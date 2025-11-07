@@ -20,7 +20,7 @@ $db = db();
 
 // الحصول على القسم المطلوب
 $section = $_GET['section'] ?? 'honey';
-$validSections = ['honey', 'olive_oil', 'beeswax', 'derivatives'];
+$validSections = ['honey', 'olive_oil', 'beeswax', 'derivatives', 'nuts'];
 if (!in_array($section, $validSections)) {
     $section = 'honey';
 }
@@ -88,6 +88,7 @@ if (!in_array($section, $validSections)) {
 .icon-olive { background: linear-gradient(135deg, #96e6a1 0%, #45b649 100%); }
 .icon-wax { background: linear-gradient(135deg, #ffc371 0%, #ff5f6d 100%); }
 .icon-derivative { background: linear-gradient(135deg, #a8edea 0%, #fed6e3 100%); }
+.icon-nuts { background: linear-gradient(135deg, #d4a574 0%, #8b6f47 100%); }
 </style>
 
 <div class="d-flex justify-content-between align-items-center mb-4">
@@ -113,6 +114,12 @@ if (!in_array($section, $validSections)) {
             <a class="nav-link <?php echo $section === 'beeswax' ? 'active' : ''; ?>" 
                href="?page=raw_materials_warehouse&section=beeswax">
                 <i class="bi bi-hexagon-fill"></i>شمع العسل
+            </a>
+        </li>
+        <li class="nav-item">
+            <a class="nav-link <?php echo $section === 'nuts' ? 'active' : ''; ?>" 
+               href="?page=raw_materials_warehouse&section=nuts">
+                <i class="bi bi-nut"></i>المكسرات
             </a>
         </li>
         <li class="nav-item">
@@ -461,6 +468,217 @@ if ($section === 'honey') {
     </div>
     
 <?php
+} elseif ($section === 'nuts') {
+    $nutsTableExists = $db->queryOne("SHOW TABLES LIKE 'nuts_stock'");
+    $mixedTableExists = $db->queryOne("SHOW TABLES LIKE 'mixed_nuts'");
+    $mixedIngredientsExists = $db->queryOne("SHOW TABLES LIKE 'mixed_nuts_ingredients'");
+    
+    if (empty($nutsTableExists)) {
+        ?>
+        <div class="alert alert-info">
+            <i class="bi bi-info-circle me-2"></i>
+            لم يتم تفعيل مخزن المكسرات بعد. يرجى التواصل مع مسؤول النظام لإعداده.
+        </div>
+        <?php
+    } else {
+        $nutsStats = [
+            'total_quantity' => $db->queryOne("SELECT COALESCE(SUM(quantity), 0) as total FROM nuts_stock")['total'] ?? 0,
+            'suppliers_count' => $db->queryOne("SELECT COUNT(DISTINCT supplier_id) as total FROM nuts_stock")['total'] ?? 0,
+            'types_count' => $db->queryOne("SELECT COUNT(DISTINCT nut_type) as total FROM nuts_stock")['total'] ?? 0,
+            'mixed_batches' => !empty($mixedTableExists) ? ($db->queryOne("SELECT COUNT(*) as total FROM mixed_nuts")['total'] ?? 0) : 0
+        ];
+        
+        $nutsStock = $db->query("
+            SELECT ns.*, s.name as supplier_name, s.phone as supplier_phone
+            FROM nuts_stock ns
+            LEFT JOIN suppliers s ON ns.supplier_id = s.id
+            ORDER BY ns.nut_type ASC, s.name ASC
+        ");
+        
+        $mixedNuts = [];
+        if (!empty($mixedTableExists) && !empty($mixedIngredientsExists)) {
+            $mixedNuts = $db->query("
+                SELECT mn.*, s.name as supplier_name, u.full_name as creator_name
+                FROM mixed_nuts mn
+                LEFT JOIN suppliers s ON mn.supplier_id = s.id
+                LEFT JOIN users u ON mn.created_by = u.id
+                ORDER BY mn.created_at DESC
+            ");
+            
+            foreach ($mixedNuts as &$mix) {
+                $mix['ingredients'] = $db->query("
+                    SELECT mni.quantity, ns.nut_type
+                    FROM mixed_nuts_ingredients mni
+                    INNER JOIN nuts_stock ns ON mni.nuts_stock_id = ns.id
+                    WHERE mni.mixed_nuts_id = ?
+                ", [$mix['id']]);
+            }
+            unset($mix);
+        }
+        ?>
+        
+        <div class="row mb-4">
+            <div class="col-md-3">
+                <div class="stats-card">
+                    <div class="d-flex justify-content-between align-items-center">
+                        <div>
+                            <div class="text-muted small mb-1">إجمالي الكمية</div>
+                            <div class="h4 mb-0"><?php echo number_format($nutsStats['total_quantity'], 2); ?> <small>كجم</small></div>
+                        </div>
+                        <div class="stat-icon icon-nuts">
+                            <i class="bi bi-nut"></i>
+                        </div>
+                    </div>
+                </div>
+            </div>
+            <div class="col-md-3">
+                <div class="stats-card">
+                    <div class="d-flex justify-content-between align-items-center">
+                        <div>
+                            <div class="text-muted small mb-1">عدد الأنواع</div>
+                            <div class="h4 mb-0"><?php echo $nutsStats['types_count']; ?></div>
+                        </div>
+                        <div class="stat-icon icon-nuts">
+                            <i class="bi bi-tags"></i>
+                        </div>
+                    </div>
+                </div>
+            </div>
+            <div class="col-md-3">
+                <div class="stats-card">
+                    <div class="d-flex justify-content-between align-items-center">
+                        <div>
+                            <div class="text-muted small mb-1">عدد الموردين</div>
+                            <div class="h4 mb-0"><?php echo $nutsStats['suppliers_count']; ?></div>
+                        </div>
+                        <div class="stat-icon icon-nuts">
+                            <i class="bi bi-people"></i>
+                        </div>
+                    </div>
+                </div>
+            </div>
+            <div class="col-md-3">
+                <div class="stats-card">
+                    <div class="d-flex justify-content-between align-items-center">
+                        <div>
+                            <div class="text-muted small mb-1">المكسرات المشكلة</div>
+                            <div class="h4 mb-0"><?php echo $nutsStats['mixed_batches']; ?></div>
+                        </div>
+                        <div class="stat-icon icon-nuts">
+                            <i class="bi bi-layers"></i>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+        
+        <div class="row">
+            <div class="col-lg-6 mb-4">
+                <div class="card shadow-sm">
+                    <div class="card-header text-white" style="background: linear-gradient(135deg, #d4a574 0%, #8b6f47 100%);">
+                        <h5 class="mb-0"><i class="bi bi-nut me-2"></i>المكسرات المنفردة</h5>
+                    </div>
+                    <div class="card-body">
+                        <?php if (empty($nutsStock)): ?>
+                            <div class="text-center text-muted py-4">
+                                <i class="bi bi-inbox fs-1 d-block mb-3"></i>
+                                لا يوجد مخزون مكسرات
+                            </div>
+                        <?php else: ?>
+                            <div class="table-responsive">
+                                <table class="table table-hover">
+                                    <thead class="table-light">
+                                        <tr>
+                                            <th>النوع</th>
+                                            <th>المورد</th>
+                                            <th class="text-center">الكمية (كجم)</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody>
+                                        <?php foreach ($nutsStock as $stock): ?>
+                                            <tr>
+                                                <td><span class="badge" style="background-color: #8b6f47;"><?php echo htmlspecialchars($stock['nut_type']); ?></span></td>
+                                                <td>
+                                                    <strong><?php echo htmlspecialchars($stock['supplier_name'] ?? 'غير محدد'); ?></strong>
+                                                    <?php if (!empty($stock['supplier_phone'])): ?>
+                                                        <br><small class="text-muted"><?php echo htmlspecialchars($stock['supplier_phone']); ?></small>
+                                                    <?php endif; ?>
+                                                </td>
+                                                <td class="text-center"><strong style="color: #8b6f47;"><?php echo number_format($stock['quantity'], 3); ?></strong></td>
+                                            </tr>
+                                        <?php endforeach; ?>
+                                    </tbody>
+                                </table>
+                            </div>
+                        <?php endif; ?>
+                    </div>
+                </div>
+            </div>
+            
+            <div class="col-lg-6 mb-4">
+                <div class="card shadow-sm">
+                    <div class="card-header text-white" style="background: linear-gradient(135deg, #d4a574 0%, #8b6f47 100%);">
+                        <h5 class="mb-0"><i class="bi bi-layers me-2"></i>المكسرات المشكلة</h5>
+                    </div>
+                    <div class="card-body">
+                        <?php if (empty($mixedNuts)): ?>
+                            <div class="text-center text-muted py-4">
+                                <i class="bi bi-inbox fs-1 d-block mb-3"></i>
+                                لا توجد مكسرات مشكلة
+                            </div>
+                        <?php else: ?>
+                            <div class="list-group list-group-flush">
+                                <?php foreach ($mixedNuts as $mix): ?>
+                                    <div class="list-group-item">
+                                        <div class="d-flex justify-content-between align-items-start mb-2">
+                                            <div>
+                                                <h6 class="mb-1"><?php echo htmlspecialchars($mix['batch_name']); ?></h6>
+                                                <small class="text-muted">
+                                                    <i class="bi bi-person me-1"></i><?php echo htmlspecialchars($mix['supplier_name'] ?? 'غير محدد'); ?>
+                                                </small>
+                                            </div>
+                                            <span class="badge bg-success"><?php echo number_format($mix['total_quantity'] ?? 0, 3); ?> كجم</span>
+                                        </div>
+                                        <?php if (!empty($mix['ingredients'])): ?>
+                                            <div class="small">
+                                                <strong>المكونات:</strong>
+                                                <ul class="list-unstyled mb-0 mt-1">
+                                                    <?php foreach ($mix['ingredients'] as $ingredient): ?>
+                                                        <li class="text-muted">
+                                                            • <?php echo htmlspecialchars($ingredient['nut_type']); ?>: <?php echo number_format($ingredient['quantity'], 3); ?> كجم
+                                                        </li>
+                                                    <?php endforeach; ?>
+                                                </ul>
+                                            </div>
+                                        <?php endif; ?>
+                                        <?php if (!empty($mix['notes'])): ?>
+                                            <small class="text-muted d-block mt-2">
+                                                <i class="bi bi-sticky me-1"></i><?php echo htmlspecialchars($mix['notes']); ?>
+                                            </small>
+                                        <?php endif; ?>
+                                        <small class="text-muted d-block mt-1">
+                                            <i class="bi bi-calendar me-1"></i><?php echo formatDateTime($mix['created_at']); ?>
+                                            <?php if (!empty($mix['creator_name'])): ?>
+                                                | <i class="bi bi-person-check me-1"></i><?php echo htmlspecialchars($mix['creator_name']); ?>
+                                            <?php endif; ?>
+                                        </small>
+                                    </div>
+                                <?php endforeach; ?>
+                            </div>
+                        <?php endif; ?>
+                        <?php if (empty($mixedTableExists) || empty($mixedIngredientsExists)): ?>
+                            <div class="alert alert-warning mt-3 mb-0">
+                                <i class="bi bi-exclamation-triangle me-2"></i>
+                                تم تفعيل عرض المكسرات، لكن جدول الخلطات غير متوفر حالياً.
+                            </div>
+                        <?php endif; ?>
+                    </div>
+                </div>
+            </div>
+        </div>
+        
+    <?php
+    }
 } elseif ($section === 'derivatives') {
     $derivStats = [
         'total_weight' => $db->queryOne("SELECT COALESCE(SUM(weight), 0) as total FROM derivatives_stock")['total'] ?? 0,
