@@ -45,8 +45,8 @@ if ($status === 'active') {
 }
 
 if ($search) {
-    $sql .= " AND (c.name LIKE ? OR c.phone LIKE ? OR c.email LIKE ?)";
-    $countSql .= " AND (name LIKE ? OR phone LIKE ? OR email LIKE ?)";
+    $sql .= " AND (c.name LIKE ? OR c.phone LIKE ? OR c.address LIKE ?)";
+    $countSql .= " AND (name LIKE ? OR phone LIKE ? OR address LIKE ?)";
     $searchParam = '%' . $search . '%';
     $params[] = $searchParam;
     $params[] = $searchParam;
@@ -98,7 +98,7 @@ $customers = $db->query($sql, $params);
             <div class="col-md-8">
                 <input type="text" class="form-control" name="search" 
                        value="<?php echo htmlspecialchars($search); ?>" 
-                       placeholder="ابحث بالاسم، رقم الهاتف، أو البريد الإلكتروني...">
+                       placeholder="ابحث بالاسم، رقم الهاتف، أو العنوان...">
             </div>
             <div class="col-md-2">
                 <select class="form-select" name="status">
@@ -127,7 +127,7 @@ $customers = $db->query($sql, $params);
                     <tr>
                         <th>الاسم</th>
                         <th>رقم الهاتف</th>
-                        <th>البريد الإلكتروني</th>
+                        <th>ديون العميل</th>
                         <th>العنوان</th>
                         <th>تاريخ الإضافة</th>
                         <th>الحالة</th>
@@ -143,7 +143,7 @@ $customers = $db->query($sql, $params);
                             <tr>
                                 <td><strong><?php echo htmlspecialchars($customer['name']); ?></strong></td>
                                 <td><?php echo htmlspecialchars($customer['phone'] ?? '-'); ?></td>
-                                <td><?php echo htmlspecialchars($customer['email'] ?? '-'); ?></td>
+                                <td><?php echo formatCurrency($customer['balance'] ?? 0); ?></td>
                                 <td><?php echo htmlspecialchars($customer['address'] ?? '-'); ?></td>
                                 <td><?php echo formatDate($customer['created_at']); ?></td>
                                 <td>
@@ -223,8 +223,8 @@ $customers = $db->query($sql, $params);
                         <input type="text" class="form-control" name="phone" placeholder="مثال: 01234567890">
                     </div>
                     <div class="mb-3">
-                        <label class="form-label">البريد الإلكتروني</label>
-                        <input type="email" class="form-control" name="email" placeholder="example@email.com">
+                        <label class="form-label">ديون العميل</label>
+                        <input type="number" class="form-control" name="balance" step="0.01" min="0" value="0">
                     </div>
                     <div class="mb-3">
                         <label class="form-label">العنوان</label>
@@ -245,8 +245,11 @@ $customers = $db->query($sql, $params);
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['action'] === 'add_customer') {
     $name = trim($_POST['name'] ?? '');
     $phone = trim($_POST['phone'] ?? '');
-    $email = trim($_POST['email'] ?? '');
     $address = trim($_POST['address'] ?? '');
+    $balance = isset($_POST['balance']) ? cleanFinancialValue($_POST['balance']) : 0;
+    if ($balance < 0) {
+        $balance = 0;
+    }
     
     if (empty($name)) {
         $error = 'يجب إدخال اسم العميل';
@@ -261,9 +264,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['
         
         if (empty($error)) {
             $db->execute(
-                "INSERT INTO customers (name, phone, email, address, status, created_by) 
+                "INSERT INTO customers (name, phone, balance, address, status, created_by) 
                  VALUES (?, ?, ?, ?, 'active', ?)",
-                [$name, $phone ?: null, $email ?: null, $address ?: null, $currentUser['id']]
+                [$name, $phone ?: null, $balance, $address ?: null, $currentUser['id']]
             );
             
             logAudit($currentUser['id'], 'add_customer', 'customer', $db->getLastInsertId(), null, [

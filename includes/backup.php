@@ -325,12 +325,26 @@ function restoreDatabase($backupId) {
         
         $connection = getDB();
         
-        // تنفيذ كل استعلام
+        $connection->query('SET FOREIGN_KEY_CHECKS = 0');
+        
         foreach ($queries as $query) {
-            if (!empty($query) && !preg_match('/^--/', $query)) {
-                $connection->query($query);
+            if (empty($query) || preg_match('/^--/', $query)) {
+                continue;
+            }
+            $result = $connection->query($query);
+            if ($result === false) {
+                $error = $connection->error ?? '';
+                if (stripos($error, 'already exists') !== false) {
+                    continue;
+                }
+                if (stripos($error, 'duplicate column') !== false) {
+                    continue;
+                }
+                throw new Exception($error ?: 'خطأ غير معروف أثناء تنفيذ الاستعلام');
             }
         }
+        
+        $connection->query('SET FOREIGN_KEY_CHECKS = 1');
         
         return [
             'success' => true,
