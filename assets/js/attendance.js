@@ -71,9 +71,9 @@ async function initCamera() {
             }
         };
         
-        // على الموبايل، جرب الكاميرا الخلفية أولاً
+        // على الموبايل نحتاج الكاميرا الأمامية بشكل افتراضي
         if (isMobile) {
-            constraints.video.facingMode = { ideal: 'environment' };
+            constraints.video.facingMode = { ideal: 'user' };
         } else {
             constraints.video.facingMode = { ideal: 'user' };
         }
@@ -93,22 +93,11 @@ async function initCamera() {
                 });
             }
         } catch (firstError) {
-            // إذا فشلت المحاولة الأولى (خاصة على الموبايل)، جرب الكاميرا الأمامية
-            if (isMobile && constraints.video.facingMode && constraints.video.facingMode.ideal === 'environment') {
-                console.log('Retrying with front camera...');
-                constraints.video.facingMode = { ideal: 'user' };
-                try {
-                    stream = await navigator.mediaDevices.getUserMedia(constraints);
-                } catch (secondError) {
-                    // إذا فشلت أيضاً، جرب بدون تحديد facingMode
-                    delete constraints.video.facingMode;
-                    try {
-                        stream = await navigator.mediaDevices.getUserMedia(constraints);
-                    } catch (thirdError) {
-                        throw firstError; // ألقِ الخطأ الأول
-                    }
-                }
-            } else {
+            // إذا فشلت المحاولة الأولى، جرب بدون تحديد facingMode
+            delete constraints.video.facingMode;
+            try {
+                stream = await navigator.mediaDevices.getUserMedia(constraints);
+            } catch (secondError) {
                 throw firstError;
             }
         }
