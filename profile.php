@@ -34,6 +34,44 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         $currentPassword = $_POST['current_password'] ?? '';
         $newPassword = $_POST['new_password'] ?? '';
         $confirmPassword = $_POST['confirm_password'] ?? '';
+        $removePhoto = isset($_POST['remove_photo']) && $_POST['remove_photo'] === '1';
+        $profilePhotoData = null;
+        
+        if (isset($_FILES['profile_photo']) && $_FILES['profile_photo']['error'] !== UPLOAD_ERR_NO_FILE) {
+            if ($_FILES['profile_photo']['error'] === UPLOAD_ERR_OK) {
+                $maxSize = 2 * 1024 * 1024;
+                if ($_FILES['profile_photo']['size'] > $maxSize) {
+                    $error = 'حجم الصورة يجب ألا يتجاوز 2 ميجابايت';
+                } else {
+                    $tmpPath = $_FILES['profile_photo']['tmp_name'];
+                    $mimeType = '';
+                    if (function_exists('mime_content_type')) {
+                        $mimeType = mime_content_type($tmpPath);
+                    }
+                    if (!$mimeType && class_exists('finfo')) {
+                        $finfo = finfo_open(FILEINFO_MIME_TYPE);
+                        if ($finfo) {
+                            $mimeType = finfo_file($finfo, $tmpPath);
+                            finfo_close($finfo);
+                        }
+                    }
+                    $allowedTypes = ['image/jpeg', 'image/png', 'image/gif', 'image/webp'];
+                    if (!$mimeType || !in_array($mimeType, $allowedTypes, true)) {
+                        $error = 'نوع الصورة غير مدعوم';
+                    } else {
+                        $imageData = file_get_contents($tmpPath);
+                        if ($imageData === false) {
+                            $error = 'تعذر قراءة الصورة';
+                        } else {
+                            $profilePhotoData = 'data:' . $mimeType . ';base64,' . base64_encode($imageData);
+                            $removePhoto = false;
+                        }
+                    }
+                }
+            } else {
+                $error = 'فشل رفع الصورة';
+            }
+        }
         
         // التحقق من البيانات
         if (empty($fullName)) {
@@ -51,9 +89,18 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             
             // تحديث البيانات الأساسية
             if (empty($error)) {
+                $updateFields = "full_name = ?, email = ?, phone = ?, updated_at = NOW()";
+                $params = [$fullName, $email, $phone];
+                if ($profilePhotoData !== null) {
+                    $updateFields .= ", profile_photo = ?";
+                    $params[] = $profilePhotoData;
+                } elseif ($removePhoto) {
+                    $updateFields .= ", profile_photo = NULL";
+                }
+                $params[] = $currentUser['id'];
                 $db->execute(
-                    "UPDATE users SET full_name = ?, email = ?, phone = ?, updated_at = NOW() WHERE id = ?",
-                    [$fullName, $email, $phone, $currentUser['id']]
+                    "UPDATE users SET $updateFields WHERE id = ?",
+                    $params
                 );
                 
                 // تحديث كلمة المرور إذا تم إدخالها
@@ -143,7 +190,7 @@ $dashboardUrl = getDashboardUrl($currentUser['role']);
                 <h5><i class="bi bi-person me-2"></i>معلومات البروفايل</h5>
             </div>
             <div class="card-body">
-                            <form method="POST" action="">
+                <form method="POST" action="" enctype="multipart/form-data">
                                 <input type="hidden" name="action" value="update_profile">
                                 
                                 <div class="row g-3 mb-3">
@@ -168,6 +215,33 @@ $dashboardUrl = getDashboardUrl($currentUser['role']);
                                         <small class="text-muted">لا يمكن تغيير الدور</small>
                                     </div>
                                 </div>
+                    
+                    <div class="mb-3">
+                        <label class="form-label">
+                            <i class="bi bi-image me-2"></i>الصورة الشخصية
+                        </label>
+                        <div class="d-flex align-items-center gap-3 flex-wrap">
+                            <div class="d-flex align-items-center justify-content-center rounded-circle border overflow-hidden bg-secondary" style="width:80px;height:80px;">
+                                <?php if (!empty($user['profile_photo'])): ?>
+                                    <img src="<?php echo htmlspecialchars($user['profile_photo']); ?>" alt="Profile" style="width:100%;height:100%;object-fit:cover;">
+                                <?php else: ?>
+                                    <span class="text-white fw-bold" style="font-size:24px;">
+                                        <?php echo htmlspecialchars(mb_substr($user['username'] ?? '', 0, 1)); ?>
+                                    </span>
+                                <?php endif; ?>
+                            </div>
+                            <div class="flex-grow-1">
+                                <input type="file" class="form-control" id="profile_photo" name="profile_photo" accept="image/*">
+                                <?php if (!empty($user['profile_photo'])): ?>
+                                    <div class="form-check mt-2">
+                                        <input class="form-check-input" type="checkbox" id="remove_photo" name="remove_photo" value="1">
+                                        <label class="form-check-label" for="remove_photo">إزالة الصورة الحالية</label>
+                                    </div>
+                                <?php endif; ?>
+                                <small class="text-muted d-block mt-2">الحد الأقصى 2 ميجابايت والأنواع المسموحة JPG وPNG وGIF وWEBP</small>
+                            </div>
+                        </div>
+                    </div>
                                 
                                 <div class="mb-3">
                                     <label for="full_name" class="form-label">
@@ -214,8 +288,8 @@ $dashboardUrl = getDashboardUrl($currentUser['role']);
                                         <i class="bi bi-save me-2"></i><?php echo isset($lang['save']) ? $lang['save'] : 'حفظ'; ?>
                                     </button>
                                 </div>
-                            </form>
-                        </div>
+                </form>
+            </div>
         </div>
     </div>
     

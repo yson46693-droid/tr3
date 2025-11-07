@@ -27,6 +27,32 @@ if ($action === 'update_profile') {
     $fullName = trim($_POST['full_name'] ?? '');
     $email = trim($_POST['email'] ?? '');
     $phone = trim($_POST['phone'] ?? '');
+    $profilePhotoInput = trim($_POST['profile_photo'] ?? '');
+    $removePhoto = isset($_POST['remove_photo']) && $_POST['remove_photo'] === '1';
+    $profilePhotoData = null;
+    
+    if ($profilePhotoInput !== '') {
+        if (preg_match('/^data:image\/(png|jpe?g|gif|webp);base64,(.+)$/i', $profilePhotoInput, $matches)) {
+            $decoded = base64_decode($matches[2], true);
+            if ($decoded === false) {
+                http_response_code(400);
+                echo json_encode(['error' => 'صيغة الصورة غير صالحة']);
+                exit;
+            }
+            if (strlen($decoded) > 2 * 1024 * 1024) {
+                http_response_code(400);
+                echo json_encode(['error' => 'حجم الصورة يجب ألا يتجاوز 2 ميجابايت']);
+                exit;
+            }
+            $mimeType = strtolower($matches[1]) === 'jpg' ? 'image/jpeg' : 'image/' . strtolower($matches[1]);
+            $profilePhotoData = 'data:' . $mimeType . ';base64,' . base64_encode($decoded);
+            $removePhoto = false;
+        } else {
+            http_response_code(400);
+            echo json_encode(['error' => 'نوع الصورة غير مدعوم']);
+            exit;
+        }
+    }
     
     // التحقق من البيانات
     if (empty($fullName)) {
@@ -53,9 +79,18 @@ if ($action === 'update_profile') {
     }
     
     // تحديث البيانات
+    $updateFields = "full_name = ?, email = ?, phone = ?, updated_at = NOW()";
+    $params = [$fullName, $email, $phone];
+    if ($profilePhotoData !== null) {
+        $updateFields .= ", profile_photo = ?";
+        $params[] = $profilePhotoData;
+    } elseif ($removePhoto) {
+        $updateFields .= ", profile_photo = NULL";
+    }
+    $params[] = $currentUser['id'];
     $db->execute(
-        "UPDATE users SET full_name = ?, email = ?, phone = ?, updated_at = NOW() WHERE id = ?",
-        [$fullName, $email, $phone, $currentUser['id']]
+        "UPDATE users SET $updateFields WHERE id = ?",
+        $params
     );
     
     logAudit($currentUser['id'], 'update_profile', 'user', $currentUser['id'], null, ['full_name' => $fullName, 'email' => $email]);

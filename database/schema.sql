@@ -19,6 +19,7 @@ CREATE TABLE IF NOT EXISTS `users` (
   `webauthn_enabled` tinyint(1) DEFAULT 0,
   `full_name` varchar(100) DEFAULT NULL,
   `phone` varchar(20) DEFAULT NULL,
+  `profile_photo` longtext DEFAULT NULL,
   `hourly_rate` decimal(10,2) DEFAULT 0.00,
   `status` enum('active','inactive') DEFAULT 'active',
   `created_at` timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP,
