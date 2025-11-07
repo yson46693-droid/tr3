@@ -371,6 +371,13 @@ switch ($role) {
                 'url' => $baseUrl . 'production.php?page=my_salary',
                 'active' => ($currentPage === 'production.php' && $currentPageParam === 'my_salary'),
                 'badge' => null
+            ],
+            [
+                'title' => isset($lang['menu_reports']) ? $lang['menu_reports'] : 'تقارير الإنتاج',
+                'icon' => 'bi-graph-up-arrow',
+                'url' => $baseUrl . 'production.php?page=production_reports',
+                'active' => ($currentPage === 'production.php' && $currentPageParam === 'production_reports'),
+                'badge' => null
             ]
         ];
         break;
