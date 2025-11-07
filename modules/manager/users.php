@@ -19,6 +19,12 @@ requireRole('manager');
 $currentUser = getCurrentUser();
 $db = db();
 
+$usersModuleContextValue = isset($usersModuleContext) && $usersModuleContext === 'security' ? 'security' : 'users';
+$usersBaseParams = $usersModuleContextValue === 'security' ? ['page' => 'security', 'tab' => 'users'] : ['page' => 'users'];
+$buildUsersUrl = function(array $extra = []) use ($usersBaseParams) {
+    return $_SERVER['PHP_SELF'] . '?' . http_build_query(array_merge($usersBaseParams, $extra));
+};
+
 // استلام رسائل النجاح أو الخطأ من session (بعد redirect)
 $error = $_SESSION['error_message'] ?? '';
 $success = $_SESSION['success_message'] ?? '';
@@ -35,6 +41,20 @@ $offset = ($pageNum - 1) * $perPage;
 $search = $_GET['search'] ?? '';
 $roleFilter = $_GET['role'] ?? '';
 $statusFilter = $_GET['status'] ?? '';
+
+$getFilterParams = function() use (&$pageNum, &$search, &$roleFilter, &$statusFilter) {
+    $params = ['p' => $pageNum];
+    if ($search !== '') {
+        $params['search'] = $search;
+    }
+    if ($roleFilter !== '') {
+        $params['role'] = $roleFilter;
+    }
+    if ($statusFilter !== '') {
+        $params['status'] = $statusFilter;
+    }
+    return $params;
+};
 
 // معالجة العمليات
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
@@ -73,16 +93,12 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 ]);
                 
                 $_SESSION['success_message'] = 'تم إضافة المستخدم بنجاح';
-                $redirectUrl = $_SERVER['PHP_SELF'] . '?page=users&p=' . $pageNum . 
-                               (!empty($search) ? '&search=' . urlencode($search) : '') .
-                               (!empty($roleFilter) ? '&role=' . urlencode($roleFilter) : '') .
-                               (!empty($statusFilter) ? '&status=' . urlencode($statusFilter) : '');
+                $redirectUrl = $buildUsersUrl($getFilterParams());
                 
                 if (!headers_sent()) {
                     header('Location: ' . $redirectUrl);
                     exit;
                 } else {
-                    // إذا تم إرسال headers بالفعل، استخدم JavaScript redirect
                     echo '<script>window.location.href = ' . json_encode($redirectUrl) . ';</script>';
                     echo '<noscript><meta http-equiv="refresh" content="0;url=' . htmlspecialchars($redirectUrl) . '"></noscript>';
                     exit;
@@ -91,10 +107,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         }
         if (!empty($error)) {
             $_SESSION['error_message'] = $error;
-            header('Location: ' . $_SERVER['PHP_SELF'] . '?page=' . $page . 
-                   (!empty($search) ? '&search=' . urlencode($search) : '') .
-                   (!empty($roleFilter) ? '&role=' . urlencode($roleFilter) : '') .
-                   (!empty($statusFilter) ? '&status=' . urlencode($statusFilter) : ''));
+            $redirectUrl = $buildUsersUrl($getFilterParams());
+            header('Location: ' . $redirectUrl);
             exit;
         }
     } elseif ($action === 'update_user') {
@@ -158,10 +172,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     }
                     
                     $_SESSION['success_message'] = 'تم تحديث المستخدم بنجاح';
-                    $redirectUrl = $_SERVER['PHP_SELF'] . '?page=users&p=' . $pageNum . 
-                                   (!empty($search) ? '&search=' . urlencode($search) : '') .
-                                   (!empty($roleFilter) ? '&role=' . urlencode($roleFilter) : '') .
-                                   (!empty($statusFilter) ? '&status=' . urlencode($statusFilter) : '');
+                    $redirectUrl = $buildUsersUrl($getFilterParams());
                     
                     if (!headers_sent()) {
                         header('Location: ' . $redirectUrl);
@@ -176,10 +187,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         }
         if (!empty($error)) {
             $_SESSION['error_message'] = $error;
-            $redirectUrl = $_SERVER['PHP_SELF'] . '?page=users&p=' . $pageNum . 
-                           (!empty($search) ? '&search=' . urlencode($search) : '') .
-                           (!empty($roleFilter) ? '&role=' . urlencode($roleFilter) : '') .
-                           (!empty($statusFilter) ? '&status=' . urlencode($statusFilter) : '');
+            $redirectUrl = $buildUsersUrl($getFilterParams());
             
             if (!headers_sent()) {
                 header('Location: ' . $redirectUrl);
@@ -203,10 +211,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 logAudit($currentUser['id'], 'delete_user', 'user', $userId, json_encode($user), null);
                 
                 $_SESSION['success_message'] = 'تم حذف المستخدم بنجاح';
-                $redirectUrl = $_SERVER['PHP_SELF'] . '?page=users&p=' . $pageNum . 
-                               (!empty($search) ? '&search=' . urlencode($search) : '') .
-                               (!empty($roleFilter) ? '&role=' . urlencode($roleFilter) : '') .
-                               (!empty($statusFilter) ? '&status=' . urlencode($statusFilter) : '');
+                $redirectUrl = $buildUsersUrl($getFilterParams());
                 
                 if (!headers_sent()) {
                     header('Location: ' . $redirectUrl);
@@ -220,10 +225,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         }
         if (!empty($error)) {
             $_SESSION['error_message'] = $error;
-            $redirectUrl = $_SERVER['PHP_SELF'] . '?page=users&p=' . $pageNum . 
-                           (!empty($search) ? '&search=' . urlencode($search) : '') .
-                           (!empty($roleFilter) ? '&role=' . urlencode($roleFilter) : '') .
-                           (!empty($statusFilter) ? '&status=' . urlencode($statusFilter) : '');
+            $redirectUrl = $buildUsersUrl($getFilterParams());
             
             if (!headers_sent()) {
                 header('Location: ' . $redirectUrl);
@@ -333,7 +335,10 @@ $users = $db->query($sql, $params);
         $currentUrl = getRelativeUrl('dashboard/manager.php');
         ?>
         <form method="GET" action="<?php echo htmlspecialchars($currentUrl); ?>" class="row g-3">
-            <input type="hidden" name="page" value="users">
+            <input type="hidden" name="page" value="<?php echo $usersModuleContextValue === 'security' ? 'security' : 'users'; ?>">
+            <?php if ($usersModuleContextValue === 'security'): ?>
+            <input type="hidden" name="tab" value="users">
+            <?php endif; ?>
             <div class="col-md-4">
                 <input type="text" class="form-control" name="search" 
                        placeholder="بحث (اسم، بريد، اسم كامل)..." value="<?php echo htmlspecialchars($search); ?>">
@@ -534,28 +539,54 @@ $users = $db->query($sql, $params);
         
         <!-- Pagination -->
         <?php if ($totalPages > 1): ?>
+        <?php
+        $paginationFilters = [];
+        if ($search !== '') {
+            $paginationFilters['search'] = $search;
+        }
+        if ($roleFilter !== '') {
+            $paginationFilters['role'] = $roleFilter;
+        }
+        if ($statusFilter !== '') {
+            $paginationFilters['status'] = $statusFilter;
+        }
+        $prevParams = $paginationFilters;
+        $prevParams['p'] = max(1, $page - 1);
+        $prevUrl = $buildUsersUrl($prevParams);
+        $nextParams = $paginationFilters;
+        $nextParams['p'] = min($totalPages, $page + 1);
+        $nextUrl = $buildUsersUrl($nextParams);
+        $startPage = max(1, $page - 2);
+        $endPage = min($totalPages, $page + 2);
+        ?>
         <nav aria-label="Page navigation" class="mt-3">
             <ul class="pagination justify-content-center">
                 <li class="page-item <?php echo $page <= 1 ? 'disabled' : ''; ?>">
-                    <a class="page-link" href="?page=<?php echo $page - 1; ?>&search=<?php echo urlencode($search); ?>&role=<?php echo urlencode($roleFilter); ?>&status=<?php echo urlencode($statusFilter); ?>">
+                    <a class="page-link" href="<?php echo htmlspecialchars($prevUrl); ?>">
                         <i class="bi bi-chevron-right"></i>
                     </a>
                 </li>
                 
-                <?php
-                $startPage = max(1, $page - 2);
-                $endPage = min($totalPages, $page + 2);
-                
-                if ($startPage > 1): ?>
-                    <li class="page-item"><a class="page-link" href="?page=1&search=<?php echo urlencode($search); ?>&role=<?php echo urlencode($roleFilter); ?>&status=<?php echo urlencode($statusFilter); ?>">1</a></li>
+                <?php if ($startPage > 1): ?>
+                    <?php
+                    $firstParams = $paginationFilters;
+                    $firstParams['p'] = 1;
+                    $firstUrl = $buildUsersUrl($firstParams);
+                    ?>
+                    <li class="page-item"><a class="page-link" href="<?php echo htmlspecialchars($firstUrl); ?>">1</a></li>
                     <?php if ($startPage > 2): ?>
                         <li class="page-item disabled"><span class="page-link">...</span></li>
                     <?php endif; ?>
                 <?php endif; ?>
                 
                 <?php for ($i = $startPage; $i <= $endPage; $i++): ?>
+                    <?php
+                    $pageParams = $paginationFilters;
+                    $pageParams['p'] = $i;
+                    $pageUrl = $buildUsersUrl($pageParams);
+                    ?>
                     <li class="page-item <?php echo $i == $page ? 'active' : ''; ?>">
-                        <a class="page-link" href="?page=<?php echo $i; ?>&search=<?php echo urlencode($search); ?>&role=<?php echo urlencode($roleFilter); ?>&status=<?php echo urlencode($statusFilter); ?>">
+                        <a class="page-link" href="<?php echo htmlspecialchars($pageUrl); ?>">
                             <?php echo $i; ?>
                         </a>
                     </li>
@@ -565,11 +596,16 @@ $users = $db->query($sql, $params);
                     <?php if ($endPage < $totalPages - 1): ?>
                         <li class="page-item disabled"><span class="page-link">...</span></li>
                     <?php endif; ?>
-                    <li class="page-item"><a class="page-link" href="?page=<?php echo $totalPages; ?>&search=<?php echo urlencode($search); ?>&role=<?php echo urlencode($roleFilter); ?>&status=<?php echo urlencode($statusFilter); ?>"><?php echo $totalPages; ?></a></li>
+                    <?php
+                    $lastParams = $paginationFilters;
+                    $lastParams['p'] = $totalPages;
+                    $lastUrl = $buildUsersUrl($lastParams);
+                    ?>
+                    <li class="page-item"><a class="page-link" href="<?php echo htmlspecialchars($lastUrl); ?>"><?php echo $totalPages; ?></a></li>
                 <?php endif; ?>
                 
                 <li class="page-item <?php echo $page >= $totalPages ? 'disabled' : ''; ?>">
-                    <a class="page-link" href="?page=<?php echo $page + 1; ?>&search=<?php echo urlencode($search); ?>&role=<?php echo urlencode($roleFilter); ?>&status=<?php echo urlencode($statusFilter); ?>">
+                    <a class="page-link" href="<?php echo htmlspecialchars($nextUrl); ?>">
                         <i class="bi bi-chevron-left"></i>
                     </a>
                 </li>

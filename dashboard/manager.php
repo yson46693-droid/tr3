@@ -408,12 +408,9 @@ $pageTitle = isset($lang['manager_dashboard']) ? $lang['manager_dashboard'] : '�
                 ?>
                 
             <?php elseif ($page === 'users'): ?>
-                <!-- صفحة إدارة المستخدمين -->
                 <?php 
-                $modulePath = __DIR__ . '/../modules/manager/users.php';
-                if (file_exists($modulePath)) {
-                    include $modulePath;
-                }
+                header('Location: manager.php?page=security&tab=users');
+                exit;
                 ?>
                 
             <?php elseif ($page === 'suppliers'): ?>

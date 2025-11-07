@@ -20,6 +20,16 @@ $db = db();
 $error = '';
 $success = '';
 
+try {
+    $createdByColumn = $db->query("SHOW COLUMNS FROM customers LIKE 'created_by'");
+    if (empty($createdByColumn)) {
+        $db->execute("ALTER TABLE customers ADD COLUMN created_by INT NULL AFTER status");
+        $db->execute("ALTER TABLE customers ADD CONSTRAINT fk_customers_created_by FOREIGN KEY (created_by) REFERENCES users(id) ON DELETE SET NULL");
+    }
+} catch (Throwable $migrationError) {
+    error_log('Customers created_by migration error: ' . $migrationError->getMessage());
+}
+
 // Pagination
 $pageNum = isset($_GET['p']) ? max(1, intval($_GET['p'])) : 1;
 $perPage = 20;

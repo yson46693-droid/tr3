@@ -224,6 +224,18 @@ $activeTab = $_GET['tab'] ?? 'security';
         </button>
     </li>
     <li class="nav-item flex-shrink-0" role="presentation">
+        <button class="nav-link <?php echo $activeTab === 'users' ? 'active' : ''; ?>" 
+                id="users-tab" 
+                data-bs-toggle="tab" 
+                data-bs-target="#users-content" 
+                type="button" 
+                role="tab" 
+                aria-controls="users-content" 
+                aria-selected="<?php echo $activeTab === 'users' ? 'true' : 'false'; ?>">
+            <i class="bi bi-people me-2"></i><span>المستخدمون</span>
+        </button>
+    </li>
+    <li class="nav-item flex-shrink-0" role="presentation">
         <button class="nav-link <?php echo $activeTab === 'permissions' ? 'active' : ''; ?>" 
                 id="permissions-tab" 
                 data-bs-toggle="tab" 
@@ -388,6 +400,22 @@ $activeTab = $_GET['tab'] ?? 'security';
                 </div>
             </div>
         </div>
+    </div>
+    
+    <div class="tab-pane fade <?php echo $activeTab === 'users' ? 'show active' : ''; ?>" 
+         id="users-content" 
+         role="tabpanel" 
+         aria-labelledby="users-tab">
+        <?php 
+        $usersModuleContext = 'security';
+        $usersModulePath = __DIR__ . '/users.php';
+        if (file_exists($usersModulePath)) {
+            include $usersModulePath;
+        } else {
+            echo '<div class="alert alert-warning">إدارة المستخدمين غير متاحة حالياً</div>';
+        }
+        unset($usersModuleContext);
+        ?>
     </div>
     
     <!-- Tab: الصلاحيات -->

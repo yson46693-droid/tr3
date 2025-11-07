@@ -96,13 +96,6 @@ switch ($role) {
             ],
             ['divider' => true, 'title' => isset($lang['listing']) ? $lang['listing'] : 'القوائم'],
             [
-                'title' => isset($lang['menu_users']) ? $lang['menu_users'] : 'المستخدمين',
-                'icon' => 'bi-people',
-                'url' => $baseUrl . 'manager.php?page=users',
-                'active' => ($currentPage === 'manager.php' && $currentPageParam === 'users'),
-                'badge' => null
-            ],
-            [
                 'title' => isset($lang['menu_suppliers']) ? $lang['menu_suppliers'] : 'الموردين',
                 'icon' => 'bi-truck',
                 'url' => $baseUrl . 'manager.php?page=suppliers',

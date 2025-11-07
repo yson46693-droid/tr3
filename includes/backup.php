@@ -335,13 +335,23 @@ function restoreDatabase($backupId) {
             if ($result === false) {
                 $error = $connection->error ?? '';
                 $lowerError = strtolower($error);
-                if (strpos($lowerError, 'already exists') !== false ||
-                    strpos($lowerError, 'duplicate column') !== false ||
+                
+                if (strpos($lowerError, 'already exists') !== false && preg_match('/CREATE\s+TABLE\s+`?([a-z0-9_]+)`?/i', $query, $matches)) {
+                    $tableName = $matches[1];
+                    $connection->query("DROP TABLE IF EXISTS `$tableName`");
+                    if (!$connection->query($query)) {
+                        continue;
+                    }
+                    continue;
+                }
+                
+                if (strpos($lowerError, 'duplicate column') !== false ||
                     strpos($lowerError, 'unknown table') !== false ||
                     strpos($lowerError, 'duplicate entry') !== false ||
                     (strpos($lowerError, 'unknown column') !== false && strpos($query, 'DROP') !== false)) {
                     continue;
                 }
+                
                 throw new Exception($error ?: 'خطأ غير معروف أثناء تنفيذ الاستعلام');
             }
         }
@@ -354,6 +364,9 @@ function restoreDatabase($backupId) {
         ];
         
     } catch (Exception $e) {
+        if (isset($connection)) {
+            $connection->query('SET FOREIGN_KEY_CHECKS = 1');
+        }
         return [
             'success' => false,
             'message' => 'فشل استعادة قاعدة البيانات: ' . $e->getMessage()
