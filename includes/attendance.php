@@ -1,3 +1,4 @@
+<?php
 function formatRoleName($role) {
     $roleNames = [
         'manager' => 'المدير',
@@ -25,7 +26,6 @@ function formatArabicTime($dateTime) {
     }
     return $dt->format('H:i:s');
 }
-<?php
 /**
  * نظام الحضور والانصراف المتقدم
  * Advanced Attendance System
