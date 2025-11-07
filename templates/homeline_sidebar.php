@@ -125,7 +125,7 @@ switch ($role) {
             ],
             [
                 'title' => 'نقطة البيع',
-                'icon' => 'bi-shop',
+                'icon' => 'bi-cart4',
                 'url' => $baseUrl . 'manager.php?page=pos',
                 'active' => ($currentPage === 'manager.php' && $currentPageParam === 'pos'),
                 'badge' => null
