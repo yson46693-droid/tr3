@@ -145,9 +145,12 @@
 }
 
 .sidebar-nav .nav {
+    display: flex;
+    flex-direction: column;
     list-style: none;
     padding: 0;
     margin: 0;
+    gap: var(--spacing-xs);
 }
 
 .sidebar-nav .nav-item {
