@@ -23,9 +23,12 @@
         if (!sidebarToggle || !dashboardWrapper) return;
         
         // Check localStorage for sidebar state
+        const isMobile = window.innerWidth <= 768;
         const sidebarCollapsed = localStorage.getItem('sidebarCollapsed') === 'true';
-        if (sidebarCollapsed) {
+        if (sidebarCollapsed && !isMobile) {
             dashboardWrapper.classList.add('sidebar-collapsed');
+        } else {
+            dashboardWrapper.classList.remove('sidebar-collapsed');
         }
         
         // Toggle sidebar on button click
@@ -33,23 +36,29 @@
             e.preventDefault();
             e.stopPropagation();
             
-            dashboardWrapper.classList.toggle('sidebar-collapsed');
+            if (window.innerWidth <= 768) {
+                dashboardWrapper.classList.remove('sidebar-collapsed');
+            } else {
+                dashboardWrapper.classList.toggle('sidebar-collapsed');
+            }
             
             // Save state to localStorage
             const isCollapsed = dashboardWrapper.classList.contains('sidebar-collapsed');
             localStorage.setItem('sidebarCollapsed', isCollapsed);
         });
         
-        // Auto-collapse on mobile
-        if (window.innerWidth <= 768) {
-            dashboardWrapper.classList.add('sidebar-collapsed');
-            dashboardWrapper.classList.remove('sidebar-open');
-        }
-        
         // Handle window resize
         window.addEventListener('resize', function() {
             if (window.innerWidth <= 768) {
                 dashboardWrapper.classList.remove('sidebar-open');
+                dashboardWrapper.classList.remove('sidebar-collapsed');
+            } else {
+                const storedCollapsed = localStorage.getItem('sidebarCollapsed') === 'true';
+                if (storedCollapsed) {
+                    dashboardWrapper.classList.add('sidebar-collapsed');
+                } else {
+                    dashboardWrapper.classList.remove('sidebar-collapsed');
+                }
             }
         });
     }
@@ -69,6 +78,9 @@
             
             const isOpening = !dashboardWrapper.classList.contains('sidebar-open');
             dashboardWrapper.classList.toggle('sidebar-open');
+            if (isOpening) {
+                dashboardWrapper.classList.remove('sidebar-collapsed');
+            }
             
             // Prevent body scroll when sidebar is open
             if (isOpening) {
