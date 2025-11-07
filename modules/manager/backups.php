@@ -176,7 +176,11 @@ $backups = array_slice($allBackups, $offset, $perPage);
                                 <td>
                                     <div class="btn-group btn-group-sm" role="group">
                                         <?php if (in_array($backup['status'], ['success', 'completed'])): ?>
-                                            <a href="<?php echo str_replace(BASE_PATH, '', $backup['file_path']); ?>" 
+                                            <?php 
+                                            $downloadPath = str_replace('\\', '/', str_replace(BASE_PATH, '', $backup['file_path'])); 
+                                            $downloadPath = '/' . ltrim($downloadPath, '/');
+                                            ?>
+                                            <a href="<?php echo htmlspecialchars($downloadPath); ?>" 
                                                class="btn btn-success" download>
                                                 <i class="bi bi-download"></i> تحميل
                                             </a>
@@ -258,7 +262,11 @@ $backups = array_slice($allBackups, $offset, $perPage);
                             
                             <div class="d-grid gap-2 d-flex mt-3">
                                 <?php if (in_array($backup['status'], ['success', 'completed'])): ?>
-                                    <a href="<?php echo str_replace(BASE_PATH, '', $backup['file_path']); ?>" 
+                                    <?php 
+                                    $downloadPath = str_replace('\\', '/', str_replace(BASE_PATH, '', $backup['file_path'])); 
+                                    $downloadPath = '/' . ltrim($downloadPath, '/');
+                                    ?>
+                                    <a href="<?php echo htmlspecialchars($downloadPath); ?>" 
                                        class="btn btn-sm btn-success flex-fill" download>
                                         <i class="bi bi-download"></i> تحميل
                                     </a>
