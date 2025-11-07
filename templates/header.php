@@ -520,6 +520,9 @@ $currentUser = getCurrentUser();
                 <button class="mobile-reload-btn d-md-none" id="mobileReloadBtn" type="button">
                     <i class="bi bi-arrow-clockwise"></i>
                 </button>
+                <button class="mobile-dark-toggle d-md-none" id="mobileDarkToggle" type="button">
+                    <i class="bi bi-moon-stars"></i>
+                </button>
                 <div class="breadcrumb-nav">
                     <?php 
                     $pageTitleText = isset($pageTitle) ? $pageTitle : (isset($lang['dashboard']) ? $lang['dashboard'] : 'لوحة التحكم');

@@ -20,6 +20,38 @@ document.addEventListener('DOMContentLoaded', function() {
         });
     }
     
+    const mobileDarkToggle = document.getElementById('mobileDarkToggle');
+    function updateMobileDarkIcon(theme) {
+        if (!mobileDarkToggle) {
+            return;
+        }
+        const icon = mobileDarkToggle.querySelector('i');
+        if (!icon) {
+            return;
+        }
+        if ((theme || '').toLowerCase() === 'dark') {
+            icon.classList.remove('bi-moon-stars');
+            icon.classList.add('bi-brightness-high');
+        } else {
+            icon.classList.remove('bi-brightness-high');
+            icon.classList.add('bi-moon-stars');
+        }
+    }
+    if (mobileDarkToggle) {
+        updateMobileDarkIcon(document.documentElement.getAttribute('data-theme') || localStorage.getItem('theme') || 'light');
+        mobileDarkToggle.addEventListener('click', function(e) {
+            e.preventDefault();
+            if (typeof toggleDarkMode === 'function') {
+                toggleDarkMode();
+            }
+            updateMobileDarkIcon(document.documentElement.getAttribute('data-theme') || localStorage.getItem('theme') || 'light');
+        });
+        window.addEventListener('themeChange', function(e) {
+            const theme = e && e.detail && e.detail.theme ? e.detail.theme : (document.documentElement.getAttribute('data-theme') || localStorage.getItem('theme') || 'light');
+            updateMobileDarkIcon(theme);
+        });
+    }
+    
     // تهيئة Popovers
     if (typeof bootstrap !== 'undefined') {
         const popoverTriggerList = [].slice.call(document.querySelectorAll('[data-bs-toggle="popover"]'));

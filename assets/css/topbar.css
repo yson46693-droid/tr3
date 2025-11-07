@@ -144,7 +144,8 @@
 
 /* ===== Mobile Menu Toggle ===== */
 .mobile-menu-toggle,
-.mobile-reload-btn {
+.mobile-reload-btn,
+.mobile-dark-toggle {
     background: none;
     border: none;
     padding: var(--spacing-sm);
@@ -161,14 +162,16 @@
 }
 
 .mobile-menu-toggle:hover,
-.mobile-reload-btn:hover {
+.mobile-reload-btn:hover,
+.mobile-dark-toggle:hover {
     background: var(--gray-100);
     color: var(--gray-900);
 }
 
 @media (max-width: 768px) {
     .mobile-menu-toggle,
-    .mobile-reload-btn {
+    .mobile-reload-btn,
+    .mobile-dark-toggle {
         display: flex;
     }
 }
