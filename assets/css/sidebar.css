@@ -158,7 +158,8 @@
 }
 
 .sidebar-nav .nav-link {
-    display: flex;
+    display: grid;
+    grid-template-columns: 20px auto;
     align-items: center;
     gap: var(--spacing-md);
     padding: var(--spacing-md) var(--spacing-lg);
@@ -189,6 +190,7 @@
     width: 24px;
     text-align: center;
     flex-shrink: 0;
+    line-height: 1;
 }
 
 .sidebar-nav .nav-link span {
