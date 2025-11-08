@@ -37,6 +37,14 @@ $baseUrl = getDashboardUrl();
             </li>
             
             <li class="nav-item">
+                <a class="nav-link <?php echo (isset($_GET['page']) && $_GET['page'] === 'invoices') ? 'active' : ''; ?>"
+                   href="<?php echo $baseUrl; ?>manager.php?page=invoices">
+                    <i class="bi bi-receipt"></i>
+                    <span>الفواتير</span>
+                </a>
+            </li>
+            
+            <li class="nav-item">
                 <a class="nav-link" href="<?php echo $baseUrl; ?>manager.php?page=audit">
                     <i class="bi bi-journal-text"></i>
                     <span><?php echo isset($lang['menu_audit_logs']) ? $lang['menu_audit_logs'] : 'سجل التدقيق'; ?></span>

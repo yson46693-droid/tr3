@@ -3469,6 +3469,15 @@ document.getElementById('createFromTemplateModal')?.addEventListener('shown.bs.m
     const modalBody = document.querySelector('#createFromTemplateModal .production-template-body');
     if (modalBody) {
         modalBody.scrollTop = 0;
+        modalBody.style.overflowY = 'auto';
+    }
+});
+
+document.getElementById('createFromTemplateModal')?.addEventListener('hidden.bs.modal', function() {
+    const modalBody = document.querySelector('#createFromTemplateModal .production-template-body');
+    if (modalBody) {
+        modalBody.scrollTop = 0;
+        modalBody.style.overflowY = '';
     }
 });
 

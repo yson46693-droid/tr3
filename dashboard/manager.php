@@ -172,6 +172,9 @@ $pageTitle = isset($lang['manager_dashboard']) ? $lang['manager_dashboard'] : '�
                     </div>
                 </div>
                 
+            <?php elseif ($page === 'invoices'): ?>
+                <?php include __DIR__ . '/../modules/accountant/invoices.php'; ?>
+                
             <?php elseif ($page === 'approvals'): ?>
                 <h2><i class="bi bi-check-circle me-2"></i><?php echo isset($lang['approvals']) ? $lang['approvals'] : 'الموافقات'; ?></h2>
                 
