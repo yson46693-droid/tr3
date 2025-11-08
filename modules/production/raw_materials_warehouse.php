@@ -313,6 +313,33 @@ if (empty($mixedNutsIngredientsCheck)) {
     }
 }
 
+$rawMaterialDamageLogCheck = $db->queryOne("SHOW TABLES LIKE 'raw_material_damage_logs'");
+if (empty($rawMaterialDamageLogCheck)) {
+    try {
+        $db->execute("
+            CREATE TABLE IF NOT EXISTS `raw_material_damage_logs` (
+              `id` int(11) NOT NULL AUTO_INCREMENT,
+              `material_category` varchar(50) NOT NULL COMMENT 'نوع الخام (honey, olive_oil, beeswax, derivatives, nuts)',
+              `stock_id` int(11) DEFAULT NULL COMMENT 'معرف السجل في جدول المخزون',
+              `supplier_id` int(11) DEFAULT NULL COMMENT 'المورد المرتبط',
+              `item_label` varchar(255) NOT NULL COMMENT 'اسم المادة التالفة',
+              `variety` varchar(255) DEFAULT NULL COMMENT 'النوع/الصنف (اختياري)',
+              `quantity` decimal(12,3) NOT NULL DEFAULT 0.000 COMMENT 'الكمية التالفة',
+              `unit` varchar(20) NOT NULL DEFAULT 'كجم' COMMENT 'وحدة القياس',
+              `reason` text DEFAULT NULL COMMENT 'سبب التلف',
+              `created_by` int(11) NOT NULL,
+              `created_at` timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP,
+              PRIMARY KEY (`id`),
+              KEY `material_category` (`material_category`),
+              KEY `created_by` (`created_by`),
+              KEY `created_at` (`created_at`)
+            ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
+        ");
+    } catch (Exception $e) {
+        error_log("Error creating raw_material_damage_logs table: " . $e->getMessage());
+    }
+}
+
 // ======= إنشاء جداول النظام الموحد لقوالب المنتجات =======
 // جدول القوالب الموحدة
 $unifiedTemplatesCheck = $db->queryOne("SHOW TABLES LIKE 'unified_product_templates'");
@@ -528,6 +555,181 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     $success = 'تمت عملية التصفية بنجاح';
                     echo '<script>window.location.href = "' . getDashboardUrl('production') . '?page=raw_materials_warehouse&section=honey";</script>';
                     echo '<noscript><meta http-equiv="refresh" content="0;url=' . getDashboardUrl('production') . '?page=raw_materials_warehouse&section=honey"></noscript>';
+                }
+            }
+        }
+        
+        elseif ($action === 'record_damage') {
+            $materialCategory = $_POST['material_category'] ?? '';
+            $stockId = intval($_POST['stock_id'] ?? 0);
+            $quantity = abs(floatval($_POST['damage_quantity'] ?? 0));
+            $reason = trim($_POST['damage_reason'] ?? '');
+            $honeyType = $_POST['honey_type'] ?? 'raw';
+            $sectionRedirect = $_POST['redirect_section'] ?? $materialCategory;
+            
+            $validCategories = ['honey', 'olive_oil', 'beeswax', 'derivatives', 'nuts'];
+            if (!in_array($materialCategory, $validCategories, true)) {
+                $error = 'نوع المادة غير صالح';
+            } elseif ($stockId <= 0) {
+                $error = 'معرف السجل غير صحيح';
+            } elseif ($quantity <= 0) {
+                $error = 'يجب إدخال كمية صحيحة';
+            } elseif ($reason === '') {
+                $error = 'يجب إدخال سبب التلف';
+            } else {
+                try {
+                    $logDetails = [
+                        'material_category' => $materialCategory,
+                        'stock_id' => $stockId,
+                        'supplier_id' => null,
+                        'item_label' => '',
+                        'variety' => null,
+                        'unit' => 'كجم'
+                    ];
+                    
+                    if ($materialCategory === 'honey') {
+                        $stock = $db->queryOne("
+                            SELECT hs.*, s.name AS supplier_name
+                            FROM honey_stock hs
+                            LEFT JOIN suppliers s ON hs.supplier_id = s.id
+                            WHERE hs.id = ?", [$stockId]);
+                        
+                        if (!$stock) {
+                            $error = 'سجل العسل غير موجود';
+                        } else {
+                            $isFiltered = ($honeyType === 'filtered');
+                            $available = $isFiltered ? floatval($stock['filtered_honey_quantity']) : floatval($stock['raw_honey_quantity']);
+                            
+                            if ($available <= 0) {
+                                $error = 'لا توجد كمية متاحة للتسجيل كتالف';
+                            } elseif ($available < $quantity) {
+                                $error = 'الكمية المدخلة أكبر من الكمية المتاحة';
+                            } else {
+                                $column = $isFiltered ? 'filtered_honey_quantity' : 'raw_honey_quantity';
+                                $itemLabel = $isFiltered ? 'عسل مصفى' : 'عسل خام';
+                                
+                                $db->execute("UPDATE honey_stock SET {$column} = {$column} - ?, updated_at = NOW() WHERE id = ?", [$quantity, $stockId]);
+                                
+                                $logDetails['supplier_id'] = $stock['supplier_id'];
+                                $logDetails['item_label'] = $itemLabel;
+                                $logDetails['variety'] = $stock['honey_variety'] ?? null;
+                            }
+                        }
+                    } elseif ($materialCategory === 'olive_oil') {
+                        $stock = $db->queryOne("
+                            SELECT os.*, s.name AS supplier_name
+                            FROM olive_oil_stock os
+                            LEFT JOIN suppliers s ON os.supplier_id = s.id
+                            WHERE os.id = ?", [$stockId]);
+                        
+                        if (!$stock) {
+                            $error = 'سجل زيت الزيتون غير موجود';
+                        } elseif (floatval($stock['quantity']) < $quantity) {
+                            $error = 'الكمية المدخلة أكبر من الكمية المتاحة';
+                        } else {
+                            $db->execute("UPDATE olive_oil_stock SET quantity = quantity - ?, updated_at = NOW() WHERE id = ?", [$quantity, $stockId]);
+                            $logDetails['supplier_id'] = $stock['supplier_id'];
+                            $logDetails['item_label'] = 'زيت زيتون';
+                            $logDetails['variety'] = null;
+                            $logDetails['unit'] = 'لتر';
+                        }
+                    } elseif ($materialCategory === 'beeswax') {
+                        $stock = $db->queryOne("
+                            SELECT ws.*, s.name AS supplier_name
+                            FROM beeswax_stock ws
+                            LEFT JOIN suppliers s ON ws.supplier_id = s.id
+                            WHERE ws.id = ?", [$stockId]);
+                        
+                        if (!$stock) {
+                            $error = 'سجل شمع العسل غير موجود';
+                        } elseif (floatval($stock['weight']) < $quantity) {
+                            $error = 'الكمية المدخلة أكبر من الكمية المتاحة';
+                        } else {
+                            $db->execute("UPDATE beeswax_stock SET weight = weight - ?, updated_at = NOW() WHERE id = ?", [$quantity, $stockId]);
+                            $logDetails['supplier_id'] = $stock['supplier_id'];
+                            $logDetails['item_label'] = 'شمع عسل';
+                        }
+                    } elseif ($materialCategory === 'derivatives') {
+                        $stock = $db->queryOne("
+                            SELECT ds.*, s.name AS supplier_name
+                            FROM derivatives_stock ds
+                            LEFT JOIN suppliers s ON ds.supplier_id = s.id
+                            WHERE ds.id = ?", [$stockId]);
+                        
+                        if (!$stock) {
+                            $error = 'سجل المشتقات غير موجود';
+                        } elseif (floatval($stock['weight']) < $quantity) {
+                            $error = 'الكمية المدخلة أكبر من الكمية المتاحة';
+                        } else {
+                            $db->execute("UPDATE derivatives_stock SET weight = weight - ?, updated_at = NOW() WHERE id = ?", [$quantity, $stockId]);
+                            $logDetails['supplier_id'] = $stock['supplier_id'];
+                            $logDetails['item_label'] = 'مشتق';
+                            $logDetails['variety'] = $stock['derivative_type'] ?? null;
+                        }
+                    } elseif ($materialCategory === 'nuts') {
+                        $stock = $db->queryOne("
+                            SELECT ns.*, s.name AS supplier_name
+                            FROM nuts_stock ns
+                            LEFT JOIN suppliers s ON ns.supplier_id = s.id
+                            WHERE ns.id = ?", [$stockId]);
+                        
+                        if (!$stock) {
+                            $error = 'سجل المكسرات غير موجود';
+                        } elseif (floatval($stock['quantity']) < $quantity) {
+                            $error = 'الكمية المدخلة أكبر من الكمية المتاحة';
+                        } else {
+                            $db->execute("UPDATE nuts_stock SET quantity = quantity - ?, updated_at = NOW() WHERE id = ?", [$quantity, $stockId]);
+                            $logDetails['supplier_id'] = $stock['supplier_id'];
+                            $logDetails['item_label'] = 'مكسرات';
+                            $logDetails['variety'] = $stock['nut_type'] ?? null;
+                        }
+                    }
+                    
+                    if (empty($error)) {
+                        try {
+                            $db->execute(
+                                "INSERT INTO raw_material_damage_logs (material_category, stock_id, supplier_id, item_label, variety, quantity, unit, reason, created_by) 
+                                 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                                [
+                                    $logDetails['material_category'],
+                                    $logDetails['stock_id'],
+                                    $logDetails['supplier_id'],
+                                    $logDetails['item_label'],
+                                    $logDetails['variety'],
+                                    $quantity,
+                                    $logDetails['unit'],
+                                    $reason ?: null,
+                                    $currentUser['id']
+                                ]
+                            );
+                        } catch (Exception $e) {
+                            error_log("Error logging raw material damage: " . $e->getMessage());
+                        }
+                        
+                        logAudit(
+                            $currentUser['id'],
+                            'record_damage',
+                            'raw_material_damage_logs',
+                            $stockId,
+                            null,
+                            [
+                                'category' => $materialCategory,
+                                'quantity' => $quantity,
+                                'unit' => $logDetails['unit'],
+                                'reason' => $reason
+                            ]
+                        );
+                        
+                        preventDuplicateSubmission(
+                            'تم تسجيل الكمية التالفة بنجاح',
+                            ['page' => 'raw_materials_warehouse', 'section' => $sectionRedirect],
+                            null,
+                            'production'
+                        );
+                    }
+                } catch (Exception $e) {
+                    $error = 'حدث خطأ أثناء تسجيل الكمية التالفة';
+                    error_log("Record damage error: " . $e->getMessage());
                 }
             }
         }

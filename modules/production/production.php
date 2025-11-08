@@ -806,7 +806,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                             }
 
                             $detectedHoneyVariety = $selectedHoneyVariety !== '' ? $selectedHoneyVariety : ($materialRow['honey_variety'] ?? null);
-
+                            
                             $materialDisplay = $materialRow['material_name'] ?? 'مادة خام';
                             if (!empty($detectedHoneyVariety)) {
                                 $materialDisplay .= ' (' . $detectedHoneyVariety . ')';
@@ -943,7 +943,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                         [$templateId]
                     );
                     $packagingIds = array_filter(array_map(function($p) { return $p['packaging_material_id'] ?? null; }, $packagingMaterials));
-
+                    
                     $packagingSupplierId = null;
 
                     foreach ($packagingMaterials as $legacyPkg) {
@@ -966,7 +966,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                             'material' => $materialLabel
                         ];
 
-                        if (!$packagingSupplierId) {
+                    if (!$packagingSupplierId) {
                             $packagingSupplierId = $supplierInfo['id'];
                         }
 
@@ -983,7 +983,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                             ];
                         }
                     }
-
+                    
                     // معالجة المواد الرئيسية حسب نوع القالب
                     switch ($templateType) {
                         case 'olive_oil':
@@ -3498,18 +3498,18 @@ document.getElementById('createFromTemplateForm')?.addEventListener('submit', fu
     const supplierSelects = document.querySelectorAll('#templateSuppliersContainer select[data-role="component-supplier"]');
 
     if (supplierSelects.length === 0) {
-        e.preventDefault();
-        alert('لا توجد مواد مرتبطة بالقالب، يرجى مراجعة القالب قبل إنشاء التشغيلة.');
-        return false;
-    }
-
-    for (let select of supplierSelects) {
-        if (!select.value) {
             e.preventDefault();
-            alert('يرجى اختيار المورد لكل مادة قبل المتابعة');
-            select.focus();
+        alert('لا توجد مواد مرتبطة بالقالب، يرجى مراجعة القالب قبل إنشاء التشغيلة.');
             return false;
         }
+
+        for (let select of supplierSelects) {
+            if (!select.value) {
+                e.preventDefault();
+                alert('يرجى اختيار المورد لكل مادة قبل المتابعة');
+                select.focus();
+                return false;
+            }
     }
 
     const honeyVarietyInputs = document.querySelectorAll('#templateSuppliersContainer input[data-role="honey-variety-input"]');
