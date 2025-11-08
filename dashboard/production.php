@@ -380,7 +380,9 @@ $pageTitle = isset($lang['production_dashboard']) ? $lang['production_dashboard'
                                         'name' => $name,
                                         'label' => 'مورد المادة: ' . $name,
                                         'description' => 'الكمية لكل وحدة: ' . $quantity . ' ' . $unit . $extra,
-                                        'type' => $material['material_type'] ?? ''
+                                        'type' => $material['material_type'] ?? '',
+                                        'honey_variety' => $material['honey_variety'] ?? null,
+                                        'requires_variety' => in_array($material['material_type'] ?? '', ['honey_raw', 'honey_filtered'], true)
                                     ];
                                 }
 
@@ -468,7 +470,9 @@ $pageTitle = isset($lang['production_dashboard']) ? $lang['production_dashboard'
                                         'key' => 'honey_main',
                                         'name' => 'عسل',
                                         'label' => 'مورد العسل',
-                                        'description' => 'الكمية لكل وحدة: ' . $honeyQuantity . ' جرام'
+                                        'description' => 'الكمية لكل وحدة: ' . $honeyQuantity . ' جرام',
+                                        'type' => 'honey_filtered',
+                                        'requires_variety' => true
                                     ];
                                 }
 
