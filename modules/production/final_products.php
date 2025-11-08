@@ -246,7 +246,8 @@ $sql = "SELECT
             pr.name as product_name,
             pr.category as product_category,
             pr.unit_price,
-            SUM(p.quantity) as total_quantity,
+            pr.quantity as available_quantity,
+            SUM(p.quantity) as total_produced,
             COUNT(DISTINCT p.id) as production_count,
             MIN(p.$dateColumn) as first_production_date,
             MAX(p.$dateColumn) as last_production_date,
@@ -270,21 +271,24 @@ $params[] = $offset;
 
 $finalProducts = $db->query($sql, $params);
 
-$totalQuantitySum = 0.0;
+$totalAvailableSum = 0.0;
+$totalProducedSum = 0.0;
 $totalProductionCountSum = 0;
 $totalEstimatedValue = 0.0;
 
 if (is_array($finalProducts)) {
     foreach ($finalProducts as $product) {
-        $productQuantity = (float)($product['total_quantity'] ?? 0);
+        $availableQuantity = (float)($product['available_quantity'] ?? 0);
+        $producedQuantity = (float)($product['total_produced'] ?? 0);
         $productOperations = (int)($product['production_count'] ?? 0);
         $productUnitPrice = isset($product['unit_price']) ? (float)$product['unit_price'] : 0.0;
 
-        $totalQuantitySum += $productQuantity;
+        $totalAvailableSum += $availableQuantity;
+        $totalProducedSum += $producedQuantity;
         $totalProductionCountSum += $productOperations;
 
         if ($productUnitPrice > 0) {
-            $totalEstimatedValue += $productQuantity * $productUnitPrice;
+            $totalEstimatedValue += $availableQuantity * $productUnitPrice;
         }
     }
 }
@@ -501,10 +505,11 @@ $lang = isset($translations) ? $translations : [];
                         <?php foreach ($finalProducts as $product): ?>
                             <?php
                             $productId = (int)($product['product_id'] ?? 0);
-                            $totalQty = (float)($product['total_quantity'] ?? 0);
+                            $availableQty = (float)($product['available_quantity'] ?? 0);
+                            $producedQty = (float)($product['total_produced'] ?? 0);
                             $unitPrice = isset($product['unit_price']) ? (float)$product['unit_price'] : 0.0;
                             $productionCount = (int)($product['production_count'] ?? 0);
-                            $estimatedValue = $unitPrice > 0 ? $unitPrice * $totalQty : 0.0;
+                            $estimatedValue = $unitPrice > 0 ? $unitPrice * $availableQty : 0.0;
                             $details = $productDetailsMap[$productId] ?? [];
                             $workersRaw = $product['workers'] ?? '';
                             $workersList = array_filter(array_map('trim', explode(',', (string)$workersRaw)));
@@ -527,13 +532,16 @@ $lang = isset($translations) ? $translations : [];
                                     <?php endif; ?>
                                 </td>
                                 <td>
-                                    <div><strong>إجمالي الكمية: <?php echo number_format($totalQty, 2); ?></strong></div>
+                                    <div><strong>المتوفر حالياً: <?php echo number_format($availableQty, 2); ?></strong></div>
+                                    <div class="text-muted small">
+                                        <i class="bi bi-box-seam me-1"></i>إجمالي الإنتاج: <?php echo number_format($producedQty, 2); ?>
+                                    </div>
                                     <div class="text-muted small">
                                         <i class="bi bi-recycle me-1"></i>عدد العمليات: <?php echo number_format($productionCount); ?>
                                     </div>
                                     <?php if ($productionCount > 0): ?>
                                         <div class="text-muted small">
-                                            <i class="bi bi-calculator me-1"></i>متوسط لكل عملية: <?php echo number_format($totalQty / $productionCount, 2); ?>
+                                            <i class="bi bi-calculator me-1"></i>متوسط إنتاج العملية: <?php echo number_format($producedQty / $productionCount, 2); ?>
                                         </div>
                                     <?php endif; ?>
                                     <?php if ($estimatedValue > 0): ?>
@@ -601,6 +609,36 @@ $lang = isset($translations) ? $translations : [];
                         <?php endforeach; ?>
                     <?php endif; ?>
                 </tbody>
+                <?php if (!empty($finalProducts)): ?>
+                <tfoot class="table-light">
+                    <tr>
+                        <th>الإجماليات</th>
+                        <th>
+                            <div class="fw-semibold text-primary"><?php echo number_format($totalAvailableSum, 2); ?></div>
+                            <div class="text-muted small">إجمالي الكمية المتاحة</div>
+                            <div class="text-muted small">إجمالي الإنتاج: <?php echo number_format($totalProducedSum, 2); ?></div>
+                        </th>
+                        <th>
+                            <?php
+                            $overallAverage = $totalProductionCountSum > 0 ? $totalProducedSum / $totalProductionCountSum : 0;
+                            ?>
+                            <div class="fw-semibold"><?php echo number_format($overallAverage, 2); ?></div>
+                            <div class="text-muted small">متوسط إنتاج العملية</div>
+                        </th>
+                        <th>
+                            <?php if ($totalEstimatedValue > 0): ?>
+                                <div class="fw-semibold text-success"><?php echo formatCurrency($totalEstimatedValue); ?></div>
+                                <div class="text-muted small">القيمة الإجمالية المتاحة</div>
+                            <?php else: ?>
+                                <span class="text-muted small">غير متاح</span>
+                            <?php endif; ?>
+                        </th>
+                        <th>
+                            <div class="text-muted small"><i class="bi bi-flag me-1"></i>إجمالي العمليات: <?php echo number_format($totalProductionCountSum); ?></div>
+                        </th>
+                    </tr>
+                </tfoot>
+                <?php endif; ?>
             </table>
         </div>
         

@@ -100,6 +100,168 @@ function renderPackagingDamageTable($items)
     echo '</tbody></table></div>';
 }
 
+function buildCombinedReportRows(array $summary): array
+{
+    $rows = [];
+    $totals = [
+        'in' => 0.0,
+        'out' => 0.0,
+        'net' => 0.0,
+        'movements' => 0
+    ];
+
+    foreach ($summary['packaging']['items'] as $item) {
+        $rows[] = [
+            'type' => 'أدوات التعبئة',
+            'name' => $item['name'] ?? 'مادة غير معروفة',
+            'category' => $item['sub_category'] ?? '-',
+            'incoming' => (float)($item['total_in'] ?? 0),
+            'outgoing' => (float)($item['total_out'] ?? 0),
+            'net' => (float)($item['net'] ?? 0),
+            'movements' => (int)($item['movements'] ?? 0),
+            'extra' => !empty($item['unit']) ? 'الوحدة: ' . $item['unit'] : ''
+        ];
+    }
+
+    foreach ($summary['raw']['items'] as $item) {
+        $rows[] = [
+            'type' => 'المواد الخام',
+            'name' => $item['name'] ?? 'مادة خام',
+            'category' => $item['sub_category'] ?? '-',
+            'incoming' => (float)($item['total_in'] ?? 0),
+            'outgoing' => (float)($item['total_out'] ?? 0),
+            'net' => (float)($item['net'] ?? 0),
+            'movements' => (int)($item['movements'] ?? 0),
+            'extra' => !empty($item['unit']) ? 'الوحدة: ' . $item['unit'] : ''
+        ];
+    }
+
+    foreach ($summary['packaging_damage']['items'] as $item) {
+        $lastDetails = [];
+        if (!empty($item['last_reason'])) {
+            $lastDetails[] = 'آخر سبب: ' . $item['last_reason'];
+        }
+        if (!empty($item['last_recorded_by'])) {
+            $lastDetails[] = 'بواسطة: ' . $item['last_recorded_by'];
+        }
+        if (!empty($item['last_recorded_at'])) {
+            $lastDetails[] = 'تاريخ آخر تسجيل: ' . date('Y-m-d H:i', strtotime($item['last_recorded_at']));
+        }
+        $totalDamaged = (float)($item['total_damaged'] ?? 0);
+        $rows[] = [
+            'type' => 'تالف أدوات التعبئة',
+            'name' => $item['name'] ?? 'غير محدد',
+            'category' => $item['unit'] ?? '-',
+            'incoming' => 0.0,
+            'outgoing' => $totalDamaged,
+            'net' => -$totalDamaged,
+            'movements' => (int)($item['entries'] ?? 0),
+            'extra' => implode(' | ', array_filter($lastDetails))
+        ];
+    }
+
+    if (!empty($summary['raw_damage']['categories'])) {
+        foreach ($summary['raw_damage']['categories'] as $categoryData) {
+            if (empty($categoryData['items'])) {
+                continue;
+            }
+            foreach ($categoryData['items'] as $item) {
+                $totalDamaged = isset($item['total_damaged_raw'])
+                    ? (float)$item['total_damaged_raw']
+                    : (float)str_replace(',', '', $item['total_damaged'] ?? 0);
+                $details = [];
+                if (!empty($item['supplier'])) {
+                    $details[] = 'المورد: ' . $item['supplier'];
+                }
+                if (!empty($item['last_reason'])) {
+                    $details[] = 'آخر سبب: ' . $item['last_reason'];
+                }
+                if (!empty($item['last_recorded_by'])) {
+                    $details[] = 'بواسطة: ' . $item['last_recorded_by'];
+                }
+                if (!empty($item['last_recorded_at'])) {
+                    $details[] = 'تاريخ آخر تسجيل: ' . date('Y-m-d H:i', strtotime($item['last_recorded_at']));
+                }
+
+                $rows[] = [
+                    'type' => 'تالف المواد الخام',
+                    'name' => $item['name'] ?? 'مادة خام',
+                    'category' => $categoryData['label'] ?? '-',
+                    'incoming' => 0.0,
+                    'outgoing' => $totalDamaged,
+                    'net' => -$totalDamaged,
+                    'movements' => (int)($item['entries'] ?? 0),
+                    'extra' => implode(' | ', array_filter($details))
+                ];
+            }
+        }
+    }
+
+    $orderMap = [
+        'أدوات التعبئة' => 1,
+        'المواد الخام' => 2,
+        'تالف أدوات التعبئة' => 3,
+        'تالف المواد الخام' => 4
+    ];
+
+    usort($rows, static function ($a, $b) use ($orderMap) {
+        $orderA = $orderMap[$a['type']] ?? 99;
+        $orderB = $orderMap[$b['type']] ?? 99;
+        if ($orderA === $orderB) {
+            return ($b['outgoing'] ?? 0) <=> ($a['outgoing'] ?? 0);
+        }
+        return $orderA <=> $orderB;
+    });
+
+    foreach ($rows as $row) {
+        $totals['in'] += $row['incoming'];
+        $totals['out'] += $row['outgoing'];
+        $totals['net'] += $row['net'];
+        $totals['movements'] += $row['movements'];
+    }
+
+    return ['rows' => $rows, 'totals' => $totals];
+}
+
+function renderCombinedReportTable(array $rows, array $totals)
+{
+    if (empty($rows)) {
+        echo '<div class="text-center text-muted py-4">لا توجد بيانات للفترة المحددة</div>';
+        return;
+    }
+
+    echo '<div class="table-responsive">';
+    echo '<table class="table table-hover align-middle">';
+    echo '<thead class="table-light"><tr>';
+    echo '<th>النوع</th><th>العنصر</th><th>الفئة / التفاصيل</th><th>الوارد</th><th>الاستهلاك</th><th>الصافي</th><th>الحركات</th><th>معلومات إضافية</th>';
+    echo '</tr></thead><tbody>';
+
+    foreach ($rows as $row) {
+        $extra = $row['extra'] !== '' ? nl2br(htmlspecialchars($row['extra'], ENT_QUOTES, 'UTF-8')) : '<span class="text-muted">—</span>';
+        echo '<tr>';
+        echo '<td><span class="badge bg-primary-subtle text-primary">' . htmlspecialchars($row['type']) . '</span></td>';
+        echo '<td>' . htmlspecialchars($row['name']) . '</td>';
+        echo '<td>' . htmlspecialchars($row['category'] ?? '-') . '</td>';
+        echo '<td>' . number_format($row['incoming'], 3) . '</td>';
+        echo '<td>' . number_format($row['outgoing'], 3) . '</td>';
+        $netClass = $row['net'] < 0 ? 'text-danger' : 'text-success';
+        echo '<td class="' . $netClass . '">' . number_format($row['net'], 3) . '</td>';
+        echo '<td>' . number_format($row['movements']) . '</td>';
+        echo '<td>' . $extra . '</td>';
+        echo '</tr>';
+    }
+
+    echo '</tbody><tfoot class="table-light"><tr>';
+    echo '<th colspan="3" class="text-end">الإجمالي</th>';
+    echo '<th>' . number_format($totals['in'], 3) . '</th>';
+    echo '<th>' . number_format($totals['out'], 3) . '</th>';
+    $totalNetClass = $totals['net'] < 0 ? 'text-danger' : 'text-success';
+    echo '<th class="' . $totalNetClass . '">' . number_format($totals['net'], 3) . '</th>';
+    echo '<th>' . number_format($totals['movements']) . '</th>';
+    echo '<th></th>';
+    echo '</tr></tfoot></table></div>';
+}
+
 $csrfToken = generateCSRFToken();
 
 ?>
@@ -155,6 +317,8 @@ function renderSummaryCards($label, $summary)
     echo '<div class="col-md-3"><div class="border rounded-3 p-3 h-100"><div class="text-muted small mb-1">الصافي الكلي</div><div class="fs-4 fw-semibold text-success">' . number_format($summary['packaging']['net'] + $summary['raw']['net'], 3) . '</div></div></div>';
     echo '<div class="col-md-3"><div class="border rounded-3 p-3 h-100"><div class="text-muted small mb-1">إجمالي الحركات</div><div class="fs-4 fw-semibold text-secondary">' . number_format(array_sum(array_column($summary['packaging']['items'], 'movements')) + array_sum(array_column($summary['raw']['items'], 'movements'))) . '</div></div></div>';
     echo '<div class="col-md-3"><div class="border rounded-3 p-3 h-100 border-danger-subtle bg-danger-subtle bg-opacity-10"><div class="text-muted small mb-1">التالف من أدوات التعبئة</div><div class="fs-4 fw-semibold text-danger">' . number_format($summary['packaging_damage']['total'], 3) . '</div></div></div>';
+    $rawDamageTotal = isset($summary['raw_damage']['total']) ? $summary['raw_damage']['total'] : 0;
+    echo '<div class="col-md-3"><div class="border rounded-3 p-3 h-100 border-warning-subtle bg-warning-subtle bg-opacity-10"><div class="text-muted small mb-1">التالف من المواد الخام</div><div class="fs-4 fw-semibold text-warning">' . number_format($rawDamageTotal, 3) . '</div></div></div>';
     echo '</div>';
     echo '</div></div>';
 }

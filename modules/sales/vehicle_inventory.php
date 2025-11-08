@@ -19,6 +19,8 @@ $currentUser = getCurrentUser();
 $db = db();
 $error = '';
 $success = '';
+$canManageVehicles = ($currentUser['role'] ?? '') === 'manager';
+$salesReps = [];
 
 $currentPageSlug = $_GET['page'] ?? 'vehicle_inventory';
 $currentSection = $_GET['section'] ?? null;
@@ -86,11 +88,60 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 $error = $result['message'];
             }
         }
+    } elseif ($action === 'create_vehicle') {
+        if (!$canManageVehicles) {
+            $error = 'غير مصرح لك بإضافة سيارات جديدة.';
+        } else {
+            $vehicleNumber = trim($_POST['vehicle_number'] ?? '');
+            $vehicleType = trim($_POST['vehicle_type'] ?? '');
+            $model = trim($_POST['model'] ?? '');
+            $year = !empty($_POST['year']) ? intval($_POST['year']) : null;
+            $driverId = !empty($_POST['driver_id']) ? intval($_POST['driver_id']) : null;
+            $statusValue = $_POST['status'] ?? 'active';
+            $notes = trim($_POST['notes'] ?? '');
+
+            if ($vehicleNumber === '') {
+                $error = 'يجب إدخال رقم السيارة';
+            } else {
+                $existingVehicle = $db->queryOne("SELECT id FROM vehicles WHERE vehicle_number = ?", [$vehicleNumber]);
+                if ($existingVehicle) {
+                    $error = 'رقم السيارة موجود بالفعل';
+                } else {
+                    $db->execute(
+                        "INSERT INTO vehicles (vehicle_number, vehicle_type, model, year, driver_id, status, notes, created_by) 
+                         VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+                        [
+                            $vehicleNumber,
+                            $vehicleType,
+                            $model,
+                            $year,
+                            $driverId,
+                            $statusValue,
+                            $notes,
+                            $currentUser['id']
+                        ]
+                    );
+
+                    $vehicleId = $db->getLastInsertId();
+                    createVehicleWarehouse($vehicleId);
+
+                    logAudit($currentUser['id'], 'create_vehicle', 'vehicle', $vehicleId, null, [
+                        'vehicle_number' => $vehicleNumber
+                    ]);
+
+                    $success = 'تم إنشاء السيارة بنجاح';
+                }
+            }
+        }
     }
 }
 
 // الحصول على السيارات
 $vehicles = getVehicles(['status' => 'active']);
+
+if ($canManageVehicles) {
+    $salesReps = $db->query("SELECT id, username, full_name FROM users WHERE role = 'sales' AND status = 'active' ORDER BY username");
+}
 
 // الحصول على المخازن
 $warehouses = $db->query("SELECT id, name, warehouse_type FROM warehouses WHERE status = 'active' ORDER BY name");
@@ -142,10 +193,17 @@ foreach ($vehicleInventory as $item) {
 }
 ?>
 <div class="d-flex justify-content-between align-items-center mb-4">
-    <h2><i class="bi bi-truck me-2"></i>مخازن سيارات المندوبين</h2>
-    <button class="btn btn-primary" data-bs-toggle="modal" data-bs-target="#createTransferModal">
-        <i class="bi bi-arrow-left-right me-2"></i>طلب نقل منتجات
-    </button>
+    <h2 class="mb-0"><i class="bi bi-truck me-2"></i>مخازن سيارات المندوبين</h2>
+    <div class="d-flex flex-wrap gap-2">
+        <?php if ($canManageVehicles): ?>
+        <button class="btn btn-success" data-bs-toggle="modal" data-bs-target="#addVehicleModal">
+            <i class="bi bi-plus-circle me-2"></i>إضافة سيارة جديدة
+        </button>
+        <?php endif; ?>
+        <button class="btn btn-primary" data-bs-toggle="modal" data-bs-target="#createTransferModal">
+            <i class="bi bi-arrow-left-right me-2"></i>طلب نقل منتجات
+        </button>
+    </div>
 </div>
 
 <?php if ($error): ?>
@@ -345,6 +403,70 @@ foreach ($vehicleInventory as $item) {
         </div>
     </div>
 </div>
+
+<?php if ($canManageVehicles): ?>
+<!-- Modal إضافة سيارة جديدة -->
+<div class="modal fade" id="addVehicleModal" tabindex="-1">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title">إضافة سيارة جديدة</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <form method="POST">
+                <input type="hidden" name="action" value="create_vehicle">
+                <div class="modal-body">
+                    <div class="mb-3">
+                        <label class="form-label">رقم السيارة <span class="text-danger">*</span></label>
+                        <input type="text" class="form-control" name="vehicle_number" required>
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label">نوع السيارة</label>
+                        <input type="text" class="form-control" name="vehicle_type" placeholder="مثال: شاحنة">
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label">الموديل</label>
+                        <input type="text" class="form-control" name="model" placeholder="مثال: تويوتا هايلكس">
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label">السنة</label>
+                        <input type="number" class="form-control" name="year" 
+                               min="2000" max="<?php echo date('Y'); ?>" 
+                               placeholder="<?php echo date('Y'); ?>">
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label">المندوب (السائق)</label>
+                        <select class="form-select" name="driver_id">
+                            <option value="">لا يوجد</option>
+                            <?php foreach ($salesReps as $rep): ?>
+                                <option value="<?php echo $rep['id']; ?>">
+                                    <?php echo htmlspecialchars($rep['full_name'] ?? $rep['username']); ?>
+                                </option>
+                            <?php endforeach; ?>
+                        </select>
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label">الحالة</label>
+                        <select class="form-select" name="status">
+                            <option value="active">نشطة</option>
+                            <option value="inactive">غير نشطة</option>
+                            <option value="maintenance">صيانة</option>
+                        </select>
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label">ملاحظات</label>
+                        <textarea class="form-control" name="notes" rows="3"></textarea>
+                    </div>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">إلغاء</button>
+                    <button type="submit" class="btn btn-primary">إضافة</button>
+                </div>
+            </form>
+        </div>
+    </div>
+</div>
+<?php endif; ?>
 
 <!-- Modal إنشاء طلب نقل -->
 <div class="modal fade" id="createTransferModal" tabindex="-1">

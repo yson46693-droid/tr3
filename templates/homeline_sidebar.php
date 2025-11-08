@@ -39,13 +39,6 @@ switch ($role) {
                 'badge' => '<span class="badge" id="approvalBadge">0</span>'
             ],
             [
-                'title' => isset($lang['menu_audit_logs']) ? $lang['menu_audit_logs'] : 'سجل التدقيق',
-                'icon' => 'bi-journal-text',
-                'url' => $baseUrl . 'manager.php?page=audit',
-                'active' => ($currentPage === 'manager.php' && $currentPageParam === 'audit'),
-                'badge' => null
-            ],
-            [
                 'title' => isset($lang['menu_reports']) ? $lang['menu_reports'] : 'التقارير',
                 'icon' => 'bi-file-earmark-text',
                 'url' => $baseUrl . 'manager.php?page=reports',

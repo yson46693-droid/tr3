@@ -817,7 +817,7 @@ $historyTypeLabels = [
 <!-- Edit Supplier Modal -->
 <?php if ($editSupplier): ?>
 <div class="modal fade" id="editSupplierModal" tabindex="-1">
-    <div class="modal-dialog">
+    <div class="modal-dialog modal-dialog-scrollable">
         <div class="modal-content">
             <form method="POST" action="">
                 <input type="hidden" name="action" value="edit">

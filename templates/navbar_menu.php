@@ -55,13 +55,6 @@ switch ($role) {
                 'active' => (isset($_GET['page']) && $_GET['page'] === 'users'),
                 'badge' => null
             ],
-            [
-                'title' => 'السيارات',
-                'icon' => 'bi-truck',
-                'url' => $baseUrl . 'manager.php?page=vehicles',
-                'active' => (isset($_GET['page']) && $_GET['page'] === 'vehicles'),
-                'badge' => null
-            ],
             ['divider' => true, 'title' => 'Management'],
             [
                 'title' => 'النسخ الاحتياطية',

@@ -45,13 +45,6 @@ $baseUrl = getDashboardUrl();
             </li>
             
             <li class="nav-item">
-                <a class="nav-link" href="<?php echo $baseUrl; ?>manager.php?page=audit">
-                    <i class="bi bi-journal-text"></i>
-                    <span><?php echo isset($lang['menu_audit_logs']) ? $lang['menu_audit_logs'] : 'سجل التدقيق'; ?></span>
-                </a>
-            </li>
-            
-            <li class="nav-item">
                 <a class="nav-link" href="<?php echo $baseUrl; ?>manager.php?page=reports">
                     <i class="bi bi-file-earmark-text"></i>
                     <span><?php echo isset($lang['menu_reports']) ? $lang['menu_reports'] : 'التقارير'; ?></span>
@@ -68,12 +61,6 @@ $baseUrl = getDashboardUrl();
                     </a>
                 </li>
                 
-                <li class="nav-item">
-                    <a class="nav-link" href="<?php echo $baseUrl; ?>manager.php?page=vehicles">
-                        <i class="bi bi-truck"></i>
-                        <span>السيارات</span>
-                    </a>
-                </li>
             </div>
             
             <div class="sidebar-section">

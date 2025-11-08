@@ -15,207 +15,219 @@ require_once __DIR__ . '/db.php';
  * إنشاء نسخة احتياطية لقاعدة البيانات
  */
 function createDatabaseBackup($backupType = 'daily', $userId = null) {
+    set_time_limit(0);
+
+    $chunkSize = 500;
+
     try {
-        $db = db();
-        
-        // إنشاء مجلد النسخ الاحتياطية
-        $backupDir = BASE_PATH . '/backups/';
-        
-        // التأكد من أن BASE_PATH معرف
         if (!defined('BASE_PATH')) {
             throw new Exception("BASE_PATH غير معرف. تحقق من ملف config.php");
         }
-        
-        // إنشاء المجلد إذا لم يكن موجوداً
+
+        $db = db();
+        $connection = getDB();
+        $connection->set_charset('utf8mb4');
+
+        $backupDir = BASE_PATH . '/backups/';
+
         if (!file_exists($backupDir)) {
             if (!@mkdir($backupDir, 0777, true)) {
                 $error = error_get_last();
                 throw new Exception("فشل إنشاء مجلد النسخ الاحتياطية: " . $backupDir . " - " . ($error['message'] ?? 'سبب غير معروف'));
             }
-            // محاولة تغيير الصلاحيات بعد الإنشاء
             @chmod($backupDir, 0777);
         }
-        
-        // التأكد من أن المجلد موجود
+
         if (!is_dir($backupDir)) {
             throw new Exception("المجلد غير موجود: " . $backupDir);
         }
-        
-        // التأكد من أن المجلد قابل للقراءة
+
         if (!is_readable($backupDir)) {
-            // محاولة تغيير الصلاحيات
             @chmod($backupDir, 0777);
             if (!is_readable($backupDir)) {
                 $perms = substr(sprintf('%o', fileperms($backupDir)), -4);
                 throw new Exception("المجلد غير قابل للقراءة: " . $backupDir . " - الصلاحيات الحالية: " . $perms);
             }
         }
-        
-        // اسم الملف
-        $timestamp = date('Y-m-d_H-i-s');
-        $filename = 'backup_' . DB_NAME . '_' . $timestamp . '.sql';
-        $filePath = $backupDir . $filename;
-        
-        // الحصول على اتصال mysqli مباشر
-        $connection = getDB();
-        
-        // الحصول على جميع الجداول
-        $tablesResult = $connection->query("SHOW TABLES");
-        
-        if (!$tablesResult || $tablesResult->num_rows === 0) {
-            throw new Exception("لا توجد جداول في قاعدة البيانات");
-        }
-        
-        $sqlContent = "-- نسخة احتياطية لقاعدة البيانات\n";
-        $sqlContent .= "-- التاريخ: " . date('Y-m-d H:i:s') . "\n";
-        $sqlContent .= "-- نوع النسخة: $backupType\n";
-        $sqlContent .= "-- قاعدة البيانات: " . DB_NAME . "\n\n";
-        $sqlContent .= "SET SQL_MODE = \"NO_AUTO_VALUE_ON_ZERO\";\n";
-        $sqlContent .= "SET time_zone = \"+02:00\";\n\n";
-        
-        // الحصول على كل جدول
-        $tableNames = [];
-        while ($row = $tablesResult->fetch_array()) {
-            $tableNames[] = $row[0];
-        }
-        
-        foreach ($tableNames as $tableName) {
-            // هيكل الجدول
-            $sqlContent .= "-- هيكل الجدول `$tableName`\n";
-            $sqlContent .= "DROP TABLE IF EXISTS `$tableName`;\n";
-            
-            $createTableResult = $connection->query("SHOW CREATE TABLE `$tableName`");
-            if ($createTableResult && $createTableResult->num_rows > 0) {
-                $row = $createTableResult->fetch_assoc();
-                $sqlContent .= $row['Create Table'] . ";\n\n";
-                $createTableResult->free();
-            }
-            
-            // بيانات الجدول
-            $sqlContent .= "-- بيانات الجدول `$tableName`\n";
-            $result = $connection->query("SELECT * FROM `$tableName`");
-            
-            if ($result && $result->num_rows > 0) {
-                // الحصول على أسماء الأعمدة
-                $columns = [];
-                $fieldResult = $connection->query("SHOW COLUMNS FROM `$tableName`");
-                if ($fieldResult) {
-                    while ($field = $fieldResult->fetch_assoc()) {
-                        $columns[] = $field['Field'];
-                    }
-                    $fieldResult->free();
-                }
-                
-                if (!empty($columns)) {
-                    $sqlContent .= "INSERT INTO `$tableName` (`" . implode("`, `", $columns) . "`) VALUES\n";
-                    $values = [];
-                    
-                    while ($row = $result->fetch_assoc()) {
-                        $rowValues = [];
-                        foreach ($columns as $column) {
-                            $value = $row[$column] ?? null;
-                            if ($value === null) {
-                                $rowValues[] = 'NULL';
-                            } else {
-                                $rowValues[] = "'" . $connection->real_escape_string($value) . "'";
-                            }
-                        }
-                        $values[] = "(" . implode(",", $rowValues) . ")";
-                    }
-                    
-                    $sqlContent .= implode(",\n", $values) . ";\n\n";
-                }
-                $result->free();
-            }
-        }
-        
-        // التأكد من أن المجلد قابل للكتابة
+
         if (!is_writable($backupDir)) {
-            // محاولة تغيير الصلاحيات
             @chmod($backupDir, 0777);
             if (!is_writable($backupDir)) {
                 $perms = substr(sprintf('%o', fileperms($backupDir)), -4);
                 throw new Exception("المجلد غير قابل للكتابة: " . $backupDir . " - الصلاحيات الحالية: " . $perms . " - حاول تغيير صلاحيات المجلد إلى 777");
             }
         }
-        
-        // حفظ الملف
-        $fileSize = @file_put_contents($filePath, $sqlContent, LOCK_EX);
-        
-        if ($fileSize === false) {
-            $error = error_get_last();
-            $errorMsg = $error['message'] ?? 'سبب غير معروف';
-            throw new Exception("فشل حفظ ملف النسخة الاحتياطية. تحقق من صلاحيات المجلد: " . $backupDir . " - الخطأ: " . $errorMsg);
+
+        $timestamp = date('Y-m-d_H-i-s');
+        $filename = 'backup_' . DB_NAME . '_' . $timestamp . '.sql';
+        $filePath = $backupDir . $filename;
+
+        $handle = @fopen($filePath, 'wb');
+        if (!$handle) {
+            throw new Exception("فشل فتح ملف النسخة الاحتياطية للكتابة: " . $filePath);
         }
-        
-        // التأكد من أن الملف تم حفظه بشكل صحيح
-        if (!file_exists($filePath)) {
-            throw new Exception("الملف غير موجود بعد الحفظ: " . $filePath);
+
+        $write = static function (string $content) use ($handle, $filePath) {
+            if (fwrite($handle, $content) === false) {
+                throw new Exception("فشل كتابة البيانات إلى ملف النسخة الاحتياطية: " . $filePath);
+            }
+        };
+
+        $write("-- نسخة احتياطية لقاعدة البيانات\n");
+        $write("-- التاريخ: " . date('Y-m-d H:i:s') . "\n");
+        $write("-- نوع النسخة: " . $backupType . "\n");
+        $write("-- قاعدة البيانات: " . DB_NAME . "\n\n");
+        $write("SET SQL_MODE='NO_AUTO_VALUE_ON_ZERO';\n");
+        $write("SET AUTOCOMMIT=0;\n");
+        $write("SET time_zone='+00:00';\n");
+        $write("SET NAMES utf8mb4;\n");
+        $write("SET FOREIGN_KEY_CHECKS=0;\n\n");
+
+        $tablesResult = $connection->query('SHOW FULL TABLES');
+        if (!$tablesResult) {
+            throw new Exception('تعذر الحصول على قائمة الجداول: ' . ($connection->error ?? ''));
         }
-        
-        // ضغط الملف (اختياري) - تخطي الضغط إذا كان هناك مشكلة
+
+        $tableNames = [];
+        $viewNames = [];
+        while ($row = $tablesResult->fetch_array(MYSQLI_NUM)) {
+            $name = $row[0];
+            $type = strtoupper($row[1] ?? 'BASE TABLE');
+            if ($type === 'VIEW') {
+                $viewNames[] = $name;
+            } else {
+                $tableNames[] = $name;
+            }
+        }
+        $tablesResult->free();
+
+        if (empty($tableNames) && empty($viewNames)) {
+            throw new Exception('لا توجد كائنات في قاعدة البيانات لنسخها احتياطياً');
+        }
+
+        foreach ($tableNames as $tableName) {
+            $write("-- هيكل الجدول `$tableName`\n");
+            $write("DROP TABLE IF EXISTS `$tableName`;\n");
+
+            $createTableResult = $connection->query("SHOW CREATE TABLE `$tableName`");
+            if (!$createTableResult || $createTableResult->num_rows === 0) {
+                throw new Exception('تعذر الحصول على هيكل الجدول: ' . $tableName);
+            }
+
+            $createRow = $createTableResult->fetch_assoc();
+            $write($createRow['Create Table'] . ";\n\n");
+            $createTableResult->free();
+
+            $write("-- بيانات الجدول `$tableName`\n");
+            $result = $connection->query("SELECT * FROM `$tableName`");
+            if (!$result) {
+                throw new Exception('تعذر الحصول على بيانات الجدول: ' . $tableName . ' - ' . ($connection->error ?? ''));
+            }
+
+            if ($result->num_rows === 0) {
+                $write("-- لا توجد بيانات في الجدول `$tableName`\n\n");
+                $result->free();
+                continue;
+            }
+
+            $fields = $result->fetch_fields();
+            $columns = array_map(static function ($field) {
+                return $field->name;
+            }, $fields);
+            $columnList = '`' . implode('`, `', $columns) . '`';
+
+            $batch = [];
+            while ($row = $result->fetch_assoc()) {
+                $batch[] = formatInsertRow($connection, $columns, $row);
+                if (count($batch) === $chunkSize) {
+                    $write("INSERT INTO `$tableName` ($columnList) VALUES\n" . implode(",\n", $batch) . ";\n");
+                    $batch = [];
+                }
+            }
+            if (!empty($batch)) {
+                $write("INSERT INTO `$tableName` ($columnList) VALUES\n" . implode(",\n", $batch) . ";\n");
+            }
+            $write("\n");
+            $result->free();
+        }
+
+        if (!empty($viewNames)) {
+            $write("-- العروض (Views)\n");
+            foreach ($viewNames as $viewName) {
+                $write("DROP VIEW IF EXISTS `$viewName`;\n");
+                $viewResult = $connection->query("SHOW CREATE VIEW `$viewName`");
+                if ($viewResult && $viewResult->num_rows > 0) {
+                    $viewRow = $viewResult->fetch_assoc();
+                    $write($viewRow['Create View'] . ";\n\n");
+                    $viewResult->free();
+                } else {
+                    $write("-- تعذر استخراج العرض `$viewName`\n\n");
+                }
+            }
+        }
+
+        $write("COMMIT;\n");
+        $write("SET FOREIGN_KEY_CHECKS=1;\n");
+        $write("SET AUTOCOMMIT=1;\n");
+
+        fclose($handle);
+
         $compressedPath = null;
         try {
             $compressedPath = compressBackup($filePath);
             if ($compressedPath && file_exists($compressedPath)) {
                 $compressedSize = filesize($compressedPath);
                 if ($compressedSize > 0) {
-                    @unlink($filePath); // حذف الملف غير المضغوط
+                    @unlink($filePath);
                     $filePath = $compressedPath;
                     $filename = basename($compressedPath);
-                    $fileSize = $compressedSize;
                 } else {
-                    // إذا كان الملف المضغوط فارغاً، استخدم الملف الأصلي
                     @unlink($compressedPath);
                     $compressedPath = null;
                 }
             }
         } catch (Exception $compressionError) {
-            // تجاهل خطأ الضغط واستخدم الملف الأصلي
-            error_log("Compression failed: " . $compressionError->getMessage());
+            error_log('Compression failed: ' . $compressionError->getMessage());
             if ($compressedPath && file_exists($compressedPath)) {
                 @unlink($compressedPath);
             }
         }
-        
-        // التأكد من أن الملف موجود قبل الحفظ
+
         if (!file_exists($filePath)) {
-            throw new Exception("ملف النسخة الاحتياطية غير موجود بعد الحفظ: " . $filePath);
+            throw new Exception('ملف النسخة الاحتياطية غير موجود بعد الحفظ: ' . $filePath);
         }
-        
+
         $finalFileSize = filesize($filePath);
         if ($finalFileSize === false || $finalFileSize === 0) {
-            throw new Exception("حجم ملف النسخة الاحتياطية غير صحيح: " . $finalFileSize);
+            throw new Exception('حجم ملف النسخة الاحتياطية غير صحيح');
         }
-        
-        // حفظ في قاعدة البيانات
-        try {
-            $db->execute(
-                "INSERT INTO backups (filename, file_path, file_size, backup_type, status, created_by) 
-                 VALUES (?, ?, ?, ?, 'completed', ?)",
-                [$filename, $filePath, $finalFileSize, $backupType, $userId]
-            );
-        } catch (Exception $dbError) {
-            // إذا فشل حفظ السجل، احذف الملف
-            @unlink($filePath);
-            throw new Exception("فشل حفظ سجل النسخة الاحتياطية: " . $dbError->getMessage());
-        }
-        
-        // حذف النسخ القديمة (احتفظ بآخر 30 نسخة يومية)
+
+        $db->execute(
+            "INSERT INTO backups (filename, file_path, file_size, backup_type, status, created_by) 
+             VALUES (?, ?, ?, ?, 'completed', ?)",
+            [$filename, $filePath, $finalFileSize, $backupType, $userId]
+        );
+
         if ($backupType === 'daily') {
             deleteOldBackups('daily', 30);
         }
-        
+
         return [
             'success' => true,
             'filename' => $filename,
             'file_path' => $filePath,
-            'file_size' => $fileSize,
+            'file_size' => $finalFileSize,
             'message' => 'تم إنشاء النسخة الاحتياطية بنجاح'
         ];
-        
     } catch (Exception $e) {
-        // تسجيل الخطأ
+        if (isset($handle) && is_resource($handle)) {
+            fclose($handle);
+        }
+
+        if (isset($filePath) && file_exists($filePath)) {
+            @unlink($filePath);
+        }
+
         if (isset($db)) {
             try {
                 $db->execute(
@@ -224,10 +236,10 @@ function createDatabaseBackup($backupType = 'daily', $userId = null) {
                     ['', '', $backupType, $e->getMessage(), $userId]
                 );
             } catch (Exception $dbError) {
-                error_log("Failed to log backup error: " . $dbError->getMessage());
+                error_log('Failed to log backup error: ' . $dbError->getMessage());
             }
         }
-        
+
         return [
             'success' => false,
             'message' => 'فشل إنشاء النسخة الاحتياطية: ' . $e->getMessage()
@@ -291,117 +303,101 @@ function deleteOldBackups($backupType = 'daily', $keepCount = 30) {
  * استعادة قاعدة البيانات من نسخة احتياطية
  */
 function restoreDatabase($backupId) {
+    set_time_limit(0);
+
     try {
         $db = db();
-        
-        // الحصول على معلومات النسخة
+
         $backup = $db->queryOne(
             "SELECT * FROM backups WHERE id = ? AND status IN ('completed', 'success')",
             [$backupId]
         );
-        
+
         if (!$backup) {
-            throw new Exception("النسخة الاحتياطية غير موجودة");
+            throw new Exception('النسخة الاحتياطية غير موجودة');
         }
-        
+
         if (!file_exists($backup['file_path'])) {
-            throw new Exception("ملف النسخة الاحتياطية غير موجود");
+            throw new Exception('ملف النسخة الاحتياطية غير موجود');
         }
-        
-        // قراءة ملف النسخة
-        $sqlContent = file_get_contents($backup['file_path']);
-        
-        // إذا كان ملف مضغوط
+
+        $rawContent = file_get_contents($backup['file_path']);
+        if ($rawContent === false) {
+            throw new Exception('تعذر قراءة ملف النسخة الاحتياطية');
+        }
+
         if (pathinfo($backup['file_path'], PATHINFO_EXTENSION) === 'gz') {
-            $sqlContent = gzdecode($sqlContent);
-        }
-        
-        // إزالة تعليقات CREATE DATABASE و USE
-        $sqlContent = preg_replace('/CREATE DATABASE.*?;/i', '', $sqlContent);
-        $sqlContent = preg_replace('/USE.*?;/i', '', $sqlContent);
-        
-        // تقسيم الاستعلامات
-        $queries = array_filter(array_map('trim', explode(';', $sqlContent)));
-        
-        $connection = getDB();
-        
-        $connection->query('SET FOREIGN_KEY_CHECKS = 0');
-        
-        foreach ($queries as $rawQuery) {
-            $query = trim($rawQuery);
-            if (empty($query) || preg_match('/^--/', $query)) {
-                continue;
+            $decoded = gzdecode($rawContent);
+            if ($decoded === false) {
+                throw new Exception('تعذر فك ضغط ملف النسخة الاحتياطية');
             }
-            
-            $createTableMatch = [];
-            if (
-                preg_match(
-                    '/^CREATE\s+TABLE\s+(?:IF\s+NOT\s+EXISTS\s+)?`?(?:([a-z0-9_]+)`?\.)?`?([a-z0-9_]+)`?/i',
-                    $query,
-                    $createTableMatch
-                )
-            ) {
-                $schemaName = !empty($createTableMatch[1]) ? $createTableMatch[1] : null;
-                $tableName = $createTableMatch[2] ?? $createTableMatch[1];
-                $dropTarget = $schemaName ? "`{$schemaName}`.`{$tableName}`" : "`{$tableName}`";
-                $connection->query("DROP TABLE IF EXISTS {$dropTarget}");
+            $rawContent = $decoded;
+        }
+
+        if (trim($rawContent) === '') {
+            throw new Exception('ملف النسخة الاحتياطية فارغ');
+        }
+
+        $statements = splitSqlStatements($rawContent);
+        if (empty($statements)) {
+            throw new Exception('تعذر تحليل استعلامات النسخة الاحتياطية');
+        }
+
+        $connection = getDB();
+        $connection->set_charset('utf8mb4');
+
+        $connection->autocommit(false);
+        $connection->query('SET FOREIGN_KEY_CHECKS = 0');
+        $connection->query('SET UNIQUE_CHECKS = 0');
+
+        try {
+            foreach ($statements as $statement) {
+                $normalized = strtoupper(ltrim($statement));
+                if ($normalized === '' || $normalized === ';') {
+                    continue;
+                }
+
+                if (
+                    strpos($normalized, 'START TRANSACTION') === 0 ||
+                    strpos($normalized, 'COMMIT') === 0 ||
+                    strpos($normalized, 'ROLLBACK') === 0 ||
+                    strpos($normalized, 'SET AUTOCOMMIT') === 0 ||
+                    strpos($normalized, 'LOCK TABLES') === 0 ||
+                    strpos($normalized, 'UNLOCK TABLES') === 0
+                ) {
+                    continue;
+                }
+
+                if ($connection->query($statement) === false) {
+                    $error = $connection->error ?: 'خطأ غير معروف أثناء تنفيذ الاستعلام';
+                    throw new Exception($error);
+                }
             }
 
-            $result = $connection->query($query);
-            if ($result === false) {
-                $error = $connection->error ?? '';
-                $lowerError = strtolower($error);
-                
-                if (
-                    strpos($lowerError, 'already exists') !== false &&
-                    preg_match(
-                        '/CREATE\s+TABLE\s+(?:IF\s+NOT\s+EXISTS\s+)?`?(?:([a-z0-9_]+)`?\.)?`?([a-z0-9_]+)`?/i',
-                        $query,
-                        $matches
-                    )
-                ) {
-                    $schemaName = !empty($matches[1]) ? $matches[1] : null;
-                    $tableName = $matches[2] ?? $matches[1];
-                    
-                    $dropTarget = $schemaName ? "`{$schemaName}`.`{$tableName}`" : "`{$tableName}`";
-                    $connection->query("DROP TABLE IF EXISTS {$dropTarget}");
-                    if (!$connection->query($query)) {
-                        throw new Exception(
-                            $connection->error ?: 'فشل إعادة إنشاء الجدول ' . ($schemaName ? "{$schemaName}." : '') . $tableName
-                        );
-                    }
-                    continue;
-                }
-                
-                if (strpos($lowerError, 'already exists') !== false && preg_match('/ALTER\s+TABLE\s+`?([a-z0-9_]+)`?\s+ADD\s+(?:COLUMN\s+)?`?([a-z0-9_]+)`?/i', $query)) {
-                    continue;
-                }
-                
-                if (strpos($lowerError, 'duplicate column') !== false ||
-                    strpos($lowerError, 'unknown table') !== false ||
-                    strpos($lowerError, 'duplicate entry') !== false ||
-                    (strpos($lowerError, 'unknown column') !== false && strpos($query, 'DROP') !== false)) {
-                    continue;
-                }
-                
-                throw new Exception($error ?: 'خطأ غير معروف أثناء تنفيذ الاستعلام');
-            }
+            $connection->commit();
+        } catch (Exception $executionError) {
+            $connection->rollback();
+            throw $executionError;
+        } finally {
+            $connection->query('SET FOREIGN_KEY_CHECKS = 1');
+            $connection->query('SET UNIQUE_CHECKS = 1');
+            $connection->autocommit(true);
         }
-        
-        $connection->query('SET FOREIGN_KEY_CHECKS = 1');
-        
+
         return [
             'success' => true,
             'message' => 'تم استعادة قاعدة البيانات بنجاح'
         ];
-        
     } catch (Exception $e) {
-        if (isset($connection)) {
+        if (isset($connection) && $connection instanceof mysqli) {
             $connection->query('SET FOREIGN_KEY_CHECKS = 1');
+            $connection->query('SET UNIQUE_CHECKS = 1');
+            $connection->autocommit(true);
         }
+
         return [
             'success' => false,
-            'message' => 'فشل استعادة قاعدة البيانات: ' . $e->getMessage()
+            'message' => 'فشل استعادة النسخة الاحتياطية: ' . $e->getMessage()
         ];
     }
 }
@@ -479,5 +475,112 @@ function formatFileSize($bytes) {
     } else {
         return $bytes . ' B';
     }
+}
+
+function formatInsertRow(mysqli $connection, array $columns, array $row): string {
+    $values = [];
+
+    foreach ($columns as $column) {
+        if (!array_key_exists($column, $row) || $row[$column] === null) {
+            $values[] = 'NULL';
+            continue;
+        }
+
+        $value = $row[$column];
+
+        if (is_bool($value)) {
+            $values[] = $value ? '1' : '0';
+            continue;
+        }
+
+        $values[] = "'" . $connection->real_escape_string((string) $value) . "'";
+    }
+
+    return '(' . implode(',', $values) . ')';
+}
+
+function splitSqlStatements(string $sqlContent): array {
+    $statements = [];
+    $length = strlen($sqlContent);
+    $buffer = '';
+
+    $inSingle = false;
+    $inDouble = false;
+    $inBacktick = false;
+    $inLineComment = false;
+    $inBlockComment = false;
+
+    for ($i = 0; $i < $length; $i++) {
+        $char = $sqlContent[$i];
+        $nextChar = $i + 1 < $length ? $sqlContent[$i + 1] : '';
+
+        if ($inLineComment) {
+            if ($char === "\n") {
+                $inLineComment = false;
+            }
+            continue;
+        }
+
+        if ($inBlockComment) {
+            if ($char === '*' && $nextChar === '/') {
+                $inBlockComment = false;
+                $i++;
+            }
+            continue;
+        }
+
+        if (!$inSingle && !$inDouble && !$inBacktick) {
+            if ($char === '-' && $nextChar === '-' && ($i + 2 < $length && ($sqlContent[$i + 2] === ' ' || $sqlContent[$i + 2] === "\t"))) {
+                $inLineComment = true;
+                $i++;
+                continue;
+            }
+
+            if ($char === '#') {
+                $inLineComment = true;
+                continue;
+            }
+
+            if ($char === '/' && $nextChar === '*') {
+                $inBlockComment = true;
+                $i++;
+                continue;
+            }
+        }
+
+        if ($char === '\\' && ($inSingle || $inDouble)) {
+            $buffer .= $char;
+            if ($i + 1 < $length) {
+                $buffer .= $sqlContent[++$i];
+            }
+            continue;
+        }
+
+        if ($char === "'" && !$inDouble && !$inBacktick) {
+            $inSingle = !$inSingle;
+        } elseif ($char === '"' && !$inSingle && !$inBacktick) {
+            $inDouble = !$inDouble;
+        } elseif ($char === '`' && !$inSingle && !$inDouble) {
+            $inBacktick = !$inBacktick;
+        }
+
+        if ($char === ';' && !$inSingle && !$inDouble && !$inBacktick) {
+            $statement = trim($buffer);
+            if ($statement !== '') {
+                $statements[] = $statement . ';';
+            }
+            $buffer = '';
+            continue;
+        }
+
+        $buffer .= $char;
+    }
+
+    $statement = trim($buffer);
+    if ($statement !== '') {
+        $statements[] = $statement;
+    }
+
+    return $statements;
 }
 
