@@ -141,7 +141,6 @@ $pageTitle = isset($lang['production_dashboard']) ? $lang['production_dashboard'
                 }
 
                 $notifications = getUserNotifications($currentUser['id'], false, 5) ?? [];
-                $tasksTableExists = !empty($db->queryOne("SHOW TABLES LIKE 'tasks'"));
                 $containsText = static function ($text, $needle) {
                     if ($text === '' || $needle === '') {
                         return false;
@@ -155,7 +154,7 @@ $pageTitle = isset($lang['production_dashboard']) ? $lang['production_dashboard'
                 if (!empty($notifications)) {
                     $notifications = array_filter(
                         $notifications,
-                        function ($notification) use ($db, $currentUser, $tasksTableExists, $containsText) {
+                        function ($notification) use ($currentUser, $containsText) {
                             $title = trim($notification['title'] ?? '');
                             $message = trim($notification['message'] ?? '');
 
@@ -164,32 +163,6 @@ $pageTitle = isset($lang['production_dashboard']) ? $lang['production_dashboard'
                                     markNotificationAsRead((int)$notification['id'], (int)$currentUser['id']);
                                 }
                                 return false;
-                            }
-
-                            if (
-                                $tasksTableExists
-                                && ($containsText($title, 'مهمة جديدة') || $containsText($title, 'مهمة من الإدارة'))
-                                && $message !== ''
-                            ) {
-                                $task = $db->queryOne(
-                                    "SELECT status FROM tasks 
-                                     WHERE assigned_to = ? 
-                                     AND (
-                                        title = ? 
-                                        OR ? LIKE CONCAT('%', title, '%') 
-                                        OR title LIKE CONCAT('%', ?, '%')
-                                     )
-                                     ORDER BY updated_at DESC, created_at DESC 
-                                     LIMIT 1",
-                                    [$currentUser['id'], $message, $message, $message]
-                                );
-
-                                if ($task && in_array($task['status'], ['completed', 'cancelled'], true)) {
-                                    if (!empty($notification['id'])) {
-                                        markNotificationAsRead((int)$notification['id'], (int)$currentUser['id']);
-                                    }
-                                    return false;
-                                }
                             }
 
                             return true;

@@ -115,9 +115,21 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
         $_GET['tab'] = 'usage';
     } elseif ($action === 'cleanup_usage') {
-        $days = intval($_POST['days'] ?? 30);
-        $deleted = cleanupRequestUsage($days);
-        $success = 'تم حذف ' . $deleted . ' سجل استخدام قديم.';
+        $usageUserId = intval($_POST['usage_user_id'] ?? 0);
+        $usageDateParam = $_POST['usage_date'] ?? null;
+
+        if ($usageUserId > 0) {
+            $deleted = deleteRequestUsageForUser($usageUserId, $usageDateParam);
+            if ($deleted > 0) {
+                $success = 'تم حذف ' . $deleted . ' سجل استخدام للمستخدم المحدد.';
+            } else {
+                $success = 'لا توجد سجلات استخدام لحذفها للمستخدم المحدد.';
+            }
+        } else {
+            $days = intval($_POST['days'] ?? 30);
+            $deleted = cleanupRequestUsage($days);
+            $success = 'تم حذف ' . $deleted . ' سجل استخدام قديم.';
+        }
         $_GET['tab'] = 'usage';
     }
 }
@@ -664,15 +676,29 @@ $activeTab = $_GET['tab'] ?? 'security';
                                 </div>
                                 <form method="post" class="d-flex align-items-center gap-2 flex-wrap">
                                     <input type="hidden" name="action" value="cleanup_usage">
+                                    <?php if ($selectedUsageUserId): ?>
+                                        <input type="hidden" name="usage_user_id" value="<?php echo intval($selectedUsageUserId); ?>">
+                                    <?php endif; ?>
+                                    <input type="hidden" name="usage_date" value="<?php echo htmlspecialchars($usageDate); ?>">
                                     <label class="form-label mb-0 me-2">
-                                        <small>تنظيف الأقدم من</small>
+                                        <small>
+                                            <?php if ($selectedUsageUserId): ?>
+                                                حذف سجلات المستخدم المحدد
+                                            <?php else: ?>
+                                                تنظيف الأقدم من
+                                            <?php endif; ?>
+                                        </small>
                                     </label>
-                                    <select name="days" class="form-select form-select-sm w-auto">
-                                        <option value="7">7 أيام</option>
-                                        <option value="30" selected>30 يوماً</option>
-                                        <option value="90">90 يوماً</option>
-                                    </select>
-                                    <button type="submit" class="btn btn-outline-danger btn-sm" onclick="return confirm('سيتم حذف سجلات الاستخدام الأقدم من المدة المحددة. هل أنت متأكد؟');">
+                                    <?php if (!$selectedUsageUserId): ?>
+                                        <select name="days" class="form-select form-select-sm w-auto">
+                                            <option value="7">7 أيام</option>
+                                            <option value="30" selected>30 يوماً</option>
+                                            <option value="90">90 يوماً</option>
+                                        </select>
+                                    <?php else: ?>
+                                        <input type="hidden" name="days" value="30">
+                                    <?php endif; ?>
+                                    <button type="submit" class="btn btn-outline-danger btn-sm" onclick="return confirm('<?php echo $selectedUsageUserId ? 'سيتم حذف جميع سجلات الاستخدام الخاصة بالمستخدم المختار خلال التاريخ المعروض. هل تريد المتابعة؟' : 'سيتم حذف سجلات الاستخدام الأقدم من المدة المحددة. هل أنت متأكد؟'; ?>');">
                                         <i class="bi bi-trash me-1"></i>
                                         تنظيف السجلات
                                     </button>

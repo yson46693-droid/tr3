@@ -354,3 +354,56 @@ function cleanupRequestUsage($days = 30) {
     }
 }
 
+/**
+ * حذف سجلات استخدام لمستخدم محدد (اختياري وفق تاريخ)
+ */
+function deleteRequestUsageForUser($userId, $date = null) {
+    $userId = intval($userId);
+    if ($userId <= 0) {
+        return 0;
+    }
+
+    try {
+        ensureRequestUsageTables();
+        $db = db();
+
+        $conditions = 'user_id = ?';
+        $params = [$userId];
+
+        $hasDate = false;
+        if (!empty($date) && preg_match('/^\d{4}-\d{2}-\d{2}$/', $date)) {
+            $start = date('Y-m-d 00:00:00', strtotime($date));
+            $end = date('Y-m-d 23:59:59', strtotime($date));
+            $conditions .= ' AND created_at BETWEEN ? AND ?';
+            $params[] = $start;
+            $params[] = $end;
+            $hasDate = true;
+        }
+
+        $result = $db->execute(
+            "DELETE FROM request_usage WHERE {$conditions}",
+            $params
+        );
+        $deletedUsage = intval($result['affected_rows'] ?? 0);
+
+        $alertConditions = "identifier_type = 'user' AND identifier_value = ?";
+        $alertParams = [(string) $userId];
+        if ($hasDate) {
+            $alertConditions .= ' AND window_start >= ? AND window_end <= ?';
+            $alertParams[] = $start;
+            $alertParams[] = $end;
+        }
+
+        $alertsResult = $db->execute(
+            "DELETE FROM request_usage_alerts WHERE {$alertConditions}",
+            $alertParams
+        );
+        $deletedAlerts = intval($alertsResult['affected_rows'] ?? 0);
+
+        return $deletedUsage + $deletedAlerts;
+    } catch (Throwable $e) {
+        error_log('Request usage delete error: ' . $e->getMessage());
+        return 0;
+    }
+}
+

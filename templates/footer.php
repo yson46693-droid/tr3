@@ -1,3 +1,21 @@
+            function incrementVersion(baseVersion, serverVersion = null) {
+                let versionString = baseVersion;
+
+                if (serverVersion && serverVersion !== baseVersion) {
+                    return serverVersion;
+                }
+
+                const versionParts = versionString.replace(/[^0-9.]/g, '').split('.');
+                while (versionParts.length < 2) {
+                    versionParts.push('0');
+                }
+
+                const minorIndex = versionParts.length - 1;
+                const minor = parseInt(versionParts[minorIndex], 10) || 0;
+                versionParts[minorIndex] = String(minor + 1);
+
+                return '1.' + versionParts.slice(1).join('.');
+            }
 <?php
 
 
@@ -121,6 +139,7 @@ if (!defined('ACCESS_ALLOWED')) {
          */
         function initUpdateChecker() {
             const STORAGE_KEY = 'app_last_version';
+            const VERSION_STORAGE_KEY = 'app_display_version';
             const CHECK_INTERVAL = 5 * 60 * 1000; // كل 5 دقائق
             let updateCheckInterval = null;
             let isChecking = false;
@@ -158,15 +177,24 @@ if (!defined('ACCESS_ALLOWED')) {
                     if (data.success) {
                         const currentHash = data.content_hash || data.version || data.last_modified;
                         const storedHash = localStorage.getItem(STORAGE_KEY);
+                        const storedDisplayedVersion = localStorage.getItem(VERSION_STORAGE_KEY);
+                        const serverVersion = data.version || '1.0.0';
                         
                         // إذا كان هناك تغيير في hash أو version
                         if (storedHash && storedHash !== currentHash) {
+                            let displayVersion = serverVersion;
+                            
+                            if (storedDisplayedVersion) {
+                                displayVersion = incrementVersion(storedDisplayedVersion, serverVersion);
+                            }
+                            
                             // يوجد تحديث جديد
-                            showUpdateAvailableNotification(data.version || 'جديد');
+                            showUpdateAvailableNotification(displayVersion);
                         }
                         
                         // حفظ hash الحالي
                         localStorage.setItem(STORAGE_KEY, currentHash);
+                    localStorage.setItem(VERSION_STORAGE_KEY, displayVersion || serverVersion);
                     }
                 } catch (error) {
                     console.log('Update check error:', error);
@@ -188,6 +216,14 @@ if (!defined('ACCESS_ALLOWED')) {
                 notification.id = 'updateNotification';
                 notification.className = 'alert alert-info alert-dismissible fade show position-fixed';
                 notification.style.cssText = 'top: 20px; right: 20px; z-index: 9999; max-width: 400px; box-shadow: 0 4px 6px rgba(0,0,0,0.1);';
+                
+                let displayVersion = version;
+                if (!version || version === 'جديد') {
+                    const storedDisplayedVersion = localStorage.getItem(VERSION_STORAGE_KEY) || '1.0.0';
+                    displayVersion = incrementVersion(storedDisplayedVersion, storedDisplayedVersion);
+                    localStorage.setItem(VERSION_STORAGE_KEY, displayVersion);
+                }
+                
                 notification.innerHTML = `
                     <div class="d-flex align-items-start">
                         <div class="flex-grow-1">
@@ -195,7 +231,7 @@ if (!defined('ACCESS_ALLOWED')) {
                                 <i class="bi bi-arrow-clockwise me-2 fs-5"></i>
                                 <strong>تحديث متاح!</strong>
                             </div>
-                            <p class="mb-2 small">يتوفر تحديث جديد للموقع (v${version}). يرجى تحديث الصفحة للحصول على أحدث الميزات.</p>
+                            <p class="mb-2 small">يتوفر تحديث جديد للموقع (v${displayVersion}). يرجى تحديث الصفحة للحصول على أحدث الميزات.</p>
                             <div class="d-flex gap-2">
                                 <button type="button" class="btn btn-sm btn-primary" onclick="refreshPage()">
                                     <i class="bi bi-arrow-clockwise me-1"></i>تحديث الآن
@@ -232,6 +268,8 @@ if (!defined('ACCESS_ALLOWED')) {
                         setTimeout(() => notif.remove(), 300);
                     }
                 };
+                
+                notification.dataset.version = version;
                 
                 // إزالة الإشعار تلقائياً بعد 60 ثانية
                 setTimeout(() => {
