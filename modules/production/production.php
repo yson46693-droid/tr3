@@ -1832,7 +1832,11 @@ $lang = isset($translations) ? $translations : [];
         <div class="row g-3">
             <?php foreach ($templates as $template): ?>
                 <div class="col-lg-3 col-md-4 col-sm-6">
-                    <div class="card shadow-sm h-100 template-card" style="border-left: 4px solid #0dcaf0; transition: transform 0.2s, box-shadow 0.2s; cursor: pointer;" data-template-id="<?php echo $template['id']; ?>" data-template-name="<?php echo htmlspecialchars($template['product_name']); ?>" onclick="openCreateFromTemplateModal(this)">
+                    <div class="card shadow-sm h-100 template-card" style="border-left: 4px solid #0dcaf0; transition: transform 0.2s, box-shadow 0.2s; cursor: pointer;"
+                         data-template-id="<?php echo $template['id']; ?>"
+                         data-template-name="<?php echo htmlspecialchars($template['product_name']); ?>"
+                         data-template-type="<?php echo htmlspecialchars($template['template_type'] ?? 'legacy'); ?>"
+                         onclick="openCreateFromTemplateModal(this)">
                         <div class="card-body p-3">
                             <?php 
                             $templateTypeLabels = [
@@ -2074,6 +2078,7 @@ $lang = isset($translations) ? $translations : [];
                 <input type="hidden" name="action" value="create_from_template">
                 <input type="hidden" name="template_id" id="template_id">
                 <input type="hidden" name="template_mode" id="template_mode" value="legacy">
+                <input type="hidden" name="template_type" id="template_type" value="">
                 <div class="modal-body production-template-body">
                     <!-- معلومات المنتج -->
                     <div class="mb-3 section-block">
@@ -2100,42 +2105,12 @@ $lang = isset($translations) ? $translations : [];
                         </div>
                     </div>
                     
-                    <!-- الموردين -->
-                    <div class="mb-3 section-block" id="legacySupplierSelectors">
-                        <h6 class="text-primary section-heading">
-                            <i class="bi bi-truck me-2"></i>الموردين <span class="text-danger">*</span>
-                        </h6>
-                        <div class="row g-3">
-                            <div class="col-md-6">
-                                <label class="form-label fw-bold">مورد العسل <span class="text-danger">*</span></label>
-                                <select name="honey_supplier_id" class="form-select" id="honey_supplier_select" required>
-                                    <option value="">اختر مورد العسل</option>
-                                    <?php foreach ($suppliers as $supplier): ?>
-                                        <option value="<?php echo $supplier['id']; ?>">
-                                            <?php echo htmlspecialchars($supplier['name']); ?>
-                                        </option>
-                                    <?php endforeach; ?>
-                                </select>
-                            </div>
-                            <div class="col-md-6">
-                                <label class="form-label fw-bold">مورد مواد التعبئة <span class="text-danger">*</span></label>
-                                <select name="packaging_supplier_id" class="form-select" id="packaging_supplier_select" required>
-                                    <option value="">اختر مورد التعبئة</option>
-                                    <?php foreach ($suppliers as $supplier): ?>
-                                        <option value="<?php echo $supplier['id']; ?>">
-                                            <?php echo htmlspecialchars($supplier['name']); ?>
-                                        </option>
-                                    <?php endforeach; ?>
-                                </select>
-                            </div>
-                        </div>
-                    </div>
-
+                    <!-- الموردون الديناميكيون -->
                     <div class="mb-3 section-block d-none" id="templateSuppliersWrapper">
                         <h6 class="text-primary section-heading">
                             <i class="bi bi-truck me-2"></i>الموردون لكل مادة <span class="text-danger">*</span>
                         </h6>
-                        <p class="text-muted small mb-3">يرجى اختيار المورد المناسب لكل مادة خام أو أداة تعبئة سيتم استخدامها في هذه التشغيلة.</p>
+                        <p class="text-muted small mb-3" id="templateSuppliersHint">يرجى اختيار المورد المناسب لكل مادة سيتم استخدامها في هذه التشغيلة.</p>
                         <div class="row g-3" id="templateSuppliersContainer"></div>
                     </div>
                     
@@ -2808,7 +2783,7 @@ echo json_encode(array_map(function($supplier) {
     ];
 }, $suppliersForJs), JSON_UNESCAPED_UNICODE);
 ?>;
-let currentTemplateMode = 'legacy';
+let currentTemplateMode = 'advanced';
 
 document.addEventListener('DOMContentLoaded', function() {
     const tabButtons = document.querySelectorAll('[data-production-tab]');
@@ -2845,26 +2820,34 @@ document.addEventListener('DOMContentLoaded', function() {
 function renderTemplateSuppliers(details) {
     const wrapper = document.getElementById('templateSuppliersWrapper');
     const container = document.getElementById('templateSuppliersContainer');
-    const legacyWrapper = document.getElementById('legacySupplierSelectors');
-    const honeySelect = document.getElementById('honey_supplier_select');
-    const packagingSelect = document.getElementById('packaging_supplier_select');
     const modeInput = document.getElementById('template_mode');
+    const hintText = document.getElementById('templateSuppliersHint');
 
-    if (!container || !wrapper || !legacyWrapper || !modeInput) {
+    if (!container || !wrapper || !modeInput) {
         return;
     }
 
-    if (!details || !details.components || details.components.length === 0) {
-        wrapper.classList.add('d-none');
-        legacyWrapper.classList.remove('d-none');
-        if (honeySelect) honeySelect.required = true;
-        if (packagingSelect) packagingSelect.required = true;
-        currentTemplateMode = 'legacy';
-        modeInput.value = 'legacy';
-        return;
-    }
+    const components = Array.isArray(details?.components) ? details.components : [];
 
     container.innerHTML = '';
+
+    if (components.length === 0) {
+        wrapper.classList.remove('d-none');
+        container.innerHTML = `
+            <div class="col-12">
+                <div class="alert alert-warning mb-0">
+                    <i class="bi bi-exclamation-triangle me-2"></i>
+                    لا توجد مواد مرتبطة بالقالب. يرجى تحديث القالب وإضافة المواد المطلوبة.
+                </div>
+            </div>
+        `;
+        if (hintText) {
+            hintText.textContent = 'لا توجد مواد لعرضها.';
+        }
+        currentTemplateMode = 'advanced';
+        modeInput.value = 'advanced';
+        return;
+    }
 
     details.components.forEach(function(component) {
         const col = document.createElement('div');
@@ -2882,11 +2865,11 @@ function renderTemplateSuppliers(details) {
         select.className = 'form-select';
         select.name = 'material_suppliers[' + (component.key || component.name) + ']';
         select.dataset.role = 'component-supplier';
-        select.required = true;
+        select.required = component.required !== false;
 
         const placeholderOption = document.createElement('option');
         placeholderOption.value = '';
-        placeholderOption.textContent = 'اختر المورد';
+        placeholderOption.textContent = component.placeholder || 'اختر المورد';
         select.appendChild(placeholderOption);
 
         (window.productionSuppliers || []).forEach(function(supplier) {
@@ -2907,19 +2890,14 @@ function renderTemplateSuppliers(details) {
         container.appendChild(col);
     });
 
-    if (honeySelect) {
-        honeySelect.required = false;
-        honeySelect.value = '';
-    }
-    if (packagingSelect) {
-        packagingSelect.required = false;
-        packagingSelect.value = '';
+    wrapper.classList.remove('d-none');
+
+    if (hintText) {
+        hintText.textContent = details.hint || 'يرجى اختيار المورد المناسب لكل مادة سيتم استخدامها.';
     }
 
-    legacyWrapper.classList.add('d-none');
-    wrapper.classList.remove('d-none');
-    currentTemplateMode = details.mode || 'advanced';
-    modeInput.value = currentTemplateMode;
+    currentTemplateMode = 'advanced';
+    modeInput.value = 'advanced';
 }
 
 // تحميل بيانات الإنتاج للتعديل
@@ -2982,57 +2960,68 @@ function viewProduction(id) {
 function openCreateFromTemplateModal(element) {
     const templateId = element.getAttribute('data-template-id');
     const templateName = element.getAttribute('data-template-name');
+    const templateType = element.getAttribute('data-template-type') || 'legacy';
     
     document.getElementById('template_id').value = templateId;
     document.getElementById('template_product_name').value = templateName;
+    document.getElementById('template_type').value = templateType;
     
     // إعادة تعيين القيم التلقائية
-    document.getElementById('honey_supplier_select').value = '';
-    document.getElementById('packaging_supplier_select').value = '';
     document.querySelector('textarea[name="batch_notes"]').value = '';
 
     const wrapper = document.getElementById('templateSuppliersWrapper');
     const container = document.getElementById('templateSuppliersContainer');
-    const legacyWrapper = document.getElementById('legacySupplierSelectors');
-    const honeySelect = document.getElementById('honey_supplier_select');
-    const packagingSelect = document.getElementById('packaging_supplier_select');
     const modeInput = document.getElementById('template_mode');
 
     if (container) {
-        container.innerHTML = '';
+        container.innerHTML = `
+            <div class="col-12">
+                <div class="alert alert-info mb-0">
+                    <i class="bi bi-hourglass-split me-2"></i>
+                    جاري تحميل بيانات المواد...
+                </div>
+            </div>
+        `;
     }
     if (wrapper) {
         wrapper.classList.add('d-none');
     }
-    if (legacyWrapper) {
-        legacyWrapper.classList.remove('d-none');
-    }
-    currentTemplateMode = 'legacy';
+    currentTemplateMode = 'advanced';
     if (modeInput) {
-        modeInput.value = 'legacy';
-    }
-    if (honeySelect) {
-        honeySelect.required = true;
-    }
-    if (packagingSelect) {
-        packagingSelect.required = true;
+        modeInput.value = 'advanced';
     }
 
     const baseUrl = window.location.origin + window.location.pathname.replace(/\/[^\/]*$/, '');
-    fetch(baseUrl + '/dashboard/production.php?page=production&ajax=template_details&template_id=' + templateId)
+    fetch(baseUrl + '/dashboard/production.php?page=production&ajax=template_details&template_id=' + templateId + '&template_type=' + encodeURIComponent(templateType))
         .then(response => response.ok ? response.json() : Promise.reject(new Error('Network error')))
         .then(data => {
-            if (data && data.success && data.mode === 'advanced') {
+            if (data && data.success) {
                 renderTemplateSuppliers(data);
             } else {
-                currentTemplateMode = 'legacy';
-                if (modeInput) {
-                    modeInput.value = 'legacy';
+                if (container) {
+                    container.innerHTML = `
+                        <div class="col-12">
+                            <div class="alert alert-warning mb-0">
+                                <i class="bi bi-exclamation-triangle me-2"></i>
+                                لم يتم العثور على مواد لهذا القالب. يرجى مراجعة إعدادات القالب.
+                            </div>
+                        </div>
+                    `;
                 }
             }
         })
         .catch(error => {
             console.error('Error loading template details:', error);
+            if (container) {
+                container.innerHTML = `
+                    <div class="col-12">
+                        <div class="alert alert-danger mb-0">
+                            <i class="bi bi-x-circle me-2"></i>
+                            تعذّر تحميل بيانات القالب: ${error.message}
+                        </div>
+                    </div>
+                `;
+            }
         })
         .finally(() => {
             const modal = new bootstrap.Modal(document.getElementById('createFromTemplateModal'));
@@ -3044,32 +3033,20 @@ function openCreateFromTemplateModal(element) {
 document.getElementById('createFromTemplateForm')?.addEventListener('submit', function(e) {
     const quantity = document.querySelector('input[name="quantity"]').value;
 
-    if (currentTemplateMode === 'legacy') {
-        const honeySupplier = document.getElementById('honey_supplier_select').value;
-        const packagingSupplier = document.getElementById('packaging_supplier_select').value;
+    const supplierSelects = document.querySelectorAll('#templateSuppliersContainer select[data-role="component-supplier"]');
 
-        if (!honeySupplier) {
-            e.preventDefault();
-            alert('يرجى اختيار مورد العسل');
-            document.getElementById('honey_supplier_select').focus();
-            return false;
-        }
+    if (supplierSelects.length === 0) {
+        e.preventDefault();
+        alert('لا توجد مواد مرتبطة بالقالب، يرجى مراجعة القالب قبل إنشاء التشغيلة.');
+        return false;
+    }
 
-        if (!packagingSupplier) {
+    for (let select of supplierSelects) {
+        if (!select.value) {
             e.preventDefault();
-            alert('يرجى اختيار مورد مواد التعبئة');
-            document.getElementById('packaging_supplier_select').focus();
+            alert('يرجى اختيار المورد لكل مادة قبل المتابعة');
+            select.focus();
             return false;
-        }
-    } else {
-        const supplierSelects = document.querySelectorAll('#templateSuppliersContainer select[data-role="component-supplier"]');
-        for (let select of supplierSelects) {
-            if (!select.value) {
-                e.preventDefault();
-                alert('يرجى اختيار المورد لكل مادة قبل المتابعة');
-                select.focus();
-                return false;
-            }
         }
     }
 

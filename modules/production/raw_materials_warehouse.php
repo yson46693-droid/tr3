@@ -766,6 +766,14 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     if (empty($validIngredients)) {
                         throw new Exception('لا توجد مكونات صحيحة');
                     }
+
+                    $uniqueIngredientTypes = array_unique(array_map(function($ingredient) {
+                        return $ingredient['nuts_stock_id'];
+                    }, $validIngredients));
+
+                    if (count($uniqueIngredientTypes) < 2) {
+                        throw new Exception('يجب اختيار نوعين مختلفين على الأقل من المكسرات للخلطة');
+                    }
                     
                     // إنشاء الخلطة
                     $result = $db->execute(
