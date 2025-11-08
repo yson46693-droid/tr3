@@ -33,6 +33,80 @@ $hasUserIdColumn = !empty($userIdColumnCheck);
 $hasWorkerIdColumn = !empty($workerIdColumnCheck);
 $userIdColumn = $hasUserIdColumn ? 'user_id' : ($hasWorkerIdColumn ? 'worker_id' : null);
 
+// معالجة طلبات AJAX لتفاصيل المنتج قبل أي إخراج
+if (isset($_GET['ajax']) && $_GET['ajax'] === 'product_details') {
+    while (ob_get_level() > 0) {
+        ob_end_clean();
+    }
+
+    header('Content-Type: application/json; charset=utf-8');
+
+    try {
+        $productId = intval($_GET['product_id'] ?? 0);
+        if ($productId <= 0) {
+            echo json_encode([
+                'success' => false,
+                'message' => 'معرف المنتج غير صالح'
+            ], JSON_UNESCAPED_UNICODE);
+            exit;
+        }
+
+        $whereDetails = ["p.product_id = ?", "(p.status = 'completed' OR p.status = 'approved')"];
+        $detailsParams = [$productId];
+
+        $detailsSql = "SELECT 
+                            p.id,
+                            p.quantity,
+                            p.$dateColumn as production_date,
+                            p.created_at,
+                            p.status" .
+                        ($userIdColumn
+                            ? ", u.full_name as worker_name, u.username as worker_username"
+                            : ", 'غير محدد' as worker_name, 'غير محدد' as worker_username"
+                        ) .
+                        " FROM production p";
+
+        if ($userIdColumn) {
+            $detailsSql .= " LEFT JOIN users u ON p.$userIdColumn = u.id";
+        }
+
+        $detailsSql .= " WHERE " . implode(' AND ', $whereDetails) . "
+                         ORDER BY p.$dateColumn DESC";
+
+        $details = $db->query($detailsSql, $detailsParams);
+
+        $statusLabels = [
+            'pending' => 'معلق',
+            'approved' => 'موافق عليه',
+            'completed' => 'مكتمل',
+            'rejected' => 'مرفوض'
+        ];
+
+        $formattedDetails = array_map(function($detail) use ($statusLabels) {
+            return [
+                'id' => $detail['id'],
+                'quantity' => $detail['quantity'],
+                'date' => formatDate($detail['production_date'] ?? $detail['created_at']),
+                'worker' => $detail['worker_name'] ?? $detail['worker_username'] ?? 'غير محدد',
+                'status' => $detail['status'],
+                'status_text' => $statusLabels[$detail['status']] ?? $detail['status']
+            ];
+        }, $details ?? []);
+
+        echo json_encode([
+            'success' => true,
+            'details' => $formattedDetails
+        ], JSON_UNESCAPED_UNICODE);
+    } catch (Exception $e) {
+        error_log('Final products AJAX error: ' . $e->getMessage());
+        echo json_encode([
+            'success' => false,
+            'message' => 'حدث خطأ أثناء تحميل تفاصيل المنتج'
+        ], JSON_UNESCAPED_UNICODE);
+    }
+    exit;
+}
+
 // التحقق من وجود جدول production_lines وإنشاءه إذا لم يكن موجوداً
 $lineTableCheck = $db->queryOne("SHOW TABLES LIKE 'production_lines'");
 if (empty($lineTableCheck)) {
@@ -508,58 +582,4 @@ function viewProductDetails(productId) {
         });
 }
 </script>
-
-<?php
-// معالجة AJAX لعرض تفاصيل المنتج
-if (isset($_GET['ajax']) && $_GET['ajax'] === 'product_details' && isset($_GET['product_id'])) {
-    $productId = intval($_GET['product_id']);
-    
-    $whereDetails = ["p.product_id = ?", "(p.status = 'completed' OR p.status = 'approved')"];
-    $detailsParams = [$productId];
-    
-    $detailsSql = "SELECT 
-                    p.id,
-                    p.quantity,
-                    p.$dateColumn as production_date,
-                    p.status,
-                    " . ($userIdColumn ? "u.full_name as worker_name, u.username as worker_username" : "'غير محدد' as worker_name, 'غير محدد' as worker_username") . "
-                  FROM production p";
-                  
-    // إضافة JOIN مع users فقط إذا كان العمود موجوداً
-    if ($userIdColumn) {
-        $detailsSql .= " LEFT JOIN users u ON p.$userIdColumn = u.id";
-    }
-    
-    $detailsSql .= " WHERE " . implode(' AND ', $whereDetails) . "
-                  ORDER BY p.$dateColumn DESC";
-    
-    $details = $db->query($detailsSql, $detailsParams);
-    
-    $formattedDetails = [];
-    foreach ($details as $detail) {
-        $statusLabels = [
-            'pending' => 'معلق',
-            'approved' => 'موافق عليه',
-            'completed' => 'مكتمل',
-            'rejected' => 'مرفوض'
-        ];
-        
-        $formattedDetails[] = [
-            'id' => $detail['id'],
-            'quantity' => $detail['quantity'],
-            'date' => formatDate($detail['production_date'] ?? $detail['created_at']),
-            'worker' => $detail['worker_name'] ?? $detail['worker_username'] ?? 'غير محدد',
-            'status' => $detail['status'],
-            'status_text' => $statusLabels[$detail['status']] ?? $detail['status']
-        ];
-    }
-    
-    header('Content-Type: application/json');
-    echo json_encode([
-        'success' => true,
-        'details' => $formattedDetails
-    ]);
-    exit;
-}
-?>
 
