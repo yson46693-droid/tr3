@@ -319,14 +319,42 @@ function updateNotificationList(notifications) {
         return; // سيتم إعادة التوجيه، لا حاجة لتحديث القائمة
     }
     
-    if (notifications.length === 0) {
+    const filteredNotifications = Array.isArray(notifications) ? notifications.filter(notification => {
+        if (!notification) {
+            return false;
+        }
+
+        const title = (notification.title || '').toString();
+        const message = (notification.message || '').toString();
+        const link = (notification.link || '').toString();
+
+        const isCompletionCue = text => {
+            if (typeof text !== 'string' || text.trim() === '') {
+                return false;
+            }
+            return text.includes('كمكتملة') ||
+                text.includes('تم إكمال') ||
+                text.includes('status=completed');
+        };
+
+        if (isCompletionCue(title) || isCompletionCue(message) || isCompletionCue(link)) {
+            if (notification.id) {
+                markNotificationAsRead(notification.id);
+            }
+            return false;
+        }
+
+        return true;
+    }) : [];
+
+    if (filteredNotifications.length === 0) {
         list.innerHTML = '<small class="text-muted">لا توجد إشعارات</small>';
         return;
     }
     
     let html = '';
     const now = Date.now();
-    notifications.forEach(notification => {
+    filteredNotifications.slice(0, NOTIFICATION_DEFAULT_LIMIT).forEach(notification => {
         const typeClass = {
             'info': 'text-info',
             'success': 'text-success',
@@ -380,8 +408,8 @@ function updateNotificationList(notifications) {
             const notificationId = this.getAttribute('data-id');
             markNotificationAsRead(notificationId);
             
-                if (notifications.find(n => (n.id == notificationId || String(n.id) === String(notificationId)) && n.link)) {
-                    const notification = notifications.find(n => (n.id == notificationId || String(n.id) === String(notificationId)));
+                if (filteredNotifications.find(n => (n.id == notificationId || String(n.id) === String(notificationId)) && n.link)) {
+                    const notification = filteredNotifications.find(n => (n.id == notificationId || String(n.id) === String(notificationId)));
                 window.location.href = notification.link;
             }
         });

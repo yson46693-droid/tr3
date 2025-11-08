@@ -7,6 +7,7 @@ class AttendanceNotificationManager {
     constructor() {
         this.notificationPermission = null;
         this.reminderTimeout = null;
+        this.checkoutReminderTimeout = null;
         this.dailyCheckInterval = null;
         this.workTime = null;
         this.userId = null;
@@ -35,6 +36,7 @@ class AttendanceNotificationManager {
 
         // جدولة الإشعارات
         this.scheduleReminders();
+        this.showImmediateRemindersOnLogin();
         
         // فحص يومي للتأكد من جدولة الإشعارات
         this.startDailyCheck();
@@ -150,37 +152,52 @@ class AttendanceNotificationManager {
             clearTimeout(this.reminderTimeout);
             this.reminderTimeout = null;
         }
+        if (this.checkoutReminderTimeout) {
+            clearTimeout(this.checkoutReminderTimeout);
+            this.checkoutReminderTimeout = null;
+        }
 
         if (!this.workTime) {
             return;
         }
 
-        // حساب الوقت قبل 10 دقائق من موعد العمل
-        const reminderTime = this.calculateReminderTime(this.workTime.start);
-        
-        if (!reminderTime) {
-            console.log('Reminder time calculation failed or already passed');
-            return;
+        // حساب الوقت قبل 10 دقائق من موعد العمل والانصراف
+        const checkinReminderTime = this.calculateReminderTime(this.workTime.start);
+        const checkoutReminderTime = this.calculateReminderTime(this.workTime.end);
+
+        if (!checkinReminderTime) {
+            console.log('Check-in reminder time calculation failed or already passed');
         }
 
         const now = new Date();
-        const timeUntilReminder = reminderTime.getTime() - now.getTime();
 
-        if (timeUntilReminder <= 0) {
-            console.log('Reminder time has already passed today');
-            // جدولة للإشعار في اليوم التالي
-            this.scheduleNextDayReminder();
-            return;
+        if (checkinReminderTime) {
+            const timeUntilCheckin = checkinReminderTime.getTime() - now.getTime();
+
+            if (timeUntilCheckin > 0) {
+                console.log(`Scheduling check-in reminder in ${Math.round(timeUntilCheckin / 1000 / 60)} minutes`);
+                this.reminderTimeout = setTimeout(() => {
+                    this.showReminderNotification('checkin');
+                    this.scheduleNextDayReminder();
+                }, timeUntilCheckin);
+            } else {
+                console.log('Check-in reminder time has already passed today, scheduling for next day.');
+                this.scheduleNextDayReminder();
+            }
         }
 
-        console.log(`Scheduling reminder in ${Math.round(timeUntilReminder / 1000 / 60)} minutes`);
+        if (checkoutReminderTime) {
+            const timeUntilCheckout = checkoutReminderTime.getTime() - now.getTime();
 
-        // جدولة الإشعار
-        this.reminderTimeout = setTimeout(() => {
-            this.showReminderNotification();
-            // جدولة للإشعار في اليوم التالي
-            this.scheduleNextDayReminder();
-        }, timeUntilReminder);
+            if (timeUntilCheckout > 0) {
+                console.log(`Scheduling checkout reminder in ${Math.round(timeUntilCheckout / 1000 / 60)} minutes`);
+                this.checkoutReminderTimeout = setTimeout(() => {
+                    this.showReminderNotification('checkout');
+                }, timeUntilCheckout);
+            } else {
+                console.log('Checkout reminder time has already passed today; will be scheduled with next day cycle.');
+            }
+        }
     }
 
     /**
@@ -208,38 +225,53 @@ class AttendanceNotificationManager {
             return;
         }
 
-        const tomorrow = new Date();
-        tomorrow.setDate(tomorrow.getDate() + 1);
-        tomorrow.setHours(0, 0, 0, 0);
+        const checkinReminderTime = this.calculateReminderTime(this.workTime.start);
+        const checkoutReminderTime = this.calculateReminderTime(this.workTime.end);
 
-        const reminderTime = this.calculateReminderTime(this.workTime.start);
-        reminderTime.setDate(reminderTime.getDate() + 1);
+        if (!checkinReminderTime && !checkoutReminderTime) {
+            return;
+        }
 
         const now = new Date();
-        const timeUntilReminder = reminderTime.getTime() - now.getTime();
 
-        if (timeUntilReminder > 0) {
-            this.reminderTimeout = setTimeout(() => {
-                this.showReminderNotification();
-                // إعادة جدولة لليوم التالي
-                this.scheduleNextDayReminder();
-            }, timeUntilReminder);
+        if (checkinReminderTime) {
+            checkinReminderTime.setDate(checkinReminderTime.getDate() + 1);
+            const timeUntilCheckin = checkinReminderTime.getTime() - now.getTime();
+            if (timeUntilCheckin > 0) {
+                this.reminderTimeout = setTimeout(() => {
+                    this.showReminderNotification('checkin');
+                    this.scheduleNextDayReminder();
+                }, timeUntilCheckin);
+            }
+        }
+
+        if (checkoutReminderTime) {
+            checkoutReminderTime.setDate(checkoutReminderTime.getDate() + 1);
+            const timeUntilCheckout = checkoutReminderTime.getTime() - now.getTime();
+            if (timeUntilCheckout > 0) {
+                this.checkoutReminderTimeout = setTimeout(() => {
+                    this.showReminderNotification('checkout');
+                }, timeUntilCheckout);
+            }
         }
     }
 
     /**
      * عرض إشعار التذكير
      */
-    async showReminderNotification() {
-        // التحقق من أن المستخدم لم يسجل حضور بعد اليوم
-        const hasCheckedInToday = await this.hasCheckedInToday();
-        
-        if (hasCheckedInToday) {
-            console.log('User has already checked in today, skipping reminder');
+    async showReminderNotification(eventType = 'checkin') {
+        const status = await this.getTodayStatus();
+
+        if (eventType === 'checkin' && status.checked_in) {
+            console.log('Check-in reminder skipped (already checked in).');
             return;
         }
 
-        // التحقق من الإذن
+        if (eventType === 'checkout' && (!status.checked_in || status.checked_out)) {
+            console.log('Checkout reminder skipped (not eligible).');
+            return;
+        }
+
         if (this.notificationPermission !== 'granted') {
             await this.requestNotificationPermission();
             if (this.notificationPermission !== 'granted') {
@@ -247,25 +279,30 @@ class AttendanceNotificationManager {
             }
         }
 
-        const workStartFormatted = this.formatTime(this.workTime.start);
-        
+        const targetTime = eventType === 'checkin' ? this.workTime.start : this.workTime.end;
+        const formattedTime = this.formatTime(targetTime);
+
         const notificationOptions = {
-            body: `موعد العمل يبدأ في الساعة ${workStartFormatted}. يرجى تسجيل الحضور قبل الموعد.`,
-            icon: '/assets/images/logo.png', // يمكن تغييرها
+            body: eventType === 'checkin'
+                ? `موعد العمل يبدأ في الساعة ${formattedTime}. يرجى تسجيل الحضور قبل الموعد.`
+                : `موعد الانصراف المحدد في الساعة ${formattedTime}. لا تنس تسجيل الانصراف.`,
+            icon: '/assets/images/logo.png',
             badge: '/assets/images/badge.png',
-            tag: 'attendance-reminder',
+            tag: eventType === 'checkin' ? 'attendance-reminder' : 'checkout-reminder',
             requireInteraction: false,
             silent: false,
             data: {
                 url: window.location.origin + '/attendance.php',
-                type: 'attendance_reminder'
+                type: eventType === 'checkin' ? 'attendance_reminder' : 'checkout_reminder'
             }
         };
 
         try {
-            const notification = new Notification('تذكير بتسجيل الحضور', notificationOptions);
-            
-            // إضافة حدث النقر على الإشعار
+            const notification = new Notification(
+                eventType === 'checkin' ? 'تذكير بتسجيل الحضور' : 'تذكير بتسجيل الانصراف',
+                notificationOptions
+            );
+
             notification.onclick = function(event) {
                 event.preventDefault();
                 window.focus();
@@ -275,15 +312,61 @@ class AttendanceNotificationManager {
                 notification.close();
             };
 
-            // إغلاق الإشعار تلقائياً بعد 10 ثوانٍ
             setTimeout(() => {
                 notification.close();
             }, 10000);
 
-            console.log('Reminder notification shown');
+            console.log(`Reminder notification shown (${eventType})`);
         } catch (error) {
             console.error('Error showing notification:', error);
         }
+    }
+
+    async showImmediateReminder(eventType) {
+        await this.showReminderNotification(eventType);
+    }
+
+    async showImmediateRemindersOnLogin() {
+        const status = await this.getTodayStatus();
+
+        if (!status.checked_in) {
+            await this.showReminderNotification('checkin');
+        } else if (!status.checked_out) {
+            await this.showReminderNotification('checkout');
+        }
+    }
+
+    async getTodayStatus() {
+        try {
+            const apiPath = this.getApiPath('attendance.php');
+            const response = await fetch(apiPath + '?action=check_today', {
+                method: 'GET',
+                credentials: 'same-origin'
+            });
+
+            if (!response.ok) {
+                throw new Error('Failed to get today status');
+            }
+
+            const data = await response.json();
+            return {
+                checked_in: data.checked_in || false,
+                checked_out: data.checked_out || false
+            };
+        } catch (error) {
+            console.error('Error getting today status:', error);
+            return { checked_in: false, checked_out: false };
+        }
+    }
+
+    async hasCheckedInToday() {
+        const status = await this.getTodayStatus();
+        return status.checked_in;
+    }
+
+    async hasCheckedOutToday() {
+        const status = await this.getTodayStatus();
+        return status.checked_out;
     }
 
     /**
@@ -304,29 +387,6 @@ class AttendanceNotificationManager {
             // في مجلد فرعي - بناء مسار مطلق
             const basePath = '/' + pathParts[0];
             return basePath + '/api/' + filename;
-        }
-    }
-
-    /**
-     * التحقق من أن المستخدم سجل حضور اليوم
-     */
-    async hasCheckedInToday() {
-        try {
-            const apiPath = this.getApiPath('attendance.php');
-            const response = await fetch(apiPath + '?action=check_today', {
-                method: 'GET',
-                credentials: 'same-origin'
-            });
-
-            if (!response.ok) {
-                return false;
-            }
-
-            const data = await response.json();
-            return data.checked_in || false;
-        } catch (error) {
-            console.error('Error checking today attendance:', error);
-            return false;
         }
     }
 
@@ -363,6 +423,10 @@ class AttendanceNotificationManager {
         if (this.reminderTimeout) {
             clearTimeout(this.reminderTimeout);
             this.reminderTimeout = null;
+        }
+        if (this.checkoutReminderTimeout) {
+            clearTimeout(this.checkoutReminderTimeout);
+            this.checkoutReminderTimeout = null;
         }
 
         if (this.dailyCheckInterval) {

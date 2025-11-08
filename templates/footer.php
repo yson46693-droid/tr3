@@ -1,21 +1,34 @@
-            function incrementVersion(baseVersion, serverVersion = null) {
-                let versionString = baseVersion;
-
-                if (serverVersion && serverVersion !== baseVersion) {
-                    return serverVersion;
+            const versionUtils = (function() {
+                function normalize(versionString) {
+                    const cleaned = (versionString || '').replace(/[^0-9.]/g, '');
+                    const parts = cleaned.split('.').filter(Boolean);
+                    while (parts.length < 2) {
+                        parts.push('0');
+                    }
+                    return parts.slice(0, 3);
                 }
 
-                const versionParts = versionString.replace(/[^0-9.]/g, '').split('.');
-                while (versionParts.length < 2) {
-                    versionParts.push('0');
+                function increment(baseVersion, serverVersion) {
+                    if (serverVersion && serverVersion !== baseVersion) {
+                        return serverVersion;
+                    }
+
+                    const parts = normalize(baseVersion);
+                    const minorIndex = parts.length - 1;
+                    const minor = parseInt(parts[minorIndex], 10) || 0;
+                    parts[minorIndex] = String(minor + 1);
+
+                    if (parts.length === 2) {
+                        return parts.join('.');
+                    }
+                    return parts.join('.');
                 }
 
-                const minorIndex = versionParts.length - 1;
-                const minor = parseInt(versionParts[minorIndex], 10) || 0;
-                versionParts[minorIndex] = String(minor + 1);
-
-                return '1.' + versionParts.slice(1).join('.');
-            }
+                return {
+                    normalize,
+                    increment
+                };
+            })();
 <?php
 
 
@@ -179,22 +192,16 @@ if (!defined('ACCESS_ALLOWED')) {
                         const storedHash = localStorage.getItem(STORAGE_KEY);
                         const storedDisplayedVersion = localStorage.getItem(VERSION_STORAGE_KEY);
                         const serverVersion = data.version || '1.0.0';
-                        
-                        // إذا كان هناك تغيير في hash أو version
+
+                        let displayVersion = storedDisplayedVersion || serverVersion;
+
                         if (storedHash && storedHash !== currentHash) {
-                            let displayVersion = serverVersion;
-                            
-                            if (storedDisplayedVersion) {
-                                displayVersion = incrementVersion(storedDisplayedVersion, serverVersion);
-                            }
-                            
-                            // يوجد تحديث جديد
+                            displayVersion = versionUtils.increment(storedDisplayedVersion || serverVersion, serverVersion);
                             showUpdateAvailableNotification(displayVersion);
                         }
-                        
-                        // حفظ hash الحالي
+
                         localStorage.setItem(STORAGE_KEY, currentHash);
-                    localStorage.setItem(VERSION_STORAGE_KEY, displayVersion || serverVersion);
+                        localStorage.setItem(VERSION_STORAGE_KEY, displayVersion);
                     }
                 } catch (error) {
                     console.log('Update check error:', error);
@@ -217,12 +224,9 @@ if (!defined('ACCESS_ALLOWED')) {
                 notification.className = 'alert alert-info alert-dismissible fade show position-fixed';
                 notification.style.cssText = 'top: 20px; right: 20px; z-index: 9999; max-width: 400px; box-shadow: 0 4px 6px rgba(0,0,0,0.1);';
                 
-                let displayVersion = version;
-                if (!version || version === 'جديد') {
-                    const storedDisplayedVersion = localStorage.getItem(VERSION_STORAGE_KEY) || '1.0.0';
-                    displayVersion = incrementVersion(storedDisplayedVersion, storedDisplayedVersion);
-                    localStorage.setItem(VERSION_STORAGE_KEY, displayVersion);
-                }
+                const storedDisplayedVersion = localStorage.getItem(VERSION_STORAGE_KEY) || '1.0.0';
+                const displayVersion = versionUtils.increment(storedDisplayedVersion, version);
+                localStorage.setItem(VERSION_STORAGE_KEY, displayVersion);
                 
                 notification.innerHTML = `
                     <div class="d-flex align-items-start">

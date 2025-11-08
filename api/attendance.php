@@ -150,15 +150,21 @@ try {
         // التحقق من أن المستخدم سجل حضور اليوم
         $today = date('Y-m-d');
         $todayRecord = $db->queryOne(
-            "SELECT id FROM attendance_records 
+            "SELECT id, check_out_time FROM attendance_records 
              WHERE user_id = ? AND date = ? AND check_in_time IS NOT NULL 
-             LIMIT 1",
+             ORDER BY check_in_time DESC LIMIT 1",
             [$currentUser['id'], $today]
         );
-        
+
+        $checkedOut = false;
+        if ($todayRecord && !empty($todayRecord['check_out_time'])) {
+            $checkedOut = true;
+        }
+
         echo json_encode([
             'success' => true,
-            'checked_in' => !empty($todayRecord)
+            'checked_in' => !empty($todayRecord),
+            'checked_out' => $checkedOut
         ], JSON_UNESCAPED_UNICODE);
         
     } else {

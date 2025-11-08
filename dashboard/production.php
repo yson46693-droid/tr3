@@ -140,7 +140,7 @@ $pageTitle = isset($lang['production_dashboard']) ? $lang['production_dashboard'
                     );
                 }
 
-                $notifications = getUserNotifications($currentUser['id'], false, 5) ?? [];
+                $notifications = getUserNotifications($currentUser['id'], false, 10) ?? [];
                 $containsText = static function ($text, $needle) {
                     if ($text === '' || $needle === '') {
                         return false;
@@ -154,15 +154,42 @@ $pageTitle = isset($lang['production_dashboard']) ? $lang['production_dashboard'
                 if (!empty($notifications)) {
                     $notifications = array_filter(
                         $notifications,
-                        function ($notification) use ($currentUser, $containsText) {
+                        function ($notification) use ($db, $currentUser, $containsText) {
                             $title = trim($notification['title'] ?? '');
                             $message = trim($notification['message'] ?? '');
+                            $link = trim($notification['link'] ?? '');
 
-                            if ($containsText($message, 'كمكتملة')) {
+                            $isCompletionAlert =
+                                $containsText($message, 'كمكتملة') ||
+                                $containsText($title, 'كمكتملة') ||
+                                ($link !== '' && strpos($link, 'status=completed') !== false);
+
+                            if ($isCompletionAlert) {
                                 if (!empty($notification['id'])) {
                                     markNotificationAsRead((int)$notification['id'], (int)$currentUser['id']);
                                 }
                                 return false;
+                            }
+
+                            if (!empty($notification['id']) && ($containsText($title, 'تم إكمال') || $containsText($title, 'تم تحديث حالة'))) {
+                                $titleSnippet = mb_substr($title, 0, 120);
+                                $task = $db->queryOne(
+                                    "SELECT status FROM tasks 
+                                     WHERE assigned_to = ? 
+                                     AND (
+                                        title = ? 
+                                        OR title LIKE CONCAT('%', ?) 
+                                        OR ? LIKE CONCAT('%', title, '%')
+                                     )
+                                     ORDER BY updated_at DESC 
+                                     LIMIT 1",
+                                    [$currentUser['id'], $title, $titleSnippet, $title]
+                                );
+
+                                if ($task && $containsText((string)($task['status'] ?? ''), 'completed')) {
+                                    markNotificationAsRead((int)$notification['id'], (int)$currentUser['id']);
+                                    return false;
+                                }
                             }
 
                             return true;
