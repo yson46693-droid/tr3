@@ -141,6 +141,33 @@ $pageTitle = isset($lang['production_dashboard']) ? $lang['production_dashboard'
                 }
 
                 $notifications = getUserNotifications($currentUser['id'], false, 10) ?? [];
+                $tasksTableExists = !empty($db->queryOne("SHOW TABLES LIKE 'tasks'"));
+                $activeTaskTitles = [];
+
+                if ($tasksTableExists) {
+                    try {
+                        $userTasks = $db->query(
+                            "SELECT title FROM tasks 
+                             WHERE assigned_to = ? 
+                             AND status NOT IN ('completed', 'cancelled')",
+                            [$currentUser['id']]
+                        );
+
+                        if (!empty($userTasks)) {
+                            foreach ($userTasks as $taskRow) {
+                                $title = trim((string)($taskRow['title'] ?? ''));
+                                if ($title === '') {
+                                    continue;
+                                }
+                                $normalized = mb_strtolower($title, 'UTF-8');
+                                $activeTaskTitles[$normalized] = true;
+                            }
+                        }
+                    } catch (Exception $taskLookupError) {
+                        error_log('Dashboard task notification filter error: ' . $taskLookupError->getMessage());
+                    }
+                }
+
                 $containsText = static function ($text, $needle) {
                     if ($text === '' || $needle === '') {
                         return false;
@@ -154,7 +181,7 @@ $pageTitle = isset($lang['production_dashboard']) ? $lang['production_dashboard'
                 if (!empty($notifications)) {
                     $notifications = array_filter(
                         $notifications,
-                        function ($notification) use ($db, $currentUser, $containsText) {
+                        function ($notification) use ($db, $currentUser, $containsText, $tasksTableExists, $activeTaskTitles) {
                             $title = trim($notification['title'] ?? '');
                             $message = trim($notification['message'] ?? '');
                             $link = trim($notification['link'] ?? '');
@@ -188,6 +215,21 @@ $pageTitle = isset($lang['production_dashboard']) ? $lang['production_dashboard'
 
                                 if ($task && $containsText((string)($task['status'] ?? ''), 'completed')) {
                                     markNotificationAsRead((int)$notification['id'], (int)$currentUser['id']);
+                                    return false;
+                                }
+                            }
+
+                            if ($tasksTableExists && $message !== '') {
+                                $normalizedMessage = mb_strtolower($message, 'UTF-8');
+                                $looksLikeTaskNotification =
+                                    $containsText($title, 'مهمة') ||
+                                    $containsText($title, 'task') ||
+                                    $containsText($title, 'إدارة');
+
+                                if ($looksLikeTaskNotification && !isset($activeTaskTitles[$normalizedMessage])) {
+                                    if (!empty($notification['id'])) {
+                                        markNotificationAsRead((int)$notification['id'], (int)$currentUser['id']);
+                                    }
                                     return false;
                                 }
                             }

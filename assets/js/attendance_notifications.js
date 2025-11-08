@@ -331,6 +331,8 @@ class AttendanceNotificationManager {
 
         if (!status.checked_in) {
             await this.showReminderNotification('checkin');
+        } else if (!status.checked_out && status.past_work_end) {
+            await this.showOverdueCheckoutReminder();
         } else if (!status.checked_out) {
             await this.showReminderNotification('checkout');
         }
@@ -349,14 +351,29 @@ class AttendanceNotificationManager {
             }
 
             const data = await response.json();
+            const now = new Date();
+            const workEndTime = this.parseTimeToDate(this.workTime.end);
+            const pastWorkEnd = workEndTime ? now > workEndTime : false;
+
             return {
                 checked_in: data.checked_in || false,
-                checked_out: data.checked_out || false
+                checked_out: data.checked_out || false,
+                past_work_end: pastWorkEnd
             };
         } catch (error) {
             console.error('Error getting today status:', error);
-            return { checked_in: false, checked_out: false };
+            return { checked_in: false, checked_out: false, past_work_end: false };
         }
+    }
+
+    parseTimeToDate(timeString) {
+        if (!timeString) {
+            return null;
+        }
+        const [hours, minutes, seconds] = timeString.split(':').map(Number);
+        const date = new Date();
+        date.setHours(hours, minutes, seconds || 0, 0);
+        return date;
     }
 
     async hasCheckedInToday() {
@@ -406,14 +423,17 @@ class AttendanceNotificationManager {
      * بدء الفحص اليومي
      */
     startDailyCheck() {
-        // فحص كل ساعة للتأكد من جدولة الإشعارات
-        this.dailyCheckInterval = setInterval(() => {
+        this.dailyCheckInterval = setInterval(async () => {
             const now = new Date();
-            // إذا كان الوقت 00:00 (بداية يوم جديد)، إعادة جدولة الإشعارات
             if (now.getHours() === 0 && now.getMinutes() === 0) {
                 this.scheduleReminders();
             }
-        }, 60000); // فحص كل دقيقة
+
+            const status = await this.getTodayStatus();
+            if (status.checked_in && !status.checked_out && status.past_work_end) {
+                this.showOverdueCheckoutReminder();
+            }
+        }, 60000);
     }
 
     /**
@@ -432,6 +452,77 @@ class AttendanceNotificationManager {
         if (this.dailyCheckInterval) {
             clearInterval(this.dailyCheckInterval);
             this.dailyCheckInterval = null;
+        }
+    }
+
+    async showOverdueCheckoutReminder() {
+        const status = await this.getTodayStatus();
+        if (!status.checked_in || status.checked_out || !status.past_work_end) {
+            return;
+        }
+
+        if (this.notificationPermission !== 'granted') {
+            await this.requestNotificationPermission();
+        }
+
+        const message = 'انتهى وقت العمل المحدد. يرجى تسجيل الانصراف للحفاظ على بيانات الحضور.';
+
+        if (window.showBrowserNotification) {
+            showBrowserNotification('تذكير تسجيل الانصراف', message, null, 'checkout-overdue');
+        } else if ('Notification' in window && Notification.permission === 'granted') {
+            try {
+                const notification = new Notification('تذكير تسجيل الانصراف', {
+                    body: message,
+                    icon: '/assets/images/logo.png',
+                    badge: '/assets/images/badge.png',
+                    tag: 'checkout-overdue',
+                    requireInteraction: false,
+                    data: {
+                        url: window.location.origin + '/attendance.php',
+                        type: 'checkout_overdue'
+                    }
+                });
+
+                notification.onclick = function(event) {
+                    event.preventDefault();
+                    window.focus();
+                    if (notification.data && notification.data.url) {
+                        window.open(notification.data.url, '_self');
+                    }
+                    notification.close();
+                };
+
+                setTimeout(() => notification.close(), 10000);
+            } catch (error) {
+                console.error('Error showing overdue checkout notification:', error);
+            }
+        }
+
+        this.playAlertSound();
+    }
+
+    playAlertSound() {
+        try {
+            if (!this.audioContext) {
+                this.audioContext = new AudioContext();
+            }
+            const duration = 0.7;
+            const oscillator = this.audioContext.createOscillator();
+            const gainNode = this.audioContext.createGain();
+
+            oscillator.type = 'sine';
+            oscillator.frequency.setValueAtTime(880, this.audioContext.currentTime);
+            gainNode.gain.setValueAtTime(0.001, this.audioContext.currentTime);
+            gainNode.gain.exponentialRampToValueAtTime(0.3, this.audioContext.currentTime + 0.05);
+            gainNode.gain.exponentialRampToValueAtTime(0.001, this.audioContext.currentTime + duration);
+
+            oscillator.connect(gainNode);
+            gainNode.connect(this.audioContext.destination);
+
+            oscillator.start();
+            oscillator.stop(this.audioContext.currentTime + duration);
+        } catch (error) {
+            console.warn('Audio context not available for alert sound:', error);
         }
     }
 }

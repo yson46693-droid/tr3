@@ -6,6 +6,43 @@ let notificationCheckInterval = null;
 const seenNotificationIds = new Set();
 const NOTIFICATION_DEFAULT_LIMIT = 10;
 
+function filterDisplayableNotifications(notifications) {
+    if (!Array.isArray(notifications)) {
+        return [];
+    }
+
+    const completionKeywords = ['كمكتملة', 'تم إكمال', 'status=completed'];
+    const filtered = [];
+
+    notifications.forEach(notification => {
+        if (!notification) {
+            return;
+        }
+
+        const title = (notification.title || '').toString();
+        const message = (notification.message || '').toString();
+        const link = (notification.link || '').toString();
+
+        const containsKeyword = text => {
+            if (typeof text !== 'string' || text.trim() === '') {
+                return false;
+            }
+            return completionKeywords.some(keyword => text.includes(keyword));
+        };
+
+        if (containsKeyword(title) || containsKeyword(message) || containsKeyword(link)) {
+            if (notification.id) {
+                markNotificationAsRead(notification.id, { silent: true }).catch(console.error);
+            }
+            return;
+        }
+
+        filtered.push(notification);
+    });
+
+    return filtered;
+}
+
 /**
  * دالة مساعدة لحساب المسار الصحيح لـ API
  */
@@ -131,11 +168,12 @@ async function loadNotifications() {
         
         if (data && data.success) {
             const notifications = Array.isArray(data.data) ? data.data : [];
-            const unreadCount = notifications.filter(isNotificationUnread).length;
+            const displayNotifications = filterDisplayableNotifications(notifications);
+            const unreadCount = displayNotifications.filter(isNotificationUnread).length;
 
             updateNotificationBadge(unreadCount);
-            handleBrowserNotifications(notifications);
-            updateNotificationList(notifications);
+            handleBrowserNotifications(displayNotifications);
+            updateNotificationList(displayNotifications);
 
             return;
         }
@@ -319,42 +357,14 @@ function updateNotificationList(notifications) {
         return; // سيتم إعادة التوجيه، لا حاجة لتحديث القائمة
     }
     
-    const filteredNotifications = Array.isArray(notifications) ? notifications.filter(notification => {
-        if (!notification) {
-            return false;
-        }
-
-        const title = (notification.title || '').toString();
-        const message = (notification.message || '').toString();
-        const link = (notification.link || '').toString();
-
-        const isCompletionCue = text => {
-            if (typeof text !== 'string' || text.trim() === '') {
-                return false;
-            }
-            return text.includes('كمكتملة') ||
-                text.includes('تم إكمال') ||
-                text.includes('status=completed');
-        };
-
-        if (isCompletionCue(title) || isCompletionCue(message) || isCompletionCue(link)) {
-            if (notification.id) {
-                markNotificationAsRead(notification.id);
-            }
-            return false;
-        }
-
-        return true;
-    }) : [];
-
-    if (filteredNotifications.length === 0) {
+    if (!Array.isArray(notifications) || notifications.length === 0) {
         list.innerHTML = '<small class="text-muted">لا توجد إشعارات</small>';
         return;
     }
     
     let html = '';
     const now = Date.now();
-    filteredNotifications.slice(0, NOTIFICATION_DEFAULT_LIMIT).forEach(notification => {
+    notifications.slice(0, NOTIFICATION_DEFAULT_LIMIT).forEach(notification => {
         const typeClass = {
             'info': 'text-info',
             'success': 'text-success',
@@ -395,6 +405,11 @@ function updateNotificationList(notifications) {
                         <div class="small text-muted">${safeMessage}</div>
                         <div class="small text-muted mt-1">${timeAgo}</div>
                     </div>
+                    <div class="notification-actions">
+                        <button type="button" class="btn btn-sm btn-link text-danger notification-delete" data-id="${notificationId}" title="حذف">
+                            <i class="bi bi-x-lg"></i>
+                        </button>
+                    </div>
                 </div>
             </div>
         `;
@@ -408,10 +423,18 @@ function updateNotificationList(notifications) {
             const notificationId = this.getAttribute('data-id');
             markNotificationAsRead(notificationId);
             
-                if (filteredNotifications.find(n => (n.id == notificationId || String(n.id) === String(notificationId)) && n.link)) {
-                    const notification = filteredNotifications.find(n => (n.id == notificationId || String(n.id) === String(notificationId)));
+                if (notifications.find(n => (n.id == notificationId || String(n.id) === String(notificationId)) && n.link)) {
+                    const notification = notifications.find(n => (n.id == notificationId || String(n.id) === String(notificationId)));
                 window.location.href = notification.link;
             }
+        });
+    });
+
+    list.querySelectorAll('.notification-delete').forEach(button => {
+        button.addEventListener('click', function(event) {
+            event.stopPropagation();
+            const notificationId = this.getAttribute('data-id');
+            deleteNotification(notificationId);
         });
     });
 }
@@ -431,7 +454,9 @@ function sanitizeText(text) {
 /**
  * تحديد إشعار كمقروء
  */
-async function markNotificationAsRead(notificationId) {
+async function markNotificationAsRead(notificationId, options = {}) {
+    const { silent = false } = options;
+
     try {
         const apiPath = getApiPath('api/notifications.php');
         await fetch(apiPath, {
@@ -446,7 +471,9 @@ async function markNotificationAsRead(notificationId) {
         });
         
         // إعادة تحميل الإشعارات
-        loadNotifications();
+        if (!silent) {
+            loadNotifications();
+        }
     } catch (error) {
         // تجاهل أخطاء CORS بصمت
         if (error.name === 'TypeError' && error.message.includes('CORS')) {
@@ -454,6 +481,33 @@ async function markNotificationAsRead(notificationId) {
             return;
         }
         console.error('Error marking notification as read:', error);
+    }
+}
+
+/**
+ * حذف إشعار
+ */
+async function deleteNotification(notificationId) {
+    try {
+        const apiPath = getApiPath('api/notifications.php');
+        await fetch(apiPath, {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/x-www-form-urlencoded',
+            },
+            body: new URLSearchParams({
+                action: 'delete',
+                id: notificationId
+            })
+        });
+
+        loadNotifications();
+    } catch (error) {
+        if (error.name === 'TypeError' && error.message.includes('CORS')) {
+            console.log('CORS error ignored when deleting notification');
+            return;
+        }
+        console.error('Error deleting notification:', error);
     }
 }
 
@@ -526,9 +580,10 @@ document.addEventListener('DOMContentLoaded', function() {
                 seenNotificationIds.add(notificationId);
             }
         });
-        const unreadCount = window.initialNotifications.filter(isNotificationUnread).length;
+        const displayNotifications = filterDisplayableNotifications(window.initialNotifications);
+        const unreadCount = displayNotifications.filter(isNotificationUnread).length;
         updateNotificationBadge(unreadCount);
-        updateNotificationList(window.initialNotifications);
+        updateNotificationList(displayNotifications);
     }
     
     // تحميل الإشعارات فوراً

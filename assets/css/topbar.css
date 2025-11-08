@@ -401,6 +401,17 @@
     transition: background var(--transition-base);
 }
 
+.notification-item .notification-actions {
+    display: flex;
+    align-items: center;
+    margin-inline-start: var(--spacing-sm);
+}
+
+.notification-item .notification-actions .btn {
+    padding: 0;
+    line-height: 1;
+}
+
 .notification-item:last-child {
     border-bottom: none;
 }
