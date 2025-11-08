@@ -57,7 +57,7 @@ $sessionCookieOptions = [
     'domain' => '',
     'secure' => $isHttps,
     'httponly' => true,
-    'samesite' => 'Strict',
+    'samesite' => 'Lax',
 ];
 
 if (session_status() !== PHP_SESSION_ACTIVE) {
@@ -72,7 +72,7 @@ if (session_status() !== PHP_SESSION_ACTIVE) {
             'domain' => '',
             'secure' => $isHttps,
             'httponly' => true,
-            'samesite' => 'Strict',
+            'samesite' => 'Lax',
         ]);
     }
 }

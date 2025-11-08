@@ -106,7 +106,22 @@ function checkRememberToken($cookieValue) {
         
         if (!$tokenRecord) {
             // حذف cookie غير صالح
-            setcookie('remember_token', '', time() - 3600, '/');
+            $isHttps = (
+                (!empty($_SERVER['HTTPS']) && $_SERVER['HTTPS'] !== 'off') ||
+                (isset($_SERVER['SERVER_PORT']) && (string)$_SERVER['SERVER_PORT'] === '443')
+            );
+            setcookie(
+                'remember_token',
+                '',
+                [
+                    'expires' => time() - 3600,
+                    'path' => '/',
+                    'domain' => '',
+                    'secure' => $isHttps,
+                    'httponly' => true,
+                    'samesite' => 'Lax'
+                ]
+            );
             return false;
         }
         
@@ -117,10 +132,14 @@ function checkRememberToken($cookieValue) {
         );
         
         // إنشاء جلسة جديدة
+        if (session_status() === PHP_SESSION_ACTIVE) {
+            session_regenerate_id(true);
+        }
         $_SESSION['user_id'] = $tokenRecord['user_id'];
         $_SESSION['username'] = $tokenRecord['username'];
         $_SESSION['role'] = $tokenRecord['role'];
         $_SESSION['logged_in'] = true;
+        generateCSRFToken(true);
         
         return true;
     } catch (Exception $e) {
@@ -194,6 +213,10 @@ function login($username, $password, $rememberMe = false) {
     // التحقق من حظر IP
     require_once __DIR__ . '/security.php';
     $ipAddress = $_SERVER['REMOTE_ADDR'] ?? 'unknown';
+    $isHttps = (
+        (!empty($_SERVER['HTTPS']) && $_SERVER['HTTPS'] !== 'off') ||
+        (isset($_SERVER['SERVER_PORT']) && (string)$_SERVER['SERVER_PORT'] === '443')
+    );
     if (isIPBlocked($ipAddress)) {
         logLoginAttempt($username, false, 'IP محظور');
         return ['success' => false, 'message' => 'عنوان IP محظور. يرجى الاتصال بالإدارة.'];
@@ -217,6 +240,10 @@ function login($username, $password, $rememberMe = false) {
     }
     
     // تسجيل الدخول
+    if (session_status() === PHP_SESSION_ACTIVE) {
+        session_regenerate_id(true);
+    }
+    generateCSRFToken(true);
     $_SESSION['user_id'] = $user['id'];
     $_SESSION['username'] = $user['username'];
     $_SESSION['role'] = $user['role'];
@@ -272,7 +299,7 @@ function login($username, $password, $rememberMe = false) {
                         'expires' => time() + (30 * 24 * 60 * 60), // 30 يوم
                         'path' => '/',
                         'domain' => '',
-                        'secure' => isset($_SERVER['HTTPS']), // HTTPS فقط إذا كان متاحاً
+                        'secure' => $isHttps,
                         'httponly' => true, // منع JavaScript من الوصول
                         'samesite' => 'Lax'
                     ]
@@ -323,7 +350,22 @@ function logout() {
     }
     
     // حذف cookie
-    setcookie('remember_token', '', time() - 3600, '/');
+    $isHttps = (
+        (!empty($_SERVER['HTTPS']) && $_SERVER['HTTPS'] !== 'off') ||
+        (isset($_SERVER['SERVER_PORT']) && (string)$_SERVER['SERVER_PORT'] === '443')
+    );
+    setcookie(
+        'remember_token',
+        '',
+        [
+            'expires' => time() - 3600,
+            'path' => '/',
+            'domain' => '',
+            'secure' => $isHttps,
+            'httponly' => true,
+            'samesite' => 'Lax'
+        ]
+    );
     if (isLoggedIn()) {
         $userId = $_SESSION['user_id'] ?? null;
         
@@ -335,6 +377,7 @@ function logout() {
     }
     
     session_unset();
+    unset($_SESSION['csrf_token']);
     session_destroy();
 }
 
@@ -594,8 +637,8 @@ function hashPassword($password) {
 /**
  * إنشاء رمز CSRF
  */
-function generateCSRFToken() {
-    if (!isset($_SESSION['csrf_token'])) {
+function generateCSRFToken($forceRefresh = false) {
+    if ($forceRefresh || !isset($_SESSION['csrf_token'])) {
         $_SESSION['csrf_token'] = bin2hex(random_bytes(32));
     }
     return $_SESSION['csrf_token'];

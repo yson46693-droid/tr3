@@ -42,6 +42,8 @@ require_once __DIR__ . '/includes/db.php';
 require_once __DIR__ . '/includes/auth.php';
 require_once __DIR__ . '/includes/path_helper.php';
 
+$csrfToken = generateCSRFToken();
+
 // تعريف ASSETS_URL إذا لم يكن معرّفاً
 // (يجب أن يكون معرّفاً بالفعل من config.php، لكن للتأكد)
 if (!defined('ASSETS_URL')) {
@@ -231,6 +233,7 @@ $lang = $translations;
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title><?php echo $lang['login_title']; ?> - <?php echo APP_NAME; ?></title>
+    <meta name="csrf-token" content="<?php echo htmlspecialchars($csrfToken, ENT_QUOTES, 'UTF-8'); ?>">
     
     <!-- Bootstrap 5 CSS -->
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
@@ -239,6 +242,11 @@ $lang = $translations;
     <!-- Custom CSS -->
     <link href="<?php echo ASSETS_URL; ?>css/style.css" rel="stylesheet">
     <link href="<?php echo ASSETS_URL; ?>css/rtl.css" rel="stylesheet">
+    <script>
+        window.APP_CSRF_TOKEN = <?php echo json_encode($csrfToken, JSON_HEX_TAG | JSON_HEX_APOS | JSON_HEX_QUOT | JSON_HEX_AMP); ?>;
+        window.APP_CSRF_FIELD = <?php echo json_encode(CSRF_TOKEN_NAME, JSON_HEX_TAG | JSON_HEX_APOS | JSON_HEX_QUOT | JSON_HEX_AMP); ?>;
+    </script>
+    <script src="<?php echo ASSETS_URL; ?>js/csrf-protection.js?v=<?php echo urlencode(APP_VERSION); ?>"></script>
 </head>
 <body class="login-page">
     <div class="container-fluid py-4 py-md-5">
@@ -269,6 +277,7 @@ $lang = $translations;
                         <?php endif; ?>
                         
                         <form id="loginForm" method="POST" action="">
+                            <input type="hidden" name="<?php echo htmlspecialchars(CSRF_TOKEN_NAME, ENT_QUOTES, 'UTF-8'); ?>" value="<?php echo htmlspecialchars($csrfToken, ENT_QUOTES, 'UTF-8'); ?>">
                             <input type="hidden" name="login_method" id="loginMethod" value="password">
                             
                             <div class="mb-3">
