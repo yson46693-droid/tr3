@@ -160,6 +160,9 @@ $pageTitle = isset($lang['production_dashboard']) ? $lang['production_dashboard'
                             $message = trim($notification['message'] ?? '');
 
                             if ($containsText($message, 'كمكتملة')) {
+                                if (!empty($notification['id'])) {
+                                    markNotificationAsRead((int)$notification['id'], (int)$currentUser['id']);
+                                }
                                 return false;
                             }
 
@@ -169,11 +172,22 @@ $pageTitle = isset($lang['production_dashboard']) ? $lang['production_dashboard'
                                 && $message !== ''
                             ) {
                                 $task = $db->queryOne(
-                                    "SELECT status FROM tasks WHERE assigned_to = ? AND title = ? ORDER BY created_at DESC LIMIT 1",
-                                    [$currentUser['id'], $message]
+                                    "SELECT status FROM tasks 
+                                     WHERE assigned_to = ? 
+                                     AND (
+                                        title = ? 
+                                        OR ? LIKE CONCAT('%', title, '%') 
+                                        OR title LIKE CONCAT('%', ?, '%')
+                                     )
+                                     ORDER BY updated_at DESC, created_at DESC 
+                                     LIMIT 1",
+                                    [$currentUser['id'], $message, $message, $message]
                                 );
 
                                 if ($task && in_array($task['status'], ['completed', 'cancelled'], true)) {
+                                    if (!empty($notification['id'])) {
+                                        markNotificationAsRead((int)$notification['id'], (int)$currentUser['id']);
+                                    }
                                     return false;
                                 }
                             }

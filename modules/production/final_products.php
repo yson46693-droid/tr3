@@ -609,37 +609,68 @@ $lang = isset($translations) ? $translations : [];
                         <?php endforeach; ?>
                     <?php endif; ?>
                 </tbody>
-                <?php if (!empty($finalProducts)): ?>
-                <tfoot class="table-light">
-                    <tr>
-                        <th>الإجماليات</th>
-                        <th>
-                            <div class="fw-semibold text-primary"><?php echo number_format($totalAvailableSum, 2); ?></div>
-                            <div class="text-muted small">إجمالي الكمية المتاحة</div>
-                            <div class="text-muted small">إجمالي الإنتاج: <?php echo number_format($totalProducedSum, 2); ?></div>
-                        </th>
-                        <th>
-                            <?php
-                            $overallAverage = $totalProductionCountSum > 0 ? $totalProducedSum / $totalProductionCountSum : 0;
-                            ?>
-                            <div class="fw-semibold"><?php echo number_format($overallAverage, 2); ?></div>
-                            <div class="text-muted small">متوسط إنتاج العملية</div>
-                        </th>
-                        <th>
-                            <?php if ($totalEstimatedValue > 0): ?>
-                                <div class="fw-semibold text-success"><?php echo formatCurrency($totalEstimatedValue); ?></div>
-                                <div class="text-muted small">القيمة الإجمالية المتاحة</div>
-                            <?php else: ?>
-                                <span class="text-muted small">غير متاح</span>
-                            <?php endif; ?>
-                        </th>
-                        <th>
-                            <div class="text-muted small"><i class="bi bi-flag me-1"></i>إجمالي العمليات: <?php echo number_format($totalProductionCountSum); ?></div>
-                        </th>
-                    </tr>
-                </tfoot>
-                <?php endif; ?>
             </table>
+        </div>
+
+        <?php
+        $overallAverage = $totalProductionCountSum > 0 ? $totalProducedSum / $totalProductionCountSum : 0;
+        ?>
+        <div class="row g-3 mt-3">
+            <div class="col-md-3 col-sm-6">
+                <div class="card shadow-sm h-100">
+                    <div class="card-body d-flex align-items-center">
+                        <div class="stat-card-icon green">
+                            <i class="bi bi-box-arrow-in-down"></i>
+                        </div>
+                        <div class="ms-3">
+                            <div class="text-muted small">إجمالي الكمية المتاحة</div>
+                            <div class="h5 mb-0"><?php echo number_format($totalAvailableSum, 2); ?></div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+            <div class="col-md-3 col-sm-6">
+                <div class="card shadow-sm h-100">
+                    <div class="card-body d-flex align-items-center">
+                        <div class="stat-card-icon blue">
+                            <i class="bi bi-graph-up-arrow"></i>
+                        </div>
+                        <div class="ms-3">
+                            <div class="text-muted small">إجمالي الإنتاج</div>
+                            <div class="h5 mb-0"><?php echo number_format($totalProducedSum, 2); ?></div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+            <div class="col-md-3 col-sm-6">
+                <div class="card shadow-sm h-100">
+                    <div class="card-body d-flex align-items-center">
+                        <div class="stat-card-icon orange">
+                            <i class="bi bi-speedometer2"></i>
+                        </div>
+                        <div class="ms-3">
+                            <div class="text-muted small">متوسط إنتاج العملية</div>
+                            <div class="h5 mb-0"><?php echo number_format($overallAverage, 2); ?></div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+            <div class="col-md-3 col-sm-6">
+                <div class="card shadow-sm h-100">
+                    <div class="card-body d-flex align-items-center">
+                        <div class="stat-card-icon purple">
+                            <i class="bi bi-wallet2"></i>
+                        </div>
+                        <div class="ms-3">
+                            <div class="text-muted small">القيمة التقديرية</div>
+                            <div class="h5 mb-1">
+                                <?php echo $totalEstimatedValue > 0 ? formatCurrency($totalEstimatedValue) : 'غير متاح'; ?>
+                            </div>
+                            <div class="text-muted small"><i class="bi bi-flag me-1"></i>عمليات الإنتاج: <?php echo number_format($totalProductionCountSum); ?></div>
+                        </div>
+                    </div>
+                </div>
+            </div>
         </div>
         
         <!-- Pagination -->
