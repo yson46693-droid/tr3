@@ -9,6 +9,7 @@ if (!defined('ACCESS_ALLOWED')) {
 
 require_once __DIR__ . '/db.php';
 require_once __DIR__ . '/simple_telegram.php';
+require_once __DIR__ . '/pdf_helper.php';
 
 const PACKAGING_ALERT_JOB_KEY = 'packaging_low_stock_alert';
 const PACKAGING_ALERT_THRESHOLD = 20;
@@ -182,148 +183,70 @@ function packagingAlertGeneratePdf(array $items): ?string {
     $timestamp = date('Y-m-d H:i');
     $thresholdLine = 'الحد الأدنى للتنبيه: أقل من ' . PACKAGING_ALERT_THRESHOLD . ' قطعة';
 
-    $lines = [
-        $title,
-        'التاريخ: ' . $timestamp,
-        $thresholdLine,
-        str_repeat('-', 90),
-        'القائمة:',
-    ];
-
+    // لتغيير البيانات المعروضة في التقرير، عدل بناء متغير $rowsHtml أدناه.
+    $rowsHtml = '';
     foreach ($items as $item) {
-        $name = trim((string)($item['name'] ?? ''));
-        $type = trim((string)($item['type'] ?? ''));
-        $unit = trim((string)($item['unit'] ?? 'قطعة'));
+        $name = htmlspecialchars(trim((string)($item['name'] ?? 'غير محدد')), ENT_QUOTES, 'UTF-8');
+        $type = htmlspecialchars(trim((string)($item['type'] ?? 'غير محدد')), ENT_QUOTES, 'UTF-8');
+        $unit = htmlspecialchars(trim((string)($item['unit'] ?? 'قطعة')), ENT_QUOTES, 'UTF-8');
         $quantity = $item['quantity'];
 
         if (is_numeric($quantity)) {
-            $quantity = (float)$quantity;
-            $quantity = rtrim(rtrim(number_format($quantity, 3, '.', ''), '0'), '.');
+            $quantity = rtrim(rtrim(number_format((float)$quantity, 3, '.', ''), '0'), '.');
         } else {
             $quantity = (string)$quantity;
         }
 
-        $lines[] = sprintf('• %s — النوع: %s — الكمية الحالية: %s %s', $name, $type ?: 'غير محدد', $quantity, $unit ?: 'قطعة');
+        $rowsHtml .= '<tr><td>' . $name . '</td><td>' . $type . '</td><td>' . htmlspecialchars($quantity, ENT_QUOTES, 'UTF-8') . ' ' . $unit . '</td></tr>';
     }
 
-    $pdfContent = packagingAlertBuildPdf($lines);
-    if ($pdfContent === null) {
-        return null;
+    if ($rowsHtml === '') {
+        $rowsHtml = '<tr><td colspan="3" class="empty">لا توجد عناصر منخفضة حالياً.</td></tr>';
     }
 
-    $bytes = @file_put_contents($filePath, $pdfContent);
-    if ($bytes === false || $bytes === 0) {
-        error_log('Packaging alert unable to write PDF: ' . $filePath);
+    $styles = '
+        @page { margin: 18mm 15mm; }
+        body { font-family: "Amiri", "Cairo", "Segoe UI", Tahoma, sans-serif; direction: rtl; text-align: right; margin:0; background:#f8fafc; color:#0f172a; }
+        /* لتغيير الخط العربي، استبدل أسماء الخطوط في السطر أعلاه أو فعّل رابط Google Fonts داخل الوسم <head>. */
+        .report { padding:32px; background:#ffffff; border-radius:16px; box-shadow:0 12px 40px rgba(15,23,42,0.08); }
+        header { text-align:center; margin-bottom:24px; }
+        header h1 { margin:0; font-size:26px; color:#1d4ed8; }
+        header .meta { display:flex; justify-content:center; gap:16px; flex-wrap:wrap; margin-top:12px; color:#475569; font-size:14px; }
+        header .meta span { background:#e2e8f0; padding:6px 14px; border-radius:999px; }
+        .threshold { margin-bottom:24px; padding:16px; background:#f1f5f9; border-radius:14px; color:#1e293b; font-size:15px; }
+        table { width:100%; border-collapse:collapse; }
+        th, td { padding:12px 16px; border:1px solid #e2e8f0; font-size:14px; }
+        th { background:#1d4ed8; color:#ffffff; font-size:15px; }
+        tr:nth-child(even) td { background:#f8fafc; }
+        .empty { text-align:center; padding:36px 0; color:#64748b; font-style:italic; font-size:15px; }
+    ';
+
+    $fontHint = '<!-- لإضافة خط عربي من Google Fonts، يمكنك استخدام الرابط التالي (أزل التعليق إذا لزم الأمر):
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Amiri:wght@400;700&display=swap">
+-->';
+
+    $body = '<div class="report"><header><h1>' . htmlspecialchars($title, ENT_QUOTES, 'UTF-8') . '</h1>'
+        . '<div class="meta"><span>' . htmlspecialchars(COMPANY_NAME, ENT_QUOTES, 'UTF-8') . '</span>'
+        . '<span>' . htmlspecialchars($timestamp, ENT_QUOTES, 'UTF-8') . '</span></div></header>'
+        . '<div class="threshold">' . htmlspecialchars($thresholdLine, ENT_QUOTES, 'UTF-8') . '</div>'
+        . '<table><thead><tr><th>اسم الأداة</th><th>النوع</th><th>الكمية الحالية</th></tr></thead><tbody>'
+        . $rowsHtml . '</tbody></table></div>';
+
+    $document = '<!DOCTYPE html><html lang="ar"><head><meta charset="utf-8"><title>'
+        . htmlspecialchars($title, ENT_QUOTES, 'UTF-8') . '</title><meta name="viewport" content="width=device-width, initial-scale=1">'
+        . $fontHint . '<style>' . $styles . '</style></head><body>' . $body . '</body></html>';
+
+    try {
+        apdfSavePdfToPath($document, $filePath, [
+            'landscape' => false,
+            'preferCSSPageSize' => true,
+        ]);
+    } catch (Throwable $e) {
+        error_log('Packaging alert aPDF.io error: ' . $e->getMessage());
         return null;
     }
 
     return $filePath;
-}
-
-/**
- * توليد محتوى PDF بسيط لنصوص متعددة الأسطر
- *
- * @param array<int, string> $lines
- * @return string|null
- */
-function packagingAlertBuildPdf(array $lines): ?string {
-    if (empty($lines)) {
-        return null;
-    }
-
-    $pageWidth = 595.0;
-    $pageHeight = 842.0;
-    $marginX = 40.0;
-    $startY = $pageHeight - 60.0;
-    $lineSpacing = 24.0;
-
-    $contentParts = [];
-    $yPos = $startY;
-    foreach ($lines as $index => $line) {
-        if ($yPos < 60.0) {
-            break;
-        }
-
-        $fontSize = $index === 0 ? 20 : ($index <= 2 ? 14 : 12);
-        $prepared = packagingAlertNormalizePdfText($line);
-        $hex = strtoupper(bin2hex(packagingAlertUtf16beText($prepared, true)));
-
-        $contentParts[] = "BT\n/F1 {$fontSize} Tf\n1 0 0 1 " . ($pageWidth - $marginX) . " {$yPos} Tm\n<{$hex}> Tj\nET\n";
-        $yPos -= $lineSpacing;
-    }
-
-    $contentStream = implode('', $contentParts);
-    $contentLength = strlen($contentStream);
-
-    $toUnicode = packagingAlertBuildToUnicodeCMap();
-
-    $objects = [];
-    $objects[] = "1 0 obj << /Type /Catalog /Pages 2 0 R >> endobj\n";
-    $objects[] = "2 0 obj << /Type /Pages /Kids [3 0 R] /Count 1 >> endobj\n";
-    $objects[] = "3 0 obj << /Type /Page /Parent 2 0 R /MediaBox [0 0 {$pageWidth} {$pageHeight}] /Contents 7 0 R /Resources << /Font << /F1 4 0 R >> >> >> endobj\n";
-    $objects[] = "4 0 obj << /Type /Font /Subtype /Type0 /BaseFont /TimesNewRomanPSMT /Encoding /Identity-H /DescendantFonts [5 0 R] /ToUnicode 6 0 R >> endobj\n";
-    $objects[] = "5 0 obj << /Type /Font /Subtype /CIDFontType2 /BaseFont /TimesNewRomanPSMT /CIDSystemInfo << /Registry (Adobe) /Ordering (Identity) /Supplement 0 >> /FontDescriptor 8 0 R /CIDToGIDMap /Identity /DW 1000 >> endobj\n";
-    $objects[] = "6 0 obj << /Length " . strlen($toUnicode) . " >> stream\n{$toUnicode}endstream\nendobj\n";
-    $objects[] = "7 0 obj << /Length {$contentLength} >> stream\n{$contentStream}endstream\nendobj\n";
-    $objects[] = "8 0 obj << /Type /FontDescriptor /FontName /TimesNewRomanPSMT /Flags 32 /ItalicAngle 0 /Ascent 1024 /Descent -300 /CapHeight 800 /StemV 80 /FontBBox [-1024 -1024 3072 3072] >> endobj\n";
-
-    $pdf = "%PDF-1.7\n";
-    $offsets = [];
-    $currentOffset = strlen($pdf);
-
-    foreach ($objects as $object) {
-        $offsets[] = $currentOffset;
-        $pdf .= $object;
-        $currentOffset += strlen($object);
-    }
-
-    $xrefPosition = $currentOffset;
-    $pdf .= "xref\n0 " . (count($objects) + 1) . "\n0000000000 65535 f \n";
-    foreach ($offsets as $offset) {
-        $pdf .= sprintf("%010d 00000 n \n", $offset);
-    }
-
-    $pdf .= "trailer << /Size " . (count($objects) + 1) . " /Root 1 0 R >>\nstartxref\n{$xrefPosition}\n%%EOF";
-
-    return $pdf;
-}
-
-function packagingAlertNormalizePdfText(string $text): string {
-    $text = str_replace(["\r\n", "\r"], "\n", $text);
-    $text = preg_replace('/\s+/', ' ', $text);
-    return trim($text);
-}
-
-function packagingAlertUtf16beText(string $text, bool $withBom = false): string {
-    $result = $withBom ? "\xFE\xFF" : '';
-    $directional = "\u{202B}" . $text . "\u{202C}";
-    $result .= mb_convert_encoding($directional, 'UTF-16BE', 'UTF-8');
-    return $result;
-}
-
-function packagingAlertBuildToUnicodeCMap(): string {
-    return <<<CMAP
-/CIDInit /ProcSet findresource begin
-12 dict begin
-begincmap
-/CIDSystemInfo
-<< /Registry (Adobe)
-   /Ordering (Identity)
-   /Supplement 0
->> def
-/CMapName /Adobe-Identity-UCS def
-/CMapType 2 def
-1 begincodespacerange
-<0000> <FFFF>
-endcodespacerange
-1 beginbfrange
-<0000> <FFFF> <0000>
-endbfrange
-endcmap
-CMapName currentdict /CMap defineresource pop
-end
-end
-CMAP;
 }
 
 

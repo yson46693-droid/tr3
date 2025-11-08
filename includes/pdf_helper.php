@@ -1,92 +1,133 @@
 <?php
 /**
- * أدوات مساعدة لإنشاء ملفات PDF مع دعم كامل للغة العربية
+ * أدوات مساعدة لإنشاء ملفات PDF عبر خدمة aPDF.io مع دعم كامل للعربية و RTL
  */
 
 if (!defined('ACCESS_ALLOWED')) {
     die('Direct access not allowed');
 }
 
-$autoloadCandidates = [
-    realpath(__DIR__ . '/../vendor/autoload.php'),
-    realpath(dirname(__DIR__, 2) . '/vendor/autoload.php'),
-    realpath(__DIR__ . '/vendor/autoload.php'),
-];
-
-$autoloadLoaded = false;
-
-foreach ($autoloadCandidates as $candidate) {
-    if ($candidate !== false && is_readable($candidate)) {
-        require_once $candidate;
-        $autoloadLoaded = true;
-        break;
-    }
+if (!function_exists('curl_init')) {
+    throw new RuntimeException('امتداد cURL غير مُفعل. يرجى تفعيله لاستخدام aPDF.io.');
 }
 
-if (!$autoloadLoaded) {
-    throw new RuntimeException(
-        'تعذر تحميل ملف Composer autoload. تأكد من رفع مجلد vendor أو تثبيت الاعتمادات باستخدام: composer install'
-    );
+if (!defined('APDF_IO_API_KEY') || APDF_IO_API_KEY === '') {
+    throw new RuntimeException('مفتاح aPDF.io غير مُعرّف. يرجى ضبط القيمة APDF_IO_API_KEY.');
 }
-
-use Mpdf\Config\ConfigVariables;
-use Mpdf\Config\FontVariables;
-use Mpdf\Mpdf;
 
 /**
- * إنشاء نسخة مهيأة من mPDF مع دعم الخطوط العربية و RTL.
+ * إرسال HTML إلى aPDF.io واستلام المحتوى الثنائي لملف PDF.
  *
- * @param array<string, mixed> $overrides
- * @return Mpdf
+ * @param string $html نص HTML الكامل (بما في ذلك <html> و <head>)
+ * @param array<string, mixed> $options خيارات إضافية يتم تمريرها إلى aPDF.io (مثل الهوامش أو الاتجاه)
+ *
+ * @throws RuntimeException عند فشل الطلب أو عدم الحصول على محتوى PDF صالح
+ *
+ * @return string محتوى PDF ثنائي
  */
-function createArabicMpdf(array $overrides = []): Mpdf
+function apdfGeneratePdf(string $html, array $options = []): string
 {
-    if (!class_exists(Mpdf::class)) {
+    $endpoint = defined('APDF_IO_ENDPOINT') ? APDF_IO_ENDPOINT : 'https://api.apdf.io/v1/pdf/html';
+
+    $payload = [
+        'html' => $html,
+        'options' => array_merge([
+            'pageSize' => 'A4',
+            'printBackground' => true,
+            'scale' => 1,
+            'margin' => [
+                'top' => '15mm',
+                'right' => '12mm',
+                'bottom' => '15mm',
+                'left' => '12mm',
+            ],
+        ], $options),
+    ];
+
+    $jsonPayload = json_encode($payload, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
+    if ($jsonPayload === false) {
+        throw new RuntimeException('تعذر ترميز بيانات PDF إلى JSON.');
+    }
+
+    $curl = curl_init($endpoint);
+    curl_setopt_array($curl, [
+        CURLOPT_POST => true,
+        CURLOPT_RETURNTRANSFER => true,
+        CURLOPT_HTTPHEADER => [
+            'Content-Type: application/json',
+            'Accept: application/pdf',
+            'X-API-KEY: ' . APDF_IO_API_KEY,
+        ],
+        CURLOPT_POSTFIELDS => $jsonPayload,
+        CURLOPT_TIMEOUT => 60,
+    ]);
+
+    $response = curl_exec($curl);
+    if ($response === false) {
+        $error = curl_error($curl);
+        curl_close($curl);
+        throw new RuntimeException('خطأ في الاتصال بخدمة aPDF.io: ' . $error);
+    }
+
+    $statusCode = curl_getinfo($curl, CURLINFO_RESPONSE_CODE);
+    $contentType = (string)(curl_getinfo($curl, CURLINFO_CONTENT_TYPE) ?? '');
+    curl_close($curl);
+
+    if ($statusCode >= 400 || stripos($contentType, 'application/pdf') === false) {
+        $preview = function_exists('mb_substr')
+            ? mb_substr($response, 0, 400, 'UTF-8')
+            : substr($response, 0, 400);
+
         throw new RuntimeException(
-            'لم يتم العثور على مكتبة mPDF. يرجى تثبيتها باستخدام الأمر: composer require mpdf/mpdf'
+            'فشل إنشاء ملف PDF عبر aPDF.io. رمز الاستجابة: '
+            . $statusCode
+            . '. معاينة الاستجابة: '
+            . $preview
         );
     }
 
-    $defaultConfig = (new ConfigVariables())->getDefaults();
-    $defaultFontConfig = (new FontVariables())->getDefaults();
-
-    $fontDirs = $defaultConfig['fontDir'] ?? [];
-    $fontData = $defaultFontConfig['fontdata'] ?? [];
-
-    $projectsFontDir = realpath(__DIR__ . '/../assets/fonts');
-    if ($projectsFontDir && is_dir($projectsFontDir)) {
-        $fontDirs[] = $projectsFontDir;
-    }
-
-    if (!isset($fontData['amiri'])) {
-        $fontData['amiri'] = [
-            'R' => 'Amiri-Regular.ttf',
-            'B' => 'Amiri-Bold.ttf',
-            'I' => 'Amiri-Italic.ttf',
-            'BI' => 'Amiri-BoldItalic.ttf',
-        ];
-    }
-
-    $config = array_merge([
-        'mode'              => 'utf-8',
-        'format'            => 'A4',
-        'directionality'    => 'rtl',
-        'tempDir'           => defined('MPDF_TEMP_PATH') ? MPDF_TEMP_PATH : sys_get_temp_dir(),
-        'fontDir'           => $fontDirs,
-        'fontdata'          => $fontData,
-        'default_font'      => 'amiri',
-        'useSubstitutions'  => true,
-        'useKerning'        => true,
-        'autoLangToFont'    => true,
-    ], $overrides);
-
-    $mpdf = new Mpdf($config);
-    $mpdf->SetDisplayMode('fullpage');
-    $mpdf->SetDirectionality('rtl');
-    $mpdf->autoLangToFont = true;
-    $mpdf->autoScriptToLang = true;
-
-    return $mpdf;
+    return $response;
 }
 
+/**
+ * حفظ ملف PDF من خدمة aPDF.io في مسار محدد.
+ *
+ * ملاحظة: لتغيير محتوى الملف أو الخطوط العربية، قم بتعديل نص HTML الذي تقوم بتمريره لهذه الدالة.
+ *
+ * @param string $html
+ * @param string $filePath
+ * @param array<string, mixed> $options
+ * @return string المسار النهائي لملف PDF
+ */
+function apdfSavePdfToPath(string $html, string $filePath, array $options = []): string
+{
+    $pdfBinary = apdfGeneratePdf($html, $options);
 
+    if (@file_put_contents($filePath, $pdfBinary) === false) {
+        throw new RuntimeException('تعذر حفظ ملف PDF في المسار: ' . $filePath);
+    }
+
+    return $filePath;
+}
+
+/**
+ * إرسال ملف PDF مباشرة إلى المتصفح مع الترويسات المناسبة.
+ *
+ * @param string $html
+ * @param string $fileName اسم الملف المعروض للزائر (يمكن تعديله قبل استدعاء الدالة)
+ * @param array<string, mixed> $options
+ * @param bool $forceDownload استخدم true لفرض التحميل بدلاً من العرض داخل المتصفح
+ * @return void
+ */
+function apdfStreamPdfToBrowser(string $html, string $fileName = 'document.pdf', array $options = [], bool $forceDownload = false): void
+{
+    $pdfBinary = apdfGeneratePdf($html, $options);
+
+    header('Content-Type: application/pdf; charset=utf-8');
+    header(($forceDownload ? 'Content-Disposition: attachment; filename="' : 'Content-Disposition: inline; filename="') . $fileName . '"');
+    header('Content-Length: ' . strlen($pdfBinary));
+    header('Cache-Control: private, must-revalidate, max-age=0');
+
+    echo $pdfBinary;
+    exit;
+}

@@ -11,8 +11,6 @@ if (!defined('ACCESS_ALLOWED')) {
 require_once __DIR__ . '/config.php';
 require_once __DIR__ . '/pdf_helper.php';
 
-use Mpdf\HTMLParserMode;
-
 // التأكد من وجود الدالة getCurrentLanguage
 if (!function_exists('getCurrentLanguage')) {
     function getCurrentLanguage() {
@@ -21,7 +19,7 @@ if (!function_exists('getCurrentLanguage')) {
 }
 
 /**
- * تصدير PDF باستخدام مكتبة mPDF مع دعم كامل للعربية
+ * تصدير PDF باستخدام خدمة aPDF.io مع دعم كامل للعربية و RTL
  *
  * @param array<int, array<string, mixed>> $data
  * @param string $title
@@ -50,6 +48,7 @@ function exportPDF($data, $title, $filters = [])
         }
     }
 
+    // لتغيير محتوى التقرير، عدل الأقسام المبنية داخل المتغير $html أدناه.
     $html = '<div class="report-wrapper">';
     $html .= '<header class="report-header">';
     $html .= '<h1>' . htmlspecialchars($title, ENT_QUOTES, 'UTF-8') . '</h1>';
@@ -94,8 +93,10 @@ function exportPDF($data, $title, $filters = [])
     $html .= '</div>';
 
     $styles = '
+        @page { margin: 15mm 12mm; }
         *, *::before, *::after { box-sizing: border-box; }
-        body { font-family: "Amiri", "Cairo", "DejaVu Sans", sans-serif; direction: ' . $dir . '; text-align: ' . ($dir === 'rtl' ? 'right' : 'left') . '; color:#1f2937; }
+        body { font-family: "Amiri", "Cairo", "DejaVu Sans", sans-serif; direction: ' . $dir . '; text-align: ' . ($dir === 'rtl' ? 'right' : 'left') . '; color:#1f2937; margin:0; background:#ffffff; }
+        /* لتغيير الخط العربي، استبدل أسماء الخطوط في السطر أعلاه أو فعّل رابط Google Fonts داخل الوسم <head>. */
         .report-wrapper { padding: 24px; }
         .report-header { border-bottom: 3px solid #1d4ed8; margin-bottom: 20px; padding-bottom: 16px; text-align: center; }
         .report-header h1 { margin: 0 0 8px; font-size: 24px; color:#0f172a; }
@@ -113,19 +114,20 @@ function exportPDF($data, $title, $filters = [])
 
     $fileName = sanitizeFileName($title) . '_' . date('Y-m-d_His') . '.pdf';
     $filePath = $reportsDir . DIRECTORY_SEPARATOR . $fileName;
+    $langAttr = $dir === 'rtl' ? 'ar' : 'en';
+    $fontHint = '<!-- لإضافة خط عربي من Google Fonts، يمكنك استخدام الرابط التالي (أزل التعليق إذا لزم الأمر):
+    <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Amiri:wght@400;700&display=swap">
+    -->';
 
-    $mpdf = createArabicMpdf([
-        'directionality' => $dir === 'rtl' ? 'rtl' : 'ltr',
-        'default_font'   => 'amiri',
+    $document = '<!DOCTYPE html><html lang="' . $langAttr . '"><head><meta charset="utf-8">'
+        . '<title>' . htmlspecialchars($title, ENT_QUOTES, 'UTF-8') . '</title>'
+        . '<meta name="viewport" content="width=device-width, initial-scale=1">' . $fontHint
+        . '<style>' . $styles . '</style></head><body>' . $html . '</body></html>';
+
+    apdfSavePdfToPath($document, $filePath, [
+        'landscape' => false,
+        'preferCSSPageSize' => true,
     ]);
-
-    if ($dir !== 'rtl') {
-        $mpdf->SetDirectionality('ltr');
-    }
-
-    $mpdf->WriteHTML($styles, HTMLParserMode::HEADER_CSS);
-    $mpdf->WriteHTML($html, HTMLParserMode::HTML_BODY);
-    $mpdf->Output($filePath, \Mpdf\Output\Destination::FILE);
 
     return $filePath;
 }

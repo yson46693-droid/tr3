@@ -9,9 +9,6 @@ if (!defined('ACCESS_ALLOWED')) {
 
 require_once __DIR__ . '/pdf_helper.php';
 
-use Mpdf\HTMLParserMode;
-use Mpdf\Output\Destination;
-
 /**
  * إنشاء ملف PDF لتقرير الكميات المنخفضة
  *
@@ -34,198 +31,83 @@ function dailyLowStockGeneratePdf(array $sections, array $counts): ?string
     $filename = sprintf('low-stock-report-%s.pdf', date('Ymd-His'));
     $filePath = $reportsDir . DIRECTORY_SEPARATOR . $filename;
 
-    $lines = [];
-    $lines[] = 'تقرير الكميات المنخفضة';
-    $lines[] = 'التاريخ: ' . date('Y-m-d H:i');
-    $lines[] = str_repeat('=', 70);
-    $lines[] = 'ملخص الأقسام:';
+    $summaryItems = '';
     foreach ($counts as $key => $value) {
-        $lines[] = sprintf('• %s: %d عنصر منخفض', formatLowStockCountLabel($key), (int)$value);
+        $summaryItems .= '<li><span class="label">' . htmlspecialchars(formatLowStockCountLabel($key), ENT_QUOTES, 'UTF-8')
+            . '</span><span class="value">' . intval($value) . '</span></li>';
     }
-    $lines[] = str_repeat('-', 70);
 
+    // لتغيير محتوى التقرير أو ترتيب الأقسام، عدل طريقة بناء المتغير $sectionsHtml أدناه.
+    $sectionsHtml = '';
     foreach ($sections as $section) {
-        $title = $section['title'] ?? 'قسم غير محدد';
-        $lines[] = $title;
-        $sectionLines = $section['lines'] ?? [];
-        if (empty($sectionLines)) {
-            $lines[] = '  لا توجد عناصر منخفضة في هذا القسم.';
+        $title = htmlspecialchars((string)($section['title'] ?? 'قسم غير محدد'), ENT_QUOTES, 'UTF-8');
+        $details = $section['lines'] ?? [];
+        $itemsList = '';
+
+        if (empty($details)) {
+            $itemsList = '<li class="empty-item">لا توجد عناصر منخفضة في هذا القسم.</li>';
         } else {
-            foreach ($sectionLines as $detail) {
-                $lines[] = '  ' . ltrim($detail);
+            foreach ($details as $detail) {
+                $itemsList .= '<li>' . htmlspecialchars(ltrim((string)$detail), ENT_QUOTES, 'UTF-8') . '</li>';
             }
         }
-        $lines[] = '';
+
+        $sectionsHtml .= '<section class="stock-section"><h3>' . $title . '</h3><ul>' . $itemsList . '</ul></section>';
     }
 
-    $imageInfo = dailyLowStockRenderReportImage($lines);
-    if ($imageInfo === null) {
-        return null;
+    $styles = '
+        @page { margin: 18mm 15mm; }
+        body { font-family: "Amiri", "Cairo", "Segoe UI", Tahoma, sans-serif; direction: rtl; text-align: right; margin: 0; background:#f8fafc; color:#0f172a; }
+        /* لتغيير الخط العربي، استبدل أسماء الخطوط في السطر أعلاه أو فعّل رابط Google Fonts داخل الوسم <head>. */
+        .report-wrapper { padding: 32px; background:#ffffff; border-radius: 16px; box-shadow: 0 12px 40px rgba(15,23,42,0.08); }
+        header { text-align: center; margin-bottom: 24px; }
+        header h1 { margin: 0; font-size: 26px; color:#1d4ed8; }
+        header .meta { display:flex; justify-content:center; gap:16px; flex-wrap:wrap; margin-top:12px; color:#475569; font-size:14px; }
+        header .meta span { background:#e2e8f0; padding:6px 14px; border-radius:999px; }
+        .summary { background:#1d4ed8; color:#ffffff; padding:18px 24px; border-radius:14px; margin-bottom:28px; }
+        .summary h2 { margin:0 0 12px; font-size:18px; }
+        .summary ul { list-style:none; margin:0; padding:0; display:grid; grid-template-columns:repeat(auto-fit, minmax(220px, 1fr)); gap:12px; }
+        .summary li { display:flex; justify-content:space-between; align-items:center; background:rgba(255,255,255,0.15); padding:12px 16px; border-radius:12px; font-size:15px; }
+        .summary .label { font-weight:600; }
+        .summary .value { font-size:17px; font-weight:700; }
+        .stock-section { margin-bottom:24px; padding:20px; border:1px solid #e2e8f0; border-radius:14px; background:#f8fafc; }
+        .stock-section h3 { margin:0 0 12px; font-size:18px; color:#0f172a; }
+        .stock-section ul { list-style:none; margin:0; padding:0; display:flex; flex-direction:column; gap:8px; font-size:14px; color:#1f2937; }
+        .stock-section li { position:relative; padding-right:24px; }
+        .stock-section li::before { content:"•"; position:absolute; right:0; color:#1d4ed8; font-size:18px; top:0; }
+        .stock-section .empty-item { color:#64748b; font-style:italic; }
+    ';
+
+    $fontHint = '<!-- لإضافة خط عربي من Google Fonts، يمكنك استخدام الرابط التالي (أزل التعليق إذا لزم الأمر):
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Amiri:wght@400;700&display=swap">
+-->';
+
+    $body = '<div class="report-wrapper">'
+        . '<header><h1>تقرير الكميات المنخفضة</h1><div class="meta">'
+        . '<span>' . htmlspecialchars(COMPANY_NAME, ENT_QUOTES, 'UTF-8') . '</span>'
+        . '<span>التاريخ: ' . date('Y-m-d H:i') . '</span></div></header>';
+
+    if (!empty($summaryItems)) {
+        $body .= '<section class="summary"><h2>ملخص الأقسام</h2><ul>' . $summaryItems . '</ul></section>';
     }
 
-    $pdfContent = dailyLowStockBuildImagePdf($imageInfo);
-    if ($pdfContent === null) {
-        return null;
-    }
+    $body .= $sectionsHtml . '</div>';
 
-    $bytes = @file_put_contents($filePath, $pdfContent);
-    if ($bytes === false || $bytes === 0) {
-        error_log('Low Stock Report: unable to write PDF - ' . $filePath);
+    $document = '<!DOCTYPE html><html lang="ar"><head><meta charset="utf-8"><title>تقرير الكميات المنخفضة</title>'
+        . '<meta name="viewport" content="width=device-width, initial-scale=1">' . $fontHint
+        . '<style>' . $styles . '</style></head><body>' . $body . '</body></html>';
+
+    try {
+        apdfSavePdfToPath($document, $filePath, [
+            'landscape' => false,
+            'preferCSSPageSize' => true,
+        ]);
+    } catch (Throwable $e) {
+        error_log('Low Stock Report: aPDF.io error - ' . $e->getMessage());
         return null;
     }
 
     return $filePath;
-}
-
-function dailyLowStockRenderReportImage(array $lines): ?array
-{
-    if (!extension_loaded('gd') || !function_exists('imagecreatetruecolor') || !function_exists('imagettftext')) {
-        error_log('Low Stock Report: GD extension or TTF support not available');
-        return null;
-    }
-
-    $fontPath = dailyLowStockFindFontPath();
-    if ($fontPath === null) {
-        error_log('Low Stock Report: no suitable TTF font found');
-        return null;
-    }
-
-    $fontSize = 28;
-    $headerFontSize = 34;
-    $margin = 60;
-    $lineSpacing = (int)ceil($fontSize * 1.6);
-    $headerSpacing = (int)ceil($headerFontSize * 1.6);
-
-    $maxWidth = 0;
-    foreach ($lines as $index => $line) {
-        $size = $index <= 2 ? $headerFontSize : $fontSize;
-        $bbox = imagettfbbox($size, 0, $fontPath, $line);
-        if ($bbox === false) {
-            continue;
-        }
-        $width = max($bbox[2], $bbox[4]) - min($bbox[0], $bbox[6]);
-        $maxWidth = max($maxWidth, (int)ceil($width));
-    }
-
-    if ($maxWidth === 0) {
-        $maxWidth = 800;
-    }
-
-    $imageWidth = $maxWidth + ($margin * 2);
-    $imageHeight = $margin * 2;
-
-    foreach ($lines as $index => $line) {
-        $imageHeight += $index <= 2 ? $headerSpacing : $lineSpacing;
-    }
-
-    $img = imagecreatetruecolor($imageWidth, $imageHeight);
-    if (!$img) {
-        return null;
-    }
-
-    $white = imagecolorallocate($img, 255, 255, 255);
-    $black = imagecolorallocate($img, 20, 20, 20);
-    imagefill($img, 0, 0, $white);
-
-    $currentY = $margin;
-    foreach ($lines as $index => $line) {
-        $size = $index <= 2 ? $headerFontSize : $fontSize;
-        $spacing = $index <= 2 ? $headerSpacing : $lineSpacing;
-        $bbox = imagettfbbox($size, 0, $fontPath, $line);
-        if ($bbox === false) {
-            $currentY += $spacing;
-            continue;
-        }
-        $textWidth = max($bbox[2], $bbox[4]) - min($bbox[0], $bbox[6]);
-        $x = $imageWidth - $margin - $textWidth;
-        $y = $currentY + $spacing - (int)($spacing * 0.3);
-        imagettftext($img, $size, 0, (int)$x, (int)$y, $black, $fontPath, $line);
-        $currentY += $spacing;
-    }
-
-    ob_start();
-    imagejpeg($img, null, 90);
-    $jpegData = ob_get_clean();
-    imagedestroy($img);
-
-    if ($jpegData === false || $jpegData === '') {
-        return null;
-    }
-
-    return [
-        'jpeg' => $jpegData,
-        'width' => $imageWidth,
-        'height' => $imageHeight,
-        'dpi' => 96,
-    ];
-}
-
-function dailyLowStockBuildImagePdf(array $imageInfo): ?string
-{
-    $jpegData = $imageInfo['jpeg'] ?? null;
-    $widthPx = (int)($imageInfo['width'] ?? 0);
-    $heightPx = (int)($imageInfo['height'] ?? 0);
-    $dpi = (int)($imageInfo['dpi'] ?? 96);
-
-    if ($jpegData === null || $widthPx <= 0 || $heightPx <= 0) {
-        return null;
-    }
-
-    $widthPt = $widthPx * 72 / $dpi;
-    $heightPt = $heightPx * 72 / $dpi;
-
-    $objects = [];
-    $objects[] = "1 0 obj << /Type /Catalog /Pages 2 0 R >> endobj\n";
-    $objects[] = "2 0 obj << /Type /Pages /Kids [3 0 R] /Count 1 >> endobj\n";
-    $objects[] = "3 0 obj << /Type /Page /Parent 2 0 R /Resources << /XObject << /Im1 4 0 R >> >> /MediaBox [0 0 {$widthPt} {$heightPt}] /Contents 5 0 R >> endobj\n";
-    $objects[] = "4 0 obj << /Type /XObject /Subtype /Image /Width {$widthPx} /Height {$heightPx} /ColorSpace /DeviceRGB /BitsPerComponent 8 /Filter /DCTDecode /Length " . strlen($jpegData) . " >> stream\n{$jpegData}\nendstream\nendobj\n";
-
-    $content = "q {$widthPt} 0 0 {$heightPt} 0 0 cm /Im1 Do Q\n";
-    $objects[] = "5 0 obj << /Length " . strlen($content) . " >> stream\n{$content}endstream\nendobj\n";
-
-    $pdf = "%PDF-1.7\n";
-    $offsets = [];
-    $currentOffset = strlen($pdf);
-
-    foreach ($objects as $object) {
-        $offsets[] = $currentOffset;
-        $pdf .= $object;
-        $currentOffset += strlen($object);
-    }
-
-    $xrefPosition = $currentOffset;
-    $pdf .= "xref\n0 " . (count($objects) + 1) . "\n0000000000 65535 f \n";
-    foreach ($offsets as $offset) {
-        $pdf .= sprintf("%010d 00000 n \n", $offset);
-    }
-
-    $pdf .= "trailer << /Size " . (count($objects) + 1) . " /Root 1 0 R >>\nstartxref\n{$xrefPosition}\n%%EOF";
-
-    return $pdf;
-}
-
-function dailyLowStockFindFontPath(): ?string
-{
-    $candidates = [
-        '/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf',
-        '/usr/share/fonts/truetype/dejavu/DejaVuSansCondensed.ttf',
-        '/usr/share/fonts/truetype/noto/NotoSansArabic-Regular.ttf',
-        '/usr/share/fonts/truetype/takao-gothic/TakaoPGothic.ttf',
-        '/usr/share/fonts/truetype/freefont/FreeSans.ttf',
-        '/system/fonts/NotoNaskhArabic-Regular.ttf',
-        '/system/fonts/NotoSansArabic-Regular.ttf',
-        'C:\\Windows\\Fonts\\arial.ttf',
-        'C:\\Windows\\Fonts\\arialuni.ttf',
-        'C:\\Windows\\Fonts\\Tahoma.ttf',
-    ];
-
-    foreach ($candidates as $path) {
-        if (is_readable($path)) {
-            return $path;
-        }
-    }
-
-    return null;
 }
 
 function formatLowStockCountLabel(string $key): string

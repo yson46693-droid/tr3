@@ -91,6 +91,10 @@ define('UPLOAD_PATH', BASE_PATH . '/uploads/');
 define('REPORTS_PATH', BASE_PATH . '/reports/');
 define('ASSETS_PATH', dirname(__DIR__) . '/assets/');
 
+// إعدادات تكامل aPDF.io - يمكن تخزين المفتاح في متغير بيئة APDF_IO_API_KEY لأمان أفضل
+define('APDF_IO_ENDPOINT', 'https://api.apdf.io/v1/pdf/html');
+define('APDF_IO_API_KEY', getenv('APDF_IO_API_KEY') ?: 'UQFfHN7tBIgv0Zjy1nelyZWMJC93m3NMXCWfWe9246a95eed');
+
 // تحديد ASSETS_URL بناءً على موقع الملف
 // استخدام REQUEST_URI للحصول على المسار الكامل (يعمل بشكل أفضل على الموبايل)
 $requestUri = $_SERVER['REQUEST_URI'] ?? '';
