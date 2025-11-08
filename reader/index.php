@@ -434,6 +434,32 @@ $_SESSION['reader_session_id'] = $_SESSION['reader_session_id'] ?? bin2hex(rando
             font-size: 1.1rem;
             padding: 4px;
         }
+        .advanced-settings {
+            margin: 12px auto 0;
+            max-width: 520px;
+            background: rgba(37, 99, 235, 0.08);
+            border: 1px solid rgba(37, 99, 235, 0.2);
+            border-radius: 16px;
+            padding: 12px 18px;
+            display: flex;
+            align-items: flex-start;
+            gap: 12px;
+        }
+        .advanced-settings input[type="checkbox"] {
+            margin-top: 4px;
+            accent-color: #2563eb;
+        }
+        .advanced-settings label {
+            font-weight: 600;
+            color: #1f2a44;
+        }
+        .advanced-settings .tip {
+            display: block;
+            color: #475569;
+            font-size: 0.85rem;
+            font-weight: 400;
+            margin-top: 4px;
+        }
     </style>
 </head>
 <body>
@@ -472,6 +498,13 @@ $_SESSION['reader_session_id'] = $_SESSION['reader_session_id'] ?? bin2hex(rando
             <canvas id="snapshotCanvas" style="display:none;"></canvas>
             <p class="camera-hint">استخدم الكاميرا لمسح رقم التشغيلة من الملصق أو أدخل الرقم يدويًا أدناه.</p>
             <div class="camera-error" id="cameraError">حدث خطأ في الوصول إلى الكاميرا. يرجى التأكد من منح الأذونات.</div>
+            <div class="advanced-settings">
+                <input type="checkbox" id="advancedModeToggle" />
+                <label for="advancedModeToggle">
+                    وضع الدقة العالية
+                    <span class="tip">يتم تحميل مكتبات إضافية عند التفعيل لتحسين قراءة الباركود والنصوص، وقد يستهلك بيانات أكثر.</span>
+                </label>
+            </div>
         </section>
         <form id="scannerForm" autocomplete="off">
             <label for="batchInput">رقم التشغيلة أو الباركود</label>
@@ -588,6 +621,7 @@ $_SESSION['reader_session_id'] = $_SESSION['reader_session_id'] ?? bin2hex(rando
         const cameraError = document.getElementById('cameraError');
         const snapshotCanvas = document.getElementById('snapshotCanvas');
         const snapshotContext = snapshotCanvas.getContext('2d', { willReadFrequently: true });
+        const advancedModeToggle = document.getElementById('advancedModeToggle');
 
         const detectionFormatsPreference = [
             'code_128',
@@ -618,8 +652,22 @@ $_SESSION['reader_session_id'] = $_SESSION['reader_session_id'] ?? bin2hex(rando
         let tesseractScriptPromise = null;
         let tesseractWorkerPromise = null;
         let ocrWorker = null;
+        let advancedMode = false;
 
         const historyEntries = [];
+
+        if (advancedModeToggle) {
+            advancedMode = localStorage.getItem('reader-advanced-mode') === '1';
+            advancedModeToggle.checked = advancedMode;
+            advancedModeToggle.addEventListener('change', () => {
+                advancedMode = advancedModeToggle.checked;
+                if (advancedMode) {
+                    localStorage.setItem('reader-advanced-mode', '1');
+                } else {
+                    localStorage.removeItem('reader-advanced-mode');
+                }
+            });
+        }
 
         function setLoading(isLoading) {
             scanButton.disabled = isLoading;
@@ -723,18 +771,22 @@ $_SESSION['reader_session_id'] = $_SESSION['reader_session_id'] ?? bin2hex(rando
             }
         }
 
+        function stopAdvancedDetection() {
+            stopZxingDetection();
+            if (ocrInterval) {
+                clearInterval(ocrInterval);
+                ocrInterval = null;
+            }
+            ocrProcessing = false;
+        }
+
         function stopDetectionLoops() {
             if (barcodeInterval) {
                 clearInterval(barcodeInterval);
                 barcodeInterval = null;
             }
-            if (ocrInterval) {
-                clearInterval(ocrInterval);
-                ocrInterval = null;
-            }
-            stopZxingDetection();
             barcodeProcessing = false;
-            ocrProcessing = false;
+            stopAdvancedDetection();
         }
 
         function stopZxingDetection() {
@@ -1077,6 +1129,12 @@ $_SESSION['reader_session_id'] = $_SESSION['reader_session_id'] ?? bin2hex(rando
             return true;
         }
 
+        async function startAdvancedDetection() {
+            const zxingReady = await startZxingDetection();
+            const ocrReady = await startOcrDetection();
+            return { zxingReady, ocrReady };
+        }
+
         async function startCamera() {
             if (!navigator.mediaDevices?.getUserMedia) {
                 cameraError.textContent = 'المتصفح لا يدعم تشغيل الكاميرا لهذه الوظيفة.';
@@ -1112,8 +1170,22 @@ $_SESSION['reader_session_id'] = $_SESSION['reader_session_id'] ?? bin2hex(rando
                 barcodeProcessing = false;
                 ocrProcessing = false;
                 const barcodeReady = await startBarcodeDetection();
-                const zxingReady = await startZxingDetection();
-                const ocrReady = await startOcrDetection();
+                let zxingReady = false;
+                let ocrReady = false;
+
+                if (!barcodeReady && !advancedMode) {
+                    cameraError.textContent = 'لم يتمكن القارئ من قراءة الباركود باستخدام الوضع الأساسي. يمكنك تفعيل وضع الدقة العالية لتجربة تقنيات إضافية.';
+                    cameraError.style.display = 'block';
+                }
+
+                if (advancedMode) {
+                    const advancedResults = await startAdvancedDetection();
+                    zxingReady = advancedResults.zxingReady;
+                    ocrReady = advancedResults.ocrReady;
+                } else {
+                    stopAdvancedDetection();
+                }
+
                 if (!barcodeReady && !zxingReady && !ocrReady) {
                     cameraError.textContent = 'تعذر تشغيل آلية قراءة الباركود أو التعرف على النص. يرجى المحاولة لاحقًا أو استخدام الإدخال اليدوي.';
                     cameraError.style.display = 'block';
@@ -1180,6 +1252,23 @@ $_SESSION['reader_session_id'] = $_SESSION['reader_session_id'] ?? bin2hex(rando
         }
         if (stopCameraBtn) {
             stopCameraBtn.addEventListener('click', stopCamera);
+        }
+        if (advancedModeToggle) {
+            advancedModeToggle.addEventListener('change', async () => {
+                if (scanning) {
+                    if (advancedMode) {
+                        const advancedResults = await startAdvancedDetection();
+                        if (!advancedResults.zxingReady && !advancedResults.ocrReady) {
+                            cameraError.textContent = 'تعذر تشغيل وضع الدقة العالية. استمر باستخدام الوضع الأساسي أو أعد تحميل الصفحة.';
+                            cameraError.style.display = 'block';
+                        } else {
+                            cameraError.style.display = 'none';
+                        }
+                    } else {
+                        stopAdvancedDetection();
+                    }
+                }
+            });
         }
         window.addEventListener('beforeunload', () => {
             stopCamera();
