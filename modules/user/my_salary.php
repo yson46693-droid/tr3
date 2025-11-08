@@ -136,6 +136,20 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['
 
 // معالجة طلب السلفة
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['action'] === 'request_advance') {
+    $isAjaxRequest = isset($_SERVER['HTTP_X_REQUESTED_WITH']) && strtolower($_SERVER['HTTP_X_REQUESTED_WITH']) === 'xmlhttprequest';
+    $sendAdvanceAjaxResponse = function ($success, $message, $redirect = null) use ($isAjaxRequest) {
+        if (!$isAjaxRequest) {
+            return false;
+        }
+        header('Content-Type: application/json; charset=utf-8');
+        echo json_encode([
+            'success' => $success,
+            'message' => $message,
+            'redirect' => $redirect
+        ], JSON_UNESCAPED_UNICODE);
+        exit;
+    };
+
     $amount = floatval($_POST['amount'] ?? 0);
     $reason = trim($_POST['reason'] ?? '');
     $month = intval($_POST['month'] ?? $selectedMonth);
@@ -143,18 +157,21 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['
     
     if ($amount <= 0) {
         $error = 'يجب إدخال مبلغ صحيح أكبر من الصفر';
+        $sendAdvanceAjaxResponse(false, $error);
     } else {
         // حساب الراتب الحالي
         $salaryData = getSalarySummary($currentUser['id'], $month, $year);
         
         if (!$salaryData['exists'] && (!isset($salaryData['calculation']) || !$salaryData['calculation']['success'])) {
             $error = 'لا يوجد راتب محسوب لهذا الشهر. يرجى الانتظار حتى يتم حساب الراتب.';
+            $sendAdvanceAjaxResponse(false, $error);
         } else {
             $currentSalary = $salaryData['exists'] ? $salaryData['salary']['total_amount'] : $salaryData['calculation']['total_amount'];
             $maxAdvance = $currentSalary * 0.5; // نصف الراتب
             
             if ($amount > $maxAdvance) {
                 $error = 'قيمة السلفة لا يمكن أن تتجاوز نصف الراتب الحالي (' . formatCurrency($maxAdvance) . ')';
+                $sendAdvanceAjaxResponse(false, $error);
             } else {
                 // التحقق من وجود طلب سلفة معلق
                 $existingRequest = $db->queryOne(
@@ -165,6 +182,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['
                 
                 if ($existingRequest) {
                     $error = 'يوجد طلب سلفة معلق بالفعل';
+                    $sendAdvanceAjaxResponse(false, $error);
                 } else {
                     // التحقق من وجود جدول salary_advances
                     $tableCheck = $db->queryOne("SHOW TABLES LIKE 'salary_advances'");
@@ -200,6 +218,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['
                             ");
                         } catch (Exception $e) {
                             error_log("Error creating salary_advances table: " . $e->getMessage());
+                            $error = 'تعذر إنشاء جدول السلف. يرجى التواصل مع الإدارة.';
+                            $sendAdvanceAjaxResponse(false, $error);
                         }
                     }
                     
@@ -237,7 +257,13 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['
                             'month' => $month,
                             'year' => $year
                         ];
-                        preventDuplicateSubmission($successMessage, $redirectParams, null, $currentUser['role']);
+                        $redirectUrl = getDashboardUrl($currentUser['role']) . '?' . http_build_query($redirectParams);
+                        
+                        // حفظ رسالة النجاح للواجهة الأمامية ولجلسة المستخدم
+                        $_SESSION['success_message'] = $successMessage;
+                        if ($sendAdvanceAjaxResponse(true, $successMessage, $redirectUrl) === false) {
+                            preventDuplicateSubmission($successMessage, $redirectParams, null, $currentUser['role']);
+                        }
                     } catch (Exception $e) {
                         error_log("Salary advance insert error: " . $e->getMessage());
                         
@@ -247,6 +273,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['
                         } else {
                             $error = 'حدث خطأ أثناء حفظ طلب السلفة. يرجى المحاولة مرة أخرى، وإذا استمرت المشكلة تواصل مع الإدارة.';
                         }
+                        $sendAdvanceAjaxResponse(false, $error);
                     }
                 }
             }
@@ -1036,6 +1063,8 @@ $lang = isset($translations) ? $translations : [];
                         <input type="hidden" name="month" value="<?php echo $selectedMonth; ?>">
                         <input type="hidden" name="year" value="<?php echo $selectedYear; ?>">
 
+                        <div id="advanceAlertContainer"></div>
+
                         <div class="row g-3">
                             <!-- مبلغ السلفة -->
                             <div class="col-md-6">
@@ -1312,6 +1341,91 @@ document.getElementById('amount')?.addEventListener('input', function() {
     } else {
         this.setCustomValidity('');
     }
+});
+
+document.addEventListener('DOMContentLoaded', function() {
+    const advanceForm = document.getElementById('advanceRequestForm');
+    if (!advanceForm || typeof fetch !== 'function') {
+        return;
+    }
+
+    const alertContainer = document.getElementById('advanceAlertContainer');
+    const submitButton = advanceForm.querySelector('button[type="submit"]');
+    const originalButtonHtml = submitButton ? submitButton.innerHTML : '';
+
+    advanceForm.addEventListener('submit', function(event) {
+        advanceForm.classList.add('was-validated');
+
+        if (!advanceForm.checkValidity()) {
+            return;
+        }
+
+        event.preventDefault();
+        event.stopImmediatePropagation();
+
+        if (alertContainer) {
+            alertContainer.innerHTML = '';
+        }
+
+        if (submitButton) {
+            submitButton.disabled = true;
+            submitButton.innerHTML = '<span class="spinner-border spinner-border-sm me-2" role="status" aria-hidden="true"></span>جاري الإرسال...';
+        }
+
+        const formData = new FormData(advanceForm);
+
+        fetch(window.location.href, {
+            method: 'POST',
+            body: formData,
+            headers: {
+                'X-Requested-With': 'XMLHttpRequest'
+            }
+        })
+            .then(response => {
+                if (!response.ok) {
+                    throw new Error('تعذر الاتصال بالخادم. يرجى المحاولة مرة أخرى.');
+                }
+                return response.json();
+            })
+            .then(data => {
+                const alert = document.createElement('div');
+                alert.className = 'alert alert-dismissible fade show ' + (data.success ? 'alert-success' : 'alert-danger');
+                alert.innerHTML = `<i class="bi ${data.success ? 'bi-check-circle-fill' : 'bi-exclamation-triangle-fill'} me-2"></i>${data.message || (data.success ? 'تم إرسال طلب السلفة بنجاح.' : 'تعذر إرسال طلب السلفة.')}` +
+                    '<button type="button" class="btn-close" data-bs-dismiss="alert"></button>';
+
+                if (alertContainer) {
+                    alertContainer.innerHTML = '';
+                    alertContainer.appendChild(alert);
+                }
+
+                if (data.success) {
+                    advanceForm.reset();
+                    advanceForm.classList.remove('was-validated');
+                    if (data.redirect) {
+                        setTimeout(function() {
+                            window.location.href = data.redirect;
+                        }, 1200);
+                    }
+                }
+            })
+            .catch(error => {
+                const alert = document.createElement('div');
+                alert.className = 'alert alert-danger alert-dismissible fade show';
+                alert.innerHTML = `<i class="bi bi-exclamation-triangle-fill me-2"></i>${error.message || 'تعذر إرسال طلب السلفة.'}` +
+                    '<button type="button" class="btn-close" data-bs-dismiss="alert"></button>';
+
+                if (alertContainer) {
+                    alertContainer.innerHTML = '';
+                    alertContainer.appendChild(alert);
+                }
+            })
+            .finally(() => {
+                if (submitButton) {
+                    submitButton.disabled = false;
+                    submitButton.innerHTML = originalButtonHtml;
+                }
+            });
+    });
 });
 </script>
 

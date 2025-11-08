@@ -191,8 +191,29 @@ function getConsumptionSummary($dateFrom, $dateTo)
             'total' => 0,
             'items' => [],
             'logs' => []
+        ],
+        'raw_damage' => [
+            'total' => 0,
+            'categories' => [],
+            'logs' => []
         ]
     ];
+    $rawDamageMeta = [
+        'honey' => ['label' => 'العسل', 'unit' => 'كجم'],
+        'olive_oil' => ['label' => 'زيت الزيتون', 'unit' => 'لتر'],
+        'beeswax' => ['label' => 'شمع العسل', 'unit' => 'كجم'],
+        'derivatives' => ['label' => 'المشتقات', 'unit' => 'كجم'],
+        'nuts' => ['label' => 'المكسرات', 'unit' => 'كجم']
+    ];
+    foreach ($rawDamageMeta as $categoryKey => $meta) {
+        $summary['raw_damage']['categories'][$categoryKey] = [
+            'label' => $meta['label'],
+            'unit' => $meta['unit'],
+            'total' => 0,
+            'items' => []
+        ];
+    }
+
     foreach ($rows as $row) {
         $totalOut = (float)($row['total_out'] ?? 0);
         $totalIn = (float)($row['total_in'] ?? 0);
@@ -303,6 +324,91 @@ function getConsumptionSummary($dateFrom, $dateTo)
         }
     } catch (Exception $e) {
         error_log('Consumption summary damage aggregation error: ' . $e->getMessage());
+    }
+
+    // معالجة التلفيات في الخامات
+    try {
+        $rawDamageTableCheck = $db->queryOne("SHOW TABLES LIKE 'raw_material_damage_logs'");
+        if (!empty($rawDamageTableCheck)) {
+            $rawDamageLogs = $db->query(
+                "SELECT d.*,
+                        s.name AS supplier_name,
+                        u.full_name AS recorded_by_name
+                 FROM raw_material_damage_logs d
+                 LEFT JOIN suppliers s ON d.supplier_id = s.id
+                 LEFT JOIN users u ON d.created_by = u.id
+                 WHERE DATE(d.created_at) BETWEEN ? AND ?
+                 ORDER BY d.created_at DESC",
+                [$from, $to]
+            );
+
+            $categoryAggregated = [];
+
+            foreach ($rawDamageLogs as $log) {
+                $category = $log['material_category'] ?? '';
+                if (!isset($summary['raw_damage']['categories'][$category])) {
+                    continue;
+                }
+
+                $itemLabel = trim($log['item_label'] ?? 'خام');
+                $variety = trim($log['variety'] ?? '');
+                $supplierName = $log['supplier_name'] ?? 'غير محدد';
+                $unit = $log['unit'] ?? $summary['raw_damage']['categories'][$category]['unit'];
+                $itemName = $itemLabel;
+                if ($variety !== '') {
+                    $itemName .= ' - ' . $variety;
+                }
+
+                $key = md5($category . '|' . $supplierName . '|' . $itemName);
+                if (!isset($categoryAggregated[$category])) {
+                    $categoryAggregated[$category] = [];
+                }
+                if (!isset($categoryAggregated[$category][$key])) {
+                    $categoryAggregated[$category][$key] = [
+                        'name' => $itemName,
+                        'supplier' => $supplierName,
+                        'variety' => $variety,
+                        'unit' => $unit,
+                        'total_damaged' => 0.0,
+                        'entries' => 0,
+                        'last_reason' => null,
+                        'last_recorded_at' => null,
+                        'last_recorded_by' => null
+                    ];
+                }
+
+                $damageQty = (float)($log['quantity'] ?? 0);
+                $categoryAggregated[$category][$key]['total_damaged'] += $damageQty;
+                $categoryAggregated[$category][$key]['entries'] += 1;
+
+                $currentLast = $categoryAggregated[$category][$key]['last_recorded_at'];
+                if ($currentLast === null || strtotime($log['created_at']) > strtotime($currentLast)) {
+                    $categoryAggregated[$category][$key]['last_recorded_at'] = $log['created_at'];
+                    $categoryAggregated[$category][$key]['last_reason'] = $log['reason'] ?? null;
+                    $categoryAggregated[$category][$key]['last_recorded_by'] = $log['recorded_by_name'] ?? null;
+                }
+
+                $summary['raw_damage']['categories'][$category]['total'] += $damageQty;
+                $summary['raw_damage']['total'] += $damageQty;
+            }
+
+            foreach ($categoryAggregated as $category => $items) {
+                foreach ($items as $item) {
+                    $formatted = $item;
+                    $formatted['total_damaged_raw'] = $item['total_damaged'];
+                    $formatted['total_damaged'] = number_format($item['total_damaged'], 3);
+                    $summary['raw_damage']['categories'][$category]['items'][] = $formatted;
+                }
+
+                usort($summary['raw_damage']['categories'][$category]['items'], function ($a, $b) {
+                    return ($b['total_damaged_raw'] ?? 0) <=> ($a['total_damaged_raw'] ?? 0);
+                });
+            }
+
+            $summary['raw_damage']['logs'] = $rawDamageLogs;
+        }
+    } catch (Exception $e) {
+        error_log('Consumption summary raw damage aggregation error: ' . $e->getMessage());
     }
 
     return $summary;

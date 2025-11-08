@@ -13,6 +13,7 @@ require_once __DIR__ . '/../includes/backup.php';
 require_once __DIR__ . '/../includes/activity_summary.php';
 require_once __DIR__ . '/../includes/permissions.php';
 require_once __DIR__ . '/../includes/security.php';
+require_once __DIR__ . '/../includes/path_helper.php';
 
 requireRole('manager');
 
@@ -171,10 +172,67 @@ $pageTitle = isset($lang['manager_dashboard']) ? $lang['manager_dashboard'] : '�
                         <div class="stat-card-description">هذا الشهر</div>
                     </div>
                 </div>
-                
+
+                <?php
+                $quickLinks = [
+                    [
+                        'label' => 'مخزن أدوات التعبئة',
+                        'icon' => 'bi-box-seam',
+                        'url' => getRelativeUrl('manager.php?page=packaging_warehouse')
+                    ],
+                    [
+                        'label' => 'مخزن الخامات',
+                        'icon' => 'bi-box2-heart',
+                        'url' => getRelativeUrl('manager.php?page=raw_materials_warehouse')
+                    ],
+                    [
+                        'label' => 'الموردين',
+                        'icon' => 'bi-truck',
+                        'url' => getRelativeUrl('manager.php?page=suppliers')
+                    ],
+                    [
+                        'label' => 'العملاء',
+                        'icon' => 'bi-people',
+                        'url' => getRelativeUrl('manager.php?page=customers')
+                    ],
+                    [
+                        'label' => 'السيارات',
+                        'icon' => 'bi-car-front',
+                        'url' => getRelativeUrl('manager.php?page=vehicles')
+                    ],
+                    [
+                        'label' => 'نقطة البيع',
+                        'icon' => 'bi-cart4',
+                        'url' => getRelativeUrl('manager.php?page=pos')
+                    ]
+                ];
+                ?>
+
+                <div class="card mt-4">
+                    <div class="card-header d-flex align-items-center justify-content-between">
+                        <h5 class="mb-0"><i class="bi bi-lightning-charge-fill me-2"></i>اختصارات سريعة</h5>
+                        <span class="text-muted small">أكثر الروابط استخداماً في الأسفل</span>
+                    </div>
+                    <div class="card-body">
+                        <div class="row g-3">
+                            <?php foreach ($quickLinks as $shortcut): ?>
+                                <div class="col-md-4 col-lg-3 col-sm-6">
+                                    <a href="<?php echo htmlspecialchars($shortcut['url']); ?>" class="btn btn-outline-primary w-100 d-flex align-items-center justify-content-center gap-2">
+                                        <i class="bi <?php echo htmlspecialchars($shortcut['icon']); ?>"></i>
+                                        <span><?php echo htmlspecialchars($shortcut['label']); ?></span>
+                                    </a>
+                                </div>
+                            <?php endforeach; ?>
+                        </div>
+                    </div>
+                </div>
+ 
             <?php elseif ($page === 'invoices'): ?>
                 <?php include __DIR__ . '/../modules/accountant/invoices.php'; ?>
                 
+            <?php elseif ($page === 'production_tasks'): ?>
+                <?php include __DIR__ . '/../modules/manager/production_tasks.php'; ?>
+
             <?php elseif ($page === 'approvals'): ?>
                 <h2><i class="bi bi-check-circle me-2"></i><?php echo isset($lang['approvals']) ? $lang['approvals'] : 'الموافقات'; ?></h2>
                 
