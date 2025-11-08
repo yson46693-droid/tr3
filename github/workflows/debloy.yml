@@ -24,6 +24,8 @@ jobs:
           exclude: |
             **/.git*
             **/.git*/**
+            **/.github/**
+            **/.cursor/**
             **/node_modules/**
             **/.DS_Store
             **/Thumbs.db
