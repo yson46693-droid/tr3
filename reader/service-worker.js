@@ -35,23 +35,49 @@ self.addEventListener('fetch', (event) => {
     return;
   }
 
-  event.respondWith(
-    caches.match(request).then((cachedResponse) => {
-      const fetchPromise = fetch(request)
-        .then((networkResponse) => {
-          if (
-            networkResponse &&
-            networkResponse.status === 200 &&
-            networkResponse.type === 'basic'
-          ) {
-            const responseToCache = networkResponse.clone();
-            caches.open(CACHE_NAME).then((cache) => cache.put(request, responseToCache));
-          }
-          return networkResponse.clone();
-        })
-        .catch(() => cachedResponse || caches.match('./index.php'));
+  const url = new URL(request.url);
 
-      return cachedResponse || fetchPromise;
-    })
+  if (url.pathname.endsWith('/api.php')) {
+    event.respondWith(
+      fetch(request).catch(() =>
+        new Response(
+          JSON.stringify({ success: false, message: 'لا يوجد اتصال بالشبكة.' }),
+          {
+            status: 503,
+            headers: { 'Content-Type': 'application/json; charset=utf-8' }
+          }
+        )
+      )
+    );
+    return;
+  }
+
+  const acceptsHTML = request.headers.get('accept')?.includes('text/html');
+
+  if (acceptsHTML) {
+    event.respondWith(
+      fetch(request)
+        .then((networkResponse) => {
+          if (networkResponse.status === 200) {
+            const responseClone = networkResponse.clone();
+            caches.open(CACHE_NAME).then((cache) => cache.put(request, responseClone));
+          }
+          return networkResponse;
+        })
+        .catch(() => caches.match(request).then((cached) => cached || caches.match('./index.php')))
+    );
+    return;
+  }
+
+  event.respondWith(
+    fetch(request)
+      .then((networkResponse) => {
+        if (networkResponse.status === 200) {
+          const responseClone = networkResponse.clone();
+          caches.open(CACHE_NAME).then((cache) => cache.put(request, responseClone));
+        }
+        return networkResponse;
+      })
+      .catch(() => caches.match(request))
   );
 });

@@ -30,8 +30,8 @@ $_SESSION['reader_session_id'] = $_SESSION['reader_session_id'] ?? bin2hex(rando
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <meta name="theme-color" content="#1d4ed8">
     <link rel="manifest" href="manifest.json">
-    <link rel="icon" type="image/svg+xml" href="assets/icon.svg">
-    <link rel="apple-touch-icon" href="assets/icon-512.png">
+    <link rel="icon" type="image/svg+xml" href="/v1/assets/icons/icon-192x192.svg">
+    <link rel="apple-touch-icon" href="/v1/assets/icons/icon-180x180.svg">
     <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.min.css">
     <title>قارئ أرقام التشغيلات</title>
     <link rel="preconnect" href="https://fonts.googleapis.com">
@@ -221,9 +221,13 @@ $_SESSION['reader_session_id'] = $_SESSION['reader_session_id'] ?? bin2hex(rando
             color: #475569;
         }
         @media (max-width: 640px) {
+            body {
+                padding: 16px 8px;
+            }
             .reader-wrapper {
-                padding: 28px;
-                border-radius: 18px;
+                padding: 22px 18px;
+                border-radius: 16px;
+                margin: 0;
             }
             .branding {
                 flex-direction: column;
@@ -237,6 +241,16 @@ $_SESSION['reader_session_id'] = $_SESSION['reader_session_id'] ?? bin2hex(rando
             .top-bar {
                 flex-direction: column;
                 align-items: stretch;
+                gap: 8px;
+            }
+            .camera-section {
+                padding: 18px;
+            }
+            .camera-preview {
+                min-height: 240px;
+            }
+            .camera-actions button {
+                width: 100%;
             }
             .input-group {
                 flex-direction: column;
@@ -244,6 +258,10 @@ $_SESSION['reader_session_id'] = $_SESSION['reader_session_id'] ?? bin2hex(rando
             }
             .input-group button {
                 width: 100%;
+            }
+            .floating-tip {
+                inset-inline: 12px;
+                bottom: 18px;
             }
         }
         .camera-section {
@@ -343,12 +361,61 @@ $_SESSION['reader_session_id'] = $_SESSION['reader_session_id'] ?? bin2hex(rando
             margin-top: 12px;
             text-align: center;
         }
+        .floating-tip {
+            position: fixed;
+            bottom: 24px;
+            inset-inline: 16px;
+            padding: 0;
+            background: rgba(15, 23, 42, 0.88);
+            color: #fff;
+            border-radius: 18px;
+            box-shadow: 0 20px 35px rgba(15, 23, 42, 0.35);
+            z-index: 1100;
+            transform: translateY(30px);
+            opacity: 0;
+            pointer-events: none;
+            transition: transform 0.3s ease, opacity 0.3s ease;
+        }
+        .floating-tip.visible {
+            transform: translateY(0);
+            opacity: 1;
+            pointer-events: auto;
+        }
+        .floating-tip .tip-content {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            padding: 16px 20px;
+        }
+        .floating-tip .tip-icon {
+            width: 36px;
+            height: 36px;
+            border-radius: 50%;
+            background: rgba(59, 130, 246, 0.95);
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 1.2rem;
+        }
+        .floating-tip .tip-text {
+            flex: 1;
+            font-size: 0.95rem;
+            line-height: 1.5;
+        }
+        .floating-tip .tip-close {
+            background: none;
+            border: none;
+            color: rgba(255, 255, 255, 0.75);
+            cursor: pointer;
+            font-size: 1.1rem;
+            padding: 4px;
+        }
     </style>
 </head>
 <body>
     <div class="reader-wrapper">
         <div class="branding">
-            <img src="assets/icon.svg" alt="شعار القارئ" loading="lazy">
+            <img src="/v1/assets/icons/icon-192x192.svg" alt="شعار القارئ" loading="lazy">
             <div>
                 <h1>قارئ باركود التشغيلات</h1>
                 <p>حل سريع وآمن للوصول إلى بيانات التشغيلات باستخدام أجهزة سطح المكتب أو الهواتف الذكية.</p>
@@ -357,6 +424,13 @@ $_SESSION['reader_session_id'] = $_SESSION['reader_session_id'] ?? bin2hex(rando
         <div class="top-bar">
             <span class="tag" id="sessionIndicator">جلسة آمنة</span>
             <button class="install-button" id="installButton">تثبيت التطبيق</button>
+        </div>
+        <div class="floating-tip" id="installTip" hidden>
+            <div class="tip-content">
+                <span class="tip-icon"><i class="bi bi-download"></i></span>
+                <div class="tip-text" id="installTipMessage">يمكنك تثبيت القارئ كتطبيق واستخدامه بلا متصفح.</div>
+                <button type="button" class="tip-close" id="dismissInstallTip"><i class="bi bi-x-lg"></i></button>
+            </div>
         </div>
         <section class="camera-section" id="cameraSection">
             <div class="camera-actions">
@@ -371,7 +445,8 @@ $_SESSION['reader_session_id'] = $_SESSION['reader_session_id'] ?? bin2hex(rando
                 <video id="video" autoplay playsinline></video>
                 <div class="scan-overlay"><div class="scan-line"></div></div>
             </div>
-            <p class="camera-hint">استخدم الكاميرا لمسح الباركود مباشرة، أو أدخل الرقم يدويًا أدناه.</p>
+            <canvas id="snapshotCanvas" style="display:none;"></canvas>
+            <p class="camera-hint">استخدم الكاميرا لمسح رقم التشغيلة من الملصق أو أدخل الرقم يدويًا أدناه.</p>
             <div class="camera-error" id="cameraError">حدث خطأ في الوصول إلى الكاميرا. يرجى التأكد من منح الأذونات.</div>
         </section>
         <form id="scannerForm" autocomplete="off">
@@ -392,20 +467,67 @@ $_SESSION['reader_session_id'] = $_SESSION['reader_session_id'] ?? bin2hex(rando
         <div class="history" id="historyLog" hidden></div>
     </div>
 
-    <script src="https://unpkg.com/quagga@0.12.1/dist/quagga.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/tesseract.js@4/dist/tesseract.min.js"></script>
     <script>
     (function() {
         const installButton = document.getElementById('installButton');
+        const installTip = document.getElementById('installTip');
+        const installTipMessage = document.getElementById('installTipMessage');
+        const dismissInstallTip = document.getElementById('dismissInstallTip');
         let deferredPrompt = null;
+        let currentTipKey = null;
+
+        const TIP_KEY = 'reader-install-tip-dismissed';
+        const IOS_TIP_KEY = 'reader-ios-tip-dismissed';
+
+        function showTip(message, storageKey) {
+            if (storageKey && localStorage.getItem(storageKey)) {
+                return;
+            }
+            currentTipKey = storageKey || null;
+            installTipMessage.textContent = message;
+            installTip.hidden = false;
+            requestAnimationFrame(() => installTip.classList.add('visible'));
+        }
+
+        function hideTip(storageKey) {
+            const keyToStore = storageKey || currentTipKey;
+            installTip.classList.remove('visible');
+            setTimeout(() => {
+                installTip.hidden = true;
+            }, 250);
+            if (keyToStore) {
+                localStorage.setItem(keyToStore, '1');
+            }
+            currentTipKey = null;
+        }
+
+        dismissInstallTip.addEventListener('click', () => hideTip());
 
         window.addEventListener('beforeinstallprompt', (event) => {
             event.preventDefault();
             deferredPrompt = event;
             installButton.style.display = 'inline-flex';
+            showTip('اضغط على زر "تثبيت التطبيق" لإضافته إلى شاشتك الرئيسية.', TIP_KEY);
         });
+
+        window.addEventListener('appinstalled', () => {
+            hideTip(TIP_KEY);
+            localStorage.setItem('reader-app-installed', '1');
+        });
+
+        const isStandalone = window.matchMedia('(display-mode: standalone)').matches || window.navigator.standalone;
+        const isIos = /iphone|ipad|ipod/.test(window.navigator.userAgent.toLowerCase());
+
+        if (isIos && !isStandalone && !localStorage.getItem(IOS_TIP_KEY)) {
+            setTimeout(() => {
+                showTip('لتثبيت التطبيق على iPhone، اختر مشاركة ثم "أضف إلى الشاشة الرئيسية".', IOS_TIP_KEY);
+            }, 1200);
+        }
 
         installButton.addEventListener('click', async () => {
             if (!deferredPrompt) {
+                hideTip();
                 return;
             }
             installButton.disabled = true;
@@ -413,7 +535,7 @@ $_SESSION['reader_session_id'] = $_SESSION['reader_session_id'] ?? bin2hex(rando
                 deferredPrompt.prompt();
                 const { outcome } = await deferredPrompt.userChoice;
                 if (outcome === 'accepted') {
-                    installButton.textContent = 'تم تثبيت التطبيق';
+                    hideTip(TIP_KEY);
                 }
             } finally {
                 deferredPrompt = null;
@@ -441,10 +563,14 @@ $_SESSION['reader_session_id'] = $_SESSION['reader_session_id'] ?? bin2hex(rando
         const videoContainer = document.getElementById('videoContainer');
         const video = document.getElementById('video');
         const cameraError = document.getElementById('cameraError');
+        const snapshotCanvas = document.getElementById('snapshotCanvas');
+        const snapshotContext = snapshotCanvas.getContext('2d', { willReadFrequently: true });
 
         let currentStream = null;
         let scanning = false;
         let detectionCooldown = false;
+        let ocrInterval = null;
+        let ocrProcessing = false;
 
         const historyEntries = [];
 
@@ -551,22 +677,13 @@ $_SESSION['reader_session_id'] = $_SESSION['reader_session_id'] ?? bin2hex(rando
         }
 
         function stopCamera() {
-            if (window.Quagga) {
-                try {
-                    Quagga.offDetected(onBarcodeDetected);
-                } catch (err) {
-                    // ignore
-                }
-            }
-            if (scanning && window.Quagga) {
-                try {
-                    Quagga.stop();
-                } catch (err) {
-                    console.error('Quagga stop error', err);
-                }
-            }
-
             scanning = false;
+            detectionCooldown = false;
+            if (ocrInterval) {
+                clearInterval(ocrInterval);
+                ocrInterval = null;
+            }
+            ocrProcessing = false;
 
             if (currentStream) {
                 currentStream.getTracks().forEach(track => track.stop());
@@ -576,14 +693,46 @@ $_SESSION['reader_session_id'] = $_SESSION['reader_session_id'] ?? bin2hex(rando
             video.srcObject = null;
             videoContainer.style.display = 'none';
             cameraSection.classList.remove('active');
-            startCameraBtn.style.display = '';
+            startCameraBtn.style.display = 'inline-flex';
             stopCameraBtn.style.display = 'none';
+        }
+
+        async function ensureCameraPermission() {
+            try {
+                if (!navigator.permissions || !navigator.permissions.query) {
+                    return true;
+                }
+                const status = await navigator.permissions.query({ name: 'camera' });
+                if (status.state === 'denied') {
+                    cameraError.textContent = 'تم رفض إذن الكاميرا. الرجاء منح الإذن في إعدادات المتصفح ثم إعادة المحاولة.';
+                    cameraError.style.display = 'block';
+                    return false;
+                }
+                if (status.state === 'prompt') {
+                    try {
+                        const tempStream = await navigator.mediaDevices.getUserMedia({ video: true, audio: false });
+                        tempStream.getTracks().forEach(track => track.stop());
+                    } catch (promptError) {
+                        cameraError.textContent = 'يجب قبول إذن الكاميرا لاستخدام المسح. الرجاء المحاولة مرة أخرى والسماح بالوصول.';
+                        cameraError.style.display = 'block';
+                        return false;
+                    }
+                }
+                return true;
+            } catch (permError) {
+                return true;
+            }
         }
 
         async function startCamera() {
             if (!navigator.mediaDevices?.getUserMedia) {
                 cameraError.textContent = 'المتصفح لا يدعم تشغيل الكاميرا لهذه الوظيفة.';
                 cameraError.style.display = 'block';
+                return;
+            }
+
+            const hasPermission = await ensureCameraPermission();
+            if (!hasPermission) {
                 return;
             }
 
@@ -601,49 +750,68 @@ $_SESSION['reader_session_id'] = $_SESSION['reader_session_id'] ?? bin2hex(rando
                 videoContainer.style.display = 'block';
                 cameraSection.classList.add('active');
                 startCameraBtn.style.display = 'none';
-                stopCameraBtn.style.display = '';
+                stopCameraBtn.style.display = 'inline-flex';
                 cameraError.style.display = 'none';
 
-                if (!window.Quagga) {
-                    cameraError.textContent = 'تعذر تحميل قارئ الباركود. تحقق من الاتصال بالإنترنت.';
-                    cameraError.style.display = 'block';
-                    return;
-                }
+                scanning = true;
+                detectionCooldown = false;
+                ocrProcessing = false;
 
-                Quagga.init({
-                    inputStream: {
-                        name: 'Live',
-                        type: 'LiveStream',
-                        target: video,
-                        constraints
-                    },
-                    decoder: {
-                        readers: [
-                            'code_128_reader',
-                            'ean_reader',
-                            'ean_8_reader',
-                            'code_39_reader',
-                            'codabar_reader',
-                            'upc_reader',
-                            'upc_e_reader',
-                            'i2of5_reader'
-                        ]
-                    },
-                    locate: true
-                }, (err) => {
-                    if (err) {
-                        console.error('Quagga init error:', err);
-                        cameraError.textContent = 'حدث خطأ أثناء تهيئة قارئ الباركود.';
-                        cameraError.style.display = 'block';
-                        stopCamera();
+                const captureFrame = async () => {
+                    if (!scanning || detectionCooldown || ocrProcessing || !window.Tesseract) {
                         return;
                     }
-                    detectionCooldown = false;
-                    Quagga.start();
-                    scanning = true;
-                });
+                    if (video.readyState < 2 || video.videoWidth === 0) {
+                        return;
+                    }
 
-                Quagga.onDetected(onBarcodeDetected);
+                    ocrProcessing = true;
+                    const width = video.videoWidth;
+                    const height = video.videoHeight;
+                    snapshotCanvas.width = width;
+                    snapshotCanvas.height = height;
+                    snapshotContext.drawImage(video, 0, 0, width, height);
+
+                    try {
+                        const result = await Tesseract.recognize(snapshotCanvas, 'eng', {
+                            logger: () => {}
+                        });
+                        const rawText = (result?.data?.text || '').replace(/\s+/g, ' ').trim();
+                        if (!rawText) {
+                            return;
+                        }
+
+                        let candidate = '';
+                        const batchMatch = rawText.match(/BATCH[:\s-]*([A-Z0-9\-]+)/i);
+                        if (batchMatch && batchMatch[1]) {
+                            candidate = 'BATCH: ' + batchMatch[1].replace(/[^A-Z0-9\-]/gi, '').toUpperCase();
+                        } else {
+                            const numericMatch = rawText.match(/\d{6,}/);
+                            if (numericMatch) {
+                                candidate = numericMatch[0];
+                            }
+                        }
+
+                        if (candidate) {
+                            detectionCooldown = true;
+                            batchInput.value = candidate;
+                            batchInput.focus();
+                            setTimeout(() => form.requestSubmit(), 200);
+                            setTimeout(() => {
+                                detectionCooldown = false;
+                            }, 3000);
+                            stopCamera();
+                        }
+                    } catch (ocrError) {
+                        console.error('OCR error:', ocrError);
+                    } finally {
+                        ocrProcessing = false;
+                    }
+                };
+
+                ocrInterval = setInterval(captureFrame, 2000);
+                captureFrame();
+
             } catch (error) {
                 console.error('Camera error:', error);
                 let message = 'تعذر الوصول إلى الكاميرا. يرجى السماح بالوصول أو التحقق من الجهاز.';
@@ -656,30 +824,6 @@ $_SESSION['reader_session_id'] = $_SESSION['reader_session_id'] ?? bin2hex(rando
                 cameraError.style.display = 'block';
                 stopCamera();
             }
-        }
-
-        function onBarcodeDetected(result) {
-            if (detectionCooldown) {
-                return;
-            }
-            const code = result?.codeResult?.code?.trim();
-            if (!code) {
-                return;
-            }
-
-            detectionCooldown = true;
-            let batchNumber = code;
-            if (!batchNumber.startsWith('BATCH:') && /^\d{8}/.test(batchNumber)) {
-                batchNumber = 'BATCH: ' + batchNumber;
-            }
-
-            batchInput.value = batchNumber;
-            batchInput.focus();
-            setTimeout(() => form.requestSubmit(), 200);
-            setTimeout(() => {
-                detectionCooldown = false;
-            }, 2000);
-            stopCamera();
         }
 
         form.addEventListener('submit', async (event) => {
