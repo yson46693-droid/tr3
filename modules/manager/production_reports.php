@@ -39,7 +39,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             $_SESSION['error_message'] = $result['message'] ?? 'تعذر إنشاء التقرير.';
         }
     }
-    preventDuplicateSubmission(null, ['page' => 'production_reports'], null, 'manager');
+    preventDuplicateSubmission(null, ['page' => 'reports', 'section' => 'production_reports'], null, 'manager');
 }
 
 function renderConsumptionTable($items, $includeCategory = false)
@@ -266,7 +266,7 @@ $csrfToken = generateCSRFToken();
 
 ?>
 
-<div class="d-flex justify-content-between align-items-center mb-4">
+<div class="d-flex justify-content-between align-items-center mb-4" id="productionReportsSection">
     <div>
         <h2 class="mb-1"><i class="bi bi-graph-up-arrow me-2"></i>تقارير الإنتاج</h2>
         <p class="text-muted mb-0">متابعة استهلاك أدوات التعبئة والمواد الخام</p>
@@ -274,6 +274,7 @@ $csrfToken = generateCSRFToken();
     <div class="d-flex gap-2">
         <form method="post" class="d-inline">
             <input type="hidden" name="csrf_token" value="<?php echo htmlspecialchars($csrfToken); ?>">
+            <input type="hidden" name="section" value="production_reports">
             <input type="hidden" name="report_scope" value="daily">
             <button class="btn btn-primary">
                 <i class="bi bi-send-check me-1"></i>إرسال تقرير اليوم
@@ -281,6 +282,7 @@ $csrfToken = generateCSRFToken();
         </form>
         <form method="post" class="d-inline">
             <input type="hidden" name="csrf_token" value="<?php echo htmlspecialchars($csrfToken); ?>">
+            <input type="hidden" name="section" value="production_reports">
             <input type="hidden" name="report_scope" value="monthly">
             <button class="btn btn-outline-primary">
                 <i class="bi bi-send-fill me-1"></i>إرسال تقرير الشهر
@@ -371,7 +373,8 @@ $recordsCount = count($combinedRows);
 <div class="card mb-4 shadow-sm">
     <div class="card-body">
         <form method="get" class="row g-3 align-items-end">
-            <input type="hidden" name="page" value="production_reports">
+            <input type="hidden" name="page" value="reports">
+            <input type="hidden" name="section" value="production_reports">
             <div class="col-md-4">
                 <label class="form-label">الفترة</label>
                 <select class="form-select" id="reportPeriod" name="period">
@@ -413,7 +416,12 @@ $recordsCount = count($combinedRows);
     document.addEventListener('DOMContentLoaded', function () {
         const periodSelect = document.getElementById('reportPeriod');
         const dayField = document.getElementById('dayFilterField');
+        const params = new URLSearchParams(window.location.search);
+        const targetSection = document.getElementById('productionReportsSection');
         if (!periodSelect || !dayField) {
+            if (params.get('section') === 'production_reports' && targetSection) {
+                targetSection.scrollIntoView({ behavior: 'smooth', block: 'start' });
+            }
             return;
         }
         const toggleDayField = () => {
@@ -425,6 +433,9 @@ $recordsCount = count($combinedRows);
         };
         periodSelect.addEventListener('change', toggleDayField);
         toggleDayField();
+        if (params.get('section') === 'production_reports' && targetSection) {
+            targetSection.scrollIntoView({ behavior: 'smooth', block: 'start' });
+        }
     });
 </script>
 

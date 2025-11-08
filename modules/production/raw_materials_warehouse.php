@@ -14,12 +14,20 @@ require_once __DIR__ . '/../../includes/auth.php';
 require_once __DIR__ . '/../../includes/path_helper.php';
 require_once __DIR__ . '/../../includes/audit_log.php';
 
-requireRole('production');
+$rawMaterialsContext = defined('RAW_MATERIALS_CONTEXT') ? RAW_MATERIALS_CONTEXT : 'production';
+$allowedRoles = ['production'];
+if ($rawMaterialsContext === 'manager') {
+    $allowedRoles[] = 'manager';
+}
+requireRole($allowedRoles);
 
 $currentUser = getCurrentUser();
 $db = db();
 $error = '';
 $success = '';
+
+$dashboardSlug = $rawMaterialsContext === 'manager' ? 'manager' : 'production';
+$dashboardUrl = getDashboardUrl($dashboardSlug);
 
 // الحصول على رسالة النجاح من session
 $sessionSuccess = getSuccessMessage();
@@ -520,8 +528,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 
                 $success = 'تم إضافة العسل بنجاح';
                 // إعادة تحميل الصفحة باستخدام JavaScript
-                echo '<script>window.location.href = "' . getDashboardUrl('production') . '?page=raw_materials_warehouse&section=honey";</script>';
-                echo '<noscript><meta http-equiv="refresh" content="0;url=' . getDashboardUrl('production') . '?page=raw_materials_warehouse&section=honey"></noscript>';
+                echo '<script>window.location.href = "' . $dashboardUrl . '?page=raw_materials_warehouse&section=honey";</script>';
+                echo '<noscript><meta http-equiv="refresh" content="0;url=' . $dashboardUrl . '?page=raw_materials_warehouse&section=honey"></noscript>';
             }
         }
         
@@ -553,8 +561,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     logAudit($currentUser['id'], 'filter_honey', 'honey_filtration', $stockId, null, ['raw' => $rawQuantity, 'filtered' => $filteredQuantity]);
                     
                     $success = 'تمت عملية التصفية بنجاح';
-                    echo '<script>window.location.href = "' . getDashboardUrl('production') . '?page=raw_materials_warehouse&section=honey";</script>';
-                    echo '<noscript><meta http-equiv="refresh" content="0;url=' . getDashboardUrl('production') . '?page=raw_materials_warehouse&section=honey"></noscript>';
+                    echo '<script>window.location.href = "' . $dashboardUrl . '?page=raw_materials_warehouse&section=honey";</script>';
+                    echo '<noscript><meta http-equiv="refresh" content="0;url=' . $dashboardUrl . '?page=raw_materials_warehouse&section=honey"></noscript>';
                 }
             }
         }
@@ -727,7 +735,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                             'تم تسجيل الكمية التالفة بنجاح',
                             ['page' => 'raw_materials_warehouse', 'section' => $sectionRedirect],
                             null,
-                            'production'
+                            $dashboardSlug
                         );
                     }
                 } catch (Exception $e) {
@@ -776,7 +784,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     logAudit($currentUser['id'], 'add_olive_oil', 'olive_oil_stock', $supplierId, null, ['quantity' => $quantity]);
                     
                     $success = 'تم إضافة زيت الزيتون بنجاح';
-                    echo '<script>window.location.href = "' . getDashboardUrl('production') . '?page=raw_materials_warehouse&section=olive_oil";</script>';
+                    echo '<script>window.location.href = "' . $dashboardUrl . '?page=raw_materials_warehouse&section=olive_oil";</script>';
                 }
             } catch (Exception $e) {
                 $error = 'حدث خطأ أثناء إضافة المخزون: ' . $e->getMessage();
@@ -798,7 +806,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 logAudit($currentUser['id'], 'add_olive_oil_template', 'olive_oil_product_templates', null, null, ['product' => $productName, 'quantity' => $oilQuantity]);
                 
                 $success = 'تم إضافة قالب المنتج بنجاح';
-                echo '<script>window.location.href = "' . getDashboardUrl('production') . '?page=raw_materials_warehouse&section=olive_oil";</script>';
+                echo '<script>window.location.href = "' . $dashboardUrl . '?page=raw_materials_warehouse&section=olive_oil";</script>';
             }
         }
         
@@ -823,7 +831,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 logAudit($currentUser['id'], 'add_beeswax', 'beeswax_stock', $supplierId, null, ['weight' => $weight]);
                 
                 $success = 'تم إضافة شمع العسل بنجاح';
-                echo '<script>window.location.href = "' . getDashboardUrl('production') . '?page=raw_materials_warehouse&section=beeswax";</script>';
+                echo '<script>window.location.href = "' . $dashboardUrl . '?page=raw_materials_warehouse&section=beeswax";</script>';
             }
         }
         
@@ -841,7 +849,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 logAudit($currentUser['id'], 'add_beeswax_template', 'beeswax_product_templates', null, null, ['product' => $productName, 'weight' => $waxWeight]);
                 
                 $success = 'تم إضافة قالب المنتج بنجاح';
-                echo '<script>window.location.href = "' . getDashboardUrl('production') . '?page=raw_materials_warehouse&section=beeswax";</script>';
+                echo '<script>window.location.href = "' . $dashboardUrl . '?page=raw_materials_warehouse&section=beeswax";</script>';
             }
         }
         
@@ -869,7 +877,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 logAudit($currentUser['id'], 'add_derivative', 'derivatives_stock', $supplierId, null, ['type' => $derivativeType, 'weight' => $weight]);
                 
                 $success = 'تم إضافة المشتق بنجاح';
-                echo '<script>window.location.href = "' . getDashboardUrl('production') . '?page=raw_materials_warehouse&section=derivatives";</script>';
+                echo '<script>window.location.href = "' . $dashboardUrl . '?page=raw_materials_warehouse&section=derivatives";</script>';
             }
         }
         
@@ -890,7 +898,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 logAudit($currentUser['id'], 'add_derivative_template', 'derivatives_product_templates', null, null, ['product' => $productName, 'type' => $derivativeType, 'weight' => $derivativeWeight]);
                 
                 $success = 'تم إضافة قالب المنتج بنجاح';
-                echo '<script>window.location.href = "' . getDashboardUrl('production') . '?page=raw_materials_warehouse&section=derivatives";</script>';
+                echo '<script>window.location.href = "' . $dashboardUrl . '?page=raw_materials_warehouse&section=derivatives";</script>';
             }
         }
         
@@ -919,7 +927,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 logAudit($currentUser['id'], 'add_single_nuts', 'nuts_stock', $supplierId, null, ['type' => $nutType, 'quantity' => $quantity]);
                 
                 $success = 'تم إضافة المكسرات بنجاح';
-                echo '<script>window.location.href = "' . getDashboardUrl('production') . '?page=raw_materials_warehouse&section=nuts";</script>';
+                echo '<script>window.location.href = "' . $dashboardUrl . '?page=raw_materials_warehouse&section=nuts";</script>';
             }
         }
         
@@ -1006,7 +1014,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     logAudit($currentUser['id'], 'create_mixed_nuts', 'mixed_nuts', $mixedNutsId, null, ['name' => $batchName, 'quantity' => $totalQuantity]);
                     
                     $success = 'تم إنشاء المكسرات المشكلة بنجاح';
-                    echo '<script>window.location.href = "' . getDashboardUrl('production') . '?page=raw_materials_warehouse&section=nuts";</script>';
+                    echo '<script>window.location.href = "' . $dashboardUrl . '?page=raw_materials_warehouse&section=nuts";</script>';
                     
                 } catch (Exception $e) {
                     $db->rollBack();
@@ -1099,7 +1107,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     logAudit($currentUser['id'], 'create_unified_template', 'unified_product_templates', $templateId, null, ['product' => $productName]);
                     
                     $success = 'تم إنشاء قالب المنتج بنجاح';
-                    echo '<script>window.location.href = "' . getDashboardUrl('production') . '?page=raw_materials_warehouse";</script>';
+                    echo '<script>window.location.href = "' . $dashboardUrl . '?page=raw_materials_warehouse";</script>';
                     
                 } catch (Exception $e) {
                     $db->rollBack();

@@ -616,9 +616,14 @@ $stats = [
         $dashboardUrl = rtrim($basePath, '/') . '/dashboard/';
         $dashboardUrl = str_replace('//', '/', $dashboardUrl);
         ?>
-        <a href="<?php echo $dashboardUrl; ?>manager.php?page=import_packaging" class="btn btn-outline-primary">
-            <i class="bi bi-upload me-2"></i>استيراد أدوات التعبئة
-        </a>
+        <div class="d-flex flex-wrap gap-2">
+            <button class="btn btn-primary" data-bs-toggle="modal" data-bs-target="#addMaterialModal">
+                <i class="bi bi-plus-circle me-2"></i>إضافة أداة جديدة
+            </button>
+            <button class="btn btn-outline-secondary" data-bs-toggle="collapse" data-bs-target="#transferSection" aria-expanded="false">
+                <i class="bi bi-arrow-left-right me-2"></i>نقل للمستودعات
+            </button>
+        </div>
     <?php endif; ?>
 </div>
 
@@ -1257,11 +1262,36 @@ function editMaterial(materialId) {
     // حالياً: إعادة توجيه إلى صفحة التعديل
     const currentUrl = window.location.href;
     const urlParams = new URLSearchParams(window.location.search);
-    urlParams.set('edit', '1');
+    urlParams.set('ajax', 'material_details');
     urlParams.set('material_id', materialId);
     urlParams.delete('p');
     
-    window.location.href = window.location.pathname + '?' + urlParams.toString();
+    const apiUrl = window.location.pathname + '?' + urlParams.toString();
+
+    fetch(apiUrl, {
+        method: 'GET',
+        headers: {
+            'Accept': 'application/json',
+        },
+        credentials: 'same-origin'
+    })
+        .then(async response => {
+            if (!response.ok) {
+                const errorText = await response.text();
+                throw new Error('HTTP error! status: ' + response.status + ' - ' + errorText.substring(0, 200));
+            }
+            return response.json();
+        })
+        .then(data => {
+            if (!data.success || !data.material) {
+                throw new Error(data.message || 'تعذر تحميل بيانات الأداة');
+            }
+            openEditModalFromData(data.material);
+        })
+        .catch(error => {
+            console.error('Error loading material data for edit:', error);
+            alert('حدث خطأ أثناء تحميل بيانات الأداة للتعديل. يرجى المحاولة لاحقاً.\n' + (error.message || ''));
+        });
 }
 </script>
 
