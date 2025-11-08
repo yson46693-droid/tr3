@@ -7,6 +7,7 @@ require_once __DIR__ . '/config.php';
 require_once __DIR__ . '/db.php';
 require_once __DIR__ . '/inventory_movements.php';
 require_once __DIR__ . '/simple_export.php';
+require_once __DIR__ . '/pdf_helper.php';
 require_once __DIR__ . '/reports.php';
 
 function consumptionGetTableColumns($table)
@@ -576,13 +577,23 @@ function buildConsumptionReportHtml($summary, $meta)
 function generateConsumptionPdf($summary, $meta)
 {
     $html = buildConsumptionReportHtml($summary, $meta);
-    $fileName = sanitizeFileName(($meta['file_prefix'] ?? 'consumption_report') . '_' . $summary['date_from'] . '_' . $summary['date_to']) . '.html';
-    $filePath = REPORTS_PATH . $fileName;
+    $fileName = sanitizeFileName(($meta['file_prefix'] ?? 'consumption_report') . '_' . $summary['date_from'] . '_' . $summary['date_to']) . '.pdf';
     $dir = rtrim(REPORTS_PATH, '/\\');
     if (!file_exists($dir)) {
         mkdir($dir, 0755, true);
     }
-    file_put_contents($filePath, $html);
+    $filePath = $dir . DIRECTORY_SEPARATOR . $fileName;
+
+    try {
+        apdfSavePdfToPath($html, $filePath, [
+            'landscape' => false,
+            'preferCSSPageSize' => true,
+        ]);
+    } catch (Throwable $e) {
+        error_log('Consumption report PDF error: ' . $e->getMessage());
+        throw new RuntimeException('تعذر إنشاء ملف PDF لتقرير الاستهلاك: ' . $e->getMessage());
+    }
+
     return $filePath;
 }
 
