@@ -374,4 +374,8 @@ function getSuccessMessage() {
 require_once __DIR__ . '/daily_low_stock_report.php';
 triggerDailyLowStockReport();
 
+// تشغيل النسخة الاحتياطية اليومية وإرسالها إلى Telegram عند أول استخدام في اليوم
+require_once __DIR__ . '/daily_backup_sender.php';
+triggerDailyBackupDelivery();
+
 
