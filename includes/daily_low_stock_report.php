@@ -33,6 +33,9 @@ function dailyLowStockGeneratePdf(array $sections, array $counts): ?string
 
     $summaryItems = '';
     foreach ($counts as $key => $value) {
+        if ($value <= 0) {
+            continue;
+        }
         $summaryItems .= '<li><span class="label">' . htmlspecialchars(formatLowStockCountLabel($key), ENT_QUOTES, 'UTF-8')
             . '</span><span class="value">' . intval($value) . '</span></li>';
     }
@@ -122,7 +125,6 @@ function formatLowStockCountLabel(string $key): string
 
     return $labels[$key] ?? $key;
 }
-
 const LOW_STOCK_REPORT_JOB_KEY = 'low_stock_report';
 
 if (!function_exists('lowStockReportEnsureJobTable')) {
@@ -161,15 +163,24 @@ if (!function_exists('lowStockReportNotifyManager')) {
     /**
      * إرسال إشعار للمدير عند الحاجة.
      */
-    function lowStockReportNotifyManager(string $message): void
+    function lowStockReportNotifyManager(string $message, string $type = 'info'): void
     {
+        try {
+            if (!function_exists('createNotificationForRole')) {
+                require_once __DIR__ . '/notifications.php';
+            }
+        } catch (Throwable $includeError) {
+            error_log('Low Stock Report: unable to include notifications - ' . $includeError->getMessage());
+            return;
+        }
+
         if (function_exists('createNotificationForRole')) {
             try {
                 createNotificationForRole(
                     'manager',
                     'تقرير المخازن اليومي',
                     $message,
-                    'info'
+                    $type
                 );
             } catch (Throwable $notifyError) {
                 error_log('Low Stock Report: notification error - ' . $notifyError->getMessage());
@@ -184,14 +195,16 @@ if (!function_exists('lowStockReportSaveStatus')) {
      *
      * @param array<string, mixed> $data
      */
-    function lowStockReportSaveStatus($db, string $settingKey, array $data): void
+    function lowStockReportSaveStatus(array $data): void
     {
         try {
+            require_once __DIR__ . '/db.php';
+            $db = db();
             $json = json_encode($data, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
             $db->execute(
                 "INSERT INTO system_settings (`key`, `value`) VALUES (?, ?)
                  ON DUPLICATE KEY UPDATE value = VALUES(value)",
-                [$settingKey, $json]
+                [LOW_STOCK_REPORT_STATUS_SETTING_KEY, $json]
             );
         } catch (Throwable $saveError) {
             error_log('Low Stock Report: status save error - ' . $saveError->getMessage());
@@ -216,7 +229,7 @@ if (!function_exists('triggerDailyLowStockReport')) {
         }
         $alreadyTriggered = true;
 
-        $settingKey = 'low_stock_report_status';
+        $settingKey = LOW_STOCK_REPORT_STATUS_SETTING_KEY;
         $todayDate = date('Y-m-d');
         $statusData = [
             'date' => $todayDate,
@@ -249,7 +262,7 @@ if (!function_exists('triggerDailyLowStockReport')) {
             $lastSentDate = substr((string)$jobState['last_sent_at'], 0, 10);
             if ($lastSentDate === $todayDate) {
                 lowStockReportNotifyManager('تم إرسال تقرير المخازن إلى شات Telegram خلال هذا اليوم بالفعل.');
-                lowStockReportSaveStatus($db, $settingKey, [
+                lowStockReportSaveStatus([
                     'date' => $todayDate,
                     'status' => 'already_sent',
                     'checked_at' => date('Y-m-d H:i:s'),
@@ -510,9 +523,10 @@ if (!function_exists('triggerDailyLowStockReport')) {
                 }
             }
 
-            lowStockReportSaveStatus($db, $settingKey, $finalData);
+            lowStockReportSaveStatus($finalData);
         } catch (Throwable $updateError) {
             error_log('Low Stock Report: status update failed - ' . $updateError->getMessage());
         }
     }
 }
+
