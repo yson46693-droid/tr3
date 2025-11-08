@@ -43,6 +43,33 @@ $filters = [
 $tableCheck = $db->queryOne("SHOW TABLES LIKE 'packaging_materials'");
 $usePackagingTable = !empty($tableCheck);
 
+// إنشاء جدول تسجيل التلفيات إذا لم يكن موجوداً
+$damageLogTableCheck = $db->queryOne("SHOW TABLES LIKE 'packaging_damage_logs'");
+if (empty($damageLogTableCheck)) {
+    try {
+        $db->execute("
+            CREATE TABLE IF NOT EXISTS `packaging_damage_logs` (
+              `id` int(11) NOT NULL AUTO_INCREMENT,
+              `material_id` int(11) NOT NULL,
+              `material_name` varchar(255) DEFAULT NULL,
+              `source_table` enum('packaging_materials','products') NOT NULL DEFAULT 'packaging_materials',
+              `quantity_before` decimal(15,4) DEFAULT 0.0000,
+              `damaged_quantity` decimal(15,4) NOT NULL,
+              `quantity_after` decimal(15,4) DEFAULT 0.0000,
+              `unit` varchar(50) DEFAULT NULL,
+              `reason` text DEFAULT NULL,
+              `recorded_by` int(11) NOT NULL,
+              `created_at` timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP,
+              PRIMARY KEY (`id`),
+              KEY `material_id` (`material_id`),
+              KEY `recorded_by` (`recorded_by`)
+            ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
+        ");
+    } catch (Exception $e) {
+        error_log("Error creating packaging_damage_logs table: " . $e->getMessage());
+    }
+}
+
 // معالجة طلبات إضافة الكميات
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     $action = $_POST['action'] ?? '';
@@ -140,6 +167,124 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     $db->rollBack();
                 }
                 $error = 'حدث خطأ أثناء تحديث الكمية: ' . $e->getMessage();
+            }
+
+            if (empty($error)) {
+                preventDuplicateSubmission($successMessage, $redirectParams, null, $currentUser['role']);
+            }
+        }
+    } elseif ($action === 'record_packaging_damage') {
+        $materialId = intval($_POST['material_id'] ?? 0);
+        $damagedQuantity = isset($_POST['damaged_quantity']) ? round(floatval($_POST['damaged_quantity']), 4) : 0.0;
+        $reason = trim($_POST['reason'] ?? '');
+
+        if ($materialId <= 0) {
+            $error = 'معرّف الأداة غير صحيح.';
+        } elseif ($damagedQuantity <= 0) {
+            $error = 'يرجى إدخال كمية تالفة صحيحة أكبر من الصفر.';
+        } elseif ($reason === '') {
+            $error = 'يرجى ذكر سبب التلف.';
+        } else {
+            try {
+                $db->beginTransaction();
+
+                if ($usePackagingTable) {
+                    $material = $db->queryOne(
+                        "SELECT id, name, quantity, unit FROM packaging_materials WHERE id = ? AND status = 'active' FOR UPDATE",
+                        [$materialId]
+                    );
+                } else {
+                    $unitColumnCheck = $db->queryOne("SHOW COLUMNS FROM products LIKE 'unit'");
+                    $selectColumns = $unitColumnCheck ? 'id, name, quantity, unit' : 'id, name, quantity';
+                    $material = $db->queryOne(
+                        "SELECT {$selectColumns} FROM products WHERE id = ? AND status = 'active' FOR UPDATE",
+                        [$materialId]
+                    );
+                    if ($unitColumnCheck && $material && !array_key_exists('unit', $material)) {
+                        $material['unit'] = null;
+                    }
+                }
+
+                if (!$material) {
+                    throw new Exception('أداة التعبئة غير موجودة أو غير مفعّلة.');
+                }
+
+                $quantityBefore = floatval($material['quantity'] ?? 0);
+                if ($damagedQuantity > $quantityBefore) {
+                    throw new Exception('الكمية التالفة تتجاوز الكمية المتاحة.');
+                }
+
+                $quantityAfter = max($quantityBefore - $damagedQuantity, 0);
+
+                if ($usePackagingTable) {
+                    $db->execute(
+                        "UPDATE packaging_materials 
+                         SET quantity = ?, updated_at = NOW() 
+                         WHERE id = ?",
+                        [$quantityAfter, $materialId]
+                    );
+                } else {
+                    $db->execute(
+                        "UPDATE products 
+                         SET quantity = ? 
+                         WHERE id = ?",
+                        [$quantityAfter, $materialId]
+                    );
+                }
+
+                $db->execute(
+                    "INSERT INTO packaging_damage_logs 
+                     (material_id, material_name, source_table, quantity_before, damaged_quantity, quantity_after, unit, reason, recorded_by) 
+                     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                    [
+                        $materialId,
+                        $material['name'] ?? null,
+                        $usePackagingTable ? 'packaging_materials' : 'products',
+                        $quantityBefore,
+                        $damagedQuantity,
+                        $quantityAfter,
+                        $material['unit'] ?? null,
+                        mb_substr($reason, 0, 500, 'UTF-8'),
+                        $currentUser['id']
+                    ]
+                );
+
+                logAudit(
+                    $currentUser['id'],
+                    'record_packaging_damage',
+                    $usePackagingTable ? 'packaging_materials' : 'products',
+                    $materialId,
+                    [
+                        'quantity_before' => $quantityBefore,
+                        'damaged_quantity' => $damagedQuantity
+                    ],
+                    [
+                        'quantity_after' => $quantityAfter,
+                        'reason' => mb_substr($reason, 0, 500, 'UTF-8')
+                    ]
+                );
+
+                $db->commit();
+
+                $unitLabel = $material['unit'] ?? 'وحدة';
+                $successMessage = sprintf(
+                    'تم تسجيل %.2f %s تالف من %s.',
+                    $damagedQuantity,
+                    $unitLabel,
+                    $material['name'] ?? ('أداة #' . $materialId)
+                );
+
+                $redirectParams = ['page' => 'packaging_warehouse'];
+                foreach (['search', 'material_id', 'date_from', 'date_to'] as $param) {
+                    if (!empty($_GET[$param])) {
+                        $redirectParams[$param] = $_GET[$param];
+                    }
+                }
+            } catch (Exception $e) {
+                if ($db->inTransaction()) {
+                    $db->rollBack();
+                }
+                $error = 'حدث خطأ أثناء تسجيل التلف: ' . $e->getMessage();
             }
 
             if (empty($error)) {
@@ -665,6 +810,16 @@ $stats = [
                                                 style="padding: 0.2rem 0.4rem; font-size: 0.75rem;">
                                             <i class="bi bi-plus-circle"></i>
                                         </button>
+                                        <button class="btn btn-danger btn-sm"
+                                                data-id="<?php echo $material['id']; ?>"
+                                                data-name="<?php echo htmlspecialchars($material['name'], ENT_QUOTES, 'UTF-8'); ?>"
+                                                data-unit="<?php echo htmlspecialchars(!empty($material['unit']) ? $material['unit'] : 'وحدة', ENT_QUOTES, 'UTF-8'); ?>"
+                                                data-quantity="<?php echo number_format((float)($material['quantity'] ?? 0), 4, '.', ''); ?>"
+                                                onclick="openRecordDamageModal(this)"
+                                                title="تسجيل تالف"
+                                                style="padding: 0.2rem 0.4rem; font-size: 0.75rem;">
+                                            <i class="bi bi-exclamation-octagon"></i>
+                                        </button>
                                         <?php if ($currentUser['role'] === 'manager'): ?>
                                             <button class="btn btn-warning btn-sm" 
                                                     onclick="editMaterial(<?php echo $material['id']; ?>)"
@@ -728,6 +883,14 @@ $stats = [
                                         data-quantity="<?php echo number_format((float)($material['quantity'] ?? 0), 4, '.', ''); ?>"
                                         onclick="openAddQuantityModal(this)">
                                     <i class="bi bi-plus-circle me-2"></i>إضافة كمية
+                                </button>
+                                <button class="btn btn-sm btn-danger flex-fill"
+                                        data-id="<?php echo $material['id']; ?>"
+                                        data-name="<?php echo htmlspecialchars($material['name'], ENT_QUOTES, 'UTF-8'); ?>"
+                                        data-unit="<?php echo htmlspecialchars(!empty($material['unit']) ? $material['unit'] : 'وحدة', ENT_QUOTES, 'UTF-8'); ?>"
+                                        data-quantity="<?php echo number_format((float)($material['quantity'] ?? 0), 4, '.', ''); ?>"
+                                        onclick="openRecordDamageModal(this)">
+                                    <i class="bi bi-exclamation-octagon me-2"></i>تسجيل تالف
                                 </button>
                                 <?php if ($currentUser['role'] === 'manager'): ?>
                                     <button class="btn btn-sm btn-warning flex-fill" onclick="editMaterial(<?php echo $material['id']; ?>)">
@@ -850,6 +1013,62 @@ $stats = [
     </div>
 </div>
 
+<!-- Modal تسجيل تالف -->
+<div class="modal fade" id="recordDamageModal" tabindex="-1">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <form method="POST" id="recordDamageForm">
+                <div class="modal-header bg-danger text-white">
+                    <h5 class="modal-title"><i class="bi bi-exclamation-octagon me-2"></i>تسجيل تالف لأداة التعبئة</h5>
+                    <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+                </div>
+                <div class="modal-body">
+                    <input type="hidden" name="action" value="record_packaging_damage">
+                    <input type="hidden" name="material_id" id="damage_material_id">
+
+                    <div class="mb-3">
+                        <label class="form-label fw-bold">أداة التعبئة</label>
+                        <div class="form-control-plaintext" id="damage_material_name">-</div>
+                    </div>
+
+                    <div class="mb-3">
+                        <label class="form-label fw-bold">الكمية الحالية</label>
+                        <div class="d-flex align-items-center gap-2">
+                            <span class="badge bg-secondary" id="damage_existing">0</span>
+                            <span id="damage_unit" class="text-muted small"></span>
+                        </div>
+                    </div>
+
+                    <div class="mb-3">
+                        <label class="form-label fw-bold">الكمية التالفة <span class="text-danger">*</span></label>
+                        <div class="input-group">
+                            <input type="number"
+                                   step="0.01"
+                                   min="0.01"
+                                   class="form-control"
+                                   name="damaged_quantity"
+                                   id="damage_quantity_input"
+                                   required
+                                   placeholder="0.00">
+                            <span class="input-group-text" id="damage_unit_suffix"></span>
+                        </div>
+                        <small class="text-muted">سيتم خصم الكمية التالفة من المخزون الحالي.</small>
+                    </div>
+
+                    <div class="mb-3">
+                        <label class="form-label fw-bold">سبب التلف <span class="text-danger">*</span></label>
+                        <textarea class="form-control" name="reason" id="damage_reason_input" rows="3" required placeholder="اذكر سبب التلف"></textarea>
+                    </div>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">إلغاء</button>
+                    <button type="submit" class="btn btn-danger">تسجيل التالف</button>
+                </div>
+            </form>
+        </div>
+    </div>
+</div>
+
 <!-- Modal لعرض التفاصيل -->
 <div class="modal fade" id="materialDetailsModal" tabindex="-1">
     <div class="modal-dialog modal-lg">
@@ -918,6 +1137,46 @@ function openAddQuantityModal(trigger) {
     setTimeout(() => {
         quantityInput.focus();
         quantityInput.select();
+    }, 250);
+}
+
+function openRecordDamageModal(trigger) {
+    const modalElement = document.getElementById('recordDamageModal');
+    const form = document.getElementById('recordDamageForm');
+    if (!modalElement || !form) {
+        return;
+    }
+
+    form.reset();
+
+    const dataset = trigger?.dataset || {};
+    const materialId = dataset.id || '';
+    const materialName = dataset.name || '-';
+    const unit = dataset.unit || 'وحدة';
+    const existingQuantity = parseFloat(dataset.quantity || '0') || 0;
+
+    if (!materialId) {
+        console.warn('Material id is missing for damage modal trigger.');
+        return;
+    }
+
+    document.getElementById('damage_material_id').value = materialId;
+    document.getElementById('damage_material_name').textContent = materialName;
+    document.getElementById('damage_existing').textContent = existingQuantity.toLocaleString('ar-EG', {
+        minimumFractionDigits: 2,
+        maximumFractionDigits: 2
+    });
+    document.getElementById('damage_unit').textContent = unit;
+    document.getElementById('damage_unit_suffix').textContent = unit;
+    document.getElementById('damage_quantity_input').value = '';
+    document.getElementById('damage_reason_input').value = '';
+
+    const modal = new bootstrap.Modal(modalElement);
+    modal.show();
+
+    setTimeout(() => {
+        document.getElementById('damage_quantity_input').focus();
+        document.getElementById('damage_quantity_input').select();
     }, 250);
 }
 
