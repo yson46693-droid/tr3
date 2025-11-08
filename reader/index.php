@@ -28,13 +28,17 @@ $_SESSION['reader_session_id'] = $_SESSION['reader_session_id'] ?? bin2hex(rando
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="theme-color" content="#1d4ed8">
+    <link rel="manifest" href="manifest.json">
+    <link rel="icon" type="image/svg+xml" href="assets/icon.svg">
+    <link rel="apple-touch-icon" href="data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAgAAAAIACAIAAAB7GkOtAAAACXBIWXMAAAsSAAALEgHS3X78AAAFwUlEQVR4nO3QMQEAAADCoPVPbQhPoAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAOBeeAAGmEuBSAAAAAElFTkSuQmCC">
     <title>قارئ أرقام التشغيلات</title>
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Tajawal:wght@400;600;700&display=swap" rel="stylesheet">
     <style>
         :root {
-            color-scheme: light dark;
+            color-scheme: light;
         }
         * { box-sizing: border-box; }
         body {
@@ -57,22 +61,60 @@ $_SESSION['reader_session_id'] = $_SESSION['reader_session_id'] ?? bin2hex(rando
             border-radius: 22px;
             padding: 36px;
         }
-        .headline {
+        .branding {
             display: flex;
             align-items: center;
-            justify-content: space-between;
-            gap: 20px;
-            margin-bottom: 32px;
+            gap: 18px;
+            margin-bottom: 28px;
         }
-        .headline h1 {
+        .branding img {
+            width: 72px;
+            height: 72px;
+        }
+        .branding h1 {
             font-size: clamp(1.6rem, 2vw + 1rem, 2.2rem);
             margin: 0;
             font-weight: 700;
             color: #0f1f4b;
         }
-        .scan-status {
-            font-size: 0.9rem;
+        .branding p {
+            margin: 6px 0 0;
             color: #475569;
+            font-size: 0.95rem;
+        }
+        .top-bar {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            flex-wrap: wrap;
+            gap: 12px;
+            margin-bottom: 30px;
+        }
+        .tag {
+            display: inline-flex;
+            align-items: center;
+            gap: 6px;
+            background: rgba(37, 99, 235, 0.15);
+            color: #1d4ed8;
+            padding: 6px 14px;
+            border-radius: 999px;
+            font-size: 0.85rem;
+            font-weight: 600;
+        }
+        .install-button {
+            display: none;
+            padding: 10px 18px;
+            border-radius: 12px;
+            background: linear-gradient(135deg, #0f1f4b 0%, #2563eb 100%);
+            color: #fff;
+            border: none;
+            font-weight: 600;
+            cursor: pointer;
+            box-shadow: 0 10px 20px rgba(37, 99, 235, 0.22);
+            transition: transform 0.2s ease;
+        }
+        .install-button:hover {
+            transform: translateY(-1px);
         }
         form {
             display: grid;
@@ -159,18 +201,7 @@ $_SESSION['reader_session_id'] = $_SESSION['reader_session_id'] ?? bin2hex(rando
             font-weight: 600;
         }
         .card tr + tr td {
-            border-top: 1px solid #e2e8f0;
-        }
-        .tag {
-            display: inline-flex;
-            align-items: center;
-            gap: 6px;
-            background: rgba(37, 99, 235, 0.15);
-            color: #1d4ed8;
-            padding: 6px 14px;
-            border-radius: 999px;
-            font-size: 0.85rem;
-            font-weight: 600;
+            border-top: 1px solid rgba(226, 232, 240, 0.6);
         }
         .muted {
             color: #64748b;
@@ -193,34 +224,41 @@ $_SESSION['reader_session_id'] = $_SESSION['reader_session_id'] ?? bin2hex(rando
                 padding: 28px;
                 border-radius: 18px;
             }
-            .headline {
+            .branding {
                 flex-direction: column;
-                align-items: flex-start;
+                align-items: center;
+                text-align: center;
+            }
+            .branding img {
+                width: 64px;
+                height: 64px;
+            }
+            .top-bar {
+                flex-direction: column;
+                align-items: stretch;
             }
             .input-group {
                 flex-direction: column;
                 align-items: stretch;
             }
-            input[type="text"] {
-                width: 100%;
-            }
             .input-group button {
                 width: 100%;
-            }
-            .card th {
-                width: auto;
             }
         }
     </style>
 </head>
 <body>
     <div class="reader-wrapper">
-        <div class="headline">
+        <div class="branding">
+            <img src="assets/icon.svg" alt="شعار القارئ" loading="lazy">
             <div>
                 <h1>قارئ باركود التشغيلات</h1>
-                <p class="scan-status">الجلسة مؤقتة ويتم إنهاؤها بعد 15 دقيقة من عدم الاستخدام.</p>
+                <p>حل سريع وآمن للوصول إلى بيانات التشغيلات باستخدام أجهزة سطح المكتب أو الهواتف الذكية.</p>
             </div>
+        </div>
+        <div class="top-bar">
             <span class="tag" id="sessionIndicator">جلسة آمنة</span>
+            <button class="install-button" id="installButton">تثبيت التطبيق</button>
         </div>
         <form id="scannerForm" autocomplete="off">
             <label for="batchInput">رقم التشغيلة أو الباركود</label>
@@ -242,6 +280,37 @@ $_SESSION['reader_session_id'] = $_SESSION['reader_session_id'] ?? bin2hex(rando
 
     <script>
     (function() {
+        const installButton = document.getElementById('installButton');
+        let deferredPrompt = null;
+
+        window.addEventListener('beforeinstallprompt', (event) => {
+            event.preventDefault();
+            deferredPrompt = event;
+            installButton.style.display = 'inline-flex';
+        });
+
+        installButton.addEventListener('click', async () => {
+            if (!deferredPrompt) {
+                return;
+            }
+            installButton.disabled = true;
+            try {
+                deferredPrompt.prompt();
+                const { outcome } = await deferredPrompt.userChoice;
+                if (outcome === 'accepted') {
+                    installButton.textContent = 'تم تثبيت التطبيق';
+                }
+            } finally {
+                deferredPrompt = null;
+                installButton.disabled = false;
+                installButton.style.display = 'none';
+            }
+        });
+
+        if ('serviceWorker' in navigator) {
+            navigator.serviceWorker.register('service-worker.js').catch(console.error);
+        }
+
         const form = document.getElementById('scannerForm');
         const batchInput = document.getElementById('batchInput');
         const scanButton = document.getElementById('scanButton');

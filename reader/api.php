@@ -46,11 +46,17 @@ if ($batchNumber === '') {
     exit;
 }
 
+$db = null;
+
 try {
     define('ACCESS_ALLOWED', true);
-    require_once __DIR__ . '/../includes/config.php';
-    require_once __DIR__ . '/../includes/db.php';
-    require_once __DIR__ . '/../includes/batch_numbers.php';
+    $appRoot = realpath(__DIR__ . '/../v1');
+    if (!$appRoot) {
+        throw new RuntimeException('تعذر تحديد مسار تطبيق v1 الرئيسي.');
+    }
+    require_once $appRoot . '/includes/config.php';
+    require_once $appRoot . '/includes/db.php';
+    require_once $appRoot . '/includes/batch_numbers.php';
 } catch (Throwable $e) {
     error_log('Reader bootstrap error: ' . $e->getMessage());
     http_response_code(500);
@@ -62,9 +68,91 @@ try {
 }
 
 try {
+    $db = db();
+
+    $tableCheck = $db->queryOne("SHOW TABLES LIKE 'reader_access_log'");
+    if (empty($tableCheck)) {
+        $db->execute("CREATE TABLE IF NOT EXISTS reader_access_log (
+            id INT AUTO_INCREMENT PRIMARY KEY,
+            session_id VARCHAR(64) NULL,
+            ip_address VARCHAR(45) NULL,
+            batch_number VARCHAR(255) NULL,
+            status ENUM('success','not_found','error','rate_limited','invalid') NOT NULL DEFAULT 'success',
+            message VARCHAR(255) NULL,
+            created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+            INDEX idx_session (session_id),
+            INDEX idx_ip (ip_address),
+            INDEX idx_created_at (created_at)
+        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci");
+    }
+} catch (Throwable $e) {
+    error_log('Reader log table error: ' . $e->getMessage());
+}
+
+$sessionId = $_SESSION['reader_session_id'] ?? null;
+$ipAddress = $_SERVER['REMOTE_ADDR'] ?? null;
+
+if ($db) {
+    try {
+        $perIpLimit = 120; // requests per hour per IP
+        $perSessionLimit = 80; // requests per hour per temporary session
+
+        if ($ipAddress) {
+            $ipCount = $db->queryOne(
+                "SELECT COUNT(*) AS total FROM reader_access_log WHERE ip_address = ? AND created_at >= DATE_SUB(NOW(), INTERVAL 1 HOUR)",
+                [$ipAddress]
+            );
+            if (($ipCount['total'] ?? 0) >= $perIpLimit) {
+                $db->execute(
+                    "INSERT INTO reader_access_log (session_id, ip_address, batch_number, status, message) VALUES (?, ?, ?, 'rate_limited', ?)",
+                    [$sessionId, $ipAddress, $batchNumber ?: null, 'تجاوز الحد المسموح للطلبات لكل ساعة.']
+                );
+                http_response_code(429);
+                echo json_encode([
+                    'success' => false,
+                    'message' => 'تم تجاوز الحد المسموح به للطلبات من هذا العنوان. يرجى المحاولة لاحقًا.'
+                ], JSON_UNESCAPED_UNICODE);
+                exit;
+            }
+        }
+
+        if ($sessionId) {
+            $sessionCount = $db->queryOne(
+                "SELECT COUNT(*) AS total FROM reader_access_log WHERE session_id = ? AND created_at >= DATE_SUB(NOW(), INTERVAL 1 HOUR)",
+                [$sessionId]
+            );
+            if (($sessionCount['total'] ?? 0) >= $perSessionLimit) {
+                $db->execute(
+                    "INSERT INTO reader_access_log (session_id, ip_address, batch_number, status, message) VALUES (?, ?, ?, 'rate_limited', ?)",
+                    [$sessionId, $ipAddress, $batchNumber ?: null, 'تجاوز الحد المسموح للطلبات للجلسة.']
+                );
+                http_response_code(429);
+                echo json_encode([
+                    'success' => false,
+                    'message' => 'تم تجاوز الحد المسموح به للطلبات لهذه الجلسة. يرجى المحاولة لاحقًا.'
+                ], JSON_UNESCAPED_UNICODE);
+                exit;
+            }
+        }
+    } catch (Throwable $e) {
+        error_log('Reader rate limit error: ' . $e->getMessage());
+    }
+}
+
+try {
     $batch = getBatchByNumber($batchNumber);
     if (!$batch) {
         http_response_code(404);
+        if ($db) {
+            try {
+                $db->execute(
+                    "INSERT INTO reader_access_log (session_id, ip_address, batch_number, status, message) VALUES (?, ?, ?, 'not_found', ?)",
+                    [$sessionId, $ipAddress, $batchNumber, 'رقم التشغيلة غير موجود.']
+                );
+            } catch (Throwable $logError) {
+                error_log('Reader log insert error (not found): ' . $logError->getMessage());
+            }
+        }
         echo json_encode([
             'success' => false,
             'message' => 'رقم التشغيلة غير موجود أو غير صحيح.'
@@ -129,9 +217,30 @@ try {
         ]
     ];
 
+    if ($db) {
+        try {
+            $db->execute(
+                "INSERT INTO reader_access_log (session_id, ip_address, batch_number, status, message) VALUES (?, ?, ?, 'success', ?)",
+                [$sessionId, $ipAddress, $batch['batch_number'] ?? $batchNumber, 'نجاح الاستعلام.']
+            );
+        } catch (Throwable $logError) {
+            error_log('Reader log insert error (success): ' . $logError->getMessage());
+        }
+    }
+
     echo json_encode($response, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
 } catch (Throwable $e) {
     error_log('Reader API error: ' . $e->getMessage());
+    if ($db) {
+        try {
+            $db->execute(
+                "INSERT INTO reader_access_log (session_id, ip_address, batch_number, status, message) VALUES (?, ?, ?, 'error', ?)",
+                [$sessionId, $ipAddress, $batchNumber ?: null, 'خطأ داخلي في الخادم.']
+            );
+        } catch (Throwable $logError) {
+            error_log('Reader log insert error (exception): ' . $logError->getMessage());
+        }
+    }
     http_response_code(500);
     echo json_encode([
         'success' => false,
