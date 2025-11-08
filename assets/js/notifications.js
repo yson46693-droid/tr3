@@ -27,10 +27,6 @@ function filterDisplayableNotifications(notifications) {
         const link = (notification.link || '').toString();
         const timestamp = getNotificationTimestamp(notification);
 
-        if (!isNotificationUnread(notification)) {
-            return;
-        }
-
         const containsKeyword = text => {
             if (typeof text !== 'string' || text.trim() === '') {
                 return false;
@@ -405,7 +401,8 @@ function updateNotificationList(notifications) {
             'attendance_checkout': 'bi-door-open'
         }[notification.type] || 'bi-bell';
         
-        const unreadClass = isNotificationUnread(notification) ? 'unread' : '';
+        const unread = isNotificationUnread(notification);
+        const unreadClass = unread ? 'unread' : 'read';
         const timeAgo = getTimeAgo(notification.created_at);
         const recentClass = (() => {
             const timestamp = getNotificationTimestamp(notification);
@@ -415,6 +412,11 @@ function updateNotificationList(notifications) {
         const notificationId = notification.id ?? '';
         const safeTitle = sanitizeText(notification.title || '');
         const safeMessage = sanitizeText(notification.message || '');
+        const markReadButton = unread ? `
+                        <button type="button" class="btn btn-sm btn-outline-secondary notification-mark-read" data-id="${notificationId}" title="تمت الرؤية">
+                            <i class="bi bi-check2 me-1"></i>تم الرؤية
+                        </button>` : `
+                        <span class="badge bg-light text-muted border">تمت الرؤية</span>`;
         
         html += `
             <div class="notification-item ${unreadClass} ${recentClass}" data-id="${notificationId}">
@@ -426,9 +428,7 @@ function updateNotificationList(notifications) {
                         <div class="small text-muted mt-1">${timeAgo}</div>
                     </div>
                     <div class="notification-actions">
-                        <button type="button" class="btn btn-sm btn-outline-secondary notification-mark-read" data-id="${notificationId}" title="تمت الرؤية">
-                            <i class="bi bi-check2 me-1"></i>تم الرؤية
-                        </button>
+                        ${markReadButton}
                         <button type="button" class="btn btn-sm btn-outline-danger notification-delete" data-id="${notificationId}" title="حذف الإشعار">
                             <i class="bi bi-trash me-1"></i>حذف
                         </button>
@@ -444,7 +444,9 @@ function updateNotificationList(notifications) {
     list.querySelectorAll('.notification-item').forEach(item => {
         item.addEventListener('click', function() {
             const notificationId = this.getAttribute('data-id');
-            markNotificationAsRead(notificationId);
+            if (this.classList.contains('unread')) {
+                markNotificationAsRead(notificationId);
+            }
             
                 if (notifications.find(n => (n.id == notificationId || String(n.id) === String(notificationId)) && n.link)) {
                     const notification = notifications.find(n => (n.id == notificationId || String(n.id) === String(notificationId)));
@@ -457,15 +459,7 @@ function updateNotificationList(notifications) {
         button.addEventListener('click', function(event) {
             event.stopPropagation();
             const notificationId = this.getAttribute('data-id');
-            markNotificationAsRead(notificationId).then(() => {
-                const item = this.closest('.notification-item');
-                if (item) {
-                    item.remove();
-                }
-                if (!list.querySelector('.notification-item')) {
-                    list.innerHTML = '<small class="text-muted">لا توجد إشعارات</small>';
-                }
-            }).catch(console.error);
+            markNotificationAsRead(notificationId).catch(console.error);
         });
     });
 

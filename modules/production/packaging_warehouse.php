@@ -775,9 +775,104 @@ $stats = [
     'materials_with_usage' => count($usageData),
     'total_productions' => array_sum(array_column($usageData, 'production_count'))
 ];
+
+$packagingReport = [
+    'generated_at' => date('Y-m-d H:i'),
+    'generated_by' => $currentUser['full_name'] ?? ($currentUser['username'] ?? 'مستخدم'),
+    'total_materials' => count($packagingMaterials),
+    'total_quantity' => 0,
+    'type_breakdown' => [],
+    'top_items' => [],
+    'zero_quantity' => 0,
+    'materials_with_usage' => $stats['materials_with_usage'],
+    'total_used' => $stats['total_used'],
+    'total_productions' => $stats['total_productions'],
+    'last_updated' => null
+];
+
+$lastUpdatedTimestamp = null;
+
+foreach ($packagingMaterials as $material) {
+    $quantity = isset($material['quantity']) ? (float)$material['quantity'] : 0.0;
+    $unit = trim((string)($material['unit'] ?? ''));
+    if ($unit === '') {
+        $unit = 'وحدة';
+    }
+
+    $typeLabel = trim((string)($material['type'] ?? ($material['category'] ?? '')));
+    if ($typeLabel === '') {
+        $typeLabel = 'غير مصنف';
+    }
+
+    $packagingReport['total_quantity'] += $quantity;
+    if ($quantity <= 0) {
+        $packagingReport['zero_quantity']++;
+    }
+
+    if (!isset($packagingReport['type_breakdown'][$typeLabel])) {
+        $packagingReport['type_breakdown'][$typeLabel] = [
+            'count' => 0,
+            'total_quantity' => 0,
+            'units' => []
+        ];
+    }
+
+    $packagingReport['type_breakdown'][$typeLabel]['count']++;
+    $packagingReport['type_breakdown'][$typeLabel]['total_quantity'] += $quantity;
+    if (!isset($packagingReport['type_breakdown'][$typeLabel]['units'][$unit])) {
+        $packagingReport['type_breakdown'][$typeLabel]['units'][$unit] = 0;
+    }
+    $packagingReport['type_breakdown'][$typeLabel]['units'][$unit] += $quantity;
+
+    $materialName = $material['name'] ?? ('أداة #' . ($material['id'] ?? ''));
+    $packagingReport['top_items'][] = [
+        'name' => $materialName,
+        'type' => $typeLabel,
+        'quantity' => $quantity,
+        'unit' => $unit,
+        'code' => $material['material_id'] ?? ($material['id'] ?? null)
+    ];
+
+    if (!empty($material['updated_at'])) {
+        $timestamp = strtotime((string)$material['updated_at']);
+        if ($timestamp !== false && ($lastUpdatedTimestamp === null || $timestamp > $lastUpdatedTimestamp)) {
+            $lastUpdatedTimestamp = $timestamp;
+        }
+    } elseif (!empty($material['created_at'])) {
+        $timestamp = strtotime((string)$material['created_at']);
+        if ($timestamp !== false && ($lastUpdatedTimestamp === null || $timestamp > $lastUpdatedTimestamp)) {
+            $lastUpdatedTimestamp = $timestamp;
+        }
+    }
+}
+
+$packagingReport['types_count'] = count($packagingReport['type_breakdown']);
+
+foreach ($packagingReport['type_breakdown'] as $typeKey => &$breakdownEntry) {
+    $count = max(1, (int)$breakdownEntry['count']);
+    $breakdownEntry['average_quantity'] = $breakdownEntry['total_quantity'] / $count;
+}
+unset($breakdownEntry);
+
+ksort($packagingReport['type_breakdown'], SORT_NATURAL | SORT_FLAG_CASE);
+
+usort($packagingReport['top_items'], static function ($a, $b) {
+    return $b['quantity'] <=> $a['quantity'];
+});
+$packagingReport['top_items'] = array_slice($packagingReport['top_items'], 0, 8);
+
+$packagingReport['last_updated'] = $lastUpdatedTimestamp
+    ? date('Y-m-d H:i', $lastUpdatedTimestamp)
+    : null;
 ?>
-<div class="d-flex justify-content-between align-items-center mb-4">
-    <h2><i class="bi bi-box-seam me-2"></i>مخزن أدوات التعبئة</h2>
+<div class="d-flex flex-wrap justify-content-between align-items-center mb-4 gap-3">
+    <h2 class="mb-0"><i class="bi bi-box-seam me-2"></i>مخزن أدوات التعبئة</h2>
+    <div class="d-flex flex-wrap gap-2">
+        <button type="button" class="btn btn-outline-secondary" id="generatePackagingReportBtn">
+            <i class="bi bi-file-bar-graph me-1"></i>
+            توليد تقرير المخزن
+        </button>
+    </div>
 </div>
 
 <?php if ($error): ?>

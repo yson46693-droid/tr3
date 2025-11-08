@@ -370,4 +370,8 @@ function getSuccessMessage() {
 // ملاحظة: تم نقل كود الإصلاح التلقائي إلى نهاية ملف db.php
 // Note: Auto-fix code moved to end of db.php file
 
+// تشغيل فحص الكميات المنخفضة اليومي عند أول استخدام في اليوم
+require_once __DIR__ . '/daily_low_stock_report.php';
+triggerDailyLowStockReport();
+
 

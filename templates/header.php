@@ -17,6 +17,7 @@ require_once __DIR__ . '/../includes/config.php';
 require_once __DIR__ . '/../includes/auth.php';
 require_once __DIR__ . '/../includes/path_helper.php';
 require_once __DIR__ . '/../includes/notifications.php';
+require_once __DIR__ . '/../includes/packaging_alerts.php';
 
 // تحديد اللغة الحالية
 $currentLang = getCurrentLanguage();
@@ -37,6 +38,10 @@ if (!isset($lang) || empty($lang)) {
 $currentUser = getCurrentUser();
 if ($currentUser && function_exists('handleAttendanceRemindersForUser')) {
     handleAttendanceRemindersForUser($currentUser);
+}
+
+if (function_exists('processDailyPackagingAlert')) {
+    processDailyPackagingAlert();
 }
 ?>
 <!DOCTYPE html>
