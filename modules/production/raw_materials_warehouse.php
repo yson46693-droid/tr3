@@ -3078,3 +3078,168 @@ document.addEventListener('show.bs.modal', function() {
     </button>
 </div>
 <?php endif; ?>
+
+<?php if ($rawMaterialsContext === 'manager'): ?>
+<!-- Modal إنشاء قالب منتج موحد متقدم -->
+<div class="modal fade" id="createTemplateModal" tabindex="-1">
+    <div class="modal-dialog modal-lg">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title"><i class="bi bi-plus-circle me-2"></i>إنشاء قالب منتج متقدم</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <form method="POST">
+                <input type="hidden" name="action" value="create_unified_template">
+                <input type="hidden" name="section" value="<?php echo htmlspecialchars($section); ?>">
+                <div class="modal-body">
+                    <div class="alert alert-info">
+                        <i class="bi bi-info-circle me-2"></i>
+                        القوالب الموحدة تسمح بتحديد المواد الخام وأدوات التعبئة لكل منتج بشكل مسبق، بحيث يمكن استخدام القالب مباشرة عند إنشاء تشغيلات جديدة.
+                    </div>
+
+                    <div class="mb-3">
+                        <label class="form-label">اسم المنتج <span class="text-danger">*</span></label>
+                        <input type="text" class="form-control" name="template_name" placeholder="مثال: خلطة مكسرات فاخرة" required>
+                    </div>
+
+                    <div class="row g-3">
+                        <div class="col-md-6">
+                            <label class="form-label">المورد الرئيسي (اختياري)</label>
+                            <select class="form-select" name="main_supplier_id">
+                                <option value="">-- بدون --</option>
+                                <?php foreach ($allSuppliers as $supplier): ?>
+                                    <option value="<?php echo $supplier['id']; ?>">
+                                        <?php echo htmlspecialchars($supplier['name']); ?> (<?php echo htmlspecialchars($supplier['type'] ?? 'غير محدد'); ?>)
+                                    </option>
+                                <?php endforeach; ?>
+                            </select>
+                            <div class="form-text">يمكن اختيار مورد محدد أو تركه فارغاً ليكون القالب مفتوحاً لكل الموردين.</div>
+                        </div>
+                        <div class="col-md-6">
+                            <label class="form-label">حالة القالب</label>
+                            <select class="form-select" name="template_status">
+                                <option value="active" selected>نشط</option>
+                                <option value="inactive">غير نشط</option>
+                            </select>
+                        </div>
+                    </div>
+
+                    <hr>
+                    <h6 class="mb-3"><i class="bi bi-droplet me-2"></i>المواد الخام</h6>
+
+                    <div class="table-responsive">
+                        <table class="table table-sm align-middle" id="templateRawMaterialsTable">
+                            <thead class="table-light">
+                                <tr>
+                                    <th>نوع المادة</th>
+                                    <th>الكمية</th>
+                                    <th>الوحدة</th>
+                                    <th>المورد</th>
+                                    <th>ملاحظات</th>
+                                    <th></th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                <tr>
+                                    <td>
+                                        <select class="form-select form-select-sm" name="raw_materials[0][type]" required>
+                                            <option value="honey_raw">عسل خام</option>
+                                            <option value="honey_filtered">عسل مصفى</option>
+                                            <option value="olive_oil">زيت زيتون</option>
+                                            <option value="beeswax">شمع العسل</option>
+                                            <option value="derivatives">مشتق</option>
+                                            <option value="nuts">مكسرات</option>
+                                            <option value="other">أخرى</option>
+                                        </select>
+                                    </td>
+                                    <td>
+                                        <input type="number" step="0.001" min="0.001" class="form-control form-control-sm" name="raw_materials[0][quantity]" placeholder="الكمية" required>
+                                    </td>
+                                    <td>
+                                        <input type="text" class="form-control form-control-sm" name="raw_materials[0][unit]" value="كجم">
+                                    </td>
+                                    <td>
+                                        <select class="form-select form-select-sm" name="raw_materials[0][supplier_id]">
+                                            <option value="">-- أي مورد --</option>
+                                            <?php foreach ($allSuppliers as $supplier): ?>
+                                                <option value="<?php echo $supplier['id']; ?>"><?php echo htmlspecialchars($supplier['name']); ?></option>
+                                            <?php endforeach; ?>
+                                        </select>
+                                    </td>
+                                    <td>
+                                        <input type="text" class="form-control form-control-sm" name="raw_materials[0][notes]" placeholder="مثال: عسل سدر">
+                                    </td>
+                                    <td>
+                                        <button type="button" class="btn btn-outline-danger btn-sm remove-row" disabled>
+                                            <i class="bi bi-x"></i>
+                                        </button>
+                                    </td>
+                                </tr>
+                            </tbody>
+                        </table>
+                    </div>
+                    <button type="button" class="btn btn-outline-primary btn-sm" id="addRawMaterialRow">
+                        <i class="bi bi-plus-circle me-1"></i>إضافة مادة خام
+                    </button>
+
+                    <hr>
+                    <h6 class="mb-3"><i class="bi bi-box-seam me-2"></i>أدوات التعبئة</h6>
+
+                    <div class="table-responsive">
+                        <table class="table table-sm align-middle" id="templatePackagingTable">
+                            <thead class="table-light">
+                                <tr>
+                                    <th>مادة التعبئة</th>
+                                    <th>الكمية لكل وحدة</th>
+                                    <th>وحدة القياس</th>
+                                    <th></th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                <tr>
+                                    <td>
+                                        <select class="form-select form-select-sm" name="packaging[0][material_id]">
+                                            <option value="">-- اختر مادة التعبئة --</option>
+                                            <?php foreach ($packagingMaterials as $material): ?>
+                                                <option value="<?php echo $material['id']; ?>">
+                                                    <?php echo htmlspecialchars($material['name']); ?> (<?php echo htmlspecialchars($material['type']); ?>)
+                                                </option>
+                                            <?php endforeach; ?>
+                                        </select>
+                                    </td>
+                                    <td>
+                                        <input type="number" step="0.001" min="0.001" class="form-control form-control-sm" name="packaging[0][quantity]" value="1">
+                                    </td>
+                                    <td>
+                                        <input type="text" class="form-control form-control-sm" name="packaging[0][unit]" value="وحدة">
+                                    </td>
+                                    <td>
+                                        <button type="button" class="btn btn-outline-danger btn-sm remove-row" disabled>
+                                            <i class="bi bi-x"></i>
+                                        </button>
+                                    </td>
+                                </tr>
+                            </tbody>
+                        </table>
+                    </div>
+                    <button type="button" class="btn btn-outline-primary btn-sm" id="addPackagingRow">
+                        <i class="bi bi-plus-circle me-1"></i>إضافة مادة تعبئة
+                    </button>
+
+                    <hr>
+                    <div class="mb-3">
+                        <label class="form-label">ملاحظات إضافية</label>
+                        <textarea class="form-control" name="template_notes" rows="3" placeholder="أي تعليمات خاصة أو ملاحظات لهذا القالب"></textarea>
+                    </div>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">إلغاء</button>
+                    <button type="submit" class="btn btn-primary">
+                        <i class="bi bi-check-circle me-2"></i>إنشاء القالب
+                    </button>
+                </div>
+            </form>
+        </div>
+    </div>
+</div>
+<?php endif; ?>
