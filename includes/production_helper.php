@@ -12,6 +12,59 @@ require_once __DIR__ . '/db.php';
 require_once __DIR__ . '/inventory_movements.php';
 
 /**
+ * التحقق من وجود عمود في جدول مع التخزين المؤقت للنتائج.
+ */
+function productionColumnExists($table, $column) {
+    static $cache = [];
+
+    $cacheKey = $table . '.' . $column;
+    if (array_key_exists($cacheKey, $cache)) {
+        return $cache[$cacheKey];
+    }
+
+    if (!preg_match('/^[a-zA-Z0-9_]+$/', $table) || !preg_match('/^[a-zA-Z0-9_]+$/', $column)) {
+        return false;
+    }
+
+    $db = db();
+
+    try {
+        $result = $db->queryOne("SHOW COLUMNS FROM `{$table}` LIKE '{$column}'");
+        $cache[$cacheKey] = !empty($result);
+    } catch (Exception $e) {
+        error_log("Production Helper: column existence check failed for {$table}.{$column}: " . $e->getMessage());
+        $cache[$cacheKey] = false;
+    }
+
+    return $cache[$cacheKey];
+}
+
+/**
+ * إنشاء تعبير SELECT آمن لعمود قد يكون غير موجود.
+ */
+function getColumnSelectExpression($table, $column, $alias = null, $tableAlias = null) {
+    $alias = $alias ?: $column;
+
+    if (!preg_match('/^[a-zA-Z0-9_]+$/', $alias)) {
+        throw new InvalidArgumentException('Invalid column alias supplied.');
+    }
+
+    $columnExists = productionColumnExists($table, $column);
+    $qualifiedColumn = $tableAlias
+        ? "`{$tableAlias}`.`{$column}`"
+        : "`{$column}`";
+
+    if ($columnExists) {
+        if ($alias !== $column) {
+            return "{$qualifiedColumn} AS `{$alias}`";
+        }
+        return $qualifiedColumn;
+    }
+
+    return "NULL AS `{$alias}`";
+}
+
+/**
  * ربط مواد التغليف بعملية إنتاج
  */
 function linkPackagingToProduction($productionId, $materials) {

@@ -10,6 +10,7 @@ require_once __DIR__ . '/../includes/auth.php';
 require_once __DIR__ . '/../includes/activity_summary.php';
 require_once __DIR__ . '/../includes/notifications.php';
 require_once __DIR__ . '/../includes/path_helper.php';
+require_once __DIR__ . '/../includes/production_helper.php';
 
 requireRole('production');
 
@@ -311,8 +312,9 @@ $pageTitle = isset($lang['production_dashboard']) ? $lang['production_dashboard'
                                 $packagingQuantityColumn = 'quantity';
                             }
 
+                            $packagingNameExpression = getColumnSelectExpression('template_packaging', 'packaging_name', 'packaging_name', 'tp');
                             $packagingItems = $db->query(
-                                "SELECT tp.id, tp.packaging_material_id, tp.packaging_name, tp.{$packagingQuantityColumn} AS quantity, 
+                                "SELECT tp.id, tp.packaging_material_id, {$packagingNameExpression}, tp.{$packagingQuantityColumn} AS quantity, 
                                         COALESCE(pm.unit, tp.unit, 'وحدة') AS unit
                                  FROM template_packaging tp
                                  LEFT JOIN packaging_materials pm ON pm.id = tp.packaging_material_id

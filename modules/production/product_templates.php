@@ -12,6 +12,7 @@ require_once __DIR__ . '/../../includes/db.php';
 require_once __DIR__ . '/../../includes/auth.php';
 require_once __DIR__ . '/../../includes/path_helper.php';
 require_once __DIR__ . '/../../includes/audit_log.php';
+require_once __DIR__ . '/../../includes/production_helper.php';
 
 requireRole(['production', 'manager']);
 
@@ -335,12 +336,13 @@ $lang = isset($translations) ? $translations : [];
         <h5 class="mb-0">قائمة القوالب (<?php echo count($templates); ?>)</h5>
     </div>
     
+    <?php $packagingNameExpression = getColumnSelectExpression('product_template_packaging', 'packaging_name'); ?>
     <div class="row g-4">
         <?php foreach ($templates as $template): ?>
             <?php
             // الحصول على أدوات التعبئة
             $packaging = $db->query(
-                "SELECT packaging_name FROM product_template_packaging WHERE template_id = ?",
+                "SELECT {$packagingNameExpression} FROM product_template_packaging WHERE template_id = ?",
                 [$template['id']]
             );
             

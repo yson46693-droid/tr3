@@ -15,6 +15,7 @@ require_once __DIR__ . '/../../includes/path_helper.php';
 require_once __DIR__ . '/../../includes/batch_numbers.php';
 require_once __DIR__ . '/../../includes/simple_barcode.php';
 require_once __DIR__ . '/../../includes/consumption_reports.php';
+require_once __DIR__ . '/../../includes/production_helper.php';
 
 requireRole(['production', 'accountant', 'manager']);
 
@@ -31,8 +32,9 @@ function checkMaterialsAvailability($db, $templateId, $productionQuantity) {
     $insufficientMaterials = [];
     
     // 1. التحقق من مواد التعبئة
+    $packagingNameExpression = getColumnSelectExpression('product_template_packaging', 'packaging_name');
     $packagingMaterials = $db->query(
-        "SELECT packaging_material_id, packaging_name, quantity_per_unit 
+        "SELECT packaging_material_id, quantity_per_unit, {$packagingNameExpression}
          FROM product_template_packaging 
          WHERE template_id = ?",
         [$templateId]
@@ -703,8 +705,11 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 
                 if ($isUnifiedTemplate) {
                     // قالب موحد - الحصول على أدوات التعبئة
+                    $packagingNameExpression = getColumnSelectExpression('template_packaging', 'packaging_name', 'packaging_name', 'tp');
                     $packagingItems = $db->query(
-                        "SELECT id, packaging_material_id, packaging_name, quantity_per_unit FROM template_packaging WHERE template_id = ?",
+                        "SELECT tp.id, tp.packaging_material_id, {$packagingNameExpression}, tp.quantity_per_unit 
+                         FROM template_packaging tp 
+                         WHERE tp.template_id = ?",
                         [$templateId]
                     );
                     $packagingIds = array_filter(array_map(function($p) { return $p['packaging_material_id'] ?? null; }, $packagingItems));
