@@ -270,6 +270,75 @@ $params[] = $offset;
 
 $finalProducts = $db->query($sql, $params);
 
+$totalQuantitySum = 0.0;
+$totalProductionCountSum = 0;
+$totalEstimatedValue = 0.0;
+
+if (is_array($finalProducts)) {
+    foreach ($finalProducts as $product) {
+        $productQuantity = (float)($product['total_quantity'] ?? 0);
+        $productOperations = (int)($product['production_count'] ?? 0);
+        $productUnitPrice = isset($product['unit_price']) ? (float)$product['unit_price'] : 0.0;
+
+        $totalQuantitySum += $productQuantity;
+        $totalProductionCountSum += $productOperations;
+
+        if ($productUnitPrice > 0) {
+            $totalEstimatedValue += $productQuantity * $productUnitPrice;
+        }
+    }
+}
+
+$statusLabels = [
+    'pending' => 'معلّق',
+    'approved' => 'موافق عليه',
+    'completed' => 'مكتمل',
+    'rejected' => 'مرفوض'
+];
+
+$productDetailsMap = [];
+if (!empty($finalProducts)) {
+    $productIds = array_column($finalProducts, 'product_id');
+    $productIds = array_values(array_filter(array_map('intval', $productIds)));
+
+    if (!empty($productIds)) {
+        $placeholders = implode(',', array_fill(0, count($productIds), '?'));
+        $detailsSql = "SELECT 
+                            p.product_id,
+                            p.id,
+                            p.quantity,
+                            p.$dateColumn as production_date,
+                            p.status,
+                            p.production_line_id,
+                            pl.line_name,
+                            " . ($userIdColumn ? "u.full_name as worker_name, u.username as worker_username" : "NULL as worker_name, NULL as worker_username") . "
+                       FROM production p
+                       LEFT JOIN production_lines pl ON p.production_line_id = pl.id";
+
+        if ($userIdColumn) {
+            $detailsSql .= " LEFT JOIN users u ON p.$userIdColumn = u.id";
+        }
+
+        $detailsSql .= " WHERE p.product_id IN ($placeholders)
+                         AND (p.status = 'completed' OR p.status = 'approved')
+                         ORDER BY p.product_id, p.$dateColumn DESC";
+
+        $detailsRows = $db->query($detailsSql, $productIds);
+
+        foreach ($detailsRows as $detailRow) {
+            $workerName = $detailRow['worker_name'] ?? $detailRow['worker_username'] ?? null;
+            $productDetailsMap[$detailRow['product_id']][] = [
+                'id' => (int)$detailRow['id'],
+                'quantity' => (float)($detailRow['quantity'] ?? 0),
+                'date' => $detailRow['production_date'] ?? null,
+                'status' => $detailRow['status'] ?? 'completed',
+                'worker' => $workerName ? trim($workerName) : 'غير محدد',
+                'line_name' => $detailRow['line_name'] ?? null,
+            ];
+        }
+    }
+}
+
 // الحصول على المنتجات وخطوط الإنتاج للفلترة
 $products = $db->query("SELECT id, name, category FROM products WHERE status = 'active' ORDER BY name");
 // حساب الإحصائيات
@@ -410,13 +479,14 @@ $lang = isset($translations) ? $translations : [];
         <h5 class="mb-0"><i class="bi bi-list-ul me-2"></i>المنتجات النهائية (<?php echo $totalProducts; ?>)</h5>
     </div>
     <div class="card-body">
-        <div class="table-responsive">
-            <table class="table table-striped table-hover">
+        <div class="table-responsive-lg">
+            <table class="table table-striped table-hover table-sm align-middle">
                 <thead>
                     <tr>
                         <th>المنتج</th>
-                        <th>الكمية المنتجة</th>
-                        <th>عدد عمليات الإنتاج</th>
+                        <th>إجمالي الإنتاج</th>
+                        <th>متوسط العملية</th>
+                        <th>القيمة التقديرية</th>
                         <th>أول إنتاج</th>
                         <th>آخر إنتاج</th>
                         <th>العمال</th>
@@ -426,46 +496,127 @@ $lang = isset($translations) ? $translations : [];
                 <tbody>
                     <?php if (empty($finalProducts)): ?>
                         <tr>
-                            <td colspan="7" class="text-center text-muted">
+                            <td colspan="8" class="text-center text-muted">
                                 لا توجد منتجات نهائية
                             </td>
                         </tr>
                     <?php else: ?>
                         <?php foreach ($finalProducts as $product): ?>
                             <tr>
+                                <td class="w-25">
+                                    <div class="d-flex align-items-start gap-3">
+                                        <div class="rounded-circle bg-primary bg-opacity-10 text-primary fw-bold d-flex align-items-center justify-content-center" style="width: 40px; height: 40px;">
+                                            <?php
+                                            $productName = (string)($product['product_name'] ?? '');
+                                            $initialChar = $productName !== '' ? (function_exists('mb_substr') ? mb_substr($productName, 0, 1, 'UTF-8') : substr($productName, 0, 1)) : '?';
+                                            $initialDisplay = function_exists('mb_strtoupper') ? mb_strtoupper($initialChar, 'UTF-8') : strtoupper($initialChar);
+                                            echo htmlspecialchars($initialDisplay ?: '?');
+                                            ?>
+                                        </div>
+                                        <div>
+                                            <div class="fw-semibold"><?php echo htmlspecialchars($product['product_name'] ?? 'غير محدد'); ?></div>
+                                            <?php if (!empty($product['product_category'])): ?>
+                                                <div class="mt-1">
+                                                    <span class="badge bg-light text-secondary border">
+                                                        <i class="bi bi-tag me-1"></i><?php echo htmlspecialchars($product['product_category']); ?>
+                                                    </span>
+                                                </div>
+                                            <?php endif; ?>
+                                        </div>
+                                    </div>
+                                </td>
+                                <td class="w-25">
+                                    <?php $totalQty = (float)($product['total_quantity'] ?? 0); ?>
+                                    <div class="fw-semibold text-primary mb-1"><?php echo number_format($totalQty, 2); ?></div>
+                                    <small class="text-muted d-block">وحدة المنتج</small>
+                                    <small class="text-muted"><i class="bi bi-diagram-3 me-1"></i>عمليات: <?php echo number_format((int)($product['production_count'] ?? 0)); ?></small>
+                                </td>
                                 <td>
-                                    <strong><?php echo htmlspecialchars($product['product_name'] ?? 'غير محدد'); ?></strong>
-                                    <?php if ($product['product_category']): ?>
-                                        <br><small class="text-muted"><?php echo htmlspecialchars($product['product_category']); ?></small>
+                                    <?php
+                                    $productionCount = (int)($product['production_count'] ?? 0);
+                                    $averageQuantity = $productionCount > 0 ? $totalQty / $productionCount : 0;
+                                    ?>
+                                    <div class="fw-semibold"><?php echo number_format($averageQuantity, 2); ?></div>
+                                    <small class="text-muted"><i class="bi bi-calculator me-1"></i>متوسط لكل عملية</small>
+                                </td>
+                                <td>
+                                    <?php
+                                    $unitPrice = isset($product['unit_price']) ? (float)$product['unit_price'] : 0.0;
+                                    $estimatedValue = $unitPrice > 0 ? $unitPrice * $totalQty : 0;
+                                    ?>
+                                    <?php if ($estimatedValue > 0): ?>
+                                        <div class="fw-semibold text-success"><?php echo formatCurrency($estimatedValue); ?></div>
+                                        <small class="text-muted">سعر الوحدة: <?php echo formatCurrency($unitPrice); ?></small>
+                                    <?php else: ?>
+                                        <span class="badge bg-secondary-subtle text-secondary">غير متاح</span>
                                     <?php endif; ?>
                                 </td>
                                 <td>
-                                    <strong><?php echo number_format($product['total_quantity'] ?? 0, 2); ?></strong>
-                                    <?php if ($product['unit_price'] > 0): ?>
-                                        <br><small class="text-muted">القيمة: <?php echo formatCurrency($product['total_quantity'] * $product['unit_price']); ?></small>
+                                    <div class="fw-semibold"><?php echo $product['first_production_date'] ? formatDate($product['first_production_date']) : '-'; ?></div>
+                                    <small class="text-muted">بداية التوريد</small>
+                                </td>
+                                <td>
+                                    <div class="fw-semibold"><?php echo $product['last_production_date'] ? formatDate($product['last_production_date']) : '-'; ?></div>
+                                    <small class="text-muted">آخر تحديث</small>
+                                </td>
+                                <td>
+                                    <?php
+                                    $workersRaw = $product['workers'] ?? '';
+                                    $workersList = array_filter(array_map('trim', explode(',', (string)$workersRaw)));
+                                    ?>
+                                    <?php if (!empty($workersList) && trim($workersRaw) !== 'غير محدد'): ?>
+                                        <div class="d-flex flex-wrap gap-1">
+                                            <?php foreach ($workersList as $workerName): ?>
+                                                <span class="badge bg-light text-dark border"><i class="bi bi-person-workspace me-1"></i><?php echo htmlspecialchars($workerName); ?></span>
+                                            <?php endforeach; ?>
+                                        </div>
+                                    <?php else: ?>
+                                        <span class="text-muted small">غير محدد</span>
                                     <?php endif; ?>
                                 </td>
                                 <td>
-                                    <span class="badge bg-secondary"><?php echo $product['production_count'] ?? 0; ?></span>
-                                </td>
-                                <td>
-                                    <?php echo $product['first_production_date'] ? formatDate($product['first_production_date']) : '-'; ?>
-                                </td>
-                                <td>
-                                    <?php echo $product['last_production_date'] ? formatDate($product['last_production_date']) : '-'; ?>
-                                </td>
-                                <td>
-                                    <small><?php echo htmlspecialchars($product['workers'] ?? 'غير محدد'); ?></small>
-                                </td>
-                                <td>
-                                <button class="btn btn-sm btn-info" onclick="viewProductDetails(<?php echo $product['product_id']; ?>)" title="عرض التفاصيل">
-                                        <i class="bi bi-eye"></i>
-                                    </button>
+                                    <div class="d-flex flex-wrap gap-2">
+                                        <button class="btn btn-sm btn-outline-primary" onclick="viewProductDetails(<?php echo (int)$product['product_id']; ?>)" title="عرض التفاصيل">
+                                            <i class="bi bi-eye"></i>
+                                        </button>
+                                    </div>
                                 </td>
                             </tr>
                         <?php endforeach; ?>
                     <?php endif; ?>
                 </tbody>
+                <?php if (!empty($finalProducts)): ?>
+                <tfoot class="table-light">
+                    <tr>
+                        <th>الإجماليات</th>
+                        <th>
+                            <div class="fw-semibold text-primary"><?php echo number_format($totalQuantitySum, 2); ?></div>
+                            <small class="text-muted">إجمالي الكمية</small>
+                        </th>
+                        <th>
+                            <?php
+                            $overallAverage = $totalProductionCountSum > 0 ? $totalQuantitySum / $totalProductionCountSum : 0;
+                            ?>
+                            <div class="fw-semibold"><?php echo number_format($overallAverage, 2); ?></div>
+                            <small class="text-muted">متوسط لكل عملية</small>
+                        </th>
+                        <th>
+                            <?php if ($totalEstimatedValue > 0): ?>
+                                <div class="fw-semibold text-success"><?php echo formatCurrency($totalEstimatedValue); ?></div>
+                                <small class="text-muted">إجمالي القيمة</small>
+                            <?php else: ?>
+                                <span class="text-muted small">غير متاح</span>
+                            <?php endif; ?>
+                        </th>
+                        <th colspan="2">
+                            <div class="d-flex flex-column flex-sm-row gap-3">
+                                <span class="text-muted small"><i class="bi bi-flag me-1"></i>العمليات: <?php echo number_format($totalProductionCountSum); ?></span>
+                            </div>
+                        </th>
+                        <th colspan="2"></th>
+                    </tr>
+                </tfoot>
+                <?php endif; ?>
             </table>
         </div>
         

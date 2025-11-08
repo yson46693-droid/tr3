@@ -442,7 +442,7 @@ $summaryTotalCustomers = $customerStats['total_count'] ?? $totalCustomers;
     </div>
 </div>
 
-<?php else_placeholder: ?>
+<?php else: ?>
 
 <div class="card shadow-sm border-0">
     <div class="card-body text-center py-5">
@@ -453,6 +453,8 @@ $summaryTotalCustomers = $customerStats['total_count'] ?? $totalCustomers;
 </div>
 
 <?php endif; ?>
+
+<?php if ($section === 'company'): ?>
 
 <script>
 document.addEventListener('DOMContentLoaded', function () {
@@ -940,3 +942,5 @@ document.addEventListener('DOMContentLoaded', function () {
         </div>
     </div>
 </div>
+
+<?php endif; ?>

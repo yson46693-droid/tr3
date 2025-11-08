@@ -325,9 +325,9 @@ function approveWarehouseTransfer($transferId, $approvedBy = null) {
             // تسجيل حركة خروج
             recordInventoryMovement(
                 $item['product_id'],
+                $transfer['from_warehouse_id'],
                 'out',
                 $item['quantity'],
-                $transfer['from_warehouse_id'],
                 'warehouse_transfer',
                 $transferId,
                 "نقل إلى مخزن آخر",
@@ -355,9 +355,9 @@ function approveWarehouseTransfer($transferId, $approvedBy = null) {
             // تسجيل حركة دخول
             recordInventoryMovement(
                 $item['product_id'],
+                $transfer['to_warehouse_id'],
                 'in',
                 $item['quantity'],
-                $transfer['to_warehouse_id'],
                 'warehouse_transfer',
                 $transferId,
                 "نقل من مخزن آخر",
