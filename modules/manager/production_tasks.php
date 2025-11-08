@@ -332,60 +332,66 @@ try {
         </div>
     </div>
 
-    <div class="card shadow-sm">
-        <div class="card-header bg-primary text-white">
-            <h5 class="mb-0"><i class="bi bi-plus-circle me-2"></i>إنشاء مهمة جديدة</h5>
-        </div>
-        <div class="card-body">
-            <form method="post" action="">
-                <input type="hidden" name="action" value="create_production_task">
-                <div class="row g-3">
-                    <div class="col-md-4">
-                        <label class="form-label">نوع المهمة</label>
-                        <select class="form-select" name="task_type" id="taskTypeSelect" required>
-                            <option value="general">مهمة عامة</option>
-                            <option value="production">إنتاج منتج</option>
-                            <option value="quality">مهمة جودة</option>
-                            <option value="maintenance">صيانة</option>
-                        </select>
+    <button class="btn btn-primary mb-3" type="button" data-bs-toggle="collapse" data-bs-target="#createTaskFormCollapse" aria-expanded="false" aria-controls="createTaskFormCollapse">
+        <i class="bi bi-plus-circle me-1"></i>إنشاء مهمة جديدة
+    </button>
+
+    <div class="collapse" id="createTaskFormCollapse">
+        <div class="card shadow-sm">
+            <div class="card-header bg-primary text-white">
+                <h5 class="mb-0"><i class="bi bi-plus-circle me-2"></i>إنشاء مهمة جديدة</h5>
+            </div>
+            <div class="card-body">
+                <form method="post" action="">
+                    <input type="hidden" name="action" value="create_production_task">
+                    <div class="row g-3">
+                        <div class="col-md-4">
+                            <label class="form-label">نوع المهمة</label>
+                            <select class="form-select" name="task_type" id="taskTypeSelect" required>
+                                <option value="general">مهمة عامة</option>
+                                <option value="production">إنتاج منتج</option>
+                                <option value="quality">مهمة جودة</option>
+                                <option value="maintenance">صيانة</option>
+                            </select>
+                        </div>
+                        <div class="col-md-4">
+                            <label class="form-label">الأولوية</label>
+                            <select class="form-select" name="priority">
+                                <option value="low">منخفضة</option>
+                                <option value="normal" selected>عادية</option>
+                                <option value="high">مرتفعة</option>
+                                <option value="urgent">عاجلة</option>
+                            </select>
+                        </div>
+                        <div class="col-md-4">
+                            <label class="form-label">تاريخ الاستحقاق</label>
+                            <input type="date" class="form-control" name="due_date" value="">
+                        </div>
+                        <div class="col-md-6">
+                            <label class="form-label">اختر العمال المستهدفين</label>
+                            <select class="form-select" name="assigned_to[]" multiple required size="6">
+                                <?php foreach ($productionUsers as $worker): ?>
+                                    <option value="<?php echo (int)$worker['id']; ?>"><?php echo htmlspecialchars($worker['full_name']); ?></option>
+                                <?php endforeach; ?>
+                            </select>
+                            <div class="form-text">يمكن تحديد أكثر من عامل باستخدام زر CTRL أو SHIFT.</div>
+                        </div>
+                        <div class="col-md-6">
+                            <label class="form-label">عنوان المهمة</label>
+                            <input type="text" class="form-control" name="title" placeholder="مثال: تنظيف خط الإنتاج">
+                            <div class="form-text">يمكنك ترك العنوان فارغاً وسيتم توليد عنوان افتراضي للمهمة الإنتاجية.</div>
+                        </div>
+                        <div class="col-12">
+                            <label class="form-label">وصف وتفاصيل المهمة</label>
+                            <textarea class="form-control" name="details" rows="4" placeholder="أدخل التفاصيل والتعليمات اللازمة للعمال."></textarea>
+                        </div>
                     </div>
-                    <div class="col-md-4">
-                        <label class="form-label">الأولوية</label>
-                        <select class="form-select" name="priority">
-                            <option value="low">منخفضة</option>
-                            <option value="normal" selected>عادية</option>
-                            <option value="high">مرتفعة</option>
-                            <option value="urgent">عاجلة</option>
-                        </select>
+                    <div class="d-flex justify-content-end mt-4 gap-2">
+                        <button type="reset" class="btn btn-secondary"><i class="bi bi-arrow-counterclockwise me-1"></i>إعادة تعيين</button>
+                        <button type="submit" class="btn btn-primary"><i class="bi bi-send-check me-1"></i>إرسال المهمة</button>
                     </div>
-                    <div class="col-md-4">
-                        <label class="form-label">تاريخ الاستحقاق</label>
-                        <input type="date" class="form-control" name="due_date" value="">
-                    </div>
-                    <div class="col-md-6">
-                        <label class="form-label">اختر العمال المستهدفين</label>
-                        <select class="form-select" name="assigned_to[]" multiple required size="6">
-                            <?php foreach ($productionUsers as $worker): ?>
-                                <option value="<?php echo (int)$worker['id']; ?>"><?php echo htmlspecialchars($worker['full_name']); ?></option>
-                            <?php endforeach; ?>
-                        </select>
-                        <div class="form-text">يمكن تحديد أكثر من عامل باستخدام زر CTRL أو SHIFT.</div>
-                    </div>
-                    <div class="col-md-6">
-                        <label class="form-label">عنوان المهمة</label>
-                        <input type="text" class="form-control" name="title" placeholder="مثال: تنظيف خط الإنتاج">
-                        <div class="form-text">يمكنك ترك العنوان فارغاً وسيتم توليد عنوان افتراضي للمهمة الإنتاجية.</div>
-                    </div>
-                    <div class="col-12">
-                        <label class="form-label">وصف وتفاصيل المهمة</label>
-                        <textarea class="form-control" name="details" rows="4" placeholder="أدخل التفاصيل والتعليمات اللازمة للعمال."></textarea>
-                    </div>
-                </div>
-                <div class="d-flex justify-content-end mt-4 gap-2">
-                    <button type="reset" class="btn btn-secondary"><i class="bi bi-arrow-counterclockwise me-1"></i>إعادة تعيين</button>
-                    <button type="submit" class="btn btn-primary"><i class="bi bi-send-check me-1"></i>إرسال المهمة</button>
-                </div>
-            </form>
+                </form>
+            </div>
         </div>
     </div>
 
