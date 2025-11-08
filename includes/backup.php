@@ -332,6 +332,21 @@ function restoreDatabase($backupId) {
             if (empty($query) || preg_match('/^--/', $query)) {
                 continue;
             }
+            
+            $createTableMatch = [];
+            if (
+                preg_match(
+                    '/^CREATE\s+TABLE\s+(?:IF\s+NOT\s+EXISTS\s+)?`?(?:([a-z0-9_]+)`?\.)?`?([a-z0-9_]+)`?/i',
+                    $query,
+                    $createTableMatch
+                )
+            ) {
+                $schemaName = !empty($createTableMatch[1]) ? $createTableMatch[1] : null;
+                $tableName = $createTableMatch[2] ?? $createTableMatch[1];
+                $dropTarget = $schemaName ? "`{$schemaName}`.`{$tableName}`" : "`{$tableName}`";
+                $connection->query("DROP TABLE IF EXISTS {$dropTarget}");
+            }
+
             $result = $connection->query($query);
             if ($result === false) {
                 $error = $connection->error ?? '';
