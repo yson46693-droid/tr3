@@ -7,6 +7,189 @@ if (!defined('ACCESS_ALLOWED')) {
     die('Direct access not allowed');
 }
 
+/**
+ * إنشاء ملف PDF لتقرير الكميات المنخفضة
+ *
+ * @param array<int, array<string, mixed>> $sections
+ * @param array<string, int> $counts
+ * @return string|null
+ */
+function dailyLowStockGeneratePdf(array $sections, array $counts): ?string
+{
+    $baseReportsPath = defined('REPORTS_PATH') ? REPORTS_PATH : (dirname(__DIR__) . '/reports/');
+    $reportsDir = rtrim($baseReportsPath, '/\\') . '/low_stock';
+    if (!is_dir($reportsDir)) {
+        @mkdir($reportsDir, 0755, true);
+    }
+    if (!is_dir($reportsDir) || !is_writable($reportsDir)) {
+        error_log('Low Stock Report: reports directory not writable - ' . $reportsDir);
+        return null;
+    }
+
+    $filename = sprintf('low-stock-report-%s.pdf', date('Ymd-His'));
+    $filePath = $reportsDir . DIRECTORY_SEPARATOR . $filename;
+
+    $lines = [];
+    $lines[] = 'تقرير الكميات المنخفضة';
+    $lines[] = 'التاريخ: ' . date('Y-m-d H:i');
+    $lines[] = str_repeat('=', 70);
+    $lines[] = 'ملخص الأقسام:';
+    foreach ($counts as $key => $value) {
+        $lines[] = sprintf('• %s: %d عنصر منخفض', formatLowStockCountLabel($key), (int)$value);
+    }
+    $lines[] = str_repeat('-', 70);
+
+    foreach ($sections as $section) {
+        $title = $section['title'] ?? 'قسم غير محدد';
+        $lines[] = $title;
+        $sectionLines = $section['lines'] ?? [];
+        if (empty($sectionLines)) {
+            $lines[] = '  لا توجد عناصر منخفضة في هذا القسم.';
+        } else {
+            foreach ($sectionLines as $detail) {
+                $lines[] = '  ' . ltrim($detail);
+            }
+        }
+        $lines[] = '';
+    }
+
+    $pdfContent = dailyLowStockBuildPdf($lines);
+    if ($pdfContent === null) {
+        return null;
+    }
+
+    $bytes = @file_put_contents($filePath, $pdfContent);
+    if ($bytes === false || $bytes === 0) {
+        error_log('Low Stock Report: unable to write PDF - ' . $filePath);
+        return null;
+    }
+
+    return $filePath;
+}
+
+/**
+ * بناء محتوى PDF بسيط يدعم العربية
+ *
+ * @param array<int, string> $lines
+ * @return string|null
+ */
+function dailyLowStockBuildPdf(array $lines): ?string
+{
+    if (empty($lines)) {
+        return null;
+    }
+
+    $pageWidth = 595.0;
+    $pageHeight = 842.0;
+    $marginX = 40.0;
+    $startY = $pageHeight - 60.0;
+    $lineSpacing = 22.0;
+
+    $contentParts = [];
+    $yPos = $startY;
+
+    foreach ($lines as $index => $line) {
+        if ($yPos < 60.0) {
+            break;
+        }
+
+        $fontSize = $index === 0 ? 20 : ($index <= 2 ? 14 : 12);
+        $prepared = dailyLowStockNormalizePdfText($line);
+        $hex = strtoupper(bin2hex(dailyLowStockUtf16beText($prepared, true)));
+
+        $contentParts[] = "BT\n/F1 {$fontSize} Tf\n1 0 0 1 " . ($pageWidth - $marginX) . " {$yPos} Tm\n<{$hex}> Tj\nET\n";
+        $yPos -= $lineSpacing;
+    }
+
+    $contentStream = implode('', $contentParts);
+    $contentLength = strlen($contentStream);
+    $toUnicode = dailyLowStockBuildToUnicodeCMap();
+
+    $objects = [];
+    $objects[] = "1 0 obj << /Type /Catalog /Pages 2 0 R >> endobj\n";
+    $objects[] = "2 0 obj << /Type /Pages /Kids [3 0 R] /Count 1 >> endobj\n";
+    $objects[] = "3 0 obj << /Type /Page /Parent 2 0 R /MediaBox [0 0 {$pageWidth} {$pageHeight}] /Contents 7 0 R /Resources << /Font << /F1 4 0 R >> >> >> endobj\n";
+    $objects[] = "4 0 obj << /Type /Font /Subtype /Type0 /BaseFont /TimesNewRomanPSMT /Encoding /Identity-H /DescendantFonts [5 0 R] /ToUnicode 6 0 R >> endobj\n";
+    $objects[] = "5 0 obj << /Type /Font /Subtype /CIDFontType2 /BaseFont /TimesNewRomanPSMT /CIDSystemInfo << /Registry (Adobe) /Ordering (Identity) /Supplement 0 >> /FontDescriptor 8 0 R /CIDToGIDMap /Identity /DW 1000 >> endobj\n";
+    $objects[] = "6 0 obj << /Length " . strlen($toUnicode) . " >> stream\n{$toUnicode}endstream\nendobj\n";
+    $objects[] = "7 0 obj << /Length {$contentLength} >> stream\n{$contentStream}endstream\nendobj\n";
+    $objects[] = "8 0 obj << /Type /FontDescriptor /FontName /TimesNewRomanPSMT /Flags 32 /ItalicAngle 0 /Ascent 1024 /Descent -300 /CapHeight 800 /StemV 80 /FontBBox [-1024 -1024 3072 3072] >> endobj\n";
+
+    $pdf = "%PDF-1.7\n";
+    $offsets = [];
+    $currentOffset = strlen($pdf);
+
+    foreach ($objects as $object) {
+        $offsets[] = $currentOffset;
+        $pdf .= $object;
+        $currentOffset += strlen($object);
+    }
+
+    $xrefPosition = $currentOffset;
+    $pdf .= "xref\n0 " . (count($objects) + 1) . "\n0000000000 65535 f \n";
+    foreach ($offsets as $offset) {
+        $pdf .= sprintf("%010d 00000 n \n", $offset);
+    }
+
+    $pdf .= "trailer << /Size " . (count($objects) + 1) . " /Root 1 0 R >>\nstartxref\n{$xrefPosition}\n%%EOF";
+
+    return $pdf;
+}
+
+function dailyLowStockNormalizePdfText(string $text): string
+{
+    $text = str_replace(["\r\n", "\r"], "\n", $text);
+    $text = preg_replace('/\s+/', ' ', $text);
+    return trim($text);
+}
+
+function dailyLowStockUtf16beText(string $text, bool $withBom = false): string
+{
+    $result = $withBom ? "\xFE\xFF" : '';
+    $directional = "\u{202B}" . $text . "\u{202C}";
+    $result .= mb_convert_encoding($directional, 'UTF-16BE', 'UTF-8');
+    return $result;
+}
+
+function dailyLowStockBuildToUnicodeCMap(): string
+{
+    return <<<CMAP
+/CIDInit /ProcSet findresource begin
+12 dict begin
+begincmap
+/CIDSystemInfo
+<< /Registry (Adobe)
+   /Ordering (Identity)
+   /Supplement 0
+>> def
+/CMapName /Adobe-Identity-UCS def
+/CMapType 2 def
+1 begincodespacerange
+<0000> <FFFF>
+endcodespacerange
+1 beginbfrange
+<0000> <FFFF> <0000>
+endbfrange
+endcmap
+CMapName currentdict /CMap defineresource pop
+end
+end
+CMAP;
+}
+
+function formatLowStockCountLabel(string $key): string
+{
+    $labels = [
+        'honey' => 'العسل الخام',
+        'olive_oil' => 'زيت الزيتون',
+        'beeswax' => 'شمع العسل',
+        'derivatives' => 'المشتقات',
+        'nuts' => 'المكسرات',
+    ];
+
+    return $labels[$key] ?? $key;
+}
+
 const LOW_STOCK_REPORT_JOB_KEY = 'low_stock_report';
 
 if (!function_exists('lowStockReportEnsureJobTable')) {
@@ -333,60 +516,30 @@ if (!function_exists('triggerDailyLowStockReport')) {
 
         $status = 'completed_no_issues';
         $errorMessage = null;
-        $savedFilePath = null;
-        $reportFileName = null;
+        $reportFilePath = null;
 
         if (!empty($sections)) {
             $status = 'completed';
-            $reportLines = [];
-            $reportLines[] = 'تقرير الكميات المنخفضة';
-            $reportLines[] = 'التاريخ: ' . date('d/m/Y H:i');
-            $reportLines[] = str_repeat('-', 50);
+            $reportFilePath = dailyLowStockGeneratePdf($sections, $counts);
 
-            foreach ($sections as $section) {
-                $reportLines[] = $section['title'];
-                foreach ($section['lines'] as $line) {
-                    $reportLines[] = $line;
-                }
-                $reportLines[] = '';
-            }
-
-            $reportContent = implode(PHP_EOL, $reportLines);
-
-            $reportsDirectory = REPORTS_PATH ?? (dirname(__DIR__) . '/reports/');
-            if (!is_dir($reportsDirectory)) {
-                @mkdir($reportsDirectory, 0775, true);
-            }
-
-            $reportFileName = 'low_stock_report_' . date('Ymd_His') . '.txt';
-            $savedFilePath = rtrim($reportsDirectory, DIRECTORY_SEPARATOR) . DIRECTORY_SEPARATOR . $reportFileName;
-
-            try {
-                $written = file_put_contents($savedFilePath, $reportContent, LOCK_EX);
-                if ($written === false) {
-                    throw new RuntimeException('فشل إنشاء ملف التقرير');
-                }
-            } catch (Throwable $fileError) {
+            if ($reportFilePath === null) {
                 $status = 'failed';
-                $errorMessage = 'فشل إنشاء ملف التقرير: ' . $fileError->getMessage();
-                $savedFilePath = null;
-            }
-
-            if ($savedFilePath !== null) {
+                $errorMessage = 'فشل إنشاء ملف PDF للتقرير.';
+            } else {
                 if (!isTelegramConfigured()) {
                     $status = 'failed';
                     $errorMessage = 'إعدادات Telegram غير مكتملة';
                 } else {
                     $caption = "⚠️ تقرير الكميات المنخفضة\nالتاريخ: " . date('Y-m-d H:i:s');
-                    $sendResult = sendTelegramFile($savedFilePath, $caption);
+                    $sendResult = sendTelegramFile($reportFilePath, $caption);
                     if ($sendResult === false) {
                         $status = 'failed';
                         $errorMessage = 'فشل إرسال التقرير إلى Telegram';
                     } else {
-                        if (file_exists($savedFilePath)) {
-                            @unlink($savedFilePath);
+                        if ($reportFilePath && file_exists($reportFilePath)) {
+                            @unlink($reportFilePath);
                         }
-                        $savedFilePath = null;
+                        $reportFilePath = null;
                     }
                 }
             }
