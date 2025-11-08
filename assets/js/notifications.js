@@ -3,6 +3,8 @@
  */
 
 let notificationCheckInterval = null;
+const seenNotificationIds = new Set();
+const NOTIFICATION_DEFAULT_LIMIT = 10;
 
 /**
  * دالة مساعدة لحساب المسار الصحيح لـ API
@@ -95,7 +97,8 @@ function showBrowserNotification(title, body, icon = null, tag = null) {
 async function loadNotifications() {
     try {
         const apiPath = getApiPath('api/notifications.php');
-        const response = await fetch(apiPath + '?action=list&unread=true&limit=10', {
+        const limit = typeof NOTIFICATION_LIMIT !== 'undefined' ? NOTIFICATION_LIMIT : NOTIFICATION_DEFAULT_LIMIT;
+        const response = await fetch(`${apiPath}?action=list&limit=${limit}`, {
             credentials: 'same-origin'
         });
         
@@ -127,27 +130,14 @@ async function loadNotifications() {
         }
         
         if (data && data.success) {
-            // التحقق من إشعار تغيير الدور أولاً
-            if (checkForRoleChangeNotification(data.data)) {
-                return; // سيتم إعادة التوجيه
-            }
-            
-            updateNotificationBadge(data.data ? data.data.length : 0);
-            updateNotificationList(data.data || []);
-            
-            // إرسال إشعارات متصفح للإشعارات الجديدة
-            if (data.data && data.data.length > 0) {
-                const firstNotification = data.data[0];
-                if (firstNotification.created_at && new Date(firstNotification.created_at) > new Date(Date.now() - 60000)) {
-                    // إشعار جديد خلال الدقيقة الماضية
-                    showBrowserNotification(
-                        firstNotification.title || '',
-                        firstNotification.message || '',
-                        null,
-                        'notification_' + firstNotification.id
-                    );
-                }
-            }
+            const notifications = Array.isArray(data.data) ? data.data : [];
+            const unreadCount = notifications.filter(isNotificationUnread).length;
+
+            updateNotificationBadge(unreadCount);
+            handleBrowserNotifications(notifications);
+            updateNotificationList(notifications);
+
+            return;
         }
     } catch (error) {
         // تجاهل أخطاء CORS بصمت
@@ -163,6 +153,72 @@ async function loadNotifications() {
             console.error('Error loading notifications:', error);
         }
     }
+}
+
+function isNotificationUnread(notification) {
+    if (notification == null || typeof notification !== 'object') {
+        return false;
+    }
+    if (Object.prototype.hasOwnProperty.call(notification, 'read')) {
+        const value = notification.read;
+        if (typeof value === 'boolean') {
+            return value === false;
+        }
+        return parseInt(value, 10) === 0;
+    }
+    if (Object.prototype.hasOwnProperty.call(notification, 'read_at')) {
+        return !notification.read_at;
+    }
+    return true;
+}
+
+function getNotificationTimestamp(notification) {
+    if (!notification) {
+        return null;
+    }
+    const dateValue = notification.created_at || notification.createdAt || notification.timestamp;
+    if (!dateValue) {
+        return null;
+    }
+    const parsed = new Date(dateValue);
+    if (Number.isNaN(parsed.getTime())) {
+        return null;
+    }
+    return parsed;
+}
+
+function handleBrowserNotifications(notifications) {
+    if (!Array.isArray(notifications) || notifications.length === 0) {
+        return;
+    }
+
+    const now = Date.now();
+    notifications.forEach(notification => {
+        const notificationId = parseInt(notification.id ?? notification.notification_id, 10);
+        if (!notificationId || seenNotificationIds.has(notificationId)) {
+            return;
+        }
+        seenNotificationIds.add(notificationId);
+
+        const createdAt = getNotificationTimestamp(notification);
+        if (!createdAt) {
+            return;
+        }
+
+        const ageMs = now - createdAt.getTime();
+        if (ageMs <= 60000 && isNotificationUnread(notification)) {
+            // التحقق من إشعار تغيير الدور أولاً
+            if (checkForRoleChangeNotification([notification])) {
+                return; // سيتم إعادة التوجيه
+            }
+            showBrowserNotification(
+                notification.title || '',
+                notification.message || '',
+                null,
+                'notification_' + notificationId
+            );
+        }
+    });
 }
 
 /**
@@ -267,6 +323,7 @@ function updateNotificationList(notifications) {
     }
     
     let html = '';
+    const now = Date.now();
     notifications.forEach(notification => {
         const typeClass = {
             'info': 'text-info',
@@ -284,16 +341,24 @@ function updateNotificationList(notifications) {
             'approval': 'bi-check-square'
         }[notification.type] || 'bi-bell';
         
-        const unreadClass = notification.read == 0 ? 'unread' : '';
+        const unreadClass = isNotificationUnread(notification) ? 'unread' : '';
         const timeAgo = getTimeAgo(notification.created_at);
+        const recentClass = (() => {
+            const timestamp = getNotificationTimestamp(notification);
+            if (!timestamp) return '';
+            return (now - timestamp.getTime()) <= 300000 ? 'recent' : '';
+        })();
+        const notificationId = notification.id ?? '';
+        const safeTitle = sanitizeText(notification.title || '');
+        const safeMessage = sanitizeText(notification.message || '');
         
         html += `
-            <div class="notification-item ${unreadClass}" data-id="${notification.id}">
+            <div class="notification-item ${unreadClass} ${recentClass}" data-id="${notificationId}">
                 <div class="d-flex align-items-start">
                     <i class="bi ${icon} ${typeClass} me-2 mt-1"></i>
                     <div class="flex-grow-1">
-                        <div class="fw-bold">${notification.title}</div>
-                        <div class="small text-muted">${notification.message}</div>
+                        <div class="fw-bold">${safeTitle}</div>
+                        <div class="small text-muted">${safeMessage}</div>
                         <div class="small text-muted mt-1">${timeAgo}</div>
                     </div>
                 </div>
@@ -309,12 +374,24 @@ function updateNotificationList(notifications) {
             const notificationId = this.getAttribute('data-id');
             markNotificationAsRead(notificationId);
             
-            if (notifications.find(n => n.id == notificationId && n.link)) {
-                const notification = notifications.find(n => n.id == notificationId);
+                if (notifications.find(n => (n.id == notificationId || String(n.id) === String(notificationId)) && n.link)) {
+                    const notification = notifications.find(n => (n.id == notificationId || String(n.id) === String(notificationId)));
                 window.location.href = notification.link;
             }
         });
     });
+}
+
+function sanitizeText(text) {
+    if (typeof text !== 'string') {
+        return '';
+    }
+    return text
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;')
+        .replace(/"/g, '&quot;')
+        .replace(/'/g, '&#039;');
 }
 
 /**
@@ -408,15 +485,39 @@ document.addEventListener('DOMContentLoaded', function() {
         console.log('Notification permission not yet requested');
     }
     
+    if (Array.isArray(window.initialNotifications)) {
+        window.initialNotifications.forEach(notification => {
+            const notificationId = parseInt(notification.id ?? notification.notification_id, 10);
+            if (notificationId) {
+                seenNotificationIds.add(notificationId);
+            }
+        });
+        const unreadCount = window.initialNotifications.filter(isNotificationUnread).length;
+        updateNotificationBadge(unreadCount);
+        updateNotificationList(window.initialNotifications);
+    }
+    
     // تحميل الإشعارات فوراً
     loadNotifications();
     
     // تحديث الإشعارات (استخدام الفترة من config أو 60 ثانية افتراضياً)
+    let pollInterval = 60000;
     if (typeof NOTIFICATION_POLL_INTERVAL !== 'undefined') {
-        notificationCheckInterval = setInterval(loadNotifications, NOTIFICATION_POLL_INTERVAL);
-    } else {
-        notificationCheckInterval = setInterval(loadNotifications, 60000); // 60 ثانية بدلاً من 5 ثوان
+        pollInterval = NOTIFICATION_POLL_INTERVAL;
     }
+    if (window.currentUser && window.currentUser.role === 'production') {
+        pollInterval = Math.min(pollInterval, 15000);
+        if (checkNotificationPermission() === 'default') {
+            const requestOnInteraction = () => {
+                requestNotificationPermission().catch(err => console.error('Error requesting notification permission:', err));
+                document.body.removeEventListener('click', requestOnInteraction);
+                document.body.removeEventListener('touchstart', requestOnInteraction);
+            };
+            document.body.addEventListener('click', requestOnInteraction, { once: true });
+            document.body.addEventListener('touchstart', requestOnInteraction, { once: true });
+        }
+    }
+    notificationCheckInterval = setInterval(loadNotifications, pollInterval);
     
     // طلب الإذن عند النقر على أيقونة الإشعارات (user-generated event)
     // البحث عن أيقونة الإشعارات في header

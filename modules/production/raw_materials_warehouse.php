@@ -574,6 +574,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             $reason = trim($_POST['damage_reason'] ?? '');
             $honeyType = $_POST['honey_type'] ?? 'raw';
             $sectionRedirect = $_POST['redirect_section'] ?? $materialCategory;
+            $stockSource = $_POST['stock_source'] ?? 'single';
             
             $validCategories = ['honey', 'olive_oil', 'beeswax', 'derivatives', 'nuts'];
             if (!in_array($sectionRedirect, $validCategories, true)) {
@@ -678,21 +679,45 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                             $logDetails['variety'] = $stock['derivative_type'] ?? null;
                         }
                     } elseif ($materialCategory === 'nuts') {
-                        $stock = $db->queryOne("
-                            SELECT ns.*, s.name AS supplier_name
-                            FROM nuts_stock ns
-                            LEFT JOIN suppliers s ON ns.supplier_id = s.id
-                            WHERE ns.id = ?", [$stockId]);
-                        
-                        if (!$stock) {
-                            $error = 'سجل المكسرات غير موجود';
-                        } elseif (floatval($stock['quantity']) < $quantity) {
-                            $error = 'الكمية المدخلة أكبر من الكمية المتاحة';
+                        if ($stockSource === 'mixed') {
+                            $stock = $db->queryOne(
+                                "SELECT mn.*, s.name AS supplier_name
+                                 FROM mixed_nuts mn
+                                 LEFT JOIN suppliers s ON mn.supplier_id = s.id
+                                 WHERE mn.id = ?",
+                                [$stockId]
+                            );
+
+                            if (!$stock) {
+                                $error = 'سجل المكسرات المشكلة غير موجود';
+                            } elseif (floatval($stock['total_quantity']) < $quantity) {
+                                $error = 'الكمية المدخلة أكبر من الكمية المتاحة في الخلطة';
+                            } else {
+                                $db->execute(
+                                    "UPDATE mixed_nuts SET total_quantity = total_quantity - ?, updated_at = NOW() WHERE id = ?",
+                                    [$quantity, $stockId]
+                                );
+                                $logDetails['supplier_id'] = $stock['supplier_id'];
+                                $logDetails['item_label'] = 'مكسرات مشكلة';
+                                $logDetails['variety'] = $stock['batch_name'] ?? null;
+                            }
                         } else {
-                            $db->execute("UPDATE nuts_stock SET quantity = quantity - ?, updated_at = NOW() WHERE id = ?", [$quantity, $stockId]);
-                            $logDetails['supplier_id'] = $stock['supplier_id'];
-                            $logDetails['item_label'] = 'مكسرات';
-                            $logDetails['variety'] = $stock['nut_type'] ?? null;
+                            $stock = $db->queryOne(
+                                "SELECT ns.*, s.name AS supplier_name
+                                FROM nuts_stock ns
+                                LEFT JOIN suppliers s ON ns.supplier_id = s.id
+                                WHERE ns.id = ?", [$stockId]);
+                            
+                            if (!$stock) {
+                                $error = 'سجل المكسرات غير موجود';
+                            } elseif (floatval($stock['quantity']) < $quantity) {
+                                $error = 'الكمية المدخلة أكبر من الكمية المتاحة';
+                            } else {
+                                $db->execute("UPDATE nuts_stock SET quantity = quantity - ?, updated_at = NOW() WHERE id = ?", [$quantity, $stockId]);
+                                $logDetails['supplier_id'] = $stock['supplier_id'];
+                                $logDetails['item_label'] = 'مكسرات';
+                                $logDetails['variety'] = $stock['nut_type'] ?? null;
+                            }
                         }
                     }
                     
@@ -2537,6 +2562,21 @@ $nutsSuppliers = $db->query("SELECT id, name, phone FROM suppliers WHERE status 
         document.getElementById('damage_nuts_submit').disabled = qty <= 0;
         new bootstrap.Modal(document.getElementById('damageNutsModal')).show();
     }
+
+    function openMixedNutsDamageModal(id, supplier, batchName, quantity) {
+        const qty = parseFloat(quantity) || 0;
+        document.getElementById('damage_mixed_stock_id').value = id;
+        document.getElementById('damage_mixed_supplier').value = supplier;
+        document.getElementById('damage_mixed_batch').value = batchName;
+        document.getElementById('damage_mixed_available').value = qty.toFixed(3) + ' كجم';
+        const qtyInput = document.getElementById('damage_mixed_quantity');
+        qtyInput.value = '';
+        qtyInput.max = qty > 0 ? qty.toFixed(3) : null;
+        qtyInput.disabled = qty <= 0;
+        document.getElementById('damage_mixed_reason').value = '';
+        document.getElementById('damage_mixed_submit').disabled = qty <= 0;
+        new bootstrap.Modal(document.getElementById('damageMixedNutsModal')).show();
+    }
 </script>
 
         <!-- المكسرات المشكلة -->
@@ -2565,7 +2605,15 @@ $nutsSuppliers = $db->query("SELECT id, name, phone FROM suppliers WHERE status 
                                                 <i class="bi bi-person me-1"></i><?php echo htmlspecialchars($mix['supplier_name']); ?>
                                             </small>
                                         </div>
-                                        <span class="badge bg-success"><?php echo number_format($mix['total_quantity'], 3); ?> كجم</span>
+                                        <div class="d-flex align-items-center gap-2">
+                                            <span class="badge bg-success"><?php echo number_format($mix['total_quantity'], 3); ?> كجم</span>
+                                            <button
+                                                class="btn btn-sm btn-danger"
+                                                onclick="openMixedNutsDamageModal(<?php echo $mix['id']; ?>, '<?php echo htmlspecialchars($mix['supplier_name'], ENT_QUOTES, 'UTF-8'); ?>', '<?php echo htmlspecialchars($mix['batch_name'], ENT_QUOTES, 'UTF-8'); ?>', <?php echo $mix['total_quantity']; ?>)"
+                                                <?php echo $mix['total_quantity'] <= 0 ? 'disabled' : ''; ?>>
+                                                <i class="bi bi-exclamation-triangle me-1"></i>تسجيل تالف
+                                            </button>
+                                        </div>
                                     </div>
                                     <div class="small">
                                         <strong>المكونات:</strong>
@@ -2602,7 +2650,7 @@ $nutsSuppliers = $db->query("SELECT id, name, phone FROM suppliers WHERE status 
     
     <!-- Modal إضافة مكسرات منفردة -->
     <div class="modal fade" id="addSingleNutsModal" tabindex="-1">
-        <div class="modal-dialog">
+        <div class="modal-dialog modal-dialog-scrollable">
             <div class="modal-content">
                 <div class="modal-header text-white" style="background: linear-gradient(135deg, #d4a574 0%, #8b6f47 100%);">
                     <h5 class="modal-title"><i class="bi bi-plus-circle me-2"></i>إضافة مكسرات منفردة</h5>
@@ -2661,7 +2709,7 @@ $nutsSuppliers = $db->query("SELECT id, name, phone FROM suppliers WHERE status 
     
     <!-- Modal إنشاء مكسرات مشكلة -->
     <div class="modal fade" id="createMixedNutsModal" tabindex="-1">
-        <div class="modal-dialog modal-lg">
+        <div class="modal-dialog modal-lg modal-dialog-scrollable">
             <div class="modal-content">
                 <div class="modal-header text-white" style="background: linear-gradient(135deg, #d4a574 0%, #8b6f47 100%);">
                     <h5 class="modal-title"><i class="bi bi-layers-fill me-2"></i>إنشاء مكسرات مشكلة</h5>

@@ -304,6 +304,10 @@ $pageTitle = isset($lang['production_dashboard']) ? $lang['production_dashboard'
                 </div>
                 <?php endif; ?>
                 
+                <script>
+                    window.initialNotifications = <?php echo json_encode($notifications ?? [], JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES); ?>;
+                </script>
+                
             <?php elseif ($page === 'production'): ?>
                 <!-- صفحة إدارة الإنتاج -->
                 <?php 

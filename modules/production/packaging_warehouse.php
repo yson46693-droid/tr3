@@ -291,6 +291,139 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 preventDuplicateSubmission($successMessage, $redirectParams, null, $currentUser['role']);
             }
         }
+    } elseif ($action === 'update_packaging_material') {
+        if (($currentUser['role'] ?? '') !== 'manager') {
+            $error = 'غير مصرح لك بتعديل أدوات التعبئة.';
+        } else {
+            $materialId = intval($_POST['material_id'] ?? 0);
+            $name = trim($_POST['name'] ?? '');
+            $typeValue = trim($_POST['type'] ?? '');
+            $unitValue = trim($_POST['unit'] ?? '');
+            $materialCode = trim($_POST['material_code'] ?? '');
+            $specificationsValue = trim($_POST['specifications'] ?? '');
+            $statusValue = $_POST['status'] ?? 'active';
+
+            $allowedStatuses = ['active', 'inactive'];
+            if (!in_array($statusValue, $allowedStatuses, true)) {
+                $statusValue = 'active';
+            }
+
+            if ($materialId <= 0) {
+                $error = 'معرف الأداة غير صالح.';
+            } elseif ($name === '') {
+                $error = 'يرجى إدخال اسم الأداة.';
+            } else {
+                try {
+                    $db->beginTransaction();
+
+                    if ($usePackagingTable) {
+                        $original = $db->queryOne(
+                            "SELECT * FROM packaging_materials WHERE id = ? FOR UPDATE",
+                            [$materialId]
+                        );
+
+                        if (!$original) {
+                            throw new Exception('لم يتم العثور على أداة التعبئة المطلوبة.');
+                        }
+
+                        $db->execute(
+                            "UPDATE packaging_materials
+                             SET name = ?, type = ?, unit = ?, material_id = ?, specifications = ?, status = ?, updated_at = NOW()
+                             WHERE id = ?",
+                            [
+                                $name,
+                                $typeValue !== '' ? $typeValue : null,
+                                $unitValue !== '' ? $unitValue : null,
+                                $materialCode !== '' ? $materialCode : null,
+                                $specificationsValue !== '' ? $specificationsValue : null,
+                                $statusValue,
+                                $materialId
+                            ]
+                        );
+                    } else {
+                        $original = $db->queryOne(
+                            "SELECT * FROM products WHERE id = ? FOR UPDATE",
+                            [$materialId]
+                        );
+
+                        if (!$original) {
+                            throw new Exception('المنتج غير موجود أو غير متاح.');
+                        }
+
+                        $updateParts = ["name = ?"];
+                        $updateParams = [$name];
+
+                        if (array_key_exists('type', $original)) {
+                            $updateParts[] = "type = ?";
+                            $updateParams[] = $typeValue !== '' ? $typeValue : null;
+                        } elseif (array_key_exists('category', $original)) {
+                            $updateParts[] = "category = ?";
+                            $updateParams[] = $typeValue !== '' ? $typeValue : ($original['category'] ?? null);
+                        }
+
+                        if (array_key_exists('unit', $original)) {
+                            $updateParts[] = "unit = ?";
+                            $updateParams[] = $unitValue !== '' ? $unitValue : null;
+                        }
+
+                        if (array_key_exists('specifications', $original)) {
+                            $updateParts[] = "specifications = ?";
+                            $updateParams[] = $specificationsValue !== '' ? $specificationsValue : null;
+                        }
+
+                        if (array_key_exists('status', $original)) {
+                            $updateParts[] = "status = ?";
+                            $updateParams[] = $statusValue;
+                        }
+
+                        if (array_key_exists('updated_at', $original)) {
+                            $updateParts[] = "updated_at = NOW()";
+                        }
+
+                        if (empty($updateParts)) {
+                            throw new Exception('لا توجد حقول متاحة للتعديل على هذا المنتج.');
+                        }
+
+                        $updateQuery = "UPDATE products SET " . implode(', ', $updateParts) . " WHERE id = ?";
+                        $updateParams[] = $materialId;
+
+                        $db->execute($updateQuery, $updateParams);
+                    }
+
+                    logAudit(
+                        $currentUser['id'],
+                        'update_packaging_material',
+                        $usePackagingTable ? 'packaging_materials' : 'products',
+                        $materialId,
+                        $original ?? null,
+                        [
+                            'name' => $name,
+                            'type' => $typeValue,
+                            'unit' => $unitValue,
+                            'material_id' => $materialCode,
+                            'status' => $statusValue
+                        ]
+                    );
+
+                    $db->commit();
+
+                    $successMessage = 'تم تحديث بيانات أداة التعبئة بنجاح.';
+                    $redirectParams = ['page' => 'packaging_warehouse'];
+                    foreach (['search', 'material_id', 'date_from', 'date_to'] as $param) {
+                        if (!empty($_GET[$param])) {
+                            $redirectParams[$param] = $_GET[$param];
+                        }
+                    }
+
+                    preventDuplicateSubmission($successMessage, $redirectParams, null, $currentUser['role']);
+                } catch (Throwable $updateError) {
+                    if ($db->inTransaction()) {
+                        $db->rollBack();
+                    }
+                    $error = 'حدث خطأ أثناء تعديل بيانات الأداة: ' . $updateError->getMessage();
+                }
+            }
+        }
     }
 }
 
@@ -365,13 +498,48 @@ if (isset($_GET['ajax']) && $_GET['ajax'] == '1' && isset($_GET['material_id']))
             ], JSON_UNESCAPED_UNICODE);
             exit;
         }
-        
+
+        $materialRow = $usePackagingTable
+            ? $db->queryOne("SELECT * FROM packaging_materials WHERE id = ?", [$materialId])
+            : $db->queryOne("SELECT * FROM products WHERE id = ?", [$materialId]);
+
+        if (!$materialRow) {
+            ob_clean();
+            header('Content-Type: application/json; charset=utf-8');
+            echo json_encode([
+                'success' => false,
+                'message' => 'أداة التعبئة غير موجودة'
+            ], JSON_UNESCAPED_UNICODE);
+            exit;
+        }
+
+        $materialData = [
+            'id' => intval($materialRow['id'] ?? $materialId),
+            'material_id' => $materialRow['material_id'] ?? null,
+            'name' => $materialRow['name'] ?? '',
+            'type' => $materialRow['type'] ?? null,
+            'category' => $materialRow['category'] ?? null,
+            'specifications' => $materialRow['specifications'] ?? '',
+            'unit' => $materialRow['unit'] ?? '',
+            'quantity' => isset($materialRow['quantity']) ? floatval($materialRow['quantity']) : null,
+            'status' => $materialRow['status'] ?? 'active',
+        ];
+
+        foreach (['supplier_id', 'reorder_point', 'lead_time_days', 'unit_price'] as $optionalKey) {
+            if (array_key_exists($optionalKey, $materialRow)) {
+                $materialData[$optionalKey] = $materialRow[$optionalKey];
+            }
+        }
+
+        if (empty($materialData['type']) && !empty($materialData['category'])) {
+            $materialData['type'] = $materialData['category'];
+        }
+
         // التحقق من وجود جدول production_materials
         $tableCheck = $db->queryOne("SHOW TABLES LIKE 'production_materials'");
         
         $productions = [];
         if (!empty($tableCheck)) {
-            // إعادة تعريف المتغيرات المطلوبة
             $materialIdColumnCheck = $db->queryOne("SHOW COLUMNS FROM production_materials LIKE 'material_id'");
             $productIdColumnCheck = $db->queryOne("SHOW COLUMNS FROM production_materials LIKE 'product_id'");
             $hasMaterialIdColumn = !empty($materialIdColumnCheck);
@@ -409,6 +577,7 @@ if (isset($_GET['ajax']) && $_GET['ajax'] == '1' && isset($_GET['material_id']))
         header('Content-Type: application/json; charset=utf-8');
         echo json_encode([
             'success' => true,
+            'material' => $materialData,
             'productions' => $productions ?: []
         ], JSON_UNESCAPED_UNICODE);
     } catch (Exception $e) {
@@ -609,22 +778,6 @@ $stats = [
 ?>
 <div class="d-flex justify-content-between align-items-center mb-4">
     <h2><i class="bi bi-box-seam me-2"></i>مخزن أدوات التعبئة</h2>
-    <?php if ($currentUser['role'] === 'manager'): ?>
-        <?php
-        // الحصول على المسار الصحيح
-        $basePath = getBasePath();
-        $dashboardUrl = rtrim($basePath, '/') . '/dashboard/';
-        $dashboardUrl = str_replace('//', '/', $dashboardUrl);
-        ?>
-        <div class="d-flex flex-wrap gap-2">
-            <button class="btn btn-primary" data-bs-toggle="modal" data-bs-target="#addMaterialModal">
-                <i class="bi bi-plus-circle me-2"></i>إضافة أداة جديدة
-            </button>
-            <button class="btn btn-outline-secondary" data-bs-toggle="collapse" data-bs-target="#transferSection" aria-expanded="false">
-                <i class="bi bi-arrow-left-right me-2"></i>نقل للمستودعات
-            </button>
-        </div>
-    <?php endif; ?>
 </div>
 
 <?php if ($error): ?>
@@ -1074,6 +1227,71 @@ $stats = [
     </div>
 </div>
 
+<!-- Modal تعديل أداة التعبئة -->
+<div class="modal fade" id="editMaterialModal" tabindex="-1">
+    <div class="modal-dialog modal-lg">
+        <div class="modal-content">
+            <form method="POST" id="editMaterialForm">
+                <div class="modal-header bg-warning">
+                    <h5 class="modal-title"><i class="bi bi-pencil-square me-2"></i>تعديل بيانات أداة التعبئة</h5>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+                </div>
+                <div class="modal-body">
+                    <input type="hidden" name="action" value="update_packaging_material">
+                    <input type="hidden" name="material_id" id="edit_material_id">
+
+                    <div class="mb-3">
+                        <label class="form-label fw-bold">اسم الأداة <span class="text-danger">*</span></label>
+                        <input type="text" class="form-control" name="name" id="edit_material_name" required maxlength="255">
+                    </div>
+
+                    <div class="row g-3">
+                        <div class="col-md-6">
+                            <label class="form-label">الفئة / النوع</label>
+                            <input type="text" class="form-control" name="type" id="edit_material_type" maxlength="100">
+                        </div>
+                        <div class="col-md-6">
+                            <label class="form-label">الوحدة</label>
+                            <input type="text" class="form-control" name="unit" id="edit_material_unit" maxlength="50">
+                        </div>
+                    </div>
+
+                    <div class="row g-3 mt-0">
+                        <div class="col-md-6">
+                            <label class="form-label">الكود الداخلي</label>
+                            <input type="text" class="form-control" name="material_code" id="edit_material_code" maxlength="100">
+                        </div>
+                        <div class="col-md-6">
+                            <label class="form-label">الحالة</label>
+                            <select class="form-select" name="status" id="edit_material_status">
+                                <option value="active">نشطة</option>
+                                <option value="inactive">غير نشطة</option>
+                            </select>
+                        </div>
+                    </div>
+
+                    <div class="mb-3 mt-3">
+                        <label class="form-label">المواصفات / الوصف</label>
+                        <textarea class="form-control" name="specifications" id="edit_material_specifications" rows="3" maxlength="500"></textarea>
+                    </div>
+
+                    <div class="mb-3">
+                        <label class="form-label">الكمية الحالية (للقراءة فقط)</label>
+                        <div class="form-control-plaintext fw-semibold" id="edit_material_quantity_display">-</div>
+                        <small class="text-muted">لتعديل الكمية يرجى استخدام أزرار "إضافة كمية" أو "تسجيل تالف".</small>
+                    </div>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">إلغاء</button>
+                    <button type="submit" class="btn btn-warning text-white">
+                        <i class="bi bi-check-circle me-2"></i>تحديث الأداة
+                    </button>
+                </div>
+            </form>
+        </div>
+    </div>
+</div>
+
 <!-- Modal لعرض التفاصيل -->
 <div class="modal fade" id="materialDetailsModal" tabindex="-1">
     <div class="modal-dialog modal-lg">
@@ -1258,11 +1476,9 @@ function viewMaterialDetails(materialId) {
 }
 
 function editMaterial(materialId) {
-    // TODO: إنشاء modal للتعديل
-    // حالياً: إعادة توجيه إلى صفحة التعديل
     const currentUrl = window.location.href;
     const urlParams = new URLSearchParams(window.location.search);
-    urlParams.set('ajax', 'material_details');
+    urlParams.set('ajax', '1');
     urlParams.set('material_id', materialId);
     urlParams.delete('p');
     
@@ -1292,6 +1508,62 @@ function editMaterial(materialId) {
             console.error('Error loading material data for edit:', error);
             alert('حدث خطأ أثناء تحميل بيانات الأداة للتعديل. يرجى المحاولة لاحقاً.\n' + (error.message || ''));
         });
+}
+
+function openEditModalFromData(material) {
+    const modalElement = document.getElementById('editMaterialModal');
+    const form = document.getElementById('editMaterialForm');
+    if (!modalElement || !form) {
+        console.warn('Edit modal not available.');
+        return;
+    }
+
+    form.reset();
+
+    const materialIdInput = document.getElementById('edit_material_id');
+    const nameInput = document.getElementById('edit_material_name');
+    const typeInput = document.getElementById('edit_material_type');
+    const unitInput = document.getElementById('edit_material_unit');
+    const codeInput = document.getElementById('edit_material_code');
+    const specsInput = document.getElementById('edit_material_specifications');
+    const statusSelect = document.getElementById('edit_material_status');
+    const quantityDisplay = document.getElementById('edit_material_quantity_display');
+
+    materialIdInput.value = material.id ?? '';
+    nameInput.value = material.name ?? '';
+
+    const resolvedType = (material.type ?? '') || (material.category ?? '');
+    typeInput.value = resolvedType;
+
+    unitInput.value = material.unit ?? '';
+    codeInput.value = material.material_id ?? '';
+    specsInput.value = material.specifications ?? '';
+
+    if (statusSelect) {
+        const availableStatuses = Array.from(statusSelect.options).map(option => option.value);
+        const desiredStatus = material.status ?? 'active';
+        statusSelect.value = availableStatuses.includes(desiredStatus) ? desiredStatus : 'active';
+    }
+
+    if (quantityDisplay) {
+        const numericQuantity = parseFloat(material.quantity ?? 0);
+        if (Number.isFinite(numericQuantity)) {
+            quantityDisplay.textContent = numericQuantity.toLocaleString('ar-EG', {
+                minimumFractionDigits: 2,
+                maximumFractionDigits: 2
+            });
+        } else {
+            quantityDisplay.textContent = '-';
+        }
+    }
+
+    const modal = new bootstrap.Modal(modalElement);
+    modal.show();
+
+    setTimeout(() => {
+        nameInput.focus();
+        nameInput.select();
+    }, 200);
 }
 </script>
 
