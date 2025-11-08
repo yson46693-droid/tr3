@@ -653,6 +653,8 @@ $_SESSION['reader_session_id'] = $_SESSION['reader_session_id'] ?? bin2hex(rando
         let tesseractWorkerPromise = null;
         let ocrWorker = null;
         let advancedMode = false;
+        let advancedDetectionActive = false;
+        let lastAdvancedDetectionResult = { zxingReady: false, ocrReady: false };
 
         const historyEntries = [];
 
@@ -778,6 +780,8 @@ $_SESSION['reader_session_id'] = $_SESSION['reader_session_id'] ?? bin2hex(rando
                 ocrInterval = null;
             }
             ocrProcessing = false;
+            advancedDetectionActive = false;
+            lastAdvancedDetectionResult = { zxingReady: false, ocrReady: false };
         }
 
         function stopDetectionLoops() {
@@ -1130,9 +1134,33 @@ $_SESSION['reader_session_id'] = $_SESSION['reader_session_id'] ?? bin2hex(rando
         }
 
         async function startAdvancedDetection() {
+            if (advancedDetectionActive) {
+                return lastAdvancedDetectionResult;
+            }
+            advancedDetectionActive = true;
             const zxingReady = await startZxingDetection();
             const ocrReady = await startOcrDetection();
-            return { zxingReady, ocrReady };
+            lastAdvancedDetectionResult = { zxingReady, ocrReady };
+            return lastAdvancedDetectionResult;
+        }
+
+        async function enableAdvancedMode(autoTriggered = false) {
+            if (!advancedMode) {
+                advancedMode = true;
+                if (advancedModeToggle) {
+                    advancedModeToggle.checked = true;
+                }
+                localStorage.setItem('reader-advanced-mode', '1');
+                if (autoTriggered) {
+                    cameraError.textContent = 'تم تفعيل وضع الدقة العالية تلقائيًا لأن متصفحك لا يدعم قراءة الباركود المدمجة.';
+                    cameraError.style.display = 'block';
+                }
+            }
+            const advancedResults = await startAdvancedDetection();
+            if (advancedResults.zxingReady || advancedResults.ocrReady) {
+                cameraError.style.display = 'none';
+            }
+            return advancedResults;
         }
 
         async function startCamera() {
@@ -1173,23 +1201,22 @@ $_SESSION['reader_session_id'] = $_SESSION['reader_session_id'] ?? bin2hex(rando
                 let zxingReady = false;
                 let ocrReady = false;
 
-                if (!barcodeReady && !advancedMode) {
-                    cameraError.textContent = 'لم يتمكن القارئ من قراءة الباركود باستخدام الوضع الأساسي. يمكنك تفعيل وضع الدقة العالية لتجربة تقنيات إضافية.';
-                    cameraError.style.display = 'block';
-                }
-
-                if (advancedMode) {
+                if (!barcodeReady) {
+                    const advancedResults = await enableAdvancedMode(true);
+                    zxingReady = advancedResults.zxingReady;
+                    ocrReady = advancedResults.ocrReady;
+                } else if (advancedMode) {
                     const advancedResults = await startAdvancedDetection();
                     zxingReady = advancedResults.zxingReady;
                     ocrReady = advancedResults.ocrReady;
                 } else {
+                    cameraError.style.display = 'none';
                     stopAdvancedDetection();
                 }
 
                 if (!barcodeReady && !zxingReady && !ocrReady) {
-                    cameraError.textContent = 'تعذر تشغيل آلية قراءة الباركود أو التعرف على النص. يرجى المحاولة لاحقًا أو استخدام الإدخال اليدوي.';
+                    cameraError.textContent = 'تعذر تشغيل آلية قراءة الباركود أو التعرف على النص. يرجى التأكد من اتصالك بالإنترنت أو استخدام الإدخال اليدوي.';
                     cameraError.style.display = 'block';
-                    stopCamera();
                 }
 
             } catch (error) {
@@ -1255,17 +1282,24 @@ $_SESSION['reader_session_id'] = $_SESSION['reader_session_id'] ?? bin2hex(rando
         }
         if (advancedModeToggle) {
             advancedModeToggle.addEventListener('change', async () => {
+                if (!advancedModeToggle.checked) {
+                    advancedMode = false;
+                    localStorage.removeItem('reader-advanced-mode');
+                    stopAdvancedDetection();
+                    cameraError.style.display = 'none';
+                    return;
+                }
+
+                advancedMode = true;
+                localStorage.setItem('reader-advanced-mode', '1');
+
                 if (scanning) {
-                    if (advancedMode) {
-                        const advancedResults = await startAdvancedDetection();
-                        if (!advancedResults.zxingReady && !advancedResults.ocrReady) {
-                            cameraError.textContent = 'تعذر تشغيل وضع الدقة العالية. استمر باستخدام الوضع الأساسي أو أعد تحميل الصفحة.';
-                            cameraError.style.display = 'block';
-                        } else {
-                            cameraError.style.display = 'none';
-                        }
+                    const advancedResults = await startAdvancedDetection();
+                    if (!advancedResults.zxingReady && !advancedResults.ocrReady) {
+                        cameraError.textContent = 'تعذر تشغيل وضع الدقة العالية. تأكد من اتصال الإنترنت ثم حاول مرة أخرى.';
+                        cameraError.style.display = 'block';
                     } else {
-                        stopAdvancedDetection();
+                        cameraError.style.display = 'none';
                     }
                 }
             });
