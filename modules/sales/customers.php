@@ -20,6 +20,122 @@ $db = db();
 $error = '';
 $success = '';
 
+if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action'])) {
+    $action = trim($_POST['action']);
+
+    if ($action === 'collect_debt') {
+        $customerId = isset($_POST['customer_id']) ? (int)$_POST['customer_id'] : 0;
+        $amount = isset($_POST['amount']) ? cleanFinancialValue($_POST['amount']) : 0;
+
+        if ($customerId <= 0) {
+            $error = 'معرف العميل غير صالح.';
+        } elseif ($amount <= 0) {
+            $error = 'يجب إدخال مبلغ تحصيل أكبر من صفر.';
+        } else {
+            $transactionStarted = false;
+
+            try {
+                $db->beginTransaction();
+                $transactionStarted = true;
+
+                $customer = $db->queryOne(
+                    "SELECT id, name, balance FROM customers WHERE id = ? FOR UPDATE",
+                    [$customerId]
+                );
+
+                if (!$customer) {
+                    throw new InvalidArgumentException('لم يتم العثور على العميل المطلوب.');
+                }
+
+                $currentBalance = isset($customer['balance']) ? (float)$customer['balance'] : 0.0;
+
+                if ($currentBalance <= 0) {
+                    throw new InvalidArgumentException('لا توجد ديون نشطة على هذا العميل.');
+                }
+
+                if ($amount > $currentBalance) {
+                    throw new InvalidArgumentException('المبلغ المدخل أكبر من ديون العميل الحالية.');
+                }
+
+                $newBalance = round(max($currentBalance - $amount, 0), 2);
+
+                $db->execute(
+                    "UPDATE customers SET balance = ? WHERE id = ?",
+                    [$newBalance, $customerId]
+                );
+
+                logAudit(
+                    $currentUser['id'],
+                    'collect_customer_debt',
+                    'customer',
+                    $customerId,
+                    null,
+                    [
+                        'collected_amount'   => $amount,
+                        'previous_balance'   => $currentBalance,
+                        'new_balance'        => $newBalance,
+                    ]
+                );
+
+                $db->commit();
+                $transactionStarted = false;
+
+                $success = 'تم تحصيل المبلغ بنجاح.';
+            } catch (InvalidArgumentException $userError) {
+                if ($transactionStarted) {
+                    $db->rollback();
+                }
+                $error = $userError->getMessage();
+            } catch (Throwable $collectionError) {
+                if ($transactionStarted) {
+                    $db->rollback();
+                }
+                error_log('Customer collection error: ' . $collectionError->getMessage());
+                $error = 'حدث خطأ أثناء تحصيل المبلغ. يرجى المحاولة مرة أخرى.';
+            }
+        }
+    } elseif ($action === 'add_customer') {
+        $name = trim($_POST['name'] ?? '');
+        $phone = trim($_POST['phone'] ?? '');
+        $address = trim($_POST['address'] ?? '');
+        $balance = isset($_POST['balance']) ? cleanFinancialValue($_POST['balance']) : 0;
+
+        if ($balance < 0) {
+            $balance = 0;
+        }
+
+        if (empty($name)) {
+            $error = 'يجب إدخال اسم العميل';
+        } else {
+            try {
+                if (!empty($phone)) {
+                    $existing = $db->queryOne("SELECT id FROM customers WHERE phone = ?", [$phone]);
+                    if ($existing) {
+                        throw new InvalidArgumentException('رقم الهاتف موجود بالفعل');
+                    }
+                }
+
+                $result = $db->execute(
+                    "INSERT INTO customers (name, phone, balance, address, status, created_by) 
+                     VALUES (?, ?, ?, ?, 'active', ?)",
+                    [$name, $phone ?: null, $balance, $address ?: null, $currentUser['id']]
+                );
+
+                logAudit($currentUser['id'], 'add_customer', 'customer', $result['insert_id'], null, [
+                    'name' => $name
+                ]);
+
+                $success = 'تم إضافة العميل بنجاح';
+            } catch (InvalidArgumentException $userError) {
+                $error = $userError->getMessage();
+            } catch (Throwable $addCustomerError) {
+                error_log('Add customer error: ' . $addCustomerError->getMessage());
+                $error = 'حدث خطأ أثناء إضافة العميل. يرجى المحاولة لاحقاً.';
+            }
+        }
+    }
+}
+
 try {
     $createdByColumn = $db->query("SHOW COLUMNS FROM customers LIKE 'created_by'");
     if (empty($createdByColumn)) {
@@ -84,6 +200,52 @@ $customers = $db->query($sql, $params);
     </button>
 </div>
 
+
+<script>
+document.addEventListener('DOMContentLoaded', function () {
+    var collectionModal = document.getElementById('collectPaymentModal');
+    if (!collectionModal) {
+        return;
+    }
+
+    var nameElement = collectionModal.querySelector('.collection-customer-name');
+    var debtElement = collectionModal.querySelector('.collection-current-debt');
+    var customerIdInput = collectionModal.querySelector('input[name="customer_id"]');
+    var amountInput = collectionModal.querySelector('input[name="amount"]');
+
+    if (!nameElement || !debtElement || !customerIdInput || !amountInput) {
+        return;
+    }
+
+    collectionModal.addEventListener('show.bs.modal', function (event) {
+        var triggerButton = event.relatedTarget;
+        if (!triggerButton) {
+            return;
+        }
+
+        var customerName = triggerButton.getAttribute('data-customer-name') || '-';
+        var balanceRaw = triggerButton.getAttribute('data-customer-balance') || '0';
+        var balanceFormatted = triggerButton.getAttribute('data-customer-balance-formatted') || balanceRaw;
+
+        nameElement.textContent = customerName;
+        debtElement.textContent = balanceFormatted;
+        customerIdInput.value = triggerButton.getAttribute('data-customer-id') || '';
+
+        amountInput.value = balanceRaw;
+        amountInput.setAttribute('max', balanceRaw);
+        amountInput.focus();
+    });
+
+    collectionModal.addEventListener('hidden.bs.modal', function () {
+        nameElement.textContent = '-';
+        debtElement.textContent = '-';
+        customerIdInput.value = '';
+        amountInput.value = '';
+        amountInput.removeAttribute('max');
+    });
+});
+</script>
+
 <?php if ($error): ?>
     <div class="alert alert-danger alert-dismissible fade show">
         <i class="bi bi-exclamation-triangle-fill me-2"></i>
@@ -140,7 +302,7 @@ $customers = $db->query($sql, $params);
                         <th>ديون العميل</th>
                         <th>العنوان</th>
                         <th>تاريخ الإضافة</th>
-                        <th>الحالة</th>
+                        <th>الإجراءات</th>
                     </tr>
                 </thead>
                 <tbody>
@@ -157,9 +319,30 @@ $customers = $db->query($sql, $params);
                                 <td><?php echo htmlspecialchars($customer['address'] ?? '-'); ?></td>
                                 <td><?php echo formatDate($customer['created_at']); ?></td>
                                 <td>
-                                    <span class="badge bg-<?php echo $customer['status'] === 'active' ? 'success' : 'secondary'; ?>">
-                                        <?php echo $customer['status'] === 'active' ? 'نشط' : 'غير نشط'; ?>
-                                    </span>
+                                    <?php
+                                    $customerBalance = isset($customer['balance']) ? (float)$customer['balance'] : 0.0;
+                                    $isActive = ($customer['status'] ?? '') === 'active';
+                                    $formattedBalance = formatCurrency($customerBalance);
+                                    $rawBalance = number_format($customerBalance, 2, '.', '');
+                                    ?>
+                                    <div class="d-flex flex-wrap align-items-center gap-2">
+                                        <button
+                                            type="button"
+                                            class="btn btn-sm <?php echo $customerBalance > 0 ? 'btn-success' : 'btn-outline-secondary'; ?>"
+                                            data-bs-toggle="modal"
+                                            data-bs-target="#collectPaymentModal"
+                                            data-customer-id="<?php echo (int)$customer['id']; ?>"
+                                            data-customer-name="<?php echo htmlspecialchars($customer['name']); ?>"
+                                            data-customer-balance="<?php echo $rawBalance; ?>"
+                                            data-customer-balance-formatted="<?php echo htmlspecialchars($formattedBalance); ?>"
+                                            <?php echo $customerBalance > 0 ? '' : 'disabled'; ?>
+                                        >
+                                            <i class="bi bi-cash-coin me-1"></i>تحصيل
+                                        </button>
+                                        <span class="badge bg-<?php echo $isActive ? 'success' : 'secondary'; ?>">
+                                            <?php echo $isActive ? 'نشط' : 'غير نشط'; ?>
+                                        </span>
+                                    </div>
                                 </td>
                             </tr>
                         <?php endforeach; ?>
@@ -213,6 +396,49 @@ $customers = $db->query($sql, $params);
     </div>
 </div>
 
+<!-- Modal تحصيل ديون العميل -->
+<div class="modal fade" id="collectPaymentModal" tabindex="-1" aria-hidden="true">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title"><i class="bi bi-cash-coin me-2"></i>تحصيل ديون العميل</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="إغلاق"></button>
+            </div>
+            <form method="POST" action="<?php echo htmlspecialchars($_SERVER['REQUEST_URI']); ?>">
+                <input type="hidden" name="action" value="collect_debt">
+                <input type="hidden" name="customer_id" value="">
+                <div class="modal-body">
+                    <div class="mb-3">
+                        <div class="fw-semibold text-muted">العميل</div>
+                        <div class="fs-5 collection-customer-name">-</div>
+                    </div>
+                    <div class="mb-3">
+                        <div class="fw-semibold text-muted">الديون الحالية</div>
+                        <div class="fs-5 text-warning collection-current-debt">-</div>
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label" for="collectionAmount">مبلغ التحصيل <span class="text-danger">*</span></label>
+                        <input
+                            type="number"
+                            class="form-control"
+                            id="collectionAmount"
+                            name="amount"
+                            step="0.01"
+                            min="0.01"
+                            required
+                        >
+                        <div class="form-text">لن يتم قبول مبلغ أكبر من قيمة الديون الحالية.</div>
+                    </div>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">إلغاء</button>
+                    <button type="submit" class="btn btn-primary">تحصيل المبلغ</button>
+                </div>
+            </form>
+        </div>
+    </div>
+</div>
+
 <!-- Modal إضافة عميل جديد -->
 <div class="modal fade" id="addCustomerModal" tabindex="-1">
     <div class="modal-dialog">
@@ -249,45 +475,4 @@ $customers = $db->query($sql, $params);
         </div>
     </div>
 </div>
-
-<?php
-// معالجة إضافة عميل
-if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['action'] === 'add_customer') {
-    $name = trim($_POST['name'] ?? '');
-    $phone = trim($_POST['phone'] ?? '');
-    $address = trim($_POST['address'] ?? '');
-    $balance = isset($_POST['balance']) ? cleanFinancialValue($_POST['balance']) : 0;
-    if ($balance < 0) {
-        $balance = 0;
-    }
-    
-    if (empty($name)) {
-        $error = 'يجب إدخال اسم العميل';
-    } else {
-        // التحقق من عدم تكرار رقم الهاتف
-        if (!empty($phone)) {
-            $existing = $db->queryOne("SELECT id FROM customers WHERE phone = ?", [$phone]);
-            if ($existing) {
-                $error = 'رقم الهاتف موجود بالفعل';
-            }
-        }
-        
-        if (empty($error)) {
-            $db->execute(
-                "INSERT INTO customers (name, phone, balance, address, status, created_by) 
-                 VALUES (?, ?, ?, ?, 'active', ?)",
-                [$name, $phone ?: null, $balance, $address ?: null, $currentUser['id']]
-            );
-            
-            logAudit($currentUser['id'], 'add_customer', 'customer', $db->getLastInsertId(), null, [
-                'name' => $name
-            ]);
-            
-            $success = 'تم إضافة العميل بنجاح';
-            $redirectUrl = getDashboardUrl($currentUser['role'] ?? 'sales') . '?page=customers';
-            echo '<script>setTimeout(function(){ window.location.href = ' . json_encode($redirectUrl, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES) . '; }, 600);</script>';
-        }
-    }
-}
-?>
 

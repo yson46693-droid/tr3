@@ -1,0 +1,49 @@
+name: Deploy to InfinityFree
+
+on:
+  push:
+    branches: ["main"]
+  workflow_dispatch: # للرفع اليدوي
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15 # حد زمني للعملية
+
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v3
+        with:
+          fetch-depth: 0 # جلب جميع الـ commits للمقارنة
+
+      - name: Upload via FTP (Incremental)
+        uses: SamKirkland/FTP-Deploy-Action@v4.3.3
+        with:
+          server: ftpupload.net
+          username: if0_40239608
+          password: ${{ secrets.FTP_PASSWORD }}
+          server-dir: /htdocs/v1/
+          local-dir: ./
+          # الخيارات لرفع التعديلات فقط (افتراضي)
+          dry-run: false
+          # استبعاد الملفات غير الضرورية
+          exclude: |
+            **/.git*
+            **/.git*/**
+            **/node_modules/**
+            **/.env
+            **/.env.*
+            **/README.md
+            **/.github/**
+            **/.vscode/**
+            **/.idea/**
+            **/*.log
+            **/backups/**
+            **/temp/**
+            **/tmp/**
+            git-push.*
+            quick-push.*
+            .gitignore
+            .editorconfig
+            .DS_Store
+            Thumbs.db

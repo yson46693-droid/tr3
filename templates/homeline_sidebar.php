@@ -74,6 +74,13 @@ switch ($role) {
                 'badge' => null
             ],
             [
+                'title' => 'مخزن المنتجات',
+                'icon' => 'bi-boxes',
+                'url' => $baseUrl . 'manager.php?page=final_products',
+                'active' => ($currentPage === 'manager.php' && $currentPageParam === 'final_products'),
+                'badge' => null
+            ],
+            [
                 'title' => 'مخزن أدوات التعبئة',
                 'icon' => 'bi-box-seam',
                 'url' => $baseUrl . 'manager.php?page=packaging_warehouse',

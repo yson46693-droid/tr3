@@ -52,6 +52,11 @@ $pageTitle = isset($lang['manager_dashboard']) ? $lang['manager_dashboard'] : '�
                         'url' => getRelativeUrl('dashboard/manager.php?page=production_tasks')
                     ],
                     [
+                        'label' => 'مخزن المنتجات',
+                        'icon' => 'bi-boxes',
+                        'url' => getRelativeUrl('dashboard/manager.php?page=final_products')
+                    ],
+                    [
                         'label' => 'مخزن أدوات التعبئة',
                         'icon' => 'bi-box-seam',
                         'url' => getRelativeUrl('dashboard/manager.php?page=packaging_warehouse')
@@ -558,6 +563,17 @@ $pageTitle = isset($lang['manager_dashboard']) ? $lang['manager_dashboard'] : '�
                     include $modulePath;
                 } else {
                     echo '<div class="alert alert-warning">صفحة مخزن أدوات التعبئة غير متاحة حالياً</div>';
+                }
+                ?>
+                
+            <?php elseif ($page === 'final_products'): ?>
+                <!-- صفحة مخزن المنتجات النهائية -->
+                <?php 
+                $modulePath = __DIR__ . '/../modules/production/final_products.php';
+                if (file_exists($modulePath)) {
+                    include $modulePath;
+                } else {
+                    echo '<div class="alert alert-warning">صفحة مخزن المنتجات غير متاحة حالياً</div>';
                 }
                 ?>
                 
