@@ -522,6 +522,15 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             try {
                 $db->beginTransaction();
                 
+                $materialSuppliersInput = $_POST['material_suppliers'] ?? [];
+                $materialSuppliers = [];
+                if (is_array($materialSuppliersInput)) {
+                    foreach ($materialSuppliersInput as $key => $value) {
+                        $materialSuppliers[$key] = intval($value);
+                    }
+                }
+                $templateMode = $_POST['template_mode'] ?? 'legacy';
+
                 // محاولة الحصول على القالب الموحد أولاً
                 $unifiedTemplate = $db->queryOne(
                     "SELECT * FROM unified_product_templates WHERE id = ? AND status = 'active'",
@@ -546,35 +555,61 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     
                     $insufficientMaterials = [];
                     foreach ($rawMaterials as $material) {
-                        $requiredQty = floatval($material['quantity']) * $quantity;
+                        $quantityColumnValue = isset($material['quantity']) ? $material['quantity'] : ($material['quantity_per_unit'] ?? 0);
+                        $requiredQty = floatval($quantityColumnValue) * $quantity;
+                        $supplierIdForCheck = $material['supplier_id'] ?? null;
                         
                         // التحقق من توفر المادة حسب نوعها
                         switch ($material['material_type']) {
                             case 'honey_raw':
                             case 'honey_filtered':
                                 $stockColumn = $material['material_type'] === 'honey_raw' ? 'raw_honey_quantity' : 'filtered_honey_quantity';
-                                $available = $db->queryOne(
-                                    "SELECT SUM($stockColumn) as total FROM honey_stock WHERE supplier_id = ?",
-                                    [$material['supplier_id']]
-                                );
+                                if ($supplierIdForCheck) {
+                                    $available = $db->queryOne(
+                                        "SELECT SUM($stockColumn) as total FROM honey_stock WHERE supplier_id = ?",
+                                        [$supplierIdForCheck]
+                                    );
+                                } else {
+                                    $available = $db->queryOne(
+                                        "SELECT SUM($stockColumn) as total FROM honey_stock"
+                                    );
+                                }
                                 break;
                             case 'olive_oil':
-                                $available = $db->queryOne(
-                                    "SELECT SUM(quantity) as total FROM olive_oil_stock WHERE supplier_id = ?",
-                                    [$material['supplier_id']]
-                                );
+                                if ($supplierIdForCheck) {
+                                    $available = $db->queryOne(
+                                        "SELECT SUM(quantity) as total FROM olive_oil_stock WHERE supplier_id = ?",
+                                        [$supplierIdForCheck]
+                                    );
+                                } else {
+                                    $available = $db->queryOne(
+                                        "SELECT SUM(quantity) as total FROM olive_oil_stock"
+                                    );
+                                }
                                 break;
                             case 'beeswax':
-                                $available = $db->queryOne(
-                                    "SELECT SUM(weight) as total FROM beeswax_stock WHERE supplier_id = ?",
-                                    [$material['supplier_id']]
-                                );
+                                if ($supplierIdForCheck) {
+                                    $available = $db->queryOne(
+                                        "SELECT SUM(weight) as total FROM beeswax_stock WHERE supplier_id = ?",
+                                        [$supplierIdForCheck]
+                                    );
+                                } else {
+                                    $available = $db->queryOne(
+                                        "SELECT SUM(weight) as total FROM beeswax_stock"
+                                    );
+                                }
                                 break;
                             case 'derivatives':
-                                $available = $db->queryOne(
-                                    "SELECT SUM(weight) as total FROM derivatives_stock WHERE supplier_id = ?",
-                                    [$material['supplier_id']]
-                                );
+                                if ($supplierIdForCheck) {
+                                    $available = $db->queryOne(
+                                        "SELECT SUM(weight) as total FROM derivatives_stock WHERE supplier_id = ?",
+                                        [$supplierIdForCheck]
+                                    );
+                                } else {
+                                    $available = $db->queryOne(
+                                        "SELECT SUM(weight) as total FROM derivatives_stock"
+                                    );
+                                }
                                 break;
                             default:
                                 $available = ['total' => PHP_FLOAT_MAX]; // للمواد الأخرى لا نتحقق
@@ -665,47 +700,64 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 if ($isUnifiedTemplate) {
                     // قالب موحد - الحصول على أدوات التعبئة
                     $packagingItems = $db->query(
-                        "SELECT packaging_material_id FROM template_packaging WHERE template_id = ?",
+                        "SELECT id, packaging_material_id, packaging_name, quantity_per_unit FROM template_packaging WHERE template_id = ?",
                         [$templateId]
                     );
                     $packagingIds = array_filter(array_map(function($p) { return $p['packaging_material_id'] ?? null; }, $packagingItems));
                     
-                    // التحقق من وجود عمود honey_variety
-                    $hasHoneyVarietyColumn = false;
-                    $templateRawMaterialsTableCheck = $db->queryOne("SHOW TABLES LIKE 'template_raw_materials'");
-                    if (!empty($templateRawMaterialsTableCheck)) {
-                        $honeyVarietyColumnCheck = $db->queryOne("SHOW COLUMNS FROM template_raw_materials LIKE 'honey_variety'");
-                        $hasHoneyVarietyColumn = !empty($honeyVarietyColumnCheck);
-                    }
+                    $honeySupplierId = null;
+                    $packagingSupplierId = null;
+                    $honeyVariety = null;
+                    $usingSubmittedSuppliers = ($templateMode === 'advanced' && !empty($materialSuppliers));
                     
-                    // الحصول على جميع الموردين من المواد الخام مع نوع العسل
-                    $selectColumns = "DISTINCT supplier_id, material_type, material_name";
-                    if ($hasHoneyVarietyColumn) {
-                        $selectColumns .= ", honey_variety";
-                    }
-                    
-                    $rawMaterials = $db->query(
-                        "SELECT {$selectColumns} FROM template_raw_materials WHERE template_id = ? AND supplier_id IS NOT NULL",
-                        [$templateId]
-                    );
-                    
-                    $honeyVariety = null; // نوع العسل الأساسي
-                    
-                    foreach ($rawMaterials as $material) {
-                        $supplierInfo = $db->queryOne(
-                            "SELECT id, name, type FROM suppliers WHERE id = ?",
-                            [$material['supplier_id']]
-                        );
-                        if ($supplierInfo) {
-                            $materialDisplay = $material['material_name'];
+                    if ($usingSubmittedSuppliers) {
+                        // الموردون المحددون من النموذج المتقدم
+                        foreach ($packagingItems as $pkg) {
+                            $pkgKey = 'pack_' . ($pkg['packaging_material_id'] ?? $pkg['id']);
+                            $selectedSupplierId = $materialSuppliers[$pkgKey] ?? 0;
+                            if (empty($selectedSupplierId)) {
+                                throw new Exception('يرجى اختيار مورد لكل أداة تعبئة قبل إنشاء التشغيلة.');
+                            }
                             
-                            // إضافة نوع العسل إلى اسم المادة
-                            if ($hasHoneyVarietyColumn 
-                                && ($material['material_type'] === 'honey_raw' || $material['material_type'] === 'honey_filtered') 
-                                && !empty($material['honey_variety'])) {
-                                $materialDisplay .= ' (' . $material['honey_variety'] . ')';
+                            $supplierInfo = $db->queryOne("SELECT id, name, type FROM suppliers WHERE id = ?", [$selectedSupplierId]);
+                            if (!$supplierInfo) {
+                                throw new Exception('مورد غير صالح لأداة التعبئة: ' . ($pkg['packaging_name'] ?? 'غير معروف'));
+                            }
+                            
+                            $allSuppliers[] = [
+                                'id' => $supplierInfo['id'],
+                                'name' => $supplierInfo['name'],
+                                'type' => $supplierInfo['type'],
+                                'material' => $pkg['packaging_name'] ?? 'أداة تعبئة'
+                            ];
+                            
+                            if (!$packagingSupplierId) {
+                                $packagingSupplierId = $supplierInfo['id'];
+                            }
+                        }
+                        
+                        $rawSuppliers = $db->query(
+                            "SELECT id, material_name, material_type, honey_variety FROM template_raw_materials WHERE template_id = ?",
+                            [$templateId]
+                        );
+                        
+                        foreach ($rawSuppliers as $materialRow) {
+                            $rawKey = 'raw_' . $materialRow['id'];
+                            $selectedSupplierId = $materialSuppliers[$rawKey] ?? 0;
+                            if (empty($selectedSupplierId)) {
+                                throw new Exception('يرجى اختيار مورد لكل مادة خام قبل إنشاء التشغيلة.');
+                            }
+                            
+                            $supplierInfo = $db->queryOne("SELECT id, name, type FROM suppliers WHERE id = ?", [$selectedSupplierId]);
+                            if (!$supplierInfo) {
+                                throw new Exception('مورد غير صالح للمادة الخام: ' . ($materialRow['material_name'] ?? 'غير معروف'));
+                            }
+                            
+                            $materialDisplay = $materialRow['material_name'] ?? 'مادة خام';
+                            if (!empty($materialRow['honey_variety'])) {
+                                $materialDisplay .= ' (' . $materialRow['honey_variety'] . ')';
                                 if (!$honeyVariety) {
-                                    $honeyVariety = $material['honey_variety']; // حفظ أول نوع عسل
+                                    $honeyVariety = $materialRow['honey_variety'];
                                 }
                             }
                             
@@ -714,21 +766,91 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                                 'name' => $supplierInfo['name'],
                                 'type' => $supplierInfo['type'],
                                 'material' => $materialDisplay,
-                                'honey_variety' => ($hasHoneyVarietyColumn && isset($material['honey_variety'])) ? $material['honey_variety'] : null
+                                'honey_variety' => $materialRow['honey_variety'] ?? null
                             ];
+                            
+                            if (!$honeySupplierId && in_array($materialRow['material_type'], ['honey_raw', 'honey_filtered'])) {
+                                $honeySupplierId = $supplierInfo['id'];
+                            }
+                        }
+
+                        if (!$packagingSupplierId) {
+                            foreach ($materialSuppliers as $key => $value) {
+                                if (strpos($key, 'pack_') === 0 && $value > 0) {
+                                    $packagingSupplierId = $value;
+                                    break;
+                                }
+                            }
+                        }
+                    } else {
+                        // fallback إلى النظام القديم (معلومات الموردين من القالب نفسه)
+                        $hasHoneyVarietyColumn = false;
+                        $templateRawMaterialsTableCheck = $db->queryOne("SHOW TABLES LIKE 'template_raw_materials'");
+                        if (!empty($templateRawMaterialsTableCheck)) {
+                            $honeyVarietyColumnCheck = $db->queryOne("SHOW COLUMNS FROM template_raw_materials LIKE 'honey_variety'");
+                            $hasHoneyVarietyColumn = !empty($honeyVarietyColumnCheck);
+                        }
+                        
+                        $selectColumns = "DISTINCT supplier_id, material_type, material_name";
+                        if ($hasHoneyVarietyColumn) {
+                            $selectColumns .= ", honey_variety";
+                        }
+                        
+                        $rawMaterialsWithSuppliers = $db->query(
+                            "SELECT {$selectColumns} FROM template_raw_materials WHERE template_id = ? AND supplier_id IS NOT NULL",
+                            [$templateId]
+                        );
+                        
+                        $honeyVariety = null;
+                        
+                        foreach ($rawMaterialsWithSuppliers as $material) {
+                            $supplierInfo = $db->queryOne(
+                                "SELECT id, name, type FROM suppliers WHERE id = ?",
+                                [$material['supplier_id']]
+                            );
+                            if ($supplierInfo) {
+                                $materialDisplay = $material['material_name'];
+                                
+                                if ($hasHoneyVarietyColumn 
+                                    && ($material['material_type'] === 'honey_raw' || $material['material_type'] === 'honey_filtered') 
+                                    && !empty($material['honey_variety'])) {
+                                    $materialDisplay .= ' (' . $material['honey_variety'] . ')';
+                                    if (!$honeyVariety) {
+                                        $honeyVariety = $material['honey_variety'];
+                                    }
+                                }
+                                
+                                $allSuppliers[] = [
+                                    'id' => $supplierInfo['id'],
+                                    'name' => $supplierInfo['name'],
+                                    'type' => $supplierInfo['type'],
+                                    'material' => $materialDisplay,
+                                    'honey_variety' => ($hasHoneyVarietyColumn && isset($material['honey_variety'])) ? $material['honey_variety'] : null
+                                ];
+                                
+                                if (!$honeySupplierId && in_array($supplierInfo['type'], ['honey'])) {
+                                    $honeySupplierId = $supplierInfo['id'];
+                                }
+                            }
+                        }
+                        
+                        if (!empty($allSuppliers)) {
+                            foreach ($allSuppliers as $sup) {
+                                if (!$packagingSupplierId && $sup['type'] === 'packaging') {
+                                    $packagingSupplierId = $sup['id'];
+                                }
+                            }
+                        }
+
+                        if (!$packagingSupplierId && !empty($materialSuppliers)) {
+                            foreach ($materialSuppliers as $key => $value) {
+                                if (strpos($key, 'pack_') === 0 && $value > 0) {
+                                    $packagingSupplierId = $value;
+                                    break;
+                                }
+                            }
                         }
                     }
-                    
-                    // استخدام أول مورد عسل ومورد تعبئة (للتوافق مع النظام القديم)
-                    $honeySupplierId = null;
-                    $packagingSupplierId = null;
-                    
-                    foreach ($allSuppliers as $sup) {
-                        if (!$honeySupplierId && in_array($sup['type'], ['honey'])) {
-                            $honeySupplierId = $sup['id'];
-                        }
-                    }
-                    
                 } else {
                     // قالب قديم
                     $packagingMaterials = $db->query(
@@ -1006,7 +1128,7 @@ $workers = $db->query("SELECT id, username, full_name FROM users WHERE role = 'p
 $suppliers = [];
 $suppliersTableCheck = $db->queryOne("SHOW TABLES LIKE 'suppliers'");
 if (!empty($suppliersTableCheck)) {
-    $suppliers = $db->query("SELECT id, name FROM suppliers WHERE status = 'active' ORDER BY name");
+    $suppliers = $db->query("SELECT id, name, type FROM suppliers WHERE status = 'active' ORDER BY name");
 }
 
 // إنشاء جداول قوالب المنتجات إذا لم تكن موجودة
@@ -1410,9 +1532,9 @@ $lang = isset($translations) ? $translations : [];
 <?php endif; ?>
 
 <div class="mb-4">
-    <div class="btn-group" role="tablist" aria-label="التنقل بين أقسام صفحة الإنتاج">
+    <div class="production-tab-toggle" role="tablist" aria-label="التنقل بين أقسام صفحة الإنتاج">
         <button type="button"
-                class="btn btn-outline-primary active"
+                class="btn btn-outline-primary production-tab-btn active"
                 data-production-tab="records"
                 aria-pressed="true"
                 aria-controls="productionRecordsSection">
@@ -1420,7 +1542,7 @@ $lang = isset($translations) ? $translations : [];
             سجلات الإنتاج
         </button>
         <button type="button"
-                class="btn btn-outline-primary"
+                class="btn btn-outline-primary production-tab-btn"
                 data-production-tab="reports"
                 aria-pressed="false"
                 aria-controls="productionReportsSection">
@@ -1657,45 +1779,37 @@ $lang = isset($translations) ? $translations : [];
                     آخر تحديث: <?php echo htmlspecialchars($productionReportsToday['generated_at'] ?? date('Y-m-d H:i:s')); ?>
                 </span>
             </div>
-            <div class="row g-3 mt-3">
-                <div class="col-md-3 col-sm-6">
-                    <div class="border rounded-3 p-3 h-100">
-                        <div class="text-muted small mb-1">استهلاك أدوات التعبئة</div>
-                        <div class="fs-4 fw-semibold text-primary">
-                            <?php echo number_format((float)($productionReportsToday['packaging']['total_out'] ?? 0), 3); ?>
-                        </div>
-                    </div>
+            <div class="production-summary-grid mt-3">
+                <div class="summary-card">
+                    <span class="summary-label">استهلاك أدوات التعبئة</span>
+                    <span class="summary-value text-primary">
+                        <?php echo number_format((float)($productionReportsToday['packaging']['total_out'] ?? 0), 3); ?>
+                    </span>
                 </div>
-                <div class="col-md-3 col-sm-6">
-                    <div class="border rounded-3 p-3 h-100">
-                        <div class="text-muted small mb-1">استهلاك المواد الخام</div>
-                        <div class="fs-4 fw-semibold text-primary">
-                            <?php echo number_format((float)($productionReportsToday['raw']['total_out'] ?? 0), 3); ?>
-                        </div>
-                    </div>
+                <div class="summary-card">
+                    <span class="summary-label">استهلاك المواد الخام</span>
+                    <span class="summary-value text-primary">
+                        <?php echo number_format((float)($productionReportsToday['raw']['total_out'] ?? 0), 3); ?>
+                    </span>
                 </div>
-                <div class="col-md-3 col-sm-6">
-                    <div class="border rounded-3 p-3 h-100">
-                        <div class="text-muted small mb-1">الصافي الكلي</div>
-                        <div class="fs-4 fw-semibold text-success">
-                            <?php
-                            $todayNet = (float)($productionReportsToday['packaging']['net'] ?? 0) + (float)($productionReportsToday['raw']['net'] ?? 0);
-                            echo number_format($todayNet, 3);
-                            ?>
-                        </div>
-                    </div>
+                <div class="summary-card">
+                    <span class="summary-label">الصافي الكلي</span>
+                    <span class="summary-value text-success">
+                        <?php
+                        $todayNet = (float)($productionReportsToday['packaging']['net'] ?? 0) + (float)($productionReportsToday['raw']['net'] ?? 0);
+                        echo number_format($todayNet, 3);
+                        ?>
+                    </span>
                 </div>
-                <div class="col-md-3 col-sm-6">
-                    <div class="border rounded-3 p-3 h-100">
-                        <div class="text-muted small mb-1">إجمالي الحركات</div>
-                        <div class="fs-4 fw-semibold text-secondary">
-                            <?php
-                            $todayMovements = productionPageSumMovements($productionReportsToday['packaging']['items'] ?? [])
-                                + productionPageSumMovements($productionReportsToday['raw']['items'] ?? []);
-                            echo number_format($todayMovements);
-                            ?>
-                        </div>
-                    </div>
+                <div class="summary-card">
+                    <span class="summary-label">إجمالي الحركات</span>
+                    <span class="summary-value text-secondary">
+                        <?php
+                        $todayMovements = productionPageSumMovements($productionReportsToday['packaging']['items'] ?? [])
+                            + productionPageSumMovements($productionReportsToday['raw']['items'] ?? []);
+                        echo number_format($todayMovements);
+                        ?>
+                    </span>
                 </div>
             </div>
         </div>
@@ -1734,45 +1848,37 @@ $lang = isset($translations) ? $translations : [];
                     آخر تحديث: <?php echo htmlspecialchars($productionReportsMonth['generated_at'] ?? date('Y-m-d H:i:s')); ?>
                 </span>
             </div>
-            <div class="row g-3 mt-3">
-                <div class="col-md-3 col-sm-6">
-                    <div class="border rounded-3 p-3 h-100">
-                        <div class="text-muted small mb-1">إجمالي استهلاك التعبئة</div>
-                        <div class="fs-4 fw-semibold text-primary">
-                            <?php echo number_format((float)($productionReportsMonth['packaging']['total_out'] ?? 0), 3); ?>
-                        </div>
-                    </div>
+            <div class="production-summary-grid mt-3">
+                <div class="summary-card">
+                    <span class="summary-label">إجمالي استهلاك التعبئة</span>
+                    <span class="summary-value text-primary">
+                        <?php echo number_format((float)($productionReportsMonth['packaging']['total_out'] ?? 0), 3); ?>
+                    </span>
                 </div>
-                <div class="col-md-3 col-sm-6">
-                    <div class="border rounded-3 p-3 h-100">
-                        <div class="text-muted small mb-1">إجمالي استهلاك المواد الخام</div>
-                        <div class="fs-4 fw-semibold text-primary">
-                            <?php echo number_format((float)($productionReportsMonth['raw']['total_out'] ?? 0), 3); ?>
-                        </div>
-                    </div>
+                <div class="summary-card">
+                    <span class="summary-label">إجمالي استهلاك المواد الخام</span>
+                    <span class="summary-value text-primary">
+                        <?php echo number_format((float)($productionReportsMonth['raw']['total_out'] ?? 0), 3); ?>
+                    </span>
                 </div>
-                <div class="col-md-3 col-sm-6">
-                    <div class="border rounded-3 p-3 h-100">
-                        <div class="text-muted small mb-1">الصافي الشهري</div>
-                        <div class="fs-4 fw-semibold text-success">
-                            <?php
-                            $monthNet = (float)($productionReportsMonth['packaging']['net'] ?? 0) + (float)($productionReportsMonth['raw']['net'] ?? 0);
-                            echo number_format($monthNet, 3);
-                            ?>
-                        </div>
-                    </div>
+                <div class="summary-card">
+                    <span class="summary-label">الصافي الشهري</span>
+                    <span class="summary-value text-success">
+                        <?php
+                        $monthNet = (float)($productionReportsMonth['packaging']['net'] ?? 0) + (float)($productionReportsMonth['raw']['net'] ?? 0);
+                        echo number_format($monthNet, 3);
+                        ?>
+                    </span>
                 </div>
-                <div class="col-md-3 col-sm-6">
-                    <div class="border rounded-3 p-3 h-100">
-                        <div class="text-muted small mb-1">إجمالي الحركات</div>
-                        <div class="fs-4 fw-semibold text-secondary">
-                            <?php
-                            $monthMovements = productionPageSumMovements($productionReportsMonth['packaging']['items'] ?? [])
-                                + productionPageSumMovements($productionReportsMonth['raw']['items'] ?? []);
-                            echo number_format($monthMovements);
-                            ?>
-                        </div>
-                    </div>
+                <div class="summary-card">
+                    <span class="summary-label">إجمالي الحركات</span>
+                    <span class="summary-value text-secondary">
+                        <?php
+                        $monthMovements = productionPageSumMovements($productionReportsMonth['packaging']['items'] ?? [])
+                            + productionPageSumMovements($productionReportsMonth['raw']['items'] ?? []);
+                        echo number_format($monthMovements);
+                        ?>
+                    </span>
                 </div>
             </div>
         </div>
@@ -1821,6 +1927,7 @@ $lang = isset($translations) ? $translations : [];
             <form method="POST" id="createFromTemplateForm">
                 <input type="hidden" name="action" value="create_from_template">
                 <input type="hidden" name="template_id" id="template_id">
+                <input type="hidden" name="template_mode" id="template_mode" value="legacy">
                 <div class="modal-body">
                     <!-- معلومات المنتج -->
                     <div class="mb-4">
@@ -1848,7 +1955,7 @@ $lang = isset($translations) ? $translations : [];
                     </div>
                     
                     <!-- الموردين -->
-                    <div class="mb-4">
+                    <div class="mb-4" id="legacySupplierSelectors">
                         <h6 class="text-primary mb-3">
                             <i class="bi bi-truck me-2"></i>الموردين <span class="text-danger">*</span>
                         </h6>
@@ -1876,6 +1983,14 @@ $lang = isset($translations) ? $translations : [];
                                 </select>
                             </div>
                         </div>
+                    </div>
+
+                    <div class="mb-4 d-none" id="templateSuppliersWrapper">
+                        <h6 class="text-primary mb-3">
+                            <i class="bi bi-truck me-2"></i>الموردون لكل مادة <span class="text-danger">*</span>
+                        </h6>
+                        <p class="text-muted small mb-3">يرجى اختيار المورد المناسب لكل مادة خام أو أداة تعبئة سيتم استخدامها في هذه التشغيلة.</p>
+                        <div class="row g-3" id="templateSuppliersContainer"></div>
                     </div>
                     
                     <!-- عمال الإنتاج الحاضرين -->
@@ -2132,6 +2247,101 @@ $lang = isset($translations) ? $translations : [];
 </div>
 
 <style>
+/* 🎯 ضبط تبويبات الصفحة وتقارير الإنتاج */
+.production-tab-toggle {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.75rem;
+}
+
+.production-tab-toggle .production-tab-btn {
+    flex: 1 1 200px;
+    min-width: 160px;
+    padding: 0.65rem 1.2rem !important;
+    border-radius: 12px !important;
+    border: 1px solid rgba(29, 78, 216, 0.35) !important;
+    background: #ffffff !important;
+    color: #1d4ed8 !important;
+    box-shadow: 0 4px 12px rgba(15, 23, 42, 0.08) !important;
+    font-weight: 600 !important;
+    transition: all 0.25s ease !important;
+}
+
+.production-tab-toggle .production-tab-btn:hover {
+    transform: translateY(-2px);
+    box-shadow: 0 8px 18px rgba(59, 130, 246, 0.25) !important;
+}
+
+.production-tab-toggle .production-tab-btn.active {
+    background: linear-gradient(135deg, #1d4ed8 0%, #2563eb 100%) !important;
+    color: #ffffff !important;
+    border-color: transparent !important;
+    box-shadow: 0 12px 26px rgba(37, 99, 235, 0.35) !important;
+}
+
+#productionReportsSection {
+    display: flex;
+    flex-direction: column;
+    gap: 1.5rem;
+}
+
+#productionReportsSection .card {
+    border-radius: 16px !important;
+}
+
+#productionReportsSection .production-summary-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(190px, 1fr));
+    gap: 1rem;
+}
+
+#productionReportsSection .summary-card {
+    background: #f8fafc;
+    border-radius: 14px;
+    padding: 1.1rem;
+    border: 1px solid rgba(15, 23, 42, 0.05);
+    box-shadow: 0 6px 20px rgba(15, 23, 42, 0.08);
+    display: flex;
+    flex-direction: column;
+    gap: 0.55rem;
+}
+
+#productionReportsSection .summary-label {
+    font-size: 0.85rem;
+    color: #6b7280;
+    letter-spacing: 0.3px;
+}
+
+#productionReportsSection .summary-value {
+    font-size: 1.45rem;
+    font-weight: 700;
+    line-height: 1.2;
+}
+
+#productionReportsSection .summary-value.text-secondary {
+    color: #475569 !important;
+}
+
+#productionReportsSection .badge {
+    font-size: 0.8rem;
+    padding: 0.45rem 0.75rem;
+    border-radius: 10px;
+}
+
+#productionReportsSection .table {
+    font-size: 0.9rem;
+}
+
+#productionReportsSection .table th {
+    font-size: 0.85rem;
+    letter-spacing: 0.4px;
+}
+
+#productionReportsSection .table td {
+    vertical-align: middle;
+    font-size: 0.85rem;
+}
+
 /* 🎨 تنسيق الألوان والظلال - تدرجات الأزرق */
 
 /* البطاقات والكروت */
@@ -2381,6 +2591,18 @@ h2, h3, h4, h5 {
 </style>
 
 <script>
+window.productionSuppliers = <?php
+$suppliersForJs = is_array($suppliers) ? $suppliers : [];
+echo json_encode(array_map(function($supplier) {
+    return [
+        'id' => (int)($supplier['id'] ?? 0),
+        'name' => $supplier['name'] ?? '',
+        'type' => $supplier['type'] ?? ''
+    ];
+}, $suppliersForJs), JSON_UNESCAPED_UNICODE);
+?>;
+let currentTemplateMode = 'legacy';
+
 document.addEventListener('DOMContentLoaded', function() {
     const tabButtons = document.querySelectorAll('[data-production-tab]');
     const sections = {
@@ -2412,6 +2634,86 @@ document.addEventListener('DOMContentLoaded', function() {
         });
     });
 });
+
+function renderTemplateSuppliers(details) {
+    const wrapper = document.getElementById('templateSuppliersWrapper');
+    const container = document.getElementById('templateSuppliersContainer');
+    const legacyWrapper = document.getElementById('legacySupplierSelectors');
+    const honeySelect = document.getElementById('honey_supplier_select');
+    const packagingSelect = document.getElementById('packaging_supplier_select');
+    const modeInput = document.getElementById('template_mode');
+
+    if (!container || !wrapper || !legacyWrapper || !modeInput) {
+        return;
+    }
+
+    if (!details || !details.components || details.components.length === 0) {
+        wrapper.classList.add('d-none');
+        legacyWrapper.classList.remove('d-none');
+        if (honeySelect) honeySelect.required = true;
+        if (packagingSelect) packagingSelect.required = true;
+        currentTemplateMode = 'legacy';
+        modeInput.value = 'legacy';
+        return;
+    }
+
+    container.innerHTML = '';
+
+    details.components.forEach(function(component) {
+        const col = document.createElement('div');
+        col.className = 'col-md-6';
+
+        const label = document.createElement('label');
+        label.className = 'form-label fw-bold';
+        label.textContent = component.label || component.name || 'مادة';
+
+        const helper = document.createElement('small');
+        helper.className = 'text-muted d-block mb-2';
+        helper.textContent = component.description || '';
+
+        const select = document.createElement('select');
+        select.className = 'form-select';
+        select.name = 'material_suppliers[' + (component.key || component.name) + ']';
+        select.dataset.role = 'component-supplier';
+        select.required = true;
+
+        const placeholderOption = document.createElement('option');
+        placeholderOption.value = '';
+        placeholderOption.textContent = 'اختر المورد';
+        select.appendChild(placeholderOption);
+
+        (window.productionSuppliers || []).forEach(function(supplier) {
+            const option = document.createElement('option');
+            option.value = supplier.id;
+            option.textContent = supplier.name;
+            if (component.default_supplier && parseInt(component.default_supplier, 10) === supplier.id) {
+                option.selected = true;
+            }
+            select.appendChild(option);
+        });
+
+        col.appendChild(label);
+        if (helper.textContent.trim() !== '') {
+            col.appendChild(helper);
+        }
+        col.appendChild(select);
+        container.appendChild(col);
+    });
+
+    if (honeySelect) {
+        honeySelect.required = false;
+        honeySelect.value = '';
+    }
+    if (packagingSelect) {
+        packagingSelect.required = false;
+        packagingSelect.value = '';
+    }
+
+    legacyWrapper.classList.add('d-none');
+    wrapper.classList.remove('d-none');
+    currentTemplateMode = details.mode || 'advanced';
+    modeInput.value = currentTemplateMode;
+}
 
 // تحميل بيانات الإنتاج للتعديل
 function editProduction(id) {
@@ -2481,33 +2783,89 @@ function openCreateFromTemplateModal(element) {
     document.getElementById('honey_supplier_select').value = '';
     document.getElementById('packaging_supplier_select').value = '';
     document.querySelector('textarea[name="batch_notes"]').value = '';
-    
-    const modal = new bootstrap.Modal(document.getElementById('createFromTemplateModal'));
-    modal.show();
+
+    const wrapper = document.getElementById('templateSuppliersWrapper');
+    const container = document.getElementById('templateSuppliersContainer');
+    const legacyWrapper = document.getElementById('legacySupplierSelectors');
+    const honeySelect = document.getElementById('honey_supplier_select');
+    const packagingSelect = document.getElementById('packaging_supplier_select');
+    const modeInput = document.getElementById('template_mode');
+
+    if (container) {
+        container.innerHTML = '';
+    }
+    if (wrapper) {
+        wrapper.classList.add('d-none');
+    }
+    if (legacyWrapper) {
+        legacyWrapper.classList.remove('d-none');
+    }
+    currentTemplateMode = 'legacy';
+    if (modeInput) {
+        modeInput.value = 'legacy';
+    }
+    if (honeySelect) {
+        honeySelect.required = true;
+    }
+    if (packagingSelect) {
+        packagingSelect.required = true;
+    }
+
+    const baseUrl = window.location.origin + window.location.pathname.replace(/\/[^\/]*$/, '');
+    fetch(baseUrl + '/dashboard/production.php?page=production&ajax=template_details&template_id=' + templateId)
+        .then(response => response.ok ? response.json() : Promise.reject(new Error('Network error')))
+        .then(data => {
+            if (data && data.success && data.mode === 'advanced') {
+                renderTemplateSuppliers(data);
+            } else {
+                currentTemplateMode = 'legacy';
+                if (modeInput) {
+                    modeInput.value = 'legacy';
+                }
+            }
+        })
+        .catch(error => {
+            console.error('Error loading template details:', error);
+        })
+        .finally(() => {
+            const modal = new bootstrap.Modal(document.getElementById('createFromTemplateModal'));
+            modal.show();
+        });
 }
 
 // إضافة معالج للنموذج للتحقق من الحقول المطلوبة
 document.getElementById('createFromTemplateForm')?.addEventListener('submit', function(e) {
-    const honeySupplier = document.getElementById('honey_supplier_select').value;
-    const packagingSupplier = document.getElementById('packaging_supplier_select').value;
     const quantity = document.querySelector('input[name="quantity"]').value;
-    
-    // التحقق من مورد العسل
-    if (!honeySupplier) {
-        e.preventDefault();
-        alert('يرجى اختيار مورد العسل');
-        document.getElementById('honey_supplier_select').focus();
-        return false;
+
+    if (currentTemplateMode === 'legacy') {
+        const honeySupplier = document.getElementById('honey_supplier_select').value;
+        const packagingSupplier = document.getElementById('packaging_supplier_select').value;
+
+        if (!honeySupplier) {
+            e.preventDefault();
+            alert('يرجى اختيار مورد العسل');
+            document.getElementById('honey_supplier_select').focus();
+            return false;
+        }
+
+        if (!packagingSupplier) {
+            e.preventDefault();
+            alert('يرجى اختيار مورد مواد التعبئة');
+            document.getElementById('packaging_supplier_select').focus();
+            return false;
+        }
+    } else {
+        const supplierSelects = document.querySelectorAll('#templateSuppliersContainer select[data-role="component-supplier"]');
+        for (let select of supplierSelects) {
+            if (!select.value) {
+                e.preventDefault();
+                alert('يرجى اختيار المورد لكل مادة قبل المتابعة');
+                select.focus();
+                return false;
+            }
+        }
     }
-    
-    // التحقق من مورد التعبئة
-    if (!packagingSupplier) {
-        e.preventDefault();
-        alert('يرجى اختيار مورد مواد التعبئة');
-        document.getElementById('packaging_supplier_select').focus();
-        return false;
-    }
-    
+
     // التحقق من الكمية
     if (!quantity || parseInt(quantity) <= 0) {
         e.preventDefault();

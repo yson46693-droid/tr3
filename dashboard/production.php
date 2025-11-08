@@ -286,6 +286,99 @@ $pageTitle = isset($lang['production_dashboard']) ? $lang['production_dashboard'
             <?php elseif ($page === 'production'): ?>
                 <!-- صفحة إدارة الإنتاج -->
                 <?php 
+                // معالجة AJAX لتحميل تفاصيل القوالب المتقدمة
+                if (isset($_GET['ajax']) && $_GET['ajax'] === 'template_details' && isset($_GET['template_id'])) {
+                    header('Content-Type: application/json; charset=utf-8');
+                    $templateId = intval($_GET['template_id']);
+                    $response = [
+                        'success' => false,
+                        'mode' => 'legacy',
+                        'components' => []
+                    ];
+
+                    try {
+                        $unifiedTemplate = $db->queryOne(
+                            "SELECT id, product_name FROM unified_product_templates WHERE id = ?",
+                            [$templateId]
+                        );
+
+                        if ($unifiedTemplate) {
+                            $components = [];
+
+                            $packagingQuantityColumn = 'quantity_per_unit';
+                            $packagingQuantityCheck = $db->queryOne("SHOW COLUMNS FROM template_packaging LIKE 'quantity_per_unit'");
+                            if (empty($packagingQuantityCheck)) {
+                                $packagingQuantityColumn = 'quantity';
+                            }
+
+                            $packagingItems = $db->query(
+                                "SELECT tp.id, tp.packaging_material_id, tp.packaging_name, tp.{$packagingQuantityColumn} AS quantity, 
+                                        COALESCE(pm.unit, tp.unit, 'وحدة') AS unit
+                                 FROM template_packaging tp
+                                 LEFT JOIN packaging_materials pm ON pm.id = tp.packaging_material_id
+                                 WHERE tp.template_id = ?",
+                                [$templateId]
+                            );
+
+                            foreach ($packagingItems as $item) {
+                                $name = $item['packaging_name'] ?? 'مادة تعبئة';
+                                $quantity = number_format((float)($item['quantity'] ?? 0), 3);
+                                $unit = $item['unit'] ?? 'وحدة';
+                                $components[] = [
+                                    'key' => 'pack_' . ($item['packaging_material_id'] ?? $item['id']),
+                                    'name' => $name,
+                                    'label' => 'أداة تعبئة: ' . $name,
+                                    'description' => 'الكمية لكل وحدة: ' . $quantity . ' ' . $unit
+                                ];
+                            }
+
+                            $rawQuantityColumn = 'quantity';
+                            $rawQuantityCheck = $db->queryOne("SHOW COLUMNS FROM template_raw_materials LIKE 'quantity_per_unit'");
+                            if (!empty($rawQuantityCheck)) {
+                                $rawQuantityColumn = 'quantity_per_unit';
+                            }
+
+                            $rawMaterials = $db->query(
+                                "SELECT id, material_name, material_type, {$rawQuantityColumn} AS quantity, 
+                                        COALESCE(unit, 'وحدة') AS unit, honey_variety
+                                 FROM template_raw_materials
+                                 WHERE template_id = ?",
+                                [$templateId]
+                            );
+
+                            foreach ($rawMaterials as $material) {
+                                $name = $material['material_name'] ?? 'مادة خام';
+                                $quantity = number_format((float)($material['quantity'] ?? 0), 3);
+                                $unit = $material['unit'] ?? 'وحدة';
+                                $extra = '';
+                                if (!empty($material['honey_variety'])) {
+                                    $extra = ' - نوع: ' . $material['honey_variety'];
+                                }
+                                $components[] = [
+                                    'key' => 'raw_' . $material['id'],
+                                    'name' => $name,
+                                    'label' => 'مادة خام: ' . $name,
+                                    'description' => 'الكمية لكل وحدة: ' . $quantity . ' ' . $unit . $extra,
+                                    'type' => $material['material_type'] ?? ''
+                                ];
+                            }
+
+                            $response['success'] = true;
+                            $response['mode'] = 'advanced';
+                            $response['components'] = $components;
+                        } else {
+                            $response['success'] = true;
+                            $response['mode'] = 'legacy';
+                        }
+                    } catch (Exception $e) {
+                        $response['success'] = false;
+                        $response['message'] = $e->getMessage();
+                    }
+
+                    echo json_encode($response, JSON_UNESCAPED_UNICODE);
+                    exit;
+                }
+
                 // معالجة AJAX لتحميل بيانات الإنتاج
                 if (isset($_GET['ajax']) && $_GET['ajax'] == '1' && isset($_GET['id'])) {
                     header('Content-Type: application/json');
