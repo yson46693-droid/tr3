@@ -87,11 +87,15 @@ function sendReportAndDelete($filePath, $reportType, $reportName) {
     
     if ($result['success'] && REPORTS_AUTO_DELETE) {
         // تحديث قاعدة البيانات
-        $db = db();
-        $db->execute(
-            "UPDATE reports SET telegram_sent = 1 WHERE file_path = ?",
-            [$filePath]
-        );
+        try {
+            $db = db();
+            $db->execute(
+                "UPDATE reports SET telegram_sent = 1 WHERE file_path = ?",
+                [$filePath]
+            );
+        } catch (Throwable $updateError) {
+            error_log('Reports table update failed: ' . $updateError->getMessage());
+        }
         
         // حذف الملف
         if (file_exists($filePath)) {

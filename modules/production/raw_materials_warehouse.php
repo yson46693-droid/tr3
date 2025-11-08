@@ -15,6 +15,24 @@ require_once __DIR__ . '/../../includes/path_helper.php';
 require_once __DIR__ . '/../../includes/audit_log.php';
 require_once __DIR__ . '/../../includes/honey_varieties.php';
 
+$rawReportQueryOne = static function ($dbConnection, $sql, $params = []) {
+    try {
+        return $dbConnection->queryOne($sql, $params);
+    } catch (Exception $e) {
+        error_log('Raw materials report queryOne error: ' . $e->getMessage());
+        return null;
+    }
+};
+
+$rawReportQuery = static function ($dbConnection, $sql, $params = []) {
+    try {
+        return $dbConnection->query($sql, $params);
+    } catch (Exception $e) {
+        error_log('Raw materials report query error: ' . $e->getMessage());
+        return [];
+    }
+};
+
 $rawMaterialsContext = defined('RAW_MATERIALS_CONTEXT') ? RAW_MATERIALS_CONTEXT : 'production';
 $allowedRoles = ['production'];
 if ($rawMaterialsContext === 'manager') {
@@ -97,6 +115,353 @@ $packagingMaterials = $db->query(
      WHERE status = 'active' 
      ORDER BY name"
 );
+
+$rawWarehouseReport = [
+    'generated_at' => date('Y-m-d H:i'),
+    'generated_by' => $currentUser['full_name'] ?? ($currentUser['username'] ?? 'مستخدم'),
+    'total_suppliers' => 0,
+    'sections' => [],
+    'sections_order' => [],
+    'total_records' => 0,
+    'zero_items' => 0
+];
+
+$rawWarehouseReport['total_suppliers'] = (int)($rawReportQueryOne($db, "
+    SELECT COUNT(*) AS total 
+    FROM suppliers 
+    WHERE status = 'active' 
+      AND type IN ('honey', 'olive_oil', 'beeswax', 'derivatives', 'nuts')
+")['total'] ?? 0);
+
+// Honey summary
+$honeySummary = $rawReportQueryOne($db, "
+    SELECT 
+        COALESCE(SUM(raw_honey_quantity), 0) AS total_raw,
+        COALESCE(SUM(filtered_honey_quantity), 0) AS total_filtered,
+        COUNT(*) AS records,
+        COUNT(DISTINCT supplier_id) AS suppliers,
+        SUM(CASE WHEN COALESCE(raw_honey_quantity,0) + COALESCE(filtered_honey_quantity,0) <= 0 THEN 1 ELSE 0 END) AS zero_items
+    FROM honey_stock
+");
+if ($honeySummary) {
+    $topHoneyVarieties = $rawReportQuery($db, "
+        SELECT honey_variety, COALESCE(SUM(filtered_honey_quantity), 0) AS total_filtered
+        FROM honey_stock
+        GROUP BY honey_variety
+        ORDER BY total_filtered DESC
+        LIMIT 5
+    ");
+
+    $sectionKey = 'honey';
+    $rawWarehouseReport['sections_order'][] = $sectionKey;
+    $rawWarehouseReport['sections'][$sectionKey] = [
+        'title' => 'العسل',
+        'records' => (int)($honeySummary['records'] ?? 0),
+        'metrics' => [
+            [
+                'label' => 'إجمالي العسل الخام',
+                'value' => (float)($honeySummary['total_raw'] ?? 0),
+                'unit' => 'كجم',
+                'decimals' => 2
+            ],
+            [
+                'label' => 'إجمالي العسل المصفى',
+                'value' => (float)($honeySummary['total_filtered'] ?? 0),
+                'unit' => 'كجم',
+                'decimals' => 2
+            ],
+            [
+                'label' => 'عدد السجلات',
+                'value' => (int)($honeySummary['records'] ?? 0),
+                'unit' => null,
+                'decimals' => 0
+            ],
+            [
+                'label' => 'عدد الموردين',
+                'value' => (int)($honeySummary['suppliers'] ?? 0),
+                'unit' => null,
+                'decimals' => 0
+            ]
+        ],
+        'top_items' => array_map(static function ($row) {
+            $label = trim((string)($row['honey_variety'] ?? ''));
+            if ($label === '') {
+                $label = 'نوع غير محدد';
+            }
+            return [
+                'label' => $label,
+                'value' => (float)($row['total_filtered'] ?? 0),
+                'unit' => 'كجم',
+                'decimals' => 2
+            ];
+        }, $topHoneyVarieties ?? [])
+    ];
+    $rawWarehouseReport['total_records'] += (int)($honeySummary['records'] ?? 0);
+    $rawWarehouseReport['zero_items'] += (int)($honeySummary['zero_items'] ?? 0);
+}
+
+// Olive oil summary
+$oliveSummary = $rawReportQueryOne($db, "
+    SELECT 
+        COALESCE(SUM(quantity), 0) AS total_quantity,
+        COUNT(*) AS records,
+        COUNT(DISTINCT supplier_id) AS suppliers,
+        SUM(CASE WHEN COALESCE(quantity,0) <= 0 THEN 1 ELSE 0 END) AS zero_items
+    FROM olive_oil_stock
+");
+if ($oliveSummary) {
+    $topOliveSuppliers = $rawReportQuery($db, "
+        SELECT 
+            COALESCE(s.name, CONCAT('مورد #', os.supplier_id)) AS supplier_name,
+            COALESCE(os.quantity, 0) AS total_quantity
+        FROM olive_oil_stock os
+        LEFT JOIN suppliers s ON os.supplier_id = s.id
+        ORDER BY total_quantity DESC
+        LIMIT 5
+    ");
+
+    $sectionKey = 'olive_oil';
+    $rawWarehouseReport['sections_order'][] = $sectionKey;
+    $rawWarehouseReport['sections'][$sectionKey] = [
+        'title' => 'زيت الزيتون',
+        'records' => (int)($oliveSummary['records'] ?? 0),
+        'metrics' => [
+            [
+                'label' => 'إجمالي الزيت المتاح',
+                'value' => (float)($oliveSummary['total_quantity'] ?? 0),
+                'unit' => 'لتر',
+                'decimals' => 2
+            ],
+            [
+                'label' => 'عدد السجلات',
+                'value' => (int)($oliveSummary['records'] ?? 0),
+                'unit' => null,
+                'decimals' => 0
+            ],
+            [
+                'label' => 'عدد الموردين',
+                'value' => (int)($oliveSummary['suppliers'] ?? 0),
+                'unit' => null,
+                'decimals' => 0
+            ]
+        ],
+        'top_items' => array_map(static function ($row) {
+            return [
+                'label' => trim((string)($row['supplier_name'] ?? 'مورد غير محدد')),
+                'value' => (float)($row['total_quantity'] ?? 0),
+                'unit' => 'لتر',
+                'decimals' => 2
+            ];
+        }, $topOliveSuppliers ?? [])
+    ];
+    $rawWarehouseReport['total_records'] += (int)($oliveSummary['records'] ?? 0);
+    $rawWarehouseReport['zero_items'] += (int)($oliveSummary['zero_items'] ?? 0);
+}
+
+// Beeswax summary
+$beeswaxSummary = $rawReportQueryOne($db, "
+    SELECT 
+        COALESCE(SUM(weight), 0) AS total_weight,
+        COUNT(*) AS records,
+        COUNT(DISTINCT supplier_id) AS suppliers,
+        SUM(CASE WHEN COALESCE(weight,0) <= 0 THEN 1 ELSE 0 END) AS zero_items
+    FROM beeswax_stock
+");
+if ($beeswaxSummary) {
+    $topBeeswaxSuppliers = $rawReportQuery($db, "
+        SELECT 
+            COALESCE(s.name, CONCAT('مورد #', bs.supplier_id)) AS supplier_name,
+            COALESCE(bs.weight, 0) AS total_weight
+        FROM beeswax_stock bs
+        LEFT JOIN suppliers s ON bs.supplier_id = s.id
+        ORDER BY total_weight DESC
+        LIMIT 5
+    ");
+
+    $sectionKey = 'beeswax';
+    $rawWarehouseReport['sections_order'][] = $sectionKey;
+    $rawWarehouseReport['sections'][$sectionKey] = [
+        'title' => 'شمع العسل',
+        'records' => (int)($beeswaxSummary['records'] ?? 0),
+        'metrics' => [
+            [
+                'label' => 'إجمالي المخزون',
+                'value' => (float)($beeswaxSummary['total_weight'] ?? 0),
+                'unit' => 'كجم',
+                'decimals' => 2
+            ],
+            [
+                'label' => 'عدد السجلات',
+                'value' => (int)($beeswaxSummary['records'] ?? 0),
+                'unit' => null,
+                'decimals' => 0
+            ],
+            [
+                'label' => 'عدد الموردين',
+                'value' => (int)($beeswaxSummary['suppliers'] ?? 0),
+                'unit' => null,
+                'decimals' => 0
+            ]
+        ],
+        'top_items' => array_map(static function ($row) {
+            return [
+                'label' => trim((string)($row['supplier_name'] ?? 'مورد غير محدد')),
+                'value' => (float)($row['total_weight'] ?? 0),
+                'unit' => 'كجم',
+                'decimals' => 2
+            ];
+        }, $topBeeswaxSuppliers ?? [])
+    ];
+    $rawWarehouseReport['total_records'] += (int)($beeswaxSummary['records'] ?? 0);
+    $rawWarehouseReport['zero_items'] += (int)($beeswaxSummary['zero_items'] ?? 0);
+}
+
+// Derivatives summary
+$derivativesSummary = $rawReportQueryOne($db, "
+    SELECT 
+        COALESCE(SUM(weight), 0) AS total_weight,
+        COUNT(*) AS records,
+        COUNT(DISTINCT supplier_id) AS suppliers,
+        SUM(CASE WHEN COALESCE(weight,0) <= 0 THEN 1 ELSE 0 END) AS zero_items,
+        COUNT(DISTINCT derivative_type) AS derivative_types
+    FROM derivatives_stock
+");
+if ($derivativesSummary) {
+    $topDerivativeTypes = $rawReportQuery($db, "
+        SELECT derivative_type, COALESCE(SUM(weight), 0) AS total_weight
+        FROM derivatives_stock
+        GROUP BY derivative_type
+        ORDER BY total_weight DESC
+        LIMIT 5
+    ");
+
+    $sectionKey = 'derivatives';
+    $rawWarehouseReport['sections_order'][] = $sectionKey;
+    $rawWarehouseReport['sections'][$sectionKey] = [
+        'title' => 'المشتقات',
+        'records' => (int)($derivativesSummary['records'] ?? 0),
+        'metrics' => [
+            [
+                'label' => 'إجمالي المخزون',
+                'value' => (float)($derivativesSummary['total_weight'] ?? 0),
+                'unit' => 'كجم',
+                'decimals' => 2
+            ],
+            [
+                'label' => 'أنواع المشتقات',
+                'value' => (int)($derivativesSummary['derivative_types'] ?? 0),
+                'unit' => null,
+                'decimals' => 0
+            ],
+            [
+                'label' => 'عدد السجلات',
+                'value' => (int)($derivativesSummary['records'] ?? 0),
+                'unit' => null,
+                'decimals' => 0
+            ],
+            [
+                'label' => 'عدد الموردين',
+                'value' => (int)($derivativesSummary['suppliers'] ?? 0),
+                'unit' => null,
+                'decimals' => 0
+            ]
+        ],
+        'top_items' => array_map(static function ($row) {
+            $label = trim((string)($row['derivative_type'] ?? 'نوع غير محدد'));
+            if ($label === '') {
+                $label = 'نوع غير محدد';
+            }
+            return [
+                'label' => $label,
+                'value' => (float)($row['total_weight'] ?? 0),
+                'unit' => 'كجم',
+                'decimals' => 2
+            ];
+        }, $topDerivativeTypes ?? [])
+    ];
+    $rawWarehouseReport['total_records'] += (int)($derivativesSummary['records'] ?? 0);
+    $rawWarehouseReport['zero_items'] += (int)($derivativesSummary['zero_items'] ?? 0);
+}
+
+// Nuts summary
+$nutsSummary = $rawReportQueryOne($db, "
+    SELECT 
+        COALESCE(SUM(quantity), 0) AS total_quantity,
+        COUNT(*) AS records,
+        COUNT(DISTINCT supplier_id) AS suppliers,
+        SUM(CASE WHEN COALESCE(quantity,0) <= 0 THEN 1 ELSE 0 END) AS zero_items
+    FROM nuts_stock
+");
+$mixedNutsSummary = $rawReportQueryOne($db, "
+    SELECT 
+        COALESCE(SUM(total_quantity), 0) AS total_quantity,
+        COUNT(*) AS batches
+    FROM mixed_nuts
+");
+if ($nutsSummary || $mixedNutsSummary) {
+    $topNuts = $rawReportQuery($db, "
+        SELECT nut_type, COALESCE(SUM(quantity), 0) AS total_quantity
+        FROM nuts_stock
+        GROUP BY nut_type
+        ORDER BY total_quantity DESC
+        LIMIT 5
+    ");
+
+    $sectionKey = 'nuts';
+    $rawWarehouseReport['sections_order'][] = $sectionKey;
+    $rawWarehouseReport['sections'][$sectionKey] = [
+        'title' => 'المكسرات',
+        'records' => (int)($nutsSummary['records'] ?? 0) + (int)($mixedNutsSummary['batches'] ?? 0),
+        'metrics' => [
+            [
+                'label' => 'إجمالي المخزون المنفرد',
+                'value' => (float)($nutsSummary['total_quantity'] ?? 0),
+                'unit' => 'كجم',
+                'decimals' => 3
+            ],
+            [
+                'label' => 'إجمالي المخزون المشكل',
+                'value' => (float)($mixedNutsSummary['total_quantity'] ?? 0),
+                'unit' => 'كجم',
+                'decimals' => 3
+            ],
+            [
+                'label' => 'عدد السجلات',
+                'value' => (int)($nutsSummary['records'] ?? 0),
+                'unit' => null,
+                'decimals' => 0
+            ],
+            [
+                'label' => 'عدد الموردين',
+                'value' => (int)($nutsSummary['suppliers'] ?? 0),
+                'unit' => null,
+                'decimals' => 0
+            ],
+            [
+                'label' => 'عدد الخلطات',
+                'value' => (int)($mixedNutsSummary['batches'] ?? 0),
+                'unit' => null,
+                'decimals' => 0
+            ]
+        ],
+        'top_items' => array_map(static function ($row) {
+            $label = trim((string)($row['nut_type'] ?? 'نوع غير محدد'));
+            if ($label === '') {
+                $label = 'نوع غير محدد';
+            }
+            return [
+                'label' => $label,
+                'value' => (float)($row['total_quantity'] ?? 0),
+                'unit' => 'كجم',
+                'decimals' => 3
+            ];
+        }, $topNuts ?? [])
+    ];
+    $rawWarehouseReport['total_records'] += (int)($nutsSummary['records'] ?? 0) + (int)($mixedNutsSummary['batches'] ?? 0);
+    $rawWarehouseReport['zero_items'] += (int)($nutsSummary['zero_items'] ?? 0);
+}
+
+$rawWarehouseReport['sections_count'] = count($rawWarehouseReport['sections']);
 
 // ======= معالجة العمليات (تم تعطيل كود إنشاء الجداول القديم) =======
 // Table creation code removed for performance - tables exist in database
@@ -1365,13 +1730,169 @@ if ($section === 'nuts') {
     font-size: 0.85rem !important;
     font-weight: 500 !important;
 }
+
+.raw-report-content .badge {
+    font-size: 0.75rem;
+}
+
+.raw-report-content .border.rounded-4 {
+    background-color: #f8fafc;
+    border-color: #e2e8f0;
+}
+
+.raw-report-content .fs-5 {
+    color: #0f172a;
+}
+
+.raw-report-content table {
+    font-size: 0.85rem;
+}
+
+.raw-report-content h5 {
+    color: #1f2937;
+}
+
+.raw-report-content .alert-info {
+    background: #ecfeff;
+    border-color: #bae6fd;
+    color: #0c4a6e;
+}
 </style>
 
-<div class="d-flex justify-content-between align-items-center mb-4">
-    <h2><i class="bi bi-box-seam me-2"></i>مخزن الخامات</h2>
-    <button class="btn text-white" style="background: linear-gradient(135deg, #17a2b8 0%, #138496 100%);" data-bs-toggle="modal" data-bs-target="#createUnifiedTemplateModal">
-        <i class="bi bi-plus-circle me-2"></i>إنشاء قالب منتج
-    </button>
+<div class="d-flex flex-wrap justify-content-between align-items-center mb-4 gap-3">
+    <h2 class="mb-0"><i class="bi bi-box-seam me-2"></i>مخزن الخامات</h2>
+    <div class="d-flex flex-wrap gap-2">
+        <button type="button" class="btn btn-outline-secondary" id="generateRawMaterialsReportBtn">
+            <i class="bi bi-file-bar-graph me-1"></i>
+            توليد تقرير المخزن
+        </button>
+        <button type="button" class="btn text-white" style="background: linear-gradient(135deg, #17a2b8 0%, #138496 100%);" data-bs-toggle="modal" data-bs-target="#createUnifiedTemplateModal">
+            <i class="bi bi-plus-circle me-2"></i>إنشاء قالب منتج
+        </button>
+    </div>
+</div>
+
+<div class="modal fade" id="rawMaterialsReportModal" tabindex="-1" aria-hidden="true">
+    <div class="modal-dialog modal-xl modal-dialog-scrollable">
+        <div class="modal-content">
+            <div class="modal-header bg-dark text-white">
+                <h5 class="modal-title"><i class="bi bi-clipboard-data me-2"></i>تقرير احترافي لمخزن الخامات</h5>
+                <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal" aria-label="إغلاق"></button>
+            </div>
+            <div class="modal-body">
+                <div id="rawMaterialsReportContent" class="raw-report-content">
+                    <div class="report-header d-flex flex-column flex-lg-row justify-content-between align-items-start gap-3 mb-4">
+                        <div>
+                            <h3 class="fw-semibold mb-1">تقرير مخزن الخامات</h3>
+                            <div class="text-muted small">تاريخ التوليد: <?php echo htmlspecialchars($rawWarehouseReport['generated_at']); ?></div>
+                            <div class="text-muted small">أُعد بواسطة: <?php echo htmlspecialchars($rawWarehouseReport['generated_by']); ?></div>
+                        </div>
+                        <div class="text-lg-end">
+                            <div class="d-flex flex-wrap gap-2 justify-content-start justify-content-lg-end">
+                                <span class="badge bg-primary-subtle text-primary fw-semibold px-3 py-2">
+                                    عدد الأقسام: <?php echo number_format($rawWarehouseReport['sections_count']); ?>
+                                </span>
+                                <span class="badge bg-success-subtle text-success fw-semibold px-3 py-2">
+                                    إجمالي السجلات: <?php echo number_format($rawWarehouseReport['total_records']); ?>
+                                </span>
+                                <span class="badge bg-info-subtle text-info fw-semibold px-3 py-2">
+                                    الموردون النشطون: <?php echo number_format($rawWarehouseReport['total_suppliers']); ?>
+                                </span>
+                            </div>
+                            <div class="text-muted small mt-2">
+                                عناصر بدون مخزون: <?php echo number_format($rawWarehouseReport['zero_items']); ?>
+                            </div>
+                        </div>
+                    </div>
+
+                    <?php foreach ($rawWarehouseReport['sections_order'] as $sectionKey): ?>
+                        <?php $sectionData = $rawWarehouseReport['sections'][$sectionKey] ?? null; ?>
+                        <?php if (!$sectionData) { continue; } ?>
+                        <div class="raw-report-section mb-5">
+                            <div class="d-flex flex-wrap justify-content-between align-items-center gap-2 mb-3">
+                                <h5 class="fw-semibold mb-0"><i class="bi bi-grid-1x2 me-2"></i><?php echo htmlspecialchars($sectionData['title']); ?></h5>
+                                <span class="badge bg-secondary-subtle text-secondary fw-semibold px-3 py-2">
+                                    عدد السجلات: <?php echo number_format($sectionData['records'] ?? 0); ?>
+                                </span>
+                            </div>
+
+                            <?php if (!empty($sectionData['metrics'])): ?>
+                                <div class="row g-3 mb-4">
+                                    <?php foreach ($sectionData['metrics'] as $metric): ?>
+                                        <div class="col-sm-6 col-lg-3">
+                                            <div class="border rounded-4 p-3 h-100 bg-light">
+                                                <div class="text-muted small mb-1"><?php echo htmlspecialchars($metric['label']); ?></div>
+                                                <div class="fs-5 fw-semibold text-primary">
+                                                    <?php
+                                                    $decimals = $metric['decimals'] ?? (isset($metric['unit']) && $metric['unit'] ? 2 : 0);
+                                                    $value = $metric['value'] ?? 0;
+                                                    if (isset($metric['unit']) && $metric['unit']) {
+                                                        echo number_format((float)$value, $decimals) . ' ' . htmlspecialchars($metric['unit']);
+                                                    } else {
+                                                        echo number_format((float)$value, $decimals);
+                                                    }
+                                                    ?>
+                                                </div>
+                                            </div>
+                                        </div>
+                                    <?php endforeach; ?>
+                                </div>
+                            <?php endif; ?>
+
+                            <?php if (!empty($sectionData['top_items'])): ?>
+                                <h6 class="fw-semibold mb-2"><i class="bi bi-bar-chart-steps me-2"></i>أهم العناصر</h6>
+                                <div class="table-responsive mb-4">
+                                    <table class="table table-sm table-striped align-middle">
+                                        <thead class="table-light">
+                                            <tr>
+                                                <th>#</th>
+                                                <th>العنصر</th>
+                                                <th>الكمية</th>
+                                            </tr>
+                                        </thead>
+                                        <tbody>
+                                            <?php foreach ($sectionData['top_items'] as $index => $item): ?>
+                                                <tr>
+                                                    <td><?php echo $index + 1; ?></td>
+                                                    <td><?php echo htmlspecialchars($item['label']); ?></td>
+                                                    <td>
+                                                        <span class="badge bg-primary-subtle text-primary fw-semibold">
+                                                            <?php
+                                                            $decimals = $item['decimals'] ?? (isset($item['unit']) && $item['unit'] ? 2 : 0);
+                                                            $value = $item['value'] ?? 0;
+                                                            if (isset($item['unit']) && $item['unit']) {
+                                                                echo number_format((float)$value, $decimals) . ' ' . htmlspecialchars($item['unit']);
+                                                            } else {
+                                                                echo number_format((float)$value, $decimals);
+                                                            }
+                                                            ?>
+                                                        </span>
+                                                    </td>
+                                                </tr>
+                                            <?php endforeach; ?>
+                                        </tbody>
+                                    </table>
+                                </div>
+                            <?php endif; ?>
+                        </div>
+                    <?php endforeach; ?>
+
+                    <?php if (empty($rawWarehouseReport['sections'])): ?>
+                        <div class="alert alert-light border text-muted text-center">
+                            لا توجد بيانات كافية لتوليد التقرير في الوقت الحالي.
+                        </div>
+                    <?php endif; ?>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">إغلاق</button>
+                <button type="button" class="btn btn-primary" id="printRawMaterialsReportBtn">
+                    <i class="bi bi-printer me-1"></i>
+                    طباعة التقرير
+                </button>
+            </div>
+        </div>
+    </div>
 </div>
 
 <?php if ($error): ?>
@@ -2993,6 +3514,88 @@ foreach ($honeyVarietiesCatalog as $catalogVariety => $meta) {
     $honeyVarietyOptionsMarkup .= '<option value="' . htmlspecialchars($catalogVariety, ENT_QUOTES, 'UTF-8') . '" data-code="' . htmlspecialchars($meta['code'], ENT_QUOTES, 'UTF-8') . '">' . htmlspecialchars($labelWithCode, ENT_QUOTES, 'UTF-8') . '</option>';
 }
 ?>
+
+<script>
+(function () {
+    const reportButton = document.getElementById('generateRawMaterialsReportBtn');
+    const reportModalElement = document.getElementById('rawMaterialsReportModal');
+    const printButton = document.getElementById('printRawMaterialsReportBtn');
+
+    let reportModalInstance = null;
+
+    if (reportModalElement && typeof bootstrap !== 'undefined') {
+        reportModalInstance = bootstrap.Modal.getOrCreateInstance(reportModalElement);
+    }
+
+    if (reportButton && reportModalInstance) {
+        reportButton.addEventListener('click', () => {
+            reportModalInstance.show();
+        });
+    }
+
+    if (printButton) {
+        printButton.addEventListener('click', () => {
+            const reportContent = document.getElementById('rawMaterialsReportContent');
+            if (!reportContent) {
+                return;
+            }
+
+            const printWindow = window.open('', '_blank', 'width=1024,height=768');
+            const stylesheets = Array.from(document.querySelectorAll('link[rel="stylesheet"], style'))
+                .map((element) => element.outerHTML)
+                .join('\n');
+
+            printWindow.document.write(`<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="UTF-8">
+<title>تقرير مخزن الخامات</title>
+${stylesheets}
+<style>
+body { font-family: 'Tajawal', 'Cairo', sans-serif; padding: 32px; background: #f8fafc; color: #0f172a; }
+.report-header { border-bottom: 2px solid #e2e8f0; padding-bottom: 12px; margin-bottom: 24px; display: flex; justify-content: space-between; align-items: flex-start; gap: 16px; }
+.badge { display: inline-block; padding: 6px 12px; border-radius: 999px; background: #e0f2fe; color: #0369a1; font-size: 12px; font-weight: 600; }
+.summary-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 12px; margin-bottom: 24px; }
+.summary-card { background: #fff; border: 1px solid #e2e8f0; border-radius: 16px; padding: 16px; box-shadow: 0 8px 24px rgba(15, 23, 42, 0.08); }
+.summary-card .label { color: #64748b; font-size: 13px; margin-bottom: 6px; }
+.summary-card .value { font-size: 20px; font-weight: 600; }
+.raw-section { margin-bottom: 36px; }
+.raw-section h5 { color: #1f2937; margin-bottom: 12px; font-weight: 600; }
+table { width: 100%; border-collapse: collapse; margin-bottom: 28px; background: #fff; border-radius: 16px; overflow: hidden; }
+table thead { background: #f1f5f9; }
+table th, table td { padding: 14px 16px; border: 1px solid #e2e8f0; text-align: right; }
+table th { font-weight: 600; color: #1e293b; background: #f8fafc; }
+.notes { border-left: 4px solid #38bdf8; background: #ecfeff; padding: 16px 20px; border-radius: 12px; }
+@media print {
+    body { padding: 0; background: #fff; }
+    .badge { background: #bfdbfe; color: #1d4ed8; }
+}
+</style>
+</head>
+<body>
+<div class="report-header">
+    <div>
+        <h2 style="margin:0 0 8px; font-weight:700;">تقرير مخزن الخامات</h2>
+        <div style="color:#64748b; font-size:13px;">تاريخ التوليد: <?php echo htmlspecialchars($rawWarehouseReport['generated_at']); ?></div>
+        <div style="color:#64748b; font-size:13px;">أُعد بواسطة: <?php echo htmlspecialchars($rawWarehouseReport['generated_by']); ?></div>
+    </div>
+    <div style="text-align:left;">
+        <div class="badge">عدد الأقسام: <?php echo number_format($rawWarehouseReport['sections_count']); ?></div>
+        <div class="badge" style="margin-right:8px;">إجمالي السجلات: <?php echo number_format($rawWarehouseReport['total_records']); ?></div>
+        <div class="badge" style="margin-right:8px;">الموردون النشطون: <?php echo number_format($rawWarehouseReport['total_suppliers']); ?></div>
+        <div style="color:#64748b; font-size:12px; margin-top:8px;">عناصر بدون مخزون: <?php echo number_format($rawWarehouseReport['zero_items']); ?></div>
+    </div>
+</div>
+${reportContent.outerHTML}
+</body>
+</html>`);
+            printWindow.document.close();
+            printWindow.focus();
+            printWindow.print();
+        });
+    }
+})();
+</script>
 
 <script>
 // دالة لإضافة صف مادة خام جديدة

@@ -226,33 +226,43 @@ function packagingAlertBuildPdf(array $lines): ?string {
         return null;
     }
 
-    $lineHeight = 18;
-    $startY = 800;
+    $pageWidth = 595.0;
+    $pageHeight = 842.0;
+    $marginX = 40.0;
+    $startY = $pageHeight - 60.0;
+    $lineSpacing = 24.0;
 
     $contentParts = [];
+    $yPos = $startY;
     foreach ($lines as $index => $line) {
-        $fontSize = $index === 0 ? 16 : 12;
-        $yPos = $startY - ($index * $lineHeight);
-
-        if ($yPos < 40) {
+        if ($yPos < 60.0) {
             break;
         }
 
-        $escaped = packagingAlertEscapePdfText($line);
-        $contentParts[] = "BT\n/F1 {$fontSize} Tf\n50 {$yPos} Td\n({$escaped}) Tj\nET\n";
+        $fontSize = $index === 0 ? 20 : ($index <= 2 ? 14 : 12);
+        $prepared = packagingAlertNormalizePdfText($line);
+        $hex = strtoupper(bin2hex(packagingAlertUtf16beText($prepared, true)));
+
+        $contentParts[] = "BT\n/F1 {$fontSize} Tf\n1 0 0 1 " . ($pageWidth - $marginX) . " {$yPos} Tm\n<{$hex}> Tj\nET\n";
+        $yPos -= $lineSpacing;
     }
 
     $contentStream = implode('', $contentParts);
     $contentLength = strlen($contentStream);
 
+    $toUnicode = packagingAlertBuildToUnicodeCMap();
+
     $objects = [];
     $objects[] = "1 0 obj << /Type /Catalog /Pages 2 0 R >> endobj\n";
     $objects[] = "2 0 obj << /Type /Pages /Kids [3 0 R] /Count 1 >> endobj\n";
-    $objects[] = "3 0 obj << /Type /Page /Parent 2 0 R /MediaBox [0 0 595 842] /Contents 5 0 R /Resources << /Font << /F1 4 0 R >> >> >> endobj\n";
-    $objects[] = "4 0 obj << /Type /Font /Subtype /Type1 /BaseFont /Helvetica >> endobj\n";
-    $objects[] = "5 0 obj << /Length {$contentLength} >> stream\n{$contentStream}endstream\nendobj\n";
+    $objects[] = "3 0 obj << /Type /Page /Parent 2 0 R /MediaBox [0 0 {$pageWidth} {$pageHeight}] /Contents 7 0 R /Resources << /Font << /F1 4 0 R >> >> >> endobj\n";
+    $objects[] = "4 0 obj << /Type /Font /Subtype /Type0 /BaseFont /TimesNewRomanPSMT /Encoding /Identity-H /DescendantFonts [5 0 R] /ToUnicode 6 0 R >> endobj\n";
+    $objects[] = "5 0 obj << /Type /Font /Subtype /CIDFontType2 /BaseFont /TimesNewRomanPSMT /CIDSystemInfo << /Registry (Adobe) /Ordering (Identity) /Supplement 0 >> /FontDescriptor 8 0 R /CIDToGIDMap /Identity /DW 1000 >> endobj\n";
+    $objects[] = "6 0 obj << /Length " . strlen($toUnicode) . " >> stream\n{$toUnicode}endstream\nendobj\n";
+    $objects[] = "7 0 obj << /Length {$contentLength} >> stream\n{$contentStream}endstream\nendobj\n";
+    $objects[] = "8 0 obj << /Type /FontDescriptor /FontName /TimesNewRomanPSMT /Flags 32 /ItalicAngle 0 /Ascent 1024 /Descent -300 /CapHeight 800 /StemV 80 /FontBBox [-1024 -1024 3072 3072] >> endobj\n";
 
-    $pdf = "%PDF-1.4\n";
+    $pdf = "%PDF-1.7\n";
     $offsets = [];
     $currentOffset = strlen($pdf);
 
@@ -273,19 +283,42 @@ function packagingAlertBuildPdf(array $lines): ?string {
     return $pdf;
 }
 
-/**
- * تهريب النص ليناسب مواصفات PDF
- */
-function packagingAlertEscapePdfText(string $text): string {
-    $replacements = [
-        '\\' => '\\\\',
-        '(' => '\(',
-        ')' => '\)',
-        "\r" => ' ',
-        "\n" => ' ',
-    ];
+function packagingAlertNormalizePdfText(string $text): string {
+    $text = str_replace(["\r\n", "\r"], "\n", $text);
+    $text = preg_replace('/\s+/', ' ', $text);
+    return trim($text);
+}
 
-    return strtr($text, $replacements);
+function packagingAlertUtf16beText(string $text, bool $withBom = false): string {
+    $result = $withBom ? "\xFE\xFF" : '';
+    $directional = "\u{202B}" . $text . "\u{202C}";
+    $result .= mb_convert_encoding($directional, 'UTF-16BE', 'UTF-8');
+    return $result;
+}
+
+function packagingAlertBuildToUnicodeCMap(): string {
+    return <<<CMAP
+/CIDInit /ProcSet findresource begin
+12 dict begin
+begincmap
+/CIDSystemInfo
+<< /Registry (Adobe)
+   /Ordering (Identity)
+   /Supplement 0
+>> def
+/CMapName /Adobe-Identity-UCS def
+/CMapType 2 def
+1 begincodespacerange
+<0000> <FFFF>
+endcodespacerange
+1 beginbfrange
+<0000> <FFFF> <0000>
+endbfrange
+endcmap
+CMapName currentdict /CMap defineresource pop
+end
+end
+CMAP;
 }
 
 
