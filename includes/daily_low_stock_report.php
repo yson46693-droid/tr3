@@ -125,7 +125,12 @@ function formatLowStockCountLabel(string $key): string
 
     return $labels[$key] ?? $key;
 }
-const LOW_STOCK_REPORT_JOB_KEY = 'low_stock_report';
+if (!defined('LOW_STOCK_REPORT_JOB_KEY')) {
+    define('LOW_STOCK_REPORT_JOB_KEY', 'low_stock_report');
+}
+if (!defined('LOW_STOCK_REPORT_STATUS_SETTING_KEY')) {
+    define('LOW_STOCK_REPORT_STATUS_SETTING_KEY', 'low_stock_report_status');
+}
 
 if (!function_exists('lowStockReportEnsureJobTable')) {
     /**
