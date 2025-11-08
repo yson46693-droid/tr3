@@ -320,20 +320,32 @@ function cleanupRequestUsage($days = 30) {
     try {
         ensureRequestUsageTables();
         $db = db();
-        $cutoff = date('Y-m-d H:i:s', strtotime("-{$days} days"));
 
-        $result = $db->execute(
-            "DELETE FROM request_usage WHERE created_at < ?",
-            [$cutoff]
-        );
+        $batchLimit = 5000;
+        $deletedUsage = 0;
+        $deletedAlerts = 0;
 
-        $alertsResult = $db->execute(
-            "DELETE FROM request_usage_alerts WHERE window_end < ?",
-            [$cutoff]
-        );
+        do {
+            $result = $db->execute(
+                "DELETE FROM request_usage 
+                 WHERE created_at < DATE_SUB(NOW(), INTERVAL {$days} DAY)
+                 LIMIT {$batchLimit}"
+            );
 
-        $deletedUsage = intval($result['affected_rows'] ?? 0);
-        $deletedAlerts = intval($alertsResult['affected_rows'] ?? 0);
+            $batchDeleted = intval($result['affected_rows'] ?? 0);
+            $deletedUsage += $batchDeleted;
+        } while ($batchDeleted === $batchLimit && $batchDeleted > 0);
+
+        do {
+            $alertsResult = $db->execute(
+                "DELETE FROM request_usage_alerts 
+                 WHERE window_end < DATE_SUB(NOW(), INTERVAL {$days} DAY)
+                 LIMIT {$batchLimit}"
+            );
+
+            $batchDeletedAlerts = intval($alertsResult['affected_rows'] ?? 0);
+            $deletedAlerts += $batchDeletedAlerts;
+        } while ($batchDeletedAlerts === $batchLimit && $batchDeletedAlerts > 0);
 
         return $deletedUsage + $deletedAlerts;
     } catch (Throwable $e) {
