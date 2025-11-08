@@ -31,7 +31,8 @@ $_SESSION['reader_session_id'] = $_SESSION['reader_session_id'] ?? bin2hex(rando
     <meta name="theme-color" content="#1d4ed8">
     <link rel="manifest" href="manifest.json">
     <link rel="icon" type="image/svg+xml" href="assets/icon.svg">
-    <link rel="apple-touch-icon" href="data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAgAAAAIACAIAAAB7GkOtAAAACXBIWXMAAAsSAAALEgHS3X78AAAFwUlEQVR4nO3QMQEAAADCoPVPbQhPoAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAOBeeAAGmEuBSAAAAAElFTkSuQmCC">
+    <link rel="apple-touch-icon" href="assets/icon-512.png">
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.min.css">
     <title>قارئ أرقام التشغيلات</title>
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -245,6 +246,103 @@ $_SESSION['reader_session_id'] = $_SESSION['reader_session_id'] ?? bin2hex(rando
                 width: 100%;
             }
         }
+        .camera-section {
+            margin-top: 24px;
+            background: rgba(255, 255, 255, 0.92);
+            border: 2px dashed rgba(37, 99, 235, 0.35);
+            border-radius: 18px;
+            padding: 24px;
+            transition: all 0.3s ease;
+        }
+        .camera-section.active {
+            border-style: solid;
+            background: rgba(226, 232, 255, 0.55);
+        }
+        .camera-actions {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 12px;
+            justify-content: center;
+            margin-bottom: 16px;
+        }
+        .camera-actions button {
+            padding: 12px 32px;
+            border-radius: 999px;
+            font-weight: 600;
+            border: none;
+            cursor: pointer;
+            transition: transform 0.2s ease, box-shadow 0.2s ease;
+        }
+        .camera-actions .start-camera {
+            background: linear-gradient(135deg, #2563eb 0%, #0f1f4b 100%);
+            color: #fff;
+            box-shadow: 0 12px 24px rgba(37, 99, 235, 0.3);
+        }
+        .camera-actions .start-camera:hover {
+            transform: translateY(-1px);
+        }
+        .camera-actions .stop-camera {
+            background: #fee2e2;
+            color: #b91c1c;
+            border: 1px solid rgba(239, 68, 68, 0.35);
+            display: none;
+        }
+        .camera-preview {
+            position: relative;
+            width: min(680px, 100%);
+            margin: 0 auto 16px;
+            border-radius: 14px;
+            overflow: hidden;
+            background: #000;
+            border: 3px solid rgba(37, 99, 235, 0.45);
+            display: none;
+        }
+        .camera-preview video {
+            width: 100%;
+            height: auto;
+            display: block;
+            object-fit: cover;
+        }
+        .scan-overlay {
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            width: 80%;
+            height: 140px;
+            border: 2px solid rgba(255, 255, 255, 0.9);
+            border-radius: 12px;
+            box-shadow: 0 0 0 9999px rgba(15, 23, 42, 0.35);
+            pointer-events: none;
+        }
+        .scan-line {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 3px;
+            background: rgba(79, 70, 229, 0.9);
+            animation: scan 2s linear infinite;
+        }
+        @keyframes scan {
+            0% { top: 0; }
+            100% { top: calc(100% - 3px); }
+        }
+        .camera-hint {
+            text-align: center;
+            color: #475569;
+            font-size: 0.9rem;
+        }
+        .camera-error {
+            background: rgba(254, 226, 226, 0.9);
+            color: #b91c1c;
+            border: 1px solid rgba(248, 113, 113, 0.45);
+            border-radius: 12px;
+            padding: 12px 16px;
+            display: none;
+            margin-top: 12px;
+            text-align: center;
+        }
     </style>
 </head>
 <body>
@@ -260,6 +358,22 @@ $_SESSION['reader_session_id'] = $_SESSION['reader_session_id'] ?? bin2hex(rando
             <span class="tag" id="sessionIndicator">جلسة آمنة</span>
             <button class="install-button" id="installButton">تثبيت التطبيق</button>
         </div>
+        <section class="camera-section" id="cameraSection">
+            <div class="camera-actions">
+                <button type="button" class="start-camera" id="startCameraBtn">
+                    <i class="bi bi-camera-video" style="margin-inline-end:8px;"></i>تشغيل الكاميرا
+                </button>
+                <button type="button" class="stop-camera" id="stopCameraBtn">
+                    <i class="bi bi-camera-video-off" style="margin-inline-end:8px;"></i>إيقاف الكاميرا
+                </button>
+            </div>
+            <div class="camera-preview" id="videoContainer">
+                <video id="video" autoplay playsinline></video>
+                <div class="scan-overlay"><div class="scan-line"></div></div>
+            </div>
+            <p class="camera-hint">استخدم الكاميرا لمسح الباركود مباشرة، أو أدخل الرقم يدويًا أدناه.</p>
+            <div class="camera-error" id="cameraError">حدث خطأ في الوصول إلى الكاميرا. يرجى التأكد من منح الأذونات.</div>
+        </section>
         <form id="scannerForm" autocomplete="off">
             <label for="batchInput">رقم التشغيلة أو الباركود</label>
             <div class="input-group">
@@ -278,6 +392,7 @@ $_SESSION['reader_session_id'] = $_SESSION['reader_session_id'] ?? bin2hex(rando
         <div class="history" id="historyLog" hidden></div>
     </div>
 
+    <script src="https://unpkg.com/quagga@0.12.1/dist/quagga.min.js"></script>
     <script>
     (function() {
         const installButton = document.getElementById('installButton');
@@ -320,6 +435,16 @@ $_SESSION['reader_session_id'] = $_SESSION['reader_session_id'] ?? bin2hex(rando
         const workersCard = document.getElementById('workersCard');
         const feedbackArea = document.getElementById('feedbackArea');
         const historyLog = document.getElementById('historyLog');
+        const startCameraBtn = document.getElementById('startCameraBtn');
+        const stopCameraBtn = document.getElementById('stopCameraBtn');
+        const cameraSection = document.getElementById('cameraSection');
+        const videoContainer = document.getElementById('videoContainer');
+        const video = document.getElementById('video');
+        const cameraError = document.getElementById('cameraError');
+
+        let currentStream = null;
+        let scanning = false;
+        let detectionCooldown = false;
 
         const historyEntries = [];
 
@@ -425,6 +550,138 @@ $_SESSION['reader_session_id'] = $_SESSION['reader_session_id'] ?? bin2hex(rando
             }
         }
 
+        function stopCamera() {
+            if (window.Quagga) {
+                try {
+                    Quagga.offDetected(onBarcodeDetected);
+                } catch (err) {
+                    // ignore
+                }
+            }
+            if (scanning && window.Quagga) {
+                try {
+                    Quagga.stop();
+                } catch (err) {
+                    console.error('Quagga stop error', err);
+                }
+            }
+
+            scanning = false;
+
+            if (currentStream) {
+                currentStream.getTracks().forEach(track => track.stop());
+                currentStream = null;
+            }
+
+            video.srcObject = null;
+            videoContainer.style.display = 'none';
+            cameraSection.classList.remove('active');
+            startCameraBtn.style.display = '';
+            stopCameraBtn.style.display = 'none';
+        }
+
+        async function startCamera() {
+            if (!navigator.mediaDevices?.getUserMedia) {
+                cameraError.textContent = 'المتصفح لا يدعم تشغيل الكاميرا لهذه الوظيفة.';
+                cameraError.style.display = 'block';
+                return;
+            }
+
+            try {
+                const constraints = {
+                    video: {
+                        facingMode: 'environment',
+                        width: { ideal: 1280 },
+                        height: { ideal: 720 }
+                    }
+                };
+
+                currentStream = await navigator.mediaDevices.getUserMedia(constraints);
+                video.srcObject = currentStream;
+                videoContainer.style.display = 'block';
+                cameraSection.classList.add('active');
+                startCameraBtn.style.display = 'none';
+                stopCameraBtn.style.display = '';
+                cameraError.style.display = 'none';
+
+                if (!window.Quagga) {
+                    cameraError.textContent = 'تعذر تحميل قارئ الباركود. تحقق من الاتصال بالإنترنت.';
+                    cameraError.style.display = 'block';
+                    return;
+                }
+
+                Quagga.init({
+                    inputStream: {
+                        name: 'Live',
+                        type: 'LiveStream',
+                        target: video,
+                        constraints
+                    },
+                    decoder: {
+                        readers: [
+                            'code_128_reader',
+                            'ean_reader',
+                            'ean_8_reader',
+                            'code_39_reader',
+                            'codabar_reader',
+                            'upc_reader',
+                            'upc_e_reader',
+                            'i2of5_reader'
+                        ]
+                    },
+                    locate: true
+                }, (err) => {
+                    if (err) {
+                        console.error('Quagga init error:', err);
+                        cameraError.textContent = 'حدث خطأ أثناء تهيئة قارئ الباركود.';
+                        cameraError.style.display = 'block';
+                        stopCamera();
+                        return;
+                    }
+                    detectionCooldown = false;
+                    Quagga.start();
+                    scanning = true;
+                });
+
+                Quagga.onDetected(onBarcodeDetected);
+            } catch (error) {
+                console.error('Camera error:', error);
+                let message = 'تعذر الوصول إلى الكاميرا. يرجى السماح بالوصول أو التحقق من الجهاز.';
+                if (error.name === 'NotAllowedError' || error.name === 'PermissionDeniedError') {
+                    message = 'تم رفض إذن الكاميرا. الرجاء منح الإذن من إعدادات المتصفح ثم المحاولة.';
+                } else if (error.name === 'NotFoundError' || error.name === 'DevicesNotFoundError') {
+                    message = 'لم يتم العثور على كاميرا متاحة. تأكد من توصيل الكاميرا بالجهاز.';
+                }
+                cameraError.textContent = message;
+                cameraError.style.display = 'block';
+                stopCamera();
+            }
+        }
+
+        function onBarcodeDetected(result) {
+            if (detectionCooldown) {
+                return;
+            }
+            const code = result?.codeResult?.code?.trim();
+            if (!code) {
+                return;
+            }
+
+            detectionCooldown = true;
+            let batchNumber = code;
+            if (!batchNumber.startsWith('BATCH:') && /^\d{8}/.test(batchNumber)) {
+                batchNumber = 'BATCH: ' + batchNumber;
+            }
+
+            batchInput.value = batchNumber;
+            batchInput.focus();
+            setTimeout(() => form.requestSubmit(), 200);
+            setTimeout(() => {
+                detectionCooldown = false;
+            }, 2000);
+            stopCamera();
+        }
+
         form.addEventListener('submit', async (event) => {
             event.preventDefault();
             const batchNumber = batchInput.value.trim();
@@ -465,6 +722,15 @@ $_SESSION['reader_session_id'] = $_SESSION['reader_session_id'] ?? bin2hex(rando
                 setLoading(false);
             }
         });
+
+        if (startCameraBtn) {
+            startCameraBtn.addEventListener('click', startCamera);
+        }
+        if (stopCameraBtn) {
+            stopCameraBtn.addEventListener('click', stopCamera);
+        }
+        window.addEventListener('beforeunload', stopCamera);
+
     })();
     </script>
 </body>

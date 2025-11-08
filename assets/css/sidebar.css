@@ -159,10 +159,11 @@
 
 .sidebar-nav .nav-link {
     display: grid;
-    grid-template-columns: 20px auto;
+    grid-template-columns: 24px 1fr;
     align-items: center;
     gap: var(--spacing-md);
     padding: var(--spacing-md) var(--spacing-lg);
+    padding-inline-end: calc(var(--spacing-lg) + 36px);
     color: var(--gray-700);
     text-decoration: none;
     font-size: var(--font-size-base);
@@ -210,12 +211,21 @@
 }
 
 .sidebar-nav .nav-link .badge {
-    margin-left: auto;
+    position: absolute;
+    inset-inline-end: var(--spacing-lg);
+    top: 50%;
+    transform: translateY(-50%);
+    min-width: 24px;
+    height: 24px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    padding: 0 8px;
+    border-radius: 999px;
     background: var(--accent-red);
-    color: white;
+    color: #fff;
     font-size: var(--font-size-xs);
-    padding: 2px 6px;
-    border-radius: 10px;
+    line-height: 1;
     font-weight: 600;
 }
 

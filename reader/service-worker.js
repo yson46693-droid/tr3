@@ -4,9 +4,10 @@ const CACHE_NAME = 'batch-reader-cache-v1';
 const OFFLINE_URLS = [
   './',
   './index.php',
-  './api.php',
   './manifest.json',
-  './assets/icon.svg'
+  './assets/icon.svg',
+  './assets/icon-192.png',
+  './assets/icon-512.png'
 ];
 
 self.addEventListener('install', (event) => {
