@@ -665,12 +665,6 @@ $stats = [
                                                 style="padding: 0.2rem 0.4rem; font-size: 0.75rem;">
                                             <i class="bi bi-plus-circle"></i>
                                         </button>
-                                        <button class="btn btn-info btn-sm" 
-                                                onclick="viewMaterialDetails(<?php echo $material['id']; ?>)"
-                                                title="عرض التفاصيل"
-                                                style="padding: 0.2rem 0.4rem; font-size: 0.75rem;">
-                                            <i class="bi bi-eye"></i>
-                                        </button>
                                         <?php if ($currentUser['role'] === 'manager'): ?>
                                             <button class="btn btn-warning btn-sm" 
                                                     onclick="editMaterial(<?php echo $material['id']; ?>)"
@@ -734,9 +728,6 @@ $stats = [
                                         data-quantity="<?php echo number_format((float)($material['quantity'] ?? 0), 4, '.', ''); ?>"
                                         onclick="openAddQuantityModal(this)">
                                     <i class="bi bi-plus-circle me-2"></i>إضافة كمية
-                                </button>
-                                <button class="btn btn-sm btn-info flex-fill" onclick="viewMaterialDetails(<?php echo $material['id']; ?>)">
-                                    <i class="bi bi-eye me-2"></i>عرض التفاصيل
                                 </button>
                                 <?php if ($currentUser['role'] === 'manager'): ?>
                                     <button class="btn btn-sm btn-warning flex-fill" onclick="editMaterial(<?php echo $material['id']; ?>)">

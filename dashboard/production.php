@@ -37,82 +37,108 @@ $pageTitle = isset($lang['production_dashboard']) ? $lang['production_dashboard'
 
             <?php if ($page === 'dashboard' || $page === ''): ?>
                 <?php
-                // التحقق من وجود عمود date أو production_date
-                $dateColumnCheck = $db->queryOne("SHOW COLUMNS FROM production LIKE 'date'");
-                $productionDateColumnCheck = $db->queryOne("SHOW COLUMNS FROM production LIKE 'production_date'");
-                $hasDateColumn = !empty($dateColumnCheck);
-                $hasProductionDateColumn = !empty($productionDateColumnCheck);
-                $dateColumn = $hasDateColumn ? 'date' : ($hasProductionDateColumn ? 'production_date' : 'created_at');
-                
-                // التحقق من وجود عمود user_id أو worker_id
-                $userIdColumnCheck = $db->queryOne("SHOW COLUMNS FROM production LIKE 'user_id'");
-                $workerIdColumnCheck = $db->queryOne("SHOW COLUMNS FROM production LIKE 'worker_id'");
-                $hasUserIdColumn = !empty($userIdColumnCheck);
-                $hasWorkerIdColumn = !empty($workerIdColumnCheck);
-                $userIdColumn = $hasUserIdColumn ? 'user_id' : ($hasWorkerIdColumn ? 'worker_id' : null);
-                
-                // الحصول على ملخص الأنشطة
-                $activitySummary = getProductionActivitySummary();
-                
-                // إحصائيات الإنتاج اليومي
-                if ($userIdColumn) {
-                    $todayProduction = $db->query(
-                        "SELECT p.*, pr.name as product_name, u.full_name as worker_name 
-                         FROM production p 
-                         LEFT JOIN products pr ON p.product_id = pr.id 
-                         LEFT JOIN users u ON p.{$userIdColumn} = u.id 
-                         WHERE DATE(p.{$dateColumn}) = CURDATE() 
-                         ORDER BY p.created_at DESC 
-                         LIMIT 10"
-                    );
-                } else {
-                    $todayProduction = $db->query(
-                        "SELECT p.*, pr.name as product_name, 'غير محدد' as worker_name 
-                         FROM production p 
-                         LEFT JOIN products pr ON p.product_id = pr.id 
-                         WHERE DATE(p.{$dateColumn}) = CURDATE() 
-                         ORDER BY p.created_at DESC 
-                         LIMIT 10"
+                // التحقق من وجود جدول الإنتاج
+                $hasProductionTable = !empty($db->queryOne("SHOW TABLES LIKE 'production'"));
+                $hasAttendanceTable = !empty($db->queryOne("SHOW TABLES LIKE 'attendance'"));
+
+                $dateColumn = 'created_at';
+                $userIdColumn = null;
+                $todayProduction = [];
+                $monthStats = [
+                    'total_production' => 0,
+                    'total_quantity' => 0,
+                    'total_workers' => 0
+                ];
+                $attendanceStats = [
+                    'total_days' => 0,
+                    'total_hours' => 0
+                ];
+                $activitySummary = [
+                    'today_production' => 0,
+                    'month_production' => 0,
+                    'pending_tasks' => 0,
+                    'recent_production' => []
+                ];
+
+                if ($hasProductionTable) {
+                    // التحقق من وجود الأعمدة
+                    $dateColumnCheck = $db->queryOne("SHOW COLUMNS FROM production LIKE 'date'");
+                    $productionDateColumnCheck = $db->queryOne("SHOW COLUMNS FROM production LIKE 'production_date'");
+                    $hasDateColumn = !empty($dateColumnCheck);
+                    $hasProductionDateColumn = !empty($productionDateColumnCheck);
+                    $dateColumn = $hasDateColumn ? 'date' : ($hasProductionDateColumn ? 'production_date' : 'created_at');
+                    
+                    $userIdColumnCheck = $db->queryOne("SHOW COLUMNS FROM production LIKE 'user_id'");
+                    $workerIdColumnCheck = $db->queryOne("SHOW COLUMNS FROM production LIKE 'worker_id'");
+                    $hasUserIdColumn = !empty($userIdColumnCheck);
+                    $hasWorkerIdColumn = !empty($workerIdColumnCheck);
+                    $userIdColumn = $hasUserIdColumn ? 'user_id' : ($hasWorkerIdColumn ? 'worker_id' : null);
+
+                    // الحصول على ملخص الأنشطة
+                    $activitySummary = getProductionActivitySummary();
+
+                    // إحصائيات الإنتاج اليومي
+                    $dateExpression = $dateColumn === 'created_at' ? 'created_at' : $dateColumn;
+                    if ($userIdColumn) {
+                        $todayProduction = $db->query(
+                            "SELECT p.*, pr.name as product_name, u.full_name as worker_name 
+                             FROM production p 
+                             LEFT JOIN products pr ON p.product_id = pr.id 
+                             LEFT JOIN users u ON p.{$userIdColumn} = u.id 
+                             WHERE DATE(p.{$dateExpression}) = CURDATE() 
+                             ORDER BY p.created_at DESC 
+                             LIMIT 10"
+                        );
+                    } else {
+                        $todayProduction = $db->query(
+                            "SELECT p.*, pr.name as product_name, 'غير محدد' as worker_name 
+                             FROM production p 
+                             LEFT JOIN products pr ON p.product_id = pr.id 
+                             WHERE DATE(p.{$dateExpression}) = CURDATE() 
+                             ORDER BY p.created_at DESC 
+                             LIMIT 10"
+                        );
+                    }
+
+                    // إحصائيات الإنتاج الشهري
+                    if ($userIdColumn) {
+                        $monthStats = $db->queryOne(
+                            "SELECT 
+                                COUNT(*) as total_production,
+                                SUM(quantity) as total_quantity,
+                                COUNT(DISTINCT {$userIdColumn}) as total_workers
+                             FROM production 
+                             WHERE MONTH({$dateExpression}) = MONTH(NOW()) 
+                             AND YEAR({$dateExpression}) = YEAR(NOW()) 
+                             AND status = 'approved'"
+                        );
+                    } else {
+                        $monthStats = $db->queryOne(
+                            "SELECT 
+                                COUNT(*) as total_production,
+                                SUM(quantity) as total_quantity,
+                                0 as total_workers
+                             FROM production 
+                             WHERE MONTH({$dateExpression}) = MONTH(NOW()) 
+                             AND YEAR({$dateExpression}) = YEAR(NOW()) 
+                             AND status = 'approved'"
+                        );
+                    }
+                }
+
+                if ($hasAttendanceTable) {
+                    $attendanceStats = $db->queryOne(
+                        "SELECT 
+                            COUNT(*) as total_days,
+                            SUM(TIMESTAMPDIFF(HOUR, check_in, IFNULL(check_out, NOW()))) as total_hours
+                         FROM attendance 
+                         WHERE user_id = ? 
+                         AND MONTH(date) = MONTH(NOW()) 
+                         AND YEAR(date) = YEAR(NOW())
+                         AND status = 'present'",
+                        [$currentUser['id']]
                     );
                 }
-                
-                // إحصائيات الإنتاج الشهري
-                if ($userIdColumn) {
-                    $monthStats = $db->queryOne(
-                        "SELECT 
-                            COUNT(*) as total_production,
-                            SUM(quantity) as total_quantity,
-                            COUNT(DISTINCT {$userIdColumn}) as total_workers
-                         FROM production 
-                         WHERE MONTH({$dateColumn}) = MONTH(NOW()) 
-                         AND YEAR({$dateColumn}) = YEAR(NOW()) 
-                         AND status = 'approved'"
-                    );
-                } else {
-                    $monthStats = $db->queryOne(
-                        "SELECT 
-                            COUNT(*) as total_production,
-                            SUM(quantity) as total_quantity,
-                            0 as total_workers
-                         FROM production 
-                         WHERE MONTH({$dateColumn}) = MONTH(NOW()) 
-                         AND YEAR({$dateColumn}) = YEAR(NOW()) 
-                         AND status = 'approved'"
-                    );
-                }
-                
-                // إحصائيات الحضور
-                $attendanceStats = $db->queryOne(
-                    "SELECT 
-                        COUNT(*) as total_days,
-                        SUM(TIMESTAMPDIFF(HOUR, check_in, check_out)) as total_hours
-                     FROM attendance 
-                     WHERE user_id = ? 
-                     AND MONTH(date) = MONTH(NOW()) 
-                     AND YEAR(date) = YEAR(NOW())
-                     AND status = 'present'",
-                    [$currentUser['id']]
-                );
                 ?>
                 
                 <div class="page-header mb-4">
@@ -249,13 +275,7 @@ $pageTitle = isset($lang['production_dashboard']) ? $lang['production_dashboard'
                 
                 <!-- الإشعارات -->
                 <?php
-                $notifications = $db->query(
-                    "SELECT * FROM notifications 
-                     WHERE user_id = ? OR role = ? 
-                     ORDER BY created_at DESC 
-                     LIMIT 5",
-                    [$currentUser['id'], $currentUser['role']]
-                );
+                $notifications = getUserNotifications($currentUser['id'], false, 5);
                 ?>
                 
                 <?php if (!empty($notifications)): ?>
