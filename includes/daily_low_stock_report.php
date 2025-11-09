@@ -543,6 +543,9 @@ if (!function_exists('triggerDailyLowStockReport')) {
                 $reportUrl = getRelativeUrl($relativePath);
                 $printUrl = $reportUrl . (strpos($reportUrl, '?') === false ? '?print=1' : '&print=1');
 
+                $absoluteReportUrl = getAbsoluteUrl($relativePath);
+                $absolutePrintUrl = $absoluteReportUrl . (strpos($absoluteReportUrl, '?') === false ? '?print=1' : '&print=1');
+
                 $summaryLines = [];
                 foreach ($counts as $key => $value) {
                     if ($value <= 0) {
@@ -584,8 +587,8 @@ if (!function_exists('triggerDailyLowStockReport')) {
                 } else {
                     $buttons = [
                         [
-                            ['text' => 'عرض التقرير', 'url' => $reportUrl],
-                            ['text' => 'طباعة / حفظ PDF', 'url' => $printUrl],
+                            ['text' => 'عرض التقرير', 'url' => $absoluteReportUrl],
+                            ['text' => 'طباعة / حفظ PDF', 'url' => $absolutePrintUrl],
                         ],
                     ];
 
