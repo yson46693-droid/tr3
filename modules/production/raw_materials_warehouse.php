@@ -582,6 +582,63 @@ $nutMaterialOptions = array_map(static function ($type, $data) {
     ];
 }, array_keys($nutMaterialAggregates), $nutMaterialAggregates);
 
+// المواد المشتقة المتاحة للاستخدام في القوالب
+$availableDerivativesForTemplates = [];
+try {
+    $availableDerivativesForTemplates = $db->query(
+        "SELECT ds.derivative_type, ds.weight, s.name AS supplier_name
+         FROM derivatives_stock ds
+         INNER JOIN suppliers s ON ds.supplier_id = s.id
+         WHERE ds.weight > 0
+         ORDER BY ds.derivative_type, s.name"
+    );
+} catch (Exception $e) {
+    error_log('Failed to load derivatives stock for templates: ' . $e->getMessage());
+    $availableDerivativesForTemplates = [];
+}
+
+$derivativeMaterialAggregates = [];
+foreach ($availableDerivativesForTemplates as $derivativeRow) {
+    $derivativeType = trim((string)($derivativeRow['derivative_type'] ?? ''));
+    if ($derivativeType === '') {
+        continue;
+    }
+
+    if (!isset($derivativeMaterialAggregates[$derivativeType])) {
+        $derivativeMaterialAggregates[$derivativeType] = [
+            'value' => $derivativeType,
+            'quantity' => 0.0,
+            'suppliers' => [],
+        ];
+    }
+
+    $derivativeMaterialAggregates[$derivativeType]['quantity'] += (float)($derivativeRow['weight'] ?? 0);
+
+    $supplierName = trim((string)($derivativeRow['supplier_name'] ?? ''));
+    if ($supplierName !== '' && !in_array($supplierName, $derivativeMaterialAggregates[$derivativeType]['suppliers'], true)) {
+        $derivativeMaterialAggregates[$derivativeType]['suppliers'][] = $supplierName;
+    }
+}
+
+$derivativeMaterialOptions = array_map(static function ($type, $data) {
+    $quantityLabel = number_format($data['quantity'], 2);
+    $suppliersLabel = '';
+    if (!empty($data['suppliers'])) {
+        $firstSupplier = $data['suppliers'][0];
+        $additionalSuppliers = count($data['suppliers']) - 1;
+        if ($additionalSuppliers > 0) {
+            $suppliersLabel = sprintf(' - مورد: %s (+%d)', $firstSupplier, $additionalSuppliers);
+        } else {
+            $suppliersLabel = sprintf(' - المورد: %s', $firstSupplier);
+        }
+    }
+
+    return [
+        'value' => $type,
+        'label' => sprintf('%s - متاح: %s كجم%s', $type, $quantityLabel, $suppliersLabel),
+    ];
+}, array_keys($derivativeMaterialAggregates), $derivativeMaterialAggregates);
+
 $rawWarehouseReport = [
     'generated_at' => date('Y-m-d H:i'),
     'generated_by' => $currentUser['full_name'] ?? ($currentUser['username'] ?? 'مستخدم'),
@@ -4042,6 +4099,7 @@ let materialRowCount = 0;
 const honeyVarietyOptionsMarkup = <?php echo json_encode($honeyVarietyOptionsMarkup, JSON_UNESCAPED_UNICODE); ?>;
 const materialOptions = <?php echo json_encode([
     'nuts' => $nutMaterialOptions,
+    'derivatives' => $derivativeMaterialOptions,
 ], JSON_UNESCAPED_UNICODE); ?>;
 function addMaterialRow() {
     materialRowCount++;
@@ -4138,7 +4196,7 @@ function populateMaterialNameOptions(rowId, materialType) {
     const options = materialOptions[materialType] || [];
     select.innerHTML = '<option value="">اختر المادة</option>';
 
-    if (materialType === 'nuts') {
+    if (materialType === 'nuts' || materialType === 'derivatives') {
         wrapper.style.display = 'block';
         select.required = true;
 
@@ -4149,14 +4207,24 @@ function populateMaterialNameOptions(rowId, materialType) {
                 opt.textContent = option.label;
                 select.appendChild(opt);
             });
-            hint.textContent = 'حدد نوع المكسرات المستخدمة في القالب';
+            if (hint) {
+                hint.textContent = materialType === 'nuts'
+                    ? 'حدد نوع المكسرات المستخدمة في القالب'
+                    : 'حدد نوع المشتق المستخدم في القالب';
+            }
         } else {
-            hint.textContent = 'لا توجد مكسرات متاحة حالياً في المخزون';
+            if (hint) {
+                hint.textContent = materialType === 'nuts'
+                    ? 'لا توجد مكسرات متاحة حالياً في المخزون'
+                    : 'لا توجد مشتقات متاحة حالياً في المخزون';
+            }
         }
     } else {
         wrapper.style.display = 'none';
         select.required = false;
-        hint.textContent = 'اختر نوع المادة لعرض الخيارات المتاحة';
+        if (hint) {
+            hint.textContent = 'اختر نوع المادة لعرض الخيارات المتاحة';
+        }
     }
 }
 
