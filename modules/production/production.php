@@ -239,6 +239,7 @@ function checkMaterialsAvailability($db, $templateId, $productionQuantity) {
 }
 
 // إنشاء جدول batch_numbers إذا لم يكن موجوداً
+$hasBatchNumbersTable = false;
 try {
     $batchTableCheck = $db->queryOne("SHOW TABLES LIKE 'batch_numbers'");
     if (empty($batchTableCheck)) {
@@ -298,8 +299,10 @@ try {
             error_log("Error adding honey_variety column: " . $e->getMessage());
         }
     }
+    $hasBatchNumbersTable = true;
 } catch (Exception $e) {
     error_log("Batch numbers table creation error: " . $e->getMessage());
+    $hasBatchNumbersTable = false;
 }
 
 // الحصول على رسالة النجاح من session (بعد redirect)
@@ -1459,15 +1462,34 @@ $totalQuantityResult = $db->queryOne($totalQuantitySql, $params);
 $totalQuantity = floatval($totalQuantityResult['total'] ?? 0);
 
 // الحصول على البيانات
+$batchJoinSelect = $hasBatchNumbersTable ? ', bn.batch_number as batch_number' : ', NULL as batch_number';
+$batchJoinClause = '';
+
+if ($hasBatchNumbersTable) {
+    $batchJoinClause = "
+            LEFT JOIN (
+                SELECT b1.production_id, b1.batch_number
+                FROM batch_numbers b1
+                WHERE b1.production_id IS NOT NULL
+                  AND b1.id = (
+                      SELECT MAX(b2.id)
+                      FROM batch_numbers b2
+                      WHERE b2.production_id = b1.production_id
+                  )
+            ) bn ON bn.production_id = p.id";
+}
+
 if ($userIdColumn) {
     $sql = "SELECT p.*, 
                    pr.name as product_name, 
                    pr.category as product_category,
                    u.full_name as worker_name,
                    u.username as worker_username
+                   $batchJoinSelect
             FROM production p
             LEFT JOIN products pr ON p.product_id = pr.id
             LEFT JOIN users u ON p.{$userIdColumn} = u.id
+            $batchJoinClause
             WHERE $whereClause
             ORDER BY p.$dateColumn DESC, p.created_at DESC
             LIMIT ? OFFSET ?";
@@ -1477,8 +1499,10 @@ if ($userIdColumn) {
                    pr.category as product_category,
                    'غير محدد' as worker_name,
                    'غير محدد' as worker_username
+                   $batchJoinSelect
             FROM production p
             LEFT JOIN products pr ON p.product_id = pr.id
+            $batchJoinClause
             WHERE $whereClause
             ORDER BY p.$dateColumn DESC, p.created_at DESC
             LIMIT ? OFFSET ?";
@@ -1939,7 +1963,7 @@ $lang = isset($translations) ? $translations : [];
                         <th><?php echo isset($lang['worker']) ? $lang['worker'] : 'العامل'; ?></th>
                         <th><?php echo isset($lang['date']) ? $lang['date'] : 'التاريخ'; ?></th>
                         <th><?php echo isset($lang['status']) ? $lang['status'] : 'الحالة'; ?></th>
-                        <th><?php echo isset($lang['actions']) ? $lang['actions'] : 'الإجراءات'; ?></th>
+                        <th><?php echo isset($lang['batch_number']) ? $lang['batch_number'] : 'رقم التشغيلة'; ?></th>
                     </tr>
                 </thead>
                 <tbody>
@@ -1968,23 +1992,10 @@ $lang = isset($translations) ? $translations : [];
                                     </span>
                                 </td>
                                 <td>
-                                    <button class="btn btn-sm btn-info" onclick="viewProduction(<?php echo $prod['id']; ?>)" title="<?php echo isset($lang['view']) ? $lang['view'] : 'عرض'; ?>">
-                                        <i class="bi bi-eye"></i>
-                                    </button>
-                                    <?php if ($currentUser['role'] === 'production' && $prod['status'] === 'pending'): ?>
-                                        <button class="btn btn-sm btn-warning" onclick="editProduction(<?php echo $prod['id']; ?>)" title="<?php echo isset($lang['edit']) ? $lang['edit'] : 'تعديل'; ?>">
-                                            <i class="bi bi-pencil"></i>
-                                        </button>
-                                        <button class="btn btn-sm btn-danger" onclick="deleteProduction(<?php echo $prod['id']; ?>)" title="<?php echo isset($lang['delete']) ? $lang['delete'] : 'حذف'; ?>">
-                                            <i class="bi bi-trash"></i>
-                                        </button>
-                                    <?php elseif (in_array($currentUser['role'], ['accountant', 'manager'])): ?>
-                                        <button class="btn btn-sm btn-warning" onclick="editProduction(<?php echo $prod['id']; ?>)" title="<?php echo isset($lang['edit']) ? $lang['edit'] : 'تعديل'; ?>">
-                                            <i class="bi bi-pencil"></i>
-                                        </button>
-                                        <button class="btn btn-sm btn-danger" onclick="deleteProduction(<?php echo $prod['id']; ?>)" title="<?php echo isset($lang['delete']) ? $lang['delete'] : 'حذف'; ?>">
-                                            <i class="bi bi-trash"></i>
-                                        </button>
+                                    <?php if (!empty($prod['batch_number'])): ?>
+                                        <span class="badge bg-secondary text-wrap" style="white-space: normal;"><?php echo htmlspecialchars($prod['batch_number']); ?></span>
+                                    <?php else: ?>
+                                        <span class="text-muted">غير متوفر</span>
                                     <?php endif; ?>
                                 </td>
                             </tr>
