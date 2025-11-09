@@ -2362,7 +2362,15 @@ document.addEventListener('DOMContentLoaded', function () {
                     })
                 });
 
-                const data = await response.json();
+                let data = null;
+                const contentType = response.headers.get('Content-Type') || '';
+
+                if (contentType.includes('application/json')) {
+                    data = await response.json();
+                } else {
+                    const rawText = await response.text();
+                    throw new Error('Response is not JSON: ' + rawText.substring(0, 200));
+                }
 
                 if (data.success) {
                     if (statusEl) {
@@ -2398,7 +2406,7 @@ document.addEventListener('DOMContentLoaded', function () {
             } catch (error) {
                 console.error('Alias update error:', error);
                 if (statusEl) {
-                    statusEl.textContent = 'حدث خطأ في الاتصال بالخادم.';
+                    statusEl.textContent = 'تعذّر حفظ الاسم المستعار: ' + (error?.message || 'خطأ غير معروف');
                     statusEl.classList.remove('text-muted', 'text-success');
                     statusEl.classList.add('text-danger');
                 }
