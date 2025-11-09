@@ -2028,6 +2028,57 @@ $rawMaterialsReportGeneratedAt = $rawWarehouseReport['generated_at'] ?? date('Y-
     background: linear-gradient(135deg, #d4a574 0%, #8b6f47 100%);
 }
 
+#createMixedNutsModal .modal-dialog {
+    max-width: 920px;
+}
+
+#createMixedNutsModal .modal-body {
+    max-height: calc(100vh - 220px);
+    overflow-y: auto;
+    padding-bottom: 1rem;
+}
+
+@media (max-width: 768px) {
+    #createMixedNutsModal .modal-body {
+        max-height: calc(100vh - 160px);
+    }
+}
+
+#ingredientsContainer {
+    max-height: 45vh;
+    overflow-y: auto;
+    padding-inline-end: 0.25rem;
+}
+
+#ingredientsContainer .ingredient-row {
+    background: #ffffff;
+    border: 1px solid #e2e8f0;
+    border-radius: 0.75rem;
+    padding: 0.75rem;
+    margin-bottom: 0.75rem;
+    box-shadow: 0 4px 12px rgba(15, 23, 42, 0.05);
+}
+
+#ingredientsContainer .ingredient-row:last-child {
+    margin-bottom: 0;
+}
+
+#ingredientsContainer .ingredient-row .form-label {
+    font-size: 0.85rem;
+    margin-bottom: 0.35rem;
+    color: #475569;
+}
+
+#ingredientsContainer .ingredient-row .form-control,
+#ingredientsContainer .ingredient-row .form-select {
+    font-size: 0.9rem;
+    min-height: 38px;
+}
+
+#ingredientsContainer .remove-ingredient-btn {
+    min-height: 38px;
+}
+
 .section-tabs .nav-link i {
     margin-left: 8px;
     font-size: 1.1em;
@@ -3657,9 +3708,9 @@ $nutsSuppliers = $db->query("SELECT id, name, phone FROM suppliers WHERE status 
         const nutsStock = <?php echo json_encode($nutsStock); ?>;
         
         const ingredientHtml = `
-            <div class="ingredient-row border rounded p-3 mb-2" id="ingredient-${ingredientIndex}">
-                <div class="row">
-                    <div class="col-md-6">
+            <div class="ingredient-row" id="ingredient-${ingredientIndex}">
+                <div class="row g-2 align-items-end">
+                    <div class="col-12 col-lg-6">
                         <label class="form-label">نوع المكسرات</label>
                         <select name="ingredients[${ingredientIndex}][nuts_stock_id]" class="form-select" required onchange="updateAvailable(this, ${ingredientIndex})">
                             <option value="">اختر النوع</option>
@@ -3670,15 +3721,15 @@ $nutsSuppliers = $db->query("SELECT id, name, phone FROM suppliers WHERE status 
                             `).join('')}
                         </select>
                     </div>
-                    <div class="col-md-4">
+                    <div class="col-6 col-lg-4">
                         <label class="form-label">الكمية (كجم)</label>
                         <input type="number" name="ingredients[${ingredientIndex}][quantity]" 
                                class="form-control" step="0.001" min="0.001" required 
                                id="quantity-${ingredientIndex}">
-                        <small class="text-muted" id="available-${ingredientIndex}"></small>
+                        <div class="form-text text-muted" id="available-${ingredientIndex}"></div>
                     </div>
-                    <div class="col-md-2 d-flex align-items-end">
-                        <button type="button" class="btn btn-danger btn-sm w-100" onclick="removeIngredient(${ingredientIndex})">
+                    <div class="col-6 col-lg-2">
+                        <button type="button" class="btn btn-outline-danger remove-ingredient-btn w-100" onclick="removeIngredient(${ingredientIndex})">
                             <i class="bi bi-trash"></i>
                         </button>
                     </div>
@@ -3687,6 +3738,7 @@ $nutsSuppliers = $db->query("SELECT id, name, phone FROM suppliers WHERE status 
         `;
         
         container.insertAdjacentHTML('beforeend', ingredientHtml);
+        container.scrollTop = container.scrollHeight;
         ingredientIndex++;
     }
     
@@ -3699,10 +3751,14 @@ $nutsSuppliers = $db->query("SELECT id, name, phone FROM suppliers WHERE status 
         const availableQty = selectedOption.getAttribute('data-quantity');
         const availableSpan = document.getElementById('available-' + index);
         const quantityInput = document.getElementById('quantity-' + index);
-        
-        if (availableQty) {
-            availableSpan.textContent = `متاح: ${parseFloat(availableQty).toFixed(3)} كجم`;
-            quantityInput.max = availableQty;
+        const availableValue = parseFloat(availableQty);
+
+        if (!Number.isNaN(availableValue)) {
+            availableSpan.textContent = `متاح: ${availableValue.toFixed(3)} كجم`;
+            quantityInput.max = availableValue.toFixed(3);
+        } else {
+            availableSpan.textContent = '';
+            quantityInput.removeAttribute('max');
         }
     }
     

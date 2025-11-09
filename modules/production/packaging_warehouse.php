@@ -2375,6 +2375,10 @@ document.addEventListener('DOMContentLoaded', function () {
         const isReady = reportButton.getAttribute('data-report-ready') === '1';
         const resolvedPrintUrl = printUrlAttr || (viewUrl ? (viewUrl.includes('?') ? `${viewUrl}&print=1` : `${viewUrl}?print=1`) : '');
 
+        if (reportModalElement && reportModalElement.parentElement !== document.body) {
+            document.body.appendChild(reportModalElement);
+        }
+
         if (!isReady) {
             reportButton.addEventListener('click', () => {
                 alert('لا يمكن توليد التقرير حالياً. يرجى تحديث الصفحة أو التأكد من صلاحيات مجلد التخزين.');
