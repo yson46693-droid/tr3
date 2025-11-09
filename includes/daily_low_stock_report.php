@@ -350,24 +350,13 @@ if (!function_exists('triggerDailyLowStockReport')) {
             if (
                 $lastSentDate === $todayDate &&
                 !empty($statusSnapshot) &&
-                in_array($statusSnapshot['status'] ?? null, ['completed', 'completed_no_issues', 'already_sent'], true)
+                in_array($statusSnapshot['status'] ?? null, ['completed', 'completed_no_issues'], true) &&
+                $existingReportPath !== null
             ) {
                 $statusSnapshot['status'] = 'already_sent';
                 $statusSnapshot['checked_at'] = date('Y-m-d H:i:s');
                 $statusSnapshot['last_sent_at'] = $jobState['last_sent_at'];
                 lowStockReportSaveStatus($statusSnapshot);
-                return;
-            }
-
-            $jobRelativePath = (string)($jobState['last_file_path'] ?? '');
-            if ($lastSentDate === $todayDate && $jobRelativePath !== '') {
-                lowStockReportSaveStatus([
-                    'date' => $todayDate,
-                    'status' => 'already_sent',
-                    'checked_at' => date('Y-m-d H:i:s'),
-                    'last_sent_at' => $jobState['last_sent_at'],
-                    'report_path' => $jobRelativePath,
-                ]);
                 return;
             }
         }

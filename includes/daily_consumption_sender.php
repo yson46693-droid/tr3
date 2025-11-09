@@ -213,17 +213,28 @@ if (!function_exists('triggerDailyConsumptionReport')) {
             );
 
             $existingData = [];
+            $existingDataReportPath = null;
             if ($existing && isset($existing['value'])) {
                 $decoded = json_decode((string) $existing['value'], true);
                 if (json_last_error() === JSON_ERROR_NONE && is_array($decoded)) {
                     $existingData = $decoded;
+                    if (
+                        ($decoded['date'] ?? null) === $todayDate &&
+                        !empty($decoded['report_path'])
+                    ) {
+                        $candidateExisting = $reportsBaseDir . '/' . ltrim((string)$decoded['report_path'], '/\\');
+                        if (is_file($candidateExisting)) {
+                            $existingDataReportPath = $candidateExisting;
+                        }
+                    }
                 }
             }
 
             if (
                 !empty($existingData) &&
                 ($existingData['date'] ?? null) === $todayDate &&
-                in_array($existingData['status'] ?? null, ['completed', 'completed_no_data', 'already_sent'], true)
+                in_array($existingData['status'] ?? null, ['completed', 'completed_no_data', 'already_sent'], true) &&
+                $existingDataReportPath !== null
             ) {
                 $db->commit();
                 return;

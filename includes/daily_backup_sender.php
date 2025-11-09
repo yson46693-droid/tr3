@@ -140,9 +140,21 @@ if (!function_exists('triggerDailyBackupDelivery')) {
             error_log('Daily Backup: failed loading job state - ' . $stateError->getMessage());
         }
 
+        $jobReportPath = null;
+        if (!empty($jobState['last_file_path'])) {
+            $candidateJob = rtrim(defined('BACKUPS_PATH') ? BACKUPS_PATH : (dirname(__DIR__) . '/backups'), '/\\')
+                . '/' . ltrim((string)$jobState['last_file_path'], '/\\');
+            if (is_file($candidateJob)) {
+                $jobReportPath = $candidateJob;
+            }
+        }
+
         if (!empty($jobState['last_sent_at'])) {
             $lastSentDate = substr((string) $jobState['last_sent_at'], 0, 10);
-            if ($lastSentDate === $todayDate) {
+            if (
+                $lastSentDate === $todayDate &&
+                ($jobReportPath !== null)
+            ) {
                 $statusData['status'] = 'already_sent';
                 $statusData['last_sent_at'] = $jobState['last_sent_at'];
                 $statusData['file_path'] = $jobState['last_file_path'] ?? null;
@@ -169,10 +181,23 @@ if (!function_exists('triggerDailyBackupDelivery')) {
                 }
             }
 
+            $existingDataHasFile = false;
+            if (
+                !empty($existingData['file_path']) &&
+                ($existingData['date'] ?? null) === $todayDate
+            ) {
+                $candidateExisting = rtrim(defined('BACKUPS_PATH') ? BACKUPS_PATH : (dirname(__DIR__) . '/backups'), '/\\')
+                    . '/' . ltrim((string)$existingData['file_path'], '/\\');
+                if (is_file($candidateExisting)) {
+                    $existingDataHasFile = true;
+                }
+            }
+
             if (
                 !empty($existingData) &&
                 ($existingData['date'] ?? null) === $todayDate &&
-                in_array($existingData['status'] ?? null, ['completed', 'sent'], true)
+                in_array($existingData['status'] ?? null, ['completed', 'sent'], true) &&
+                $existingDataHasFile
             ) {
                 $db->commit();
                 dailyBackupNotifyManager('تم إرسال النسخة الاحتياطية للبيانات إلى شات Telegram مسبقاً اليوم.');

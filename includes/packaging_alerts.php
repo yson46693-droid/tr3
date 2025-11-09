@@ -166,9 +166,21 @@ function processDailyPackagingAlert(): void {
         }
     }
 
+    $jobRelativePath = (string)($jobState['last_file_path'] ?? '');
+    $jobReportPath = null;
+    if ($jobRelativePath !== '') {
+        $candidate = $reportsBase . '/' . ltrim($jobRelativePath, '/\\');
+        if (is_file($candidate)) {
+            $jobReportPath = $candidate;
+        }
+    }
+
     if (!empty($jobState['last_sent_at'])) {
         $lastSentDate = substr((string)$jobState['last_sent_at'], 0, 10);
-        if ($lastSentDate === $today) {
+        if (
+            $lastSentDate === $today &&
+            ($existingReportPath !== null || $jobReportPath !== null)
+        ) {
             $alreadyData = !empty($existingData) ? $existingData : [
                 'date' => $today,
                 'status' => 'already_sent',
@@ -178,6 +190,8 @@ function processDailyPackagingAlert(): void {
             $alreadyData['last_sent_at'] = $jobState['last_sent_at'];
             if ($existingReportRelative !== null) {
                 $alreadyData['report_path'] = $existingReportRelative;
+            } elseif ($jobRelativePath !== '') {
+                $alreadyData['report_path'] = $jobRelativePath;
             }
             if ($existingViewerPath !== null) {
                 $alreadyData['viewer_path'] = $existingViewerPath;

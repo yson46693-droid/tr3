@@ -425,19 +425,16 @@ if (ENABLE_DAILY_LOW_STOCK_REPORT) {
 }
 
 if (ENABLE_DAILY_PACKAGING_ALERT) {
-    usleep(2 * 1000000); //  ثواني لتخفيف الضغط على API
     require_once __DIR__ . '/packaging_alerts.php';
     processDailyPackagingAlert();
 }
 
 if (ENABLE_DAILY_CONSUMPTION_REPORT) {
-    usleep(2 * 1000000);
     require_once __DIR__ . '/daily_consumption_sender.php';
     triggerDailyConsumptionReport();
 }
 
 if (ENABLE_DAILY_BACKUP_DELIVERY) {
-    usleep(2 * 1000000);
     require_once __DIR__ . '/daily_backup_sender.php';
     triggerDailyBackupDelivery();
 }
