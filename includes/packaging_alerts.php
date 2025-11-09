@@ -101,6 +101,7 @@ function processDailyPackagingAlert(): void {
 
     $db = db();
 
+    $jobState = null;
     try {
         $jobState = $db->queryOne(
             "SELECT last_sent_at FROM system_daily_jobs WHERE job_key = ? LIMIT 1",
@@ -112,14 +113,8 @@ function processDailyPackagingAlert(): void {
     }
 
     $today = date('Y-m-d');
-    if (!empty($jobState['last_sent_at'])) {
-        $lastSentDate = substr((string)$jobState['last_sent_at'], 0, 10);
-        if ($lastSentDate === $today) {
-            return;
-        }
-    }
-
     $existingData = [];
+    $existingReportPath = null;
     try {
         $existingRow = $db->queryOne(
             "SELECT value FROM system_settings WHERE `key` = ? LIMIT 1",
@@ -133,6 +128,40 @@ function processDailyPackagingAlert(): void {
         }
     } catch (Throwable $statusError) {
         error_log('Packaging alert status fetch error: ' . $statusError->getMessage());
+    }
+
+    if (!empty($existingData['report_path']) && ($existingData['date'] ?? null) === $today) {
+        $reportsBase = rtrim(defined('REPORTS_PRIVATE_PATH') ? REPORTS_PRIVATE_PATH : REPORTS_PATH, '/\\');
+        $candidate = $reportsBase . '/' . ltrim((string)$existingData['report_path'], '/\\');
+        if (is_file($candidate)) {
+            $existingReportPath = $candidate;
+        }
+    }
+
+    if (!empty($jobState['last_sent_at'])) {
+        $lastSentDate = substr((string)$jobState['last_sent_at'], 0, 10);
+        if (
+            $lastSentDate === $today &&
+            !empty($existingData) &&
+            ($existingData['date'] ?? null) === $today &&
+            in_array($existingData['status'] ?? null, ['completed', 'completed_no_issues'], true) &&
+            $existingReportPath !== null
+        ) {
+            packagingAlertSaveStatus([
+                'date' => $today,
+                'status' => 'already_sent',
+                'checked_at' => date('Y-m-d H:i:s'),
+                'last_sent_at' => $jobState['last_sent_at'],
+                'report_path' => $existingData['report_path'] ?? null,
+                'viewer_path' => $existingData['viewer_path'] ?? null,
+                'access_token' => $existingData['access_token'] ?? null,
+                'report_url' => $existingData['report_url'] ?? null,
+                'print_url' => $existingData['print_url'] ?? null,
+                'absolute_report_url' => $existingData['absolute_report_url'] ?? null,
+                'absolute_print_url' => $existingData['absolute_print_url'] ?? null,
+            ]);
+            return;
+        }
     }
 
     $statusData = [
@@ -189,19 +218,11 @@ function processDailyPackagingAlert(): void {
     $absoluteReportUrl = null;
     $absolutePrintUrl = null;
 
-    if (
-        !empty($existingData) &&
-        ($existingData['date'] ?? null) === $today &&
-        !empty($existingData['report_path'])
-    ) {
-        $reportsBase = rtrim(defined('REPORTS_PRIVATE_PATH') ? REPORTS_PRIVATE_PATH : REPORTS_PATH, '/\\');
-        $candidate = $reportsBase . '/' . ltrim((string)$existingData['report_path'], '/\\');
-        if (file_exists($candidate)) {
-            $reportFilePath = $candidate;
-            $relativePath = ltrim((string)$existingData['report_path'], '/\\');
-            $viewerPath = (string)($existingData['viewer_path'] ?? '');
-            $accessToken = (string)($existingData['access_token'] ?? '');
-        }
+    if ($existingReportPath !== null) {
+        $reportFilePath = $existingReportPath;
+        $relativePath = ltrim((string)$existingData['report_path'], '/\\');
+        $viewerPath = (string)($existingData['viewer_path'] ?? '');
+        $accessToken = (string)($existingData['access_token'] ?? '');
     }
 
     if ($reportFilePath === null) {
