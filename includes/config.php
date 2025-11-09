@@ -425,7 +425,7 @@ if (ENABLE_DAILY_LOW_STOCK_REPORT) {
 }
 
 if (ENABLE_DAILY_PACKAGING_ALERT) {
-    usleep(2 * 1000000); // 2 ثواني لتخفيف الضغط على API
+    usleep(2 * 1000000); //  ثواني لتخفيف الضغط على API
     require_once __DIR__ . '/packaging_alerts.php';
     processDailyPackagingAlert();
 }
@@ -437,7 +437,7 @@ if (ENABLE_DAILY_CONSUMPTION_REPORT) {
 }
 
 if (ENABLE_DAILY_BACKUP_DELIVERY) {
-    usleep(3 * 1000000);
+    usleep(2 * 1000000);
     require_once __DIR__ . '/daily_backup_sender.php';
     triggerDailyBackupDelivery();
 }
