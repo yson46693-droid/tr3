@@ -98,8 +98,12 @@ function sendTelegramMessage($message, $chatId = null) {
  */
 function sendTelegramMessageWithButtons($message, array $buttons, $chatId = null) {
     if (!isTelegramConfigured()) {
-        error_log("Telegram not configured");
-        return false;
+        $error = 'Telegram bot token or chat id not configured';
+        error_log("Telegram not configured (buttons)");
+        return [
+            'success' => false,
+            'error' => $error,
+        ];
     }
 
     $inlineKeyboard = [];
@@ -161,16 +165,34 @@ function sendTelegramMessageWithButtons($message, array $buttons, $chatId = null
     if ($httpCode === 200) {
         $result = json_decode($response, true);
         if (isset($result['ok']) && $result['ok']) {
-            return $result;
+            return [
+                'success' => true,
+                'response' => $result,
+            ];
         }
 
         $errorDesc = $result['description'] ?? 'Unknown error';
         error_log("Telegram API error (buttons): " . $errorDesc);
-        return false;
+        return [
+            'success' => false,
+            'error' => $errorDesc,
+            'response' => $result,
+        ];
     }
 
-    error_log("Telegram HTTP error (buttons): {$httpCode}. cURL Error: {$curlError}");
-    return false;
+    $errorMessage = "HTTP {$httpCode}";
+    if (!empty($curlError)) {
+        $errorMessage .= ' - ' . $curlError;
+    }
+    error_log("Telegram HTTP error (buttons): {$errorMessage}");
+    if (!empty($response)) {
+        error_log("Telegram error response (buttons): " . substr($response, 0, 500));
+    }
+
+    return [
+        'success' => false,
+        'error' => $errorMessage,
+    ];
 }
 
 /**

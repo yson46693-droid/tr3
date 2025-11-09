@@ -590,9 +590,10 @@ if (!function_exists('triggerDailyLowStockReport')) {
                     ];
 
                     $sendResult = sendTelegramMessageWithButtons($message, $buttons);
-                    if ($sendResult === false) {
+                    if (empty($sendResult['success'])) {
                         $status = 'failed';
-                        $errorMessage = 'فشل إرسال رابط التقرير إلى Telegram';
+                        $errorMessage = 'فشل إرسال رابط التقرير إلى Telegram'
+                            . (!empty($sendResult['error']) ? ' (' . $sendResult['error'] . ')' : '');
                     }
                 }
             }
