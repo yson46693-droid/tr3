@@ -61,11 +61,12 @@ function dailyLowStockGeneratePdf(array $sections, array $counts): ?string
 
     $summaryItems = '';
     foreach ($counts as $key => $value) {
-        if ($value <= 0) {
-            continue;
-        }
-        $summaryItems .= '<li><span class="label">' . htmlspecialchars(formatLowStockCountLabel($key), ENT_QUOTES, 'UTF-8')
-            . '</span><span class="value">' . intval($value) . '</span></li>';
+        $label = formatLowStockCountLabel($key);
+        $liClass = $value > 0 ? '' : ' class="no-data"';
+        $valueClass = $value > 0 ? 'value' : 'value zero';
+        $summaryItems .= '<li' . $liClass . '><span class="label">'
+            . htmlspecialchars($label, ENT_QUOTES, 'UTF-8')
+            . '</span><span class="' . $valueClass . '">' . intval($value) . '</span></li>';
     }
 
     // لتغيير محتوى التقرير أو ترتيب الأقسام، عدل طريقة بناء المتغير $sectionsHtml أدناه.
@@ -103,8 +104,10 @@ function dailyLowStockGeneratePdf(array $sections, array $counts): ?string
         .summary h2 { margin:0 0 12px; font-size:18px; }
         .summary ul { list-style:none; margin:0; padding:0; display:grid; grid-template-columns:repeat(auto-fit, minmax(220px, 1fr)); gap:12px; }
         .summary li { display:flex; justify-content:space-between; align-items:center; background:rgba(255,255,255,0.15); padding:12px 16px; border-radius:12px; font-size:15px; }
+        .summary li.no-data { background:rgba(255,255,255,0.08); border:1px dashed rgba(255,255,255,0.35); }
         .summary .label { font-weight:600; }
         .summary .value { font-size:17px; font-weight:700; }
+        .summary .value.zero { color:#fde68a; font-weight:600; }
         .stock-section { margin-bottom:24px; padding:20px; border:1px solid #e2e8f0; border-radius:14px; background:#f8fafc; }
         .stock-section h3 { margin:0 0 12px; font-size:18px; color:#0f172a; }
         .stock-section ul { list-style:none; margin:0; padding:0; display:flex; flex-direction:column; gap:8px; font-size:14px; color:#1f2937; }
@@ -469,21 +472,21 @@ if (!function_exists('triggerDailyLowStockReport')) {
              WHERE hs.raw_honey_quantity IS NOT NULL AND hs.raw_honey_quantity < 10
              ORDER BY hs.raw_honey_quantity ASC"
         );
+        $counts['honey'] = count($honeyRows);
+        $honeyLines = [];
         if (!empty($honeyRows)) {
-            $counts['honey'] = count($honeyRows);
-            $lines = [];
             foreach ($honeyRows as $row) {
                 $supplier = trim($row['supplier_name'] ?? '') ?: 'غير محدد';
                 $variety = trim($row['honey_variety'] ?? '') ?: 'أخرى';
                 $varietyLabel = formatHoneyVarietyWithCode($variety);
                 $quantity = number_format((float)($row['raw_honey_quantity'] ?? 0), 2);
-                $lines[] = "- المورد: {$supplier} | النوع: {$varietyLabel} | الكمية: {$quantity} كجم";
+                $honeyLines[] = "- المورد: {$supplier} | النوع: {$varietyLabel} | الكمية: {$quantity} كجم";
             }
-            $sections[] = [
-                'title' => 'العسل الخام (أقل من 10 كجم)',
-                'lines' => $lines,
-            ];
         }
+        $sections[] = [
+            'title' => 'العسل الخام (أقل من 10 كجم)',
+            'lines' => $honeyLines,
+        ];
 
         $oliveRows = $safeQuery(
             "SELECT os.id, COALESCE(s.name, 'غير معروف') AS supplier_name, os.quantity
@@ -492,19 +495,19 @@ if (!function_exists('triggerDailyLowStockReport')) {
              WHERE os.quantity IS NOT NULL AND os.quantity < 10
              ORDER BY os.quantity ASC"
         );
+        $counts['olive_oil'] = count($oliveRows);
+        $oliveLines = [];
         if (!empty($oliveRows)) {
-            $counts['olive_oil'] = count($oliveRows);
-            $lines = [];
             foreach ($oliveRows as $row) {
                 $supplier = trim($row['supplier_name'] ?? '') ?: 'غير محدد';
                 $quantity = number_format((float)($row['quantity'] ?? 0), 2);
-                $lines[] = "- المورد: {$supplier} | الكمية: {$quantity} لتر";
+                $oliveLines[] = "- المورد: {$supplier} | الكمية: {$quantity} لتر";
             }
-            $sections[] = [
-                'title' => 'زيت الزيتون (أقل من 10 لتر)',
-                'lines' => $lines,
-            ];
         }
+        $sections[] = [
+            'title' => 'زيت الزيتون (أقل من 10 لتر)',
+            'lines' => $oliveLines,
+        ];
 
         $beeswaxRows = $safeQuery(
             "SELECT bs.id, COALESCE(s.name, 'غير معروف') AS supplier_name, bs.weight
@@ -513,19 +516,19 @@ if (!function_exists('triggerDailyLowStockReport')) {
              WHERE bs.weight IS NOT NULL AND bs.weight < 10
              ORDER BY bs.weight ASC"
         );
+        $counts['beeswax'] = count($beeswaxRows);
+        $beeswaxLines = [];
         if (!empty($beeswaxRows)) {
-            $counts['beeswax'] = count($beeswaxRows);
-            $lines = [];
             foreach ($beeswaxRows as $row) {
                 $supplier = trim($row['supplier_name'] ?? '') ?: 'غير محدد';
                 $quantity = number_format((float)($row['weight'] ?? 0), 2);
-                $lines[] = "- المورد: {$supplier} | الكمية: {$quantity} كجم";
+                $beeswaxLines[] = "- المورد: {$supplier} | الكمية: {$quantity} كجم";
             }
-            $sections[] = [
-                'title' => 'شمع العسل (أقل من 10 كجم)',
-                'lines' => $lines,
-            ];
         }
+        $sections[] = [
+            'title' => 'شمع العسل (أقل من 10 كجم)',
+            'lines' => $beeswaxLines,
+        ];
 
         $derivativeRows = $safeQuery(
             "SELECT ds.id, COALESCE(s.name, 'غير معروف') AS supplier_name, ds.derivative_type, ds.weight
@@ -534,20 +537,20 @@ if (!function_exists('triggerDailyLowStockReport')) {
              WHERE ds.weight IS NOT NULL AND ds.weight < 1
              ORDER BY ds.weight ASC"
         );
+        $counts['derivatives'] = count($derivativeRows);
+        $derivativeLines = [];
         if (!empty($derivativeRows)) {
-            $counts['derivatives'] = count($derivativeRows);
-            $lines = [];
             foreach ($derivativeRows as $row) {
                 $supplier = trim($row['supplier_name'] ?? '') ?: 'غير محدد';
                 $type = trim($row['derivative_type'] ?? '') ?: 'غير محدد';
                 $quantity = number_format((float)($row['weight'] ?? 0), 3);
-                $lines[] = "- المورد: {$supplier} | المشتق: {$type} | الكمية: {$quantity} كجم";
+                $derivativeLines[] = "- المورد: {$supplier} | المشتق: {$type} | الكمية: {$quantity} كجم";
             }
-            $sections[] = [
-                'title' => 'المشتقات (أقل من 1 كجم)',
-                'lines' => $lines,
-            ];
         }
+        $sections[] = [
+            'title' => 'المشتقات (أقل من 1 كجم)',
+            'lines' => $derivativeLines,
+        ];
 
         $nutsRows = $safeQuery(
             "SELECT ns.id, COALESCE(s.name, 'غير معروف') AS supplier_name, ns.nut_type, ns.quantity
@@ -556,20 +559,20 @@ if (!function_exists('triggerDailyLowStockReport')) {
              WHERE ns.quantity IS NOT NULL AND ns.quantity < 10
              ORDER BY ns.quantity ASC"
         );
+        $counts['nuts'] = count($nutsRows);
+        $nutsLines = [];
         if (!empty($nutsRows)) {
-            $counts['nuts'] = count($nutsRows);
-            $lines = [];
             foreach ($nutsRows as $row) {
                 $supplier = trim($row['supplier_name'] ?? '') ?: 'غير محدد';
                 $type = trim($row['nut_type'] ?? '') ?: 'غير محدد';
                 $quantity = number_format((float)($row['quantity'] ?? 0), 3);
-                $lines[] = "- المورد: {$supplier} | النوع: {$type} | الكمية: {$quantity} كجم";
+                $nutsLines[] = "- المورد: {$supplier} | النوع: {$type} | الكمية: {$quantity} كجم";
             }
-            $sections[] = [
-                'title' => 'المكسرات المنفردة (أقل من 10 كجم)',
-                'lines' => $lines,
-            ];
         }
+        $sections[] = [
+            'title' => 'المكسرات المنفردة (أقل من 10 كجم)',
+            'lines' => $nutsLines,
+        ];
 
         $status = 'completed_no_issues';
         $errorMessage = null;
@@ -651,8 +654,11 @@ if (!function_exists('triggerDailyLowStockReport')) {
                 $absolutePrintUrl = $absoluteReportUrl . (strpos($absoluteReportUrl, '?') === false ? '?print=1' : '&print=1');
 
                 $message = "⚠️ <b>تقرير الكميات المنخفضة</b>\n";
-                $message .= 'التاريخ: ' . date('Y-m-d H:i:s') . "\n\n";
-                $message .= "✅ التقرير محفوظ في النظام ويمكن عرضه أو طباعته من خلال الأزرار التالية.";
+                $message .= 'التاريخ: ' . date('Y-m-d H:i:s');
+                foreach ($counts as $key => $value) {
+                    $message .= "\n• " . formatLowStockCountLabel($key) . ': ' . intval($value);
+                }
+                $message .= "\n\n✅ التقرير محفوظ في النظام ويمكن عرضه أو طباعته من خلال الأزرار التالية.";
 
                 if (!isTelegramConfigured()) {
                     $status = 'failed';
