@@ -115,6 +115,7 @@ if (!function_exists('triggerDailyConsumptionReport')) {
 
         $todayDate = date('Y-m-d');
         $targetDate = date('Y-m-d', strtotime('-1 day'));
+        error_log(sprintf('[DailyConsumption] Trigger invoked (today=%s, target=%s)', $todayDate, $targetDate));
         $statusData = [
             'date' => $todayDate,
             'target_date' => $targetDate,
@@ -149,6 +150,7 @@ if (!function_exists('triggerDailyConsumptionReport')) {
                 $statusData['last_sent_at'] = $jobState['last_sent_at'];
                 $statusData['note'] = 'Consumption report already delivered today';
                 dailyConsumptionSaveStatus($statusData);
+                error_log('[DailyConsumption] Skipped: already sent earlier today.');
                 dailyConsumptionNotifyManager('تم إرسال تقرير الاستهلاك اليومي مسبقاً اليوم.');
                 return;
             }
@@ -204,6 +206,7 @@ if (!function_exists('triggerDailyConsumptionReport')) {
 
             $db->commit();
             $inProgress = true;
+            error_log('[DailyConsumption] Status locked and transaction committed (running).');
         } catch (Throwable $transactionError) {
             try {
                 $db->rollback();
@@ -214,6 +217,7 @@ if (!function_exists('triggerDailyConsumptionReport')) {
         }
 
         if (!$inProgress) {
+            error_log('[DailyConsumption] Aborted: inProgress flag false after transaction.');
             return;
         }
 
@@ -240,6 +244,7 @@ if (!function_exists('triggerDailyConsumptionReport')) {
                     'completed_at' => date('Y-m-d H:i:s'),
                     'message' => $message,
                 ]));
+                error_log('[DailyConsumption] No data available for target date - report not sent.');
                 dailyConsumptionNotifyManager('لا توجد بيانات استهلاك للفترة السابقة، لم يتم إرسال التقرير الآلي اليوم.', 'info');
                 return;
             }
@@ -249,6 +254,7 @@ if (!function_exists('triggerDailyConsumptionReport')) {
                 'completed_at' => date('Y-m-d H:i:s'),
                 'error' => $message ?: 'تعذر إنشاء تقرير الاستهلاك اليومي.',
             ]));
+            error_log('[DailyConsumption] Report generation failed: ' . ($message ?: 'unknown reason'));
             dailyConsumptionNotifyManager('تعذر إرسال تقرير الاستهلاك اليومي: ' . ($message ?: 'سبب غير معروف'), 'danger');
             return;
         }
@@ -280,6 +286,7 @@ if (!function_exists('triggerDailyConsumptionReport')) {
             'message' => $message ?: 'تم إرسال التقرير بنجاح.',
         ]);
 
+        error_log('[DailyConsumption] Report generated and sent successfully.');
         dailyConsumptionNotifyManager('تم إنشاء تقرير الاستهلاك اليومي وإرساله إلى Telegram بنجاح.');
         return;
     }
