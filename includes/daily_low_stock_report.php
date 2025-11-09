@@ -44,7 +44,9 @@ function dailyLowStockCleanupOldReports(string $reportsDir, string $currentFilen
  */
 function dailyLowStockGeneratePdf(array $sections, array $counts): ?string
 {
-    $baseReportsPath = defined('REPORTS_PATH') ? REPORTS_PATH : (dirname(__DIR__) . '/reports/');
+    $baseReportsPath = defined('REPORTS_PRIVATE_PATH')
+        ? REPORTS_PRIVATE_PATH
+        : (defined('REPORTS_PATH') ? REPORTS_PATH : (dirname(__DIR__) . '/reports/'));
     $reportsDir = rtrim($baseReportsPath, '/\\') . '/low_stock';
     if (!is_dir($reportsDir)) {
         @mkdir($reportsDir, 0755, true);
@@ -522,7 +524,8 @@ if (!function_exists('triggerDailyLowStockReport')) {
         if (!empty($existingData) && ($existingData['date'] ?? null) === $todayDate) {
             $storedPath = $existingData['report_path'] ?? null;
             if (!empty($storedPath)) {
-                $candidate = BASE_PATH . '/' . ltrim($storedPath, '/\\');
+                $reportsBase = rtrim(defined('REPORTS_PRIVATE_PATH') ? REPORTS_PRIVATE_PATH : REPORTS_PATH, '/\\');
+                $candidate = $reportsBase . '/' . ltrim($storedPath, '/\\');
                 if (file_exists($candidate)) {
                     $existingReportPath = $candidate;
                     $existingReportRelative = ltrim($storedPath, '/\\');
@@ -544,7 +547,12 @@ if (!function_exists('triggerDailyLowStockReport')) {
             } else {
                 $reportFilePath = dailyLowStockGeneratePdf($sections, $counts);
                 if ($reportFilePath !== null) {
-                    $relativePath = ltrim(str_replace(BASE_PATH, '', $reportFilePath), '/\\');
+                    $reportsBase = rtrim(defined('REPORTS_PRIVATE_PATH') ? REPORTS_PRIVATE_PATH : REPORTS_PATH, '/\\');
+                    if (strpos($reportFilePath, $reportsBase) === 0) {
+                        $relativePath = ltrim(substr($reportFilePath, strlen($reportsBase)), '/\\');
+                    } else {
+                        $relativePath = basename($reportFilePath);
+                    }
                 }
             }
 

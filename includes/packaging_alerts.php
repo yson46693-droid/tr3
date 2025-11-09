@@ -137,7 +137,7 @@ function processDailyPackagingAlert(): void {
 
     $statusData = [
         'date' => $today,
-        'status' => 'pending',
+        'status' => 'running',
         'started_at' => date('Y-m-d H:i:s'),
     ];
     packagingAlertSaveStatus($statusData);
@@ -194,7 +194,8 @@ function processDailyPackagingAlert(): void {
         ($existingData['date'] ?? null) === $today &&
         !empty($existingData['report_path'])
     ) {
-        $candidate = BASE_PATH . '/' . ltrim((string)$existingData['report_path'], '/\\');
+        $reportsBase = rtrim(defined('REPORTS_PRIVATE_PATH') ? REPORTS_PRIVATE_PATH : REPORTS_PATH, '/\\');
+        $candidate = $reportsBase . '/' . ltrim((string)$existingData['report_path'], '/\\');
         if (file_exists($candidate)) {
             $reportFilePath = $candidate;
             $relativePath = ltrim((string)$existingData['report_path'], '/\\');
@@ -206,7 +207,12 @@ function processDailyPackagingAlert(): void {
     if ($reportFilePath === null) {
         $reportFilePath = packagingAlertGenerateReport($lowStockItems);
         if ($reportFilePath !== null) {
-            $relativePath = ltrim(str_replace(BASE_PATH, '', $reportFilePath), '/\\');
+            $reportsBase = rtrim(defined('REPORTS_PRIVATE_PATH') ? REPORTS_PRIVATE_PATH : REPORTS_PATH, '/\\');
+            if (strpos($reportFilePath, $reportsBase) === 0) {
+                $relativePath = ltrim(substr($reportFilePath, strlen($reportsBase)), '/\\');
+            } else {
+                $relativePath = basename($reportFilePath);
+            }
         }
     }
 
@@ -399,7 +405,9 @@ function processDailyPackagingAlert(): void {
  * @return string|null
  */
 function packagingAlertGenerateReport(array $items): ?string {
-    $baseReportsPath = defined('REPORTS_PATH') ? REPORTS_PATH : (dirname(__DIR__) . '/reports/');
+    $baseReportsPath = defined('REPORTS_PRIVATE_PATH')
+        ? REPORTS_PRIVATE_PATH
+        : (defined('REPORTS_PATH') ? REPORTS_PATH : (dirname(__DIR__) . '/reports/'));
     $reportsDir = rtrim($baseReportsPath, '/\\') . '/alerts';
     if (!is_dir($reportsDir)) {
         @mkdir($reportsDir, 0755, true);

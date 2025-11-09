@@ -103,11 +103,23 @@ if ($relativePath === '') {
     renderReportError(404, 'مسار ملف التقرير غير متاح.');
 }
 
-if (strpos($relativePath, '..') !== false) {
+if (preg_match('#\.\.[/\\\\]#', $relativePath)) {
     renderReportError(403, 'مسار الملف غير آمن.');
 }
 
-$fullPath = BASE_PATH . '/' . ltrim(str_replace('\\', '/', $relativePath), '/');
+$normalized = str_replace('\\', '/', $relativePath);
+$normalized = ltrim($normalized, '/');
+
+$reportsBaseDir = null;
+if (defined('REPORTS_PRIVATE_PATH')) {
+    $reportsBaseDir = rtrim(str_replace('\\', '/', REPORTS_PRIVATE_PATH), '/');
+} elseif (defined('REPORTS_PATH')) {
+    $reportsBaseDir = rtrim(str_replace('\\', '/', REPORTS_PATH), '/');
+} else {
+    $reportsBaseDir = str_replace('\\', '/', BASE_PATH . '/reports');
+}
+
+$fullPath = $reportsBaseDir . '/' . $normalized;
 if (!is_file($fullPath)) {
     renderReportError(404, 'ملف التقرير غير موجود.');
 }

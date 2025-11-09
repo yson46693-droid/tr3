@@ -89,6 +89,14 @@ define('REQUEST_USAGE_ALERT_WINDOW_MINUTES', 1440); // فترة المراقبة
 define('BASE_PATH', dirname(__DIR__));
 define('UPLOAD_PATH', BASE_PATH . '/uploads/');
 define('REPORTS_PATH', BASE_PATH . '/reports/');
+
+$privateStorageBase = dirname(BASE_PATH) . '/storage';
+if (!defined('PRIVATE_STORAGE_PATH')) {
+    define('PRIVATE_STORAGE_PATH', $privateStorageBase);
+}
+if (!defined('REPORTS_PRIVATE_PATH')) {
+    define('REPORTS_PRIVATE_PATH', PRIVATE_STORAGE_PATH . '/reports');
+}
 define('ASSETS_PATH', dirname(__DIR__) . '/assets/');
 
 // إعدادات تكامل aPDF.io - يمكن تخزين المفتاح في متغير بيئة APDF_IO_API_KEY لأمان أفضل
@@ -377,6 +385,10 @@ function getSuccessMessage() {
 // تشغيل فحص الكميات المنخفضة اليومي عند أول استخدام في اليوم
 require_once __DIR__ . '/daily_low_stock_report.php';
 triggerDailyLowStockReport();
+
+// تشغيل تقرير أدوات التعبئة منخفضة الكمية يوميًا
+require_once __DIR__ . '/packaging_alerts.php';
+processDailyPackagingAlert();
 
 // تشغيل تقرير الاستهلاك اليومي وإرساله إلى Telegram عند أول استخدام في اليوم
 require_once __DIR__ . '/daily_consumption_sender.php';
