@@ -114,6 +114,12 @@ function logRequestUsage($pathOverride = null) {
             ]
         );
 
+        $maxUsageRows = defined('REQUEST_USAGE_MAX_ROWS') ? intval(REQUEST_USAGE_MAX_ROWS) : 100;
+        if ($maxUsageRows <= 0) {
+            $maxUsageRows = 100;
+        }
+        enforceRequestUsageLimit($maxUsageRows);
+
         $windowMinutes = defined('REQUEST_USAGE_ALERT_WINDOW_MINUTES') ? intval(REQUEST_USAGE_ALERT_WINDOW_MINUTES) : 1440;
         if ($windowMinutes <= 0) {
             $windowMinutes = 1440;
@@ -404,6 +410,67 @@ function deleteRequestUsageForUser($userId, $date = null) {
     } catch (Throwable $e) {
         error_log('Request usage delete error: ' . $e->getMessage());
         return 0;
+    }
+}
+
+/**
+ * فرض حد أقصى لسجلات request_usage
+ */
+function enforceRequestUsageLimit($maxRows = 100) {
+    $maxRows = intval($maxRows);
+    if ($maxRows < 1) {
+        return true;
+    }
+
+    try {
+        ensureRequestUsageTables();
+        $db = db();
+
+        $totalRow = $db->queryOne("SELECT COUNT(*) AS total FROM request_usage");
+        $total = intval($totalRow['total'] ?? 0);
+
+        if ($total <= $maxRows) {
+            return true;
+        }
+
+        $toDelete = $total - $maxRows;
+        $batchSize = 100;
+
+        while ($toDelete > 0) {
+            $currentBatch = min($batchSize, $toDelete);
+
+            $oldest = $db->query(
+                "SELECT id FROM request_usage ORDER BY created_at ASC, id ASC LIMIT ?",
+                [$currentBatch]
+            );
+
+            if (empty($oldest)) {
+                break;
+            }
+
+            $ids = array_map('intval', array_column($oldest, 'id'));
+            if (empty($ids)) {
+                break;
+            }
+
+            $placeholders = implode(',', array_fill(0, count($ids), '?'));
+            $db->execute(
+                "DELETE FROM request_usage WHERE id IN ($placeholders)",
+                $ids
+            );
+
+            $deleted = count($ids);
+            $toDelete -= $deleted;
+
+            if ($deleted < $currentBatch) {
+                break;
+            }
+        }
+
+        return true;
+    } catch (Throwable $e) {
+        error_log('Request usage enforce limit error: ' . $e->getMessage());
+        return false;
     }
 }
 

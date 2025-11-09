@@ -30,6 +30,8 @@ function logLoginAttempt($username, $success, $failureReason = null) {
             $success ? 1 : 0,
             $failureReason
         ]);
+
+        enforceLoginAttemptsLimit(50);
         
         // إذا فشلت المحاولة، تحقق من عدد المحاولات الفاشلة
         if (!$success) {
@@ -293,6 +295,50 @@ function cleanupOldLoginAttempts($days = 1) {
             'deleted' => 0,
             'message' => 'حدث خطأ أثناء حذف السجلات القديمة: ' . $e->getMessage()
         ];
+    }
+}
+
+/**
+ * ضمان عدم تجاوز عدد سجلات محاولات تسجيل الدخول للحد المسموح
+ */
+function enforceLoginAttemptsLimit($maxCount = 50) {
+    if ($maxCount < 1) {
+        return true;
+    }
+
+    try {
+        $db = db();
+
+        $totalRow = $db->queryOne("SELECT COUNT(*) as count FROM login_attempts");
+        $total = isset($totalRow['count']) ? (int) $totalRow['count'] : 0;
+
+        if ($total <= $maxCount) {
+            return true;
+        }
+
+        $toDelete = $total - $maxCount;
+        if ($toDelete <= 0) {
+            return true;
+        }
+
+        $oldAttempts = $db->query(
+            "SELECT id FROM login_attempts ORDER BY created_at ASC LIMIT " . (int) $toDelete
+        );
+
+        if (empty($oldAttempts)) {
+            return true;
+        }
+
+        foreach ($oldAttempts as $attempt) {
+            if (!empty($attempt['id'])) {
+                $db->execute("DELETE FROM login_attempts WHERE id = ?", [(int) $attempt['id']]);
+            }
+        }
+
+        return true;
+    } catch (Exception $e) {
+        error_log("Error enforcing login attempts limit: " . $e->getMessage());
+        return false;
     }
 }
 

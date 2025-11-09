@@ -16,6 +16,10 @@ if (!function_exists('getOfficialWorkTime')) {
     require_once __DIR__ . '/attendance.php';
 }
 
+if (!defined('NOTIFICATIONS_MAX_ROWS')) {
+    define('NOTIFICATIONS_MAX_ROWS', 200);
+}
+
 /**
  * إنشاء إشعار جديد
  */
@@ -33,6 +37,8 @@ function createNotification($userId, $title, $message, $type = 'info', $link = n
             $type,
             $link
         ]);
+
+        pruneNotificationsIfNeeded($db);
         
         // إرسال إشعار Telegram إذا كان مفعّل
         if ($sendTelegram && isTelegramConfigured()) {
@@ -87,6 +93,34 @@ function createNotificationForRole($role, $title, $message, $type = 'info', $lin
  */
 function notifyManagers($title, $message, $type = 'info', $link = null, $sendTelegram = true) {
     return createNotificationForRole('manager', $title, $message, $type, $link, $sendTelegram);
+}
+
+/**
+ * تقليم جدول الإشعارات عند تجاوز الحد
+ */
+function pruneNotificationsIfNeeded($db, $threshold = NOTIFICATIONS_MAX_ROWS) {
+    if (!$db) {
+        return;
+    }
+
+    try {
+        $countRow = $db->queryOne("SELECT COUNT(*) as total FROM notifications");
+        $total = isset($countRow['total']) ? (int)$countRow['total'] : 0;
+
+        if ($total >= $threshold) {
+            $target = max($threshold - 1, 0);
+            $excess = $total - $target;
+            if ($excess < 1) {
+                $excess = 1;
+            }
+
+            $db->execute(
+                "DELETE FROM notifications ORDER BY created_at ASC LIMIT " . (int)$excess
+            );
+        }
+    } catch (Exception $e) {
+        error_log("Notification pruning error: " . $e->getMessage());
+    }
 }
 
 /**

@@ -1277,16 +1277,64 @@ if (empty($unifiedTemplatesCheck)) {
               `product_name` varchar(255) NOT NULL COMMENT 'اسم المنتج',
               `created_by` int(11) DEFAULT NULL,
               `status` enum('active','inactive') DEFAULT 'active',
+              `main_supplier_id` int(11) DEFAULT NULL,
+              `notes` text DEFAULT NULL COMMENT 'ملاحظات القالب',
               `created_at` timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP,
               `updated_at` timestamp NULL DEFAULT NULL ON UPDATE CURRENT_TIMESTAMP,
               PRIMARY KEY (`id`),
               KEY `created_by` (`created_by`),
-              KEY `status` (`status`)
+              KEY `status` (`status`),
+              KEY `main_supplier_id` (`main_supplier_id`)
             ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
         ");
     } catch (Exception $e) {
         error_log("Error creating unified_product_templates table: " . $e->getMessage());
     }
+}
+
+try {
+    $mainSupplierColumnCheck = $db->queryOne("SHOW COLUMNS FROM unified_product_templates LIKE 'main_supplier_id'");
+    if (empty($mainSupplierColumnCheck)) {
+        $db->execute("
+            ALTER TABLE `unified_product_templates`
+            ADD COLUMN `main_supplier_id` int(11) DEFAULT NULL AFTER `status`,
+            ADD KEY `main_supplier_id` (`main_supplier_id`)
+        ");
+    }
+} catch (Exception $e) {
+    error_log("Error adding main_supplier_id to unified_product_templates: " . $e->getMessage());
+}
+
+try {
+    $mainSupplierConstraintCheck = $db->queryOne("
+        SELECT CONSTRAINT_NAME 
+        FROM INFORMATION_SCHEMA.KEY_COLUMN_USAGE 
+        WHERE TABLE_NAME = 'unified_product_templates' 
+          AND CONSTRAINT_SCHEMA = DATABASE() 
+          AND REFERENCED_TABLE_NAME = 'suppliers' 
+          AND COLUMN_NAME = 'main_supplier_id'
+    ");
+    if (empty($mainSupplierConstraintCheck)) {
+        $db->execute("
+            ALTER TABLE `unified_product_templates`
+            ADD CONSTRAINT `unified_product_templates_main_supplier_fk`
+            FOREIGN KEY (`main_supplier_id`) REFERENCES `suppliers`(`id`) ON DELETE SET NULL
+        ");
+    }
+} catch (Exception $e) {
+    error_log("Error adding unified_product_templates main supplier FK: " . $e->getMessage());
+}
+
+try {
+    $notesColumnCheck = $db->queryOne("SHOW COLUMNS FROM unified_product_templates LIKE 'notes'");
+    if (empty($notesColumnCheck)) {
+        $db->execute("
+            ALTER TABLE `unified_product_templates`
+            ADD COLUMN `notes` TEXT DEFAULT NULL AFTER `main_supplier_id`
+        ");
+    }
+} catch (Exception $e) {
+    error_log("Error adding notes column to unified_product_templates: " . $e->getMessage());
 }
 
 // جدول المواد الخام للقوالب
@@ -1980,52 +2028,127 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         
         // إنشاء قالب منتج موحد
         elseif ($action === 'create_unified_template') {
-            $productName = trim($_POST['product_name'] ?? '');
-            
-            // المواد الخام
-            $rawMaterials = [];
+            $productName = trim($_POST['product_name'] ?? $_POST['template_name'] ?? '');
+            if ($productName !== '') {
+                $productName = mb_substr($productName, 0, 255, 'UTF-8');
+            }
+            $templateStatus = $_POST['template_status'] ?? 'active';
+            $validStatuses = ['active', 'inactive'];
+            if (!in_array($templateStatus, $validStatuses, true)) {
+                $templateStatus = 'active';
+            }
+
+            $mainSupplierId = intval($_POST['main_supplier_id'] ?? 0);
+            if ($mainSupplierId <= 0) {
+                $mainSupplierId = null;
+            }
+
+            $templateNotes = trim($_POST['template_notes'] ?? '');
+            if ($templateNotes !== '') {
+                $templateNotes = mb_substr($templateNotes, 0, 2000, 'UTF-8');
+            }
+
+            // المواد الخام - دعم الحقول القديمة والجديدة
+            $rawMaterialsInput = [];
             if (isset($_POST['materials']) && is_array($_POST['materials'])) {
-                foreach ($_POST['materials'] as $material) {
-                    $materialType = trim($material['type'] ?? '');
-                    $materialName = trim($material['name'] ?? '');
-                    $supplierId = intval($material['supplier_id'] ?? 0);
-                    $honeyVariety = trim($material['honey_variety'] ?? '');
-                    $quantity = floatval($material['quantity'] ?? 0);
-                    $unit = trim($material['unit'] ?? 'كجم');
-                    
-                    if ($materialType && $quantity > 0) {
-                        $isHoneyMaterial = $materialType === 'honey_raw' || $materialType === 'honey_filtered';
-                        if ($isHoneyMaterial && !in_array($honeyVariety, $validHoneyVarieties, true)) {
-                            $honeyVariety = null;
-                        }
-                        $rawMaterials[] = [
-                            'type' => $materialType,
-                            'name' => $materialName ?: $materialType,
-                            'supplier_id' => $supplierId > 0 ? $supplierId : null,
-                            'honey_variety' => $isHoneyMaterial ? $honeyVariety : null,
-                            'quantity' => $quantity,
-                            'unit' => $unit
-                        ];
+                $rawMaterialsInput = $_POST['materials'];
+            } elseif (isset($_POST['raw_materials']) && is_array($_POST['raw_materials'])) {
+                $rawMaterialsInput = $_POST['raw_materials'];
+            }
+
+            $materialTypeLabels = [
+                'honey_raw'      => 'عسل خام',
+                'honey_filtered' => 'عسل مصفى',
+                'olive_oil'      => 'زيت زيتون',
+                'beeswax'        => 'شمع عسل',
+                'derivatives'    => 'مشتق',
+                'nuts'           => 'مكسرات',
+                'other'          => 'مادة أخرى'
+            ];
+
+            $allowedMaterialTypes = array_keys($materialTypeLabels);
+            $rawMaterials = [];
+            foreach ($rawMaterialsInput as $material) {
+                if (!is_array($material)) {
+                    continue;
+                }
+
+                $materialType = trim((string)($material['type'] ?? ''));
+                $quantity = floatval($material['quantity'] ?? 0);
+                if ($materialType === '' || $quantity <= 0) {
+                    continue;
+                }
+                if (!in_array($materialType, $allowedMaterialTypes, true)) {
+                    continue;
+                }
+
+                $unit = trim((string)($material['unit'] ?? ''));
+                if ($unit === '') {
+                    $unit = 'كجم';
+                }
+                $unit = mb_substr($unit, 0, 50, 'UTF-8');
+
+                $supplierId = intval($material['supplier_id'] ?? 0);
+                if ($supplierId <= 0) {
+                    $supplierId = null;
+                }
+
+                $materialNote = trim((string)($material['notes'] ?? ($material['name'] ?? '')));
+                if ($materialNote !== '') {
+                    $materialNote = mb_substr($materialNote, 0, 255, 'UTF-8');
+                }
+
+                $isHoneyMaterial = in_array($materialType, ['honey_raw', 'honey_filtered'], true);
+                $honeyVariety = null;
+                if ($isHoneyMaterial) {
+                    $honeyVariety = $materialNote !== '' ? mb_substr($materialNote, 0, 120, 'UTF-8') : null;
+                    if ($honeyVariety !== null && !in_array($honeyVariety, $validHoneyVarieties, true)) {
+                        // إذا لم يكن النوع ضمن القائمة المعتمدة، نخزن القيمة كما هي بعد التنظيف
+                        $honeyVariety = mb_substr($honeyVariety, 0, 120, 'UTF-8');
                     }
                 }
+
+                $materialName = $materialNote !== '' ? $materialNote : ($material['name'] ?? '');
+                if ($materialName === '' && isset($materialTypeLabels[$materialType])) {
+                    $materialName = $materialTypeLabels[$materialType];
+                }
+                if ($materialName === '') {
+                    $materialName = $materialType;
+                }
+                $materialName = mb_substr((string)$materialName, 0, 255, 'UTF-8');
+
+                $rawMaterials[] = [
+                    'type' => $materialType,
+                    'name' => $materialName,
+                    'supplier_id' => $supplierId,
+                    'honey_variety' => $isHoneyMaterial ? $honeyVariety : null,
+                    'quantity' => $quantity,
+                    'unit' => $unit
+                ];
             }
-            
-            // أدوات التعبئة
-            $packagingItems = [];
+
+            // أدوات التعبئة - دعم الحقول القديمة والجديدة
+            $packagingInput = [];
             if (isset($_POST['packaging']) && is_array($_POST['packaging'])) {
-                foreach ($_POST['packaging'] as $packaging) {
-                    $packagingId = intval($packaging['id'] ?? 0);
-                    $quantity = floatval($packaging['quantity'] ?? 1);
-                    
-                    if ($packagingId > 0) {
-                        $packagingItems[] = [
-                            'id' => $packagingId,
-                            'quantity' => $quantity
-                        ];
-                    }
+                $packagingInput = $_POST['packaging'];
+            }
+
+            $packagingItems = [];
+            foreach ($packagingInput as $packaging) {
+                if (!is_array($packaging)) {
+                    continue;
+                }
+                $packagingId = intval($packaging['material_id'] ?? $packaging['id'] ?? 0);
+                $quantity = floatval($packaging['quantity'] ?? $packaging['quantity_per_unit'] ?? 0);
+
+                if ($packagingId > 0 && $quantity > 0) {
+                    $packagingItems[] = [
+                        'id' => $packagingId,
+                        'quantity' => $quantity
+                    ];
                 }
             }
-            
+
             $normalizedProductName = function_exists('mb_strtolower')
                 ? mb_strtolower($productName, 'UTF-8')
                 : strtolower($productName);
@@ -2052,23 +2175,37 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             } else {
                 try {
                     $db->beginTransaction();
-                    
+
                     // إنشاء القالب
                     $result = $db->execute(
-                        "INSERT INTO unified_product_templates (product_name, created_by, status) VALUES (?, ?, 'active')",
-                        [$productName, $currentUser['id']]
+                        "INSERT INTO unified_product_templates (product_name, created_by, status, main_supplier_id, notes) VALUES (?, ?, ?, ?, ?)",
+                        [
+                            $productName,
+                            $currentUser['id'],
+                            $templateStatus,
+                            $mainSupplierId,
+                            $templateNotes !== '' ? $templateNotes : null
+                        ]
                     );
                     $templateId = $result['insert_id'];
-                    
+
                     // إضافة المواد الخام
                     foreach ($rawMaterials as $material) {
                         $db->execute(
                             "INSERT INTO template_raw_materials (template_id, material_type, material_name, supplier_id, honey_variety, quantity, unit) 
                              VALUES (?, ?, ?, ?, ?, ?, ?)",
-                            [$templateId, $material['type'], $material['name'], $material['supplier_id'], $material['honey_variety'], $material['quantity'], $material['unit']]
+                            [
+                                $templateId,
+                                $material['type'],
+                                $material['name'],
+                                $material['supplier_id'],
+                                $material['honey_variety'],
+                                $material['quantity'],
+                                $material['unit']
+                            ]
                         );
                     }
-                    
+
                     // إضافة أدوات التعبئة
                     foreach ($packagingItems as $packaging) {
                         $db->execute(
@@ -2077,18 +2214,22 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                             [$templateId, $packaging['id'], $packaging['quantity']]
                         );
                     }
-                    
+
                     $db->commit();
-                    
-                    logAudit($currentUser['id'], 'create_unified_template', 'unified_product_templates', $templateId, null, ['product' => $productName]);
-                    
+
+                    logAudit($currentUser['id'], 'create_unified_template', 'unified_product_templates', $templateId, null, [
+                        'product' => $productName,
+                        'status' => $templateStatus,
+                        'main_supplier_id' => $mainSupplierId
+                    ]);
+
                     preventDuplicateSubmission(
                         'تم إنشاء قالب المنتج بنجاح',
                         ['page' => 'raw_materials_warehouse'],
                         null,
                         $dashboardSlug
                     );
-                    
+
                 } catch (Exception $e) {
                     $db->rollBack();
                     $error = 'حدث خطأ في إنشاء القالب: ' . $e->getMessage();

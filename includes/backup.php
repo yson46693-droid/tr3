@@ -208,9 +208,9 @@ function createDatabaseBackup($backupType = 'daily', $userId = null) {
             [$filename, $filePath, $finalFileSize, $backupType, $userId]
         );
 
-        if ($backupType === 'daily') {
-            deleteOldBackups('daily', 30);
-        }
+        $maxBackupsToKeep = 9;
+        deleteOldBackups($backupType, $maxBackupsToKeep);
+        enforceBackupLimit($maxBackupsToKeep);
 
         return [
             'success' => true,
@@ -295,6 +295,53 @@ function deleteOldBackups($backupType = 'daily', $keepCount = 30) {
         return true;
     } catch (Exception $e) {
         error_log("Error deleting old backups: " . $e->getMessage());
+        return false;
+    }
+}
+
+/**
+ * ضمان عدم تجاوز عدد النسخ الاحتياطية للحد المسموح
+ */
+function enforceBackupLimit($maxCount = 9) {
+    if ($maxCount < 1) {
+        return true;
+    }
+
+    try {
+        $db = db();
+
+        $totalRow = $db->queryOne(
+            "SELECT COUNT(*) AS total FROM backups WHERE status IN ('completed', 'success')"
+        );
+
+        $total = isset($totalRow['total']) ? (int) $totalRow['total'] : 0;
+
+        if ($total < $maxCount + 1) {
+            return true;
+        }
+
+        $toDelete = $total - $maxCount;
+        if ($toDelete <= 0) {
+            return true;
+        }
+
+        $oldBackups = $db->query(
+            "SELECT id, file_path FROM backups WHERE status IN ('completed', 'success') ORDER BY created_at ASC LIMIT " . (int) $toDelete
+        );
+
+        foreach ($oldBackups as $backup) {
+            if (!empty($backup['file_path']) && file_exists($backup['file_path'])) {
+                @unlink($backup['file_path']);
+            }
+
+            if (!empty($backup['id'])) {
+                $db->execute("DELETE FROM backups WHERE id = ?", [(int) $backup['id']]);
+            }
+        }
+
+        return true;
+    } catch (Exception $e) {
+        error_log("Error enforcing backup limit: " . $e->getMessage());
         return false;
     }
 }

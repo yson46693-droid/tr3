@@ -91,6 +91,7 @@ try {
 
 $sessionId = $_SESSION['reader_session_id'] ?? null;
 $ipAddress = $_SERVER['REMOTE_ADDR'] ?? null;
+$readerLogMaxRows = getReaderAccessLogMaxRows();
 
 if ($db) {
     try {
@@ -107,6 +108,7 @@ if ($db) {
                     "INSERT INTO reader_access_log (session_id, ip_address, batch_number, status, message) VALUES (?, ?, ?, 'rate_limited', ?)",
                     [$sessionId, $ipAddress, $batchNumber ?: null, 'تجاوز الحد المسموح للطلبات لكل ساعة.']
                 );
+                enforceReaderAccessLogLimit($db, $readerLogMaxRows);
                 http_response_code(429);
                 echo json_encode([
                     'success' => false,
@@ -126,6 +128,7 @@ if ($db) {
                     "INSERT INTO reader_access_log (session_id, ip_address, batch_number, status, message) VALUES (?, ?, ?, 'rate_limited', ?)",
                     [$sessionId, $ipAddress, $batchNumber ?: null, 'تجاوز الحد المسموح للطلبات للجلسة.']
                 );
+                enforceReaderAccessLogLimit($db, $readerLogMaxRows);
                 http_response_code(429);
                 echo json_encode([
                     'success' => false,
@@ -149,6 +152,7 @@ try {
                     "INSERT INTO reader_access_log (session_id, ip_address, batch_number, status, message) VALUES (?, ?, ?, 'not_found', ?)",
                     [$sessionId, $ipAddress, $batchNumber, 'رقم التشغيلة غير موجود.']
                 );
+                enforceReaderAccessLogLimit($db, $readerLogMaxRows);
             } catch (Throwable $logError) {
                 error_log('Reader log insert error (not found): ' . $logError->getMessage());
             }
@@ -223,6 +227,7 @@ try {
                 "INSERT INTO reader_access_log (session_id, ip_address, batch_number, status, message) VALUES (?, ?, ?, 'success', ?)",
                 [$sessionId, $ipAddress, $batch['batch_number'] ?? $batchNumber, 'نجاح الاستعلام.']
             );
+            enforceReaderAccessLogLimit($db, $readerLogMaxRows);
         } catch (Throwable $logError) {
             error_log('Reader log insert error (success): ' . $logError->getMessage());
         }
@@ -237,6 +242,7 @@ try {
                 "INSERT INTO reader_access_log (session_id, ip_address, batch_number, status, message) VALUES (?, ?, ?, 'error', ?)",
                 [$sessionId, $ipAddress, $batchNumber ?: null, 'خطأ داخلي في الخادم.']
             );
+            enforceReaderAccessLogLimit($db, $readerLogMaxRows);
         } catch (Throwable $logError) {
             error_log('Reader log insert error (exception): ' . $logError->getMessage());
         }
@@ -246,4 +252,85 @@ try {
         'success' => false,
         'message' => 'حدث خطأ أثناء معالجة الطلب.'
     ], JSON_UNESCAPED_UNICODE);
+}
+
+if (!function_exists('getReaderAccessLogMaxRows')) {
+    function getReaderAccessLogMaxRows(): int {
+        if (defined('READER_ACCESS_LOG_MAX_ROWS')) {
+            $value = (int) READER_ACCESS_LOG_MAX_ROWS;
+            if ($value > 0) {
+                return $value;
+            }
+        }
+        return 50;
+    }
+}
+
+if (!function_exists('enforceReaderAccessLogLimit')) {
+    function enforceReaderAccessLogLimit($dbInstance = null, int $maxRows = 50) {
+        $maxRows = (int) $maxRows;
+        if ($maxRows < 1) {
+            $maxRows = 50;
+        }
+
+        try {
+            if ($dbInstance === null) {
+                $dbInstance = db();
+            }
+
+            if (!$dbInstance) {
+                return false;
+            }
+
+            $totalRow = $dbInstance->queryOne("SELECT COUNT(*) AS total FROM reader_access_log");
+            $total = isset($totalRow['total']) ? (int) $totalRow['total'] : 0;
+
+            if ($total <= $maxRows) {
+                return true;
+            }
+
+            $toDelete = $total - $maxRows;
+            $batchSize = 50;
+
+            while ($toDelete > 0) {
+                $currentBatch = min($batchSize, $toDelete);
+
+                $oldest = $dbInstance->query(
+                    "SELECT id FROM reader_access_log ORDER BY created_at ASC, id ASC LIMIT ?",
+                    [$currentBatch]
+                );
+
+                if (empty($oldest)) {
+                    break;
+                }
+
+                $ids = array_map('intval', array_column($oldest, 'id'));
+                $ids = array_filter($ids, static function ($id) {
+                    return $id > 0;
+                });
+
+                if (empty($ids)) {
+                    break;
+                }
+
+                $placeholders = implode(',', array_fill(0, count($ids), '?'));
+                $dbInstance->execute(
+                    "DELETE FROM reader_access_log WHERE id IN ($placeholders)",
+                    $ids
+                );
+
+                $deleted = count($ids);
+                $toDelete -= $deleted;
+
+                if ($deleted < $currentBatch) {
+                    break;
+                }
+            }
+
+            return true;
+        } catch (Throwable $e) {
+            error_log('Reader access log enforce limit error: ' . $e->getMessage());
+            return false;
+        }
+    }
 }
