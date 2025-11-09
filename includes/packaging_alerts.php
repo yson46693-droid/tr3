@@ -115,6 +115,9 @@ function processDailyPackagingAlert(): void {
     $today = date('Y-m-d');
     $existingData = [];
     $existingReportPath = null;
+    $existingReportRelative = null;
+    $existingViewerPath = null;
+    $existingAccessToken = null;
     try {
         $existingRow = $db->queryOne(
             "SELECT value FROM system_settings WHERE `key` = ? LIMIT 1",
@@ -130,36 +133,47 @@ function processDailyPackagingAlert(): void {
         error_log('Packaging alert status fetch error: ' . $statusError->getMessage());
     }
 
+    $reportsBase = rtrim(defined('REPORTS_PRIVATE_PATH') ? REPORTS_PRIVATE_PATH : REPORTS_PATH, '/\\');
+
     if (!empty($existingData['report_path']) && ($existingData['date'] ?? null) === $today) {
-        $reportsBase = rtrim(defined('REPORTS_PRIVATE_PATH') ? REPORTS_PRIVATE_PATH : REPORTS_PATH, '/\\');
         $candidate = $reportsBase . '/' . ltrim((string)$existingData['report_path'], '/\\');
         if (is_file($candidate)) {
             $existingReportPath = $candidate;
+            $existingReportRelative = ltrim((string)$existingData['report_path'], '/\\');
+            $existingViewerPath = (string)($existingData['viewer_path'] ?? '');
+            $existingAccessToken = (string)($existingData['access_token'] ?? '');
+        }
+    }
+
+    if (($existingData['date'] ?? null) === $today) {
+        $existingStatus = $existingData['status'] ?? null;
+        if (
+            in_array($existingStatus, ['completed', 'completed_no_issues'], true) &&
+            $existingReportPath !== null
+        ) {
+            $alreadyData = $existingData;
+            $alreadyData['status'] = 'already_sent';
+            $alreadyData['checked_at'] = date('Y-m-d H:i:s');
+            packagingAlertSaveStatus($alreadyData);
+            return;
+        }
+
+        if ($existingStatus === 'running') {
+            $startedAt = isset($existingData['started_at']) ? strtotime((string)$existingData['started_at']) : 0;
+            if ($startedAt && (time() - $startedAt) < 600) {
+                return;
+            }
         }
     }
 
     if (!empty($jobState['last_sent_at'])) {
         $lastSentDate = substr((string)$jobState['last_sent_at'], 0, 10);
-        if (
-            $lastSentDate === $today &&
-            !empty($existingData) &&
-            ($existingData['date'] ?? null) === $today &&
-            in_array($existingData['status'] ?? null, ['completed', 'completed_no_issues'], true) &&
-            $existingReportPath !== null
-        ) {
-            packagingAlertSaveStatus([
-                'date' => $today,
-                'status' => 'already_sent',
-                'checked_at' => date('Y-m-d H:i:s'),
-                'last_sent_at' => $jobState['last_sent_at'],
-                'report_path' => $existingData['report_path'] ?? null,
-                'viewer_path' => $existingData['viewer_path'] ?? null,
-                'access_token' => $existingData['access_token'] ?? null,
-                'report_url' => $existingData['report_url'] ?? null,
-                'print_url' => $existingData['print_url'] ?? null,
-                'absolute_report_url' => $existingData['absolute_report_url'] ?? null,
-                'absolute_print_url' => $existingData['absolute_print_url'] ?? null,
-            ]);
+        if ($lastSentDate === $today && $existingReportPath !== null && !empty($existingData)) {
+            $alreadyData = $existingData;
+            $alreadyData['status'] = 'already_sent';
+            $alreadyData['checked_at'] = date('Y-m-d H:i:s');
+            $alreadyData['last_sent_at'] = $jobState['last_sent_at'];
+            packagingAlertSaveStatus($alreadyData);
             return;
         }
     }
@@ -220,9 +234,9 @@ function processDailyPackagingAlert(): void {
 
     if ($existingReportPath !== null) {
         $reportFilePath = $existingReportPath;
-        $relativePath = ltrim((string)$existingData['report_path'], '/\\');
-        $viewerPath = (string)($existingData['viewer_path'] ?? '');
-        $accessToken = (string)($existingData['access_token'] ?? '');
+        $relativePath = $existingReportRelative;
+        $viewerPath = $existingViewerPath;
+        $accessToken = $existingAccessToken;
     }
 
     if ($reportFilePath === null) {
