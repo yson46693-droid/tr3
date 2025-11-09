@@ -390,21 +390,24 @@ class AttendanceNotificationManager {
      * الحصول على مسار API ديناميكياً
      */
     getApiPath(filename) {
-        // استخدام مسار مطلق بناءً على موقع الصفحة الحالية
-        const currentPath = window.location.pathname;
-        const pathParts = currentPath.split('/').filter(p => p && !p.endsWith('.php'));
-        
-        // إذا كنا في الجذر (مثل /v1/dashboard/production.php)، المسار سيكون /v1/api/attendance.php
-        // إذا كنا في مجلد فرعي، نستخدم المسار المطلق
-        
-        if (pathParts.length === 0) {
-            // في الجذر - استخدام مسار نسبي
-            return 'api/' + filename;
-        } else {
-            // في مجلد فرعي - بناء مسار مطلق
-            const basePath = '/' + pathParts[0];
-            return basePath + '/api/' + filename;
+        const currentPath = window.location.pathname || '/';
+        const rawParts = currentPath.split('/').filter(Boolean);
+
+        if (rawParts.length > 0 && rawParts[rawParts.length - 1].includes('.')) {
+            rawParts.pop();
         }
+
+        const stopIndex = rawParts.findIndex(part => part === 'dashboard' || part === 'modules');
+        const baseParts = stopIndex === -1 ? rawParts : rawParts.slice(0, stopIndex);
+
+        let basePath = '/';
+        if (baseParts.length > 0) {
+            basePath = '/' + baseParts.join('/') + '/';
+        }
+
+        const fullPath = `${basePath}api/${filename}`.replace(/\/{2,}/g, '/');
+
+        return fullPath.startsWith('/') ? fullPath : '/' + fullPath;
     }
 
     /**

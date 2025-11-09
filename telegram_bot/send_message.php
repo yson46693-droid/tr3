@@ -3,7 +3,9 @@
  * إرسال رسائل وملفات إلى Telegram Bot
  */
 
-define('ACCESS_ALLOWED', true);
+if (!defined('ACCESS_ALLOWED')) {
+    define('ACCESS_ALLOWED', true);
+}
 require_once __DIR__ . '/../includes/config.php';
 require_once __DIR__ . '/../includes/simple_telegram.php';
 

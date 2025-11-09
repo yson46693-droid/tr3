@@ -3516,20 +3516,28 @@ foreach ($honeyVarietiesCatalog as $catalogVariety => $meta) {
 ?>
 
 <script>
-(function () {
+document.addEventListener('DOMContentLoaded', function () {
     const reportButton = document.getElementById('generateRawMaterialsReportBtn');
     const reportModalElement = document.getElementById('rawMaterialsReportModal');
     const printButton = document.getElementById('printRawMaterialsReportBtn');
 
-    let reportModalInstance = null;
-
-    if (reportModalElement && typeof bootstrap !== 'undefined') {
-        reportModalInstance = bootstrap.Modal.getOrCreateInstance(reportModalElement);
+    function getReportModalInstance() {
+        if (!reportModalElement) {
+            return null;
+        }
+        if (typeof bootstrap === 'undefined') {
+            console.warn('Bootstrap.js غير محمل بعد، تعذّر تهيئة نافذة التقرير.');
+            return null;
+        }
+        return bootstrap.Modal.getOrCreateInstance(reportModalElement);
     }
 
-    if (reportButton && reportModalInstance) {
+    if (reportButton) {
         reportButton.addEventListener('click', () => {
-            reportModalInstance.show();
+            const modalInstance = getReportModalInstance();
+            if (modalInstance) {
+                modalInstance.show();
+            }
         });
     }
 
@@ -3594,7 +3602,7 @@ ${reportContent.outerHTML}
             printWindow.print();
         });
     }
-})();
+});
 </script>
 
 <script>

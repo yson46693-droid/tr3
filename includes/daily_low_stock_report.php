@@ -350,8 +350,7 @@ if (!function_exists('triggerDailyLowStockReport')) {
             if (
                 $lastSentDate === $todayDate &&
                 !empty($statusSnapshot) &&
-                in_array($statusSnapshot['status'] ?? null, ['completed', 'completed_no_issues'], true) &&
-                $existingReportPath !== null
+                in_array($statusSnapshot['status'] ?? null, ['completed', 'completed_no_issues', 'already_sent'], true)
             ) {
                 $statusSnapshot['status'] = 'already_sent';
                 $statusSnapshot['checked_at'] = date('Y-m-d H:i:s');
@@ -361,18 +360,15 @@ if (!function_exists('triggerDailyLowStockReport')) {
             }
 
             $jobRelativePath = (string)($jobState['last_file_path'] ?? '');
-            if ($lastSentDate === $todayDate && $existingReportPath === null && $jobRelativePath !== '') {
-                $candidate = $reportsBaseDir . '/' . ltrim($jobRelativePath, '/\\');
-                if (is_file($candidate)) {
-                    lowStockReportSaveStatus([
-                        'date' => $todayDate,
-                        'status' => 'already_sent',
-                        'checked_at' => date('Y-m-d H:i:s'),
-                        'last_sent_at' => $jobState['last_sent_at'],
-                        'report_path' => $jobRelativePath,
-                    ]);
-                    return;
-                }
+            if ($lastSentDate === $todayDate && $jobRelativePath !== '') {
+                lowStockReportSaveStatus([
+                    'date' => $todayDate,
+                    'status' => 'already_sent',
+                    'checked_at' => date('Y-m-d H:i:s'),
+                    'last_sent_at' => $jobState['last_sent_at'],
+                    'report_path' => $jobRelativePath,
+                ]);
+                return;
             }
         }
 
@@ -385,28 +381,17 @@ if (!function_exists('triggerDailyLowStockReport')) {
             );
 
             $existingData = [];
-            $existingDataReportPath = null;
             if ($existing && isset($existing['value'])) {
                 $decoded = json_decode((string)$existing['value'], true);
                 if (json_last_error() === JSON_ERROR_NONE && is_array($decoded)) {
                     $existingData = $decoded;
-                    if (
-                        ($decoded['date'] ?? null) === $todayDate &&
-                        !empty($decoded['report_path'])
-                    ) {
-                        $candidate = $reportsBaseDir . '/' . ltrim((string)$decoded['report_path'], '/\\');
-                        if (is_file($candidate)) {
-                            $existingDataReportPath = $candidate;
-                        }
-                    }
                 }
             }
 
             if (
                 !empty($existingData) &&
                 ($existingData['date'] ?? null) === $todayDate &&
-                in_array($existingData['status'] ?? null, ['completed', 'completed_no_issues'], true) &&
-                $existingDataReportPath !== null
+                in_array($existingData['status'] ?? null, ['completed', 'completed_no_issues', 'already_sent'], true)
             ) {
                 $db->commit();
                 return;

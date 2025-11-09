@@ -1571,20 +1571,28 @@ $packagingReport['last_updated'] = $lastUpdatedTimestamp
 </div>
 
 <script>
-(function () {
+document.addEventListener('DOMContentLoaded', function () {
     const reportButton = document.getElementById('generatePackagingReportBtn');
     const reportModalElement = document.getElementById('packagingReportModal');
     const printButton = document.getElementById('printPackagingReportBtn');
 
-    let reportModalInstance = null;
-
-    if (reportModalElement && typeof bootstrap !== 'undefined') {
-        reportModalInstance = new bootstrap.Modal(reportModalElement);
+    function getReportModalInstance() {
+        if (!reportModalElement) {
+            return null;
+        }
+        if (typeof bootstrap === 'undefined') {
+            console.warn('Bootstrap.js غير محمل بعد، تعذّر تهيئة نافذة التقرير.');
+            return null;
+        }
+        return bootstrap.Modal.getOrCreateInstance(reportModalElement);
     }
 
-    if (reportButton && reportModalInstance) {
+    if (reportButton) {
         reportButton.addEventListener('click', () => {
-            reportModalInstance.show();
+            const modalInstance = getReportModalInstance();
+            if (modalInstance) {
+                modalInstance.show();
+            }
         });
     }
 
@@ -1646,7 +1654,7 @@ ${reportContent.outerHTML}
             printWindow.print();
         });
     }
-})();
+});
 
 function openAddQuantityModal(trigger) {
     const modalElement = document.getElementById('addQuantityModal');
