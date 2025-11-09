@@ -179,17 +179,26 @@ if (!function_exists('triggerDailyConsumptionReport')) {
         if (!empty($jobState['last_sent_at'])) {
             $lastSentDate = substr((string) $jobState['last_sent_at'], 0, 10);
             if ($lastSentDate === $todayDate) {
-                if (
-                    !empty($statusSnapshot) &&
-                    in_array($statusSnapshot['status'] ?? null, ['completed', 'completed_no_data'], true) &&
-                    $existingReportPath !== null
-                ) {
+                $snapshotStatus = $statusSnapshot['status'] ?? null;
+                if (!empty($statusSnapshot) && in_array($snapshotStatus, ['completed', 'completed_no_data', 'already_sent'], true)) {
                     $statusSnapshot['status'] = 'already_sent';
                     $statusSnapshot['checked_at'] = date('Y-m-d H:i:s');
                     $statusSnapshot['last_sent_at'] = $jobState['last_sent_at'];
                     dailyConsumptionSaveStatus($statusSnapshot);
                     error_log('[DailyConsumption] Skipped: already sent earlier today.');
                     dailyConsumptionNotifyManager('تم إرسال تقرير الاستهلاك اليومي مسبقاً اليوم.');
+                    return;
+                }
+
+                if (empty($statusSnapshot)) {
+                    dailyConsumptionSaveStatus([
+                        'date' => $todayDate,
+                        'target_date' => $targetDate,
+                        'status' => 'already_sent',
+                        'checked_at' => date('Y-m-d H:i:s'),
+                        'last_sent_at' => $jobState['last_sent_at'],
+                    ]);
+                    error_log('[DailyConsumption] Skipped: job state indicates already sent today.');
                     return;
                 }
             }
@@ -204,28 +213,17 @@ if (!function_exists('triggerDailyConsumptionReport')) {
             );
 
             $existingData = [];
-            $existingDataReportPath = null;
             if ($existing && isset($existing['value'])) {
                 $decoded = json_decode((string) $existing['value'], true);
                 if (json_last_error() === JSON_ERROR_NONE && is_array($decoded)) {
                     $existingData = $decoded;
-                    if (
-                        ($decoded['date'] ?? null) === $todayDate &&
-                        !empty($decoded['report_path'])
-                    ) {
-                        $candidateExisting = $reportsBaseDir . '/' . ltrim((string)$decoded['report_path'], '/\\');
-                        if (is_file($candidateExisting)) {
-                            $existingDataReportPath = $candidateExisting;
-                        }
-                    }
                 }
             }
 
             if (
                 !empty($existingData) &&
                 ($existingData['date'] ?? null) === $todayDate &&
-                in_array($existingData['status'] ?? null, ['completed', 'completed_no_data'], true) &&
-                $existingDataReportPath !== null
+                in_array($existingData['status'] ?? null, ['completed', 'completed_no_data', 'already_sent'], true)
             ) {
                 $db->commit();
                 return;
@@ -289,11 +287,30 @@ if (!function_exists('triggerDailyConsumptionReport')) {
         if (!$success) {
             $normalizedMessage = mb_strtolower($message, 'UTF-8');
             if ($message !== '' && str_contains($normalizedMessage, 'لا توجد بيانات')) {
-                dailyConsumptionSaveStatus(array_merge($statusData, [
+                $statusPayload = array_merge($statusData, [
                     'status' => 'completed_no_data',
                     'completed_at' => date('Y-m-d H:i:s'),
                     'message' => $message,
-                ]));
+                ]);
+                dailyConsumptionSaveStatus($statusPayload);
+                try {
+                    if ($jobState) {
+                        $db->execute(
+                            "UPDATE system_daily_jobs
+                             SET last_sent_at = NOW(), last_file_path = NULL, updated_at = NOW()
+                             WHERE job_key = ?",
+                            [DAILY_CONSUMPTION_JOB_KEY]
+                        );
+                    } else {
+                        $db->execute(
+                            "INSERT INTO system_daily_jobs (job_key, last_sent_at, last_file_path)
+                             VALUES (?, NOW(), NULL)",
+                            [DAILY_CONSUMPTION_JOB_KEY]
+                        );
+                    }
+                } catch (Throwable $updateJobNoData) {
+                    error_log('Daily Consumption: failed updating job state (no data) - ' . $updateJobNoData->getMessage());
+                }
                 error_log('[DailyConsumption] No data available for target date - report not sent.');
                 dailyConsumptionNotifyManager('لا توجد بيانات استهلاك للفترة السابقة، لم يتم إرسال التقرير الآلي اليوم.', 'info');
                 return;
