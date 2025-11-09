@@ -315,39 +315,13 @@ function processDailyPackagingAlert(): void {
         $summaryLines[] = '• لا توجد أصناف محددة حسب النوع.';
     }
 
-    $detailLines = [];
     $previewItems = [];
-    $slice = array_slice($lowStockItems, 0, 5);
-    foreach ($slice as $item) {
-        $name = htmlspecialchars(trim((string)($item['name'] ?? 'غير محدد')), ENT_QUOTES, 'UTF-8');
-        $type = htmlspecialchars(trim((string)($item['type'] ?? 'غير محدد')), ENT_QUOTES, 'UTF-8');
-        $unit = htmlspecialchars(trim((string)($item['unit'] ?? 'قطعة')), ENT_QUOTES, 'UTF-8');
-        $qty = $item['quantity'];
-        if (is_numeric($qty)) {
-            $qtyFmt = rtrim(rtrim(number_format((float)$qty, 3, '.', ''), '0'), '.');
-        } else {
-            $qtyFmt = (string)$qty;
-        }
-        $detailLines[] = '• ' . $name . ' — ' . $qtyFmt . ' ' . $unit . ' (' . $type . ')';
-        $previewItems[] = [
-            'name' => $name,
-            'type' => $type,
-            'quantity' => $qtyFmt,
-            'unit' => $unit,
-        ];
-    }
-    if (count($lowStockItems) > count($slice)) {
-        $detailLines[] = '• ...';
-    }
 
     $message = "📦 <b>تقرير أدوات التعبئة منخفضة الكمية</b>\n";
     $message .= 'التاريخ: ' . date('Y-m-d H:i:s') . "\n";
     $message .= 'الحد الأدنى للتنبيه: أقل من ' . PACKAGING_ALERT_THRESHOLD . " قطعة\n\n";
     $message .= '<b>عدد العناصر المنخفضة:</b> ' . $totalItems . "\n";
     $message .= "<b>ملخص حسب النوع:</b>\n" . implode("\n", $summaryLines);
-    if (!empty($detailLines)) {
-        $message .= "\n\n<b>أبرز الأدوات:</b>\n" . implode("\n", $detailLines);
-    }
     $message .= "\n\n✅ التقرير محفوظ في النظام ويمكن طباعته أو حفظه من خلال الروابط التالية.";
 
     $buttons = [
