@@ -249,6 +249,10 @@ if (!function_exists('triggerDailyConsumptionReport')) {
                 return;
             }
 
+            if (isset($result['status']) && isset($result['preview'])) {
+                error_log('[DailyConsumption] aPDF failure details: status=' . $result['status'] . '; preview=' . $result['preview']);
+            }
+
             dailyConsumptionSaveStatus(array_merge($statusData, [
                 'status' => 'failed',
                 'completed_at' => date('Y-m-d H:i:s'),

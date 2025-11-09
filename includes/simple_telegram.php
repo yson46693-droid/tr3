@@ -89,6 +89,91 @@ function sendTelegramMessage($message, $chatId = null) {
 }
 
 /**
+ * إرسال رسالة مع أزرار Inline إلى Telegram
+ *
+ * @param string $message
+ * @param array<int, array<int, array<string, string>>> $buttons مصفوفة من الصفوف، كل صف يحوي أزراراً (text, url)
+ * @param string|null $chatId
+ * @return array<string, mixed>|false
+ */
+function sendTelegramMessageWithButtons($message, array $buttons, $chatId = null) {
+    if (!isTelegramConfigured()) {
+        error_log("Telegram not configured");
+        return false;
+    }
+
+    $inlineKeyboard = [];
+    foreach ($buttons as $row) {
+        $rowButtons = [];
+        foreach ($row as $button) {
+            $text = trim($button['text'] ?? '');
+            $url = trim($button['url'] ?? '');
+            if ($text === '' || $url === '') {
+                continue;
+            }
+            $rowButtons[] = [
+                'text' => $text,
+                'url'  => $url,
+            ];
+        }
+        if (!empty($rowButtons)) {
+            $inlineKeyboard[] = $rowButtons;
+        }
+    }
+
+    $chatId = $chatId ?? TELEGRAM_CHAT_ID;
+    $url = TELEGRAM_API_URL . '/sendMessage';
+
+    $allowedTags = '<b><strong><i><em><u><s><code><pre><a>';
+    $cleanMessage = strip_tags($message, $allowedTags);
+
+    $data = [
+        'chat_id' => $chatId,
+        'text' => $cleanMessage,
+        'parse_mode' => 'HTML',
+        'disable_web_page_preview' => false,
+    ];
+
+    if (!empty($inlineKeyboard)) {
+        $data['reply_markup'] = json_encode(['inline_keyboard' => $inlineKeyboard], JSON_UNESCAPED_UNICODE);
+    }
+
+    $url = str_replace('149.154.167.220', 'api.telegram.org', $url);
+
+    $ch = curl_init();
+    curl_setopt_array($ch, [
+        CURLOPT_URL => $url,
+        CURLOPT_POST => true,
+        CURLOPT_POSTFIELDS => http_build_query($data),
+        CURLOPT_RETURNTRANSFER => true,
+        CURLOPT_SSL_VERIFYPEER => false,
+        CURLOPT_SSL_VERIFYHOST => 0,
+        CURLOPT_TIMEOUT => 15,
+        CURLOPT_CONNECTTIMEOUT => 5,
+        CURLOPT_RESOLVE => ['api.telegram.org:443:149.154.167.220'],
+    ]);
+
+    $response = curl_exec($ch);
+    $httpCode = curl_getinfo($ch, CURLINFO_HTTP_CODE);
+    $curlError = curl_error($ch);
+    curl_close($ch);
+
+    if ($httpCode === 200) {
+        $result = json_decode($response, true);
+        if (isset($result['ok']) && $result['ok']) {
+            return $result;
+        }
+
+        $errorDesc = $result['description'] ?? 'Unknown error';
+        error_log("Telegram API error (buttons): " . $errorDesc);
+        return false;
+    }
+
+    error_log("Telegram HTTP error (buttons): {$httpCode}. cURL Error: {$curlError}");
+    return false;
+}
+
+/**
  * إرسال ملف إلى Telegram (مبسط)
  */
 function sendTelegramFile($filePath, $caption = '', $chatId = null) {

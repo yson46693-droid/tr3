@@ -8,6 +8,32 @@ if (!defined('ACCESS_ALLOWED')) {
 }
 
 require_once __DIR__ . '/pdf_helper.php';
+require_once __DIR__ . '/path_helper.php';
+/**
+ * إزالة ملفات التقارير الأقدم والاحتفاظ بآخر تقرير فقط.
+ *
+ * @param string $reportsDir
+ * @param string $currentFilename
+ * @return void
+ */
+function dailyLowStockCleanupOldReports(string $reportsDir, string $currentFilename): void
+{
+    $pattern = rtrim($reportsDir, '/\\') . '/low-stock-report-*.html';
+    $files = glob($pattern) ?: [];
+
+    foreach ($files as $file) {
+        if (!is_string($file)) {
+            continue;
+        }
+
+        if (basename($file) === $currentFilename) {
+            continue;
+        }
+
+        @unlink($file);
+    }
+}
+
 
 /**
  * إنشاء ملف PDF لتقرير الكميات المنخفضة
@@ -28,7 +54,7 @@ function dailyLowStockGeneratePdf(array $sections, array $counts): ?string
         return null;
     }
 
-    $filename = sprintf('low-stock-report-%s.pdf', date('Ymd-His'));
+    $filename = sprintf('low-stock-report-%s.html', date('Ymd-His'));
     $filePath = $reportsDir . DIRECTORY_SEPARATOR . $filename;
 
     $summaryItems = '';
@@ -63,6 +89,10 @@ function dailyLowStockGeneratePdf(array $sections, array $counts): ?string
         body { font-family: "Amiri", "Cairo", "Segoe UI", Tahoma, sans-serif; direction: rtl; text-align: right; margin: 0; background:#f8fafc; color:#0f172a; }
         /* لتغيير الخط العربي، استبدل أسماء الخطوط في السطر أعلاه أو فعّل رابط Google Fonts داخل الوسم <head>. */
         .report-wrapper { padding: 32px; background:#ffffff; border-radius: 16px; box-shadow: 0 12px 40px rgba(15,23,42,0.08); }
+        .actions { display:flex; flex-direction:column; gap:8px; align-items:flex-start; margin-bottom:20px; }
+        .actions button { background:#1d4ed8; color:#fff; border:none; padding:10px 18px; border-radius:10px; font-size:15px; cursor:pointer; transition:opacity 0.2s ease; }
+        .actions button:hover { opacity:0.9; }
+        .actions .hint { font-size:13px; color:#475569; }
         header { text-align: center; margin-bottom: 24px; }
         header h1 { margin: 0; font-size: 26px; color:#1d4ed8; }
         header .meta { display:flex; justify-content:center; gap:16px; flex-wrap:wrap; margin-top:12px; color:#475569; font-size:14px; }
@@ -79,6 +109,10 @@ function dailyLowStockGeneratePdf(array $sections, array $counts): ?string
         .stock-section li { position:relative; padding-right:24px; }
         .stock-section li::before { content:"•"; position:absolute; right:0; color:#1d4ed8; font-size:18px; top:0; }
         .stock-section .empty-item { color:#64748b; font-style:italic; }
+        @media print {
+            .actions { display:none !important; }
+            body { background:#ffffff; }
+        }
     ';
 
     $fontHint = '<!-- لإضافة خط عربي من Google Fonts، يمكنك استخدام الرابط التالي (أزل التعليق إذا لزم الأمر):
@@ -86,6 +120,10 @@ function dailyLowStockGeneratePdf(array $sections, array $counts): ?string
 -->';
 
     $body = '<div class="report-wrapper">'
+        . '<div class="actions">'
+        . '<button id="printReportButton" type="button">طباعة / حفظ كـ PDF</button>'
+        . '<span class="hint">يمكنك أيضاً استخدام الرابط المرسل عبر Telegram لعرض التقرير وطباعته.</span>'
+        . '</div>'
         . '<header><h1>تقرير الكميات المنخفضة</h1><div class="meta">'
         . '<span>' . htmlspecialchars(COMPANY_NAME, ENT_QUOTES, 'UTF-8') . '</span>'
         . '<span>التاريخ: ' . date('Y-m-d H:i') . '</span></div></header>';
@@ -96,44 +134,25 @@ function dailyLowStockGeneratePdf(array $sections, array $counts): ?string
 
     $body .= $sectionsHtml . '</div>';
 
+    $printScript = '<script>(function(){function triggerPrint(){window.print();}'
+        . 'document.addEventListener("DOMContentLoaded",function(){var btn=document.getElementById("printReportButton");'
+        . 'if(btn){btn.addEventListener("click",function(e){e.preventDefault();triggerPrint();});}'
+        . 'var params=new URLSearchParams(window.location.search);'
+        . 'if(params.get("print")==="1"){setTimeout(triggerPrint,700);}'
+        . '});})();</script>';
+
     $document = '<!DOCTYPE html><html lang="ar"><head><meta charset="utf-8"><title>تقرير الكميات المنخفضة</title>'
         . '<meta name="viewport" content="width=device-width, initial-scale=1">' . $fontHint
-        . '<style>' . $styles . '</style></head><body>' . $body . '</body></html>';
+        . '<style>' . $styles . '</style></head><body>' . $body . $printScript . '</body></html>';
 
-    // حفظ نسخة HTML يمكن استخدامها يدوياً إذا فشل توليد PDF
-    $htmlFallbackPath = $reportsDir . DIRECTORY_SEPARATOR . sprintf('low-stock-report-%s.html', date('Ymd-His'));
-    file_put_contents($htmlFallbackPath, $document);
-
-    $apiResult = apdfGeneratePdf($document, [
-        'landscape' => false,
-        'preferCSSPageSize' => true,
-    ]);
-
-    if ($apiResult['success']) {
-        if (@file_put_contents($filePath, $apiResult['data']) === false) {
-            error_log('Low Stock Report: unable to save PDF to path ' . $filePath);
-            return null;
-        }
-        // حذف نسخة HTML اذا كان الحفظ التلقائي مفعّل ولا نحتاجها
-        if (defined('REPORTS_AUTO_DELETE') && REPORTS_AUTO_DELETE) {
-            @unlink($htmlFallbackPath);
-        }
-        return $filePath;
+    if (@file_put_contents($filePath, $document) === false) {
+        error_log('Low Stock Report: unable to write HTML report to ' . $filePath);
+        return null;
     }
 
-    // سجل السبب المفصل لمساعدة التشخيص
-    $errorDetails = sprintf(
-        'status=%s; preview=%s',
-        $apiResult['status'] ?? 'unknown',
-        $apiResult['preview'] ?? 'no-preview'
-    );
-    error_log('Low Stock Report: aPDF.io failure - ' . $errorDetails);
+    dailyLowStockCleanupOldReports($reportsDir, $filename);
 
-    if (!empty($apiResult['status']) && (int)$apiResult['status'] === 0) {
-        error_log('Low Stock Report: curl error - ' . ($apiResult['preview'] ?? 'no message'));
-    }
-
-    return null;
+    return $filePath;
 }
 
 function formatLowStockCountLabel(string $key): string
@@ -491,29 +510,89 @@ if (!function_exists('triggerDailyLowStockReport')) {
         $status = 'completed_no_issues';
         $errorMessage = null;
         $reportFilePath = null;
+        $relativePath = null;
+        $existingReportPath = null;
+        $existingReportRelative = null;
+        if (!empty($existingData) && ($existingData['date'] ?? null) === $todayDate) {
+            $storedPath = $existingData['report_path'] ?? null;
+            if (!empty($storedPath)) {
+                $candidate = BASE_PATH . '/' . ltrim($storedPath, '/\\');
+                if (file_exists($candidate)) {
+                    $existingReportPath = $candidate;
+                    $existingReportRelative = ltrim($storedPath, '/\\');
+                }
+            }
+        }
 
         if (!empty($sections)) {
             $status = 'completed';
-            $reportFilePath = dailyLowStockGeneratePdf($sections, $counts);
-
-            if ($reportFilePath === null) {
-                $status = 'failed';
-                $errorMessage = 'فشل إنشاء ملف PDF للتقرير.';
+            if ($existingReportPath !== null) {
+                $reportFilePath = $existingReportPath;
+                $relativePath = $existingReportRelative;
             } else {
+                $reportFilePath = dailyLowStockGeneratePdf($sections, $counts);
+                if ($reportFilePath !== null) {
+                    $relativePath = ltrim(str_replace(BASE_PATH, '', $reportFilePath), '/\\');
+                }
+            }
+
+            if ($reportFilePath === null || $relativePath === null) {
+                $status = 'failed';
+                $errorMessage = 'فشل إنشاء ملف HTML للتقرير.';
+            } else {
+                $reportUrl = getRelativeUrl($relativePath);
+                $printUrl = $reportUrl . (strpos($reportUrl, '?') === false ? '?print=1' : '&print=1');
+
+                $summaryLines = [];
+                foreach ($counts as $key => $value) {
+                    if ($value <= 0) {
+                        continue;
+                    }
+                    $summaryLines[] = '• ' . htmlspecialchars(formatLowStockCountLabel($key), ENT_QUOTES, 'UTF-8') . ': ' . intval($value);
+                }
+                if (empty($summaryLines)) {
+                    $summaryLines[] = '• لا توجد عناصر منخفضة في هذا اليوم.';
+                }
+
+                $detailLines = [];
+                foreach ($sections as $section) {
+                    $title = htmlspecialchars((string)($section['title'] ?? 'قسم غير محدد'), ENT_QUOTES, 'UTF-8');
+                    $detailLines[] = '— ' . $title;
+                    $sectionLines = $section['lines'] ?? [];
+                    $limited = array_slice($sectionLines, 0, 3);
+                    foreach ($limited as $line) {
+                        $detailLines[] = '   ' . htmlspecialchars(ltrim((string)$line), ENT_QUOTES, 'UTF-8');
+                    }
+                    if (count($sectionLines) > 3) {
+                        $detailLines[] = '   ...';
+                    }
+                }
+
+                $message = "⚠️ <b>تقرير الكميات المنخفضة</b>\n";
+                $message .= 'التاريخ: ' . date('Y-m-d H:i:s') . "\n\n";
+                $message .= "<b>الملخص:</b>\n" . implode("\n", $summaryLines);
+
+                if (!empty($detailLines)) {
+                    $message .= "\n\n<b>أبرز العناصر:</b>\n" . implode("\n", $detailLines);
+                }
+
+                $message .= "\n\n✅ التقرير محفوظ في النظام ويمكن طباعته أو حفظه عبر الروابط التالية.";
+
                 if (!isTelegramConfigured()) {
                     $status = 'failed';
                     $errorMessage = 'إعدادات Telegram غير مكتملة';
                 } else {
-                    $caption = "⚠️ تقرير الكميات المنخفضة\nالتاريخ: " . date('Y-m-d H:i:s');
-                    $sendResult = sendTelegramFile($reportFilePath, $caption);
+                    $buttons = [
+                        [
+                            ['text' => 'عرض التقرير', 'url' => $reportUrl],
+                            ['text' => 'طباعة / حفظ PDF', 'url' => $printUrl],
+                        ],
+                    ];
+
+                    $sendResult = sendTelegramMessageWithButtons($message, $buttons);
                     if ($sendResult === false) {
                         $status = 'failed';
-                        $errorMessage = 'فشل إرسال التقرير إلى Telegram';
-                    } else {
-                        if ($reportFilePath && file_exists($reportFilePath)) {
-                            @unlink($reportFilePath);
-                        }
-                        $reportFilePath = null;
+                        $errorMessage = 'فشل إرسال رابط التقرير إلى Telegram';
                     }
                 }
             }
@@ -526,10 +605,17 @@ if (!function_exists('triggerDailyLowStockReport')) {
                 'status' => $status,
                 'completed_at' => date('Y-m-d H:i:s'),
                 'counts' => $counts,
-                'file_deleted' => ($status === 'completed'),
+                'file_deleted' => false,
             ];
             if (!empty($errorMessage)) {
                 $finalData['error'] = $errorMessage;
+            }
+            if (!empty($relativePath)) {
+                $finalData['report_path'] = $relativePath;
+            }
+            if (isset($reportUrl)) {
+                $finalData['report_url'] = $reportUrl;
+                $finalData['print_url'] = $printUrl ?? $reportUrl;
             }
 
             if ($status === 'completed') {

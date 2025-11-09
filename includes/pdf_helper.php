@@ -89,10 +89,21 @@ function apdfGeneratePdf(string $html, array $options = []): array
         ];
     }
 
+    // بعض الاستضافات قد تعيد ملف PDF فارغ أو قصير جداً
+    $pdfLength = strlen($response);
+    if ($pdfLength < 200) {
+        return [
+            'success' => false,
+            'status' => $statusCode,
+            'preview' => 'Received PDF but size too small (' . $pdfLength . ' bytes)',
+        ];
+    }
+
     return [
         'success' => true,
         'status' => $statusCode,
         'data' => $response,
+        'size' => $pdfLength,
     ];
 }
 
@@ -108,9 +119,20 @@ function apdfGeneratePdf(string $html, array $options = []): array
  */
 function apdfSavePdfToPath(string $html, string $filePath, array $options = []): string
 {
-    $pdfBinary = apdfGeneratePdf($html, $options);
+    $result = apdfGeneratePdf($html, $options);
 
-    if (@file_put_contents($filePath, $pdfBinary) === false) {
+    if (!$result['success']) {
+        $status = $result['status'] ?? 'unknown';
+        $preview = $result['preview'] ?? 'no-preview';
+        throw new RuntimeException(
+            'فشل إنشاء ملف PDF عبر aPDF.io. رمز الاستجابة: '
+            . $status
+            . '. معاينة الاستجابة: '
+            . $preview
+        );
+    }
+
+    if (@file_put_contents($filePath, $result['data']) === false) {
         throw new RuntimeException('تعذر حفظ ملف PDF في المسار: ' . $filePath);
     }
 
@@ -128,7 +150,20 @@ function apdfSavePdfToPath(string $html, string $filePath, array $options = []):
  */
 function apdfStreamPdfToBrowser(string $html, string $fileName = 'document.pdf', array $options = [], bool $forceDownload = false): void
 {
-    $pdfBinary = apdfGeneratePdf($html, $options);
+    $result = apdfGeneratePdf($html, $options);
+
+    if (!$result['success']) {
+        $status = $result['status'] ?? 'unknown';
+        $preview = $result['preview'] ?? 'no-preview';
+        throw new RuntimeException(
+            'فشل إنشاء ملف PDF عبر aPDF.io قبل الإرسال للمتصفح. رمز الاستجابة: '
+            . $status
+            . '. معاينة الاستجابة: '
+            . $preview
+        );
+    }
+
+    $pdfBinary = $result['data'];
 
     header('Content-Type: application/pdf; charset=utf-8');
     header(($forceDownload ? 'Content-Disposition: attachment; filename="' : 'Content-Disposition: inline; filename="') . $fileName . '"');
