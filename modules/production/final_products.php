@@ -465,7 +465,7 @@ $overallAverage = $totalProductionCountSum > 0 ? $totalProducedSum / $totalProdu
         <h5 class="mb-0"><i class="bi bi-list-ul me-2"></i>المنتجات النهائية (<?php echo $totalProducts; ?>)</h5>
     </div>
     <div class="card-body">
-        <div class="table-responsive-lg">
+        <div class="table-responsive-lg mobile-production-table-wrapper">
             <table class="table table-striped table-hover align-middle">
                 <thead class="table-light">
                     <tr>
@@ -638,4 +638,28 @@ $overallAverage = $totalProductionCountSum > 0 ? $totalProducedSum / $totalProdu
         <?php endif; ?>
     </div>
 </div>
+
+<style>
+@media (max-width: 767.98px) {
+    .mobile-production-table-wrapper {
+        overflow-x: auto;
+        -webkit-overflow-scrolling: touch;
+        border-radius: 0.75rem;
+    }
+
+    .mobile-production-table-wrapper table {
+        min-width: 700px;
+        white-space: nowrap;
+    }
+
+    .mobile-production-table-wrapper::-webkit-scrollbar {
+        height: 6px;
+    }
+
+    .mobile-production-table-wrapper::-webkit-scrollbar-thumb {
+        background: rgba(37, 99, 235, 0.35);
+        border-radius: 10px;
+    }
+}
+</style>
 

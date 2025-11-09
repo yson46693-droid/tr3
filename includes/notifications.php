@@ -296,10 +296,18 @@ function handleAttendanceRemindersForUser($user) {
     $checkInRecords = getTodayAttendanceRecords($userId, $today);
     $hasCheckIn = !empty($checkInRecords);
     $hasOpenAttendance = false;
+    $openAttendanceCheckInTime = null;
 
     foreach ($checkInRecords as $record) {
         if (empty($record['check_out_time'])) {
             $hasOpenAttendance = true;
+            if (!empty($record['check_in_time']) && !$openAttendanceCheckInTime) {
+                try {
+                    $openAttendanceCheckInTime = new DateTime($record['check_in_time']);
+                } catch (Exception $e) {
+                    $openAttendanceCheckInTime = null;
+                }
+            }
             break;
         }
     }
@@ -316,7 +324,19 @@ function handleAttendanceRemindersForUser($user) {
 
     // تذكير تسجيل الانصراف
     $checkOutReminderThreshold = (clone $endTime)->modify('-10 minutes');
-    if ($hasOpenAttendance && $now >= $checkOutReminderThreshold) {
+    $remainingMinutes = (int) floor(($endTime->getTimestamp() - $now->getTimestamp()) / 60);
+    $inCheckoutWindow = $remainingMinutes >= 0 && $remainingMinutes <= 10;
+    $eligibleForCheckoutReminder = $hasOpenAttendance && $inCheckoutWindow && $now >= $checkOutReminderThreshold;
+
+    if ($eligibleForCheckoutReminder && $openAttendanceCheckInTime instanceof DateTime) {
+        $minutesSinceCheckIn = floor(($now->getTimestamp() - $openAttendanceCheckInTime->getTimestamp()) / 60);
+        $minimumSessionMinutes = 30;
+        if ($minutesSinceCheckIn < $minimumSessionMinutes) {
+            $eligibleForCheckoutReminder = false;
+        }
+    }
+
+    if ($eligibleForCheckoutReminder) {
         $title = 'تنبيه تسجيل الانصراف';
         $message = 'تنبيه هام لتسجيل الانصراف لتفادي الخصومات. يرجى تسجيل الانصراف قبل مغادرة العمل.';
         ensureAttendanceReminderForUser($userId, $role, 'checkout', $title, $message);

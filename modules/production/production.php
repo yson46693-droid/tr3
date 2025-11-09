@@ -1596,7 +1596,7 @@ try {
             ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
         ");
     } else {
-        // Ø§Ù„ØªØ­Ù‚Ù‚ Ù…Ù† ÙˆØ¬ÙˆØ¯ Ø§Ù„Ø¬Ø¯Ø§ÙˆÙ„ Ø§Ù„Ù…Ø±ØªØ¨Ø·Ø© Ø­ØªÙ‰ Ù„Ùˆ ÙƒØ§Ù† product_templates Ù…ÙˆØ¬ÙˆØ¯Ø§Ù‹
+        
         $packagingTableCheck = $db->queryOne("SHOW TABLES LIKE 'product_template_packaging'");
         if (empty($packagingTableCheck)) {
             $db->execute("
@@ -1924,14 +1924,14 @@ $lang = isset($translations) ? $translations : [];
 <?php endif; ?>
 
 <div class="mb-4">
-    <div class="production-tab-toggle" role="tablist" aria-label="Ø§Ù„ØªÙ†Ù‚Ù„ Ø¨ÙŠÙ† Ø£Ù‚Ø³Ø§Ù… ØµÙØ­Ø© Ø§Ù„Ø¥Ù†ØªØ§Ø¬">
+    <div class="production-tab-toggle" role="tablist" aria-label="التنقل بين أقسام صفحة الإنتاج">
         <button type="button"
                 class="btn btn-outline-primary production-tab-btn active"
                 data-production-tab="records"
                 aria-pressed="true"
                 aria-controls="productionRecordsSection">
             <i class="bi bi-list-task me-1"></i>
-            Ø³Ø¬Ù„Ø§Øª Ø§Ù„Ø¥Ù†ØªØ§Ø¬
+            سجلات الإنتاج
         </button>
         <button type="button"
                 class="btn btn-outline-primary production-tab-btn"
@@ -1939,19 +1939,19 @@ $lang = isset($translations) ? $translations : [];
                 aria-pressed="false"
                 aria-controls="productionReportsSection">
             <i class="bi bi-graph-up-arrow me-1"></i>
-            ØªÙ‚Ø§Ø±ÙŠØ± Ø§Ù„Ø¥Ù†ØªØ§Ø¬
+            تقارير الإنتاج
         </button>
     </div>
 </div>
 
 <div id="productionRecordsSection">
 
-<!-- Ù‚Ø³Ù… Ù‚ÙˆØ§Ù„Ø¨ Ø§Ù„Ù…Ù†ØªØ¬Ø§Øª -->
+<!-- قسم قوالب المنتجات -->
 <div class="card shadow-sm mb-4">
     <div class="card-header bg-info text-white d-flex justify-content-between align-items-center">
-        <h5 class="mb-0"><i class="bi bi-file-earmark-text me-2"></i>Ù‚ÙˆØ§Ù„Ø¨ Ø§Ù„Ù…Ù†ØªØ¬Ø§Øª - Ø¥Ù†Ø´Ø§Ø¡ Ø¥Ù†ØªØ§Ø¬ Ù…Ù† Ù‚Ø§Ù„Ø¨</h5>
+        <h5 class="mb-0"><i class="bi bi-file-earmark-text me-2"></i>قوالب المنتجات - إنشاء إنتاج من قالب</h5>
         <a href="<?php echo getDashboardUrl('production'); ?>?page=raw_materials_warehouse" class="btn btn-light btn-sm">
-            <i class="bi bi-plus-circle me-2"></i>Ø¥Ø¯Ø§Ø±Ø© Ø§Ù„Ù‚ÙˆØ§Ù„Ø¨ ÙÙŠ Ù…Ø®Ø²Ù† Ø§Ù„Ø®Ø§Ù…Ø§Øª
+            <i class="bi bi-plus-circle me-2"></i>إدارة القوالب في مخزن الخامات
         </a>
     </div>
     <?php if (!empty($templates)): ?>
@@ -1959,13 +1959,13 @@ $lang = isset($translations) ? $translations : [];
         <?php foreach ($templates as $template): ?>
             <?php 
             $templateTypeLabels = [
-                'unified' => 'Ù…ØªØ¹Ø¯Ø¯ Ø§Ù„Ù…ÙˆØ§Ø¯',
-                'honey' => 'Ø¹Ø³Ù„',
-                'olive_oil' => 'Ø²ÙŠØª Ø²ÙŠØªÙˆÙ†',
-                'beeswax' => 'Ø´Ù…Ø¹ Ø¹Ø³Ù„',
-                'derivatives' => 'Ù…Ø´ØªÙ‚Ø§Øª'
+                'unified' => 'متعدد المواد',
+                'honey' => 'عسل',
+                'olive_oil' => 'زيت زيتون',
+                'beeswax' => 'شمع عسل',
+                'derivatives' => 'مشتقات'
             ];
-            $typeLabel = $templateTypeLabels[$template['template_type']] ?? 'ØºÙŠØ± Ù…Ø­Ø¯Ø¯';
+            $typeLabel = $templateTypeLabels[$template['template_type']] ?? 'غير محدد';
             $typeAccents = [
                 'unified' => ['#0f172a', '#0f172a22'],
                 'honey' => ['#f59e0b', '#f59e0b22'],
@@ -1998,23 +1998,23 @@ $lang = isset($translations) ? $translations : [];
                     <div class="template-products-count">
                         <i class="bi bi-box me-1"></i>
                         <?php echo $productsCount; ?>
-                        <span>Ù…Ù†ØªØ¬</span>
+                    <span>منتج</span>
                     </div>
                 </div>
 
                 <div class="template-metrics">
                     <div class="metric-item">
-                        <span class="metric-label">Ø£Ø¯ÙˆØ§Øª Ø§Ù„ØªØ¹Ø¨Ø¦Ø©</span>
+                    <span class="metric-label">أدوات التعبئة</span>
                         <span class="metric-value"><?php echo $packagingCount; ?></span>
                     </div>
                     <div class="metric-separator"></div>
                     <div class="metric-item">
-                        <span class="metric-label">Ù…ÙˆØ§Ø¯ Ø®Ø§Ù…</span>
+                    <span class="metric-label">مواد خام</span>
                         <span class="metric-value"><?php echo $rawCount; ?></span>
                     </div>
                     <div class="metric-separator"></div>
                     <div class="metric-item">
-                        <span class="metric-label">Ø¢Ø®Ø± ØªØ¹Ø¯ÙŠÙ„</span>
+                    <span class="metric-label">آخر تعديل</span>
                         <span class="metric-value">
                             <?php echo htmlspecialchars(date('Y/m/d', strtotime($template['updated_at'] ?? $template['created_at'] ?? 'now'))); ?>
                         </span>
@@ -2041,14 +2041,14 @@ $lang = isset($translations) ? $translations : [];
                         </div>
                     <?php endforeach; ?>
                     <?php if ($hasMoreMaterials): ?>
-                        <div class="materials-more">+ <?php echo $rawCount - count($materialsPreview); ?> Ù…ÙˆØ§Ø¯ Ø¥Ø¶Ø§ÙÙŠØ©</div>
+                        <div class="materials-more">+ <?php echo $rawCount - count($materialsPreview); ?> مواد إضافية</div>
                     <?php endif; ?>
                 </div>
                 <?php endif; ?>
 
                 <div class="template-actions">
                     <span class="template-action-badge">
-                        <i class="bi bi-lightning-charge me-2"></i>Ø§Ø¨Ø¯Ø£ Ø§Ù„Ø¥Ù†ØªØ§Ø¬ Ø§Ù„Ø¢Ù†
+                        <i class="bi bi-lightning-charge me-2"></i>ابدأ الإنتاج الآن
                     </span>
                 </div>
             </div>
@@ -2057,16 +2057,16 @@ $lang = isset($translations) ? $translations : [];
     <?php else: ?>
         <div class="card-body text-center py-5">
             <i class="bi bi-inbox fs-1 text-muted d-block mb-3"></i>
-            <h5 class="text-muted">Ù„Ø§ ØªÙˆØ¬Ø¯ Ù‚ÙˆØ§Ù„Ø¨ Ù…Ù†ØªØ¬Ø§Øª</h5>
-            <p class="text-muted">Ù‚Ù… Ø¨Ø¥Ù†Ø´Ø§Ø¡ Ù‚ÙˆØ§Ù„Ø¨ Ø§Ù„Ù…Ù†ØªØ¬Ø§Øª Ù…Ù† ØµÙØ­Ø© Ù…Ø®Ø²Ù† Ø§Ù„Ø®Ø§Ù…Ø§Øª</p>
+            <h5 class="text-muted">لا توجد قوالب منتجات</h5>
+            <p class="text-muted">قم بإنشاء قوالب المنتجات من صفحة مخزن الخامات</p>
             <a href="<?php echo getDashboardUrl('production'); ?>?page=raw_materials_warehouse" class="btn btn-primary">
-                <i class="bi bi-box-seam me-2"></i>Ø§Ù„Ø°Ù‡Ø§Ø¨ Ø¥Ù„Ù‰ Ù…Ø®Ø²Ù† Ø§Ù„Ø®Ø§Ù…Ø§Øª
+                <i class="bi bi-box-seam me-2"></i>الذهاب إلى مخزن الخامات
             </a>
         </div>
     <?php endif; ?>
 </div>
 
-<!-- Ø¬Ø¯ÙˆÙ„ Ø§Ù„Ø¥Ù†ØªØ§Ø¬ -->
+<!-- جدول الإنتاج -->
 <div class="card shadow-sm mt-4">
     <div class="card-header bg-primary text-white d-flex justify-content-between align-items-center">
         <h5 class="mb-0"><i class="bi bi-list-ul me-2"></i><?php echo isset($lang['production_list']) ? $lang['production_list'] : 'Ù‚Ø§Ø¦Ù…Ø© Ø§Ù„Ø¥Ù†ØªØ§Ø¬'; ?> (<?php echo $totalProduction; ?>)</h5>

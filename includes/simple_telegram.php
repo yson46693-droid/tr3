@@ -369,10 +369,14 @@ function sendTelegramPhoto($photoData, $caption = '', $chatId = null, $isBase64 
     
     error_log("Preparing to send photo: file={$photoPath}, size={$fileSize} bytes, chat_id={$chatId}");
     
+    $allowedCaptionTags = '<b><strong><i><em><u><s><code><pre><a>';
+    $cleanCaption = strip_tags($caption, $allowedCaptionTags);
+
     $data = [
         'chat_id' => $chatId,
         'photo' => $photo,
-        'caption' => mb_substr($caption, 0, 1024)
+        'caption' => mb_substr($cleanCaption, 0, 1024),
+        'parse_mode' => 'HTML'
     ];
     
     // استبدال IP بـ Domain في URL
