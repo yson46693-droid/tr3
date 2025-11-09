@@ -419,93 +419,27 @@ if (!defined('ENABLE_DAILY_BACKUP_DELIVERY')) {
 }
 
 # وظيفة مساعده لجدولة المهام اليومية بفاصل زمني
-if (!function_exists('scheduleDailyJob')) {
-    /**
-     * جدولة مهمة يومية بفاصل لتقليل التحميل المفاجئ.
-     *
-     * @param string   $jobKey
-     * @param callable $callback
-     * @param int      $delaySeconds
-     */
-    function scheduleDailyJob(string $jobKey, callable $callback, int $delaySeconds = 30): void
-    {
-        static $initialized = false;
-        static $db;
-
-        try {
-            if (!$initialized) {
-                require_once __DIR__ . '/db.php';
-                $db = db();
-                $db->execute("CREATE TABLE IF NOT EXISTS system_scheduled_jobs (
-                    job_key VARCHAR(120) PRIMARY KEY,
-                    scheduled_at DATETIME NOT NULL,
-                    executed_at DATETIME DEFAULT NULL,
-                    updated_at TIMESTAMP NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
-                ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci");
-                $initialized = true;
-            }
-
-            $today = date('Y-m-d');
-            $scheduled = $db->queryOne(
-                "SELECT scheduled_at, executed_at FROM system_scheduled_jobs WHERE job_key = ? LIMIT 1",
-                [$jobKey]
-            );
-
-            $shouldSchedule = false;
-            if (!$scheduled) {
-                $shouldSchedule = true;
-            } else {
-                $scheduledDate = substr((string)($scheduled['scheduled_at'] ?? ''), 0, 10);
-                $executedDate = substr((string)($scheduled['executed_at'] ?? ''), 0, 10);
-                if ($scheduledDate !== $today || $executedDate !== $today) {
-                    $shouldSchedule = true;
-                }
-            }
-
-            if ($shouldSchedule) {
-                $scheduledTime = date('Y-m-d H:i:s', time() + $delaySeconds);
-                $db->execute(
-                    "INSERT INTO system_scheduled_jobs (job_key, scheduled_at, executed_at)
-                     VALUES (?, ?, NULL)
-                     ON DUPLICATE KEY UPDATE scheduled_at = VALUES(scheduled_at), executed_at = NULL",
-                    [$jobKey, $scheduledTime]
-                );
-            } else {
-                $scheduledTime = $scheduled['scheduled_at'];
-            }
-
-            if (!empty($scheduledTime) && strtotime($scheduledTime) <= time()) {
-                $callback();
-                $db->execute(
-                    "UPDATE system_scheduled_jobs SET executed_at = NOW() WHERE job_key = ?",
-                    [$jobKey]
-                );
-            }
-        } catch (Throwable $scheduleError) {
-            error_log('Daily schedule error (' . $jobKey . '): ' . $scheduleError->getMessage());
-            $callback();
-        }
-    }
-}
-
 if (ENABLE_DAILY_LOW_STOCK_REPORT) {
     require_once __DIR__ . '/daily_low_stock_report.php';
-    scheduleDailyJob('daily_low_stock_report', 'triggerDailyLowStockReport', 5);
+    triggerDailyLowStockReport();
 }
 
 if (ENABLE_DAILY_PACKAGING_ALERT) {
+    usleep(2 * 1000000); // 2 ثواني لتخفيف الضغط على API
     require_once __DIR__ . '/packaging_alerts.php';
-    scheduleDailyJob('daily_packaging_alert', 'processDailyPackagingAlert', 20);
+    processDailyPackagingAlert();
 }
 
 if (ENABLE_DAILY_CONSUMPTION_REPORT) {
+    usleep(2 * 1000000);
     require_once __DIR__ . '/daily_consumption_sender.php';
-    scheduleDailyJob('daily_consumption_report', 'triggerDailyConsumptionReport', 40);
+    triggerDailyConsumptionReport();
 }
 
 if (ENABLE_DAILY_BACKUP_DELIVERY) {
+    usleep(3 * 1000000);
     require_once __DIR__ . '/daily_backup_sender.php';
-    scheduleDailyJob('daily_backup_delivery', 'triggerDailyBackupDelivery', 90);
+    triggerDailyBackupDelivery();
 }
 
 
