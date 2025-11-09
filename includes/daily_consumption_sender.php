@@ -173,7 +173,7 @@ if (!function_exists('triggerDailyConsumptionReport')) {
             if (
                 !empty($existingData) &&
                 ($existingData['date'] ?? null) === $todayDate &&
-                in_array($existingData['status'] ?? null, ['completed'], true)
+                in_array($existingData['status'] ?? null, ['completed', 'completed_no_data'], true)
             ) {
                 $db->commit();
                 return;
@@ -219,12 +219,68 @@ if (!function_exists('triggerDailyConsumptionReport')) {
 
         try {
             require_once __DIR__ . '/consumption_reports.php';
-            require_once __DIR__ . '/simple_telegram.php';
         } catch (Throwable $includeError) {
-            error_log('Daily Consumption: failed including modules - ' . $includeError->getMessage());
+            error_log('Daily Consumption: failed including consumption reports - ' . $includeError->getMessage());
             dailyConsumptionSaveStatus(array_merge($statusData, [
                 'status' => 'failed',
-                'error' => 'Unable to load consumption report modules',
+                'error' => 'Unable to load consumption report module',
+            ]));
+            return;
+        }
+
+        try {
+            $summary = getConsumptionSummary($targetDate, $targetDate);
+        } catch (Throwable $summaryError) {
+            error_log('Daily Consumption: summary error - ' . $summaryError->getMessage());
+            dailyConsumptionSaveStatus(array_merge($statusData, [
+                'status' => 'failed',
+                'error' => 'تعذر جمع بيانات الاستهلاك: ' . $summaryError->getMessage(),
+            ]));
+            dailyConsumptionNotifyManager('تعذر جمع بيانات تقرير الاستهلاك اليومي: ' . $summaryError->getMessage(), 'danger');
+            return;
+        }
+
+        $hasPackaging = !empty($summary['packaging']['items']);
+        $hasRaw = !empty($summary['raw']['items']);
+        $hasPackagingDamage = !empty($summary['packaging_damage']['items']);
+        $hasRawDamage = !empty($summary['raw_damage']['items']);
+
+        if (!$hasPackaging && !$hasRaw && !$hasPackagingDamage && !$hasRawDamage) {
+            dailyConsumptionSaveStatus(array_merge($statusData, [
+                'status' => 'completed_no_data',
+                'completed_at' => date('Y-m-d H:i:s'),
+                'message' => 'لا توجد بيانات استهلاك للفترة المحددة.',
+            ]));
+            dailyConsumptionNotifyManager('لا توجد بيانات استهلاك للفترة السابقة، لم يتم إرسال تقرير اليوم.', 'info');
+            return;
+        }
+
+        $meta = [
+            'title' => 'تقرير استهلاك الإنتاج',
+            'period' => 'الفترة: ' . $summary['date_from'] . ' - ' . $summary['date_to'],
+            'scope' => 'التقرير اليومي الآلي',
+            'file_prefix' => 'consumption_report',
+        ];
+
+        try {
+            $filePath = generateConsumptionPdf($summary, $meta);
+        } catch (Throwable $pdfError) {
+            dailyConsumptionSaveStatus(array_merge($statusData, [
+                'status' => 'failed',
+                'error' => $pdfError->getMessage(),
+            ]));
+            dailyConsumptionNotifyManager('تعذر إنشاء تقرير الاستهلاك اليومي: ' . $pdfError->getMessage(), 'danger');
+            return;
+        }
+
+        try {
+            require_once __DIR__ . '/simple_telegram.php';
+        } catch (Throwable $telegramIncludeError) {
+            error_log('Daily Consumption: failed including simple_telegram - ' . $telegramIncludeError->getMessage());
+            dailyConsumptionSaveStatus(array_merge($statusData, [
+                'status' => 'failed',
+                'error' => 'Unable to load Telegram module',
+                'file_path' => $filePath,
             ]));
             return;
         }
@@ -233,56 +289,91 @@ if (!function_exists('triggerDailyConsumptionReport')) {
             dailyConsumptionSaveStatus(array_merge($statusData, [
                 'status' => 'failed',
                 'error' => 'Telegram integration is not configured',
+                'file_path' => $filePath,
             ]));
             dailyConsumptionNotifyManager('تعذر إرسال تقرير الاستهلاك اليومي: إعدادات Telegram غير مكتملة.', 'danger');
             return;
         }
 
-        $result = sendConsumptionReport($targetDate, $targetDate, 'التقرير اليومي الآلي');
-        $success = (bool)($result['success'] ?? false);
-        $message = $result['message'] ?? ($success ? 'تم إرسال التقرير.' : 'تعذر إنشاء التقرير.');
+        $packCount = count($summary['packaging']['items']);
+        $rawCount = count($summary['raw']['items']);
+        $captionLines = [
+            "📊 تقرير الاستهلاك اليومي",
+            'الفترة: ' . $summary['date_from'] . ' - ' . $summary['date_to'],
+            'وقت الإعداد: ' . date('Y-m-d H:i:s'),
+        ];
+        if ($packCount > 0) {
+            $captionLines[] = 'عناصر التغليف: ' . $packCount;
+        }
+        if ($rawCount > 0) {
+            $captionLines[] = 'عناصر الخام: ' . $rawCount;
+        }
+        if (!empty($summary['packaging_damage']['items'])) {
+            $captionLines[] = 'بلاغات تالف تغليف: ' . count($summary['packaging_damage']['items']);
+        }
+        if (!empty($summary['raw_damage']['items'])) {
+            $captionLines[] = 'بلاغات تالف خام: ' . count($summary['raw_damage']['items']);
+        }
 
-        if ($success) {
-            try {
-                if ($jobState) {
-                    $db->execute(
-                        "UPDATE system_daily_jobs
-                         SET last_sent_at = NOW(), last_file_path = NULL, updated_at = NOW()
-                         WHERE job_key = ?",
-                        [DAILY_CONSUMPTION_JOB_KEY]
-                    );
-                } else {
-                    $db->execute(
-                        "INSERT INTO system_daily_jobs (job_key, last_sent_at, last_file_path)
-                         VALUES (?, NOW(), NULL)",
-                        [DAILY_CONSUMPTION_JOB_KEY]
-                    );
-                }
-            } catch (Throwable $logError) {
-                error_log('Daily Consumption: failed updating job log - ' . $logError->getMessage());
-            }
+        $caption = implode("\n", $captionLines);
+        $sent = sendTelegramFile($filePath, $caption);
 
-            dailyConsumptionSaveStatus([
-                'date' => $todayDate,
-                'target_date' => $targetDate,
-                'status' => 'completed',
-                'completed_at' => date('Y-m-d H:i:s'),
-                'message' => $message,
-            ]);
-
-            dailyConsumptionNotifyManager('تم إنشاء تقرير الاستهلاك اليومي وإرساله إلى Telegram بنجاح.');
+        if ($sent === false) {
+            dailyConsumptionSaveStatus(array_merge($statusData, [
+                'status' => 'failed',
+                'error' => 'فشل إرسال التقرير إلى Telegram',
+                'file_path' => $filePath,
+            ]));
+            dailyConsumptionNotifyManager('تعذر إرسال تقرير الاستهلاك اليومي: فشل إرسال الملف إلى Telegram.', 'danger');
             return;
+        }
+
+        $storedFilePath = (defined('REPORTS_AUTO_DELETE') && REPORTS_AUTO_DELETE) ? null : $filePath;
+        if (defined('REPORTS_AUTO_DELETE') && REPORTS_AUTO_DELETE && file_exists($filePath)) {
+            @unlink($filePath);
+        }
+
+        $fileLogValue = $storedFilePath ?? $filePath;
+        if (strlen($fileLogValue) > 510) {
+            $fileLogValue = substr($fileLogValue, -510);
+        }
+
+        try {
+            if ($jobState) {
+                $db->execute(
+                    "UPDATE system_daily_jobs
+                     SET last_sent_at = NOW(), last_file_path = ?, updated_at = NOW()
+                     WHERE job_key = ?",
+                    [$fileLogValue, DAILY_CONSUMPTION_JOB_KEY]
+                );
+            } else {
+                $db->execute(
+                    "INSERT INTO system_daily_jobs (job_key, last_sent_at, last_file_path)
+                     VALUES (?, NOW(), ?)",
+                    [DAILY_CONSUMPTION_JOB_KEY, $fileLogValue]
+                );
+            }
+        } catch (Throwable $logError) {
+            error_log('Daily Consumption: failed updating job log - ' . $logError->getMessage());
         }
 
         dailyConsumptionSaveStatus([
             'date' => $todayDate,
             'target_date' => $targetDate,
-            'status' => 'failed',
+            'status' => 'completed',
             'completed_at' => date('Y-m-d H:i:s'),
-            'error' => $message,
+            'message' => 'تم إرسال التقرير بنجاح.',
+                'file_path' => $storedFilePath,
+            'summary_totals' => [
+                'packaging_count' => $packCount,
+                'raw_count' => $rawCount,
+                'packaging_damage_count' => count($summary['packaging_damage']['items'] ?? []),
+                'raw_damage_count' => count($summary['raw_damage']['items'] ?? []),
+            ],
         ]);
 
-        dailyConsumptionNotifyManager('تعذر إرسال تقرير الاستهلاك اليومي: ' . $message, 'danger');
+        dailyConsumptionNotifyManager('تم إنشاء تقرير الاستهلاك اليومي وإرساله إلى Telegram بنجاح.');
+        return;
     }
 }
 
