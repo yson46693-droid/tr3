@@ -39,7 +39,12 @@ class SimpleWebAuthn {
      * تحويل Base64 إلى ArrayBuffer
      */
     base64ToArrayBuffer(base64) {
-        const binaryString = window.atob(base64);
+        if (typeof base64 !== 'string' || base64.length === 0) {
+            throw new Error('بيانات Base64 غير صالحة');
+        }
+
+        const normalized = this.normalizeBase64(base64);
+        const binaryString = window.atob(normalized);
         const bytes = new Uint8Array(binaryString.length);
         for (let i = 0; i < binaryString.length; i++) {
             bytes[i] = binaryString.charCodeAt(i);
@@ -57,6 +62,18 @@ class SimpleWebAuthn {
             binary += String.fromCharCode(bytes[i]);
         }
         return window.btoa(binary);
+    }
+
+    /**
+     * تحويل base64url إلى base64 عادي مع الحشو
+     */
+    normalizeBase64(value) {
+        let normalized = value.replace(/-/g, '+').replace(/_/g, '/').replace(/\s+/g, '');
+        const paddingNeeded = normalized.length % 4;
+        if (paddingNeeded) {
+            normalized += '='.repeat(4 - paddingNeeded);
+        }
+        return normalized;
     }
 
     /**
