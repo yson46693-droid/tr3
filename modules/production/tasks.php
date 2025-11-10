@@ -940,11 +940,17 @@ if (!function_exists('enforceTasksRetentionLimit')) {
 let tasksData = <?php echo json_encode($tasks); ?>;
 
 function toggleProductionFields() {
-    const taskType = document.getElementById('task_type').value;
+    const taskTypeInput = document.getElementById('task_type');
     const productionFields = document.getElementById('production_fields');
     const productId = document.getElementById('product_id');
     const quantity = document.getElementById('quantity');
     const taskTitle = document.getElementById('task_title');
+
+    if (!taskTypeInput || !productionFields || !productId || !quantity || !taskTitle) {
+        return;
+    }
+
+    const taskType = taskTypeInput.value;
     
     if (taskType === 'production') {
         productionFields.style.display = 'block';
@@ -966,6 +972,10 @@ function updateProductionTitle() {
     const quantity = document.getElementById('quantity');
     const taskTitle = document.getElementById('task_title');
     
+    if (!productId || !quantity || !taskTitle) {
+        return;
+    }
+
     if (productId.value > 0 && quantity.value > 0) {
         const productName = productId.options[productId.selectedIndex].text;
         taskTitle.value = 'إنتاج ' + productName + ' - ' + quantity.value + ' قطعة';
@@ -1096,4 +1106,5 @@ function hideTasksPageLoader() {
 
 document.addEventListener('DOMContentLoaded', hideTasksPageLoader);
 window.addEventListener('load', hideTasksPageLoader);
+setTimeout(hideTasksPageLoader, 1500);
 </script>

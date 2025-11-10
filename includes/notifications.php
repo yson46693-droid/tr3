@@ -33,6 +33,42 @@ if (!defined('ATTENDANCE_NOTIFICATION_CACHE_PREFIX')) {
 }
 
 /**
+ * تخزين حالة تذكيرات الحضور في الجلسة
+ */
+function getAttendanceSessionKey(int $userId, string $kind): string
+{
+    $today = date('Y-m-d');
+    return "attendance_notification_{$userId}_{$kind}_{$today}";
+}
+
+function sessionHasAttendanceNotification(int $userId, string $kind): bool
+{
+    if (session_status() !== PHP_SESSION_ACTIVE) {
+        return false;
+    }
+    $key = getAttendanceSessionKey($userId, $kind);
+    return !empty($_SESSION[$key]);
+}
+
+function sessionMarkAttendanceNotification(int $userId, string $kind): void
+{
+    if (session_status() !== PHP_SESSION_ACTIVE) {
+        return;
+    }
+    $key = getAttendanceSessionKey($userId, $kind);
+    $_SESSION[$key] = true;
+}
+
+function sessionClearAttendanceNotification(int $userId, string $kind): void
+{
+    if (session_status() !== PHP_SESSION_ACTIVE) {
+        return;
+    }
+    $key = getAttendanceSessionKey($userId, $kind);
+    unset($_SESSION[$key]);
+}
+
+/**
  * إنشاء إشعار جديد
  */
 function createNotification($userId, $title, $message, $type = 'info', $link = null, $sendTelegram = false) {
@@ -317,6 +353,10 @@ function hasAttendanceNotificationBeenSentToday(int $userId, string $kind): bool
         }
     }
 
+    if (sessionHasAttendanceNotification($userId, $kind)) {
+        return true;
+    }
+
     $db = db();
     $type = 'attendance_' . $kind;
     $today = date('Y-m-d');
@@ -347,6 +387,7 @@ function hasAttendanceNotificationBeenSentToday(int $userId, string $kind): bool
         if (function_exists('cache_set')) {
             cache_set(ATTENDANCE_NOTIFICATION_CACHE_PREFIX . $userId . ':' . $kind, $today, ATTENDANCE_NOTIFICATION_CACHE_TTL);
         }
+        sessionMarkAttendanceNotification($userId, $kind);
         return true;
     }
 
@@ -397,6 +438,8 @@ function markAttendanceNotificationSent(int $userId, string $kind): void
         $ttl = max(60, $secondsUntilTomorrow);
         cache_set(ATTENDANCE_NOTIFICATION_CACHE_PREFIX . $userId . ':' . $kind, $today, $ttl);
     }
+
+    sessionMarkAttendanceNotification($userId, $kind);
 }
 
 /**
@@ -419,6 +462,8 @@ function clearAttendanceNotificationLog(int $userId, string $kind): void
     if (function_exists('cache_delete')) {
         cache_delete(ATTENDANCE_NOTIFICATION_CACHE_PREFIX . $userId . ':' . $kind);
     }
+
+    sessionClearAttendanceNotification($userId, $kind);
 }
 
 /**

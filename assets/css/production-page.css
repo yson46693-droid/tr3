@@ -51,6 +51,7 @@
     padding: 1rem 1.1rem;
     flex: 1 1 auto;
     overflow-y: auto;
+    min-height: 0;
 }
 
 @media (max-width: 767.98px) {
