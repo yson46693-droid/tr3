@@ -12,11 +12,43 @@ require_once __DIR__ . '/config.php';
 require_once __DIR__ . '/db.php';
 
 /**
+ * التأكد من أن جدول سجل التدقيق يحتوي على الأعمدة المطلوبة
+ */
+function ensureAuditLogSchema($db) {
+    static $schemaValidated = false;
+
+    if ($schemaValidated) {
+        return;
+    }
+
+    try {
+        $columnsToEnsure = [
+            'old_value' => "ALTER TABLE audit_logs ADD COLUMN old_value LONGTEXT NULL AFTER entity_id",
+            'new_value' => "ALTER TABLE audit_logs ADD COLUMN new_value LONGTEXT NULL AFTER old_value",
+            'ip_address' => "ALTER TABLE audit_logs ADD COLUMN ip_address VARCHAR(45) NULL AFTER new_value",
+            'user_agent' => "ALTER TABLE audit_logs ADD COLUMN user_agent TEXT NULL AFTER ip_address",
+        ];
+
+        foreach ($columnsToEnsure as $columnName => $alterSql) {
+            $columnExists = $db->queryOne("SHOW COLUMNS FROM audit_logs LIKE ?", [$columnName]);
+            if (empty($columnExists)) {
+                $db->execute($alterSql);
+            }
+        }
+
+        $schemaValidated = true;
+    } catch (Exception $schemaError) {
+        error_log('Audit schema validation error: ' . $schemaError->getMessage());
+    }
+}
+
+/**
  * تسجيل عملية في سجل التدقيق
  */
 function logAudit($userId, $action, $entityType, $entityId = null, $oldValue = null, $newValue = null) {
     try {
         $db = db();
+        ensureAuditLogSchema($db);
         
         $ipAddress = $_SERVER['REMOTE_ADDR'] ?? null;
         $userAgent = $_SERVER['HTTP_USER_AGENT'] ?? null;
