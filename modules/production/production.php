@@ -3019,6 +3019,13 @@ document.addEventListener('DOMContentLoaded', function() {
             button.classList.add('active');
             button.setAttribute('aria-pressed', 'true');
             sections[target].classList.remove('d-none');
+
+            const scrollTarget = document.querySelector('.production-tab-toggle') || sections[target];
+            if (scrollTarget) {
+                scrollTarget.scrollIntoView({ behavior: 'smooth', block: 'start' });
+            } else {
+                window.scrollTo({ top: 0, behavior: 'smooth' });
+            }
         });
     });
 });
