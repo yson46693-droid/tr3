@@ -710,10 +710,22 @@ if (!function_exists('enforceTasksRetentionLimit')) {
 
 <script>
 (function () {
-    const pageLoader = document.getElementById('pageLoader');
-    if (pageLoader) {
-        pageLoader.remove();
+    function hidePageLoader() {
+        const pageLoader = document.getElementById('pageLoader');
+        if (!pageLoader) {
+            return;
+        }
+
+        pageLoader.classList.add('hidden');
+        pageLoader.style.opacity = '0';
+        pageLoader.style.visibility = 'hidden';
+        pageLoader.style.display = 'none';
     }
+
+    hidePageLoader();
+    document.addEventListener('readystatechange', hidePageLoader);
+    window.addEventListener('load', hidePageLoader);
+    window.addEventListener('pageshow', hidePageLoader);
 })();
 
 document.addEventListener('DOMContentLoaded', function () {
