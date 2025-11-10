@@ -420,6 +420,36 @@ function ensureProductTemplatesExtendedSchema($db): void
         error_log('ensureProductTemplatesExtendedSchema: failed adding index main_supplier_id -> ' . $e->getMessage());
     }
 
+    // إزالة أي علاقة قديمة مع جدول المنتجات إذا كانت موجودة
+    try {
+        $fkInfo = $db->queryOne("
+            SELECT CONSTRAINT_NAME 
+            FROM INFORMATION_SCHEMA.REFERENTIAL_CONSTRAINTS 
+            WHERE CONSTRAINT_SCHEMA = DATABASE() 
+              AND TABLE_NAME = 'product_templates' 
+              AND REFERENCED_TABLE_NAME = 'products'
+        ");
+        if (!empty($fkInfo['CONSTRAINT_NAME'])) {
+            $constraintName = $fkInfo['CONSTRAINT_NAME'];
+            $db->execute("ALTER TABLE `product_templates` DROP FOREIGN KEY `{$constraintName}`");
+        }
+    } catch (Exception $e) {
+        error_log('ensureProductTemplatesExtendedSchema: failed dropping old FK -> ' . $e->getMessage());
+    }
+
+    // التأكد من قابلية حقل product_id للرابط الاختياري فقط
+    try {
+        $productIdColumn = $db->queryOne("SHOW COLUMNS FROM `product_templates` LIKE 'product_id'");
+        if (!empty($productIdColumn)) {
+            $nullable = ($productIdColumn['Null'] ?? '') === 'YES';
+            if (!$nullable) {
+                $db->execute("ALTER TABLE `product_templates` MODIFY `product_id` int(11) NULL DEFAULT NULL");
+            }
+        }
+    } catch (Exception $e) {
+        error_log('ensureProductTemplatesExtendedSchema: failed updating product_id column -> ' . $e->getMessage());
+    }
+
     // تعيين قيمة افتراضية لأنواع القوالب القديمة
     try {
         $db->execute("UPDATE product_templates SET template_type = 'legacy' WHERE (template_type IS NULL OR template_type = '')");
