@@ -14,6 +14,7 @@ require_once __DIR__ . '/../includes/activity_summary.php';
 require_once __DIR__ . '/../includes/permissions.php';
 require_once __DIR__ . '/../includes/security.php';
 require_once __DIR__ . '/../includes/path_helper.php';
+require_once __DIR__ . '/../includes/table_styles.php';
 
 requireRole('manager');
 
@@ -262,8 +263,8 @@ $pageTitle = isset($lang['manager_dashboard']) ? $lang['manager_dashboard'] : '�
                         <h5 class="mb-0">الموافقات المعلقة (<?php echo $totalApprovals; ?>)</h5>
                     </div>
                     <div class="card-body">
-                        <div class="table-responsive">
-                            <table class="table table-striped">
+                        <div class="table-responsive dashboard-table-wrapper">
+                            <table class="table dashboard-table align-middle">
                                 <thead>
                                     <tr>
                                         <th>النوع</th>

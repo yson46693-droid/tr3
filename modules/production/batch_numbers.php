@@ -14,6 +14,7 @@ require_once __DIR__ . '/../../includes/path_helper.php';
 require_once __DIR__ . '/../../includes/batch_numbers.php';
 require_once __DIR__ . '/../../includes/simple_barcode.php';
 require_once __DIR__ . '/../../includes/audit_log.php';
+require_once __DIR__ . '/../../includes/table_styles.php';
 
 requireRole(['production', 'accountant', 'manager']);
 
@@ -189,7 +190,8 @@ if (isset($_GET['id'])) {
         <div class="card-body">
             <div class="row">
                 <div class="col-md-6">
-                    <table class="table table-bordered">
+                    <div class="table-responsive dashboard-table-wrapper">
+                        <table class="table dashboard-table dashboard-table--compact align-middle table-bordered">
                         <tr>
                             <th width="40%">المنتج:</th>
                             <td><?php echo htmlspecialchars($selectedBatch['product_name'] ?? '-'); ?></td>
@@ -231,7 +233,8 @@ if (isset($_GET['id'])) {
                                 </span>
                             </td>
                         </tr>
-                    </table>
+                        </table>
+                    </div>
                 </div>
                 <div class="col-md-6">
                     <h6>مواد التعبئة المستخدمة:</h6>
@@ -340,8 +343,8 @@ if (isset($_GET['id'])) {
         <h5 class="mb-0">قائمة أرقام التشغيلة (<?php echo $totalBatches; ?>)</h5>
     </div>
     <div class="card-body">
-        <div class="table-responsive">
-            <table class="table table-striped table-hover">
+        <div class="table-responsive dashboard-table-wrapper">
+            <table class="table dashboard-table align-middle">
                 <thead>
                     <tr>
                         <th>رقم التشغيلة</th>

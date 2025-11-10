@@ -385,9 +385,32 @@
 }
 
 #productionReportsSection {
+    display: block;
+}
+
+.production-report-layout {
+    display: grid;
+    gap: 1.5rem;
+    grid-template-columns: repeat(auto-fit, minmax(320px, 1fr));
+}
+
+.production-report-column {
     display: flex;
     flex-direction: column;
-    gap: 1.5rem;
+    gap: 1.25rem;
+}
+
+.production-report-card {
+    margin: 0 !important;
+}
+
+.production-report-card .card-body {
+    padding: 1.5rem;
+}
+
+.production-report-card .table-responsive {
+    margin: -0.25rem;
+    padding: 0.25rem;
 }
 
 #productionReportsSection .card {
@@ -445,6 +468,24 @@
 #productionReportsSection .table td {
     vertical-align: middle;
     font-size: 0.85rem;
+}
+
+@media (max-width: 992px) {
+    .production-report-layout {
+        grid-template-columns: 1fr;
+    }
+    .production-report-card .card-body {
+        padding: 1.25rem;
+    }
+}
+
+@media (max-width: 576px) {
+    .production-report-card .card-body {
+        padding: 1rem;
+    }
+    .production-summary-grid {
+        grid-template-columns: 1fr !important;
+    }
 }
 
 .card {
