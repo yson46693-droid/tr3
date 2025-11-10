@@ -565,17 +565,15 @@ if ($currentUser && $currentUserRole === 'sales') {
         <div class="homeline-topbar">
             <div class="topbar-left">
                 <!-- Mobile Menu Toggle -->
-                <?php if ($currentUserRole !== 'sales'): ?>
-                <button class="mobile-menu-toggle d-md-none" id="mobileMenuToggle" type="button">
-                    <i class="bi bi-list"></i>
-                </button>
-                <button class="mobile-reload-btn d-md-none" id="mobileReloadBtn" type="button">
-                    <i class="bi bi-arrow-clockwise"></i>
-                </button>
-                <?php endif; ?>
-                <button class="mobile-dark-toggle d-md-none" id="mobileDarkToggle" type="button">
-                    <i class="bi bi-moon-stars"></i>
-                </button>
+                 <button class="mobile-menu-toggle d-md-none" id="mobileMenuToggle" type="button">
+                     <i class="bi bi-list"></i>
+                 </button>
+                 <button class="mobile-reload-btn d-md-none" id="mobileReloadBtn" type="button">
+                     <i class="bi bi-arrow-clockwise"></i>
+                 </button>
+                 <button class="mobile-dark-toggle d-md-none" id="mobileDarkToggle" type="button">
+                     <i class="bi bi-moon-stars"></i>
+                 </button>
                 <div class="breadcrumb-nav">
                     <?php 
                     $pageTitleText = isset($pageTitle) ? $pageTitle : (isset($lang['dashboard']) ? $lang['dashboard'] : 'لوحة التحكم');
