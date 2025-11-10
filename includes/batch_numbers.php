@@ -10,7 +10,7 @@ if (!defined('ACCESS_ALLOWED')) {
 require_once __DIR__ . '/config.php';
 require_once __DIR__ . '/db.php';
 require_once __DIR__ . '/audit_log.php';
-
+require_once __DIR__ . '/batch_creation.php';
 /**
  * توليد رقم تشغيلة بالصيغة الجديدة المعتمدة على القالب والموردين.
  */
