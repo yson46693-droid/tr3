@@ -68,9 +68,10 @@ $baseUrl = getDashboardUrl();
             </li>
             
             <li class="nav-item">
-                <a class="nav-link" href="<?php echo $baseUrl; ?>sales.php?page=pos">
+                <a class="nav-link <?php echo (isset($_GET['page']) && $_GET['page'] === 'pos') ? 'active' : ''; ?>"
+                   href="<?php echo $baseUrl; ?>sales.php?page=pos">
                     <i class="bi bi-shop"></i>
-                    <span>نقطة البيع</span>
+                    <span><?php echo isset($lang['sales_pos']) ? $lang['sales_pos'] : 'نقطة البيع'; ?></span>
                 </a>
             </li>
             

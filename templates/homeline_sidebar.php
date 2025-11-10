@@ -283,6 +283,13 @@ switch ($role) {
                 'badge' => null
             ],
             [
+                'title' => isset($lang['sales_pos']) ? $lang['sales_pos'] : 'نقطة البيع',
+                'icon' => 'bi-shop',
+                'url' => $baseUrl . 'sales.php?page=pos',
+                'active' => ($currentPage === 'sales.php' && $currentPageParam === 'pos'),
+                'badge' => null
+            ],
+            [
                 'title' => isset($lang['returns_exchanges']) ? $lang['returns_exchanges'] : 'المرتجعات والاستبدال',
                 'icon' => 'bi-arrow-return-left',
                 'url' => $baseUrl . 'sales.php?page=returns',
