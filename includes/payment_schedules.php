@@ -339,6 +339,104 @@ function sendPaymentReminders($salesRepId = null) {
 }
 
 /**
+ * الحصول على جداول التحصيل المستحقة اليوم لمندوب معين
+ */
+function getTodayDuePaymentSchedules($salesRepId) {
+    if (!$salesRepId) {
+        return [];
+    }
+
+    try {
+        $db = db();
+        return $db->query(
+            "SELECT ps.id, ps.amount, ps.due_date, ps.status, ps.customer_id,
+                    c.name AS customer_name
+             FROM payment_schedules ps
+             LEFT JOIN customers c ON ps.customer_id = c.id
+             WHERE ps.sales_rep_id = ?
+               AND ps.status IN ('pending', 'overdue')
+               AND ps.due_date <= CURDATE()
+             ORDER BY ps.due_date ASC",
+            [$salesRepId]
+        );
+    } catch (Exception $e) {
+        error_log('Today due schedules fetch error: ' . $e->getMessage());
+        return [];
+    }
+}
+
+/**
+ * إرسال إشعارات بالتحصيلات المستحقة اليوم لمندوب المبيعات
+ */
+function notifyTodayPaymentSchedules($salesRepId) {
+    if (!$salesRepId) {
+        return;
+    }
+
+    try {
+        if (session_status() === PHP_SESSION_NONE) {
+            session_start();
+        }
+    } catch (Throwable $sessionError) {
+        // تجاهل أخطاء الجلسة بصمت ولكن الاستمرار بإرسال الإشعارات
+    }
+
+    $db = db();
+    $schedules = getTodayDuePaymentSchedules($salesRepId);
+    if (empty($schedules)) {
+        return;
+    }
+
+    foreach ($schedules as $schedule) {
+        $scheduleId = (int) ($schedule['id'] ?? 0);
+        if ($scheduleId <= 0) {
+            continue;
+        }
+
+        $link = getRelativeUrl('dashboard/sales.php?page=payment_schedules&id=' . $scheduleId);
+
+        try {
+            $existing = $db->queryOne(
+                "SELECT id FROM notifications 
+                 WHERE user_id = ? 
+                   AND type = 'payment_due' 
+                   AND DATE(created_at) = CURDATE()
+                   AND link = ?
+                 LIMIT 1",
+                [$salesRepId, $link]
+            );
+
+            if ($existing) {
+                continue;
+            }
+        } catch (Exception $checkError) {
+            error_log('Payment due notification check error: ' . $checkError->getMessage());
+        }
+
+        $customerName = $schedule['customer_name'] ?? 'عميل';
+        $amount = (float) ($schedule['amount'] ?? 0);
+        $dueDate = $schedule['due_date'] ?? date('Y-m-d');
+
+        $title = 'تذكير بالتحصيل اليوم';
+        $message = sprintf(
+            'موعد تحصيل مبلغ %s من العميل %s اليوم (%s).',
+            formatCurrency($amount),
+            $customerName,
+            formatDate($dueDate)
+        );
+
+        createNotification(
+            $salesRepId,
+            $title,
+            $message,
+            'payment_due',
+            $link,
+            false
+        );
+    }
+}
+
+/**
  * تحديث حالة الجداول المتأخرة
  */
 function updateOverdueSchedules() {

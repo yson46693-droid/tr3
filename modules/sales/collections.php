@@ -231,7 +231,7 @@ $customers = $db->query("SELECT id, name FROM customers WHERE status = 'active' 
 <div class="card shadow-sm mb-4">
     <div class="card-body">
         <form method="GET" action="" class="row g-3">
-            <input type="hidden" name="page" value="collections">
+            <input type="hidden" name="page" value="sales_collections">
             <div class="col-md-3">
                 <label class="form-label">العميل</label>
                 <select class="form-select" name="customer_id">
@@ -350,7 +350,7 @@ $customers = $db->query("SELECT id, name FROM customers WHERE status = 'active' 
                                 <?php endif; ?>
                                 <td><?php echo htmlspecialchars($collection['collected_by_name'] ?? '-'); ?></td>
                                 <td>
-                                    <a href="?page=collections&id=<?php echo $collection['id']; ?>" class="btn btn-sm btn-info">
+                                    <a href="?page=sales_collections&id=<?php echo $collection['id']; ?>" class="btn btn-sm btn-info">
                                         <i class="bi bi-eye"></i>
                                     </a>
                                 </td>
@@ -366,7 +366,7 @@ $customers = $db->query("SELECT id, name FROM customers WHERE status = 'active' 
         <nav aria-label="Page navigation" class="mt-3">
             <ul class="pagination justify-content-center">
                 <li class="page-item <?php echo $pageNum <= 1 ? 'disabled' : ''; ?>">
-                    <a class="page-link" href="?page=collections&p=<?php echo $pageNum - 1; ?>">
+                    <a class="page-link" href="?page=sales_collections&p=<?php echo $pageNum - 1; ?>">
                         <i class="bi bi-chevron-right"></i>
                     </a>
                 </li>
@@ -376,7 +376,7 @@ $customers = $db->query("SELECT id, name FROM customers WHERE status = 'active' 
                 $endPage = min($totalPages, $pageNum + 2);
                 
                 if ($startPage > 1): ?>
-                    <li class="page-item"><a class="page-link" href="?page=collections&p=1">1</a></li>
+                    <li class="page-item"><a class="page-link" href="?page=sales_collections&p=1">1</a></li>
                     <?php if ($startPage > 2): ?>
                         <li class="page-item disabled"><span class="page-link">...</span></li>
                     <?php endif; ?>
@@ -384,7 +384,7 @@ $customers = $db->query("SELECT id, name FROM customers WHERE status = 'active' 
                 
                 <?php for ($i = $startPage; $i <= $endPage; $i++): ?>
                     <li class="page-item <?php echo $i == $pageNum ? 'active' : ''; ?>">
-                        <a class="page-link" href="?page=collections&p=<?php echo $i; ?>"><?php echo $i; ?></a>
+                        <a class="page-link" href="?page=sales_collections&p=<?php echo $i; ?>"><?php echo $i; ?></a>
                     </li>
                 <?php endfor; ?>
                 
@@ -392,11 +392,11 @@ $customers = $db->query("SELECT id, name FROM customers WHERE status = 'active' 
                     <?php if ($endPage < $totalPages - 1): ?>
                         <li class="page-item disabled"><span class="page-link">...</span></li>
                     <?php endif; ?>
-                    <li class="page-item"><a class="page-link" href="?page=collections&p=<?php echo $totalPages; ?>"><?php echo $totalPages; ?></a></li>
+                    <li class="page-item"><a class="page-link" href="?page=sales_collections&p=<?php echo $totalPages; ?>"><?php echo $totalPages; ?></a></li>
                 <?php endif; ?>
                 
                 <li class="page-item <?php echo $pageNum >= $totalPages ? 'disabled' : ''; ?>">
-                    <a class="page-link" href="?page=collections&p=<?php echo $pageNum + 1; ?>">
+                    <a class="page-link" href="?page=sales_collections&p=<?php echo $pageNum + 1; ?>">
                         <i class="bi bi-chevron-left"></i>
                     </a>
                 </li>

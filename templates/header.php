@@ -18,6 +18,7 @@ require_once __DIR__ . '/../includes/auth.php';
 require_once __DIR__ . '/../includes/path_helper.php';
 require_once __DIR__ . '/../includes/notifications.php';
 require_once __DIR__ . '/../includes/packaging_alerts.php';
+require_once __DIR__ . '/../includes/payment_schedules.php';
 
 // تحديد اللغة الحالية
 $currentLang = getCurrentLanguage();
@@ -43,6 +44,14 @@ if ($currentUser && function_exists('handleAttendanceRemindersForUser')) {
 
 if (function_exists('processDailyPackagingAlert')) {
     processDailyPackagingAlert();
+}
+
+if ($currentUser && $currentUserRole === 'sales') {
+    try {
+        notifyTodayPaymentSchedules((int) $currentUser['id']);
+    } catch (Throwable $paymentNotificationError) {
+        error_log('Sales payment notification error: ' . $paymentNotificationError->getMessage());
+    }
 }
 ?>
 <!DOCTYPE html>
