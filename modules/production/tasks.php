@@ -1080,4 +1080,17 @@ function deleteTask(taskId) {
     document.body.appendChild(form);
     form.submit();
 }
+
+document.addEventListener('DOMContentLoaded', function() {
+    const pageLoader = document.getElementById('pageLoader');
+    if (pageLoader) {
+        pageLoader.style.display = 'none';
+        pageLoader.style.visibility = 'hidden';
+        pageLoader.classList.add('hidden');
+    }
+
+    if (typeof toggleProductionFields === 'function') {
+        toggleProductionFields();
+    }
+});
 </script>

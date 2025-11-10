@@ -547,18 +547,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     }
                 }
 
-                $extraMaterialIdsInput = $_POST['extra_material_ids'] ?? [];
-                $extraMaterialIds = [];
-                if (is_array($extraMaterialIdsInput)) {
-                    foreach ($extraMaterialIdsInput as $value) {
-                        $materialIdValue = intval($value);
-                        if ($materialIdValue > 0) {
-                            $extraMaterialIds[$materialIdValue] = true;
-                        }
-                    }
-                    $extraMaterialIds = array_keys($extraMaterialIds);
-                }
-
                 $extraSupplierIdsInput = $_POST['extra_supplier_ids'] ?? [];
                 $extraSupplierIds = [];
                 if (is_array($extraSupplierIdsInput)) {
@@ -1210,24 +1198,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     $workersList = [$selectedUserId];
                 }
                 
-                $extraMaterialsDetails = [];
-                if (!empty($extraMaterialIds)) {
-                    $materialPlaceholders = implode(',', array_fill(0, count($extraMaterialIds), '?'));
-                    $materialsResult = $db->query(
-                        "SELECT id, name, category FROM products WHERE id IN ($materialPlaceholders)",
-                        $extraMaterialIds
-                    );
-                    $materialsById = [];
-                    foreach ($materialsResult as $materialRow) {
-                        $materialsById[(int)($materialRow['id'] ?? 0)] = $materialRow;
-                    }
-                    foreach ($extraMaterialIds as $selectedMaterialId) {
-                        if (isset($materialsById[$selectedMaterialId])) {
-                            $extraMaterialsDetails[] = $materialsById[$selectedMaterialId];
-                        }
-                    }
-                }
-
                 $extraSuppliersDetails = [];
                 if (!empty($extraSupplierIds)) {
                     $supplierPlaceholders = implode(',', array_fill(0, count($extraSupplierIds), '?'));
@@ -1283,24 +1253,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                         $supplierNames[] = $supplier['name'] . ' (' . $supplier['material'] . ')';
                     }
                     $notesParts[] = 'الموردون: ' . implode(', ', $supplierNames);
-                }
-                
-                if (!empty($extraMaterialsDetails)) {
-                    $materialsLabels = [];
-                    foreach ($extraMaterialsDetails as $materialRow) {
-                        $label = $materialRow['name'] ?? '';
-                        $categoryLabel = $materialRow['category'] ?? '';
-                        if ($label === '') {
-                            $label = 'مادة #' . ($materialRow['id'] ?? '');
-                        }
-                        if ($categoryLabel !== '') {
-                            $label .= ' - ' . $categoryLabel;
-                        }
-                        $materialsLabels[] = $label;
-                    }
-                    if (!empty($materialsLabels)) {
-                        $notesParts[] = 'مواد إضافية: ' . implode(', ', $materialsLabels);
-                    }
                 }
 
                 if (!empty($extraSuppliersDetails)) {
@@ -2004,17 +1956,7 @@ $productionReportsMonthStart = date('Y-m-01');
 $productionReportsToday = getConsumptionSummary($productionReportsTodayDate, $productionReportsTodayDate);
 $productionReportsMonth = getConsumptionSummary($productionReportsMonthStart, $productionReportsTodayDate);
 
-$additionalMaterialsOptions = [];
 $additionalSuppliersOptions = [];
-try {
-    $additionalMaterialsOptions = $db->query(
-        "SELECT id, name, category FROM products WHERE status = 'active' ORDER BY name ASC"
-    );
-} catch (Exception $e) {
-    error_log('Failed to load production materials list: ' . $e->getMessage());
-    $additionalMaterialsOptions = [];
-}
-
 try {
     $suppliersStatusColumnCheck = $db->queryOne("SHOW COLUMNS FROM suppliers LIKE 'status'");
     if (!empty($suppliersStatusColumnCheck)) {
@@ -2031,7 +1973,6 @@ try {
     $additionalSuppliersOptions = [];
 }
 
-$additionalMaterialsSelectSize = max(4, min(10, count($additionalMaterialsOptions)));
 $additionalSuppliersSelectSize = max(4, min(10, count($additionalSuppliersOptions)));
 
 if (!function_exists('productionPageRenderConsumptionTable')) {
@@ -2581,38 +2522,16 @@ $lang = isset($translations) ? $translations : [];
                             <i class="bi bi-list-check me-2"></i>معلومات إضافية (اختياري)
                         </h6>
                         <div class="row g-3">
-                            <div class="col-md-6">
-                                <label class="form-label fw-bold">مواد أخرى مشاركة</label>
-                                <?php if (!empty($additionalMaterialsOptions)): ?>
-                                    <select id="extraMaterialsSelect"
-                                            name="extra_material_ids[]"
-                                            class="form-select"
-                                            multiple
-                                            size="<?php echo (int)$additionalMaterialsSelectSize; ?>">
-                                        <?php foreach ($additionalMaterialsOptions as $option): ?>
-                                            <?php
-                                            $materialId = (int)($option['id'] ?? 0);
-                                            $materialName = trim((string)($option['name'] ?? ''));
-                                            $materialCategory = trim((string)($option['category'] ?? ''));
-                                            if ($materialName === '') {
-                                                $materialName = 'مادة #' . $materialId;
-                                            }
-                                            $materialLabel = $materialName;
-                                            if ($materialCategory !== '') {
-                                                $materialLabel .= ' - ' . $materialCategory;
-                                            }
-                                            ?>
-                                            <option value="<?php echo $materialId; ?>">
-                                                <?php echo htmlspecialchars($materialLabel, ENT_QUOTES, 'UTF-8'); ?>
-                                            </option>
-                                        <?php endforeach; ?>
-                                    </select>
-                                    <small class="text-muted">يمكن اختيار أكثر من مادة بالضغط مع الاستمرار على زر Ctrl أو Shift.</small>
-                                <?php else: ?>
-                                    <div class="form-control-plaintext text-muted">لا توجد مواد متاحة للاختيار حالياً.</div>
-                                <?php endif; ?>
+                            <div class="col-12">
+                                <label class="form-label fw-bold d-flex align-items-center gap-2">
+                                    <i class="bi bi-diagram-3 text-primary"></i>
+                                    المواد المستخدمة في القالب
+                                </label>
+                                <div id="templateMaterialsInfo" class="template-materials-info">
+                                    <div class="text-muted small">سيتم عرض المواد والمقادير الخاصة بالقالب بعد اختيار قالب الإنتاج.</div>
+                                </div>
                             </div>
-                            <div class="col-md-6">
+                            <div class="col-12 col-md-6">
                                 <label class="form-label fw-bold">موردون إضافيون</label>
                                 <?php if (!empty($additionalSuppliersOptions)): ?>
                                     <select id="extraSuppliersSelect"
@@ -3119,6 +3038,7 @@ function renderTemplateSuppliers(details) {
     const hintText = document.getElementById('templateSuppliersHint');
     const summaryWrapper = document.getElementById('templateComponentsSummary');
     const summaryGrid = document.getElementById('templateComponentsSummaryGrid');
+    const materialsInfoBox = document.getElementById('templateMaterialsInfo');
 
     if (!container || !wrapper || !modeInput) {
         return;
@@ -3135,6 +3055,9 @@ function renderTemplateSuppliers(details) {
     }
 
     if (components.length === 0) {
+        if (materialsInfoBox) {
+            materialsInfoBox.innerHTML = '<div class="text-muted small">لا توجد مواد مرتبطة بهذا القالب حالياً.</div>';
+        }
         wrapper.classList.remove('d-none');
         container.innerHTML = `
             <div class="col-12">
@@ -3210,6 +3133,67 @@ function renderTemplateSuppliers(details) {
         raw_general: 'bi-diagram-3',
         generic: 'bi-diagram-2'
     };
+
+    const formatComponentQuantity = (component) => {
+        if (!component) {
+            return 'غير محدد';
+        }
+        const quantityDisplay = component.quantity_display || component.quantity_label || component.quantity_text;
+        if (quantityDisplay && String(quantityDisplay).trim() !== '') {
+            return quantityDisplay;
+        }
+        const unit = component.unit || component.unit_label || component.unit_name || '';
+        const numericSource = component.quantity_per_unit ?? component.quantity ?? component.amount ?? null;
+        if (numericSource !== null && numericSource !== undefined) {
+            const numericValue = Number(numericSource);
+            if (!Number.isNaN(numericValue)) {
+                const formatted = numericValue.toLocaleString('ar-EG', {
+                    minimumFractionDigits: 0,
+                    maximumFractionDigits: 3
+                });
+                return unit ? `${formatted} ${unit}` : formatted;
+            }
+            const rawString = String(numericSource).trim();
+            if (rawString !== '') {
+                return unit ? `${rawString} ${unit}` : rawString;
+            }
+        }
+        return unit !== '' ? unit : 'غير محدد';
+    };
+
+    if (materialsInfoBox) {
+        const infoItemsHtml = components.map((component, index) => {
+            const canonicalType = determineComponentType(component);
+            const typeLabel = typeLabelsMap[canonicalType] || typeLabelsMap.generic;
+            const quantityLabel = formatComponentQuantity(component);
+            const description = component.description || component.details || '';
+            const name = component.name || component.label || `مكوّن رقم ${index + 1}`;
+            return `
+                <div class="materials-info-item">
+                    <div class="materials-info-header">
+                        <span class="materials-info-name">${name}</span>
+                        <span class="materials-info-type badge bg-light text-primary border">
+                            ${typeLabel}
+                        </span>
+                    </div>
+                    <div class="materials-info-meta text-muted">
+                        <i class="bi bi-basket me-1"></i>
+                        <span>الكمية لكل تشغيلة: ${quantityLabel}</span>
+                    </div>
+                    ${description ? `<div class="materials-info-note text-muted">${description}</div>` : ''}
+                </div>
+            `;
+        }).join('');
+
+        materialsInfoBox.innerHTML = `
+            <div class="materials-info-summary text-muted mb-2">
+                تم تحميل ${components.length} من المواد والمكوّنات الخاصة بالقالب المحدد.
+            </div>
+            <div class="materials-info-list">
+                ${infoItemsHtml}
+            </div>
+        `;
+    }
 
     const stats = {
         total: components.length,
@@ -3501,17 +3485,15 @@ function openCreateFromTemplateModal(element) {
     document.getElementById('template_product_name').value = templateName;
     document.getElementById('template_type').value = templateType;
     
-    const extraMaterialsSelect = document.getElementById('extraMaterialsSelect');
-    if (extraMaterialsSelect) {
-        Array.from(extraMaterialsSelect.options).forEach(option => {
-            option.selected = false;
-        });
-    }
     const extraSuppliersSelect = document.getElementById('extraSuppliersSelect');
     if (extraSuppliersSelect) {
         Array.from(extraSuppliersSelect.options).forEach(option => {
             option.selected = false;
         });
+    }
+    const materialsInfoBox = document.getElementById('templateMaterialsInfo');
+    if (materialsInfoBox) {
+        materialsInfoBox.innerHTML = '<div class="text-muted small">سيتم عرض المواد والمقادير الخاصة بالقالب بعد اختيار قالب الإنتاج.</div>';
     }
 
     const wrapper = document.getElementById('templateSuppliersWrapper');
