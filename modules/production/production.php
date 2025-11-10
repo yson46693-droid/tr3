@@ -547,6 +547,30 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     }
                 }
 
+                $extraMaterialIdsInput = $_POST['extra_material_ids'] ?? [];
+                $extraMaterialIds = [];
+                if (is_array($extraMaterialIdsInput)) {
+                    foreach ($extraMaterialIdsInput as $value) {
+                        $materialIdValue = intval($value);
+                        if ($materialIdValue > 0) {
+                            $extraMaterialIds[$materialIdValue] = true;
+                        }
+                    }
+                    $extraMaterialIds = array_keys($extraMaterialIds);
+                }
+
+                $extraSupplierIdsInput = $_POST['extra_supplier_ids'] ?? [];
+                $extraSupplierIds = [];
+                if (is_array($extraSupplierIdsInput)) {
+                    foreach ($extraSupplierIdsInput as $value) {
+                        $supplierIdValue = intval($value);
+                        if ($supplierIdValue > 0) {
+                            $extraSupplierIds[$supplierIdValue] = true;
+                        }
+                    }
+                    $extraSupplierIds = array_keys($extraSupplierIds);
+                }
+
                 if (empty($materialSuppliers)) {
                     throw new Exception('يرجى اختيار المورد المحاسب لهذه المادة قبل إنشاء التشغيلة.');
                 }
@@ -1186,6 +1210,68 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     $workersList = [$selectedUserId];
                 }
                 
+                $extraMaterialsDetails = [];
+                if (!empty($extraMaterialIds)) {
+                    $materialPlaceholders = implode(',', array_fill(0, count($extraMaterialIds), '?'));
+                    $materialsResult = $db->query(
+                        "SELECT id, name, category FROM products WHERE id IN ($materialPlaceholders)",
+                        $extraMaterialIds
+                    );
+                    $materialsById = [];
+                    foreach ($materialsResult as $materialRow) {
+                        $materialsById[(int)($materialRow['id'] ?? 0)] = $materialRow;
+                    }
+                    foreach ($extraMaterialIds as $selectedMaterialId) {
+                        if (isset($materialsById[$selectedMaterialId])) {
+                            $extraMaterialsDetails[] = $materialsById[$selectedMaterialId];
+                        }
+                    }
+                }
+
+                $extraSuppliersDetails = [];
+                if (!empty($extraSupplierIds)) {
+                    $supplierPlaceholders = implode(',', array_fill(0, count($extraSupplierIds), '?'));
+                    $suppliersResult = $db->query(
+                        "SELECT id, name, type FROM suppliers WHERE id IN ($supplierPlaceholders)",
+                        $extraSupplierIds
+                    );
+                    $suppliersById = [];
+                    foreach ($suppliersResult as $supplierRow) {
+                        $suppliersById[(int)($supplierRow['id'] ?? 0)] = $supplierRow;
+                    }
+                    foreach ($extraSupplierIds as $selectedSupplierId) {
+                        if (isset($suppliersById[$selectedSupplierId])) {
+                            $extraSuppliersDetails[] = $suppliersById[$selectedSupplierId];
+                        }
+                    }
+                }
+
+                if (!empty($extraSuppliersDetails)) {
+                    $existingSupplierIds = [];
+                    foreach ($allSuppliers as $supplierEntry) {
+                        if (isset($supplierEntry['id']) && $supplierEntry['id']) {
+                            $existingSupplierIds[(int)$supplierEntry['id']] = true;
+                        }
+                    }
+
+                    foreach ($extraSuppliersDetails as $supplierRow) {
+                        $supplierIdValue = (int)($supplierRow['id'] ?? 0);
+                        if ($supplierIdValue > 0 && isset($existingSupplierIds[$supplierIdValue])) {
+                            continue;
+                        }
+                        if ($supplierIdValue > 0) {
+                            $existingSupplierIds[$supplierIdValue] = true;
+                        }
+                        $allSuppliers[] = [
+                            'id' => $supplierIdValue > 0 ? $supplierIdValue : null,
+                            'name' => $supplierRow['name'] ?? 'مورد إضافي',
+                            'type' => $supplierRow['type'] ?? null,
+                            'material' => 'مورد إضافي (اختياري)',
+                            'context' => 'manual_extra_supplier'
+                        ];
+                    }
+                }
+
                 // 4. الملاحظات: توليد ملاحظات تلقائية تذكر الموردين
                 $batchNotes = '';
                 $notesParts = ['تم إنشاؤه من قالب: ' . $template['product_name']];
@@ -1199,6 +1285,42 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     $notesParts[] = 'الموردون: ' . implode(', ', $supplierNames);
                 }
                 
+                if (!empty($extraMaterialsDetails)) {
+                    $materialsLabels = [];
+                    foreach ($extraMaterialsDetails as $materialRow) {
+                        $label = $materialRow['name'] ?? '';
+                        $categoryLabel = $materialRow['category'] ?? '';
+                        if ($label === '') {
+                            $label = 'مادة #' . ($materialRow['id'] ?? '');
+                        }
+                        if ($categoryLabel !== '') {
+                            $label .= ' - ' . $categoryLabel;
+                        }
+                        $materialsLabels[] = $label;
+                    }
+                    if (!empty($materialsLabels)) {
+                        $notesParts[] = 'مواد إضافية: ' . implode(', ', $materialsLabels);
+                    }
+                }
+
+                if (!empty($extraSuppliersDetails)) {
+                    $manualSupplierLabels = [];
+                    foreach ($extraSuppliersDetails as $supplierRow) {
+                        $label = $supplierRow['name'] ?? '';
+                        $typeLabel = $supplierRow['type'] ?? '';
+                        if ($label === '') {
+                            $label = 'مورد #' . ($supplierRow['id'] ?? '');
+                        }
+                        if ($typeLabel !== '') {
+                            $label .= ' (' . $typeLabel . ')';
+                        }
+                        $manualSupplierLabels[] = $label;
+                    }
+                    if (!empty($manualSupplierLabels)) {
+                        $notesParts[] = 'موردون إضافيون: ' . implode(', ', $manualSupplierLabels);
+                    }
+                }
+
                 $batchNotes = implode(' | ', $notesParts);
                 
                 // إنشاء سجل إنتاج واحد للتشغيلة
@@ -1882,6 +2004,36 @@ $productionReportsMonthStart = date('Y-m-01');
 $productionReportsToday = getConsumptionSummary($productionReportsTodayDate, $productionReportsTodayDate);
 $productionReportsMonth = getConsumptionSummary($productionReportsMonthStart, $productionReportsTodayDate);
 
+$additionalMaterialsOptions = [];
+$additionalSuppliersOptions = [];
+try {
+    $additionalMaterialsOptions = $db->query(
+        "SELECT id, name, category FROM products WHERE status = 'active' ORDER BY name ASC"
+    );
+} catch (Exception $e) {
+    error_log('Failed to load production materials list: ' . $e->getMessage());
+    $additionalMaterialsOptions = [];
+}
+
+try {
+    $suppliersStatusColumnCheck = $db->queryOne("SHOW COLUMNS FROM suppliers LIKE 'status'");
+    if (!empty($suppliersStatusColumnCheck)) {
+        $additionalSuppliersOptions = $db->query(
+            "SELECT id, name, type FROM suppliers WHERE status = 'active' ORDER BY name ASC"
+        );
+    } else {
+        $additionalSuppliersOptions = $db->query(
+            "SELECT id, name, type FROM suppliers ORDER BY name ASC"
+        );
+    }
+} catch (Exception $e) {
+    error_log('Failed to load suppliers list: ' . $e->getMessage());
+    $additionalSuppliersOptions = [];
+}
+
+$additionalMaterialsSelectSize = max(4, min(10, count($additionalMaterialsOptions)));
+$additionalSuppliersSelectSize = max(4, min(10, count($additionalSuppliersOptions)));
+
 if (!function_exists('productionPageRenderConsumptionTable')) {
     function productionPageRenderConsumptionTable(array $items, bool $includeCategory = false): void
     {
@@ -2421,6 +2573,77 @@ $lang = isset($translations) ? $translations : [];
                         </h6>
                         <p class="text-muted small mb-3" id="templateSuppliersHint">يرجى اختيار المورد المناسب لكل مادة سيتم استخدامها في هذه التشغيلة.</p>
                         <div class="row g-3" id="templateSuppliersContainer"></div>
+                    </div>
+
+                    <!-- معلومات إضافية اختيارية -->
+                    <div class="mb-3 section-block">
+                        <h6 class="text-primary section-heading">
+                            <i class="bi bi-list-check me-2"></i>معلومات إضافية (اختياري)
+                        </h6>
+                        <div class="row g-3">
+                            <div class="col-md-6">
+                                <label class="form-label fw-bold">مواد أخرى مشاركة</label>
+                                <?php if (!empty($additionalMaterialsOptions)): ?>
+                                    <select id="extraMaterialsSelect"
+                                            name="extra_material_ids[]"
+                                            class="form-select"
+                                            multiple
+                                            size="<?php echo (int)$additionalMaterialsSelectSize; ?>">
+                                        <?php foreach ($additionalMaterialsOptions as $option): ?>
+                                            <?php
+                                            $materialId = (int)($option['id'] ?? 0);
+                                            $materialName = trim((string)($option['name'] ?? ''));
+                                            $materialCategory = trim((string)($option['category'] ?? ''));
+                                            if ($materialName === '') {
+                                                $materialName = 'مادة #' . $materialId;
+                                            }
+                                            $materialLabel = $materialName;
+                                            if ($materialCategory !== '') {
+                                                $materialLabel .= ' - ' . $materialCategory;
+                                            }
+                                            ?>
+                                            <option value="<?php echo $materialId; ?>">
+                                                <?php echo htmlspecialchars($materialLabel, ENT_QUOTES, 'UTF-8'); ?>
+                                            </option>
+                                        <?php endforeach; ?>
+                                    </select>
+                                    <small class="text-muted">يمكن اختيار أكثر من مادة بالضغط مع الاستمرار على زر Ctrl أو Shift.</small>
+                                <?php else: ?>
+                                    <div class="form-control-plaintext text-muted">لا توجد مواد متاحة للاختيار حالياً.</div>
+                                <?php endif; ?>
+                            </div>
+                            <div class="col-md-6">
+                                <label class="form-label fw-bold">موردون إضافيون</label>
+                                <?php if (!empty($additionalSuppliersOptions)): ?>
+                                    <select id="extraSuppliersSelect"
+                                            name="extra_supplier_ids[]"
+                                            class="form-select"
+                                            multiple
+                                            size="<?php echo (int)$additionalSuppliersSelectSize; ?>">
+                                        <?php foreach ($additionalSuppliersOptions as $option): ?>
+                                            <?php
+                                            $supplierId = (int)($option['id'] ?? 0);
+                                            $supplierName = trim((string)($option['name'] ?? ''));
+                                            $supplierType = trim((string)($option['type'] ?? ''));
+                                            if ($supplierName === '') {
+                                                $supplierName = 'مورد #' . $supplierId;
+                                            }
+                                            $supplierLabel = $supplierName;
+                                            if ($supplierType !== '') {
+                                                $supplierLabel .= ' (' . $supplierType . ')';
+                                            }
+                                            ?>
+                                            <option value="<?php echo $supplierId; ?>">
+                                                <?php echo htmlspecialchars($supplierLabel, ENT_QUOTES, 'UTF-8'); ?>
+                                            </option>
+                                        <?php endforeach; ?>
+                                    </select>
+                                    <small class="text-muted">استخدم التحديد المتعدد لتعيين أكثر من مورد مشارك.</small>
+                                <?php else: ?>
+                                    <div class="form-control-plaintext text-muted">لا توجد بيانات موردين إضافية متاحة.</div>
+                                <?php endif; ?>
+                            </div>
+                        </div>
                     </div>
                     
                     <!-- عمال الإنتاج الحاضرون -->
@@ -3278,6 +3501,19 @@ function openCreateFromTemplateModal(element) {
     document.getElementById('template_product_name').value = templateName;
     document.getElementById('template_type').value = templateType;
     
+    const extraMaterialsSelect = document.getElementById('extraMaterialsSelect');
+    if (extraMaterialsSelect) {
+        Array.from(extraMaterialsSelect.options).forEach(option => {
+            option.selected = false;
+        });
+    }
+    const extraSuppliersSelect = document.getElementById('extraSuppliersSelect');
+    if (extraSuppliersSelect) {
+        Array.from(extraSuppliersSelect.options).forEach(option => {
+            option.selected = false;
+        });
+    }
+
     const wrapper = document.getElementById('templateSuppliersWrapper');
     const container = document.getElementById('templateSuppliersContainer');
     const modeInput = document.getElementById('template_mode');
