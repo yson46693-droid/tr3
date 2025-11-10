@@ -131,6 +131,117 @@ function checkMaterialsAvailability($db, $templateId, $productionQuantity) {
         }
     }
 
+    $normalizeMaterialType = static function ($type, string $materialName): string {
+        $normalizedType = '';
+        if (is_string($type)) {
+            $normalizedType = mb_strtolower(trim($type), 'UTF-8');
+        }
+
+        if ($normalizedType === '') {
+            $nameNormalized = mb_strtolower(trim($materialName), 'UTF-8');
+
+            if ($nameNormalized !== '') {
+                if (mb_strpos($nameNormalized, 'زيت زيتون') !== false || mb_strpos($nameNormalized, 'olive oil') !== false) {
+                    return 'olive_oil';
+                }
+                if (mb_strpos($nameNormalized, 'عسل') !== false || mb_strpos($nameNormalized, 'honey') !== false) {
+                    return 'honey';
+                }
+                if (mb_strpos($nameNormalized, 'شمع') !== false || mb_strpos($nameNormalized, 'beeswax') !== false) {
+                    return 'beeswax';
+                }
+                if (mb_strpos($nameNormalized, 'مشتق') !== false || mb_strpos($nameNormalized, 'derivative') !== false) {
+                    return 'derivatives';
+                }
+                if (mb_strpos($nameNormalized, 'مكسرات') !== false || mb_strpos($nameNormalized, 'nuts') !== false) {
+                    return 'nuts';
+                }
+            }
+        } elseif (in_array($normalizedType, ['honey_raw', 'honey_filtered', 'honey', 'olive_oil', 'beeswax', 'derivatives', 'nuts'], true)) {
+            return $normalizedType;
+        }
+
+        return $normalizedType !== '' ? $normalizedType : 'other';
+    };
+
+    $checkStock = static function (string $table, string $column, ?int $supplierId = null) use ($db): float {
+        $sql = "SELECT SUM({$column}) AS total_quantity FROM {$table}";
+        $params = [];
+        if ($supplierId) {
+            $sql .= " WHERE supplier_id = ?";
+            $params[] = $supplierId;
+        }
+        $stockRow = $db->queryOne($sql, $params);
+        return (float)($stockRow['total_quantity'] ?? 0);
+    };
+
+    $resolveSpecialStock = static function (?string $materialType, ?int $supplierId, string $materialName) use ($db, $checkStock, $normalizeMaterialType): array {
+        $resolved = false;
+        $availableQuantity = 0.0;
+        $normalizedType = $normalizeMaterialType($materialType, $materialName);
+
+        switch ($normalizedType) {
+            case 'honey_raw':
+            case 'honey_filtered':
+            case 'honey':
+                $honeyStockExists = $db->queryOne("SHOW TABLES LIKE 'honey_stock'");
+                if (!empty($honeyStockExists)) {
+                    $column = ($normalizedType === 'honey_raw') ? 'raw_honey_quantity' : 'filtered_honey_quantity';
+                    $availableQuantity = $checkStock('honey_stock', $column, $supplierId);
+                    $resolved = true;
+                }
+                break;
+            case 'olive_oil':
+                $oliveTableExists = $db->queryOne("SHOW TABLES LIKE 'olive_oil_stock'");
+                if (!empty($oliveTableExists)) {
+                    $availableQuantity = $checkStock('olive_oil_stock', 'quantity', $supplierId);
+                    $resolved = true;
+                }
+                break;
+            case 'beeswax':
+                $beeswaxTableExists = $db->queryOne("SHOW TABLES LIKE 'beeswax_stock'");
+                if (!empty($beeswaxTableExists)) {
+                    $availableQuantity = $checkStock('beeswax_stock', 'weight', $supplierId);
+                    $resolved = true;
+                }
+                break;
+            case 'derivatives':
+                $derivativesTableExists = $db->queryOne("SHOW TABLES LIKE 'derivatives_stock'");
+                if (!empty($derivativesTableExists)) {
+                    $availableQuantity = $checkStock('derivatives_stock', 'weight', $supplierId);
+                    $resolved = true;
+                }
+                break;
+            case 'nuts':
+                $nutsTableExists = $db->queryOne("SHOW TABLES LIKE 'nuts_stock'");
+                if (!empty($nutsTableExists)) {
+                    $availableQuantity = $checkStock('nuts_stock', 'quantity', $supplierId);
+                    $resolved = true;
+                }
+                break;
+            default:
+                if ($supplierId) {
+                    $genericStockTableExists = $db->queryOne("SHOW TABLES LIKE 'raw_materials'");
+                    if (!empty($genericStockTableExists)) {
+                        $stockRow = $db->queryOne(
+                            "SELECT SUM(quantity) AS total_quantity 
+                             FROM raw_materials 
+                             WHERE supplier_id = ?",
+                            [$supplierId]
+                        );
+                        $availableQuantity = (float)($stockRow['total_quantity'] ?? 0);
+                        $resolved = true;
+                    }
+                }
+                break;
+        }
+
+        return [
+            'resolved' => $resolved,
+            'quantity' => $availableQuantity,
+        ];
+    };
+
     $rawMaterials = $db->query(
         "SELECT material_name, quantity_per_unit, unit 
          FROM product_template_raw_materials 
@@ -155,6 +266,14 @@ function checkMaterialsAvailability($db, $templateId, $productionQuantity) {
         
         if ($product) {
             $availableQuantity = floatval($product['quantity'] ?? 0);
+
+            if ($availableQuantity < $requiredQuantity) {
+                $specialStock = $resolveSpecialStock($materialTypeMeta, $materialSupplierMeta, $materialName);
+                if ($specialStock['resolved']) {
+                    $availableQuantity += $specialStock['quantity'];
+                }
+            }
+
             if ($availableQuantity < $requiredQuantity) {
                 $insufficientMaterials[] = [
                     'name' => $materialName,
@@ -165,79 +284,9 @@ function checkMaterialsAvailability($db, $templateId, $productionQuantity) {
                 ];
             }
         } else {
-            $resolved = false;
-            $availableQuantity = 0.0;
-
-            $checkStock = function(string $table, string $column, ?int $supplierId = null) use ($db) {
-                $sql = "SELECT SUM({$column}) AS total_quantity FROM {$table}";
-                $params = [];
-                if ($supplierId) {
-                    $sql .= " WHERE supplier_id = ?";
-                    $params[] = $supplierId;
-                }
-                $stockRow = $db->queryOne($sql, $params);
-                return (float)($stockRow['total_quantity'] ?? 0);
-            };
-
-            $materialTypeMeta = $materialTypeMeta ?: 'other';
-
-            switch ($materialTypeMeta) {
-                case 'honey_raw':
-                case 'honey_filtered':
-                case 'honey':
-                    $honeyStockExists = $db->queryOne("SHOW TABLES LIKE 'honey_stock'");
-                    if (!empty($honeyStockExists)) {
-                        $column = ($materialTypeMeta === 'honey_raw') ? 'raw_honey_quantity' : 'filtered_honey_quantity';
-                        $availableQuantity = $checkStock('honey_stock', $column, $materialSupplierMeta);
-                        $resolved = true;
-                    }
-                    break;
-                case 'olive_oil':
-                    $oliveTableExists = $db->queryOne("SHOW TABLES LIKE 'olive_oil_stock'");
-                    if (!empty($oliveTableExists)) {
-                        $availableQuantity = $checkStock('olive_oil_stock', 'quantity', $materialSupplierMeta);
-                        $resolved = true;
-                    }
-                    break;
-                case 'beeswax':
-                    $beeswaxTableExists = $db->queryOne("SHOW TABLES LIKE 'beeswax_stock'");
-                    if (!empty($beeswaxTableExists)) {
-                        $availableQuantity = $checkStock('beeswax_stock', 'weight', $materialSupplierMeta);
-                        $resolved = true;
-                    }
-                    break;
-                case 'derivatives':
-                    $derivativesTableExists = $db->queryOne("SHOW TABLES LIKE 'derivatives_stock'");
-                    if (!empty($derivativesTableExists)) {
-                        $availableQuantity = $checkStock('derivatives_stock', 'weight', $materialSupplierMeta);
-                        $resolved = true;
-                    }
-                    break;
-                case 'nuts':
-                    $nutsTableExists = $db->queryOne("SHOW TABLES LIKE 'nuts_stock'");
-                    if (!empty($nutsTableExists)) {
-                        $availableQuantity = $checkStock('nuts_stock', 'quantity', $materialSupplierMeta);
-                        $resolved = true;
-                    }
-                    break;
-                default:
-                    if ($materialSupplierMeta) {
-                        $genericStockTableExists = $db->queryOne("SHOW TABLES LIKE 'raw_materials'");
-                        if (!empty($genericStockTableExists)) {
-                            $stockRow = $db->queryOne(
-                                "SELECT SUM(quantity) AS total_quantity 
-                                 FROM raw_materials 
-                                 WHERE supplier_id = ?",
-                                [$materialSupplierMeta]
-                            );
-                            $availableQuantity = (float)($stockRow['total_quantity'] ?? 0);
-                            $resolved = true;
-                        }
-                    }
-                    break;
-            }
-
-            if ($resolved) {
+            $specialStock = $resolveSpecialStock($materialTypeMeta, $materialSupplierMeta, $materialName);
+            if ($specialStock['resolved']) {
+                $availableQuantity = $specialStock['quantity'];
                 if ($availableQuantity < $requiredQuantity) {
                     $insufficientMaterials[] = [
                         'name' => $materialName,

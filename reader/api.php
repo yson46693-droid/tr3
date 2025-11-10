@@ -161,7 +161,20 @@ if ($db) {
 }
 
 try {
-    $batch = getBatchByNumber($batchNumber);
+    $batch = $db->queryOne(
+        "SELECT 
+            b.*,
+            COALESCE(fp.product_name, p.name) AS product_name,
+            p.category AS product_category,
+            fp.quantity_produced
+         FROM batches b
+         LEFT JOIN finished_products fp ON fp.batch_id = b.id
+         LEFT JOIN products p ON p.id = b.product_id
+         WHERE b.batch_number = ?
+         LIMIT 1",
+        [$batchNumber]
+    );
+
     if (!$batch) {
         http_response_code(404);
         if ($db) {
@@ -182,6 +195,8 @@ try {
         exit;
     }
 
+    $batchId = (int) ($batch['id'] ?? 0);
+
     $statusLabels = [
         'in_production' => 'قيد الإنتاج',
         'completed' => 'مكتملة',
@@ -189,35 +204,87 @@ try {
         'cancelled' => 'ملغاة',
     ];
 
-    $materials = [];
-    if (!empty($batch['packaging_materials_details']) && is_array($batch['packaging_materials_details'])) {
-        foreach ($batch['packaging_materials_details'] as $item) {
-            $details = [];
-            if (!empty($item['type'])) {
-                $details[] = 'النوع: ' . $item['type'];
-            }
-            if (!empty($item['specifications'])) {
-                $details[] = $item['specifications'];
-            }
-            $materials[] = [
-                'id' => $item['id'] ?? null,
-                'name' => $item['name'] ?? '—',
-                'details' => implode(' — ', array_filter($details)),
-            ];
-        }
+    $packagingDetails = [];
+    try {
+        $packagingDetails = $db->query(
+            "SELECT 
+                bp.id,
+                bp.quantity_used,
+                COALESCE(bp.packaging_name, pm.name) AS name,
+                COALESCE(bp.unit, pm.unit) AS unit
+             FROM batch_packaging bp
+             LEFT JOIN packaging_materials pm ON pm.id = bp.packaging_material_id
+             WHERE bp.batch_id = ?",
+            [$batchId]
+        );
+    } catch (Throwable $packagingError) {
+        error_log('Reader packaging query error: ' . $packagingError->getMessage());
+        $packagingDetails = [];
     }
 
-    $workers = [];
-    if (!empty($batch['workers_details']) && is_array($batch['workers_details'])) {
-        foreach ($batch['workers_details'] as $worker) {
-            $workers[] = [
-                'id' => $worker['id'] ?? null,
-                'username' => $worker['username'] ?? null,
-                'full_name' => $worker['full_name'] ?? null,
-                'role' => 'عامل إنتاج',
-            ];
-        }
+    $rawMaterials = [];
+    try {
+        $rawMaterials = $db->query(
+            "SELECT 
+                brm.id,
+                brm.quantity_used,
+                COALESCE(brm.material_name, rm.name) AS name,
+                COALESCE(brm.unit, rm.unit) AS unit
+             FROM batch_raw_materials brm
+             LEFT JOIN raw_materials rm ON rm.id = brm.raw_material_id
+             WHERE brm.batch_id = ?",
+            [$batchId]
+        );
+    } catch (Throwable $rawError) {
+        error_log('Reader raw materials query error: ' . $rawError->getMessage());
+        $rawMaterials = [];
     }
+
+    $workersDetails = [];
+    try {
+        $workersDetails = $db->query(
+            "SELECT 
+                bw.id,
+                bw.employee_id,
+                COALESCE(e.name, u.full_name, u.username) AS name,
+                u.role
+             FROM batch_workers bw
+             LEFT JOIN employees e ON e.id = bw.employee_id
+             LEFT JOIN users u ON u.id = bw.employee_id
+             WHERE bw.batch_id = ?",
+            [$batchId]
+        );
+    } catch (Throwable $workersError) {
+        error_log('Reader workers query error: ' . $workersError->getMessage());
+        $workersDetails = [];
+    }
+
+    $packagingFormatted = array_map(static function (array $row) {
+        return [
+            'id' => $row['id'] ?? null,
+            'name' => $row['name'] ?? null,
+            'unit' => $row['unit'] ?? null,
+            'quantity_used' => isset($row['quantity_used']) ? (float) $row['quantity_used'] : null,
+        ];
+    }, $packagingDetails);
+
+    $rawMaterialsFormatted = array_map(static function (array $row) {
+        return [
+            'id' => $row['id'] ?? null,
+            'name' => $row['name'] ?? null,
+            'unit' => $row['unit'] ?? null,
+            'quantity_used' => isset($row['quantity_used']) ? (float) $row['quantity_used'] : null,
+        ];
+    }, $rawMaterials);
+
+    $workersFormatted = array_map(static function (array $row) {
+        return [
+            'assignment_id' => $row['id'] ?? null,
+            'worker_id' => $row['employee_id'] ?? null,
+            'full_name' => $row['name'] ?? null,
+            'role' => $row['role'] ?? 'عامل إنتاج',
+        ];
+    }, $workersDetails);
 
     $response = [
         'success' => true,
@@ -226,16 +293,15 @@ try {
             'batch_number' => $batch['batch_number'] ?? $batchNumber,
             'product_name' => $batch['product_name'] ?? null,
             'product_category' => $batch['product_category'] ?? null,
-            'production_date' => $batch['production_date'] ?? $batch['production_date_value'] ?? null,
+            'production_date' => $batch['production_date'] ?? null,
             'quantity' => $batch['quantity'] ?? null,
+            'quantity_produced' => $batch['quantity_produced'] ?? null,
             'status' => $batch['status'] ?? null,
             'status_label' => $statusLabels[$batch['status'] ?? ''] ?? 'غير معروف',
-            'honey_supplier_name' => $batch['honey_supplier_name'] ?? null,
-            'packaging_supplier_name' => $batch['packaging_supplier_name'] ?? null,
             'notes' => $batch['notes'] ?? null,
-            'created_by_name' => $batch['created_by_name'] ?? null,
-            'materials' => $materials,
-            'workers' => $workers,
+            'packaging_materials' => $packagingFormatted,
+            'raw_materials' => $rawMaterialsFormatted,
+            'workers' => $workersFormatted,
         ]
     ];
 
