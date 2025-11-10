@@ -502,6 +502,7 @@ function batchCreationCreate(int $templateId, int $units): array
                 'INSERT INTO batch_raw_materials (' . implode(', ', $rawInsertColumns) . ') VALUES (' . implode(', ', $rawInsertPlaceholders) . ')'
             );
         }
+        $pendingRawMaterialRows = [];
 
         $batchPackagingExists = batchCreationTableExists($pdo, 'batch_packaging');
         $batchPackagingHasNameColumn = $batchPackagingExists && batchCreationColumnExists($pdo, 'batch_packaging', 'packaging_name');
@@ -782,14 +783,12 @@ function batchCreationCreate(int $templateId, int $units): array
 
                 if ($batchRawMaterialsExists && $batchRawInsertStatement instanceof PDOStatement) {
                     $qtyUsed = (float)($stockMaterial['quantity_per_unit'] ?? 0) * $units;
-                    $params = [$batchId, null, $qtyUsed];
-                    if ($batchRawHasNameColumn) {
-                        $params[] = (string)($stockMaterial['material_name'] ?? '');
-                    }
-                    if ($batchRawHasUnitColumn) {
-                        $params[] = $stockMaterial['unit'] ?? null;
-                    }
-                    $batchRawInsertStatement->execute($params);
+                    $pendingRawMaterialRows[] = [
+                        'raw_material_id' => null,
+                        'quantity_used'   => $qtyUsed,
+                        'material_name'   => $batchRawHasNameColumn ? (string)($stockMaterial['material_name'] ?? '') : null,
+                        'unit'            => $batchRawHasUnitColumn ? ($stockMaterial['unit'] ?? null) : null,
+                    ];
                 }
             }
         }
@@ -921,6 +920,19 @@ function batchCreationCreate(int $templateId, int $units): array
                 }
                 if ($batchRawHasUnitColumn) {
                     $params[] = $material['unit'] ?? null;
+                }
+                $batchRawInsertStatement->execute($params);
+            }
+        }
+
+        if (!empty($pendingRawMaterialRows) && $batchRawMaterialsExists && $batchRawInsertStatement instanceof PDOStatement) {
+            foreach ($pendingRawMaterialRows as $pendingRow) {
+                $params = [$batchId, $pendingRow['raw_material_id'], $pendingRow['quantity_used']];
+                if ($batchRawHasNameColumn) {
+                    $params[] = $pendingRow['material_name'];
+                }
+                if ($batchRawHasUnitColumn) {
+                    $params[] = $pendingRow['unit'];
                 }
                 $batchRawInsertStatement->execute($params);
             }
