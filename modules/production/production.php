@@ -3700,9 +3700,10 @@ function openCreateFromTemplateModal(element) {
             return relativePath;
         }
         try {
-            return new URL(relativePath, window.location.origin).toString();
+            return new URL(relativePath, window.location.href).toString();
         } catch (error) {
-            return window.location.origin + relativePath;
+            const basePath = window.location.pathname.replace(/[^\/]*$/, '');
+            return window.location.origin + basePath + relativePath.replace(/^\//, '');
         }
     };
 
