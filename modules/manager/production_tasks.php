@@ -712,9 +712,7 @@ if (!function_exists('enforceTasksRetentionLimit')) {
 (function () {
     const pageLoader = document.getElementById('pageLoader');
     if (pageLoader) {
-        pageLoader.classList.add('hidden');
-        pageLoader.style.display = 'none';
-        pageLoader.style.visibility = 'hidden';
+        pageLoader.remove();
     }
 })();
 
