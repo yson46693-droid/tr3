@@ -2148,6 +2148,31 @@ $lang = isset($translations) ? $translations : [];
         </a>
     </div>
     <?php if (!empty($templates)): ?>
+    <?php
+    $materialIconMap = [
+        'honey_filtered' => 'bi-droplet-fill',
+        'honey_raw' => 'bi-droplet-half',
+        'honey' => 'bi-droplet-fill',
+        'olive_oil' => 'bi-bucket-fill',
+        'beeswax' => 'bi-hexagon-fill',
+        'derivatives' => 'bi-diagram-3',
+        'nuts' => 'bi-nut',
+        'other' => 'bi-collection-fill'
+    ];
+    $materialKeywordIconMap = [
+        'عسل' => 'bi-droplet-fill',
+        'شمع' => 'bi-hexagon-fill',
+        'زيت' => 'bi-bucket-fill',
+        'زيوت' => 'bi-bucket-fill',
+        'مشتق' => 'bi-diagram-3',
+        'لقاح' => 'bi-flower1',
+        'حبوب' => 'bi-flower1',
+        'غذاء' => 'bi-cup-hot',
+        'مكسر' => 'bi-nut',
+        'سكر' => 'bi-cup-straw',
+        'ماء' => 'bi-droplet'
+    ];
+    ?>
     <div class="card-body template-grid">
         <?php foreach ($templates as $template): ?>
             <?php 
@@ -2217,9 +2242,38 @@ $lang = isset($translations) ? $translations : [];
                 <?php if (!empty($materialsPreview)): ?>
                 <div class="template-materials">
                     <?php foreach ($materialsPreview as $material): ?>
+                        <?php
+                        $materialIconKey = $material['material_type'] ?? '';
+                        $materialIconClass = $materialIconMap[$materialIconKey] ?? null;
+                        $materialName = $material['type'] ?? '';
+                        if (!$materialIconClass && $materialName !== '') {
+                            foreach ($materialKeywordIconMap as $keyword => $iconClass) {
+                                $hasMbStripos = function_exists('mb_stripos');
+                                $positionFound = $hasMbStripos
+                                    ? mb_stripos($materialName, $keyword, 0, 'UTF-8')
+                                    : stripos($materialName, $keyword);
+                                if ($positionFound !== false) {
+                                    $materialIconClass = $iconClass;
+                                    break;
+                                }
+                            }
+                        }
+                        $materialInitial = '';
+                        if (!$materialIconClass && $materialName !== '') {
+                            if (function_exists('mb_substr')) {
+                                $materialInitial = mb_substr($materialName, 0, 1, 'UTF-8');
+                            } else {
+                                $materialInitial = substr($materialName, 0, 1);
+                            }
+                        }
+                        ?>
                         <div class="material-row">
                             <div class="material-icon">
-                                <i class="bi bi-drop"></i>
+                                <?php if ($materialIconClass): ?>
+                                    <i class="bi <?php echo htmlspecialchars($materialIconClass); ?>"></i>
+                                <?php else: ?>
+                                    <span><?php echo htmlspecialchars($materialInitial !== '' ? $materialInitial : '•'); ?></span>
+                                <?php endif; ?>
                             </div>
                             <div class="material-info">
                                 <div class="material-name"><?php echo htmlspecialchars($material['type']); ?></div>

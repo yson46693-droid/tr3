@@ -423,10 +423,17 @@ if ($page === 'sales_collections') {
                             return;
                         }
 
-                        const printWindow = window.open('', '_blank', 'noopener,noreferrer,width=1024,height=768');
+                        const printWindow = window.open('', '_blank', 'width=1024,height=768,resizable=yes,scrollbars=yes');
                         if (!printWindow) {
                             alert('يرجى السماح بالنوافذ المنبثقة لإنشاء التقرير');
                             return;
+                        }
+
+                        try {
+                            // حماية من هجمات reverse tabnabbing مع الحفاظ على إمكانية الكتابة في بعض المتصفحات
+                            printWindow.opener = null;
+                        } catch (error) {
+                            console.warn('Unable to clear window opener:', error);
                         }
 
                         const doc = printWindow.document;
