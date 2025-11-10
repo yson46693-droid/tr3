@@ -3537,20 +3537,30 @@ function openCreateFromTemplateModal(element) {
     const modal = new bootstrap.Modal(modalElement);
     modal.show();
 
+    const showTemplateMessage = (html, wrapperClass = '') => {
+        const materialsInfoBox = document.getElementById('templateMaterialsInfo');
+        if (materialsInfoBox) {
+            materialsInfoBox.innerHTML = html;
+        }
+        if (wrapper) {
+            wrapper.classList.remove('d-none');
+            if (wrapperClass) {
+                wrapper.className = wrapper.className.replace(/\b(alert-\w+)\b/g, '').trim();
+                wrapper.classList.add(wrapperClass);
+            }
+        }
+        if (container) {
+            container.innerHTML = '';
+        }
+    };
+
     const handleTemplateResponse = (data) => {
         if (data && data.success) {
             renderTemplateSuppliers(data);
         } else {
-            if (container) {
-                container.innerHTML = `
-                    <div class="col-12">
-                        <div class="alert alert-warning mb-0">
-                            <i class="bi bi-exclamation-triangle me-2"></i>
-                            لم يتم العثور على مواد لهذا القالب. يرجى مراجعة إعدادات القالب.
-                        </div>
-                    </div>
-                `;
-            }
+            showTemplateMessage(
+                '<div class="alert alert-warning mb-0"><i class="bi bi-exclamation-triangle me-2"></i>لم يتم العثور على مواد لهذا القالب. يرجى مراجعة إعدادات القالب.</div>'
+            );
         }
     };
 
@@ -3584,16 +3594,9 @@ function openCreateFromTemplateModal(element) {
         })
         .catch(error => {
             console.error('Error loading template details:', error);
-            if (container) {
-                container.innerHTML = `
-                    <div class="col-12">
-                        <div class="alert alert-danger mb-0">
-                            <i class="bi bi-x-circle me-2"></i>
-                            تعذّر تحميل بيانات القالب: ${error.message}
-                        </div>
-                    </div>
-                `;
-            }
+            showTemplateMessage(
+                `<div class="alert alert-danger mb-0"><i class="bi bi-x-circle me-2"></i>تعذّر تحميل بيانات القالب: ${error.message}</div>`
+            );
         });
 }
 
