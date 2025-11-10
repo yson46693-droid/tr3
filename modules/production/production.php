@@ -867,10 +867,14 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     if ($existingProduct) {
                         $productId = $existingProduct['id'];
                     } else {
+                        $insertProductName = trim((string)$template['product_name']);
+                        if ($insertProductName === '') {
+                            $insertProductName = 'منتج رقم ' . ($template['id'] ?? '?');
+                        }
                         // إنشاء منتج جديد
                         $result = $db->execute(
                             "INSERT INTO products (name, category, status, unit) VALUES (?, 'finished', 'active', 'قطعة')",
-                            [$template['product_name']]
+                            [$insertProductName]
                         );
                         $productId = $result['insert_id'];
                     }
