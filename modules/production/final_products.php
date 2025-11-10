@@ -11,6 +11,7 @@ require_once __DIR__ . '/../../includes/config.php';
 require_once __DIR__ . '/../../includes/db.php';
 require_once __DIR__ . '/../../includes/auth.php';
 require_once __DIR__ . '/../../includes/path_helper.php';
+require_once __DIR__ . '/../../includes/table_styles.php';
 
 requireRole(['production', 'accountant', 'manager']);
 
@@ -465,8 +466,8 @@ $overallAverage = $totalProductionCountSum > 0 ? $totalProducedSum / $totalProdu
         <h5 class="mb-0"><i class="bi bi-list-ul me-2"></i>المنتجات النهائية (<?php echo $totalProducts; ?>)</h5>
     </div>
     <div class="card-body">
-        <div class="table-responsive-lg mobile-production-table-wrapper">
-            <table class="table table-striped table-hover align-middle">
+        <div class="table-responsive-lg dashboard-table-wrapper mobile-production-table-wrapper">
+            <table class="table dashboard-table align-middle">
                 <thead class="table-light">
                     <tr>
                         <th style="min-width:200px;">المنتج</th>

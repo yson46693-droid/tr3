@@ -14,6 +14,7 @@ require_once __DIR__ . '/../../includes/auth.php';
 require_once __DIR__ . '/../../includes/path_helper.php';
 require_once __DIR__ . '/../../includes/audit_log.php';
 require_once __DIR__ . '/../../includes/honey_varieties.php';
+require_once __DIR__ . '/../../includes/table_styles.php';
 
 requireRole('production'); // فقط عامل الإنتاج يمكنه التعديل
 
@@ -455,8 +456,8 @@ $stats['total_honey'] = $stats['total_raw_honey'] + $stats['total_filtered_honey
             <div class="text-center text-muted py-4">لا يوجد مخزون عسل</div>
         <?php else: ?>
             <!-- عرض الجدول على الشاشات الكبيرة -->
-            <div class="table-responsive d-none d-md-block">
-                <table class="table table-striped table-hover">
+            <div class="table-responsive dashboard-table-wrapper d-none d-md-block">
+                <table class="table dashboard-table align-middle">
                     <thead class="table-primary">
                         <tr>
                             <th class="text-center" style="width: 50px;">#</th>
@@ -842,7 +843,7 @@ function viewFiltrationHistory(supplierId) {
             try {
                 const data = JSON.parse(text);
                 if (data.success) {
-                    let html = '<div class="table-responsive"><table class="table table-sm table-hover"><thead class="table-light"><tr><th>التاريخ</th><th>الكمية الخام</th><th>الكمية المصفاة</th><th>الخسارة</th><th>ملاحظات</th></tr></thead><tbody>';
+                    let html = '<div class="table-responsive dashboard-table-wrapper"><table class="table dashboard-table dashboard-table--compact align-middle"><thead class="table-light"><tr><th>التاريخ</th><th>الكمية الخام</th><th>الكمية المصفاة</th><th>الخسارة</th><th>ملاحظات</th></tr></thead><tbody>';
                     if (data.history && data.history.length > 0) {
                         data.history.forEach(item => {
                             html += `<tr>

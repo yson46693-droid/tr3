@@ -2245,8 +2245,8 @@ $lang = isset($translations) ? $translations : [];
         <h5 class="mb-0"><i class="bi bi-list-ul me-2"></i><?php echo isset($lang['production_list']) ? $lang['production_list'] : 'قائمة الإنتاج'; ?> (<?php echo $totalProduction; ?>)</h5>
     </div>
     <div class="card-body">
-        <div class="table-responsive">
-            <table class="table table-striped table-hover">
+        <div class="table-responsive dashboard-table-wrapper">
+            <table class="table dashboard-table align-middle">
                 <thead>
                     <tr>
                         <th><?php echo isset($lang['id']) ? $lang['id'] : 'رقم'; ?></th>

@@ -13,6 +13,7 @@ require_once __DIR__ . '/../../includes/db.php';
 require_once __DIR__ . '/../../includes/auth.php';
 require_once __DIR__ . '/../../includes/path_helper.php';
 require_once __DIR__ . '/../../includes/audit_log.php';
+require_once __DIR__ . '/../../includes/table_styles.php';
 
 if (!function_exists('buildPackagingReportHtmlDocument')) {
     /**
@@ -1803,8 +1804,8 @@ $packagingReportGeneratedAt = $packagingReport['generated_at'] ?? date('Y-m-d H:
             <div class="text-center text-muted py-4">لا توجد أدوات تعبئة</div>
         <?php else: ?>
             <!-- عرض الجدول على الشاشات الكبيرة -->
-            <div class="table-responsive d-none d-md-block">
-                <table class="table table-striped table-sm packaging-table" style="font-size: 0.875rem;">
+            <div class="table-responsive dashboard-table-wrapper d-none d-md-block">
+                <table class="table dashboard-table dashboard-table--compact align-middle packaging-table" style="font-size: 0.875rem;">
                     <thead>
                         <tr>
                             <th style="width: 40px; padding: 0.5rem 0.25rem;">#</th>
@@ -2659,7 +2660,7 @@ function viewMaterialDetails(materialId) {
             if (data.success) {
                 let html = '<div class="mb-3"><h6><i class="bi bi-box-seam me-2"></i>استخدامات الأداة في عمليات الإنتاج</h6></div>';
                 if (data.productions && data.productions.length > 0) {
-                    html += '<div class="table-responsive"><table class="table table-sm table-striped"><thead><tr><th>رقم العملية</th><th>المنتج</th><th>الكمية المستخدمة</th><th>التاريخ</th></tr></thead><tbody>';
+                    html += '<div class="table-responsive dashboard-table-wrapper"><table class="table dashboard-table dashboard-table--compact align-middle"><thead><tr><th>رقم العملية</th><th>المنتج</th><th>الكمية المستخدمة</th><th>التاريخ</th></tr></thead><tbody>';
                     data.productions.forEach(prod => {
                         const date = prod.date ? new Date(prod.date).toLocaleDateString('ar-EG') : '-';
                         html += `<tr><td>#${prod.production_id}</td><td>${prod.product_name || '-'}</td><td>${prod.quantity_used || 0}</td><td>${date}</td></tr>`;
