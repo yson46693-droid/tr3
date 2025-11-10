@@ -139,6 +139,7 @@ $translations = [
     'sales_page_coming_soon' => 'صفحة المبيعات - سيتم إضافتها',
     'customers_page_coming_soon' => 'صفحة العملاء - سيتم إضافتها',
     'collections_page_coming_soon' => 'صفحة التحصيلات - سيتم إضافتها',
+    'sales_pos' => 'نقطة بيع المندوب',
     'product' => 'المنتج',
     'quantity' => 'الكمية',
     'price' => 'السعر',
