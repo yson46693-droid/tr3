@@ -419,6 +419,55 @@ if (!function_exists('storeRawMaterialsReportDocument')) {
     }
 }
 
+if (!function_exists('ensureUnifiedTemplateColumns')) {
+    function ensureUnifiedTemplateColumns($db): void
+    {
+        static $columnsEnsured = false;
+        if ($columnsEnsured) {
+            return;
+        }
+
+        try {
+            $mainSupplierColumn = $db->queryOne("SHOW COLUMNS FROM unified_product_templates LIKE 'main_supplier_id'");
+            if (empty($mainSupplierColumn)) {
+                $db->execute("
+                    ALTER TABLE `unified_product_templates`
+                    ADD COLUMN `main_supplier_id` int(11) DEFAULT NULL AFTER `status`,
+                    ADD KEY `main_supplier_id` (`main_supplier_id`)
+                ");
+            }
+        } catch (Exception $e) {
+            error_log('Failed to ensure main_supplier_id column: ' . $e->getMessage());
+        }
+
+        try {
+            $notesColumn = $db->queryOne("SHOW COLUMNS FROM unified_product_templates LIKE 'notes'");
+            if (empty($notesColumn)) {
+                $db->execute("
+                    ALTER TABLE `unified_product_templates`
+                    ADD COLUMN `notes` TEXT DEFAULT NULL AFTER `main_supplier_id`
+                ");
+            }
+        } catch (Exception $e) {
+            error_log('Failed to ensure notes column: ' . $e->getMessage());
+        }
+
+        try {
+            $formPayloadColumn = $db->queryOne("SHOW COLUMNS FROM unified_product_templates LIKE 'form_payload'");
+            if (empty($formPayloadColumn)) {
+                $db->execute("
+                    ALTER TABLE `unified_product_templates`
+                    ADD COLUMN `form_payload` LONGTEXT DEFAULT NULL COMMENT 'JSON يحتوي جميع مدخلات النموذج' AFTER `notes`
+                ");
+            }
+        } catch (Exception $e) {
+            error_log('Failed to ensure form_payload column: ' . $e->getMessage());
+        }
+
+        $columnsEnsured = true;
+    }
+}
+
 $rawReportQueryOne = static function ($dbConnection, $sql, $params = []) {
     try {
         return $dbConnection->queryOne($sql, $params);
@@ -2221,6 +2270,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 $error = 'يجب اختيار أداة تعبئة واحدة على الأقل';
             } else {
                 try {
+                    ensureUnifiedTemplateColumns($db);
                     $db->beginTransaction();
 
                     // إنشاء القالب
