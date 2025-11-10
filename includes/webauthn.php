@@ -18,7 +18,8 @@ class WebAuthn {
      * إنشاء تحدي للتسجيل
      */
     public static function createRegistrationChallenge($userId, $username) {
-        $challenge = bin2hex(random_bytes(32));
+        $challengeBytes = random_bytes(32);
+        $challenge = self::base64urlEncode($challengeBytes);
         
         $_SESSION['webauthn_challenge'] = $challenge;
         $_SESSION['webauthn_user_id'] = $userId;
@@ -75,7 +76,7 @@ class WebAuthn {
         }
         
         return [
-            'challenge' => base64_encode(hex2bin($challenge)),
+            'challenge' => $challenge,
             'rp' => [
                 'name' => WEBAUTHN_RP_NAME,
                 'id' => $rpId
@@ -139,20 +140,12 @@ class WebAuthn {
             }
             
             // التحقق من التحدي
-            $expectedChallenge = base64_encode(hex2bin($challenge));
+            $expectedChallenge = $challenge;
             $receivedChallenge = $clientData['challenge'] ?? '';
             
-            // في بعض الحالات، المتصفح يرسل challenge كـ base64url encoded
-            // نحاول كلا الطريقتين
             if ($receivedChallenge !== $expectedChallenge) {
-                // محاولة base64url decode
-                $receivedChallengeDecoded = self::base64urlDecode($receivedChallenge);
-                $expectedChallengeDecoded = hex2bin($challenge);
-                
-                if ($receivedChallengeDecoded !== $expectedChallengeDecoded) {
-                    error_log("WebAuthn: Challenge mismatch. Expected: $expectedChallenge, Received: $receivedChallenge");
-                    return false;
-                }
+                error_log("WebAuthn: Challenge mismatch. Expected: $expectedChallenge, Received: $receivedChallenge");
+                return false;
             }
             
             // التحقق من الأصل (مع مرونة أكثر للموبايل)
@@ -302,6 +295,21 @@ class WebAuthn {
     }
     
     /**
+     * تحويل البيانات إلى base64url
+     */
+    private static function base64urlEncode($data) {
+        if ($data === null) {
+            return '';
+        }
+        
+        if (!is_string($data)) {
+            $data = (string)$data;
+        }
+        
+        return rtrim(strtr(base64_encode($data), '+/', '-_'), '=');
+    }
+    
+    /**
      * إنشاء تحدي لتسجيل الدخول
      */
     public static function createLoginChallenge($username) {
@@ -321,7 +329,8 @@ class WebAuthn {
             return null;
         }
         
-        $challenge = bin2hex(random_bytes(32));
+        $challengeBytes = random_bytes(32);
+        $challenge = self::base64urlEncode($challengeBytes);
         $_SESSION['webauthn_login_challenge'] = $challenge;
         $_SESSION['webauthn_login_user_id'] = $user['id'];
         
@@ -356,7 +365,7 @@ class WebAuthn {
         
         // إعدادات challenge محسّنة للموبايل
         $challengeData = [
-            'challenge' => base64_encode(hex2bin($challenge)),
+            'challenge' => $challenge,
             'allowCredentials' => $allowCredentials,
             'timeout' => 180000, // زيادة timeout للموبايل (180 ثانية = 3 دقائق)
             'rpId' => $rpId,
@@ -421,19 +430,12 @@ class WebAuthn {
             }
             
             // التحقق من التحدي (مع مرونة أكثر)
-            $expectedChallenge = base64_encode(hex2bin($challenge));
+            $expectedChallenge = $challenge;
             $receivedChallenge = $clientData['challenge'] ?? '';
             
-            // محاولة base64url decode إذا لزم الأمر
             if ($receivedChallenge !== $expectedChallenge) {
-                // بعض المتصفحات ترسل challenge كـ base64url
-                $receivedChallengeDecoded = self::base64urlDecode($receivedChallenge);
-                $expectedChallengeDecoded = hex2bin($challenge);
-                
-                if ($receivedChallengeDecoded !== $expectedChallengeDecoded) {
-                    error_log("WebAuthn Login: Challenge mismatch. Expected: $expectedChallenge, Received: $receivedChallenge");
-                    return false;
-                }
+                error_log("WebAuthn Login: Challenge mismatch. Expected: $expectedChallenge, Received: $receivedChallenge");
+                return false;
             }
             
             // التحقق من الأصل (مع مرونة أكثر للموبايل)
