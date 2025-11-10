@@ -1372,6 +1372,17 @@ if (!$error) {
         });
     }
 
+    function sanitizeSummaryDisplays() {
+        if (elements.netTotal) {
+            const current = elements.netTotal.textContent || '';
+            elements.netTotal.textContent = formatCurrency(current);
+        }
+        if (elements.dueAmount) {
+            const current = elements.dueAmount.textContent || '';
+            elements.dueAmount.textContent = formatCurrency(current);
+        }
+    }
+
     function updateSummary() {
         const subtotal = cart.reduce((total, item) => {
             const qty = sanitizeNumber(item.quantity);
@@ -1427,6 +1438,7 @@ if (!$error) {
         elements.submitBtn.disabled = cart.length === 0;
         syncCartData();
         refreshPaymentOptionStates();
+        sanitizeSummaryDisplays();
     }
 
     function renderCart() {
@@ -1697,6 +1709,7 @@ if (!$error) {
     // تهيئة أولية للقيم
     refreshPaymentOptionStates();
     renderCart();
+    sanitizeSummaryDisplays();
 })();
 </script>
 <?php endif; ?>

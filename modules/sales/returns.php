@@ -14,6 +14,8 @@ require_once __DIR__ . '/../../includes/returns.php';
 require_once __DIR__ . '/../../includes/audit_log.php';
 require_once __DIR__ . '/../../includes/notifications.php';
 
+require_once __DIR__ . '/table_styles.php';
+
 requireRole(['sales', 'accountant', 'manager']);
 
 $currentUser = getCurrentUser();
@@ -345,7 +347,7 @@ if (isset($_GET['id'])) {
         <div class="card-body">
             <div class="row">
                 <div class="col-md-6">
-                    <table class="table table-bordered">
+                    <table class="table sales-table-details">
                         <tr>
                             <th width="40%">العميل:</th>
                             <td><?php echo htmlspecialchars($selectedReturn['customer_name'] ?? '-'); ?></td>
@@ -379,7 +381,7 @@ if (isset($_GET['id'])) {
                     </table>
                 </div>
                 <div class="col-md-6">
-                    <table class="table table-bordered">
+                    <table class="table sales-table-details">
                         <tr>
                             <th width="40%">الحالة:</th>
                             <td>
@@ -429,8 +431,8 @@ if (isset($_GET['id'])) {
             
             <?php if (!empty($selectedReturn['items'])): ?>
                 <h6 class="mt-3">عناصر المرتجع:</h6>
-                <div class="table-responsive">
-                    <table class="table table-striped">
+                <div class="table-responsive sales-table-responsive">
+                    <table class="table sales-table sales-table--compact align-middle">
                         <thead>
                             <tr>
                                 <th>المنتج</th>
@@ -551,8 +553,8 @@ if (isset($_GET['id'])) {
         <h5 class="mb-0">قائمة المرتجعات (<?php echo $totalReturns; ?>)</h5>
     </div>
     <div class="card-body">
-        <div class="table-responsive">
-            <table class="table table-striped table-hover">
+        <div class="table-responsive sales-table-responsive">
+            <table class="table sales-table align-middle">
                 <thead>
                     <tr>
                         <th>رقم المرتجع</th>

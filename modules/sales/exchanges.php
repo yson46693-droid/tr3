@@ -11,6 +11,8 @@ require_once __DIR__ . '/../../includes/exchanges.php';
 require_once __DIR__ . '/../../includes/audit_log.php';
 require_once __DIR__ . '/../../includes/notifications.php';
 
+require_once __DIR__ . '/table_styles.php';
+
 requireRole(['sales', 'accountant', 'manager']);
 
 $currentUser = getCurrentUser();
@@ -401,7 +403,7 @@ if (isset($_GET['id'])) {
         <div class="card-body">
             <div class="row">
                 <div class="col-md-6">
-                    <table class="table table-bordered">
+                    <table class="table sales-table-details">
                         <tr>
                             <th width="40%">العميل:</th>
                             <td><?php echo htmlspecialchars($selectedExchange['customer_name'] ?? '-'); ?></td>
@@ -431,7 +433,7 @@ if (isset($_GET['id'])) {
                     </table>
                 </div>
                 <div class="col-md-6">
-                    <table class="table table-bordered">
+                    <table class="table sales-table-details">
                         <tr>
                             <th width="40%">الحالة:</th>
                             <td>
@@ -475,8 +477,8 @@ if (isset($_GET['id'])) {
             <div class="row mt-3">
                 <div class="col-md-6">
                     <h6>المنتجات المرتجعة:</h6>
-                    <div class="table-responsive">
-                        <table class="table table-sm table-striped">
+                    <div class="table-responsive sales-table-responsive">
+                        <table class="table sales-table sales-table--compact align-middle">
                             <thead>
                                 <tr>
                                     <th>المنتج</th>
@@ -500,8 +502,8 @@ if (isset($_GET['id'])) {
                 </div>
                 <div class="col-md-6">
                     <h6>المنتجات الجديدة:</h6>
-                    <div class="table-responsive">
-                        <table class="table table-sm table-striped">
+                    <div class="table-responsive sales-table-responsive">
+                        <table class="table sales-table sales-table--compact align-middle">
                             <thead>
                                 <tr>
                                     <th>المنتج</th>
@@ -597,8 +599,8 @@ if (isset($_GET['id'])) {
         <h5 class="mb-0">قائمة الاستبدالات (<?php echo $totalExchanges; ?>)</h5>
     </div>
     <div class="card-body">
-        <div class="table-responsive">
-            <table class="table table-striped table-hover">
+        <div class="table-responsive sales-table-responsive">
+            <table class="table sales-table align-middle">
                 <thead>
                     <tr>
                         <th>رقم الاستبدال</th>

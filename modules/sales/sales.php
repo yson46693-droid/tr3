@@ -13,6 +13,8 @@ require_once __DIR__ . '/../../includes/auth.php';
 require_once __DIR__ . '/../../includes/audit_log.php';
 require_once __DIR__ . '/../../includes/path_helper.php';
 
+require_once __DIR__ . '/table_styles.php';
+
 requireRole(['sales', 'accountant', 'manager']);
 
 $currentUser = getCurrentUser();
@@ -188,8 +190,8 @@ $customers = $db->query("SELECT id, name FROM customers WHERE status = 'active' 
         <h5 class="mb-0">قائمة المبيعات (<?php echo $totalSales ?? 0; ?>)</h5>
     </div>
     <div class="card-body">
-        <div class="table-responsive">
-            <table class="table table-striped table-hover">
+        <div class="table-responsive sales-table-responsive">
+            <table class="table sales-table align-middle">
                 <thead>
                     <tr>
                         <th>التاريخ</th>

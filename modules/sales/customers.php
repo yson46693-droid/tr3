@@ -16,6 +16,8 @@ require_once __DIR__ . '/../../includes/path_helper.php';
 
 requireRole(['sales', 'accountant', 'manager']);
 
+require_once __DIR__ . '/table_styles.php';
+
 $currentUser = getCurrentUser();
 $isSalesUser = isset($currentUser['role']) && $currentUser['role'] === 'sales';
 $db = db();
@@ -736,8 +738,8 @@ document.addEventListener('DOMContentLoaded', function () {
         </h5>
     </div>
     <div class="card-body">
-        <div class="table-responsive">
-            <table class="table table-striped table-hover">
+        <div class="table-responsive sales-table-responsive">
+            <table class="table sales-table align-middle">
                 <thead>
                     <tr>
                         <th>الاسم</th>
