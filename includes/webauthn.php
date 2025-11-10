@@ -123,8 +123,8 @@ class WebAuthn {
                 return false;
             }
             
-            $clientDataJSON = base64_decode($clientDataJSONEncoded);
-            $attestationObject = base64_decode($attestationObjectEncoded);
+            $clientDataJSON = self::base64urlDecode($clientDataJSONEncoded);
+            $attestationObject = self::base64urlDecode($attestationObjectEncoded);
             
             if ($clientDataJSON === false || $attestationObject === false) {
                 error_log("WebAuthn: Failed to decode base64 data");
@@ -146,8 +146,7 @@ class WebAuthn {
             // نحاول كلا الطريقتين
             if ($receivedChallenge !== $expectedChallenge) {
                 // محاولة base64url decode
-                $receivedChallengeDecoded = strtr($receivedChallenge, '-_', '+/');
-                $receivedChallengeDecoded = base64_decode($receivedChallengeDecoded);
+                $receivedChallengeDecoded = self::base64urlDecode($receivedChallenge);
                 $expectedChallengeDecoded = hex2bin($challenge);
                 
                 if ($receivedChallengeDecoded !== $expectedChallengeDecoded) {
@@ -282,6 +281,27 @@ class WebAuthn {
     }
     
     /**
+     * تحويل base64url إلى base64 عادي وفك الترميز
+     */
+    private static function base64urlDecode($data) {
+        if ($data === null) {
+            return false;
+        }
+        
+        if (!is_string($data)) {
+            $data = (string)$data;
+        }
+        
+        $data = strtr($data, '-_', '+/');
+        $padding = strlen($data) % 4;
+        if ($padding > 0) {
+            $data .= str_repeat('=', 4 - $padding);
+        }
+        
+        return base64_decode($data, true);
+    }
+    
+    /**
      * إنشاء تحدي لتسجيل الدخول
      */
     public static function createLoginChallenge($username) {
@@ -384,9 +404,9 @@ class WebAuthn {
                 return false;
             }
             
-            $clientDataJSON = base64_decode($clientDataJSONEncoded, true);
-            $authenticatorData = base64_decode($authenticatorDataEncoded, true);
-            $signature = base64_decode($signatureEncoded, true);
+            $clientDataJSON = self::base64urlDecode($clientDataJSONEncoded);
+            $authenticatorData = self::base64urlDecode($authenticatorDataEncoded);
+            $signature = self::base64urlDecode($signatureEncoded);
             
             if ($clientDataJSON === false || $authenticatorData === false || $signature === false) {
                 error_log("WebAuthn Login: Failed to decode base64 data");
@@ -407,8 +427,7 @@ class WebAuthn {
             // محاولة base64url decode إذا لزم الأمر
             if ($receivedChallenge !== $expectedChallenge) {
                 // بعض المتصفحات ترسل challenge كـ base64url
-                $receivedChallengeDecoded = strtr($receivedChallenge, '-_', '+/');
-                $receivedChallengeDecoded = base64_decode($receivedChallengeDecoded, true);
+                $receivedChallengeDecoded = self::base64urlDecode($receivedChallenge);
                 $expectedChallengeDecoded = hex2bin($challenge);
                 
                 if ($receivedChallengeDecoded !== $expectedChallengeDecoded) {
