@@ -1732,9 +1732,31 @@ if (!empty($unifiedTemplatesCheck)) {
             $template['material_details'][] = [
                 'type' => $materialDisplay,
                 'quantity' => $material['quantity'],
-                'unit' => $material['unit']
+                'unit' => $material['unit'],
+                'honey_variety' => $material['honey_variety'] ?? null,
+                'material_type' => $material['material_type']
             ];
         }
+
+        // جلب أدوات التعبئة المرتبطة بالقالب
+        $packagingItems = $db->query(
+            "SELECT tp.packaging_material_id, tp.quantity_per_unit,
+                    COALESCE(tp.packaging_name, pm.name) AS packaging_name,
+                    pm.unit AS packaging_unit
+             FROM template_packaging tp
+             LEFT JOIN packaging_materials pm ON tp.packaging_material_id = pm.id
+             WHERE tp.template_id = ?",
+            [$template['id']]
+        );
+
+        $template['packaging_count'] = count($packagingItems);
+        $template['packaging_details'] = array_map(static function ($item) {
+            return [
+                'name' => $item['packaging_name'] ?? 'مادة تعبئة',
+                'quantity_per_unit' => (float)($item['quantity_per_unit'] ?? 0),
+                'unit' => $item['packaging_unit'] ?? 'وحدة'
+            ];
+        }, $packagingItems);
     }
     
     // تصفية القوالب: تجاهل القوالب التي لا تحتوي على مواد
