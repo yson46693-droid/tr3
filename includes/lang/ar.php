@@ -132,6 +132,7 @@ $translations = [
     
     // المبيعات
     'sales' => 'المبيعات',
+    'sales_and_collections' => 'مبيعات و تحصيلات',
     'sales_record' => 'سجل المبيعات',
     'sales_dashboard' => 'لوحة المبيعات',
     'sales_dashboard_coming_soon' => 'لوحة المبيعات - سيتم إضافتها',

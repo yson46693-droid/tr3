@@ -110,6 +110,7 @@ $translations = [
     
     // Sales
     'sales' => 'Sales',
+    'sales_and_collections' => 'Sales & Collections',
     'sales_record' => 'Sales Record',
     'sales_dashboard' => 'Sales Dashboard',
     'sales_dashboard_coming_soon' => 'Sales Dashboard - coming soon',

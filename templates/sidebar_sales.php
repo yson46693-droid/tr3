@@ -39,9 +39,9 @@ $baseUrl = getDashboardUrl();
                 <div class="sidebar-section-title">Sales</div>
                 
                 <li class="nav-item">
-                    <a class="nav-link" href="<?php echo $baseUrl; ?>sales.php?page=sales">
+                    <a class="nav-link" href="<?php echo $baseUrl; ?>sales.php?page=sales_collections">
                         <i class="bi bi-receipt"></i>
-                        <span><?php echo $lang['sales']; ?></span>
+                        <span><?php echo isset($lang['sales_and_collections']) ? $lang['sales_and_collections'] : 'مبيعات و تحصيلات'; ?></span>
                     </a>
                 </li>
                 
@@ -64,6 +64,13 @@ $baseUrl = getDashboardUrl();
                 <a class="nav-link" href="<?php echo $baseUrl; ?>sales.php?page=vehicle_inventory">
                     <i class="bi bi-truck"></i>
                     <span>مخزن السيارة</span>
+                </a>
+            </li>
+            
+            <li class="nav-item">
+                <a class="nav-link" href="<?php echo $baseUrl; ?>sales.php?page=pos">
+                    <i class="bi bi-shop"></i>
+                    <span>نقطة البيع</span>
                 </a>
             </li>
             

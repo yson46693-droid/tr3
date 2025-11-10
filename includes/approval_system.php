@@ -308,7 +308,7 @@ function getEntityLink($type, $entityId) {
             return $baseUrl . 'accountant.php?page=financial&id=' . $entityId;
             
         case 'sales':
-            return $baseUrl . 'sales.php?page=sales&id=' . $entityId;
+            return $baseUrl . 'sales.php?page=sales_collections&id=' . $entityId;
             
         case 'production':
             return $baseUrl . 'production.php?page=production&id=' . $entityId;

@@ -196,10 +196,10 @@ switch ($role) {
             ],
             ['divider' => true, 'title' => 'Sales'],
             [
-                'title' => isset($lang['sales']) ? $lang['sales'] : 'المبيعات',
+                'title' => isset($lang['sales_and_collections']) ? $lang['sales_and_collections'] : 'مبيعات و تحصيلات',
                 'icon' => 'bi-receipt',
-                'url' => $baseUrl . 'sales.php?page=sales',
-                'active' => (isset($_GET['page']) && $_GET['page'] === 'sales'),
+                'url' => $baseUrl . 'sales.php?page=sales_collections',
+                'active' => (isset($_GET['page']) && in_array($_GET['page'], ['sales', 'collections', 'sales_collections'], true)),
                 'badge' => null
             ],
             [

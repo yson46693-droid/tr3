@@ -77,6 +77,11 @@ $pageTitle = isset($lang['manager_dashboard']) ? $lang['manager_dashboard'] : '�
                         'url' => getRelativeUrl('dashboard/manager.php?page=customers')
                     ],
                     [
+                        'label' => 'طلبات العملاء',
+                        'icon' => 'bi-cart-check',
+                        'url' => getRelativeUrl('dashboard/manager.php?page=orders')
+                    ],
+                    [
                         'label' => 'نقطة البيع',
                         'icon' => 'bi-cart4',
                         'url' => getRelativeUrl('dashboard/manager.php?page=pos')
@@ -502,6 +507,21 @@ $pageTitle = isset($lang['manager_dashboard']) ? $lang['manager_dashboard'] : '�
                     }
                 } else {
                     echo '<div class="alert alert-warning">صفحة العملاء غير متاحة حالياً</div>';
+                }
+                ?>
+                
+            <?php elseif ($page === 'orders'): ?>
+                <?php 
+                $modulePath = __DIR__ . '/../modules/sales/customer_orders.php';
+                if (file_exists($modulePath)) {
+                    try {
+                        include $modulePath;
+                    } catch (Throwable $e) {
+                        error_log('Manager orders module error: ' . $e->getMessage());
+                        echo '<div class="alert alert-danger">حدث خطأ أثناء تحميل صفحة طلبات العملاء: ' . htmlspecialchars($e->getMessage()) . '</div>';
+                    }
+                } else {
+                    echo '<div class="alert alert-warning">صفحة طلبات العملاء غير متاحة حالياً</div>';
                 }
                 ?>
                 

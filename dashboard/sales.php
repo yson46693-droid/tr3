@@ -16,9 +16,17 @@ $currentUser = getCurrentUser();
 $db = db();
 $page = $_GET['page'] ?? 'dashboard';
 
+// توحيد مسار صفحات المبيعات والتحصيلات تحت صفحة واحدة
+if (in_array($page, ['sales', 'collections', 'sales_collections'], true)) {
+    $page = 'sales_collections';
+}
+
 require_once __DIR__ . '/../includes/lang/' . getCurrentLanguage() . '.php';
 $lang = isset($translations) ? $translations : [];
 $pageTitle = isset($lang['sales_dashboard']) ? $lang['sales_dashboard'] : 'لوحة المبيعات';
+if ($page === 'sales_collections') {
+    $pageTitle = isset($lang['sales_and_collections']) ? $lang['sales_and_collections'] : 'مبيعات و تحصيلات';
+}
 ?>
 <?php include __DIR__ . '/../templates/header.php'; ?>
 
@@ -116,7 +124,7 @@ $pageTitle = isset($lang['sales_dashboard']) ? $lang['sales_dashboard'] : 'لو�
                         <h3 class="table-card-title">آخر المبيعات</h3>
                         <?php 
                         $basePath = getBasePath();
-                        $salesUrl = rtrim($basePath, '/') . '/dashboard/sales.php?page=sales';
+                        $salesUrl = rtrim($basePath, '/') . '/dashboard/sales.php?page=sales_collections';
                         ?>
                         <a href="<?php echo $salesUrl; ?>" class="analytics-card-action">
                             عرض الكل <i class="bi bi-arrow-left"></i>
@@ -217,34 +225,43 @@ $pageTitle = isset($lang['sales_dashboard']) ? $lang['sales_dashboard'] : 'لو�
                 </div>
                 <?php } ?>
                 
-            <?php elseif ($page === 'sales'): ?>
+            <?php elseif ($page === 'sales_collections'): ?>
                 <!-- Page Header -->
                 <div class="page-header">
-                    <h2><i class="bi bi-cart-check"></i><?php echo isset($lang['sales']) ? $lang['sales'] : 'المبيعات'; ?></h2>
+                    <h2><i class="bi bi-diagram-3"></i><?php echo isset($lang['sales_and_collections']) ? $lang['sales_and_collections'] : 'مبيعات و تحصيلات'; ?></h2>
                 </div>
-                
-                <!-- Sales Page -->
-                <?php 
-                $modulePath = __DIR__ . '/../modules/sales/sales.php';
-                if (file_exists($modulePath)) {
-                    include $modulePath;
-                } else {
-                ?>
-                <div class="empty-state-card">
-                    <div class="empty-state-icon"><i class="bi bi-cart-check"></i></div>
-                    <div class="empty-state-title">صفحة المبيعات</div>
-                    <div class="empty-state-description"><?php echo isset($lang['sales_page_coming_soon']) ? $lang['sales_page_coming_soon'] : 'صفحة المبيعات - سيتم إضافتها'; ?></div>
+
+                <div class="combined-sections">
+                    <section class="combined-section mb-5">
+                        <?php 
+                        $salesModulePath = __DIR__ . '/../modules/sales/sales.php';
+                        if (file_exists($salesModulePath)) {
+                            include $salesModulePath;
+                        } else {
+                        ?>
+                        <div class="empty-state-card">
+                            <div class="empty-state-icon"><i class="bi bi-cart-check"></i></div>
+                            <div class="empty-state-title"><?php echo isset($lang['sales']) ? $lang['sales'] : 'المبيعات'; ?></div>
+                            <div class="empty-state-description"><?php echo isset($lang['sales_page_coming_soon']) ? $lang['sales_page_coming_soon'] : 'صفحة المبيعات - سيتم إضافتها'; ?></div>
+                        </div>
+                        <?php } ?>
+                    </section>
+
+                    <section class="combined-section">
+                        <?php 
+                        $collectionsModulePath = __DIR__ . '/../modules/sales/collections.php';
+                        if (file_exists($collectionsModulePath)) {
+                            include $collectionsModulePath;
+                        } else {
+                        ?>
+                        <div class="empty-state-card">
+                            <div class="empty-state-icon"><i class="bi bi-cash-coin"></i></div>
+                            <div class="empty-state-title"><?php echo isset($lang['collections']) ? $lang['collections'] : 'التحصيلات'; ?></div>
+                            <div class="empty-state-description"><?php echo isset($lang['collections_page_coming_soon']) ? $lang['collections_page_coming_soon'] : 'صفحة التحصيلات - سيتم إضافتها'; ?></div>
+                        </div>
+                        <?php } ?>
+                    </section>
                 </div>
-                <?php } ?>
-                
-            <?php elseif ($page === 'collections'): ?>
-                <!-- صفحة التحصيلات -->
-                <?php 
-                $modulePath = __DIR__ . '/../modules/sales/collections.php';
-                if (file_exists($modulePath)) {
-                    include $modulePath;
-                }
-                ?>
                 
             <?php elseif ($page === 'orders'): ?>
                 <!-- صفحة طلبات العملاء -->
@@ -259,6 +276,15 @@ $pageTitle = isset($lang['sales_dashboard']) ? $lang['sales_dashboard'] : 'لو�
                 <!-- صفحة الجداول الزمنية للتحصيل -->
                 <?php 
                 $modulePath = __DIR__ . '/../modules/sales/payment_schedules.php';
+                if (file_exists($modulePath)) {
+                    include $modulePath;
+                }
+                ?>
+                
+            <?php elseif ($page === 'pos'): ?>
+                <!-- صفحة نقطة البيع للمندوب -->
+                <?php 
+                $modulePath = __DIR__ . '/../modules/sales/pos.php';
                 if (file_exists($modulePath)) {
                     include $modulePath;
                 }

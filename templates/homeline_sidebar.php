@@ -117,6 +117,13 @@ switch ($role) {
                 'badge' => null
             ],
             [
+                'title' => 'طلبات العملاء',
+                'icon' => 'bi-bag-check',
+                'url' => $baseUrl . 'manager.php?page=orders',
+                'active' => ($currentPage === 'manager.php' && $currentPageParam === 'orders'),
+                'badge' => null
+            ],
+            [
                 'title' => 'نقطة البيع',
                 'icon' => 'bi-cart4',
                 'url' => $baseUrl . 'manager.php?page=pos',
@@ -200,6 +207,13 @@ switch ($role) {
                 'badge' => null
             ],
             [
+                'title' => 'طلبات العملاء',
+                'icon' => 'bi-bag-check',
+                'url' => $baseUrl . 'accountant.php?page=orders',
+                'active' => ($currentPage === 'accountant.php' && $currentPageParam === 'orders'),
+                'badge' => null
+            ],
+            [
                 'title' => isset($lang['menu_attendance']) ? $lang['menu_attendance'] : 'الحضور',
                 'icon' => 'bi-calendar-check',
                 'url' => getRelativeUrl('attendance.php'),
@@ -241,17 +255,10 @@ switch ($role) {
                 'badge' => null
             ],
             [
-                'title' => isset($lang['sales']) ? $lang['sales'] : 'المبيعات',
+                'title' => isset($lang['sales_and_collections']) ? $lang['sales_and_collections'] : 'مبيعات و تحصيلات',
                 'icon' => 'bi-cart-check',
-                'url' => $baseUrl . 'sales.php?page=sales',
-                'active' => ($currentPage === 'sales.php' && $currentPageParam === 'sales'),
-                'badge' => null
-            ],
-            [
-                'title' => isset($lang['collections']) ? $lang['collections'] : 'التحصيلات',
-                'icon' => 'bi-cash-coin',
-                'url' => $baseUrl . 'sales.php?page=collections',
-                'active' => ($currentPage === 'sales.php' && $currentPageParam === 'collections'),
+                'url' => $baseUrl . 'sales.php?page=sales_collections',
+                'active' => ($currentPage === 'sales.php' && in_array($currentPageParam, ['sales', 'collections', 'sales_collections'], true)),
                 'badge' => null
             ],
             [

@@ -428,6 +428,21 @@ $pageTitle = isset($lang['accountant_dashboard']) ? $lang['accountant_dashboard'
                 }
                 ?>
                 
+            <?php elseif ($page === 'orders'): ?>
+                <?php 
+                $modulePath = __DIR__ . '/../modules/sales/customer_orders.php';
+                if (file_exists($modulePath)) {
+                    try {
+                        include $modulePath;
+                    } catch (Throwable $e) {
+                        error_log('Accountant orders module error: ' . $e->getMessage());
+                        echo '<div class="alert alert-danger">حدث خطأ أثناء تحميل صفحة طلبات العملاء: ' . htmlspecialchars($e->getMessage()) . '</div>';
+                    }
+                } else {
+                    echo '<div class="alert alert-warning">صفحة طلبات العملاء غير متاحة حالياً</div>';
+                }
+                ?>
+                
             <?php elseif ($page === 'inventory'): ?>
                 <!-- صفحة المخزون -->
                 <?php 

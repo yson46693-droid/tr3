@@ -311,7 +311,7 @@ function sendPaymentReminders($salesRepId = null) {
                 'تذكير بموعد تحصيل',
                 $message,
                 'warning',
-                "dashboard/sales.php?page=collections&id={$reminder['payment_schedule_id']}",
+                "dashboard/sales.php?page=sales_collections&id={$reminder['payment_schedule_id']}",
                 true // إرسال Telegram
             );
         }
