@@ -54,10 +54,12 @@ if ($isTemplateAjax) {
                 }
 
                 $alias = $table === 'template_packaging' ? 'tp' : 'ptp';
+                $hasUnitColumn = !empty($db->queryOne("SHOW COLUMNS FROM {$table} LIKE 'unit'"));
+                $unitColumnSql = $hasUnitColumn ? "{$alias}.unit" : 'NULL';
                 $packagingNameExpression = getColumnSelectExpression($table, 'packaging_name', 'packaging_name', $alias);
                 $packagingItems = $db->query(
                     "SELECT {$alias}.id, {$alias}.packaging_material_id, {$packagingNameExpression}, {$alias}.{$packagingQuantityColumn} AS quantity,
-                            COALESCE(pm.unit, {$alias}.unit, 'وحدة') AS unit
+                            COALESCE(pm.unit, {$unitColumnSql}, 'وحدة') AS unit
                      FROM {$table} {$alias}
                      LEFT JOIN packaging_materials pm ON pm.id = {$alias}.packaging_material_id
                      WHERE {$alias}.template_id = ?",
