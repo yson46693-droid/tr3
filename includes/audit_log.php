@@ -30,7 +30,14 @@ function ensureAuditLogSchema($db) {
         ];
 
         foreach ($columnsToEnsure as $columnName => $alterSql) {
-            $columnExists = $db->queryOne("SHOW COLUMNS FROM audit_logs LIKE ?", [$columnName]);
+            $columnExists = $db->queryOne(
+                "SELECT COLUMN_NAME 
+                 FROM information_schema.COLUMNS 
+                 WHERE TABLE_SCHEMA = DATABASE() 
+                   AND TABLE_NAME = 'audit_logs' 
+                   AND COLUMN_NAME = ?",
+                [$columnName]
+            );
             if (empty($columnExists)) {
                 $db->execute($alterSql);
             }
