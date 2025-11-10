@@ -58,9 +58,32 @@ $pageTitle = isset($lang['sales_dashboard']) ? $lang['sales_dashboard'] : 'لو�
                         $pendingSales = ['count' => 0];
                     }
                     
-                    $customersCount = $db->queryOne(
-                        "SELECT COUNT(*) as count FROM customers"
-                    );
+                    $customersCount = ['count' => 0];
+                    $salesUserId = (int) ($currentUser['id'] ?? 0);
+                    $customersTableExists = $db->queryOne("SHOW TABLES LIKE 'customers'");
+                    if (!empty($customersTableExists) && $salesUserId > 0) {
+                        try {
+                            $createdByColumnExists = $db->queryOne("
+                                SELECT COLUMN_NAME 
+                                FROM information_schema.COLUMNS 
+                                WHERE TABLE_SCHEMA = DATABASE()
+                                  AND TABLE_NAME = 'customers'
+                                  AND COLUMN_NAME = 'created_by'
+                            ");
+
+                            if (!empty($createdByColumnExists)) {
+                                $customersCount = $db->queryOne(
+                                    "SELECT COUNT(*) AS count 
+                                     FROM customers 
+                                     WHERE created_by = ?",
+                                    [$salesUserId]
+                                );
+                            }
+                        } catch (Exception $e) {
+                            error_log('Sales dashboard customers count error: ' . $e->getMessage());
+                            $customersCount = ['count' => 0];
+                        }
+                    }
                     ?>
                     
                     <div class="stat-card">
