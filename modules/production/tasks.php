@@ -1,6 +1,6 @@
 <?php
 /**
- * صفحة إدارة المهام
+ * صفحة إدارة المهام (نسخة مبسطة محسّنة)
  */
 
 if (!defined('ACCESS_ALLOWED')) {
@@ -18,484 +18,489 @@ requireRole(['production', 'accountant', 'manager']);
 
 $currentUser = getCurrentUser();
 $db = db();
-$error = '';
-$success = '';
-$isManager = $currentUser['role'] === 'manager';
-$isProduction = $currentUser['role'] === 'production';
-$tasksRetentionLimit = getTasksRetentionLimit();
 
-// التحقق من وجود جدول tasks وإنشاؤه/تحديثه إذا لم يكن موجوداً
-$tableCheck = $db->queryOne("SHOW TABLES LIKE 'tasks'");
-if (empty($tableCheck)) {
-    try {
-        $db->execute("
-            CREATE TABLE IF NOT EXISTS `tasks` (
-              `id` int(11) NOT NULL AUTO_INCREMENT,
-              `title` varchar(255) NOT NULL,
-              `description` text DEFAULT NULL,
-              `assigned_to` int(11) DEFAULT NULL,
-              `created_by` int(11) NOT NULL,
-              `priority` enum('low','normal','high','urgent') DEFAULT 'normal',
-              `status` enum('pending','in_progress','completed','cancelled','received') DEFAULT 'pending',
-              `due_date` date DEFAULT NULL,
-              `completed_at` timestamp NULL DEFAULT NULL,
-              `received_at` timestamp NULL DEFAULT NULL,
-              `started_at` timestamp NULL DEFAULT NULL,
-              `related_type` varchar(50) DEFAULT NULL,
-              `related_id` int(11) DEFAULT NULL,
-              `product_id` int(11) DEFAULT NULL,
-              `quantity` decimal(10,2) DEFAULT NULL,
-              `notes` text DEFAULT NULL,
-              `created_at` timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP,
-              `updated_at` timestamp NULL DEFAULT NULL ON UPDATE CURRENT_TIMESTAMP,
-              PRIMARY KEY (`id`),
-              KEY `assigned_to` (`assigned_to`),
-              KEY `created_by` (`created_by`),
-              KEY `status` (`status`),
-              KEY `priority` (`priority`),
-              KEY `due_date` (`due_date`),
-              KEY `product_id` (`product_id`),
-              CONSTRAINT `tasks_ibfk_1` FOREIGN KEY (`assigned_to`) REFERENCES `users` (`id`) ON DELETE SET NULL,
-              CONSTRAINT `tasks_ibfk_2` FOREIGN KEY (`created_by`) REFERENCES `users` (`id`) ON DELETE CASCADE,
-              CONSTRAINT `tasks_ibfk_3` FOREIGN KEY (`product_id`) REFERENCES `products` (`id`) ON DELETE SET NULL
-            ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
-        ");
-        $success = 'تم إنشاء جدول المهام بنجاح';
-    } catch (Exception $e) {
-        error_log("Error creating tasks table: " . $e->getMessage());
-    }
-} else {
-    // إضافة الأعمدة الجديدة إذا لم تكن موجودة
-    try {
-        $columnsToAdd = [
-            'received_at' => "ALTER TABLE tasks ADD COLUMN received_at timestamp NULL DEFAULT NULL AFTER completed_at",
-            'started_at' => "ALTER TABLE tasks ADD COLUMN started_at timestamp NULL DEFAULT NULL AFTER received_at",
-            'product_id' => "ALTER TABLE tasks ADD COLUMN product_id int(11) DEFAULT NULL AFTER related_id",
-            'quantity' => "ALTER TABLE tasks ADD COLUMN quantity decimal(10,2) DEFAULT NULL AFTER product_id",
-            'status_received' => "ALTER TABLE tasks MODIFY COLUMN status enum('pending','received','in_progress','completed','cancelled') DEFAULT 'pending'"
-        ];
-        
-        foreach ($columnsToAdd as $columnName => $sql) {
-            $columnCheck = $db->queryOne("SHOW COLUMNS FROM tasks LIKE '$columnName'");
-            if (empty($columnCheck)) {
-                try {
-                    $db->execute($sql);
-                } catch (Exception $e) {
-                    // قد تكون الأعمدة موجودة بالفعل أو نوع enum مختلف
-                    if ($columnName === 'status_received') {
-                        // تحديث enum status يدوياً
-                        try {
-                            $db->execute("ALTER TABLE tasks MODIFY COLUMN status enum('pending','received','in_progress','completed','cancelled') DEFAULT 'pending'");
-                        } catch (Exception $e2) {
-                            // تجاهل الخطأ إذا كان enum مختلف
-                        }
-                    }
-                }
-            }
+$errorMessages = [];
+$successMessages = [];
+
+$isManager = ($currentUser['role'] ?? '') === 'manager';
+$isProduction = ($currentUser['role'] ?? '') === 'production';
+
+if (!function_exists('tasksSafeString')) {
+    function tasksSafeString($value)
+    {
+        if ($value === null) {
+            return '';
         }
-        
-        // إضافة foreign key لـ product_id إذا لم يكن موجوداً
-        $foreignKeyCheck = $db->queryOne("
-            SELECT CONSTRAINT_NAME 
-            FROM information_schema.KEY_COLUMN_USAGE 
-            WHERE TABLE_NAME = 'tasks' 
-            AND COLUMN_NAME = 'product_id' 
-            AND CONSTRAINT_NAME != 'PRIMARY'
-        ");
-        if (empty($foreignKeyCheck)) {
-            try {
-                $db->execute("ALTER TABLE tasks ADD CONSTRAINT tasks_ibfk_3 FOREIGN KEY (product_id) REFERENCES products(id) ON DELETE SET NULL");
-            } catch (Exception $e) {
-                // تجاهل الخطأ إذا كان موجوداً بالفعل
-            }
+
+        if (!is_scalar($value)) {
+            return '';
         }
-    } catch (Exception $e) {
-        error_log("Error updating tasks table: " . $e->getMessage());
+
+        if (function_exists('mb_convert_encoding')) {
+            $value = @mb_convert_encoding((string) $value, 'UTF-8', 'UTF-8, ISO-8859-1, Windows-1256, Windows-1252');
+        } else {
+            $value = (string) $value;
+        }
+
+        $value = preg_replace('/[\x00-\x1F\x7F]/u', '', $value);
+        return trim($value);
     }
 }
 
-// معالجة العمليات
-if ($_SERVER['REQUEST_METHOD'] === 'POST') {
-    $action = $_POST['action'] ?? '';
-    
-    if ($action === 'add_task') {
-        // فقط المدير يمكنه إنشاء مهام
-        if (!$isManager) {
-            $error = 'غير مصرح لك بإنشاء مهام';
-        } else {
-            $title = trim($_POST['title'] ?? '');
-            $description = trim($_POST['description'] ?? '');
-            $assignedTo = intval($_POST['assigned_to'] ?? 0);
-            $priority = $_POST['priority'] ?? 'normal';
-            $dueDate = $_POST['due_date'] ?? null;
-            $relatedType = trim($_POST['related_type'] ?? '');
-            $relatedId = intval($_POST['related_id'] ?? 0);
-            $productId = intval($_POST['product_id'] ?? 0);
-            $quantity = floatval($_POST['quantity'] ?? 0);
-            $taskType = $_POST['task_type'] ?? 'general';
-            $notes = trim($_POST['notes'] ?? '');
-            
-            if (empty($title)) {
-                $error = 'يجب إدخال عنوان المهمة';
-            } elseif ($taskType === 'production' && $productId <= 0) {
-                $error = 'يجب اختيار منتج لمهمة الإنتاج';
-            } elseif ($taskType === 'production' && $quantity <= 0) {
-                $error = 'يجب إدخال كمية صحيحة لمهمة الإنتاج';
-            } else {
-                try {
-                    // إذا كانت مهمة إنتاج، تحديث العنوان
-                    if ($taskType === 'production' && $productId > 0) {
-                        $product = $db->queryOne("SELECT name FROM products WHERE id = ?", [$productId]);
-                        if ($product) {
-                            $title = 'إنتاج ' . $product['name'] . ' - ' . $quantity . ' قطعة';
-                        }
-                    }
-                    
-                    $columns = ['title', 'description', 'created_by', 'priority', 'status'];
-                    $values = [$title, $description, $currentUser['id'], $priority, 'pending'];
-                    $placeholders = ['?', '?', '?', '?', '?'];
-                    
-                    if ($assignedTo > 0) {
-                        $columns[] = 'assigned_to';
-                        $values[] = $assignedTo;
-                        $placeholders[] = '?';
-                    }
-                    
-                    if ($dueDate) {
-                        $columns[] = 'due_date';
-                        $values[] = $dueDate;
-                        $placeholders[] = '?';
-                    }
-                    
-                    if ($relatedType && $relatedId > 0) {
-                        $columns[] = 'related_type';
-                        $columns[] = 'related_id';
-                        $values[] = $relatedType;
-                        $values[] = $relatedId;
-                        $placeholders[] = '?';
-                        $placeholders[] = '?';
-                    }
-                    
-                    if ($productId > 0) {
-                        $columns[] = 'product_id';
-                        $values[] = $productId;
-                        $placeholders[] = '?';
-                    }
-                    
-                    if ($quantity > 0) {
-                        $columns[] = 'quantity';
-                        $values[] = $quantity;
-                        $placeholders[] = '?';
-                    }
-                    
-                    if ($notes) {
-                        $columns[] = 'notes';
-                        $values[] = $notes;
-                        $placeholders[] = '?';
-                    }
-                    
-                    $sql = "INSERT INTO tasks (" . implode(', ', $columns) . ") VALUES (" . implode(', ', $placeholders) . ")";
-                    $result = $db->execute($sql, $values);
+if (!function_exists('tasksSafeJsonEncode')) {
+    function tasksSafeJsonEncode($data): string
+    {
+        $options = JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES | JSON_HEX_TAG | JSON_HEX_APOS | JSON_HEX_QUOT | JSON_HEX_AMP;
 
-                    enforceTasksRetentionLimit($db, $tasksRetentionLimit);
+        $json = json_encode($data, $options);
+        if ($json === false) {
+            $sanitized = tasksSanitizeForJson($data);
+            $json = json_encode($sanitized, $options);
+        }
 
-                    logAudit($currentUser['id'], 'add_task', 'tasks', $result['insert_id'], null, ['title' => $title, 'type' => $taskType]);
-                    $success = 'تم إضافة المهمة بنجاح';
-                } catch (Exception $e) {
-                    $error = 'حدث خطأ في إضافة المهمة: ' . $e->getMessage();
-                }
+        return $json !== false ? $json : '[]';
+    }
+}
+
+if (!function_exists('tasksSanitizeForJson')) {
+    function tasksSanitizeForJson($value)
+    {
+        if (is_array($value)) {
+            foreach ($value as $key => $item) {
+                $value[$key] = tasksSanitizeForJson($item);
+            }
+            return $value;
+        }
+
+        if (is_object($value)) {
+            foreach (get_object_vars($value) as $key => $item) {
+                $value->$key = tasksSanitizeForJson($item);
+            }
+            return $value;
+        }
+
+        if (is_string($value) || is_numeric($value)) {
+            return tasksSafeString($value);
+        }
+
+        return $value;
+    }
+}
+
+if (!function_exists('getTasksRetentionLimit')) {
+    function getTasksRetentionLimit(): int
+    {
+        if (defined('TASKS_RETENTION_MAX_ROWS')) {
+            $limit = (int) TASKS_RETENTION_MAX_ROWS;
+            if ($limit > 0) {
+                return $limit;
             }
         }
-    } elseif ($action === 'receive_task') {
-        // عمال الإنتاج يمكنهم استلام المهام
-        $taskId = intval($_POST['task_id'] ?? 0);
-        
-        if ($taskId <= 0) {
-            $error = 'معرف المهمة غير صحيح';
-        } else {
-            // التحقق من أن المهمة مخصصة لهذا العامل
-            $task = $db->queryOne("SELECT assigned_to, status FROM tasks WHERE id = ?", [$taskId]);
-            if (!$task) {
-                $error = 'المهمة غير موجودة';
-            } elseif ($task['assigned_to'] != $currentUser['id']) {
-                $error = 'هذه المهمة غير مخصصة لك';
-            } else {
-                try {
-                    $db->execute("UPDATE tasks SET status = 'received', received_at = NOW() WHERE id = ?", [$taskId]);
-                    logAudit($currentUser['id'], 'receive_task', 'tasks', $taskId, null, null);
-                    $success = 'تم استلام المهمة بنجاح';
-                } catch (Exception $e) {
-                    $error = 'حدث خطأ في استلام المهمة: ' . $e->getMessage();
-                }
-            }
-        }
-    } elseif ($action === 'start_task') {
-        // عمال الإنتاج يمكنهم بدء المهام
-        $taskId = intval($_POST['task_id'] ?? 0);
-        
-        if ($taskId <= 0) {
-            $error = 'معرف المهمة غير صحيح';
-        } else {
-            $task = $db->queryOne("SELECT assigned_to, status FROM tasks WHERE id = ?", [$taskId]);
-            if (!$task) {
-                $error = 'المهمة غير موجودة';
-            } elseif ($task['assigned_to'] != $currentUser['id']) {
-                $error = 'هذه المهمة غير مخصصة لك';
-            } else {
-                try {
-                    $db->execute("UPDATE tasks SET status = 'in_progress', started_at = NOW() WHERE id = ?", [$taskId]);
-                    logAudit($currentUser['id'], 'start_task', 'tasks', $taskId, null, null);
-                    $success = 'تم بدء المهمة بنجاح';
-                } catch (Exception $e) {
-                    $error = 'حدث خطأ في بدء المهمة: ' . $e->getMessage();
-                }
-            }
-        }
-    } elseif ($action === 'complete_task') {
-        // عمال الإنتاج يمكنهم إكمال المهام
-        $taskId = intval($_POST['task_id'] ?? 0);
-        
-        if ($taskId <= 0) {
-            $error = 'معرف المهمة غير صحيح';
-        } else {
-            $task = $db->queryOne("SELECT assigned_to, status, title, created_by FROM tasks WHERE id = ?", [$taskId]);
-            if (!$task) {
-                $error = 'المهمة غير موجودة';
-            } elseif ($task['assigned_to'] != $currentUser['id']) {
-                $error = 'هذه المهمة غير مخصصة لك';
-            } else {
-                try {
-                    $db->execute("UPDATE tasks SET status = 'completed', completed_at = NOW() WHERE id = ?", [$taskId]);
-                    logAudit($currentUser['id'], 'complete_task', 'tasks', $taskId, null, null);
-                    $success = 'تم إكمال المهمة بنجاح';
 
+        return 100;
+    }
+}
+
+if (!function_exists('enforceTasksRetentionLimit')) {
+    function enforceTasksRetentionLimit($dbInstance = null, int $maxRows = 100): bool
+    {
+        $maxRows = max(1, (int) $maxRows);
+
+        try {
+            if ($dbInstance === null) {
+                $dbInstance = db();
+            }
+
+            if (!$dbInstance) {
+                return false;
+            }
+
+            $totalRow = $dbInstance->queryOne('SELECT COUNT(*) AS total FROM tasks');
+            $total = isset($totalRow['total']) ? (int) $totalRow['total'] : 0;
+
+            if ($total <= $maxRows) {
+                return true;
+            }
+
+            $toDelete = $total - $maxRows;
+            $ids = $dbInstance->query(
+                'SELECT id FROM tasks ORDER BY created_at ASC, id ASC LIMIT ?',
+                [max(1, $toDelete)]
+            );
+
+            if (empty($ids)) {
+                return true;
+            }
+
+            $idValues = array_map(static function ($row) {
+                return (int) $row['id'];
+            }, $ids);
+
+            $placeholders = implode(',', array_fill(0, count($idValues), '?'));
+            $dbInstance->execute("DELETE FROM tasks WHERE id IN ($placeholders)", $idValues);
+
+            return true;
+        } catch (Throwable $e) {
+            error_log('Tasks retention error: ' . $e->getMessage());
+            return false;
+        }
+    }
+}
+
+function tasksAddMessage(array &$bag, string $message): void
+{
+    $trimmed = tasksSafeString($message);
+    if ($trimmed !== '') {
+        $bag[] = $trimmed;
+    }
+}
+
+function tasksHandleAction(string $action, array $input, array $context): array
+{
+    $db = $context['db'];
+    $currentUser = $context['user'];
+    $isManager = (bool) ($context['is_manager'] ?? false);
+    $isProduction = (bool) ($context['is_production'] ?? false);
+    $retentionLimit = (int) $context['retention_limit'];
+
+    $result = ['error' => null, 'success' => null];
+
+    try {
+        switch ($action) {
+            case 'add_task':
+                if (!$isManager) {
+                    throw new RuntimeException('غير مصرح لك بإنشاء مهام');
+                }
+
+                $title = tasksSafeString($input['title'] ?? '');
+                $description = tasksSafeString($input['description'] ?? '');
+                $assignedTo = isset($input['assigned_to']) ? (int) $input['assigned_to'] : 0;
+                $priority = in_array(($input['priority'] ?? 'normal'), ['low', 'normal', 'high', 'urgent'], true)
+                    ? $input['priority']
+                    : 'normal';
+                $dueDate = tasksSafeString($input['due_date'] ?? '');
+                $relatedType = tasksSafeString($input['related_type'] ?? '');
+                $relatedId = isset($input['related_id']) ? (int) $input['related_id'] : 0;
+                $productId = isset($input['product_id']) ? (int) $input['product_id'] : 0;
+                $quantity = isset($input['quantity']) ? (float) $input['quantity'] : 0.0;
+                $taskType = $input['task_type'] ?? 'general';
+                $notes = tasksSafeString($input['notes'] ?? '');
+
+                if ($title === '' && $taskType !== 'production') {
+                    throw new RuntimeException('يجب إدخال عنوان المهمة');
+                }
+
+                if ($taskType === 'production') {
+                    if ($productId <= 0) {
+                        throw new RuntimeException('يجب اختيار منتج لمهمة الإنتاج');
+                    }
+
+                    if ($quantity <= 0) {
+                        throw new RuntimeException('يجب إدخال كمية صحيحة لمهمة الإنتاج');
+                    }
+
+                    $product = $db->queryOne('SELECT name FROM products WHERE id = ?', [$productId]);
+                    if ($product) {
+                        $title = 'إنتاج ' . tasksSafeString($product['name']) . ' - ' . number_format($quantity, 2) . ' قطعة';
+                    }
+                }
+
+                if ($title === '') {
+                    throw new RuntimeException('يجب إدخال عنوان المهمة');
+                }
+
+                $columns = ['title', 'created_by', 'priority', 'status'];
+                $values = [$title, (int) $currentUser['id'], $priority, 'pending'];
+                $placeholders = ['?', '?', '?', '?'];
+
+                if ($description !== '') {
+                    $columns[] = 'description';
+                    $values[] = $description;
+                    $placeholders[] = '?';
+                }
+
+                if ($assignedTo > 0) {
+                    $columns[] = 'assigned_to';
+                    $values[] = $assignedTo;
+                    $placeholders[] = '?';
+                }
+
+                if ($dueDate !== '') {
+                    $columns[] = 'due_date';
+                    $values[] = $dueDate;
+                    $placeholders[] = '?';
+                }
+
+                if ($relatedType !== '' && $relatedId > 0) {
+                    $columns[] = 'related_type';
+                    $columns[] = 'related_id';
+                    $values[] = $relatedType;
+                    $values[] = $relatedId;
+                    $placeholders[] = '?';
+                    $placeholders[] = '?';
+                }
+
+                if ($productId > 0) {
+                    $columns[] = 'product_id';
+                    $values[] = $productId;
+                    $placeholders[] = '?';
+                }
+
+                if ($quantity > 0) {
+                    $columns[] = 'quantity';
+                    $values[] = $quantity;
+                    $placeholders[] = '?';
+                }
+
+                if ($notes !== '') {
+                    $columns[] = 'notes';
+                    $values[] = $notes;
+                    $placeholders[] = '?';
+                }
+
+                $sql = 'INSERT INTO tasks (' . implode(', ', $columns) . ') VALUES (' . implode(', ', $placeholders) . ')';
+                $insertResult = $db->execute($sql, $values);
+                $insertId = $insertResult['insert_id'] ?? 0;
+
+                enforceTasksRetentionLimit($db, $retentionLimit);
+                logAudit($currentUser['id'], 'add_task', 'tasks', $insertId, null, ['title' => $title, 'type' => $taskType]);
+
+                $result['success'] = 'تم إضافة المهمة بنجاح';
+                break;
+
+            case 'receive_task':
+            case 'start_task':
+            case 'complete_task':
+                if (!$isProduction) {
+                    throw new RuntimeException('غير مصرح لك بتنفيذ هذا الإجراء');
+                }
+
+                $taskId = isset($input['task_id']) ? (int) $input['task_id'] : 0;
+                if ($taskId <= 0) {
+                    throw new RuntimeException('معرف المهمة غير صحيح');
+                }
+
+                $task = $db->queryOne('SELECT assigned_to, status, title, created_by FROM tasks WHERE id = ?', [$taskId]);
+                if (!$task) {
+                    throw new RuntimeException('المهمة غير موجودة');
+                }
+
+                if ((int) $task['assigned_to'] !== (int) $currentUser['id']) {
+                    throw new RuntimeException('هذه المهمة غير مخصصة لك');
+                }
+
+                $statusMap = [
+                    'receive_task' => ['status' => 'received', 'column' => 'received_at'],
+                    'start_task' => ['status' => 'in_progress', 'column' => 'started_at'],
+                    'complete_task' => ['status' => 'completed', 'column' => 'completed_at'],
+                ];
+
+                $update = $statusMap[$action];
+                $db->execute(
+                    "UPDATE tasks SET status = ?, {$update['column']} = NOW() WHERE id = ?",
+                    [$update['status'], $taskId]
+                );
+
+                logAudit($currentUser['id'], $action, 'tasks', $taskId, null, ['status' => $update['status']]);
+
+                if ($action === 'complete_task') {
                     try {
-                        $taskTitle = $task['title'] ?? ('مهمة #' . $taskId);
-                        $taskLink = getRelativeUrl('production.php?page=tasks');
+                        $taskTitle = tasksSafeString($task['title'] ?? ('مهمة #' . $taskId));
+                        $link = getRelativeUrl('production.php?page=tasks');
                         createNotification(
                             $currentUser['id'],
                             'تم إكمال المهمة',
                             'تم تسجيل المهمة "' . $taskTitle . '" كمكتملة.',
                             'success',
-                            $taskLink
+                            $link
                         );
 
-                        if (!empty($task['created_by']) && $task['created_by'] != $currentUser['id']) {
-                            $creatorLink = getRelativeUrl('manager.php?page=tasks');
-                            $workerName = $currentUser['full_name'] ?? $currentUser['username'] ?? 'عامل الإنتاج';
+                        if (!empty($task['created_by']) && (int) $task['created_by'] !== (int) $currentUser['id']) {
                             createNotification(
-                                (int)$task['created_by'],
+                                (int) $task['created_by'],
                                 'تم إكمال مهمة الإنتاج',
-                                $workerName . ' أكمل المهمة "' . $taskTitle . '".',
+                                ($currentUser['full_name'] ?? $currentUser['username'] ?? 'عامل الإنتاج') .
+                                    ' أكمل المهمة "' . $taskTitle . '".',
                                 'success',
-                                $creatorLink
+                                getRelativeUrl('manager.php?page=tasks')
                             );
                         }
-                    } catch (Exception $notifyError) {
-                        error_log('Task completion notification error: ' . $notifyError->getMessage());
+                    } catch (Throwable $notificationError) {
+                        error_log('Task completion notification error: ' . $notificationError->getMessage());
                     }
-                } catch (Exception $e) {
-                    $error = 'حدث خطأ في إكمال المهمة: ' . $e->getMessage();
                 }
-            }
-        }
-    } elseif ($action === 'change_status') {
-        // فقط المدير يمكنه تغيير الحالة مباشرة
-        if (!$isManager) {
-            $error = 'غير مصرح لك بتغيير حالة المهمة';
-        } else {
-            $taskId = intval($_POST['task_id'] ?? 0);
-            $status = $_POST['status'] ?? 'pending';
-            
-            if ($taskId <= 0) {
-                $error = 'معرف المهمة غير صحيح';
-            } else {
-                try {
-                    $setParts = ['status = ?'];
-                    $values = [$status];
-                    
-                    if ($status === 'completed') {
-                        $setParts[] = 'completed_at = NOW()';
-                    } else {
-                        $setParts[] = 'completed_at = NULL';
-                    }
-                    
-                    if ($status === 'received') {
-                        $setParts[] = 'received_at = NOW()';
-                    }
-                    
-                    if ($status === 'in_progress') {
-                        $setParts[] = 'started_at = NOW()';
-                    }
-                    
-                    $values[] = $taskId;
-                    
-                    $sql = "UPDATE tasks SET " . implode(', ', $setParts) . " WHERE id = ?";
-                    $db->execute($sql, $values);
-                    
-                    logAudit($currentUser['id'], 'change_task_status', 'tasks', $taskId, null, ['status' => $status]);
-                    $success = 'تم تحديث حالة المهمة بنجاح';
 
-                    if ($status === 'completed') {
-                        try {
-                            $taskDetails = $db->queryOne(
-                                "SELECT assigned_to, title FROM tasks WHERE id = ?",
-                                [$taskId]
-                            );
-                            if ($taskDetails && !empty($taskDetails['assigned_to'])) {
-                                $taskTitle = $taskDetails['title'] ?? ('مهمة #' . $taskId);
-                                createNotification(
-                                    (int)$taskDetails['assigned_to'],
-                                    'تم تحديث حالة المهمة',
-                                    'قام المدير بتعليم المهمة "' . $taskTitle . '" كمكتملة.',
-                                    'success',
-                                    getRelativeUrl('production.php?page=tasks')
-                                );
-                            }
-                        } catch (Exception $notifyError) {
-                            error_log('Manager status change notification error: ' . $notifyError->getMessage());
-                        }
-                    }
-                } catch (Exception $e) {
-                    $error = 'حدث خطأ في تحديث حالة المهمة: ' . $e->getMessage();
+                $result['success'] = 'تم تحديث حالة المهمة بنجاح';
+                break;
+
+            case 'change_status':
+                if (!$isManager) {
+                    throw new RuntimeException('غير مصرح لك بتغيير حالة المهمة');
                 }
-            }
+
+                $taskId = isset($input['task_id']) ? (int) $input['task_id'] : 0;
+                $status = $input['status'] ?? 'pending';
+                $validStatuses = ['pending', 'received', 'in_progress', 'completed', 'cancelled'];
+
+                if ($taskId <= 0 || !in_array($status, $validStatuses, true)) {
+                    throw new RuntimeException('بيانات غير صحيحة لتحديث المهمة');
+                }
+
+                $setParts = ['status = ?'];
+                $values = [$status];
+
+                $setParts[] = $status === 'completed' ? 'completed_at = NOW()' : 'completed_at = NULL';
+                $setParts[] = $status === 'received' ? 'received_at = NOW()' : 'received_at = NULL';
+                $setParts[] = $status === 'in_progress' ? 'started_at = NOW()' : 'started_at = NULL';
+
+                $values[] = $taskId;
+
+                $db->execute('UPDATE tasks SET ' . implode(', ', $setParts) . ' WHERE id = ?', $values);
+                logAudit($currentUser['id'], 'change_task_status', 'tasks', $taskId, null, ['status' => $status]);
+
+                $result['success'] = 'تم تحديث حالة المهمة بنجاح';
+                break;
+
+            case 'delete_task':
+                if (!$isManager) {
+                    throw new RuntimeException('غير مصرح لك بحذف المهام');
+                }
+
+                $taskId = isset($input['task_id']) ? (int) $input['task_id'] : 0;
+                if ($taskId <= 0) {
+                    throw new RuntimeException('معرف المهمة غير صحيح');
+                }
+
+                $db->execute('DELETE FROM tasks WHERE id = ?', [$taskId]);
+                logAudit($currentUser['id'], 'delete_task', 'tasks', $taskId, null, null);
+
+                $result['success'] = 'تم حذف المهمة بنجاح';
+                break;
+
+            default:
+                throw new RuntimeException('إجراء غير معروف');
         }
-    } elseif ($action === 'delete_task') {
-        // فقط المدير يمكنه حذف المهام
-        if (!$isManager) {
-            $error = 'غير مصرح لك بحذف المهام';
-        } else {
-            $taskId = intval($_POST['task_id'] ?? 0);
-            
-            if ($taskId <= 0) {
-                $error = 'معرف المهمة غير صحيح';
-            } else {
-                try {
-                    $db->execute("DELETE FROM tasks WHERE id = ?", [$taskId]);
-                    logAudit($currentUser['id'], 'delete_task', 'tasks', $taskId, null, null);
-                    $success = 'تم حذف المهمة بنجاح';
-                } catch (Exception $e) {
-                    $error = 'حدث خطأ في حذف المهمة: ' . $e->getMessage();
-                }
-            }
+    } catch (Throwable $e) {
+        $result['error'] = $e->getMessage();
+    }
+
+    return $result;
+}
+
+if ($_SERVER['REQUEST_METHOD'] === 'POST') {
+    $action = tasksSafeString($_POST['action'] ?? '');
+
+    if ($action !== '') {
+        $context = [
+            'db' => $db,
+            'user' => $currentUser,
+            'is_manager' => $isManager,
+            'is_production' => $isProduction,
+            'retention_limit' => getTasksRetentionLimit(),
+        ];
+
+        $result = tasksHandleAction($action, $_POST, $context);
+        if ($result['error']) {
+            tasksAddMessage($errorMessages, $result['error']);
+        } elseif ($result['success']) {
+            tasksAddMessage($successMessages, $result['success']);
         }
     }
 }
 
-// Pagination
-$pageNum = isset($_GET['p']) ? max(1, intval($_GET['p'])) : 1;
+$pageNum = isset($_GET['p']) ? max(1, (int) $_GET['p']) : 1;
 $perPage = 20;
 $offset = ($pageNum - 1) * $perPage;
 
-// البحث والفلترة
-$search = trim($_GET['search'] ?? '');
-$statusFilter = $_GET['status'] ?? '';
-$priorityFilter = $_GET['priority'] ?? '';
-$assignedFilter = intval($_GET['assigned'] ?? 0);
+$search = tasksSafeString($_GET['search'] ?? '');
+$statusFilter = tasksSafeString($_GET['status'] ?? '');
+$priorityFilter = tasksSafeString($_GET['priority'] ?? '');
+$assignedFilter = isset($_GET['assigned']) ? (int) $_GET['assigned'] : 0;
 
-// بناء استعلام SQL
 $whereConditions = [];
 $params = [];
 
-if ($search) {
-    $whereConditions[] = "(t.title LIKE ? OR t.description LIKE ?)";
-    $searchParam = "%$search%";
+if ($search !== '') {
+    $whereConditions[] = '(t.title LIKE ? OR t.description LIKE ?)';
+    $searchParam = '%' . $search . '%';
     $params[] = $searchParam;
     $params[] = $searchParam;
 }
 
-if ($statusFilter) {
-    $whereConditions[] = "t.status = ?";
+if ($statusFilter !== '') {
+    $whereConditions[] = 't.status = ?';
     $params[] = $statusFilter;
 } else {
     $whereConditions[] = "t.status != 'cancelled'";
 }
 
-if ($priorityFilter) {
-    $whereConditions[] = "t.priority = ?";
+if ($priorityFilter !== '' && in_array($priorityFilter, ['low', 'normal', 'high', 'urgent'], true)) {
+    $whereConditions[] = 't.priority = ?';
     $params[] = $priorityFilter;
 }
 
 if ($assignedFilter > 0) {
-    $whereConditions[] = "t.assigned_to = ?";
+    $whereConditions[] = 't.assigned_to = ?';
     $params[] = $assignedFilter;
 }
 
-// إذا كان المستخدم عامل إنتاج، عرض فقط المهام المخصصة له
 if ($isProduction) {
-    $whereConditions[] = "t.assigned_to = ?";
-    $params[] = $currentUser['id'];
+    $whereConditions[] = 't.assigned_to = ?';
+    $params[] = (int) $currentUser['id'];
 }
 
-$whereClause = !empty($whereConditions) ? "WHERE " . implode(' AND ', $whereConditions) : '';
+$whereClause = $whereConditions ? 'WHERE ' . implode(' AND ', $whereConditions) : '';
 
-// الحصول على إجمالي المهام
-$totalQuery = "SELECT COUNT(*) as total FROM tasks t $whereClause";
-$totalResult = $db->queryOne($totalQuery, $params);
-$totalTasks = $totalResult['total'] ?? 0;
-$totalPages = ceil($totalTasks / $perPage);
+$totalRow = $db->queryOne('SELECT COUNT(*) AS total FROM tasks t ' . $whereClause, $params);
+$totalTasks = isset($totalRow['total']) ? (int) $totalRow['total'] : 0;
+$totalPages = max(1, (int) ceil($totalTasks / $perPage));
 
-// الحصول على المهام
-$tasksQuery = "SELECT t.*, 
-     u1.full_name as assigned_to_name, 
-     u2.full_name as created_by_name,
-     p.name as product_name
-     FROM tasks t
-     LEFT JOIN users u1 ON t.assigned_to = u1.id
-     LEFT JOIN users u2 ON t.created_by = u2.id
-     LEFT JOIN products p ON t.product_id = p.id
-     $whereClause
-     ORDER BY 
-     CASE priority 
-         WHEN 'urgent' THEN 1 
-         WHEN 'high' THEN 2 
-         WHEN 'normal' THEN 3 
-         WHEN 'low' THEN 4 
-     END,
-     due_date ASC,
-     created_at DESC
-     LIMIT ? OFFSET ?";
-     
+$taskSql = "SELECT t.*, 
+    uAssign.full_name AS assigned_to_name,
+    uCreate.full_name AS created_by_name,
+    p.name AS product_name
+FROM tasks t
+LEFT JOIN users uAssign ON t.assigned_to = uAssign.id
+LEFT JOIN users uCreate ON t.created_by = uCreate.id
+LEFT JOIN products p ON t.product_id = p.id
+$whereClause
+ORDER BY 
+    CASE t.priority
+        WHEN 'urgent' THEN 1
+        WHEN 'high' THEN 2
+        WHEN 'normal' THEN 3
+        WHEN 'low' THEN 4
+        ELSE 5
+    END,
+    COALESCE(t.due_date, '9999-12-31') ASC,
+    t.created_at DESC
+LIMIT ? OFFSET ?";
+
 $queryParams = array_merge($params, [$perPage, $offset]);
-$tasks = $db->query($tasksQuery, $queryParams);
+$tasks = $db->query($taskSql, $queryParams);
 
-// الحصول على جميع المستخدمين للقائمة المنسدلة (فقط عمال الإنتاج)
-$users = $db->query("SELECT id, full_name, role FROM users WHERE status = 'active' AND role = 'production' ORDER BY full_name");
-
-// الحصول على المنتجات
+$users = $db->query("SELECT id, full_name FROM users WHERE status = 'active' AND role = 'production' ORDER BY full_name");
 $products = $db->query("SELECT id, name FROM products WHERE status = 'active' ORDER BY name");
 
-// إحصائيات
-$statsFilters = [];
-$statsParams = [];
+$statsBaseConditions = [];
+$statsBaseParams = [];
 
 if ($isProduction) {
-    $statsFilters[] = 'assigned_to = ?';
-    $statsParams[] = $currentUser['id'];
+    $statsBaseConditions[] = 'assigned_to = ?';
+    $statsBaseParams[] = (int) $currentUser['id'];
 }
 
-$buildStatsQuery = function(string $extraCondition = '', array $extraParams = []) use ($db, $statsFilters, $statsParams) {
-    $conditions = $statsFilters;
-    $params = $statsParams;
-
-    if ($extraCondition !== '') {
+$buildStatsQuery = function (?string $extraCondition = null, array $extraParams = []) use ($db, $statsBaseConditions, $statsBaseParams) {
+    $conditions = $statsBaseConditions;
+    if ($extraCondition) {
         $conditions[] = $extraCondition;
     }
 
-    if (!empty($extraParams)) {
-        $params = array_merge($params, $extraParams);
-    }
+    $params = array_merge($statsBaseParams, $extraParams);
+    $where = $conditions ? 'WHERE ' . implode(' AND ', $conditions) : '';
 
-    $whereClause = '';
-    if (!empty($conditions)) {
-        $whereClause = 'WHERE ' . implode(' AND ', $conditions);
-    }
-
-    $sql = "SELECT COUNT(*) as total FROM tasks $whereClause";
-    $result = $db->queryOne($sql, $params);
-
-    return isset($result['total']) ? (int) $result['total'] : 0;
+    $row = $db->queryOne('SELECT COUNT(*) AS total FROM tasks ' . $where, $params);
+    return isset($row['total']) ? (int) $row['total'] : 0;
 };
 
 $stats = [
@@ -507,260 +512,99 @@ $stats = [
     'overdue' => $buildStatsQuery("status != 'completed' AND due_date < CURDATE()")
 ];
 
-if (!function_exists('tasksNormalizeUtf8Value')) {
-    function tasksNormalizeUtf8Value($value)
-    {
-        if (!is_string($value)) {
-            return $value;
-        }
-
-        if (function_exists('mb_convert_encoding')) {
-            $converted = @mb_convert_encoding($value, 'UTF-8', 'UTF-8, ISO-8859-1, Windows-1256, Windows-1252');
-            if ($converted !== false) {
-                $value = $converted;
-            }
-        }
-
-        if (function_exists('mb_detect_encoding') && !mb_detect_encoding($value, 'UTF-8', true) && function_exists('iconv')) {
-            $converted = @iconv('Windows-1256', 'UTF-8//IGNORE', $value);
-            if ($converted !== false) {
-                $value = $converted;
-            }
-        }
-
-        if (function_exists('preg_replace')) {
-            $value = preg_replace('/[\x00-\x1F\x7F]/u', '', $value);
-        }
-
-        return $value;
-    }
-}
-
-if (!function_exists('tasksSanitizeForJsonEncoding')) {
-    function tasksSanitizeForJsonEncoding($data)
-    {
-        if (is_array($data)) {
-            $clean = [];
-            foreach ($data as $key => $value) {
-                $clean[$key] = tasksSanitizeForJsonEncoding($value);
-            }
-            return $clean;
-        }
-
-        if (is_object($data)) {
-            foreach (get_object_vars($data) as $property => $value) {
-                $data->$property = tasksSanitizeForJsonEncoding($value);
-            }
-            return $data;
-        }
-
-        if (is_string($data)) {
-            return tasksNormalizeUtf8Value($data);
-        }
-
-        return $data;
-    }
-}
-
-if (!function_exists('tasksSafeJsonEncode')) {
-    function tasksSafeJsonEncode($data): string
-    {
-        $options = JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES | JSON_HEX_TAG | JSON_HEX_APOS | JSON_HEX_QUOT | JSON_HEX_AMP;
-        $json = json_encode($data, $options);
-
-        if ($json === false) {
-            $cleanData = tasksSanitizeForJsonEncoding($data);
-            $json = json_encode($cleanData, $options);
-
-            if ($json === false) {
-                error_log('Tasks module JSON encode error: ' . json_last_error_msg());
-                return '[]';
-            }
-        }
-
-        if ($json === '' || $json === null || $json === 'null') {
-            return '[]';
-        }
-
-        return $json;
-    }
-}
-
 $tasksJson = tasksSafeJsonEncode($tasks);
 
-if (!function_exists('getTasksRetentionLimit')) {
-    function getTasksRetentionLimit(): int {
-        if (defined('TASKS_RETENTION_MAX_ROWS')) {
-            $value = (int) TASKS_RETENTION_MAX_ROWS;
-            if ($value > 0) {
-                return $value;
-            }
-        }
-        return 100;
-    }
-}
-
-if (!function_exists('enforceTasksRetentionLimit')) {
-    function enforceTasksRetentionLimit($dbInstance = null, int $maxRows = 100) {
-        $maxRows = (int) $maxRows;
-        if ($maxRows < 1) {
-            $maxRows = 100;
-        }
-
-        try {
-            if ($dbInstance === null) {
-                $dbInstance = db();
-            }
-
-            if (!$dbInstance) {
-                return false;
-            }
-
-            $totalRow = $dbInstance->queryOne("SELECT COUNT(*) AS total FROM tasks");
-            $total = isset($totalRow['total']) ? (int) $totalRow['total'] : 0;
-
-            if ($total <= $maxRows) {
-                return true;
-            }
-
-            $toDelete = $total - $maxRows;
-            $batchSize = 100;
-
-            while ($toDelete > 0) {
-                $currentBatch = min($batchSize, $toDelete);
-
-                $oldest = $dbInstance->query(
-                    "SELECT id FROM tasks ORDER BY created_at ASC, id ASC LIMIT ?",
-                    [$currentBatch]
-                );
-
-                if (empty($oldest)) {
-                    break;
-                }
-
-                $ids = array_map('intval', array_column($oldest, 'id'));
-                $ids = array_filter($ids, static function ($id) {
-                    return $id > 0;
-                });
-
-                if (empty($ids)) {
-                    break;
-                }
-
-                $placeholders = implode(',', array_fill(0, count($ids), '?'));
-                $dbInstance->execute(
-                    "DELETE FROM tasks WHERE id IN ($placeholders)",
-                    $ids
-                );
-
-                $deleted = count($ids);
-                $toDelete -= $deleted;
-
-                if ($deleted < $currentBatch) {
-                    break;
-                }
-            }
-
-            return true;
-        } catch (Throwable $e) {
-            error_log('Tasks retention enforce error: ' . $e->getMessage());
-            return false;
-        }
-    }
+function tasksHtml(string $value): string
+{
+    return htmlspecialchars(tasksSafeString($value), ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8');
 }
 ?>
 
 <div class="container-fluid">
-    <?php if ($error): ?>
+    <?php foreach ($errorMessages as $message): ?>
         <div class="alert alert-danger alert-dismissible fade show" role="alert">
-            <i class="bi bi-exclamation-triangle me-2"></i><?php echo htmlspecialchars($error); ?>
-            <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
+            <i class="bi bi-exclamation-triangle me-2"></i><?php echo tasksHtml($message); ?>
+            <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="إغلاق"></button>
         </div>
-    <?php endif; ?>
-    
-    <?php if ($success): ?>
+    <?php endforeach; ?>
+
+    <?php foreach ($successMessages as $message): ?>
         <div class="alert alert-success alert-dismissible fade show" role="alert">
-            <i class="bi bi-check-circle me-2"></i><?php echo htmlspecialchars($success); ?>
-            <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
+            <i class="bi bi-check-circle me-2"></i><?php echo tasksHtml($message); ?>
+            <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="إغلاق"></button>
         </div>
-    <?php endif; ?>
-    
-    <div class="row mb-3">
-        <div class="col-12">
-            <div class="d-flex justify-content-between align-items-center">
-                <h2><i class="bi bi-list-check me-2"></i>إدارة المهام</h2>
-                <?php if ($isManager): ?>
-                    <button type="button" class="btn btn-primary" data-bs-toggle="modal" data-bs-target="#addTaskModal">
-                        <i class="bi bi-plus-circle me-2"></i>إضافة مهمة جديدة
-                    </button>
-                <?php endif; ?>
-            </div>
-        </div>
+    <?php endforeach; ?>
+
+    <div class="d-flex justify-content-between align-items-center flex-wrap mb-3">
+        <h2 class="mb-0"><i class="bi bi-list-check me-2"></i>إدارة المهام</h2>
+        <?php if ($isManager): ?>
+            <button type="button" class="btn btn-primary" data-bs-toggle="modal" data-bs-target="#addTaskModal">
+                <i class="bi bi-plus-circle me-2"></i>إضافة مهمة جديدة
+            </button>
+        <?php endif; ?>
     </div>
-    
-    <!-- إحصائيات -->
-    <div class="row mb-3">
-        <div class="col-md-2 col-sm-6 mb-2">
-            <div class="card text-center border-primary">
+
+    <div class="row g-2 mb-3">
+        <div class="col-6 col-md-2">
+            <div class="card border-primary text-center h-100">
                 <div class="card-body p-2">
-                    <h5 class="card-title text-primary mb-0" style="font-size: 1.5rem;"><?php echo $stats['total']; ?></h5>
-                    <p class="card-text text-muted mb-0" style="font-size: 0.8rem;">إجمالي المهام</p>
+                    <h5 class="text-primary mb-0"><?php echo $stats['total']; ?></h5>
+                    <small class="text-muted">إجمالي المهام</small>
                 </div>
             </div>
         </div>
-        <div class="col-md-2 col-sm-6 mb-2">
-            <div class="card text-center border-warning">
+        <div class="col-6 col-md-2">
+            <div class="card border-warning text-center h-100">
                 <div class="card-body p-2">
-                    <h5 class="card-title text-warning mb-0" style="font-size: 1.5rem;"><?php echo $stats['pending']; ?></h5>
-                    <p class="card-text text-muted mb-0" style="font-size: 0.8rem;">معلقة</p>
+                    <h5 class="text-warning mb-0"><?php echo $stats['pending']; ?></h5>
+                    <small class="text-muted">معلقة</small>
                 </div>
             </div>
         </div>
-        <div class="col-md-2 col-sm-6 mb-2">
-            <div class="card text-center border-info">
+        <div class="col-6 col-md-2">
+            <div class="card border-info text-center h-100">
                 <div class="card-body p-2">
-                    <h5 class="card-title text-info mb-0" style="font-size: 1.5rem;"><?php echo $stats['received']; ?></h5>
-                    <p class="card-text text-muted mb-0" style="font-size: 0.8rem;">مستلمة</p>
+                    <h5 class="text-info mb-0"><?php echo $stats['received']; ?></h5>
+                    <small class="text-muted">مستلمة</small>
                 </div>
             </div>
         </div>
-        <div class="col-md-2 col-sm-6 mb-2">
-            <div class="card text-center border-info">
+        <div class="col-6 col-md-2">
+            <div class="card border-info text-center h-100">
                 <div class="card-body p-2">
-                    <h5 class="card-title text-info mb-0" style="font-size: 1.5rem;"><?php echo $stats['in_progress']; ?></h5>
-                    <p class="card-text text-muted mb-0" style="font-size: 0.8rem;">قيد التنفيذ</p>
+                    <h5 class="text-info mb-0"><?php echo $stats['in_progress']; ?></h5>
+                    <small class="text-muted">قيد التنفيذ</small>
                 </div>
             </div>
         </div>
-        <div class="col-md-2 col-sm-6 mb-2">
-            <div class="card text-center border-success">
+        <div class="col-6 col-md-2">
+            <div class="card border-success text-center h-100">
                 <div class="card-body p-2">
-                    <h5 class="card-title text-success mb-0" style="font-size: 1.5rem;"><?php echo $stats['completed']; ?></h5>
-                    <p class="card-text text-muted mb-0" style="font-size: 0.8rem;">مكتملة</p>
+                    <h5 class="text-success mb-0"><?php echo $stats['completed']; ?></h5>
+                    <small class="text-muted">مكتملة</small>
                 </div>
             </div>
         </div>
-        <div class="col-md-2 col-sm-6 mb-2">
-            <div class="card text-center border-danger">
+        <div class="col-6 col-md-2">
+            <div class="card border-danger text-center h-100">
                 <div class="card-body p-2">
-                    <h5 class="card-title text-danger mb-0" style="font-size: 1.5rem;"><?php echo $stats['overdue']; ?></h5>
-                    <p class="card-text text-muted mb-0" style="font-size: 0.8rem;">متأخرة</p>
+                    <h5 class="text-danger mb-0"><?php echo $stats['overdue']; ?></h5>
+                    <small class="text-muted">متأخرة</small>
                 </div>
             </div>
         </div>
     </div>
-    
-    <!-- فلاتر البحث - سطر واحد -->
+
     <div class="card mb-3">
-        <div class="card-body p-2">
+        <div class="card-body p-3">
             <form method="GET" action="" class="row g-2 align-items-end">
                 <input type="hidden" name="page" value="tasks">
-                <div class="col-md-2 col-sm-6">
-                    <label class="form-label mb-0" style="font-size: 0.85rem;">بحث</label>
-                    <input type="text" class="form-control form-control-sm" name="search" value="<?php echo htmlspecialchars($search); ?>" placeholder="عنوان أو وصف">
+                <div class="col-md-3 col-sm-6">
+                    <label class="form-label mb-1">بحث</label>
+                    <input type="text" class="form-control form-control-sm" name="search" value="<?php echo tasksHtml($search); ?>" placeholder="عنوان أو وصف">
                 </div>
                 <div class="col-md-2 col-sm-6">
-                    <label class="form-label mb-0" style="font-size: 0.85rem;">الحالة</label>
+                    <label class="form-label mb-1">الحالة</label>
                     <select class="form-select form-select-sm" name="status">
                         <option value="">الكل</option>
                         <option value="pending" <?php echo $statusFilter === 'pending' ? 'selected' : ''; ?>>معلقة</option>
@@ -771,7 +615,7 @@ if (!function_exists('enforceTasksRetentionLimit')) {
                     </select>
                 </div>
                 <div class="col-md-2 col-sm-6">
-                    <label class="form-label mb-0" style="font-size: 0.85rem;">الأولوية</label>
+                    <label class="form-label mb-1">الأولوية</label>
                     <select class="form-select form-select-sm" name="priority">
                         <option value="">الكل</option>
                         <option value="urgent" <?php echo $priorityFilter === 'urgent' ? 'selected' : ''; ?>>عاجلة</option>
@@ -781,47 +625,45 @@ if (!function_exists('enforceTasksRetentionLimit')) {
                     </select>
                 </div>
                 <?php if ($isManager): ?>
-                <div class="col-md-2 col-sm-6">
-                    <label class="form-label mb-0" style="font-size: 0.85rem;">المخصص إلى</label>
-                    <select class="form-select form-select-sm" name="assigned">
-                        <option value="0">الكل</option>
-                        <?php 
-                        foreach ($users as $user): ?>
-                            <option value="<?php echo $user['id']; ?>" <?php echo $assignedFilter === $user['id'] ? 'selected' : ''; ?>>
-                                <?php echo htmlspecialchars($user['full_name']); ?>
-                            </option>
-                        <?php endforeach; ?>
-                    </select>
-                </div>
+                    <div class="col-md-2 col-sm-6">
+                        <label class="form-label mb-1">المخصص إلى</label>
+                        <select class="form-select form-select-sm" name="assigned">
+                            <option value="0">الكل</option>
+                            <?php foreach ($users as $user): ?>
+                                <option value="<?php echo (int) $user['id']; ?>" <?php echo $assignedFilter === (int) $user['id'] ? 'selected' : ''; ?>>
+                                    <?php echo tasksHtml($user['full_name']); ?>
+                                </option>
+                            <?php endforeach; ?>
+                        </select>
+                    </div>
                 <?php endif; ?>
                 <div class="col-md-2 col-sm-6">
                     <button type="submit" class="btn btn-primary btn-sm w-100">
                         <i class="bi bi-search me-1"></i>بحث
                     </button>
                 </div>
-                <div class="col-md-2 col-sm-6">
+                <div class="col-md-1 col-sm-6">
                     <a href="?page=tasks" class="btn btn-secondary btn-sm w-100">
-                        <i class="bi bi-x me-1"></i>إعادة تعيين
+                        <i class="bi bi-x"></i>
                     </a>
                 </div>
             </form>
         </div>
     </div>
-    
-    <!-- جدول المهام -->
+
     <div class="card">
-        <div class="card-body">
+        <div class="card-body p-0">
             <?php if (empty($tasks)): ?>
                 <div class="text-center py-5">
-                    <i class="bi bi-inbox display-1 text-muted"></i>
-                    <p class="text-muted mt-3">لا توجد مهام</p>
+                    <i class="bi bi-inbox display-5 text-muted"></i>
+                    <p class="text-muted mt-3 mb-0">لا توجد مهام</p>
                 </div>
             <?php else: ?>
                 <div class="table-responsive">
-                    <table class="table table-hover">
-                        <thead>
+                    <table class="table table-hover mb-0 align-middle">
+                        <thead class="table-light">
                             <tr>
-                                <th>#</th>
+                                <th style="width: 60px;">#</th>
                                 <th>العنوان</th>
                                 <th>المنتج</th>
                                 <th>الكمية</th>
@@ -830,88 +672,91 @@ if (!function_exists('enforceTasksRetentionLimit')) {
                                 <th>الحالة</th>
                                 <th>تاريخ الاستحقاق</th>
                                 <th>أنشئت بواسطة</th>
-                                <th>الإجراءات</th>
+                                <th style="width: 180px;">الإجراءات</th>
                             </tr>
                         </thead>
                         <tbody>
                             <?php foreach ($tasks as $index => $task): ?>
                                 <?php
-                                $overdue = $task['due_date'] && !in_array($task['status'], ['completed', 'cancelled']) && strtotime($task['due_date']) < time();
+                                $rowNumber = ($pageNum - 1) * $perPage + $index + 1;
                                 $priorityClass = [
                                     'urgent' => 'danger',
                                     'high' => 'warning',
                                     'normal' => 'info',
-                                    'low' => 'secondary'
-                                ];
+                                    'low' => 'secondary',
+                                ][$task['priority']] ?? 'secondary';
+
                                 $statusClass = [
                                     'pending' => 'warning',
                                     'received' => 'info',
                                     'in_progress' => 'primary',
                                     'completed' => 'success',
-                                    'cancelled' => 'secondary'
-                                ];
-                                $statusText = [
+                                    'cancelled' => 'secondary',
+                                ][$task['status']] ?? 'secondary';
+
+                                $statusLabel = [
                                     'pending' => 'معلقة',
                                     'received' => 'مستلمة',
                                     'in_progress' => 'قيد التنفيذ',
                                     'completed' => 'مكتملة',
                                     'cancelled' => 'ملغاة'
-                                ];
+                                ][$task['status']] ?? tasksSafeString($task['status']);
+
+                                $priorityLabel = [
+                                    'urgent' => 'عاجلة',
+                                    'high' => 'عالية',
+                                    'normal' => 'عادية',
+                                    'low' => 'منخفضة'
+                                ][$task['priority']] ?? tasksSafeString($task['priority']);
+
+                                $overdue = !in_array($task['status'], ['completed', 'cancelled'], true)
+                                    && !empty($task['due_date'])
+                                    && strtotime((string) $task['due_date']) < time();
                                 ?>
                                 <tr class="<?php echo $overdue ? 'table-danger' : ''; ?>">
-                                    <td><?php echo ($pageNum - 1) * $perPage + $index + 1; ?></td>
+                                    <td><?php echo $rowNumber; ?></td>
                                     <td>
-                                        <strong><?php echo htmlspecialchars($task['title']); ?></strong>
+                                        <strong><?php echo tasksHtml($task['title'] ?? ''); ?></strong>
                                         <?php if ($overdue): ?>
                                             <span class="badge bg-danger ms-1">متأخرة</span>
                                         <?php endif; ?>
                                     </td>
-                                    <td><?php echo $task['product_name'] ? htmlspecialchars($task['product_name']) : '-'; ?></td>
-                                    <td><?php echo $task['quantity'] ? number_format($task['quantity'], 2) . ' قطعة' : '-'; ?></td>
-                                    <td><?php echo htmlspecialchars($task['assigned_to_name'] ?? 'غير محدد'); ?></td>
+                                    <td><?php echo isset($task['product_name']) && $task['product_name'] !== null ? tasksHtml($task['product_name']) : '<span class="text-muted">-</span>'; ?></td>
+                                    <td><?php echo isset($task['quantity']) && $task['quantity'] !== null ? number_format((float) $task['quantity'], 2) . ' قطعة' : '<span class="text-muted">-</span>'; ?></td>
+                                    <td><?php echo isset($task['assigned_to_name']) ? tasksHtml($task['assigned_to_name']) : '<span class="text-muted">غير محدد</span>'; ?></td>
+                                    <td><span class="badge bg-<?php echo $priorityClass; ?>"><?php echo tasksHtml($priorityLabel); ?></span></td>
+                                    <td><span class="badge bg-<?php echo $statusClass; ?>"><?php echo tasksHtml($statusLabel); ?></span></td>
                                     <td>
-                                        <span class="badge bg-<?php echo $priorityClass[$task['priority']] ?? 'secondary'; ?>">
-                                            <?php
-                                            $priorityText = ['urgent' => 'عاجلة', 'high' => 'عالية', 'normal' => 'عادية', 'low' => 'منخفضة'];
-                                            echo $priorityText[$task['priority']] ?? $task['priority'];
-                                            ?>
-                                        </span>
-                                    </td>
-                                    <td>
-                                        <span class="badge bg-<?php echo $statusClass[$task['status']] ?? 'secondary'; ?>">
-                                            <?php echo $statusText[$task['status']] ?? $task['status']; ?>
-                                        </span>
-                                    </td>
-                                    <td>
-                                        <?php if ($task['due_date']): ?>
-                                            <?php echo date('Y-m-d', strtotime($task['due_date'])); ?>
+                                        <?php if (!empty($task['due_date'])): ?>
+                                            <?php echo tasksHtml(date('Y-m-d', strtotime((string) $task['due_date']))); ?>
                                         <?php else: ?>
                                             <span class="text-muted">-</span>
                                         <?php endif; ?>
                                     </td>
-                                    <td><?php echo htmlspecialchars($task['created_by_name'] ?? ''); ?></td>
+                                    <td><?php echo isset($task['created_by_name']) ? tasksHtml($task['created_by_name']) : ''; ?></td>
                                     <td>
-                                        <div class="btn-group btn-group-sm">
-                                            <?php if ($isProduction && $task['assigned_to'] == $currentUser['id']): ?>
+                                        <div class="btn-group btn-group-sm" role="group">
+                                            <?php if ($isProduction && (int) ($task['assigned_to'] ?? 0) === (int) $currentUser['id']): ?>
                                                 <?php if ($task['status'] === 'pending'): ?>
-                                                    <button type="button" class="btn btn-sm btn-info" onclick="receiveTask(<?php echo $task['id']; ?>)" title="استلام المهمة">
+                                                    <button type="button" class="btn btn-outline-info" onclick="submitTaskAction('receive_task', <?php echo (int) $task['id']; ?>)">
                                                         <i class="bi bi-check-circle me-1"></i>استلام
                                                     </button>
                                                 <?php elseif ($task['status'] === 'received'): ?>
-                                                    <button type="button" class="btn btn-sm btn-primary" onclick="startTask(<?php echo $task['id']; ?>)" title="بدء العمل">
+                                                    <button type="button" class="btn btn-outline-primary" onclick="submitTaskAction('start_task', <?php echo (int) $task['id']; ?>)">
                                                         <i class="bi bi-play-circle me-1"></i>بدء
                                                     </button>
                                                 <?php elseif ($task['status'] === 'in_progress'): ?>
-                                                    <button type="button" class="btn btn-sm btn-success" onclick="completeTask(<?php echo $task['id']; ?>)" title="إكمال المهمة">
-                                                        <i class="bi bi-check-circle-fill me-1"></i>إكمال
+                                                    <button type="button" class="btn btn-outline-success" onclick="submitTaskAction('complete_task', <?php echo (int) $task['id']; ?>)">
+                                                        <i class="bi bi-check2-circle me-1"></i>إكمال
                                                     </button>
                                                 <?php endif; ?>
                                             <?php endif; ?>
+
                                             <?php if ($isManager): ?>
-                                                <button type="button" class="btn btn-sm btn-info" onclick="viewTask(<?php echo $task['id']; ?>)" title="عرض">
+                                                <button type="button" class="btn btn-outline-secondary" onclick="viewTask(<?php echo (int) $task['id']; ?>)">
                                                     <i class="bi bi-eye"></i>
                                                 </button>
-                                                <button type="button" class="btn btn-sm btn-danger" onclick="deleteTask(<?php echo $task['id']; ?>)" title="حذف">
+                                                <button type="button" class="btn btn-outline-danger" onclick="confirmDeleteTask(<?php echo (int) $task['id']; ?>)">
                                                     <i class="bi bi-trash"></i>
                                                 </button>
                                             <?php endif; ?>
@@ -922,19 +767,18 @@ if (!function_exists('enforceTasksRetentionLimit')) {
                         </tbody>
                     </table>
                 </div>
-                
-                <!-- Pagination -->
+
                 <?php if ($totalPages > 1): ?>
-                    <nav aria-label="Page navigation">
+                    <nav class="my-3" aria-label="Task pagination">
                         <ul class="pagination justify-content-center">
-                            <?php
-                            $queryParams = $_GET;
-                            for ($i = 1; $i <= $totalPages; $i++):
-                                $queryParams['p'] = $i;
-                                $url = '?' . http_build_query($queryParams);
-                            ?>
+                            <?php for ($i = 1; $i <= $totalPages; $i++): ?>
+                                <?php
+                                $paramsForPage = $_GET;
+                                $paramsForPage['p'] = $i;
+                                $url = '?' . http_build_query($paramsForPage);
+                                ?>
                                 <li class="page-item <?php echo $pageNum === $i ? 'active' : ''; ?>">
-                                    <a class="page-link" href="<?php echo htmlspecialchars($url); ?>"><?php echo $i; ?></a>
+                                    <a class="page-link" href="<?php echo tasksHtml($url); ?>"><?php echo $i; ?></a>
                                 </li>
                             <?php endfor; ?>
                         </ul>
@@ -946,99 +790,97 @@ if (!function_exists('enforceTasksRetentionLimit')) {
 </div>
 
 <?php if ($isManager): ?>
-<!-- Modal إضافة مهمة -->
-<div class="modal fade" id="addTaskModal" tabindex="-1">
-    <div class="modal-dialog modal-lg">
+<div class="modal fade" id="addTaskModal" tabindex="-1" aria-hidden="true">
+    <div class="modal-dialog modal-lg modal-dialog-scrollable">
         <div class="modal-content">
-            <div class="modal-header">
-                <h5 class="modal-title">إضافة مهمة جديدة</h5>
-                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
-            </div>
             <form method="POST" action="" id="addTaskForm">
-                <input type="hidden" name="action" value="add_task">
+                <div class="modal-header">
+                    <h5 class="modal-title">إضافة مهمة جديدة</h5>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="إغلاق"></button>
+                </div>
                 <div class="modal-body">
-                    <div class="mb-3">
-                        <label class="form-label">نوع المهمة <span class="text-danger">*</span></label>
-                        <select class="form-select" name="task_type" id="task_type" required onchange="toggleProductionFields()">
-                            <option value="general">مهمة عامة</option>
-                            <option value="production">مهمة إنتاج</option>
-                        </select>
-                    </div>
-                    <div class="mb-3">
-                        <label class="form-label">عنوان المهمة <span class="text-danger">*</span></label>
-                        <input type="text" class="form-control" name="title" id="task_title" required>
-                        <small class="text-muted">سيتم ملء العنوان تلقائياً لمهام الإنتاج</small>
-                    </div>
-                    <div id="production_fields" style="display: none;">
-                        <div class="row">
-                            <div class="col-md-6 mb-3">
-                                <label class="form-label">المنتج <span class="text-danger">*</span></label>
-                                <select class="form-select" name="product_id" id="product_id">
-                                    <option value="0">اختر المنتج</option>
-                                    <?php foreach ($products as $product): ?>
-                                        <option value="<?php echo $product['id']; ?>"><?php echo htmlspecialchars($product['name']); ?></option>
-                                    <?php endforeach; ?>
-                                </select>
-                            </div>
-                            <div class="col-md-6 mb-3">
-                                <label class="form-label">الكمية <span class="text-danger">*</span></label>
-                                <input type="number" step="0.01" min="0.01" class="form-control" name="quantity" id="quantity" placeholder="0.00">
-                            </div>
+                    <input type="hidden" name="action" value="add_task">
+                    <div class="row g-3">
+                        <div class="col-md-6">
+                            <label class="form-label">نوع المهمة <span class="text-danger">*</span></label>
+                            <select class="form-select" name="task_type" id="task_type" required>
+                                <option value="general">مهمة عامة</option>
+                                <option value="production">مهمة إنتاج</option>
+                            </select>
                         </div>
-                    </div>
-                    <div class="mb-3">
-                        <label class="form-label">الوصف</label>
-                        <textarea class="form-control" name="description" rows="3"></textarea>
-                    </div>
-                    <div class="row">
-                        <div class="col-md-6 mb-3">
+                        <div class="col-md-6">
+                            <label class="form-label">العنوان <span class="text-danger">*</span></label>
+                            <input type="text" class="form-control" name="title" id="task_title" required>
+                        </div>
+                        <div class="col-12">
+                            <label class="form-label">الوصف</label>
+                            <textarea class="form-control" name="description" rows="3" placeholder="تفاصيل المهمة"></textarea>
+                        </div>
+                        <div class="col-md-6">
                             <label class="form-label">المخصص إلى</label>
                             <select class="form-select" name="assigned_to">
                                 <option value="0">غير محدد</option>
                                 <?php foreach ($users as $user): ?>
-                                    <option value="<?php echo $user['id']; ?>"><?php echo htmlspecialchars($user['full_name']); ?></option>
+                                    <option value="<?php echo (int) $user['id']; ?>"><?php echo tasksHtml($user['full_name']); ?></option>
                                 <?php endforeach; ?>
                             </select>
                         </div>
-                        <div class="col-md-6 mb-3">
+                        <div class="col-md-6">
                             <label class="form-label">الأولوية</label>
                             <select class="form-select" name="priority">
-                                <option value="low">منخفضة</option>
                                 <option value="normal" selected>عادية</option>
+                                <option value="low">منخفضة</option>
                                 <option value="high">عالية</option>
                                 <option value="urgent">عاجلة</option>
                             </select>
                         </div>
+                        <div class="col-md-6">
+                            <label class="form-label">تاريخ الاستحقاق</label>
+                            <input type="date" class="form-control" name="due_date">
+                        </div>
+                        <div class="col-md-6">
+                            <label class="form-label">ملاحظات إضافية</label>
+                            <textarea class="form-control" name="notes" rows="2"></textarea>
+                        </div>
                     </div>
-                    <div class="mb-3">
-                        <label class="form-label">تاريخ الاستحقاق</label>
-                        <input type="date" class="form-control" name="due_date">
-                    </div>
-                    <div class="mb-3">
-                        <label class="form-label">ملاحظات</label>
-                        <textarea class="form-control" name="notes" rows="2"></textarea>
+
+                    <div class="border rounded p-3 mt-3" id="production_fields" style="display: none;">
+                        <h6 class="fw-bold mb-3">بيانات مهمة الإنتاج</h6>
+                        <div class="row g-3">
+                            <div class="col-md-6">
+                                <label class="form-label">المنتج <span class="text-danger">*</span></label>
+                                <select class="form-select" name="product_id" id="product_id">
+                                    <option value="0">اختر المنتج</option>
+                                    <?php foreach ($products as $product): ?>
+                                        <option value="<?php echo (int) $product['id']; ?>"><?php echo tasksHtml($product['name']); ?></option>
+                                    <?php endforeach; ?>
+                                </select>
+                            </div>
+                            <div class="col-md-6">
+                                <label class="form-label">الكمية <span class="text-danger">*</span></label>
+                                <input type="number" step="0.01" min="0.01" class="form-control" name="quantity" id="quantity" placeholder="0.00">
+                            </div>
+                        </div>
+                        <div class="form-text mt-2">سيتم إنشاء العنوان تلقائيًا بناءً على المنتج والكمية.</div>
                     </div>
                 </div>
                 <div class="modal-footer">
                     <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">إلغاء</button>
-                    <button type="submit" class="btn btn-primary">إضافة</button>
+                    <button type="submit" class="btn btn-primary">حفظ</button>
                 </div>
             </form>
         </div>
     </div>
 </div>
 
-<!-- Modal عرض المهمة -->
-<div class="modal fade" id="viewTaskModal" tabindex="-1">
-    <div class="modal-dialog modal-lg">
+<div class="modal fade" id="viewTaskModal" tabindex="-1" aria-hidden="true">
+    <div class="modal-dialog modal-lg modal-dialog-scrollable">
         <div class="modal-content">
             <div class="modal-header">
                 <h5 class="modal-title">تفاصيل المهمة</h5>
-                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="إغلاق"></button>
             </div>
-            <div class="modal-body" id="viewTaskContent">
-                <!-- سيتم ملؤه بالـ JavaScript -->
-            </div>
+            <div class="modal-body" id="viewTaskContent"></div>
             <div class="modal-footer">
                 <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">إغلاق</button>
             </div>
@@ -1047,227 +889,213 @@ if (!function_exists('enforceTasksRetentionLimit')) {
 </div>
 <?php endif; ?>
 
+<form method="POST" action="" id="taskActionForm" style="display: none;">
+    <input type="hidden" name="action" value="">
+    <input type="hidden" name="task_id" value="">
+    <input type="hidden" name="status" value="">
+</form>
+
 <script>
-let tasksData = <?php echo $tasksJson; ?>;
-if (!Array.isArray(tasksData)) {
-    if (tasksData && typeof tasksData === 'object') {
-        tasksData = Object.values(tasksData);
-    } else {
-        tasksData = [];
-    }
-}
+(function () {
+    'use strict';
 
-function tasksSanitizeText(value) {
-    if (value === null || value === undefined) {
-        return '';
+    const tasksDataRaw = <?php echo $tasksJson; ?>;
+    const tasksData = Array.isArray(tasksDataRaw)
+        ? tasksDataRaw
+        : (tasksDataRaw && typeof tasksDataRaw === 'object' ? Object.values(tasksDataRaw) : []);
+
+    const taskTypeSelect = document.getElementById('task_type');
+    const productionFields = document.getElementById('production_fields');
+    const productSelect = document.getElementById('product_id');
+    const quantityInput = document.getElementById('quantity');
+    const titleInput = document.getElementById('task_title');
+    const taskActionForm = document.getElementById('taskActionForm');
+
+    function hideLoader() {
+        const loader = document.getElementById('pageLoader');
+        if (loader) {
+            loader.style.display = 'none';
+            loader.classList.add('d-none');
+        }
     }
 
-    const unsafeControlChars = /[\u0000-\u001F\u007F]/g;
-    const htmlUnsafeChars = /[&<>"'`]/g;
-    const htmlEntities = {
-        '&': '&amp;',
-        '<': '&lt;',
-        '>': '&gt;',
-        '"': '&quot;',
-        "'": '&#39;',
-        '`': '&#96;'
+    function sanitizeText(value) {
+        if (value === null || value === undefined) {
+            return '';
+        }
+
+        return String(value)
+            .replace(/[\u0000-\u001F\u007F]/g, '')
+            .replace(/[&<>"'`]/g, function (char) {
+                return ({
+                    '&': '&amp;',
+                    '<': '&lt;',
+                    '>': '&gt;',
+                    '"': '&quot;',
+                    "'": '&#39;',
+                    '`': '&#96;'
+                })[char] || char;
+            });
+    }
+
+    function sanitizeMultilineText(value) {
+        return sanitizeText(value).replace(/(\r\n|\r|\n)/g, '<br>');
+    }
+
+    function toggleProductionFields() {
+        if (!taskTypeSelect || !productionFields || !titleInput) {
+            return;
+        }
+
+        const isProductionTask = taskTypeSelect.value === 'production';
+        productionFields.style.display = isProductionTask ? 'block' : 'none';
+        titleInput.readOnly = isProductionTask;
+
+        if (!isProductionTask) {
+            if (productSelect) productSelect.required = false;
+            if (quantityInput) quantityInput.required = false;
+            titleInput.value = '';
+            return;
+        }
+
+        if (productSelect) productSelect.required = true;
+        if (quantityInput) quantityInput.required = true;
+        updateProductionTitle();
+    }
+
+    function updateProductionTitle() {
+        if (!productSelect || !quantityInput || !titleInput) {
+            return;
+        }
+
+        const productId = parseInt(productSelect.value, 10);
+        const quantity = parseFloat(quantityInput.value);
+
+        if (productId > 0 && quantity > 0) {
+            const productName = sanitizeText(productSelect.options[productSelect.selectedIndex].text || 'منتج');
+            titleInput.value = 'إنتاج ' + productName + ' - ' + quantity.toFixed(2) + ' قطعة';
+        }
+    }
+
+    window.submitTaskAction = function (action, taskId) {
+        if (!taskActionForm) return;
+
+        taskActionForm.querySelector('input[name="action"]').value = sanitizeText(action);
+        taskActionForm.querySelector('input[name="task_id"]').value = parseInt(taskId, 10) || '';
+        taskActionForm.submit();
     };
 
-    const stringValue = String(value).replace(unsafeControlChars, '');
-    return stringValue.replace(htmlUnsafeChars, (char) => htmlEntities[char] || char);
-}
+    window.confirmDeleteTask = function (taskId) {
+        if (window.confirm('هل أنت متأكد من حذف هذه المهمة؟')) {
+            submitTaskAction('delete_task', taskId);
+        }
+    };
 
-function tasksSanitizeMultilineText(value) {
-    const sanitized = tasksSanitizeText(value);
-    return sanitized.replace(/(\r\n|\r|\n)/g, '<br>');
-}
+    window.viewTask = function (taskId) {
+        const task = tasksData.find(function (item) {
+            return parseInt(item.id, 10) === parseInt(taskId, 10);
+        });
 
-function toggleProductionFields() {
-    const taskTypeInput = document.getElementById('task_type');
-    const productionFields = document.getElementById('production_fields');
-    const productId = document.getElementById('product_id');
-    const quantity = document.getElementById('quantity');
-    const taskTitle = document.getElementById('task_title');
+        if (!task) {
+            return;
+        }
 
-    if (!taskTypeInput || !productionFields || !productId || !quantity || !taskTitle) {
-        return;
-    }
+        const priorityText = {
+            'urgent': 'عاجلة',
+            'high': 'عالية',
+            'normal': 'عادية',
+            'low': 'منخفضة'
+        };
 
-    const taskType = taskTypeInput.value;
-    
-    if (taskType === 'production') {
-        productionFields.style.display = 'block';
-        productId.required = true;
-        quantity.required = true;
-        taskTitle.readOnly = true;
-        updateProductionTitle();
-    } else {
-        productionFields.style.display = 'none';
-        productId.required = false;
-        quantity.required = false;
-        taskTitle.readOnly = false;
-        taskTitle.value = '';
-    }
-}
+        const statusText = {
+            'pending': 'معلقة',
+            'received': 'مستلمة',
+            'in_progress': 'قيد التنفيذ',
+            'completed': 'مكتملة',
+            'cancelled': 'ملغاة'
+        };
 
-function updateProductionTitle() {
-    const productId = document.getElementById('product_id');
-    const quantity = document.getElementById('quantity');
-    const taskTitle = document.getElementById('task_title');
-    
-    if (!productId || !quantity || !taskTitle) {
-        return;
-    }
+        const title = sanitizeText(task.title || '');
+        const description = task.description ? sanitizeMultilineText(task.description) : 'لا يوجد وصف';
+        const productName = task.product_name ? sanitizeText(task.product_name) : '';
+        const quantity = task.quantity ? sanitizeText(task.quantity) : '';
+        const assignedTo = task.assigned_to_name ? sanitizeText(task.assigned_to_name) : 'غير محدد';
+        const createdBy = task.created_by_name ? sanitizeText(task.created_by_name) : '';
+        const dueDate = task.due_date ? sanitizeText(task.due_date) : 'غير محدد';
+        const createdAt = task.created_at ? sanitizeText(task.created_at) : '';
+        const notes = task.notes ? sanitizeMultilineText(task.notes) : '';
 
-    if (productId.value > 0 && quantity.value > 0) {
-        const productName = productId.options[productId.selectedIndex].text;
-        taskTitle.value = 'إنتاج ' + productName + ' - ' + quantity.value + ' قطعة';
-    }
-}
+        const priorityBadgeClass = task.priority === 'urgent' ? 'danger'
+            : task.priority === 'high' ? 'warning'
+            : task.priority === 'normal' ? 'info'
+            : 'secondary';
 
-document.getElementById('product_id')?.addEventListener('change', updateProductionTitle);
-document.getElementById('quantity')?.addEventListener('input', updateProductionTitle);
+        const statusBadgeClass = task.status === 'pending' ? 'warning'
+            : task.status === 'received' ? 'info'
+            : task.status === 'in_progress' ? 'primary'
+            : task.status === 'completed' ? 'success'
+            : 'secondary';
 
-function viewTask(taskId) {
-    const task = tasksData.find(t => t.id == taskId);
-    if (!task) return;
-    
-    const priorityText = {'urgent': 'عاجلة', 'high': 'عالية', 'normal': 'عادية', 'low': 'منخفضة'};
-    const statusText = {'pending': 'معلقة', 'received': 'مستلمة', 'in_progress': 'قيد التنفيذ', 'completed': 'مكتملة', 'cancelled': 'ملغاة'};
-    const title = tasksSanitizeText(task.title || '');
-    const description = task.description ? tasksSanitizeMultilineText(task.description) : tasksSanitizeMultilineText('لا يوجد وصف');
-    const productName = task.product_name ? tasksSanitizeText(task.product_name) : '';
-    const quantity = task.quantity ? tasksSanitizeText(task.quantity) : '';
-    const assignedToName = tasksSanitizeText(task.assigned_to_name || 'غير محدد');
-    const createdByName = tasksSanitizeText(task.created_by_name || '');
-    const dueDate = task.due_date ? tasksSanitizeText(task.due_date) : 'غير محدد';
-    const createdAt = task.created_at ? tasksSanitizeText(task.created_at) : '';
-    const notes = task.notes ? tasksSanitizeMultilineText(task.notes) : '';
-    const priorityBadgeClass = task.priority === 'urgent' ? 'danger'
-        : task.priority === 'high' ? 'warning'
-        : task.priority === 'normal' ? 'info'
-        : 'secondary';
-    const statusBadgeClass = task.status === 'pending' ? 'warning'
-        : task.status === 'received' ? 'info'
-        : task.status === 'in_progress' ? 'primary'
-        : task.status === 'completed' ? 'success'
-        : 'secondary';
-    const priorityLabel = tasksSanitizeText(priorityText[task.priority] || task.priority || '');
-    const statusLabel = tasksSanitizeText(statusText[task.status] || task.status || '');
-    
-    const content = `
-        <div class="mb-3">
-            <h5>${title}</h5>
-        </div>
-        <div class="mb-3">
-            <strong>الوصف:</strong>
-            <p>${description}</p>
-        </div>
-        ${productName ? `<div class="mb-3"><strong>المنتج:</strong> ${productName}</div>` : ''}
-        ${quantity ? `<div class="mb-3"><strong>الكمية:</strong> ${quantity} قطعة</div>` : ''}
-        <div class="row mb-3">
-            <div class="col-md-6">
-                <strong>المخصص إلى:</strong> ${assignedToName}
+        const content = `
+            <div class="mb-3">
+                <h5>${title}</h5>
             </div>
-            <div class="col-md-6">
-                <strong>أنشئت بواسطة:</strong> ${createdByName}
+            <div class="mb-3">
+                <strong>الوصف:</strong>
+                <p>${description}</p>
             </div>
-        </div>
-        <div class="row mb-3">
-            <div class="col-md-6">
-                <strong>الأولوية:</strong> 
-                <span class="badge bg-${priorityBadgeClass}">
-                    ${priorityLabel}
-                </span>
+            ${productName ? `<div class="mb-3"><strong>المنتج:</strong> ${productName}</div>` : ''}
+            ${quantity ? `<div class="mb-3"><strong>الكمية:</strong> ${quantity} قطعة</div>` : ''}
+            <div class="row mb-3">
+                <div class="col-md-6"><strong>المخصص إلى:</strong> ${assignedTo}</div>
+                <div class="col-md-6"><strong>أنشئت بواسطة:</strong> ${createdBy}</div>
             </div>
-            <div class="col-md-6">
-                <strong>الحالة:</strong> 
-                <span class="badge bg-${statusBadgeClass}">
-                    ${statusLabel}
-                </span>
+            <div class="row mb-3">
+                <div class="col-md-6">
+                    <strong>الأولوية:</strong>
+                    <span class="badge bg-${priorityBadgeClass}">${sanitizeText(priorityText[task.priority] || task.priority || '')}</span>
+                </div>
+                <div class="col-md-6">
+                    <strong>الحالة:</strong>
+                    <span class="badge bg-${statusBadgeClass}">${sanitizeText(statusText[task.status] || task.status || '')}</span>
+                </div>
             </div>
-        </div>
-        <div class="row mb-3">
-            <div class="col-md-6">
-                <strong>تاريخ الاستحقاق:</strong> ${dueDate}
+            <div class="row mb-3">
+                <div class="col-md-6"><strong>تاريخ الاستحقاق:</strong> ${dueDate}</div>
+                <div class="col-md-6"><strong>تاريخ الإنشاء:</strong> ${createdAt}</div>
             </div>
-            <div class="col-md-6">
-                <strong>تاريخ الإنشاء:</strong> ${createdAt}
-            </div>
-        </div>
-        ${notes ? `<div class="mb-3"><strong>ملاحظات:</strong><p>${notes}</p></div>` : ''}
-    `;
-    
-    document.getElementById('viewTaskContent').innerHTML = content;
-    new bootstrap.Modal(document.getElementById('viewTaskModal')).show();
-}
+            ${notes ? `<div class="mb-3"><strong>ملاحظات:</strong><p>${notes}</p></div>` : ''}
+        `;
 
-function receiveTask(taskId) {
-    if (!confirm('هل أنت متأكد من استلام هذه المهمة؟')) return;
-    
-    const form = document.createElement('form');
-    form.method = 'POST';
-    form.innerHTML = `
-        <input type="hidden" name="action" value="receive_task">
-        <input type="hidden" name="task_id" value="${taskId}">
-    `;
-    document.body.appendChild(form);
-    form.submit();
-}
+        const modalContent = document.getElementById('viewTaskContent');
+        if (modalContent) {
+            modalContent.innerHTML = content;
+        }
 
-function startTask(taskId) {
-    if (!confirm('هل أنت متأكد من بدء العمل على هذه المهمة؟')) return;
-    
-    const form = document.createElement('form');
-    form.method = 'POST';
-    form.innerHTML = `
-        <input type="hidden" name="action" value="start_task">
-        <input type="hidden" name="task_id" value="${taskId}">
-    `;
-    document.body.appendChild(form);
-    form.submit();
-}
+        const modalElement = document.getElementById('viewTaskModal');
+        if (modalElement && typeof bootstrap !== 'undefined') {
+            const modal = bootstrap.Modal.getOrCreateInstance(modalElement);
+            modal.show();
+        }
+    };
 
-function completeTask(taskId) {
-    if (!confirm('هل أنت متأكد من إكمال هذه المهمة؟')) return;
-    
-    const form = document.createElement('form');
-    form.method = 'POST';
-    form.innerHTML = `
-        <input type="hidden" name="action" value="complete_task">
-        <input type="hidden" name="task_id" value="${taskId}">
-    `;
-    document.body.appendChild(form);
-    form.submit();
-}
-
-function deleteTask(taskId) {
-    if (!confirm('هل أنت متأكد من حذف هذه المهمة؟')) return;
-    
-    const form = document.createElement('form');
-    form.method = 'POST';
-    form.innerHTML = `
-        <input type="hidden" name="action" value="delete_task">
-        <input type="hidden" name="task_id" value="${taskId}">
-    `;
-    document.body.appendChild(form);
-    form.submit();
-}
-
-function hideTasksPageLoader() {
-    const pageLoader = document.getElementById('pageLoader');
-    if (pageLoader) {
-        pageLoader.style.display = 'none';
-        pageLoader.style.visibility = 'hidden';
-        pageLoader.classList.add('hidden');
-    }
-
-    if (typeof toggleProductionFields === 'function') {
+    document.addEventListener('DOMContentLoaded', function () {
+        hideLoader();
         toggleProductionFields();
-    }
-}
+    });
 
-document.addEventListener('DOMContentLoaded', hideTasksPageLoader);
-window.addEventListener('load', hideTasksPageLoader);
-setTimeout(hideTasksPageLoader, 1500);
+    window.addEventListener('load', hideLoader);
+
+    if (taskTypeSelect) {
+        taskTypeSelect.addEventListener('change', toggleProductionFields);
+    }
+
+    if (productSelect) {
+        productSelect.addEventListener('change', updateProductionTitle);
+    }
+
+    if (quantityInput) {
+        quantityInput.addEventListener('input', updateProductionTitle);
+    }
+})();
 </script>
