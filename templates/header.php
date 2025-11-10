@@ -537,7 +537,7 @@ if ($currentUser && $currentUserRole === 'sales') {
       data-user-role="<?php echo htmlspecialchars($currentUser['role'] ?? ''); ?>"
       data-user-id="<?php echo isset($currentUser['id']) ? (int) $currentUser['id'] : 0; ?>">
     <!-- 🎬 شاشة التحميل -->
-    <div id="pageLoader">
+    <div id="pageLoader" class="hidden" style="display: none;">
         <div class="loader-icon">
             <i class="bi bi-box-seam"></i>
         </div>
