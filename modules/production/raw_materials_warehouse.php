@@ -2088,7 +2088,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             }
         }
         
-        // إنشاء قالب منتج موحد
+        // إنشاء قالب منتج قياسي
         elseif ($action === 'create_unified_template') {
             $productName = trim($_POST['product_name'] ?? $_POST['template_name'] ?? '');
             if ($productName !== '') {
@@ -2252,7 +2252,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             if ($normalizedProductName !== '') {
                 try {
                     $existingTemplate = $db->queryOne(
-                        "SELECT id FROM unified_product_templates WHERE LOWER(product_name) = ? LIMIT 1",
+                        "SELECT id FROM product_templates WHERE LOWER(product_name) = ? LIMIT 1",
                         [$normalizedProductName]
                     );
                 } catch (Exception $e) {
@@ -2270,16 +2270,25 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 $error = 'يجب اختيار أداة تعبئة واحدة على الأقل';
             } else {
                 try {
-                    ensureUnifiedTemplateColumns($db);
+                    ensureProductTemplatesExtendedSchema($db);
                     $db->beginTransaction();
 
-                    // إنشاء القالب
+                    $honeyQuantity = 0.0;
+                    foreach ($rawMaterials as $material) {
+                        if (in_array($material['type'], ['honey_raw', 'honey_filtered'], true)) {
+                            $honeyQuantity += (float)$material['quantity'];
+                        }
+                    }
+
                     $result = $db->execute(
-                        "INSERT INTO unified_product_templates (product_name, created_by, status, main_supplier_id, notes, form_payload) VALUES (?, ?, ?, ?, ?, ?)",
+                        "INSERT INTO product_templates (product_name, honey_quantity, status, created_by, template_type, main_supplier_id, notes, details_json)
+                         VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
                         [
                             $productName,
-                            $currentUser['id'],
+                            $honeyQuantity,
                             $templateStatus,
+                            $currentUser['id'],
+                            'advanced',
                             $mainSupplierId,
                             $templateNotes !== '' ? $templateNotes : null,
                             $templatePayloadJson
@@ -2290,14 +2299,11 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     // إضافة المواد الخام
                     foreach ($rawMaterials as $material) {
                         $db->execute(
-                            "INSERT INTO template_raw_materials (template_id, material_type, material_name, supplier_id, honey_variety, quantity, unit) 
-                             VALUES (?, ?, ?, ?, ?, ?, ?)",
+                            "INSERT INTO product_template_raw_materials (template_id, material_name, quantity_per_unit, unit) 
+                             VALUES (?, ?, ?, ?)",
                             [
                                 $templateId,
-                                $material['type'],
                                 $material['name'],
-                                $material['supplier_id'],
-                                $material['honey_variety'],
                                 $material['quantity'],
                                 $material['unit']
                             ]
@@ -2306,27 +2312,32 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
                     // إضافة أدوات التعبئة
                     foreach ($packagingItems as $packaging) {
+                        $packagingName = null;
+                        $packagingRow = $db->queryOne(
+                            "SELECT name FROM packaging_materials WHERE id = ?",
+                            [$packaging['id']]
+                        );
+                        if ($packagingRow && !empty($packagingRow['name'])) {
+                            $packagingName = $packagingRow['name'];
+                        }
+                        if ($packagingName === null) {
+                            $packagingName = 'أداة تعبئة #' . $packaging['id'];
+                        }
+
                         $db->execute(
-                            "INSERT INTO template_packaging (template_id, packaging_material_id, quantity_per_unit) 
-                             VALUES (?, ?, ?)",
-                            [$templateId, $packaging['id'], $packaging['quantity']]
+                            "INSERT INTO product_template_packaging (template_id, packaging_material_id, packaging_name, quantity_per_unit) 
+                             VALUES (?, ?, ?, ?)",
+                            [$templateId, $packaging['id'], $packagingName, $packaging['quantity']]
                         );
                     }
 
                     $db->commit();
 
-                    logAudit($currentUser['id'], 'create_unified_template', 'unified_product_templates', $templateId, null, [
+                    logAudit($currentUser['id'], 'create_product_template', 'product_templates', $templateId, null, [
                         'product' => $productName,
                         'status' => $templateStatus,
                         'main_supplier_id' => $mainSupplierId
                     ]);
-
-                    try {
-                        ensureProductTemplatesExtendedSchema($db);
-                        syncUnifiedTemplateToProductTemplate($db, $templateId);
-                    } catch (Exception $syncError) {
-                        error_log("Unified template sync error: " . $syncError->getMessage());
-                    }
 
                     preventDuplicateSubmission(
                         'تم إنشاء قالب المنتج بنجاح',
