@@ -16,6 +16,87 @@ require_once __DIR__ . '/../../includes/security.php';
 require_once __DIR__ . '/../../includes/path_helper.php';
 require_once __DIR__ . '/../../includes/table_styles.php';
 
+if (!function_exists('getTasksRetentionLimit')) {
+    function getTasksRetentionLimit(): int {
+        if (defined('TASKS_RETENTION_MAX_ROWS')) {
+            $value = (int) TASKS_RETENTION_MAX_ROWS;
+            if ($value > 0) {
+                return $value;
+            }
+        }
+        return 100;
+    }
+}
+
+if (!function_exists('enforceTasksRetentionLimit')) {
+    function enforceTasksRetentionLimit($dbInstance = null, int $maxRows = 100) {
+        $maxRows = (int) $maxRows;
+        if ($maxRows < 1) {
+            $maxRows = 100;
+        }
+
+        try {
+            if ($dbInstance === null) {
+                $dbInstance = db();
+            }
+
+            if (!$dbInstance) {
+                return false;
+            }
+
+            $totalRow = $dbInstance->queryOne("SELECT COUNT(*) AS total FROM tasks");
+            $total = isset($totalRow['total']) ? (int) $totalRow['total'] : 0;
+
+            if ($total <= $maxRows) {
+                return true;
+            }
+
+            $toDelete = $total - $maxRows;
+            $batchSize = 100;
+
+            while ($toDelete > 0) {
+                $currentBatch = min($batchSize, $toDelete);
+
+                $oldest = $dbInstance->query(
+                    "SELECT id FROM tasks ORDER BY created_at ASC, id ASC LIMIT ?",
+                    [$currentBatch]
+                );
+
+                if (empty($oldest)) {
+                    break;
+                }
+
+                $ids = array_map('intval', array_column($oldest, 'id'));
+                $ids = array_filter($ids, static function ($id) {
+                    return $id > 0;
+                });
+
+                if (empty($ids)) {
+                    break;
+                }
+
+                $placeholders = implode(',', array_fill(0, count($ids), '?'));
+                $dbInstance->execute(
+                    "DELETE FROM tasks WHERE id IN ($placeholders)",
+                    $ids
+                );
+
+                $deleted = count($ids);
+                $toDelete -= $deleted;
+
+                if ($deleted < $currentBatch) {
+                    break;
+                }
+            }
+
+            return true;
+        } catch (Throwable $e) {
+            error_log('Tasks retention enforce error: ' . $e->getMessage());
+            return false;
+        }
+    }
+}
+
 requireRole('manager');
 
 $db = db();
@@ -385,86 +466,6 @@ try {
     error_log('Manager recent tasks error: ' . $e->getMessage());
 }
 
-if (!function_exists('getTasksRetentionLimit')) {
-    function getTasksRetentionLimit(): int {
-        if (defined('TASKS_RETENTION_MAX_ROWS')) {
-            $value = (int) TASKS_RETENTION_MAX_ROWS;
-            if ($value > 0) {
-                return $value;
-            }
-        }
-        return 100;
-    }
-}
-
-if (!function_exists('enforceTasksRetentionLimit')) {
-    function enforceTasksRetentionLimit($dbInstance = null, int $maxRows = 100) {
-        $maxRows = (int) $maxRows;
-        if ($maxRows < 1) {
-            $maxRows = 100;
-        }
-
-        try {
-            if ($dbInstance === null) {
-                $dbInstance = db();
-            }
-
-            if (!$dbInstance) {
-                return false;
-            }
-
-            $totalRow = $dbInstance->queryOne("SELECT COUNT(*) AS total FROM tasks");
-            $total = isset($totalRow['total']) ? (int) $totalRow['total'] : 0;
-
-            if ($total <= $maxRows) {
-                return true;
-            }
-
-            $toDelete = $total - $maxRows;
-            $batchSize = 100;
-
-            while ($toDelete > 0) {
-                $currentBatch = min($batchSize, $toDelete);
-
-                $oldest = $dbInstance->query(
-                    "SELECT id FROM tasks ORDER BY created_at ASC, id ASC LIMIT ?",
-                    [$currentBatch]
-                );
-
-                if (empty($oldest)) {
-                    break;
-                }
-
-                $ids = array_map('intval', array_column($oldest, 'id'));
-                $ids = array_filter($ids, static function ($id) {
-                    return $id > 0;
-                });
-
-                if (empty($ids)) {
-                    break;
-                }
-
-                $placeholders = implode(',', array_fill(0, count($ids), '?'));
-                $dbInstance->execute(
-                    "DELETE FROM tasks WHERE id IN ($placeholders)",
-                    $ids
-                );
-
-                $deleted = count($ids);
-                $toDelete -= $deleted;
-
-                if ($deleted < $currentBatch) {
-                    break;
-                }
-            }
-
-            return true;
-        } catch (Throwable $e) {
-            error_log('Tasks retention enforce error: ' . $e->getMessage());
-            return false;
-        }
-    }
-}
 ?>
 
 <style>

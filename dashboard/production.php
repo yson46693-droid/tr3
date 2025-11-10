@@ -13,7 +13,7 @@ require_once __DIR__ . '/../includes/path_helper.php';
 require_once __DIR__ . '/../includes/production_helper.php';
 require_once __DIR__ . '/../includes/table_styles.php';
 
-requireRole('production');
+requireRole(['production', 'manager']);
 
 $currentUser = getCurrentUser();
 $db = db();
