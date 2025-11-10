@@ -220,8 +220,8 @@ function getBatchNumber($batchId) {
             $batch['raw_materials'] = $db->query(
                 "SELECT 
                     brm.quantity_used,
-                    rm.name,
-                    rm.unit
+                    COALESCE(brm.material_name, rm.name) AS name,
+                    COALESCE(brm.unit, rm.unit) AS unit
                  FROM batch_raw_materials brm
                  LEFT JOIN raw_materials rm ON brm.raw_material_id = rm.id
                  WHERE brm.batch_id = ?",
@@ -236,8 +236,8 @@ function getBatchNumber($batchId) {
             $batch['packaging_materials_details'] = $db->query(
                 "SELECT 
                     bp.quantity_used,
-                    pm.name,
-                    pm.unit
+                    COALESCE(bp.packaging_name, pm.name) AS name,
+                    COALESCE(bp.unit, pm.unit) AS unit
                  FROM batch_packaging bp
                  LEFT JOIN packaging_materials pm ON bp.packaging_material_id = pm.id
                  WHERE bp.batch_id = ?",

@@ -377,6 +377,50 @@ function batchCreationEnsureTables(PDO $pdo): void
         $pdo->exec($sql);
     }
 
+    try {
+        if (!batchCreationColumnExists($pdo, 'batch_raw_materials', 'material_name')) {
+            $pdo->exec("
+                ALTER TABLE `batch_raw_materials`
+                ADD COLUMN `material_name` varchar(255) DEFAULT NULL AFTER `raw_material_id`
+            ");
+        }
+    } catch (Throwable $e) {
+        error_log('batchCreationEnsureTables: failed adding material_name column -> ' . $e->getMessage());
+    }
+
+    try {
+        if (!batchCreationColumnExists($pdo, 'batch_raw_materials', 'unit')) {
+            $pdo->exec("
+                ALTER TABLE `batch_raw_materials`
+                ADD COLUMN `unit` varchar(50) DEFAULT NULL AFTER `material_name`
+            ");
+        }
+    } catch (Throwable $e) {
+        error_log('batchCreationEnsureTables: failed adding unit column -> ' . $e->getMessage());
+    }
+
+    try {
+        if (!batchCreationColumnExists($pdo, 'batch_packaging', 'packaging_name')) {
+            $pdo->exec("
+                ALTER TABLE `batch_packaging`
+                ADD COLUMN `packaging_name` varchar(255) DEFAULT NULL AFTER `packaging_material_id`
+            ");
+        }
+    } catch (Throwable $e) {
+        error_log('batchCreationEnsureTables: failed adding packaging_name column -> ' . $e->getMessage());
+    }
+
+    try {
+        if (!batchCreationColumnExists($pdo, 'batch_packaging', 'unit')) {
+            $pdo->exec("
+                ALTER TABLE `batch_packaging`
+                ADD COLUMN `unit` varchar(50) DEFAULT NULL AFTER `packaging_name`
+            ");
+        }
+    } catch (Throwable $e) {
+        error_log('batchCreationEnsureTables: failed adding packaging unit column -> ' . $e->getMessage());
+    }
+
     $ensured = true;
 }
 
@@ -438,6 +482,46 @@ function batchCreationCreate(int $templateId, int $units): array
         }
 
         $pdo->beginTransaction();
+
+        $batchRawMaterialsExists = batchCreationTableExists($pdo, 'batch_raw_materials');
+        $batchRawHasNameColumn = $batchRawMaterialsExists && batchCreationColumnExists($pdo, 'batch_raw_materials', 'material_name');
+        $batchRawHasUnitColumn = $batchRawMaterialsExists && batchCreationColumnExists($pdo, 'batch_raw_materials', 'unit');
+        $batchRawInsertStatement = null;
+        if ($batchRawMaterialsExists) {
+            $rawInsertColumns = ['batch_id', 'raw_material_id', 'quantity_used'];
+            $rawInsertPlaceholders = ['?', '?', '?'];
+            if ($batchRawHasNameColumn) {
+                $rawInsertColumns[] = 'material_name';
+                $rawInsertPlaceholders[] = '?';
+            }
+            if ($batchRawHasUnitColumn) {
+                $rawInsertColumns[] = 'unit';
+                $rawInsertPlaceholders[] = '?';
+            }
+            $batchRawInsertStatement = $pdo->prepare(
+                'INSERT INTO batch_raw_materials (' . implode(', ', $rawInsertColumns) . ') VALUES (' . implode(', ', $rawInsertPlaceholders) . ')'
+            );
+        }
+
+        $batchPackagingExists = batchCreationTableExists($pdo, 'batch_packaging');
+        $batchPackagingHasNameColumn = $batchPackagingExists && batchCreationColumnExists($pdo, 'batch_packaging', 'packaging_name');
+        $batchPackagingHasUnitColumn = $batchPackagingExists && batchCreationColumnExists($pdo, 'batch_packaging', 'unit');
+        $batchPackagingInsertStatement = null;
+        if ($batchPackagingExists) {
+            $packInsertColumns = ['batch_id', 'packaging_material_id', 'quantity_used'];
+            $packInsertPlaceholders = ['?', '?', '?'];
+            if ($batchPackagingHasNameColumn) {
+                $packInsertColumns[] = 'packaging_name';
+                $packInsertPlaceholders[] = '?';
+            }
+            if ($batchPackagingHasUnitColumn) {
+                $packInsertColumns[] = 'unit';
+                $packInsertPlaceholders[] = '?';
+            }
+            $batchPackagingInsertStatement = $pdo->prepare(
+                'INSERT INTO batch_packaging (' . implode(', ', $packInsertColumns) . ') VALUES (' . implode(', ', $packInsertPlaceholders) . ')'
+            );
+        }
 
         // جلب بيانات القالب
         $templateStmt = $pdo->prepare("
@@ -695,6 +779,18 @@ function batchCreationCreate(int $templateId, int $units): array
         if (!$canUpdateRawStock && !empty($materialsForStockDeduction)) {
             foreach ($materialsForStockDeduction as $stockMaterial) {
                 batchCreationDeductTypedStock($pdo, $stockMaterial, (float)$units);
+
+                if ($batchRawMaterialsExists && $batchRawInsertStatement instanceof PDOStatement) {
+                    $qtyUsed = (float)($stockMaterial['quantity_per_unit'] ?? 0) * $units;
+                    $params = [$batchId, null, $qtyUsed];
+                    if ($batchRawHasNameColumn) {
+                        $params[] = (string)($stockMaterial['material_name'] ?? '');
+                    }
+                    if ($batchRawHasUnitColumn) {
+                        $params[] = $stockMaterial['unit'] ?? null;
+                    }
+                    $batchRawInsertStatement->execute($params);
+                }
             }
         }
 
@@ -804,7 +900,7 @@ function batchCreationCreate(int $templateId, int $units): array
         }
 
         if ($canUpdateRawStock && !empty($materials)) {
-            if (!batchCreationTableExists($pdo, 'batch_raw_materials')) {
+            if (!$batchRawMaterialsExists || !$batchRawInsertStatement instanceof PDOStatement) {
                 throw new RuntimeException('جدول تفاصيل المواد الخام غير موجود');
             }
 
@@ -814,21 +910,24 @@ function batchCreationCreate(int $templateId, int $units): array
                 $rawStockColumn,
                 $rawStockColumn
             ));
-            $insertBatchRaw = $pdo->prepare('
-                INSERT INTO batch_raw_materials (batch_id, raw_material_id, quantity_used)
-                VALUES (?, ?, ?)
-            ');
 
             foreach ($materials as $material) {
                 $qtyUsed = (float) $material['quantity_per_unit'] * $units;
 
                 $updateRawStock->execute([$qtyUsed, $material['raw_id']]);
-                $insertBatchRaw->execute([$batchId, $material['raw_id'], $qtyUsed]);
+                $params = [$batchId, $material['raw_id'], $qtyUsed];
+                if ($batchRawHasNameColumn) {
+                    $params[] = (string)($material['raw_name'] ?? '');
+                }
+                if ($batchRawHasUnitColumn) {
+                    $params[] = $material['unit'] ?? null;
+                }
+                $batchRawInsertStatement->execute($params);
             }
         }
 
         if (!empty($packaging)) {
-            if (!batchCreationTableExists($pdo, 'batch_packaging')) {
+            if (!$batchPackagingExists || !$batchPackagingInsertStatement instanceof PDOStatement) {
                 throw new RuntimeException('جدول تفاصيل أدوات التعبئة غير موجود');
             }
 
@@ -838,16 +937,22 @@ function batchCreationCreate(int $templateId, int $units): array
                 $packagingStockColumn,
                 $packagingStockColumn
             ));
-            $insertBatchPack = $pdo->prepare('
-                INSERT INTO batch_packaging (batch_id, packaging_material_id, quantity_used)
-                VALUES (?, ?, ?)
-            ');
 
             foreach ($packaging as $pack) {
                 $qtyUsed = (float) $pack['quantity_per_unit'] * $units;
 
-                $updatePackStock->execute([$qtyUsed, $pack['pack_id']]);
-                $insertBatchPack->execute([$batchId, $pack['pack_id'], $qtyUsed]);
+                if (!empty($pack['pack_id'])) {
+                    $updatePackStock->execute([$qtyUsed, $pack['pack_id']]);
+                }
+
+                $params = [$batchId, $pack['pack_id'], $qtyUsed];
+                if ($batchPackagingHasNameColumn) {
+                    $params[] = (string)($pack['pack_name'] ?? '');
+                }
+                if ($batchPackagingHasUnitColumn) {
+                    $params[] = $pack['unit'] ?? null;
+                }
+                $batchPackagingInsertStatement->execute($params);
             }
         }
 

@@ -49,11 +49,29 @@ if ($batchNumber === '') {
 $db = null;
 
 try {
-    define('ACCESS_ALLOWED', true);
-    $appRoot = realpath(__DIR__ . '/../v1');
-    if (!$appRoot) {
-        throw new RuntimeException('تعذر تحديد مسار تطبيق v1 الرئيسي.');
+    if (!defined('ACCESS_ALLOWED')) {
+        define('ACCESS_ALLOWED', true);
     }
+
+    $rootCandidates = [
+        realpath(__DIR__ . '/../v1'),
+        realpath(__DIR__ . '/..'),
+        realpath(__DIR__ . '/../../v2'),
+        realpath(__DIR__ . '/../../')
+    ];
+
+    $appRoot = null;
+    foreach ($rootCandidates as $candidate) {
+        if ($candidate && is_dir($candidate . '/includes')) {
+            $appRoot = $candidate;
+            break;
+        }
+    }
+
+    if (!$appRoot) {
+        throw new RuntimeException('تعذر تحديد مجلد التطبيق الرئيسي الذي يحتوي على مجلد includes.');
+    }
+
     require_once $appRoot . '/includes/config.php';
     require_once $appRoot . '/includes/db.php';
     require_once $appRoot . '/includes/batch_numbers.php';
