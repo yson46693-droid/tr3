@@ -387,26 +387,56 @@ function notifyTodayPaymentSchedules($salesRepId) {
         return;
     }
 
+    $notifiedCustomers = [];
+
+    $todayDate = new DateTimeImmutable('today');
+
     foreach ($schedules as $schedule) {
         $scheduleId = (int) ($schedule['id'] ?? 0);
         if ($scheduleId <= 0) {
             continue;
         }
 
-        $link = getRelativeUrl('dashboard/sales.php?page=payment_schedules&id=' . $scheduleId);
+        $customerId = (int) ($schedule['customer_id'] ?? 0);
+        if ($customerId > 0 && isset($notifiedCustomers[$customerId])) {
+            continue;
+        }
+
+        $link = $customerId > 0
+            ? getRelativeUrl('dashboard/sales.php?page=payment_schedules&customer_id=' . $customerId)
+            : getRelativeUrl('dashboard/sales.php?page=payment_schedules&id=' . $scheduleId);
+
+        $scheduleDueDate = null;
+        $notificationType = 'payment_due';
+        $isOverdue = false;
+
+        try {
+            if (!empty($schedule['due_date'])) {
+                $scheduleDueDate = new DateTimeImmutable($schedule['due_date']);
+                $isOverdue = $scheduleDueDate < $todayDate;
+                if ($isOverdue) {
+                    $notificationType = 'payment_overdue';
+                }
+            }
+        } catch (Exception $dateParseError) {
+            error_log('Invalid payment schedule due date: ' . $dateParseError->getMessage());
+        }
 
         try {
             $existing = $db->queryOne(
                 "SELECT id FROM notifications 
                  WHERE user_id = ? 
-                   AND type = 'payment_due' 
+                   AND type = ? 
                    AND DATE(created_at) = CURDATE()
                    AND link = ?
                  LIMIT 1",
-                [$salesRepId, $link]
+                [$salesRepId, $notificationType, $link]
             );
 
             if ($existing) {
+                if ($customerId > 0) {
+                    $notifiedCustomers[$customerId] = true;
+                }
                 continue;
             }
         } catch (Exception $checkError) {
@@ -415,24 +445,41 @@ function notifyTodayPaymentSchedules($salesRepId) {
 
         $customerName = $schedule['customer_name'] ?? 'عميل';
         $amount = (float) ($schedule['amount'] ?? 0);
-        $dueDate = $schedule['due_date'] ?? date('Y-m-d');
+        $dueDateString = $scheduleDueDate ? $scheduleDueDate->format('Y-m-d') : ($schedule['due_date'] ?? date('Y-m-d'));
 
-        $title = 'تذكير بالتحصيل اليوم';
-        $message = sprintf(
-            'موعد تحصيل مبلغ %s من العميل %s اليوم (%s).',
-            formatCurrency($amount),
-            $customerName,
-            formatDate($dueDate)
-        );
+        if ($isOverdue && $scheduleDueDate instanceof DateTimeImmutable) {
+            $daysOverdue = max(1, (int) $scheduleDueDate->diff($todayDate)->format('%a'));
+            $title = 'تنبيه تحصيل متأخر';
+            $message = sprintf(
+                'مر %s يوم على موعد تحصيل مبلغ %s من العميل %s (الموعد في %s). يرجى المتابعة فوراً.',
+                $daysOverdue,
+                formatCurrency($amount),
+                $customerName,
+                formatDate($dueDateString)
+            );
+        } else {
+            $title = 'تذكير بالتحصيل اليوم';
+            $message = sprintf(
+                'موعد تحصيل مبلغ %s من العميل %s اليوم (%s).',
+                formatCurrency($amount),
+                $customerName,
+                formatDate($dueDateString)
+            );
+        }
 
+        $notificationTypeToSend = $notificationType;
         createNotification(
             $salesRepId,
             $title,
             $message,
-            'payment_due',
+            $notificationTypeToSend,
             $link,
             false
         );
+
+        if ($customerId > 0) {
+            $notifiedCustomers[$customerId] = true;
+        }
     }
 }
 
