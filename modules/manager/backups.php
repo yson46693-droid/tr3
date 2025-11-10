@@ -126,7 +126,7 @@ $backups = array_slice($allBackups, $offset, $perPage);
         <?php else: ?>
             <!-- عرض الجدول على الشاشات الكبيرة -->
             <div class="table-responsive dashboard-table-wrapper d-none d-md-block">
-                <table class="table dashboard-table align-middle">
+                <table class="table dashboard-table dashboard-table--no-hover align-middle">
                     <thead>
                         <tr>
                             <th>اسم الملف</th>

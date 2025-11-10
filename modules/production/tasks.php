@@ -686,7 +686,7 @@ function tasksHtml(string $value): string
                 </div>
             <?php else: ?>
                 <div class="table-responsive dashboard-table-wrapper">
-                    <table class="table dashboard-table align-middle mb-0">
+                    <table class="table dashboard-table dashboard-table--no-hover align-middle mb-0">
                         <thead class="table-light">
                             <tr>
                                 <th style="width: 60px;">#</th>

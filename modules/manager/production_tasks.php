@@ -478,21 +478,6 @@ try {
         pointer-events: none !important;
     }
 
-    .dashboard-table--no-hover tbody tr {
-        transition: none !important;
-    }
-
-    .dashboard-table--no-hover tbody tr:hover {
-        transform: none !important;
-    }
-
-    .dashboard-table--no-hover tbody tr:nth-child(odd):hover {
-        background: var(--global-table-row-bg) !important;
-    }
-
-    .dashboard-table--no-hover tbody tr:nth-child(even):hover {
-        background: var(--global-table-row-alt-bg) !important;
-    }
 </style>
 <script>
 (function () {
