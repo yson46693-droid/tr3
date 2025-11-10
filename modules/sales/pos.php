@@ -200,120 +200,304 @@ if (!$error && $vehicle) {
 }
 
 // معالجة إنشاء عملية بيع جديدة
+$posInvoiceLinks = null;
+$inventoryByProduct = [];
+foreach ($vehicleInventory as $item) {
+    $inventoryByProduct[(int) ($item['product_id'] ?? 0)] = $item;
+}
+
 if (!$error && $_SERVER['REQUEST_METHOD'] === 'POST') {
     $action = $_POST['action'] ?? '';
 
     if ($action === 'create_pos_sale') {
-        $productId = isset($_POST['product_id']) ? (int) $_POST['product_id'] : 0;
-        $customerId = isset($_POST['customer_id']) ? (int) $_POST['customer_id'] : 0;
-        $quantity = isset($_POST['quantity']) ? (float) $_POST['quantity'] : 0;
-        $price = isset($_POST['price']) ? round((float) $_POST['price'], 2) : 0;
-        $saleDate = $_POST['date'] ?? date('Y-m-d');
+        $cartPayload = $_POST['cart_data'] ?? '';
+        $cartItems = json_decode($cartPayload, true);
+        $saleDate = $_POST['sale_date'] ?? date('Y-m-d');
+        $customerMode = $_POST['customer_mode'] ?? 'existing';
+        $paymentType = $_POST['payment_type'] ?? 'full';
+        $prepaidAmount = cleanFinancialValue($_POST['prepaid_amount'] ?? 0);
+        $paidAmountInput = cleanFinancialValue($_POST['paid_amount'] ?? 0);
+        $notes = trim($_POST['notes'] ?? '');
 
         if (!preg_match('/^\d{4}-\d{2}-\d{2}$/', $saleDate)) {
             $saleDate = date('Y-m-d');
         }
 
-        if ($customerId <= 0) {
-            $validationErrors[] = 'يجب اختيار العميل.';
+        if (!in_array($paymentType, ['full', 'partial', 'credit'], true)) {
+            $paymentType = 'full';
         }
 
-        if ($productId <= 0) {
-            $validationErrors[] = 'يجب اختيار المنتج.';
+        if (!is_array($cartItems) || empty($cartItems)) {
+            $validationErrors[] = 'يجب اختيار منتج واحد على الأقل من المخزون.';
         }
 
-        if ($quantity <= 0) {
-            $validationErrors[] = 'يجب إدخال كمية صالحة.';
-        }
-
-        if ($price <= 0) {
-            $validationErrors[] = 'يجب إدخال سعر صالح.';
-        }
+        $normalizedCart = [];
+        $subtotal = 0;
 
         if (empty($validationErrors)) {
-            // التحقق من وجود العميل
-            $customer = $db->queryOne("SELECT id FROM customers WHERE id = ?", [$customerId]);
-            if (!$customer) {
-                $validationErrors[] = 'العميل المحدد غير موجود.';
-            }
-        }
+            foreach ($cartItems as $index => $row) {
+                $productId = isset($row['product_id']) ? (int) $row['product_id'] : 0;
+                $quantity = isset($row['quantity']) ? (float) $row['quantity'] : 0;
+                $unitPrice = isset($row['unit_price']) ? round((float) $row['unit_price'], 2) : 0;
 
-        if (empty($validationErrors)) {
-            // إعادة تحميل المخزون للتأكد من آخر تحديث
-            $vehicleInventory = getVehicleInventory($vehicle['id']);
-            $inventoryByProduct = [];
-            foreach ($vehicleInventory as $item) {
-                $inventoryByProduct[(int) $item['product_id']] = $item;
-            }
-
-            $inventoryItem = $inventoryByProduct[$productId] ?? null;
-            if (!$inventoryItem) {
-                $validationErrors[] = 'المنتج غير موجود في مخزون السيارة.';
-            } else {
-                $availableQuantity = (float) ($inventoryItem['quantity'] ?? 0);
-                if ($quantity > $availableQuantity) {
-                    $validationErrors[] = 'الكمية المطلوبة أكبر من المتوفرة في السيارة.';
+                if ($productId <= 0 || !isset($inventoryByProduct[$productId])) {
+                    $validationErrors[] = 'المنتج المحدد رقم ' . ($index + 1) . ' غير متاح في مخزون السيارة.';
+                    continue;
                 }
 
-                if ($price < 0.01) {
-                    $price = round((float) ($inventoryItem['unit_price'] ?? 0), 2);
-                    if ($price <= 0) {
-                        $validationErrors[] = 'لا يمكن تحديد سعر المنتج.';
+                $product = $inventoryByProduct[$productId];
+                $available = (float) ($product['quantity'] ?? 0);
+
+                if ($quantity <= 0) {
+                    $validationErrors[] = 'يجب تحديد كمية صالحة للمنتج ' . htmlspecialchars($product['product_name'] ?? '', ENT_QUOTES, 'UTF-8') . '.';
+                    continue;
+                }
+
+                if ($quantity > $available) {
+                    $validationErrors[] = 'الكمية المطلوبة للمنتج ' . htmlspecialchars($product['product_name'] ?? '', ENT_QUOTES, 'UTF-8') . ' تتجاوز الكمية المتاحة.';
+                    continue;
+                }
+
+                if ($unitPrice <= 0) {
+                    $unitPrice = round((float) ($product['unit_price'] ?? 0), 2);
+                    if ($unitPrice <= 0) {
+                        $validationErrors[] = 'لا يمكن تحديد سعر المنتج ' . htmlspecialchars($product['product_name'] ?? '', ENT_QUOTES, 'UTF-8') . '.';
+                        continue;
                     }
                 }
+
+                $lineTotal = round($unitPrice * $quantity, 2);
+                $subtotal += $lineTotal;
+
+                $normalizedCart[] = [
+                    'product_id' => $productId,
+                    'name' => $product['product_name'] ?? 'منتج',
+                    'category' => $product['category'] ?? null,
+                    'quantity' => $quantity,
+                    'available' => $available,
+                    'unit_price' => $unitPrice,
+                    'line_total' => $lineTotal,
+                ];
             }
         }
 
-        if (empty($validationErrors)) {
-            $total = round($price * $quantity, 2);
+        if ($subtotal <= 0 && empty($validationErrors)) {
+            $validationErrors[] = 'لا يمكن إتمام عملية بيع بمجموع صفري.';
+        }
 
+        $prepaidAmount = max(0, min($prepaidAmount, $subtotal));
+        $netTotal = round($subtotal - $prepaidAmount, 2);
+
+        $effectivePaidAmount = 0.0;
+        if ($paymentType === 'full') {
+            $effectivePaidAmount = $netTotal;
+        } elseif ($paymentType === 'partial') {
+            if ($paidAmountInput <= 0) {
+                $validationErrors[] = 'يجب إدخال مبلغ التحصيل الجزئي.';
+            } elseif ($paidAmountInput >= $netTotal) {
+                $validationErrors[] = 'مبلغ التحصيل الجزئي يجب أن يكون أقل من الإجمالي بعد الخصم.';
+            } else {
+                $effectivePaidAmount = $paidAmountInput;
+            }
+        } else { // credit
+            $effectivePaidAmount = 0.0;
+        }
+
+        $dueAmount = round(max(0, $netTotal - $effectivePaidAmount), 2);
+
+        $customerId = 0;
+        $createdCustomerId = null;
+        $customer = null;
+
+        if ($customerMode === 'existing') {
+            $customerId = isset($_POST['customer_id']) ? (int) $_POST['customer_id'] : 0;
+            if ($customerId <= 0) {
+                $validationErrors[] = 'يجب اختيار عميل من القائمة.';
+            } else {
+                $customer = $db->queryOne("SELECT id, name, balance, created_by FROM customers WHERE id = ?", [$customerId]);
+                if (!$customer) {
+                    $validationErrors[] = 'العميل المحدد غير موجود.';
+                } elseif (($currentUser['role'] ?? '') === 'sales' && isset($customer['created_by']) && (int) $customer['created_by'] !== (int) $currentUser['id']) {
+                    $validationErrors[] = 'غير مصرح لك بإتمام البيع لهذا العميل.';
+                }
+            }
+        } else {
+            $newCustomerName = trim($_POST['new_customer_name'] ?? '');
+            $newCustomerPhone = trim($_POST['new_customer_phone'] ?? '');
+            $newCustomerAddress = trim($_POST['new_customer_address'] ?? '');
+
+            if ($newCustomerName === '') {
+                $validationErrors[] = 'يجب إدخال اسم العميل الجديد.';
+            }
+        }
+
+        if (empty($validationErrors) && empty($normalizedCart)) {
+            $validationErrors[] = 'قائمة المنتجات فارغة.';
+        }
+
+        if (empty($validationErrors)) {
             try {
                 $conn = $db->getConnection();
                 $conn->begin_transaction();
 
-                $db->execute(
-                    "INSERT INTO sales (customer_id, product_id, quantity, price, total, date, salesperson_id, status) 
-                     VALUES (?, ?, ?, ?, ?, ?, ?, 'completed')",
-                    [$customerId, $productId, $quantity, $price, $total, $saleDate, $currentUser['id']]
-                );
+                if ($customerMode === 'new') {
+                    $db->execute(
+                        "INSERT INTO customers (name, phone, address, balance, status, created_by) VALUES (?, ?, ?, ?, 'active', ?)",
+                        [
+                            $newCustomerName,
+                            $newCustomerPhone !== '' ? $newCustomerPhone : null,
+                            $newCustomerAddress !== '' ? $newCustomerAddress : null,
+                            $dueAmount,
+                            $currentUser['id'],
+                        ]
+                    );
+                    $customerId = (int) $db->getLastInsertId();
+                    $createdCustomerId = $customerId;
+                    $customer = [
+                        'id' => $customerId,
+                        'name' => $newCustomerName,
+                        'balance' => $dueAmount,
+                        'created_by' => $currentUser['id'],
+                    ];
+                } else {
+                    $customer = $db->queryOne(
+                        "SELECT id, balance FROM customers WHERE id = ? FOR UPDATE",
+                        [$customerId]
+                    );
 
-                $saleId = (int) $db->getLastInsertId();
+                    if (!$customer) {
+                        throw new RuntimeException('تعذر تحميل بيانات العميل أثناء المعالجة.');
+                    }
 
-                // تحديث مخزون السيارة
-                $newQuantity = max(0, (float) $inventoryItem['quantity'] - $quantity);
-                $updateResult = updateVehicleInventory($vehicle['id'], $productId, $newQuantity, $currentUser['id']);
-
-                if (!$updateResult['success']) {
-                    throw new Exception($updateResult['message'] ?? 'تعذر تحديث مخزون السيارة.');
+                    if ($dueAmount > 0) {
+                        $newBalance = round(((float) ($customer['balance'] ?? 0)) + $dueAmount, 2);
+                        $db->execute("UPDATE customers SET balance = ? WHERE id = ?", [$newBalance, $customerId]);
+                        $customer['balance'] = $newBalance;
+                    }
                 }
 
-                // تسجيل حركة المخزون
-                $movementResult = recordInventoryMovement(
-                    $productId,
-                    $vehicleWarehouseId,
-                    'out',
-                    $quantity,
-                    'sales',
-                    $saleId,
-                    'بيع من مخزون السيارة',
+                $invoiceItems = [];
+                foreach ($normalizedCart as $item) {
+                    $invoiceItems[] = [
+                        'product_id' => $item['product_id'],
+                        'description' => $item['name'],
+                        'quantity' => $item['quantity'],
+                        'unit_price' => $item['unit_price'],
+                    ];
+                }
+
+                $invoiceResult = createInvoice(
+                    $customerId,
+                    $currentUser['id'],
+                    $saleDate,
+                    $invoiceItems,
+                    0,
+                    $prepaidAmount,
+                    $notes,
                     $currentUser['id']
                 );
 
-                if (!$movementResult['success']) {
-                    throw new Exception($movementResult['message'] ?? 'تعذر تسجيل حركة المخزون.');
+                if (empty($invoiceResult['success'])) {
+                    throw new RuntimeException($invoiceResult['message'] ?? 'تعذر إنشاء الفاتورة.');
                 }
 
-                logAudit($currentUser['id'], 'create_pos_sale', 'sale', $saleId, null, [
-                    'product_id' => $productId,
+                $invoiceId = (int) $invoiceResult['invoice_id'];
+                $invoiceNumber = $invoiceResult['invoice_number'] ?? '';
+
+                $invoiceStatus = 'sent';
+                if ($dueAmount <= 0.0001) {
+                    $invoiceStatus = 'paid';
+                } elseif ($effectivePaidAmount > 0) {
+                    $invoiceStatus = 'partial';
+                }
+
+                $db->execute(
+                    "UPDATE invoices SET paid_amount = ?, remaining_amount = ?, status = ?, updated_at = NOW() WHERE id = ?",
+                    [$effectivePaidAmount, $dueAmount, $invoiceStatus, $invoiceId]
+                );
+
+                $totalSoldValue = 0;
+
+                foreach ($normalizedCart as $item) {
+                    $productId = $item['product_id'];
+                    $quantity = $item['quantity'];
+                    $unitPrice = $item['unit_price'];
+                    $lineTotal = $item['line_total'];
+
+                    $product = $inventoryByProduct[$productId] ?? null;
+                    $available = $product ? (float) ($product['quantity'] ?? 0) : 0;
+
+                    if ($product === null || $quantity > $available) {
+                        throw new RuntimeException('الكمية المتاحة للمنتج ' . $item['name'] . ' تغيرت أثناء المعالجة.');
+                    }
+
+                    $newQuantity = max(0, $available - $quantity);
+                    $updateResult = updateVehicleInventory($vehicle['id'], $productId, $newQuantity, $currentUser['id']);
+                    if (empty($updateResult['success'])) {
+                        throw new RuntimeException($updateResult['message'] ?? 'تعذر تحديث مخزون السيارة.');
+                    }
+
+                    $movementResult = recordInventoryMovement(
+                        $productId,
+                        $vehicleWarehouseId,
+                        'out',
+                        $quantity,
+                        'sales',
+                        $invoiceId,
+                        'بيع من نقطة بيع المندوب - فاتورة ' . $invoiceNumber,
+                        $currentUser['id']
+                    );
+
+                    if (empty($movementResult['success'])) {
+                        throw new RuntimeException($movementResult['message'] ?? 'تعذر تسجيل حركة المخزون.');
+                    }
+
+                    $db->execute(
+                        "INSERT INTO sales (customer_id, product_id, quantity, price, total, date, salesperson_id, status) 
+                         VALUES (?, ?, ?, ?, ?, ?, ?, 'completed')",
+                        [$customerId, $productId, $quantity, $unitPrice, $lineTotal, $saleDate, $currentUser['id']]
+                    );
+
+                    $inventoryByProduct[$productId]['quantity'] = $newQuantity;
+                    $inventoryByProduct[$productId]['total_value'] = ($newQuantity * $unitPrice);
+                    $totalSoldValue += $lineTotal;
+                }
+
+                logAudit($currentUser['id'], 'create_pos_sale_multi', 'invoice', $invoiceId, null, [
+                    'invoice_number' => $invoiceNumber,
+                    'items' => $normalizedCart,
+                    'net_total' => $netTotal,
+                    'paid_amount' => $effectivePaidAmount,
+                    'due_amount' => $dueAmount,
                     'customer_id' => $customerId,
-                    'quantity' => $quantity,
-                    'total' => $total
                 ]);
 
                 $conn->commit();
-                $success = 'تم تسجيل عملية البيع بنجاح.';
 
-                // تحديث البيانات بعد عملية البيع
+                $invoiceData = getInvoice($invoiceId);
+                $invoiceMeta = [
+                    'summary' => [
+                        'subtotal' => $subtotal,
+                        'prepaid' => $prepaidAmount,
+                        'net_total' => $netTotal,
+                        'paid' => $effectivePaidAmount,
+                        'due' => $dueAmount,
+                    ],
+                ];
+                $reportInfo = $invoiceData ? storeSalesInvoiceDocument($invoiceData, $invoiceMeta) : null;
+
+                if ($reportInfo) {
+                    $telegramResult = sendReportAndDelete($reportInfo, 'sales_pos_invoice', 'فاتورة نقطة بيع المندوب');
+                    $reportInfo['telegram_sent'] = !empty($telegramResult['success']);
+                    $posInvoiceLinks = $reportInfo;
+                }
+
+                $success = 'تم إتمام عملية البيع بنجاح. رقم الفاتورة: ' . htmlspecialchars($invoiceNumber);
+                if ($createdCustomerId) {
+                    $success .= ' - تم إنشاء العميل الجديد.';
+                }
+
+                // إعادة تحميل المخزون والإحصائيات
                 $vehicleInventory = getVehicleInventory($vehicle['id']);
                 $inventoryStats = [
                     'total_products' => 0,
@@ -325,8 +509,17 @@ if (!$error && $_SERVER['REQUEST_METHOD'] === 'POST') {
                     $inventoryStats['total_quantity'] += (float) ($item['quantity'] ?? 0);
                     $inventoryStats['total_value'] += (float) ($item['total_value'] ?? 0);
                 }
-            } catch (Exception $exception) {
-                if (isset($conn)) {
+
+                // تحديث الخريطة بعد البيع
+                $inventoryByProduct = [];
+                foreach ($vehicleInventory as $item) {
+                    $inventoryByProduct[(int) ($item['product_id'] ?? 0)] = $item;
+                }
+
+            } catch (Throwable $exception) {
+                if (isset($conn) && $conn->errno === 0) {
+                    $conn->rollback();
+                } elseif (isset($conn) && $conn->errno !== 0) {
                     $conn->rollback();
                 }
                 $error = 'حدث خطأ أثناء حفظ عملية البيع: ' . $exception->getMessage();
