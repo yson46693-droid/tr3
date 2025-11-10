@@ -11,8 +11,9 @@ if (!defined('SALES_TABLE_STYLES_RENDERED')) {
     ?>
     <style>
         :root {
-            --sales-table-header-bg: linear-gradient(135deg, #0f172a 0%, #1d4ed8 100%);
+            --sales-table-header-bg: #1d4ed8;
             --sales-table-header-color: #f8fafc;
+            --sales-table-header-divider: rgba(248, 250, 252, 0.25);
             --sales-table-row-bg: #ffffff;
             --sales-table-row-alt-bg: #f8fafc;
             --sales-table-row-hover-bg: #eff6ff;
@@ -50,10 +51,15 @@ if (!defined('SALES_TABLE_STYLES_RENDERED')) {
             border-bottom: none;
             border-top: none;
             position: relative;
+            border-right: 1px solid var(--sales-table-header-divider);
         }
 
         .sales-table thead th:first-child {
             padding-inline-start: 1.35rem;
+        }
+
+        .sales-table thead th:last-child {
+            border-right: none;
         }
 
         .sales-table tbody tr {
