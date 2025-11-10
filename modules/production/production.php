@@ -2371,7 +2371,7 @@ $lang = isset($translations) ? $translations : [];
 <div class="modal fade" id="createFromTemplateModal" tabindex="-1">
     <div class="modal-dialog modal-xl modal-dialog-scrollable production-template-dialog">
         <div class="modal-content">
-            <div class="modal-header bg-primary text-white">
+            <div class="modal-header bg-success text-white">
                 <h5 class="modal-title"><i class="bi bi-file-earmark-text me-2"></i>إنشاء تشغيلة إنتاج</h5>
                 <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
             </div>
