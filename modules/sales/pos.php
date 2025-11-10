@@ -903,7 +903,7 @@ if (!$error) {
             </div>
         </section>
 
-            <section class="pos-content">
+        <section class="pos-content">
                 <div class="pos-panel" style="grid-column: span 7;">
                     <div class="pos-panel-header">
                         <div>
@@ -912,10 +912,17 @@ if (!$error) {
                         </div>
                         <div class="pos-search">
                             <i class="bi bi-search"></i>
-                        <input type="text" id="posInventorySearch" class="form-control" placeholder="بحث سريع عن منتج..."<?php echo empty($vehicleInventory) ? ' disabled' : ''; ?>>
+                            <input type="text" id="posInventorySearch" class="form-control" placeholder="بحث سريع عن منتج..."<?php echo empty($vehicleInventory) ? ' disabled' : ''; ?>>
                         </div>
                     </div>
-                    <div class="pos-product-grid" id="posProductGrid">
+                <div class="pos-product-grid" id="posProductGrid">
+                    <?php if (empty($vehicleInventory)): ?>
+                        <div class="pos-empty pos-empty-inline">
+                            <i class="bi bi-box"></i>
+                            <h5 class="mt-3 mb-2">لا يوجد مخزون متاح حالياً</h5>
+                            <p class="mb-0">اطلب تزويد السيارة بالمنتجات لبدء البيع من نقطة البيع الميدانية.</p>
+                        </div>
+                    <?php else: ?>
                         <?php foreach ($vehicleInventory as $item): ?>
                             <div class="pos-product-card" data-product-card data-product-id="<?php echo (int) $item['product_id']; ?>" data-name="<?php echo htmlspecialchars($item['product_name'] ?? '', ENT_QUOTES, 'UTF-8'); ?>" data-category="<?php echo htmlspecialchars($item['category'] ?? '', ENT_QUOTES, 'UTF-8'); ?>">
                                 <div class="pos-product-name"><?php echo htmlspecialchars($item['product_name'] ?? 'منتج'); ?></div>
@@ -944,6 +951,7 @@ if (!$error) {
                                 </button>
                             </div>
                         <?php endforeach; ?>
+                    <?php endif; ?>
                     </div>
                 </div>
 
@@ -1139,11 +1147,11 @@ if (!$error) {
                         <?php endif; ?>
                     </div>
                 </div>
-            </section>
+        </section>
     </div>
 <?php endif; ?>
 
-<?php if (!$error && !empty($vehicleInventory)): ?>
+<?php if (!$error && $vehicle): ?>
 <script>
 (function () {
     const locale = <?php echo json_encode($pageDirection === 'rtl' ? 'ar-EG' : 'en-US'); ?>;
