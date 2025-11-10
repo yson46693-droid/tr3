@@ -529,95 +529,31 @@ class WebAuthn {
                 return null;
             }
             
-            // البنية: CBOR map (0xa3 = 3 items)
-            // fmt: string (عادة "none" أو "packed")
-            // attStmt: map
-            // authData: bytes
+            $offset = 0;
+            $decoded = self::cborDecodeItem($attestationObject, $offset);
             
-            // في معظم الحالات، authData هو آخر عنصر في الـ map
-            // ونحاول استخراجه من نهاية البيانات
-            
-            // الطريقة الأفضل: فك ترميز CBOR بسيط
-            // CBOR map يبدأ بـ 0xa0-0xbf (map with 0-23 items) أو 0xbf (indefinite)
-            // أو 0xa1-0xa3 (map with specific count)
-            
-            $len = strlen($attestationObject);
-            if ($len < 50) {
-                return null;
-            }
-            
-            // محاولة 1: البحث عن authData في نهاية البيانات
-            // authData عادة يكون 37+ bytes في النهاية
-            // نحاول العثور على بدايته من خلال البحث عن pattern معروف
-            
-            // محاولة 2: فك ترميز CBOR يدوياً
-            $pos = 0;
-            
-            // قراءة نوع البيانات (map)
-            if (ord($attestationObject[$pos]) >= 0xa0 && ord($attestationObject[$pos]) <= 0xbf) {
-                $mapLength = ord($attestationObject[$pos]) & 0x1f;
-                $pos++;
-            } elseif (ord($attestationObject[$pos]) == 0xbf) {
-                // indefinite length map
-                $pos++;
-                // نحتاج للبحث عن break marker (0xff)
-            } else {
-                // قد يكون map كبير (0xb8-0xbf)
-                return self::extractAuthDataSimple($attestationObject);
-            }
-            
-            // تخطي fmt و attStmt للوصول إلى authData
-            // fmt: string
-            $pos++; // تخطي first byte
-            
-            // البحث عن authData marker (byte string with tag)
-            // authData عادة يكون byte string (0x58, 0x59, 0x5a, 0x5b)
-            for ($i = $pos; $i < $len - 37; $i++) {
-                $byte = ord($attestationObject[$i]);
+            if (is_array($decoded)) {
+                // في حالة map يتم تمثيلها كمصفوفة ترابطية
+                if (isset($decoded['authData']) && is_string($decoded['authData'])) {
+                    return $decoded['authData'];
+                }
                 
-                // byte string markers
-                if ($byte >= 0x58 && $byte <= 0x5b) {
-                    // تحديد الطول
-                    $dataLength = 0;
-                    $dataStart = $i + 1;
-                    
-                    if ($byte == 0x58) { // 1 byte length
-                        if ($i + 1 >= $len) break;
-                        $dataLength = ord($attestationObject[$i + 1]);
-                        $dataStart = $i + 2;
-                    } elseif ($byte == 0x59) { // 2 bytes length (big-endian)
-                        if ($i + 2 >= $len) break;
-                        $dataLength = unpack('n', substr($attestationObject, $i + 1, 2))[1];
-                        $dataStart = $i + 3;
-                    } elseif ($byte == 0x5a) { // 4 bytes length
-                        if ($i + 4 >= $len) break;
-                        $dataLength = unpack('N', substr($attestationObject, $i + 1, 4))[1];
-                        $dataStart = $i + 5;
-                    } elseif ($byte == 0x5b) { // 8 bytes length
-                        if ($i + 8 >= $len) break;
-                        $unpacked = unpack('N2', substr($attestationObject, $i + 1, 8));
-                        $dataLength = ($unpacked[1] << 32) | $unpacked[2];
-                        $dataStart = $i + 9;
+                // في بعض البيئات قد تكون المفاتيح غير lowercase أو تعتمد على الترتيب
+                foreach ($decoded as $key => $value) {
+                    if (is_string($key) && strcasecmp($key, 'authData') === 0 && is_string($value)) {
+                        return $value;
                     }
-                    
-                    // التحقق من أن الطول منطقي (عادة authData يكون 37+ bytes)
-                    if ($dataLength >= 37 && $dataLength <= 1000 && ($dataStart + $dataLength) <= $len) {
-                        $extracted = substr($attestationObject, $dataStart, $dataLength);
-                        // التحقق من أن البيانات تبدو صحيحة (authData له structure محدد)
-                        if (strlen($extracted) >= 37) {
-                            return $extracted;
-                        }
+                    // fallback إذا كانت البيانات داخل map فرعية
+                    if (is_array($value) && isset($value['authData']) && is_string($value['authData'])) {
+                        return $value['authData'];
                     }
                 }
             }
-            
-            // إذا فشل كل شيء، استخدم طريقة بسيطة
-            return self::extractAuthDataSimple($attestationObject);
-            
         } catch (Exception $e) {
-            error_log("extractAuthDataFromAttestation error: " . $e->getMessage());
-            return self::extractAuthDataSimple($attestationObject);
+            error_log("extractAuthDataFromAttestation CBOR decode error: " . $e->getMessage());
         }
+        
+        return self::extractAuthDataSimple($attestationObject);
     }
     
     /**
@@ -652,6 +588,316 @@ class WebAuthn {
         }
         
         return null;
+    }
+    
+    /**
+     * CBOR decoding helpers (minimal implementation يكفي لهيكل attestationObject)
+     */
+    private static function cborDecodeItem($data, &$offset) {
+        $length = strlen($data);
+        
+        if ($offset >= $length) {
+            throw new RuntimeException('CBOR decode: offset out of range');
+        }
+        
+        $initialByte = ord($data[$offset]);
+        $offset++;
+        
+        $majorType = $initialByte >> 5;
+        $additionalInfo = $initialByte & 0x1f;
+        
+        switch ($majorType) {
+            case 0: // unsigned integer
+                return self::cborReadLength($data, $offset, $additionalInfo);
+            
+            case 1: // negative integer
+                $value = self::cborReadLength($data, $offset, $additionalInfo);
+                return -1 - $value;
+            
+            case 2: // byte string
+                return self::cborReadByteString($data, $offset, $additionalInfo);
+            
+            case 3: // text string
+                return self::cborReadTextString($data, $offset, $additionalInfo);
+            
+            case 4: // array
+                return self::cborReadArray($data, $offset, $additionalInfo);
+            
+            case 5: // map
+                return self::cborReadMap($data, $offset, $additionalInfo);
+            
+            case 6: // semantic tag
+                // نتجاهل القيمة الدلالية ونفك ترميز العنصر الذي بعده
+                self::cborReadLength($data, $offset, $additionalInfo); // قراءة رقم الـ tag
+                return self::cborDecodeItem($data, $offset);
+            
+            case 7: // simple values / floats
+                return self::cborReadSimpleValue($data, $offset, $additionalInfo);
+            
+            default:
+                throw new RuntimeException('CBOR decode: unsupported major type ' . $majorType);
+        }
+    }
+    
+    private static function cborReadLength($data, &$offset, $additionalInfo) {
+        $length = strlen($data);
+        
+        if ($additionalInfo < 24) {
+            return $additionalInfo;
+        }
+        
+        if ($additionalInfo === 24) {
+            if ($offset >= $length) {
+                throw new RuntimeException('CBOR decode: unexpected end of data (uint8)');
+            }
+            return ord($data[$offset++]);
+        }
+        
+        if ($additionalInfo === 25) {
+            if ($offset + 1 >= $length) {
+                throw new RuntimeException('CBOR decode: unexpected end of data (uint16)');
+            }
+            $value = unpack('n', substr($data, $offset, 2))[1];
+            $offset += 2;
+            return $value;
+        }
+        
+        if ($additionalInfo === 26) {
+            if ($offset + 3 >= $length) {
+                throw new RuntimeException('CBOR decode: unexpected end of data (uint32)');
+            }
+            $value = unpack('N', substr($data, $offset, 4))[1];
+            $offset += 4;
+            return $value;
+        }
+        
+        if ($additionalInfo === 27) {
+            if ($offset + 7 >= $length) {
+                throw new RuntimeException('CBOR decode: unexpected end of data (uint64)');
+            }
+            $parts = unpack('N2', substr($data, $offset, 8));
+            $offset += 8;
+            return ($parts[1] << 32) | $parts[2];
+        }
+        
+        if ($additionalInfo === 31) {
+            return -1; // indefinite length
+        }
+        
+        throw new RuntimeException('CBOR decode: unsupported additional info ' . $additionalInfo);
+    }
+    
+    private static function cborReadByteString($data, &$offset, $additionalInfo) {
+        $length = strlen($data);
+        
+        if ($additionalInfo === 31) { // indefinite length
+            $result = '';
+            while (true) {
+                if ($offset >= $length) {
+                    throw new RuntimeException('CBOR decode: unterminated indefinite byte string');
+                }
+                if (ord($data[$offset]) === 0xff) { // break
+                    $offset++;
+                    break;
+                }
+                $chunk = self::cborDecodeItem($data, $offset);
+                if (!is_string($chunk)) {
+                    throw new RuntimeException('CBOR decode: invalid chunk in indefinite byte string');
+                }
+                $result .= $chunk;
+            }
+            return $result;
+        }
+        
+        $byteLength = self::cborReadLength($data, $offset, $additionalInfo);
+        if ($byteLength < 0) {
+            throw new RuntimeException('CBOR decode: invalid byte string length');
+        }
+        
+        if ($offset + $byteLength > $length) {
+            throw new RuntimeException('CBOR decode: byte string exceeds buffer');
+        }
+        
+        $value = substr($data, $offset, $byteLength);
+        $offset += $byteLength;
+        return $value;
+    }
+    
+    private static function cborReadTextString($data, &$offset, $additionalInfo) {
+        $length = strlen($data);
+        
+        if ($additionalInfo === 31) { // indefinite
+            $result = '';
+            while (true) {
+                if ($offset >= $length) {
+                    throw new RuntimeException('CBOR decode: unterminated indefinite text string');
+                }
+                if (ord($data[$offset]) === 0xff) {
+                    $offset++;
+                    break;
+                }
+                $chunk = self::cborDecodeItem($data, $offset);
+                if (!is_string($chunk)) {
+                    throw new RuntimeException('CBOR decode: invalid chunk in indefinite text string');
+                }
+                $result .= $chunk;
+            }
+            return $result;
+        }
+        
+        $strLength = self::cborReadLength($data, $offset, $additionalInfo);
+        if ($strLength < 0) {
+            throw new RuntimeException('CBOR decode: invalid text string length');
+        }
+        
+        if ($offset + $strLength > $length) {
+            throw new RuntimeException('CBOR decode: text string exceeds buffer');
+        }
+        
+        $value = substr($data, $offset, $strLength);
+        $offset += $strLength;
+        return $value;
+    }
+    
+    private static function cborReadArray($data, &$offset, $additionalInfo) {
+        $length = strlen($data);
+        
+        if ($additionalInfo === 31) {
+            $result = [];
+            while (true) {
+                if ($offset >= $length) {
+                    throw new RuntimeException('CBOR decode: unterminated indefinite array');
+                }
+                if (ord($data[$offset]) === 0xff) {
+                    $offset++;
+                    break;
+                }
+                $result[] = self::cborDecodeItem($data, $offset);
+            }
+            return $result;
+        }
+        
+        $arrayLength = self::cborReadLength($data, $offset, $additionalInfo);
+        if ($arrayLength < 0) {
+            throw new RuntimeException('CBOR decode: invalid array length');
+        }
+        
+        $result = [];
+        for ($i = 0; $i < $arrayLength; $i++) {
+            $result[] = self::cborDecodeItem($data, $offset);
+        }
+        
+        return $result;
+    }
+    
+    private static function cborReadMap($data, &$offset, $additionalInfo) {
+        $length = strlen($data);
+        
+        if ($additionalInfo === 31) {
+            $result = [];
+            while (true) {
+                if ($offset >= $length) {
+                    throw new RuntimeException('CBOR decode: unterminated indefinite map');
+                }
+                if (ord($data[$offset]) === 0xff) {
+                    $offset++;
+                    break;
+                }
+                
+                $key = self::cborDecodeItem($data, $offset);
+                $value = self::cborDecodeItem($data, $offset);
+                
+                if (is_string($key) || is_int($key)) {
+                    $result[$key] = $value;
+                } else {
+                    $result[] = [$key, $value];
+                }
+            }
+            return $result;
+        }
+        
+        $mapLength = self::cborReadLength($data, $offset, $additionalInfo);
+        if ($mapLength < 0) {
+            throw new RuntimeException('CBOR decode: invalid map length');
+        }
+        
+        $result = [];
+        for ($i = 0; $i < $mapLength; $i++) {
+            $key = self::cborDecodeItem($data, $offset);
+            $value = self::cborDecodeItem($data, $offset);
+            
+            if (is_string($key) || is_int($key)) {
+                $result[$key] = $value;
+            } else {
+                $result[] = [$key, $value];
+            }
+        }
+        
+        return $result;
+    }
+    
+    private static function cborReadSimpleValue($data, &$offset, $additionalInfo) {
+        switch ($additionalInfo) {
+            case 20:
+                return false;
+            case 21:
+                return true;
+            case 22:
+                return null;
+            case 23:
+                return null; // undefined
+            case 24:
+                // simple value (next byte) - نتجاهله ونقرأه
+                if ($offset >= strlen($data)) {
+                    throw new RuntimeException('CBOR decode: unexpected end of data (simple value)');
+                }
+                $offset++;
+                return null;
+            case 25:
+                if ($offset + 1 >= strlen($data)) {
+                    throw new RuntimeException('CBOR decode: unexpected end of data (half float)');
+                }
+                $half = unpack('n', substr($data, $offset, 2))[1];
+                $offset += 2;
+                return self::cborDecodeHalfFloat($half);
+            case 26:
+                if ($offset + 3 >= strlen($data)) {
+                    throw new RuntimeException('CBOR decode: unexpected end of data (float32)');
+                }
+                $value = unpack('G', substr($data, $offset, 4))[1];
+                $offset += 4;
+                return $value;
+            case 27:
+                if ($offset + 7 >= strlen($data)) {
+                    throw new RuntimeException('CBOR decode: unexpected end of data (float64)');
+                }
+                $value = unpack('E', substr($data, $offset, 8))[1];
+                $offset += 8;
+                return $value;
+            case 31:
+                return null; // break code - يجب أن يتم التعامل معه خارجاً
+            default:
+                if ($additionalInfo < 20) {
+                    return $additionalInfo;
+                }
+                throw new RuntimeException('CBOR decode: unsupported simple value ' . $additionalInfo);
+        }
+    }
+    
+    private static function cborDecodeHalfFloat($half) {
+        $sign = ($half & 0x8000) >> 15;
+        $exponent = ($half & 0x7C00) >> 10;
+        $fraction = $half & 0x03FF;
+        
+        if ($exponent === 0) {
+            $value = $fraction * (2 ** -24);
+        } elseif ($exponent === 0x1F) {
+            $value = $fraction === 0 ? INF : NAN;
+        } else {
+            $value = (1 + ($fraction / 1024)) * (2 ** ($exponent - 15));
+        }
+        
+        return $sign ? -$value : $value;
     }
     
     /**
