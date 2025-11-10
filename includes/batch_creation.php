@@ -712,14 +712,22 @@ function batchCreationCreate(int $templateId, int $units): array
             $workersStmt->execute([$today]);
             $workers = $workersStmt->fetchAll();
         } elseif (batchCreationTableExists($pdo, 'attendance_records') && batchCreationTableExists($pdo, 'users')) {
-            $workersStmt = $pdo->prepare("
-                SELECT u.id, u.full_name AS name
-                FROM attendance_records ar
-                JOIN users u ON ar.user_id = u.id
-                WHERE DATE(ar.checked_in_at) = ? AND ar.status = 'present'
-            ");
-            $workersStmt->execute([$today]);
-            $workers = $workersStmt->fetchAll();
+            $dateColumn = batchCreationColumnExists($pdo, 'attendance_records', 'attendance_date')
+                ? 'attendance_date'
+                : (batchCreationColumnExists($pdo, 'attendance_records', 'date') ? 'date' : null);
+            $userColumn = batchCreationColumnExists($pdo, 'attendance_records', 'user_id') ? 'user_id' : null;
+            $statusColumn = batchCreationColumnExists($pdo, 'attendance_records', 'status') ? 'status' : null;
+
+            if ($dateColumn !== null && $userColumn !== null && $statusColumn !== null) {
+                $workersStmt = $pdo->prepare("
+                    SELECT u.id, u.full_name AS name
+                    FROM attendance_records ar
+                    JOIN users u ON ar.{$userColumn} = u.id
+                    WHERE ar.{$dateColumn} = ? AND ar.{$statusColumn} = 'present'
+                ");
+                $workersStmt->execute([$today]);
+                $workers = $workersStmt->fetchAll();
+            }
         }
 
         $batchNumber    = batchCreationGenerateNumber($pdo);
