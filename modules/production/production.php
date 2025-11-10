@@ -955,8 +955,12 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     }
                 } else {
                     // القالب القديم لأصناف المنتجات البسيطة (عسل، زيت، شمع، مشتقات)
+                    $legacyHasPackagingNameColumn = productionColumnExists('product_template_packaging', 'packaging_name');
+                    $legacyPackagingNameExpression = $legacyHasPackagingNameColumn
+                        ? 'ptp.packaging_name AS packaging_name'
+                        : "COALESCE(pm.name, CONCAT('أداة تعبئة #', ptp.packaging_material_id)) AS packaging_name";
                     $packagingMaterials = $db->query(
-                        "SELECT ptp.id, ptp.packaging_material_id, ptp.packaging_name, ptp.quantity_per_unit,
+                        "SELECT ptp.id, ptp.packaging_material_id, {$legacyPackagingNameExpression}, ptp.quantity_per_unit,
                                 pm.name as packaging_db_name, pm.unit as packaging_unit, pm.product_id as packaging_product_id
                          FROM product_template_packaging ptp
                          LEFT JOIN packaging_materials pm ON pm.id = ptp.packaging_material_id
@@ -1822,9 +1826,13 @@ if (!empty($unifiedTemplatesCheck)) {
         $packagingDetails = [];
         if (!empty($templatePackagingCheck)) {
             try {
+                $hasTemplatePackagingNameColumn = productionColumnExists('template_packaging', 'packaging_name');
+                $packagingNameSelect = $hasTemplatePackagingNameColumn
+                    ? 'tp.packaging_name'
+                    : "COALESCE(pm.name, CONCAT('أداة تعبئة #', tp.packaging_material_id))";
                 $packagingItems = $db->query(
                     "SELECT tp.packaging_material_id, tp.quantity_per_unit,
-                            COALESCE(tp.packaging_name, pm.name) AS packaging_name,
+                            {$packagingNameSelect} AS packaging_name,
                             pm.unit AS packaging_unit
                      FROM template_packaging tp
                      LEFT JOIN packaging_materials pm ON tp.packaging_material_id = pm.id
