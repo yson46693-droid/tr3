@@ -836,6 +836,14 @@ if (!$error) {
             text-align: center;
             color: #475569;
         }
+        .pos-empty-inline {
+            grid-column: 1 / -1;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            min-height: 200px;
+        }
         .pos-empty i {
             font-size: 2.6rem;
             color: #94a3b8;
