@@ -942,6 +942,58 @@ if (!$error) {
             .pos-product-grid {
                 grid-template-columns: repeat(auto-fill, minmax(180px, 1fr));
             }
+            .pos-cart-table {
+                width: 100%;
+                min-width: 100%;
+            }
+            .pos-cart-table thead {
+                display: none;
+            }
+            .pos-cart-table tbody tr {
+                display: block;
+                width: 100%;
+                margin-bottom: 1rem;
+                border: 1px solid rgba(148, 163, 184, 0.35);
+                border-radius: 14px;
+                padding: 0.85rem 0.95rem;
+                background: #ffffff;
+                box-shadow: 0 12px 20px rgba(15, 23, 42, 0.08);
+            }
+            .pos-cart-table tbody tr:last-child {
+                margin-bottom: 0;
+            }
+            .pos-cart-table td {
+                display: flex;
+                flex-direction: column;
+                align-items: stretch;
+                gap: 0.45rem;
+                width: 100%;
+                padding: 0.35rem 0;
+                border: none;
+            }
+            .pos-cart-table td::before {
+                content: attr(data-label);
+                font-weight: 600;
+                color: #1f2937;
+                font-size: 0.95rem;
+            }
+            .pos-cart-table td .form-control {
+                width: 100%;
+            }
+            .pos-cart-table td .pos-qty-control {
+                width: 100%;
+                justify-content: space-between;
+            }
+            .pos-cart-table td .pos-qty-control input {
+                flex: 1;
+            }
+            .pos-cart-table td .btn[data-action="decrease"],
+            .pos-cart-table td .btn[data-action="increase"] {
+                flex: 0 0 38px;
+            }
+            #posCartTableWrapper {
+                overflow-x: visible;
+            }
         }
     </style>
 
@@ -1463,22 +1515,22 @@ if (!$error) {
             const sanitizedAvailable = sanitizeNumber(item.available);
             return `
                 <tr data-cart-row data-product-id="${item.product_id}">
-                    <td>
+                    <td data-label="المنتج">
                         <div class="fw-semibold">${escapeHtml(item.name)}</div>
                         <div class="text-muted small">التصنيف: ${escapeHtml(item.category || 'غير مصنف')} • متاح: ${sanitizedAvailable.toFixed(2)}</div>
                     </td>
-                    <td>
+                    <td data-label="الكمية">
                         <div class="pos-qty-control">
                             <button type="button" class="btn btn-light border" data-action="decrease" data-product-id="${item.product_id}"><i class="bi bi-dash"></i></button>
                             <input type="number" step="0.01" min="0" class="form-control" data-cart-qty data-product-id="${item.product_id}" value="${sanitizedQty.toFixed(2)}">
                             <button type="button" class="btn btn-light border" data-action="increase" data-product-id="${item.product_id}"><i class="bi bi-plus"></i></button>
                         </div>
                     </td>
-                    <td>
+                    <td data-label="سعر الوحدة">
                         <input type="number" step="0.01" min="0" class="form-control" data-cart-price data-product-id="${item.product_id}" value="${sanitizedPrice.toFixed(2)}">
                     </td>
-                    <td class="fw-semibold">${formatCurrency(sanitizedQty * sanitizedPrice)}</td>
-                    <td class="text-end">
+                    <td data-label="الإجمالي" class="fw-semibold">${formatCurrency(sanitizedQty * sanitizedPrice)}</td>
+                    <td data-label="إجراءات" class="text-end">
                         <button type="button" class="btn btn-link text-danger" data-action="remove" data-product-id="${item.product_id}"><i class="bi bi-x-circle"></i></button>
                     </td>
                 </tr>`;
