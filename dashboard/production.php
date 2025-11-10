@@ -38,215 +38,122 @@ if ($isTemplateAjax) {
         ];
 
         try {
-            $components = [];
-            $templateType = trim($templateType);
+            $template = $db->queryOne(
+                "SELECT * FROM product_templates WHERE id = ?",
+                [$templateId]
+            );
 
-            $addPackagingComponents = function($table, $templateId) use ($db, &$components) {
-                $packagingQuantityColumn = 'quantity_per_unit';
-                $packagingQuantityCheck = $db->queryOne("SHOW COLUMNS FROM {$table} LIKE 'quantity_per_unit'");
-                if (!empty($packagingQuantityCheck)) {
-                    $packagingQuantityColumn = 'quantity_per_unit';
-                } elseif ($table === 'template_packaging') {
-                    $legacyQuantityCheck = $db->queryOne("SHOW COLUMNS FROM template_packaging LIKE 'quantity'");
-                    if (!empty($legacyQuantityCheck)) {
-                        $packagingQuantityColumn = 'quantity';
-                    }
-                }
-
-                $alias = $table === 'template_packaging' ? 'tp' : 'ptp';
-                $hasUnitColumn = !empty($db->queryOne("SHOW COLUMNS FROM {$table} LIKE 'unit'"));
-                $unitColumnSql = $hasUnitColumn ? "{$alias}.unit" : 'NULL';
-                $packagingNameExpression = getColumnSelectExpression($table, 'packaging_name', 'packaging_name', $alias);
-                $packagingItems = $db->query(
-                    "SELECT {$alias}.id, {$alias}.packaging_material_id, {$packagingNameExpression}, {$alias}.{$packagingQuantityColumn} AS quantity,
-                            COALESCE(pm.unit, {$unitColumnSql}, 'وحدة') AS unit
-                     FROM {$table} {$alias}
-                     LEFT JOIN packaging_materials pm ON pm.id = {$alias}.packaging_material_id
-                     WHERE {$alias}.template_id = ?",
-                    [$templateId]
-                );
-
-                foreach ($packagingItems as $item) {
-                    $name = $item['packaging_name'] ?? 'أداة تعبئة';
-                    $quantity = number_format((float)($item['quantity'] ?? 0), 3);
-                    $unit = $item['unit'] ?? 'وحدة';
-                    $components[] = [
-                        'key' => 'pack_' . ($item['packaging_material_id'] ?? $item['id']),
-                        'name' => $name,
-                        'label' => 'مورد أداة التعبئة: ' . $name,
-                        'description' => 'الكمية لكل وحدة: ' . $quantity . ' ' . $unit,
-                        'type' => 'packaging'
-                    ];
-                }
-            };
-
-            $templateTypeKey = $templateType !== '' ? $templateType : 'honey';
-
-            switch ($templateTypeKey) {
-                case 'unified':
-                    $template = $db->queryOne(
-                        "SELECT id, product_name FROM unified_product_templates WHERE id = ?",
-                        [$templateId]
-                    );
-                    if (!$template) {
-                        throw new Exception('القالب غير موجود أو تم حذفه.');
-                    }
-
-                    $addPackagingComponents('template_packaging', $templateId);
-
-                    $rawQuantityColumn = 'quantity';
-                    $rawQuantityCheck = $db->queryOne("SHOW COLUMNS FROM template_raw_materials LIKE 'quantity_per_unit'");
-                    if (!empty($rawQuantityCheck)) {
-                        $rawQuantityColumn = 'quantity_per_unit';
-                    }
-
-                    $rawMaterials = $db->query(
-                        "SELECT id, material_name, material_type, {$rawQuantityColumn} AS quantity,
-                                COALESCE(unit, 'وحدة') AS unit, honey_variety
-                         FROM template_raw_materials
-                         WHERE template_id = ?",
-                        [$templateId]
-                    );
-
-                    foreach ($rawMaterials as $material) {
-                        $name = $material['material_name'] ?? 'مادة خام';
-                        $quantity = number_format((float)($material['quantity'] ?? 0), 3);
-                        $unit = $material['unit'] ?? 'وحدة';
-                        $extra = '';
-                        if (!empty($material['honey_variety'])) {
-                            $extra = ' - نوع: ' . $material['honey_variety'];
-                        }
-                        $components[] = [
-                            'key' => 'raw_' . $material['id'],
-                            'name' => $name,
-                            'label' => 'مورد المادة: ' . $name,
-                            'description' => 'الكمية لكل وحدة: ' . $quantity . ' ' . $unit . $extra,
-                            'type' => $material['material_type'] ?? '',
-                            'honey_variety' => $material['honey_variety'] ?? null,
-                            'requires_variety' => in_array($material['material_type'] ?? '', ['honey_raw', 'honey_filtered'], true)
-                        ];
-                    }
-
-                    $response['hint'] = 'اختر مورد لكل مادة خام وأداة تعبئة مستخدمة في هذا القالب.';
-                    break;
-
-                case 'olive_oil':
-                    $template = $db->queryOne(
-                        "SELECT id, product_name, olive_oil_quantity FROM olive_oil_product_templates WHERE id = ?",
-                        [$templateId]
-                    );
-                    if (!$template) {
-                        throw new Exception('قالب زيت الزيتون غير موجود.');
-                    }
-
-                    $quantity = number_format((float)($template['olive_oil_quantity'] ?? 0), 3);
-                    $components[] = [
-                        'key' => 'olive_main',
-                        'name' => 'زيت زيتون',
-                        'label' => 'مورد زيت الزيتون',
-                        'description' => 'الكمية لكل وحدة: ' . $quantity . ' لتر',
-                        'type' => 'olive_oil'
-                    ];
-
-                    $addPackagingComponents('product_template_packaging', $templateId);
-                    $response['hint'] = 'اختر المورد المسؤول عن زيت الزيتون وأي مواد إضافية متوفرة.';
-                    break;
-
-                case 'beeswax':
-                    $template = $db->queryOne(
-                        "SELECT id, product_name, beeswax_weight FROM beeswax_product_templates WHERE id = ?",
-                        [$templateId]
-                    );
-                    if (!$template) {
-                        throw new Exception('قالب شمع العسل غير موجود.');
-                    }
-
-                    $quantity = number_format((float)($template['beeswax_weight'] ?? 0), 3);
-                    $components[] = [
-                        'key' => 'beeswax_main',
-                        'name' => 'شمع عسل',
-                        'label' => 'مورد شمع العسل',
-                        'description' => 'الكمية لكل وحدة: ' . $quantity . ' كجم',
-                        'type' => 'beeswax'
-                    ];
-
-                    $addPackagingComponents('product_template_packaging', $templateId);
-                    $response['hint'] = 'اختر المورد المسؤول عن شمع العسل وأي مواد إضافية متوفرة.';
-                    break;
-
-                case 'derivatives':
-                    $template = $db->queryOne(
-                        "SELECT id, product_name, derivative_type, derivative_weight FROM derivatives_product_templates WHERE id = ?",
-                        [$templateId]
-                    );
-                    if (!$template) {
-                        throw new Exception('قالب المشتقات غير موجود.');
-                    }
-
-                    $derivativeType = $template['derivative_type'] ?? 'مشتق';
-                    $quantity = number_format((float)($template['derivative_weight'] ?? 0), 3);
-                    $components[] = [
-                        'key' => 'derivative_main',
-                        'name' => $derivativeType,
-                        'label' => 'مورد المشتق: ' . $derivativeType,
-                        'description' => 'الكمية لكل وحدة: ' . $quantity . ' كجم',
-                        'type' => 'derivatives'
-                    ];
-
-                    $addPackagingComponents('product_template_packaging', $templateId);
-                    $response['hint'] = 'اختر المورد المسؤول عن المشتق وأي أدوات تعبئة مرتبطة.';
-                    break;
-
-                case 'honey':
-                case 'legacy':
-                default:
-                    $template = $db->queryOne(
-                        "SELECT id, product_name, honey_quantity FROM product_templates WHERE id = ?",
-                        [$templateId]
-                    );
-                    if (!$template) {
-                        throw new Exception('قالب المنتج غير موجود.');
-                    }
-
-                    if (isset($template['honey_quantity']) && (float)$template['honey_quantity'] > 0) {
-                        $honeyQuantity = number_format((float)$template['honey_quantity'], 3);
-                        $components[] = [
-                            'key' => 'honey_main',
-                            'name' => 'عسل',
-                            'label' => 'مورد العسل',
-                            'description' => 'الكمية لكل وحدة: ' . $honeyQuantity . ' جرام',
-                            'type' => 'honey_filtered',
-                            'requires_variety' => true
-                        ];
-                    }
-
-                    $addPackagingComponents('product_template_packaging', $templateId);
-
-                    $rawMaterials = $db->query(
-                        "SELECT id, material_name, quantity_per_unit, unit
-                         FROM product_template_raw_materials
-                         WHERE template_id = ?",
-                        [$templateId]
-                    );
-
-                    foreach ($rawMaterials as $material) {
-                        $name = $material['material_name'] ?? 'مادة خام';
-                        $quantity = number_format((float)($material['quantity_per_unit'] ?? 0), 3);
-                        $unit = $material['unit'] ?? 'وحدة';
-                        $components[] = [
-                            'key' => 'raw_' . $material['id'],
-                            'name' => $name,
-                            'label' => 'مورد المادة: ' . $name,
-                            'description' => 'الكمية لكل وحدة: ' . $quantity . ' ' . $unit,
-                            'type' => 'raw_general'
-                        ];
-                    }
-
-                    $response['hint'] = 'اختر المورد لكل مكون (العسل، المواد الخام، أدوات التعبئة).';
-                    break;
+            if (!$template) {
+                throw new Exception('القالب غير موجود أو تم حذفه.');
             }
 
+            $templateTypeKey = trim($template['template_type'] ?? '') ?: 'legacy';
+            $components = [];
+
+            $detailsPayload = [];
+            if (!empty($template['details_json'])) {
+                $decoded = json_decode($template['details_json'], true);
+                if (is_array($decoded)) {
+                    $detailsPayload = $decoded;
+                }
+            }
+
+            $rawDefaults = [];
+            if (!empty($detailsPayload['raw_materials']) && is_array($detailsPayload['raw_materials'])) {
+                foreach ($detailsPayload['raw_materials'] as $rawItem) {
+                    $nameKey = trim((string)($rawItem['name'] ?? ''));
+                    if ($nameKey !== '') {
+                        $rawDefaults[$nameKey] = [
+                            'supplier_id' => $rawItem['supplier_id'] ?? null,
+                            'honey_variety' => $rawItem['honey_variety'] ?? null
+                        ];
+                    }
+                }
+            }
+
+            $packagingDefaults = [];
+            if (!empty($detailsPayload['packaging']) && is_array($detailsPayload['packaging'])) {
+                foreach ($detailsPayload['packaging'] as $packItem) {
+                    $packId = $packItem['packaging_material_id'] ?? null;
+                    if ($packId) {
+                        $packagingDefaults[$packId] = [
+                            'supplier_id' => $packItem['supplier_id'] ?? null
+                        ];
+                    }
+                }
+            }
+
+            $honeyQuantity = (float)($template['honey_quantity'] ?? 0);
+            if ($honeyQuantity > 0) {
+                $components[] = [
+                    'key' => 'honey_main',
+                    'name' => 'عسل',
+                    'label' => 'مورد العسل',
+                    'description' => 'الكمية لكل وحدة: ' . number_format($honeyQuantity, 3) . ' جرام',
+                    'type' => 'honey_main',
+                    'requires_variety' => true,
+                    'default_supplier' => $detailsPayload['main_supplier_id'] ?? null,
+                    'honey_variety' => $detailsPayload['honey_variety'] ?? null
+                ];
+            }
+
+            $rawMaterials = $db->query(
+                "SELECT id, material_name, quantity_per_unit, unit 
+                 FROM product_template_raw_materials 
+                 WHERE template_id = ?",
+                [$templateId]
+            );
+            foreach ($rawMaterials as $rawMaterial) {
+                $name = trim((string)($rawMaterial['material_name'] ?? 'مادة خام'));
+                $quantity = number_format((float)($rawMaterial['quantity_per_unit'] ?? 0), 3);
+                $unit = $rawMaterial['unit'] ?? 'وحدة';
+                $defaultSupplier = null;
+                $defaultHoneyVariety = null;
+                if ($name !== '' && isset($rawDefaults[$name])) {
+                    $defaultSupplier = $rawDefaults[$name]['supplier_id'] ?? null;
+                    $defaultHoneyVariety = $rawDefaults[$name]['honey_variety'] ?? null;
+                }
+
+                $components[] = [
+                    'key' => 'raw_' . $rawMaterial['id'],
+                    'name' => $name,
+                    'label' => 'مورد المادة: ' . $name,
+                    'description' => 'الكمية لكل وحدة: ' . $quantity . ' ' . $unit,
+                    'type' => 'raw_general',
+                    'default_supplier' => $defaultSupplier,
+                    'honey_variety' => $defaultHoneyVariety,
+                    'requires_variety' => (mb_stripos($name, 'عسل') !== false)
+                ];
+            }
+
+            $packagingItems = $db->query(
+                "SELECT id, packaging_material_id, packaging_name, quantity_per_unit 
+                 FROM product_template_packaging 
+                 WHERE template_id = ?",
+                [$templateId]
+            );
+            foreach ($packagingItems as $packItem) {
+                $packagingId = $packItem['packaging_material_id'] ?? null;
+                $name = $packItem['packaging_name'] ?? ('أداة تعبئة #' . ($packagingId ?: $packItem['id']));
+                $quantity = number_format((float)($packItem['quantity_per_unit'] ?? 0), 3);
+                $defaultSupplier = null;
+                if ($packagingId && isset($packagingDefaults[$packagingId])) {
+                    $defaultSupplier = $packagingDefaults[$packagingId]['supplier_id'] ?? null;
+                }
+
+                $components[] = [
+                    'key' => 'pack_' . ($packagingId ?: $packItem['id']),
+                    'name' => $name,
+                    'label' => 'مورد أداة التعبئة: ' . $name,
+                    'description' => 'الكمية لكل وحدة: ' . $quantity . ' قطعة',
+                    'type' => 'packaging',
+                    'default_supplier' => $defaultSupplier
+                ];
+            }
+
+            $response['hint'] = 'اختر المورد لكل مادة خام وأداة تعبئة مرتبطة بالقالب.';
             $response['components'] = $components;
+            $response['template_type'] = $templateTypeKey;
             $response['success'] = true;
             $response['cache_key'] = $templateId . '::' . $templateTypeKey;
         } catch (Exception $e) {
