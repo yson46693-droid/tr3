@@ -36,6 +36,7 @@ if (!isset($lang) || empty($lang)) {
     $lang = isset($translations) ? $translations : [];
 }
 $currentUser = getCurrentUser();
+$currentUserRole = strtolower((string) ($currentUser['role'] ?? ''));
 if ($currentUser && function_exists('handleAttendanceRemindersForUser')) {
     handleAttendanceRemindersForUser($currentUser);
 }
@@ -555,7 +556,7 @@ if (function_exists('processDailyPackagingAlert')) {
         <div class="homeline-topbar">
             <div class="topbar-left">
                 <!-- Mobile Menu Toggle -->
-                <?php if (($currentUser['role'] ?? '') !== 'sales'): ?>
+                <?php if ($currentUserRole !== 'sales'): ?>
                 <button class="mobile-menu-toggle d-md-none" id="mobileMenuToggle" type="button">
                     <i class="bi bi-list"></i>
                 </button>
