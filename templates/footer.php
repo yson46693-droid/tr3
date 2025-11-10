@@ -127,8 +127,11 @@ if (!defined('ACCESS_ALLOWED')) {
         function initUpdateChecker() {
             const STORAGE_KEY = 'app_last_version';
             const VERSION_STORAGE_KEY = 'app_display_version';
-            const CHECK_INTERVAL = 5 * 60 * 1000; // كل 5 دقائق
+            const LAST_CHECK_KEY = 'app_last_update_check';
+            const CHECK_INTERVAL = 30 * 60 * 1000; // كل 30 دقيقة
+            const MIN_MANUAL_INTERVAL = 5 * 60 * 1000; // الحد الأدنى بين التحقق اليدوي
             let updateCheckInterval = null;
+            let updateCheckTimeout = null;
             let isChecking = false;
             
             // حساب مسار API
@@ -179,6 +182,11 @@ if (!defined('ACCESS_ALLOWED')) {
                 } catch (error) {
                     console.log('Update check error:', error);
                 } finally {
+                    try {
+                        localStorage.setItem(LAST_CHECK_KEY, Date.now().toString());
+                    } catch (storageError) {
+                        console.log('Update check storage error:', storageError);
+                    }
                     isChecking = false;
                 }
             }
@@ -253,22 +261,60 @@ if (!defined('ACCESS_ALLOWED')) {
                 }, 60000);
             }
             
-            // التحقق الأولي بعد تحميل الصفحة بـ 10 ثوان
-            setTimeout(checkForUpdates, 10000);
-            
-            // التحقق بشكل دوري
-            updateCheckInterval = setInterval(checkForUpdates, CHECK_INTERVAL);
+            function getLastCheckTimestamp() {
+                try {
+                    const raw = localStorage.getItem(LAST_CHECK_KEY);
+                    const parsed = raw ? parseInt(raw, 10) : 0;
+                    return Number.isFinite(parsed) ? parsed : 0;
+                } catch (error) {
+                    return 0;
+                }
+            }
+
+            function shouldCheckNow(minInterval = CHECK_INTERVAL) {
+                const lastCheck = getLastCheckTimestamp();
+                if (!lastCheck) {
+                    return true;
+                }
+                return (Date.now() - lastCheck) >= minInterval;
+            }
+
+            function scheduleBackgroundChecks() {
+                if (updateCheckTimeout) {
+                    clearTimeout(updateCheckTimeout);
+                    updateCheckTimeout = null;
+                }
+                if (updateCheckInterval) {
+                    clearInterval(updateCheckInterval);
+                    updateCheckInterval = null;
+                }
+
+                if (shouldCheckNow()) {
+                    checkForUpdates();
+                    updateCheckInterval = setInterval(checkForUpdates, CHECK_INTERVAL);
+                } else {
+                    const lastCheck = getLastCheckTimestamp();
+                    const elapsed = Date.now() - lastCheck;
+                    const remaining = Math.max(CHECK_INTERVAL - elapsed, MIN_MANUAL_INTERVAL);
+                    updateCheckTimeout = setTimeout(function() {
+                        checkForUpdates();
+                        updateCheckInterval = setInterval(checkForUpdates, CHECK_INTERVAL);
+                    }, remaining);
+                }
+            }
+
+            scheduleBackgroundChecks();
             
             // التحقق عند إعادة التركيز على النافذة
             window.addEventListener('focus', function() {
-                if (!isChecking) {
+                if (!isChecking && shouldCheckNow(MIN_MANUAL_INTERVAL)) {
                     checkForUpdates();
                 }
             });
             
             // التحقق عند الاتصال بالإنترنت
             window.addEventListener('online', function() {
-                if (!isChecking) {
+                if (!isChecking && shouldCheckNow(MIN_MANUAL_INTERVAL)) {
                     setTimeout(checkForUpdates, 2000);
                 }
             });
@@ -277,6 +323,11 @@ if (!defined('ACCESS_ALLOWED')) {
             window.addEventListener('beforeunload', function() {
                 if (updateCheckInterval) {
                     clearInterval(updateCheckInterval);
+                    updateCheckInterval = null;
+                }
+                if (updateCheckTimeout) {
+                    clearTimeout(updateCheckTimeout);
+                    updateCheckTimeout = null;
                 }
             });
         }

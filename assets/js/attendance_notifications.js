@@ -13,6 +13,10 @@ class AttendanceNotificationManager {
         this.userId = null;
         this.userRole = null;
         this.storageAvailable = this.checkStorageAvailability();
+        this.statusCacheTTL = 5 * 60 * 1000; // 5 دقائق
+        this.todayStatusCache = null;
+        this.todayStatusCacheTimestamp = 0;
+        this.todayStatusCachePromise = null;
     }
 
     /**
@@ -400,32 +404,66 @@ class AttendanceNotificationManager {
         }
     }
 
-    async getTodayStatus() {
-        try {
-            const apiPath = this.getApiPath('attendance.php');
-            const response = await fetch(apiPath + '?action=check_today', {
-                method: 'GET',
-                credentials: 'same-origin'
-            });
+    invalidateTodayStatusCache() {
+        this.todayStatusCache = null;
+        this.todayStatusCacheTimestamp = 0;
+        this.todayStatusCachePromise = null;
+    }
 
-            if (!response.ok) {
-                throw new Error('Failed to get today status');
-            }
+    async getTodayStatus(forceRefresh = false) {
+        const nowMs = Date.now();
 
-            const data = await response.json();
-            const now = new Date();
-            const workEndTime = this.parseTimeToDate(this.workTime.end);
-            const pastWorkEnd = workEndTime ? now > workEndTime : false;
-
-            return {
-                checked_in: data.checked_in || false,
-                checked_out: data.checked_out || false,
-                past_work_end: pastWorkEnd
-            };
-        } catch (error) {
-            console.error('Error getting today status:', error);
-            return { checked_in: false, checked_out: false, past_work_end: false };
+        if (
+            !forceRefresh &&
+            this.todayStatusCache &&
+            (nowMs - this.todayStatusCacheTimestamp) < this.statusCacheTTL
+        ) {
+            return this.todayStatusCache;
         }
+
+        if (!forceRefresh && this.todayStatusCachePromise) {
+            return this.todayStatusCachePromise;
+        }
+
+        const fetchPromise = (async () => {
+            try {
+                const apiPath = this.getApiPath('attendance.php');
+                const response = await fetch(apiPath + '?action=check_today', {
+                    method: 'GET',
+                    credentials: 'same-origin'
+                });
+
+                if (!response.ok) {
+                    throw new Error('Failed to get today status');
+                }
+
+                const data = await response.json();
+                const now = new Date();
+                const workEndTime = this.parseTimeToDate(this.workTime?.end);
+                const pastWorkEnd = workEndTime ? now > workEndTime : false;
+
+                const status = {
+                    checked_in: Boolean(data.checked_in),
+                    checked_out: Boolean(data.checked_out),
+                    past_work_end: pastWorkEnd
+                };
+
+                this.todayStatusCache = status;
+                this.todayStatusCacheTimestamp = Date.now();
+                return status;
+            } catch (error) {
+                console.error('Error getting today status:', error);
+                if (this.todayStatusCache) {
+                    return this.todayStatusCache;
+                }
+                return { checked_in: false, checked_out: false, past_work_end: false };
+            } finally {
+                this.todayStatusCachePromise = null;
+            }
+        })();
+
+        this.todayStatusCachePromise = fetchPromise;
+        return fetchPromise;
     }
 
     parseTimeToDate(timeString) {
@@ -491,6 +529,7 @@ class AttendanceNotificationManager {
         this.dailyCheckInterval = setInterval(async () => {
             const now = new Date();
             if (now.getHours() === 0 && now.getMinutes() === 0) {
+                this.invalidateTodayStatusCache();
                 this.scheduleReminders();
             }
 
