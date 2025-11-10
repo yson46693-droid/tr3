@@ -755,14 +755,18 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     $packagingProductId = null;
 
                     if ($packagingMaterialId) {
+                        $packagingProductColumnExists = productionColumnExists('packaging_materials', 'product_id');
+                        $selectColumns = $packagingProductColumnExists
+                            ? 'id, name, unit, product_id'
+                            : 'id, name, unit';
                         $packagingRow = $db->queryOne(
-                            "SELECT id, name, unit, product_id FROM packaging_materials WHERE id = ?",
+                            "SELECT {$selectColumns} FROM packaging_materials WHERE id = ?",
                             [$packagingMaterialId]
                         );
                         if ($packagingRow) {
                             $packagingName = $packagingName ?: $packagingRow['name'];
                             $packagingUnit = $packagingRow['unit'] ?? $packagingUnit;
-                            if (!empty($packagingRow['product_id'])) {
+                            if ($packagingProductColumnExists && !empty($packagingRow['product_id'])) {
                                 $packagingProductId = (int)$packagingRow['product_id'];
                             }
                         }
