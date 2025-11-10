@@ -2469,13 +2469,6 @@ $lang = isset($translations) ? $translations : [];
                         <input type="hidden" name="user_id" value="<?php echo $currentUser['id']; ?>">
                     <?php endif; ?>
                     
-                    <!-- الملاحظات -->
-                    <div class="mb-3 section-block">
-                        <label class="form-label fw-bold">ملاحظات (اختياري)</label>
-                        <textarea name="batch_notes" class="form-control" rows="3" 
-                                  placeholder="سيتم إنشاء الملاحظات تلقائياً بناءً على البيانات المحددة"></textarea>
-                        <small class="text-muted">إذا تركتها فارغة، سيتم إنشاء ملاحظات تلقائية تتضمن معلومات الموردين والقالب</small>
-                    </div>
                 </div>
                 <div class="modal-footer bg-light">
                     <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">
@@ -3285,12 +3278,6 @@ function openCreateFromTemplateModal(element) {
     document.getElementById('template_product_name').value = templateName;
     document.getElementById('template_type').value = templateType;
     
-    // إعادة تهيئة الحقول التلقائية
-    const batchNotesField = document.querySelector('textarea[name="batch_notes"]');
-    if (batchNotesField) {
-        batchNotesField.value = '';
-    }
-
     const wrapper = document.getElementById('templateSuppliersWrapper');
     const container = document.getElementById('templateSuppliersContainer');
     const modeInput = document.getElementById('template_mode');
