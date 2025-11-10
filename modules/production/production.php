@@ -741,7 +741,12 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 
                 if ($isUnifiedTemplate) {
                     // القالب الموحد - استرجاع أدوات التعبئة
-                    $packagingNameExpression = getColumnSelectExpression('template_packaging', 'packaging_name', 'packaging_name', 'tp');
+                    $hasTemplatePackagingNameColumn = productionColumnExists('template_packaging', 'packaging_name');
+                    if ($hasTemplatePackagingNameColumn) {
+                        $packagingNameExpression = 'tp.packaging_name AS packaging_name';
+                    } else {
+                        $packagingNameExpression = "COALESCE(pm.name, CONCAT('أداة تعبئة #', tp.packaging_material_id)) AS packaging_name";
+                    }
                     $packagingItems = $db->query(
                         "SELECT tp.id, tp.packaging_material_id, {$packagingNameExpression}, tp.quantity_per_unit,
                                 pm.name as packaging_db_name, pm.unit as packaging_unit, pm.product_id as packaging_product_id
