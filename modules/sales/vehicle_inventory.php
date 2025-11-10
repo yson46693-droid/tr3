@@ -13,6 +13,8 @@ require_once __DIR__ . '/../../includes/auth.php';
 require_once __DIR__ . '/../../includes/vehicle_inventory.php';
 require_once __DIR__ . '/../../includes/audit_log.php';
 
+require_once __DIR__ . '/table_styles.php';
+
 requireRole(['sales', 'accountant', 'production', 'manager']);
 
 $currentUser = getCurrentUser();
@@ -237,7 +239,7 @@ foreach ($vehicleInventory as $item) {
         <div class="card-body">
             <div class="row mb-3">
                 <div class="col-md-6">
-                    <table class="table table-bordered">
+                    <table class="table sales-table-details">
                         <tr>
                             <th width="40%">رقم السيارة:</th>
                             <td><?php echo htmlspecialchars($selectedVehicle['vehicle_number']); ?></td>
@@ -323,8 +325,8 @@ foreach ($vehicleInventory as $item) {
             </div>
             
             <!-- قائمة مخزون السيارة -->
-            <div class="table-responsive">
-                <table class="table table-striped table-hover">
+            <div class="table-responsive sales-table-responsive">
+                <table class="table sales-table align-middle">
                     <thead>
                         <tr>
                             <th>المنتج</th>
