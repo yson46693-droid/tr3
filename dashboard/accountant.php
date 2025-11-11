@@ -18,6 +18,10 @@ $currentUser = getCurrentUser();
 $db = db();
 $page = $_GET['page'] ?? 'dashboard';
 
+if ($page === 'pos') {
+    $page = 'dashboard';
+}
+
 // معالجة AJAX قبل أي إخراج HTML - خاصة لصفحة مخزن أدوات التعبئة
 if ($page === 'packaging_warehouse' && isset($_GET['ajax']) && $_GET['ajax'] == '1' && isset($_GET['material_id'])) {
     // تحميل ملف packaging_warehouse.php مباشرة للتعامل مع AJAX
@@ -448,15 +452,6 @@ $pageTitle = isset($lang['accountant_dashboard']) ? $lang['accountant_dashboard'
                 <!-- صفحة المخزون -->
                 <?php 
                 $modulePath = __DIR__ . '/../modules/accountant/inventory.php';
-                if (file_exists($modulePath)) {
-                    include $modulePath;
-                }
-                ?>
-                
-            <?php elseif ($page === 'pos'): ?>
-                <!-- صفحة نقطة البيع المحلية -->
-                <?php 
-                $modulePath = __DIR__ . '/../modules/accountant/pos.php';
                 if (file_exists($modulePath)) {
                     include $modulePath;
                 }

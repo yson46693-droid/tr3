@@ -172,13 +172,6 @@ switch ($role) {
                 'badge' => null
             ],
             [
-                'title' => 'نقطة البيع',
-                'icon' => 'bi-cash-register',
-                'url' => $baseUrl . 'accountant.php?page=pos',
-                'active' => ($currentPage === 'accountant.php' && $currentPageParam === 'pos'),
-                'badge' => null
-            ],
-            [
                 'title' => 'مخزن المنتجات',
                 'icon' => 'bi-boxes',
                 'url' => $baseUrl . 'accountant.php?page=inventory',
