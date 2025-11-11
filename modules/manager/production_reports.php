@@ -103,7 +103,7 @@ function renderPackagingDamageTable($items)
         return;
     }
     echo '<div class="table-responsive dashboard-table-wrapper">';
-    echo '<table class="table dashboard-table align-middle">';
+    echo '<table class="table table-no-hover dashboard-table align-middle">';
     echo '<thead class="table-light"><tr>';
     echo '<th>أداة التعبئة</th><th>الكمية التالفة</th><th>عدد السجلات</th><th>آخر سبب</th><th>آخر تسجيل</th>';
     echo '</tr></thead><tbody>';

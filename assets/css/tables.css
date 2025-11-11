@@ -44,6 +44,16 @@
     transform: scale(1.001);
 }
 
+.table.table-no-hover tbody tr {
+    transition: none;
+}
+
+.table.table-no-hover tbody tr:hover {
+    background-color: inherit;
+    transform: none;
+    box-shadow: none;
+}
+
 .table-striped tbody tr:nth-of-type(odd) {
     background-color: var(--bg-secondary, #f8f9fa);
 }
