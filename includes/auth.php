@@ -18,6 +18,32 @@ if (!function_exists('getRelativeUrl') && file_exists(__DIR__ . '/path_helper.ph
 }
 
 /**
+ * الحصول على الحد الأدنى لطول كلمة المرور من الإعدادات
+ *
+ * @return int
+ */
+function getPasswordMinLength(): int
+{
+    static $cachedValue = null;
+
+    if ($cachedValue !== null) {
+        return $cachedValue;
+    }
+
+    if (defined('PASSWORD_MIN_LENGTH')) {
+        $value = (int) PASSWORD_MIN_LENGTH;
+    } else {
+        $value = 8;
+    }
+
+    if ($value < 1) {
+        $value = 1;
+    }
+
+    return $cachedValue = $value;
+}
+
+/**
  * التحقق من تسجيل الدخول
  */
 function isLoggedIn() {

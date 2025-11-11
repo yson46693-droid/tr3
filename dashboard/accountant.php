@@ -19,8 +19,7 @@ $db = db();
 $page = $_GET['page'] ?? 'dashboard';
 
 if ($page === 'pos') {
-    header('Location: accountant.php');
-    exit;
+    $page = 'dashboard';
 }
 
 // معالجة AJAX قبل أي إخراج HTML - خاصة لصفحة مخزن أدوات التعبئة
