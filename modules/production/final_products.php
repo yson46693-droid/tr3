@@ -444,7 +444,6 @@ $lang = isset($translations) ? $translations : [];
                     <thead class="table-light">
                         <tr>
                             <th>رقم التشغيله</th>
-                            <th>معرّف المنتج</th>
                             <th>اسم المنتج</th>
                             <th>تاريخ الإنتاج</th>
                             <th>الكمية المنتجة</th>
@@ -456,7 +455,6 @@ $lang = isset($translations) ? $translations : [];
                         <?php foreach ($finishedProductsRows as $finishedRow): ?>
                             <?php
                                 $batchNumber = $finishedRow['batch_number'] ?? '';
-                                $productIdValue = $finishedRow['product_id'] ?? null;
                                 $workersList = array_filter(array_map('trim', explode(',', (string)($finishedRow['workers'] ?? ''))));
                                 $workersDisplay = !empty($workersList)
                                     ? implode('، ', array_map('htmlspecialchars', $workersList))
@@ -467,7 +465,6 @@ $lang = isset($translations) ? $translations : [];
                             ?>
                             <tr>
                                 <td><?php echo htmlspecialchars($batchNumber ?: '—'); ?></td>
-                                <td><?php echo $productIdValue !== null ? htmlspecialchars((string)$productIdValue) : '—'; ?></td>
                                 <td><?php echo htmlspecialchars($finishedRow['product_name'] ?? 'غير محدد'); ?></td>
                                 <td><?php echo !empty($finishedRow['production_date']) ? htmlspecialchars(formatDate($finishedRow['production_date'])) : '—'; ?></td>
                                 <td><?php echo number_format((float)($finishedRow['quantity_produced'] ?? 0), 2); ?></td>
@@ -476,7 +473,7 @@ $lang = isset($translations) ? $translations : [];
                                     <div class="btn-group btn-group-sm" role="group">
                                         <?php if ($viewUrl): ?>
                                             <a class="btn btn-primary" href="<?php echo htmlspecialchars($viewUrl); ?>">
-                                                <i class="bi bi-eye"></i> عرض
+                                                <i class="bi bi-eye"></i> عرض تفاصيل التشغيلة
                                             </a>
                                         <?php endif; ?>
                                         <?php if ($batchNumber): ?>

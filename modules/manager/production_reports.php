@@ -73,7 +73,7 @@ function renderConsumptionTable($items, $includeCategory = false)
         return;
     }
     echo '<div class="table-responsive dashboard-table-wrapper">';
-    echo '<table class="table dashboard-table align-middle">';
+    echo '<table class="table dashboard-table dashboard-table--no-hover align-middle">';
     echo '<thead class="table-light"><tr>';
     echo '<th>المادة</th>';
     if ($includeCategory) {
