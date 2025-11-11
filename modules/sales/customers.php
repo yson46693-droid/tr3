@@ -39,6 +39,12 @@ $customerStats = [
 ];
 $totalCollectionsAmount = 0.0;
 
+// جلب رسالة النجاح من الجلسة (إن وجدت) بعد عمليات إعادة التوجيه
+$sessionSuccess = getSuccessMessage();
+if ($sessionSuccess !== null) {
+    $success = $sessionSuccess;
+}
+
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action'])) {
     $action = trim($_POST['action']);
 
@@ -103,7 +109,17 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action'])) {
                 $db->commit();
                 $transactionStarted = false;
 
-                $success = 'تم تحصيل المبلغ بنجاح.';
+                $redirectParams = ['page' => 'customers'];
+                if (!empty($section)) {
+                    $redirectParams['section'] = $section;
+                }
+
+                preventDuplicateSubmission(
+                    'تم تحصيل المبلغ بنجاح.',
+                    $redirectParams,
+                    null,
+                    $currentUser['role'] ?? null
+                );
             } catch (InvalidArgumentException $userError) {
                 if ($transactionStarted) {
                     $db->rollback();
@@ -148,7 +164,17 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action'])) {
                     'name' => $name
                 ]);
 
-                $success = 'تم إضافة العميل بنجاح';
+                $redirectParams = ['page' => 'customers'];
+                if (!empty($section)) {
+                    $redirectParams['section'] = $section;
+                }
+
+                preventDuplicateSubmission(
+                    'تم إضافة العميل بنجاح',
+                    $redirectParams,
+                    null,
+                    $currentUser['role'] ?? null
+                );
             } catch (InvalidArgumentException $userError) {
                 $error = $userError->getMessage();
             } catch (Throwable $addCustomerError) {

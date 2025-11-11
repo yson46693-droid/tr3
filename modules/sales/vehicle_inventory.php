@@ -239,7 +239,7 @@ foreach ($vehicleInventory as $item) {
         <div class="card-body">
             <div class="row mb-3">
                 <div class="col-md-6">
-                    <table class="table dashboard-table-details">
+                    <table class="table table-no-hover dashboard-table-details">
                         <tr>
                             <th width="40%">رقم السيارة:</th>
                             <td><?php echo htmlspecialchars($selectedVehicle['vehicle_number']); ?></td>
@@ -326,7 +326,7 @@ foreach ($vehicleInventory as $item) {
             
             <!-- قائمة مخزون السيارة -->
             <div class="table-responsive dashboard-table-wrapper">
-                <table class="table dashboard-table align-middle">
+                <table class="table table-no-hover dashboard-table align-middle">
                     <thead>
                         <tr>
                             <th>المنتج</th>
@@ -359,6 +359,7 @@ foreach ($vehicleInventory as $item) {
     </div>
 <?php endif; ?>
 
+<?php if (($currentUser['role'] ?? '') !== 'sales'): ?>
 <!-- قائمة السيارات -->
 <div class="card shadow-sm">
     <div class="card-body">
@@ -402,6 +403,7 @@ foreach ($vehicleInventory as $item) {
         </div>
     </div>
 </div>
+<?php endif; ?>
 
 <?php if ($canManageVehicles): ?>
 <!-- Modal إضافة سيارة جديدة -->
