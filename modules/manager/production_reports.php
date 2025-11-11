@@ -333,6 +333,33 @@ $csrfToken = generateCSRFToken();
     </div>
 <?php endif; ?>
 
+<div class="card shadow-sm mb-4">
+    <div class="card-body py-3">
+        <div class="d-flex flex-wrap gap-2">
+            <button class="btn btn-outline-primary js-report-nav" type="button" data-target="#productionReportsSection">
+                <i class="bi bi-gear-wide-connected me-1"></i>
+                إعداد التقرير
+            </button>
+            <button class="btn btn-outline-primary js-report-nav" type="button" data-target="#reportFiltersSection">
+                <i class="bi bi-funnel me-1"></i>
+                خيارات الفلترة
+            </button>
+            <button class="btn btn-outline-primary js-report-nav" type="button" data-target="#summarySection">
+                <i class="bi bi-clipboard-data me-1"></i>
+                ملخص الفترة
+            </button>
+            <button class="btn btn-outline-primary js-report-nav" type="button" data-target="#complianceSection">
+                <i class="bi bi-shield-check me-1"></i>
+                متابعة التوالف
+            </button>
+            <button class="btn btn-outline-primary js-report-nav" type="button" data-target="#combinedTableSection">
+                <i class="bi bi-table me-1"></i>
+                الجدول الموحد
+            </button>
+        </div>
+    </div>
+</div>
+
 <?php
 function renderSummaryCards($label, $summary)
 {
@@ -445,7 +472,7 @@ $combinedTotals = $combinedData['totals'];
 $recordsCount = count($combinedRows);
 ?>
 
-<div class="card mb-4 shadow-sm">
+<div class="card mb-4 shadow-sm" id="reportFiltersSection">
     <div class="card-body">
         <form method="get" class="row g-3 align-items-end">
             <input type="hidden" name="page" value="reports">
@@ -475,11 +502,18 @@ $recordsCount = count($combinedRows);
     </div>
 </div>
 
-<?php renderSummaryCards('ملخص ' . $rangeLabel, $selectedSummary); ?>
+<section id="summarySection" class="mb-4">
+    <?php renderSummaryCards('ملخص ' . $rangeLabel, $selectedSummary); ?>
+</section>
 
-<?php renderDamageComplianceCard($selectedSummary['damage_compliance'] ?? []); ?>
+<?php $damageCompliance = $selectedSummary['damage_compliance'] ?? []; ?>
+<?php if (!empty($damageCompliance)): ?>
+<section id="complianceSection" class="mb-4">
+    <?php renderDamageComplianceCard($damageCompliance); ?>
+</section>
+<?php endif; ?>
 
-<div class="card shadow-sm">
+<div class="card shadow-sm" id="combinedTableSection">
     <div class="card-header bg-secondary text-white d-flex justify-content-between align-items-center">
         <span><i class="bi bi-table me-2"></i>الجدول الموحد للفترة: <?php echo htmlspecialchars($rangeLabel); ?></span>
         <span class="badge bg-primary-subtle text-primary">عدد السجلات: <?php echo number_format($recordsCount); ?></span>
@@ -497,6 +531,7 @@ $recordsCount = count($combinedRows);
         const scopeDateField = document.getElementById('reportScopeDateField');
         const params = new URLSearchParams(window.location.search);
         const targetSection = document.getElementById('productionReportsSection');
+        const navButtons = document.querySelectorAll('.js-report-nav');
 
         const toggleScopeDateField = () => {
             if (!scopeSelect || !scopeDateField) {
@@ -513,6 +548,19 @@ $recordsCount = count($combinedRows);
             scopeSelect.addEventListener('change', toggleScopeDateField);
             toggleScopeDateField();
         }
+
+        navButtons.forEach(function (btn) {
+            btn.addEventListener('click', function () {
+                const targetSelector = btn.getAttribute('data-target');
+                if (!targetSelector) {
+                    return;
+                }
+                const section = document.querySelector(targetSelector);
+                if (section) {
+                    section.scrollIntoView({ behavior: 'smooth', block: 'start' });
+                }
+            });
+        });
 
         if (!periodSelect || !dayField) {
             if (params.get('section') === 'production_reports' && targetSection) {
