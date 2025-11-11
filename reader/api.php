@@ -404,12 +404,13 @@ try {
 
     echo json_encode($response, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
 } catch (Throwable $e) {
-    error_log('Reader API error: ' . $e->getMessage());
+    $errorMessage = $e->getMessage();
+    error_log('Reader API error: ' . $errorMessage);
     if ($db) {
         try {
             $db->execute(
                 "INSERT INTO reader_access_log (session_id, ip_address, batch_number, status, message) VALUES (?, ?, ?, 'error', ?)",
-                [$sessionId, $ipAddress, $batchNumber ?: null, 'خطأ داخلي في الخادم.']
+                [$sessionId, $ipAddress, $batchNumber ?: null, 'خطأ داخلي في الخادم: ' . mb_substr($errorMessage, 0, 200)]
             );
             enforceReaderAccessLogLimit($db, $readerLogMaxRows);
         } catch (Throwable $logError) {
@@ -419,7 +420,8 @@ try {
     http_response_code(500);
     echo json_encode([
         'success' => false,
-        'message' => 'حدث خطأ أثناء معالجة الطلب.'
+        'message' => 'حدث خطأ أثناء معالجة الطلب.',
+        'debug' => $errorMessage
     ], JSON_UNESCAPED_UNICODE);
 }
 
