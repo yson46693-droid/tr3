@@ -870,6 +870,155 @@ $lang = isset($translations) ? $translations : [];
 </div>
 <?php endif; ?>
 
+<script>
+document.addEventListener('DOMContentLoaded', function () {
+    const transferForm = document.getElementById('mainWarehouseTransferForm');
+    const itemsContainer = document.getElementById('mainWarehouseTransferItems');
+    const addItemButton = document.getElementById('addTransferItemBtn');
+    const destinationSelect = document.getElementById('transferToWarehouse');
+
+    if (!transferForm || !itemsContainer) {
+        return;
+    }
+
+    let transferItemIndex = 1;
+
+    function buildItemRow(index) {
+        const wrapper = document.createElement('div');
+        wrapper.className = 'transfer-item row g-2 align-items-end mb-2';
+        wrapper.innerHTML = `
+            <div class="col-md-5">
+                <label class="form-label small text-muted">المنتج</label>
+                <select class="form-select product-select" name="items[${index}][product_id]" required>
+                    <option value="">اختر المنتج</option>
+                    <?php foreach ($transferProducts as $product): ?>
+                        <option value="<?php echo intval($product['id']); ?>"
+                                data-available="<?php echo floatval($product['quantity'] ?? 0); ?>">
+                            <?php echo htmlspecialchars($product['name']); ?>
+                            (متوفر: <?php echo number_format((float)($product['quantity'] ?? 0), 2); ?>)
+                        </option>
+                    <?php endforeach; ?>
+                </select>
+            </div>
+            <div class="col-md-3">
+                <label class="form-label small text-muted">الكمية</label>
+                <input type="number" step="0.01" min="0.01" class="form-control quantity-input"
+                       name="items[${index}][quantity]" placeholder="الكمية" required>
+            </div>
+            <div class="col-md-3">
+                <label class="form-label small text-muted">ملاحظات</label>
+                <input type="text" class="form-control" name="items[${index}][notes]" placeholder="ملاحظات (اختياري)">
+            </div>
+            <div class="col-md-1 text-end">
+                <button type="button" class="btn btn-outline-danger remove-transfer-item" title="حذف العنصر">
+                    <i class="bi bi-trash"></i>
+                </button>
+            </div>
+        `;
+        return wrapper;
+    }
+
+    function attachItemEvents(row) {
+        const select = row.querySelector('.product-select');
+        const quantityInput = row.querySelector('.quantity-input');
+
+        if (!select || !quantityInput) {
+            return;
+        }
+
+        const updateQuantityConstraints = () => {
+            const selectedOption = select.options[select.selectedIndex];
+            const available = selectedOption ? parseFloat(selectedOption.dataset.available || '0') : 0;
+            if (available > 0) {
+                quantityInput.setAttribute('max', available);
+                if (parseFloat(quantityInput.value || '0') > available) {
+                    quantityInput.value = available;
+                }
+            } else {
+                quantityInput.removeAttribute('max');
+            }
+        };
+
+        select.addEventListener('change', updateQuantityConstraints);
+        updateQuantityConstraints();
+    }
+
+    if (addItemButton) {
+        addItemButton.addEventListener('click', () => {
+            const newRow = buildItemRow(transferItemIndex);
+            itemsContainer.appendChild(newRow);
+            attachItemEvents(newRow);
+            transferItemIndex += 1;
+        });
+    }
+
+    document.addEventListener('click', (event) => {
+        const removeButton = event.target.closest('.remove-transfer-item');
+        if (!removeButton) {
+            return;
+        }
+
+        const rows = itemsContainer.querySelectorAll('.transfer-item');
+        if (rows.length <= 1) {
+            return;
+        }
+
+        removeButton.closest('.transfer-item').remove();
+    });
+
+    itemsContainer.querySelectorAll('.transfer-item').forEach((row) => {
+        attachItemEvents(row);
+    });
+
+    transferForm.addEventListener('submit', (event) => {
+        const rows = itemsContainer.querySelectorAll('.transfer-item');
+        if (!rows.length) {
+            event.preventDefault();
+            alert('أضف منتجاً واحداً على الأقل قبل إرسال الطلب.');
+            return;
+        }
+
+        for (const row of rows) {
+            const select = row.querySelector('.product-select');
+            const quantityInput = row.querySelector('.quantity-input');
+
+            if (!select || !quantityInput) {
+                event.preventDefault();
+                alert('يرجى التأكد من إدخال بيانات صحيحة لكل منتج.');
+                return;
+            }
+
+            if (!select.value) {
+                event.preventDefault();
+                alert('اختر المنتج المراد نقله.');
+                return;
+            }
+
+            const max = parseFloat(quantityInput.getAttribute('max') || '0');
+            const min = parseFloat(quantityInput.getAttribute('min') || '0');
+            const value = parseFloat(quantityInput.value || '0');
+
+            if (value < min) {
+                event.preventDefault();
+                alert('يرجى إدخال كمية أكبر من الصفر.');
+                return;
+            }
+
+            if (max > 0 && value > max) {
+                event.preventDefault();
+                alert('الكمية المطلوبة تتجاوز المتاح في المخزن الرئيسي.');
+                return;
+            }
+        }
+
+        if (destinationSelect && !destinationSelect.value) {
+            event.preventDefault();
+            alert('يرجى اختيار المخزن الوجهة قبل إرسال الطلب.');
+        }
+    });
+});
+</script>
+
 <div class="modal fade" id="batchDetailsModal" tabindex="-1" aria-hidden="true">
     <div class="modal-dialog modal-lg modal-dialog-scrollable modal-dialog-centered">
         <div class="modal-content">
