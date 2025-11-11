@@ -615,6 +615,16 @@ $pageTitle = isset($lang['manager_dashboard']) ? $lang['manager_dashboard'] : '�
                 }
                 ?>
                 
+            <?php elseif ($page === 'salaries'): ?>
+                <?php 
+                $modulePath = __DIR__ . '/../modules/accountant/salaries.php';
+                if (file_exists($modulePath)) {
+                    include $modulePath;
+                } else {
+                    echo '<div class="alert alert-warning">صفحة الرواتب غير متاحة حالياً</div>';
+                }
+                ?>
+                
             <?php elseif ($page === 'vehicles'): ?>
                 <!-- صفحة إدارة السيارات -->
                 <?php 

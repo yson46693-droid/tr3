@@ -18,7 +18,7 @@ $currentUser = getCurrentUser();
 $db = db();
 $page = $_GET['page'] ?? 'dashboard';
 
-if ($page === 'pos') {
+if (in_array($page, ['pos', 'reports'], true)) {
     $page = 'dashboard';
 }
 
@@ -536,19 +536,6 @@ $pageTitle = isset($lang['accountant_dashboard']) ? $lang['accountant_dashboard'
                 }
                 ?>
                 
-            <?php elseif ($page === 'reports'): ?>
-                <!-- صفحة التقارير -->
-                <h2><i class="bi bi-file-earmark-text me-2"></i><?php echo (isset($lang) && isset($lang['reports'])) ? $lang['reports'] : 'التقارير'; ?></h2>
-                <div class="card shadow-sm">
-                    <div class="card-body">
-                        <button class="btn btn-primary" onclick="generatePDFReport('financial', {}, event)">
-                            <i class="bi bi-file-pdf me-2"></i>توليد تقرير PDF
-                        </button>
-                        <button class="btn btn-success ms-2" onclick="generateExcelReport('financial', {}, event)">
-                            <i class="bi bi-file-excel me-2"></i>توليد تقرير Excel
-                        </button>
-                    </div>
-                </div>
             <?php endif; ?>
 
 <script>

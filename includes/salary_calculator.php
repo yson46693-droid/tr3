@@ -246,6 +246,32 @@ function createOrUpdateSalary($userId, $month, $year, $bonus = 0, $deductions = 
     if (!$hasBonusColumn) {
         $hasBonusColumn = false;
     }
+
+    // التحقق من وجود عمود notes
+    $hasNotesColumn = false;
+    try {
+        $columnExists = $db->queryOne(
+            "SELECT COUNT(*) as cnt FROM INFORMATION_SCHEMA.COLUMNS 
+             WHERE TABLE_SCHEMA = DATABASE() 
+             AND TABLE_NAME = 'salaries' 
+             AND COLUMN_NAME = 'notes'"
+        );
+        if (!empty($columnExists) && isset($columnExists['cnt'])) {
+            $hasNotesColumn = (int)$columnExists['cnt'] > 0;
+        }
+    } catch (Exception $e) {
+        try {
+            $notesColumnCheck = $db->queryOne("SHOW COLUMNS FROM salaries WHERE Field = 'notes'");
+            if (!empty($notesColumnCheck) && isset($notesColumnCheck['Field']) && $notesColumnCheck['Field'] === 'notes') {
+                $hasNotesColumn = true;
+            }
+        } catch (Exception $e2) {
+            $hasNotesColumn = false;
+        }
+    }
+    if (!$hasNotesColumn) {
+        $hasNotesColumn = false;
+    }
     
     // التحقق من نوع month إذا لم يكن year موجوداً
     $monthType = '';
@@ -281,49 +307,93 @@ function createOrUpdateSalary($userId, $month, $year, $bonus = 0, $deductions = 
     if ($existingSalary) {
         // تحديث الراتب الموجود
         if ($hasBonusColumn) {
-            $db->execute(
-                "UPDATE salaries SET 
-                    hourly_rate = ?, 
-                    total_hours = ?, 
-                    base_amount = ?, 
-                    bonus = ?, 
-                    deductions = ?, 
-                    total_amount = ?,
-                    notes = ?,
-                    updated_at = NOW()
-                 WHERE id = ?",
-                [
-                    $calculation['hourly_rate'],
-                    $calculation['total_hours'],
-                    $calculation['base_amount'],
-                    $calculation['total_bonus'], // إجمالي المكافأة (بما في ذلك نسبة التحصيلات)
-                    $calculation['deductions'],
-                    $calculation['total_amount'],
-                    $notes,
-                    $existingSalary['id']
-                ]
-            );
+            if ($hasNotesColumn) {
+                $db->execute(
+                    "UPDATE salaries SET 
+                        hourly_rate = ?, 
+                        total_hours = ?, 
+                        base_amount = ?, 
+                        bonus = ?, 
+                        deductions = ?, 
+                        total_amount = ?,
+                        notes = ?,
+                        updated_at = NOW()
+                     WHERE id = ?",
+                    [
+                        $calculation['hourly_rate'],
+                        $calculation['total_hours'],
+                        $calculation['base_amount'],
+                        $calculation['total_bonus'], // إجمالي المكافأة (بما في ذلك نسبة التحصيلات)
+                        $calculation['deductions'],
+                        $calculation['total_amount'],
+                        $notes,
+                        $existingSalary['id']
+                    ]
+                );
+            } else {
+                $db->execute(
+                    "UPDATE salaries SET 
+                        hourly_rate = ?, 
+                        total_hours = ?, 
+                        base_amount = ?, 
+                        bonus = ?, 
+                        deductions = ?, 
+                        total_amount = ?,
+                        updated_at = NOW()
+                     WHERE id = ?",
+                    [
+                        $calculation['hourly_rate'],
+                        $calculation['total_hours'],
+                        $calculation['base_amount'],
+                        $calculation['total_bonus'], // إجمالي المكافأة (بما في ذلك نسبة التحصيلات)
+                        $calculation['deductions'],
+                        $calculation['total_amount'],
+                        $existingSalary['id']
+                    ]
+                );
+            }
         } else {
-            $db->execute(
-                "UPDATE salaries SET 
-                    hourly_rate = ?, 
-                    total_hours = ?, 
-                    base_amount = ?, 
-                    deductions = ?, 
-                    total_amount = ?,
-                    notes = ?,
-                    updated_at = NOW()
-                 WHERE id = ?",
-                [
-                    $calculation['hourly_rate'],
-                    $calculation['total_hours'],
-                    $calculation['base_amount'],
-                    $calculation['deductions'],
-                    $calculation['total_amount'],
-                    $notes,
-                    $existingSalary['id']
-                ]
-            );
+            if ($hasNotesColumn) {
+                $db->execute(
+                    "UPDATE salaries SET 
+                        hourly_rate = ?, 
+                        total_hours = ?, 
+                        base_amount = ?, 
+                        deductions = ?, 
+                        total_amount = ?,
+                        notes = ?,
+                        updated_at = NOW()
+                     WHERE id = ?",
+                    [
+                        $calculation['hourly_rate'],
+                        $calculation['total_hours'],
+                        $calculation['base_amount'],
+                        $calculation['deductions'],
+                        $calculation['total_amount'],
+                        $notes,
+                        $existingSalary['id']
+                    ]
+                );
+            } else {
+                $db->execute(
+                    "UPDATE salaries SET 
+                        hourly_rate = ?, 
+                        total_hours = ?, 
+                        base_amount = ?, 
+                        deductions = ?, 
+                        total_amount = ?,
+                        updated_at = NOW()
+                     WHERE id = ?",
+                    [
+                        $calculation['hourly_rate'],
+                        $calculation['total_hours'],
+                        $calculation['base_amount'],
+                        $calculation['deductions'],
+                        $calculation['total_amount'],
+                        $existingSalary['id']
+                    ]
+                );
+            }
         }
         
         return [
@@ -337,38 +407,73 @@ function createOrUpdateSalary($userId, $month, $year, $bonus = 0, $deductions = 
         if ($hasYearColumn) {
             // إذا كان عمود year موجوداً
             if ($hasBonusColumn) {
-                $result = $db->execute(
-                    "INSERT INTO salaries (user_id, month, year, hourly_rate, total_hours, base_amount, bonus, deductions, total_amount, notes, status) 
-                     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'pending')",
-                    [
-                        $userId,
-                        $month,
-                        $year,
-                        $calculation['hourly_rate'],
-                        $calculation['total_hours'],
-                        $calculation['base_amount'],
-                        $calculation['total_bonus'],
-                        $calculation['deductions'],
-                        $calculation['total_amount'],
-                        $notes
-                    ]
-                );
+                if ($hasNotesColumn) {
+                    $result = $db->execute(
+                        "INSERT INTO salaries (user_id, month, year, hourly_rate, total_hours, base_amount, bonus, deductions, total_amount, notes, status) 
+                         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'pending')",
+                        [
+                            $userId,
+                            $month,
+                            $year,
+                            $calculation['hourly_rate'],
+                            $calculation['total_hours'],
+                            $calculation['base_amount'],
+                            $calculation['total_bonus'],
+                            $calculation['deductions'],
+                            $calculation['total_amount'],
+                            $notes
+                        ]
+                    );
+                } else {
+                    $result = $db->execute(
+                        "INSERT INTO salaries (user_id, month, year, hourly_rate, total_hours, base_amount, bonus, deductions, total_amount, status) 
+                         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'pending')",
+                        [
+                            $userId,
+                            $month,
+                            $year,
+                            $calculation['hourly_rate'],
+                            $calculation['total_hours'],
+                            $calculation['base_amount'],
+                            $calculation['total_bonus'],
+                            $calculation['deductions'],
+                            $calculation['total_amount']
+                        ]
+                    );
+                }
             } else {
-                $result = $db->execute(
-                    "INSERT INTO salaries (user_id, month, year, hourly_rate, total_hours, base_amount, deductions, total_amount, notes, status) 
-                     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'pending')",
-                    [
-                        $userId,
-                        $month,
-                        $year,
-                        $calculation['hourly_rate'],
-                        $calculation['total_hours'],
-                        $calculation['base_amount'],
-                        $calculation['deductions'],
-                        $calculation['total_amount'],
-                        $notes
-                    ]
-                );
+                if ($hasNotesColumn) {
+                    $result = $db->execute(
+                        "INSERT INTO salaries (user_id, month, year, hourly_rate, total_hours, base_amount, deductions, total_amount, notes, status) 
+                         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'pending')",
+                        [
+                            $userId,
+                            $month,
+                            $year,
+                            $calculation['hourly_rate'],
+                            $calculation['total_hours'],
+                            $calculation['base_amount'],
+                            $calculation['deductions'],
+                            $calculation['total_amount'],
+                            $notes
+                        ]
+                    );
+                } else {
+                    $result = $db->execute(
+                        "INSERT INTO salaries (user_id, month, year, hourly_rate, total_hours, base_amount, deductions, total_amount, status) 
+                         VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'pending')",
+                        [
+                            $userId,
+                            $month,
+                            $year,
+                            $calculation['hourly_rate'],
+                            $calculation['total_hours'],
+                            $calculation['base_amount'],
+                            $calculation['deductions'],
+                            $calculation['total_amount']
+                        ]
+                    );
+                }
             }
         } else {
             // إذا لم يكن year موجوداً
@@ -376,70 +481,136 @@ function createOrUpdateSalary($userId, $month, $year, $bonus = 0, $deductions = 
                 // إذا كان month من نوع DATE
                 $targetDate = sprintf('%04d-%02d-01', $year, $month);
                 if ($hasBonusColumn) {
-                    $result = $db->execute(
-                        "INSERT INTO salaries (user_id, month, hourly_rate, total_hours, base_amount, bonus, deductions, total_amount, notes, status) 
-                         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'pending')",
-                        [
-                            $userId,
-                            $targetDate,
-                            $calculation['hourly_rate'],
-                            $calculation['total_hours'],
-                            $calculation['base_amount'],
-                            $calculation['total_bonus'], // إجمالي المكافأة (بما في ذلك نسبة التحصيلات)
-                            $calculation['deductions'],
-                            $calculation['total_amount'],
-                            $notes
-                        ]
-                    );
+                    if ($hasNotesColumn) {
+                        $result = $db->execute(
+                            "INSERT INTO salaries (user_id, month, hourly_rate, total_hours, base_amount, bonus, deductions, total_amount, notes, status) 
+                             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'pending')",
+                            [
+                                $userId,
+                                $targetDate,
+                                $calculation['hourly_rate'],
+                                $calculation['total_hours'],
+                                $calculation['base_amount'],
+                                $calculation['total_bonus'], // إجمالي المكافأة (بما في ذلك نسبة التحصيلات)
+                                $calculation['deductions'],
+                                $calculation['total_amount'],
+                                $notes
+                            ]
+                        );
+                    } else {
+                        $result = $db->execute(
+                            "INSERT INTO salaries (user_id, month, hourly_rate, total_hours, base_amount, bonus, deductions, total_amount, status) 
+                             VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'pending')",
+                            [
+                                $userId,
+                                $targetDate,
+                                $calculation['hourly_rate'],
+                                $calculation['total_hours'],
+                                $calculation['base_amount'],
+                                $calculation['total_bonus'], // إجمالي المكافأة (بما في ذلك نسبة التحصيلات)
+                                $calculation['deductions'],
+                                $calculation['total_amount']
+                            ]
+                        );
+                    }
                 } else {
-                    $result = $db->execute(
-                        "INSERT INTO salaries (user_id, month, hourly_rate, total_hours, base_amount, deductions, total_amount, notes, status) 
-                         VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'pending')",
-                        [
-                            $userId,
-                            $targetDate,
-                            $calculation['hourly_rate'],
-                            $calculation['total_hours'],
-                            $calculation['base_amount'],
-                            $calculation['deductions'],
-                            $calculation['total_amount'],
-                            $notes
-                        ]
-                    );
+                    if ($hasNotesColumn) {
+                        $result = $db->execute(
+                            "INSERT INTO salaries (user_id, month, hourly_rate, total_hours, base_amount, deductions, total_amount, notes, status) 
+                             VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'pending')",
+                            [
+                                $userId,
+                                $targetDate,
+                                $calculation['hourly_rate'],
+                                $calculation['total_hours'],
+                                $calculation['base_amount'],
+                                $calculation['deductions'],
+                                $calculation['total_amount'],
+                                $notes
+                            ]
+                        );
+                    } else {
+                        $result = $db->execute(
+                            "INSERT INTO salaries (user_id, month, hourly_rate, total_hours, base_amount, deductions, total_amount, status) 
+                             VALUES (?, ?, ?, ?, ?, ?, ?, 'pending')",
+                            [
+                                $userId,
+                                $targetDate,
+                                $calculation['hourly_rate'],
+                                $calculation['total_hours'],
+                                $calculation['base_amount'],
+                                $calculation['deductions'],
+                                $calculation['total_amount']
+                            ]
+                        );
+                    }
                 }
             } else {
                 // إذا كان month من نوع INT فقط
                 if ($hasBonusColumn) {
-                    $result = $db->execute(
-                        "INSERT INTO salaries (user_id, month, hourly_rate, total_hours, base_amount, bonus, deductions, total_amount, notes, status) 
-                         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'pending')",
-                        [
-                            $userId,
-                            $month,
-                            $calculation['hourly_rate'],
-                            $calculation['total_hours'],
-                            $calculation['base_amount'],
-                            $calculation['total_bonus'], // إجمالي المكافأة (بما في ذلك نسبة التحصيلات)
-                            $calculation['deductions'],
-                            $calculation['total_amount'],
-                            $notes
-                        ]
-                    );
+                    if ($hasNotesColumn) {
+                        $result = $db->execute(
+                            "INSERT INTO salaries (user_id, month, hourly_rate, total_hours, base_amount, bonus, deductions, total_amount, notes, status) 
+                             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'pending')",
+                            [
+                                $userId,
+                                $month,
+                                $calculation['hourly_rate'],
+                                $calculation['total_hours'],
+                                $calculation['base_amount'],
+                                $calculation['total_bonus'], // إجمالي المكافأة (بما في ذلك نسبة التحصيلات)
+                                $calculation['deductions'],
+                                $calculation['total_amount'],
+                                $notes
+                            ]
+                        );
+                    } else {
+                        $result = $db->execute(
+                            "INSERT INTO salaries (user_id, month, hourly_rate, total_hours, base_amount, bonus, deductions, total_amount, status) 
+                             VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'pending')",
+                            [
+                                $userId,
+                                $month,
+                                $calculation['hourly_rate'],
+                                $calculation['total_hours'],
+                                $calculation['base_amount'],
+                                $calculation['total_bonus'], // إجمالي المكافأة (بما في ذلك نسبة التحصيلات)
+                                $calculation['deductions'],
+                                $calculation['total_amount']
+                            ]
+                        );
+                    }
                 } else {
-                    $result = $db->execute(
-                        "INSERT INTO salaries (user_id, month, hourly_rate, total_hours, base_amount, deductions, total_amount, notes, status) 
-                         VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'pending')",
-                        [
-                            $userId,
-                            $month,
-                            $calculation['hourly_rate'],
-                            $calculation['total_hours'],
-                            $calculation['base_amount'],
-                            $calculation['deductions'],
-                            $calculation['total_amount'],
-                            $notes
-                        ]
-                    );
+                    if ($hasNotesColumn) {
+                        $result = $db->execute(
+                            "INSERT INTO salaries (user_id, month, hourly_rate, total_hours, base_amount, deductions, total_amount, notes, status) 
+                             VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'pending')",
+                            [
+                                $userId,
+                                $month,
+                                $calculation['hourly_rate'],
+                                $calculation['total_hours'],
+                                $calculation['base_amount'],
+                                $calculation['deductions'],
+                                $calculation['total_amount'],
+                                $notes
+                            ]
+                        );
+                    } else {
+                        $result = $db->execute(
+                            "INSERT INTO salaries (user_id, month, hourly_rate, total_hours, base_amount, deductions, total_amount, status) 
+                             VALUES (?, ?, ?, ?, ?, ?, ?, 'pending')",
+                            [
+                                $userId,
+                                $month,
+                                $calculation['hourly_rate'],
+                                $calculation['total_hours'],
+                                $calculation['base_amount'],
+                                $calculation['deductions'],
+                                $calculation['total_amount']
+                            ]
+                        );
+                    }
                 }
             }
         }

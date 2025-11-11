@@ -124,6 +124,13 @@ switch ($role) {
                 'badge' => null
             ],
             [
+                'title' => isset($lang['menu_salaries']) ? $lang['menu_salaries'] : 'الرواتب',
+                'icon' => 'bi-currency-dollar',
+                'url' => $baseUrl . 'manager.php?page=salaries',
+                'active' => ($currentPage === 'manager.php' && $currentPageParam === 'salaries'),
+                'badge' => null
+            ],
+            [
                 'title' => 'نقطة البيع',
                 'icon' => 'bi-cart4',
                 'url' => $baseUrl . 'manager.php?page=pos',
@@ -218,13 +225,6 @@ switch ($role) {
                 'icon' => 'bi-cash-coin',
                 'url' => $baseUrl . 'accountant.php?page=advance_requests',
                 'active' => ($currentPage === 'accountant.php' && $currentPageParam === 'advance_requests'),
-                'badge' => null
-            ],
-            [
-                'title' => isset($lang['menu_reports']) ? $lang['menu_reports'] : 'التقارير',
-                'icon' => 'bi-file-earmark-text',
-                'url' => $baseUrl . 'accountant.php?page=reports',
-                'active' => ($currentPage === 'accountant.php' && $currentPageParam === 'reports'),
                 'badge' => null
             ]
         ];
