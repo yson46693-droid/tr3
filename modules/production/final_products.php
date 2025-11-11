@@ -179,7 +179,9 @@ $warehousesTableExists = $db->queryOne("SHOW TABLES LIKE 'warehouses'");
 $primaryWarehouse = null;
 $transferWarehouses = [];
 $destinationWarehouses = [];
-$transferProducts = [];
+$finishedProductOptions = [];
+$hasDestinationWarehouses = false;
+$hasFinishedBatches = false;
 $canCreateTransfers = false;
 
 if (!empty($warehousesTableExists)) {
@@ -249,14 +251,11 @@ if (!empty($warehousesTableExists)) {
             }
         }
 
-        $transferProducts = $db->query(
-            "SELECT id, name, quantity
-             FROM products
-             WHERE status = 'active'
-             ORDER BY name ASC"
-        );
+        $finishedProductOptions = getFinishedProductBatchOptions();
+        $hasDestinationWarehouses = !empty($destinationWarehouses);
+        $hasFinishedBatches = !empty($finishedProductOptions);
 
-        $canCreateTransfers = !empty($primaryWarehouse) && !empty($destinationWarehouses);
+        $canCreateTransfers = !empty($primaryWarehouse) && $hasDestinationWarehouses && $hasFinishedBatches;
     } catch (Exception $warehouseException) {
         error_log('Production inventory warehouse setup error: ' . $warehouseException->getMessage());
     }
@@ -294,10 +293,14 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'creat
                 $productId = isset($item['product_id']) ? intval($item['product_id']) : 0;
                 $quantity = isset($item['quantity']) ? floatval($item['quantity']) : 0.0;
                 $itemNotes = isset($item['notes']) ? trim((string)$item['notes']) : null;
+                $batchId = isset($item['batch_id']) ? intval($item['batch_id']) : 0;
+                $batchNumber = isset($item['batch_number']) ? trim((string)$item['batch_number']) : '';
 
-                if ($productId > 0 && $quantity > 0) {
+                if ($quantity > 0 && ($productId > 0 || $batchId > 0)) {
                     $transferItems[] = [
-                        'product_id' => $productId,
+                        'product_id' => $productId > 0 ? $productId : null,
+                        'batch_id' => $batchId > 0 ? $batchId : null,
+                        'batch_number' => $batchNumber !== '' ? $batchNumber : null,
                         'quantity' => round($quantity, 4),
                         'notes' => $itemNotes !== '' ? $itemNotes : null,
                     ];
@@ -771,7 +774,13 @@ $lang = isset($translations) ? $translations : [];
                         <div class="alert alert-warning d-flex align-items-center gap-2 mb-0">
                             <i class="bi bi-exclamation-triangle-fill fs-5"></i>
                             <div>
-                                لا توجد مخازن وجهة نشطة متاحة حالياً. يرجى إنشاء أو تفعيل مخزن وجهة قبل إرسال طلب النقل.
+                                <?php if (empty($primaryWarehouse)): ?>
+                                    لا يوجد مخزن رئيسي معرف بعد. يرجى إنشاء المخزن الرئيسي أولاً.
+                                <?php elseif (!$hasDestinationWarehouses): ?>
+                                    لا توجد مخازن وجهة نشطة متاحة حالياً. يرجى إنشاء أو تفعيل مخزن وجهة قبل إرسال طلب النقل.
+                                <?php elseif (!$hasFinishedBatches): ?>
+                                    لا توجد تشغيلات جاهزة للنقل حالياً. تأكد من إضافة منتجات نهائية بتشغيلاتها في جدول الإنتاج.
+                                <?php endif; ?>
                             </div>
                         </div>
                     <?php else: ?>
@@ -813,13 +822,17 @@ $lang = isset($translations) ? $translations : [];
                                 <div class="transfer-item row g-2 align-items-end mb-2">
                                     <div class="col-md-5">
                                         <label class="form-label small text-muted">المنتج</label>
-                                        <select class="form-select product-select" name="items[0][product_id]" required>
+                                        <select class="form-select product-select" required>
                                             <option value="">اختر المنتج</option>
-                                            <?php foreach ($transferProducts as $product): ?>
-                                                <option value="<?php echo intval($product['id']); ?>"
-                                                        data-available="<?php echo floatval($product['quantity'] ?? 0); ?>">
-                                                    <?php echo htmlspecialchars($product['name']); ?>
-                                                    (متوفر: <?php echo number_format((float)($product['quantity'] ?? 0), 2); ?>)
+                                            <?php foreach ($finishedProductOptions as $option): ?>
+                                                <option value="<?php echo intval($option['product_id'] ?? 0); ?>"
+                                                        data-product-id="<?php echo intval($option['product_id'] ?? 0); ?>"
+                                                        data-batch-id="<?php echo intval($option['batch_id']); ?>"
+                                                        data-batch-number="<?php echo htmlspecialchars($option['batch_number']); ?>"
+                                                        data-available="<?php echo number_format((float)$option['quantity_available'], 2, '.', ''); ?>">
+                                                    <?php echo htmlspecialchars($option['product_name']); ?>
+                                                    - تشغيلة <?php echo htmlspecialchars($option['batch_number'] ?: 'بدون'); ?>
+                                                    (متاح: <?php echo number_format((float)$option['quantity_available'], 2); ?>)
                                                 </option>
                                             <?php endforeach; ?>
                                         </select>
@@ -831,6 +844,12 @@ $lang = isset($translations) ? $translations : [];
                                     <div class="col-md-3">
                                         <label class="form-label small text-muted">ملاحظات</label>
                                         <input type="text" class="form-control" name="items[0][notes]" placeholder="ملاحظات (اختياري)">
+                                    </div>
+                                    <div class="col-12">
+                                        <small class="text-muted available-hint d-block"></small>
+                                        <input type="hidden" name="items[0][product_id]" class="selected-product-id">
+                                        <input type="hidden" name="items[0][batch_id]" class="selected-batch-id">
+                                        <input type="hidden" name="items[0][batch_number]" class="selected-batch-number">
                                     </div>
                                     <div class="col-md-1 text-end">
                                         <button type="button" class="btn btn-outline-danger remove-transfer-item" title="حذف العنصر">
@@ -889,13 +908,17 @@ document.addEventListener('DOMContentLoaded', function () {
         wrapper.innerHTML = `
             <div class="col-md-5">
                 <label class="form-label small text-muted">المنتج</label>
-                <select class="form-select product-select" name="items[${index}][product_id]" required>
+                <select class="form-select product-select" required>
                     <option value="">اختر المنتج</option>
-                    <?php foreach ($transferProducts as $product): ?>
-                        <option value="<?php echo intval($product['id']); ?>"
-                                data-available="<?php echo floatval($product['quantity'] ?? 0); ?>">
-                            <?php echo htmlspecialchars($product['name']); ?>
-                            (متوفر: <?php echo number_format((float)($product['quantity'] ?? 0), 2); ?>)
+                    <?php foreach ($finishedProductOptions as $option): ?>
+                        <option value="<?php echo intval($option['product_id'] ?? 0); ?>"
+                                data-product-id="<?php echo intval($option['product_id'] ?? 0); ?>"
+                                data-batch-id="<?php echo intval($option['batch_id']); ?>"
+                                data-batch-number="<?php echo htmlspecialchars($option['batch_number']); ?>"
+                                data-available="<?php echo number_format((float)$option['quantity_available'], 2, '.', ''); ?>">
+                            <?php echo htmlspecialchars($option['product_name']); ?>
+                            - تشغيلة <?php echo htmlspecialchars($option['batch_number'] ?: 'بدون'); ?>
+                            (متاح: <?php echo number_format((float)$option['quantity_available'], 2); ?>)
                         </option>
                     <?php endforeach; ?>
                 </select>
@@ -909,6 +932,12 @@ document.addEventListener('DOMContentLoaded', function () {
                 <label class="form-label small text-muted">ملاحظات</label>
                 <input type="text" class="form-control" name="items[${index}][notes]" placeholder="ملاحظات (اختياري)">
             </div>
+            <div class="col-12">
+                <small class="text-muted available-hint d-block"></small>
+                <input type="hidden" name="items[${index}][product_id]" class="selected-product-id">
+                <input type="hidden" name="items[${index}][batch_id]" class="selected-batch-id">
+                <input type="hidden" name="items[${index}][batch_number]" class="selected-batch-number">
+            </div>
             <div class="col-md-1 text-end">
                 <button type="button" class="btn btn-outline-danger remove-transfer-item" title="حذف العنصر">
                     <i class="bi bi-trash"></i>
@@ -921,6 +950,10 @@ document.addEventListener('DOMContentLoaded', function () {
     function attachItemEvents(row) {
         const select = row.querySelector('.product-select');
         const quantityInput = row.querySelector('.quantity-input');
+        const productIdInput = row.querySelector('.selected-product-id');
+        const batchIdInput = row.querySelector('.selected-batch-id');
+        const batchNumberInput = row.querySelector('.selected-batch-number');
+        const availableHint = row.querySelector('.available-hint');
 
         if (!select || !quantityInput) {
             return;
@@ -929,6 +962,28 @@ document.addEventListener('DOMContentLoaded', function () {
         const updateQuantityConstraints = () => {
             const selectedOption = select.options[select.selectedIndex];
             const available = selectedOption ? parseFloat(selectedOption.dataset.available || '0') : 0;
+            const selectedProductId = selectedOption ? parseInt(selectedOption.dataset.productId || '0', 10) : 0;
+            const selectedBatchId = selectedOption ? parseInt(selectedOption.dataset.batchId || '0', 10) : 0;
+            const selectedBatchNumber = selectedOption ? selectedOption.dataset.batchNumber || '' : '';
+
+            if (productIdInput) {
+                productIdInput.value = selectedProductId > 0 ? selectedProductId : '';
+            }
+            if (batchIdInput) {
+                batchIdInput.value = selectedBatchId > 0 ? selectedBatchId : '';
+            }
+            if (batchNumberInput) {
+                batchNumberInput.value = selectedBatchNumber;
+            }
+
+            if (availableHint) {
+                if (selectedOption && selectedOption.value) {
+                    availableHint.textContent = `الكمية المتاحة لهذه التشغيلة: ${available.toLocaleString('ar-EG')} وحدة`;
+                } else {
+                    availableHint.textContent = '';
+                }
+            }
+
             if (available > 0) {
                 quantityInput.setAttribute('max', available);
                 if (parseFloat(quantityInput.value || '0') > available) {

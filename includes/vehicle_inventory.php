@@ -14,6 +14,96 @@ require_once __DIR__ . '/notifications.php';
 require_once __DIR__ . '/inventory_movements.php';
 
 /**
+ * ضمان وجود أعمدة رقم التشغيلة في جدول عناصر طلبات النقل
+ */
+function ensureWarehouseTransferBatchColumns(): void
+{
+    static $ensured = false;
+
+    if ($ensured) {
+        return;
+    }
+
+    $db = db();
+
+    try {
+        $batchIdColumn = $db->queryOne("SHOW COLUMNS FROM warehouse_transfer_items LIKE 'batch_id'");
+        if (empty($batchIdColumn)) {
+            $db->execute("ALTER TABLE warehouse_transfer_items ADD COLUMN `batch_id` int(11) DEFAULT NULL AFTER `product_id`");
+            $db->execute("ALTER TABLE warehouse_transfer_items ADD KEY `batch_id` (`batch_id`)");
+        }
+
+        $batchNumberColumn = $db->queryOne("SHOW COLUMNS FROM warehouse_transfer_items LIKE 'batch_number'");
+        if (empty($batchNumberColumn)) {
+            $db->execute("ALTER TABLE warehouse_transfer_items ADD COLUMN `batch_number` varchar(100) DEFAULT NULL AFTER `batch_id`");
+            $db->execute("ALTER TABLE warehouse_transfer_items ADD KEY `batch_number` (`batch_number`)");
+        }
+    } catch (Exception $e) {
+        error_log('ensureWarehouseTransferBatchColumns error: ' . $e->getMessage());
+    }
+
+    $ensured = true;
+}
+
+/**
+ * الحصول على قائمة المنتجات بالتشغيلات المتاحة للنقل
+ */
+function getFinishedProductBatchOptions($onlyAvailable = true): array
+{
+    $db = db();
+
+    try {
+        $finishedExists = $db->queryOne("SHOW TABLES LIKE 'finished_products'");
+        if (empty($finishedExists)) {
+            return [];
+        }
+
+        ensureWarehouseTransferBatchColumns();
+
+        $sql = "
+            SELECT
+                fp.id AS batch_id,
+                fp.product_id,
+                COALESCE(p.name, fp.product_name) AS product_name,
+                fp.batch_number,
+                fp.production_date,
+                fp.quantity_produced,
+                COALESCE(SUM(wti.quantity), 0) AS transferred_quantity
+            FROM finished_products fp
+            LEFT JOIN products p ON fp.product_id = p.id
+            LEFT JOIN warehouse_transfer_items wti ON wti.batch_id = fp.id
+            GROUP BY fp.id, fp.product_id, fp.product_name, fp.batch_number, fp.production_date, fp.quantity_produced, p.name
+            ORDER BY fp.production_date DESC, product_name ASC, fp.batch_number ASC
+        ";
+
+        $rows = $db->query($sql) ?? [];
+        $options = [];
+
+        foreach ($rows as $row) {
+            $available = (float)$row['quantity_produced'] - (float)$row['transferred_quantity'];
+            if ($onlyAvailable && $available <= 0) {
+                continue;
+            }
+
+            $options[] = [
+                'batch_id' => (int)$row['batch_id'],
+                'product_id' => $row['product_id'] ? (int)$row['product_id'] : null,
+                'product_name' => $row['product_name'] ?? 'منتج غير محدد',
+                'batch_number' => $row['batch_number'] ?? '',
+                'production_date' => $row['production_date'] ?? null,
+                'quantity_produced' => (float)$row['quantity_produced'],
+                'quantity_available' => max(0, $available),
+            ];
+        }
+
+        return $options;
+    } catch (Exception $e) {
+        error_log('getFinishedProductBatchOptions error: ' . $e->getMessage());
+        return [];
+    }
+}
+
+/**
  * إنشاء أو تحديث مخزن سيارة
  */
 function createVehicleWarehouse($vehicleId, $vehicleName = null) {
@@ -187,6 +277,8 @@ function createWarehouseTransfer($fromWarehouseId, $toWarehouseId, $transferDate
                                  $reason = null, $notes = null, $requestedBy = null) {
     try {
         $db = db();
+
+        ensureWarehouseTransferBatchColumns();
         
         if ($requestedBy === null) {
             require_once __DIR__ . '/auth.php';
@@ -232,12 +324,55 @@ function createWarehouseTransfer($fromWarehouseId, $toWarehouseId, $transferDate
         
         // إضافة العناصر
         foreach ($items as $item) {
+            $batchId = isset($item['batch_id']) ? (int)$item['batch_id'] : null;
+            $batchNumber = isset($item['batch_number']) ? trim((string)$item['batch_number']) : null;
+            $batchName = $batchNumber ?? 'بدون رقم تشغيلة';
+
+            if ($batchId) {
+                $batchRow = $db->queryOne(
+                    "SELECT quantity_produced, product_id, batch_number 
+                     FROM finished_products WHERE id = ?",
+                    [$batchId]
+                );
+
+                if (!$batchRow) {
+                    throw new Exception("رقم التشغيلة المحدد غير موجود.");
+                }
+
+                $transferred = $db->queryOne(
+                    "SELECT COALESCE(SUM(quantity), 0) AS total_transferred
+                     FROM warehouse_transfer_items
+                     WHERE batch_id = ?",
+                    [$batchId]
+                );
+
+                $available = (float)$batchRow['quantity_produced'] - (float)($transferred['total_transferred'] ?? 0);
+
+                if ($item['quantity'] > $available + 1e-6) {
+                    throw new Exception(sprintf(
+                        'الكمية المطلوبة للتشغيلة %s تتجاوز المتاح حالياً (%.2f).',
+                        $batchRow['batch_number'] ?? $batchName,
+                        max(0, $available)
+                    ));
+                }
+
+                if (empty($item['product_id']) && !empty($batchRow['product_id'])) {
+                    $item['product_id'] = (int)$batchRow['product_id'];
+                }
+
+                if (!$batchNumber) {
+                    $batchNumber = $batchRow['batch_number'] ?? null;
+                }
+            }
+
             $db->execute(
-                "INSERT INTO warehouse_transfer_items (transfer_id, product_id, quantity, notes) 
-                 VALUES (?, ?, ?, ?)",
+                "INSERT INTO warehouse_transfer_items (transfer_id, product_id, batch_id, batch_number, quantity, notes) 
+                 VALUES (?, ?, ?, ?, ?, ?)",
                 [
                     $transferId,
                     $item['product_id'],
+                    $batchId ?: null,
+                    $batchNumber ?: null,
                     $item['quantity'],
                     $item['notes'] ?? null
                 ]
@@ -306,6 +441,10 @@ function approveWarehouseTransfer($transferId, $approvedBy = null) {
         
         // تنفيذ النقل
         foreach ($items as $item) {
+            $batchId = isset($item['batch_id']) ? (int)$item['batch_id'] : null;
+            $batchNumber = $item['batch_number'] ?? null;
+            $batchNote = $batchNumber ? " - تشغيلة {$batchNumber}" : '';
+
             // خروج من المخزن المصدر
             $fromWarehouse = $db->queryOne(
                 "SELECT id FROM warehouses WHERE id = ?",
@@ -330,7 +469,7 @@ function approveWarehouseTransfer($transferId, $approvedBy = null) {
                 $item['quantity'],
                 'warehouse_transfer',
                 $transferId,
-                "نقل إلى مخزن آخر",
+                "نقل إلى مخزن آخر{$batchNote}",
                 $approvedBy
             );
             
@@ -360,7 +499,7 @@ function approveWarehouseTransfer($transferId, $approvedBy = null) {
                 $item['quantity'],
                 'warehouse_transfer',
                 $transferId,
-                "نقل من مخزن آخر",
+                "نقل من مخزن آخر{$batchNote}",
                 $approvedBy
             );
         }

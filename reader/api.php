@@ -280,6 +280,7 @@ try {
     }, $packagingDetails);
 
     $rawMaterials = [];
+    $rawMaterialsFormatted = null;
     $rawAvailable = $batchId > 0 && function_exists('readerTableExists') && readerTableExists($db, 'batch_raw_materials');
     if (!$rawAvailable) {
         // Raw materials table not available; no notes returned
@@ -320,6 +321,17 @@ try {
             error_log('Reader raw materials query error: ' . $rawError->getMessage());
             $rawMaterials = [];
         }
+
+        $rawMaterialsFormatted = array_map(static function (array $row) {
+            return [
+                'id' => $row['id'] ?? null,
+                'name' => $row['name'] ?? null,
+                'unit' => $row['unit'] ?? null,
+                'quantity_used' => isset($row['quantity_used']) ? (float) $row['quantity_used'] : null,
+                'supplier_id' => isset($row['supplier_id']) ? (int) $row['supplier_id'] : null,
+                'supplier_name' => $row['supplier_name'] ?? null,
+            ];
+        }, $rawMaterials);
     }
 
     $workersDetails = [];

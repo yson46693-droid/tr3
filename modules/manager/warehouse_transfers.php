@@ -139,9 +139,21 @@ if (isset($_GET['id'])) {
     
     if ($selectedTransfer) {
         $selectedTransfer['items'] = $db->query(
-            "SELECT wti.*, p.name as product_name, p.quantity as available_quantity
+            "SELECT 
+                wti.*, 
+                p.name as product_name, 
+                fp.batch_number as finished_batch_number,
+                fp.quantity_produced as batch_quantity_produced,
+                (
+                    fp.quantity_produced - COALESCE((
+                        SELECT SUM(wti2.quantity)
+                        FROM warehouse_transfer_items wti2
+                        WHERE wti2.batch_id = wti.batch_id
+                    ), 0)
+                ) AS batch_quantity_available
              FROM warehouse_transfer_items wti
              LEFT JOIN products p ON wti.product_id = p.id
+             LEFT JOIN finished_products fp ON wti.batch_id = fp.id
              WHERE wti.transfer_id = ?
              ORDER BY wti.id",
             [$transferId]
@@ -273,19 +285,33 @@ if (isset($_GET['id'])) {
                         <thead>
                             <tr>
                                 <th>المنتج</th>
+                                <th>رقم التشغيلة</th>
                                 <th>الكمية المطلوبة</th>
-                                <th>المتوفر في المخزن</th>
+                                <th>المتبقي من التشغيلة</th>
                                 <th>ملاحظات</th>
                             </tr>
                         </thead>
                         <tbody>
                             <?php foreach ($selectedTransfer['items'] as $item): ?>
-                                <tr class="<?php echo ($item['available_quantity'] ?? 0) < $item['quantity'] ? 'table-warning' : ''; ?>">
+                                <?php
+                                    $availableBatch = $item['batch_quantity_available'] ?? null;
+                                    $badgeClass = ($availableBatch !== null && $availableBatch < $item['quantity']) ? 'table-warning' : '';
+                                ?>
+                                <tr class="<?php echo $badgeClass; ?>">
                                     <td><?php echo htmlspecialchars($item['product_name'] ?? '-'); ?></td>
+                                    <td><?php echo htmlspecialchars($item['batch_number'] ?? $item['finished_batch_number'] ?? '-'); ?></td>
                                     <td><strong><?php echo number_format($item['quantity'], 2); ?></strong></td>
-                                    <td><?php echo number_format($item['available_quantity'] ?? 0, 2); ?></td>
                                     <td>
-                                        <?php if (($item['available_quantity'] ?? 0) < $item['quantity']): ?>
+                                        <?php 
+                                            if ($availableBatch === null) {
+                                                echo '<span class="text-muted">غير متاح</span>';
+                                            } else {
+                                                echo number_format(max(0, $availableBatch), 2);
+                                            }
+                                        ?>
+                                    </td>
+                                    <td>
+                                        <?php if ($availableBatch !== null && $availableBatch < $item['quantity']): ?>
                                             <span class="badge bg-warning">كمية غير متوفرة</span>
                                         <?php endif; ?>
                                         <?php echo htmlspecialchars($item['notes'] ?? ''); ?>
