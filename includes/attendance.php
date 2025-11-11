@@ -556,7 +556,7 @@ function recordAttendanceCheckOut($userId, $photoBase64 = null) {
                     $message .= "🕐 <b>الوقت:</b> " . date('H:i:s') . "\n";
                     $message .= "⏱️ <b>ساعات هذا التسجيل:</b> {$workHours} ساعة\n";
                     $message .= "📊 <b>ساعات اليوم:</b> {$todayHours} ساعة\n";
-                    $message .= "📈 <ب>ساعات الشهر:</b> {$monthHours} ساعة\n";
+                    $message .= "📈 <b>ساعات الشهر:</b> {$monthHours} ساعة\n";
                     $message .= "⚠️ <i>لم يتم التقاط صورة</i>";
                     
                     sendTelegramMessage($message);
