@@ -371,6 +371,11 @@ try {
         ];
     }, $workersDetails);
 
+    $batchNotes = [
+        ...($response['notes'] ?? []),
+    ];
+    unset($response['notes']);
+
     $response = [
         'success' => true,
         'batch' => [
@@ -387,6 +392,7 @@ try {
             'packaging_materials' => $packagingFormatted,
             'raw_materials' => $rawMaterialsFormatted,
             'workers' => $workersFormatted,
+            'notes' => $batchNotes,
         ]
     ];
 
