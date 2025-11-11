@@ -109,16 +109,33 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action'])) {
                 $db->commit();
                 $transactionStarted = false;
 
-                $redirectParams = ['page' => 'customers'];
+                $_SESSION['success_message'] = 'تم تحصيل المبلغ بنجاح.';
+
+                $redirectFilters = [];
                 if (!empty($section)) {
-                    $redirectParams['section'] = $section;
+                    $redirectFilters['section'] = $section;
                 }
 
-                preventDuplicateSubmission(
-                    'تم تحصيل المبلغ بنجاح.',
-                    $redirectParams,
-                    null,
-                    $currentUser['role'] ?? null
+                $currentSearch = trim($_GET['search'] ?? '');
+                if ($currentSearch !== '') {
+                    $redirectFilters['search'] = $currentSearch;
+                }
+
+                $currentDebtStatus = $_GET['debt_status'] ?? 'all';
+                if (in_array($currentDebtStatus, ['debtor', 'clear'], true)) {
+                    $redirectFilters['debt_status'] = $currentDebtStatus;
+                }
+
+                $currentPageParam = isset($_GET['p']) ? max(1, intval($_GET['p'])) : 1;
+                if ($currentPageParam > 1) {
+                    $redirectFilters['p'] = $currentPageParam;
+                }
+
+                redirectAfterPost(
+                    'customers',
+                    $redirectFilters,
+                    [],
+                    strtolower((string)($currentUser['role'] ?? 'manager'))
                 );
             } catch (InvalidArgumentException $userError) {
                 if ($transactionStarted) {
@@ -164,16 +181,33 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action'])) {
                     'name' => $name
                 ]);
 
-                $redirectParams = ['page' => 'customers'];
+                $_SESSION['success_message'] = 'تم إضافة العميل بنجاح';
+
+                $redirectFilters = [];
                 if (!empty($section)) {
-                    $redirectParams['section'] = $section;
+                    $redirectFilters['section'] = $section;
                 }
 
-                preventDuplicateSubmission(
-                    'تم إضافة العميل بنجاح',
-                    $redirectParams,
-                    null,
-                    $currentUser['role'] ?? null
+                $currentSearch = trim($_GET['search'] ?? '');
+                if ($currentSearch !== '') {
+                    $redirectFilters['search'] = $currentSearch;
+                }
+
+                $currentDebtStatus = $_GET['debt_status'] ?? 'all';
+                if (in_array($currentDebtStatus, ['debtor', 'clear'], true)) {
+                    $redirectFilters['debt_status'] = $currentDebtStatus;
+                }
+
+                $currentPageParam = isset($_GET['p']) ? max(1, intval($_GET['p'])) : 1;
+                if ($currentPageParam > 1) {
+                    $redirectFilters['p'] = $currentPageParam;
+                }
+
+                redirectAfterPost(
+                    'customers',
+                    $redirectFilters,
+                    [],
+                    strtolower((string)($currentUser['role'] ?? 'manager'))
                 );
             } catch (InvalidArgumentException $userError) {
                 $error = $userError->getMessage();
@@ -525,8 +559,187 @@ $collectionsLabel = $isSalesUser ? 'تحصيلاتي' : 'إجمالي التحص
 
 <?php if ($section === 'company'): ?>
 
+<style>
+    .customers-search-card .card-body {
+        padding: 1.25rem 1.5rem;
+        background: linear-gradient(135deg, rgba(59, 130, 246, 0.08), rgba(59, 130, 246, 0));
+        border-radius: 20px;
+    }
+
+    .customers-search-card .form-control,
+    .customers-search-card .form-select {
+        height: 48px;
+        border-radius: 0.85rem;
+        font-weight: 500;
+    }
+
+    .customers-search-card .btn {
+        height: 48px;
+        border-radius: 0.85rem;
+        font-weight: 600;
+        letter-spacing: 0.02em;
+    }
+
+    .customers-list-card .card-header {
+        padding: 1rem 1.35rem;
+        border-radius: 18px 18px 0 0;
+    }
+
+    .customers-list-card .card-body {
+        padding: 1.35rem 1.25rem;
+    }
+
+    .customers-table-container.dashboard-table-wrapper {
+        overflow-x: auto;
+        overflow-y: hidden;
+        border-radius: 18px;
+    }
+
+    .customers-table-container .table {
+        min-width: 780px;
+    }
+
+    .customers-table-container .table thead th,
+    .customers-table-container .table tbody td {
+        white-space: nowrap;
+    }
+
+    .customers-table-container::-webkit-scrollbar {
+        height: 8px;
+    }
+
+    .customers-table-container::-webkit-scrollbar-track {
+        background: rgba(226, 232, 240, 0.6);
+        border-radius: 999px;
+    }
+
+    .customers-table-container::-webkit-scrollbar-thumb {
+        background: rgba(37, 99, 235, 0.35);
+        border-radius: 999px;
+    }
+
+    .customers-table-container::-webkit-scrollbar-thumb:hover {
+        background: rgba(37, 99, 235, 0.55);
+    }
+
+    @media (max-width: 992px) {
+        .customers-search-card .col-md-8,
+        .customers-search-card .col-md-2 {
+            flex: 0 0 100%;
+            max-width: 100%;
+        }
+
+        .customers-search-card .card-body {
+            padding: 1.1rem 1rem 1.35rem;
+        }
+    }
+
+    @media (max-width: 768px) {
+        .customers-list-card .card-body {
+            padding: 1.1rem 0.75rem 1rem;
+        }
+
+        .customers-table-container .table {
+            min-width: 720px;
+            font-size: 0.92rem;
+        }
+    }
+
+    @media (max-width: 576px) {
+        .customers-search-card .card-body {
+            padding: 1rem 0.75rem 1.25rem;
+            border-radius: 16px;
+        }
+
+        .customers-table-container .table {
+            min-width: 660px;
+            font-size: 0.86rem;
+        }
+
+        .customers-list-card .card-header {
+            border-radius: 16px 16px 0 0;
+        }
+
+        .customers-list-card .card-body {
+            padding: 1rem 0.5rem 0.9rem;
+        }
+    }
+</style>
+
 <script>
 document.addEventListener('DOMContentLoaded', function () {
+    var GEO_PROMPT_STORAGE_KEY = 'customersGeoPromptResponse';
+
+    function markGeoPromptState(state) {
+        try {
+            localStorage.setItem(GEO_PROMPT_STORAGE_KEY, state);
+        } catch (storageError) {
+            console.warn('Unable to persist geolocation prompt state.', storageError);
+        }
+    }
+
+    function shouldAskForGeolocation() {
+        try {
+            var stored = localStorage.getItem(GEO_PROMPT_STORAGE_KEY);
+            return stored === null || stored === '';
+        } catch (storageError) {
+            console.warn('Unable to read geolocation prompt state.', storageError);
+            return true;
+        }
+    }
+
+    function requestInitialGeolocation() {
+        if (!('geolocation' in navigator)) {
+            return;
+        }
+
+        var handleResult = function (status) {
+            markGeoPromptState(status);
+        };
+
+        var askPermission = function () {
+            var confirmMessage = 'يحتاج النظام إلى الوصول إلى موقع جهازك لتحديد مواقع العملاء بدقة. هل ترغب في منح الصلاحية الآن؟';
+            if (window.confirm(confirmMessage)) {
+                navigator.geolocation.getCurrentPosition(function () {
+                    handleResult('granted');
+                }, function (error) {
+                    if (error && error.code === error.PERMISSION_DENIED) {
+                        handleResult('denied');
+                        showAlert('لم يتم منح صلاحية الموقع. يمكنك تمكينها لاحقاً من إعدادات المتصفح.');
+                    } else {
+                        handleResult('error');
+                    }
+                }, {
+                    enableHighAccuracy: false,
+                    timeout: 8000,
+                    maximumAge: 0
+                });
+            } else {
+                handleResult('dismissed');
+            }
+        };
+
+        if (!shouldAskForGeolocation()) {
+            return;
+        }
+
+        if (navigator.permissions && navigator.permissions.query) {
+            navigator.permissions.query({ name: 'geolocation' }).then(function (result) {
+                if (result.state === 'prompt') {
+                    setTimeout(askPermission, 600);
+                } else {
+                    handleResult(result.state);
+                }
+            }).catch(function () {
+                setTimeout(askPermission, 600);
+            });
+        } else {
+            setTimeout(askPermission, 600);
+        }
+    }
+
+    requestInitialGeolocation();
+
     var collectionModal = document.getElementById('collectPaymentModal');
     if (collectionModal) {
         var nameElement = collectionModal.querySelector('.collection-customer-name');
@@ -727,7 +940,7 @@ document.addEventListener('DOMContentLoaded', function () {
 <?php endif; ?>
 
 <!-- البحث -->
-<div class="card shadow-sm mb-4">
+<div class="card shadow-sm mb-4 customers-search-card">
     <div class="card-body">
         <form method="GET" action="" class="row g-2 g-md-3 align-items-end">
             <input type="hidden" name="page" value="customers">
@@ -770,7 +983,7 @@ document.addEventListener('DOMContentLoaded', function () {
 </div>
 
 <!-- قائمة العملاء -->
-<div class="card shadow-sm">
+<div class="card shadow-sm customers-list-card">
     <div class="card-header bg-primary text-white">
         <h5 class="mb-0">
             <?php echo $isSalesUser ? 'قائمة عملائي' : 'قائمة عملاء الشركة'; ?>
@@ -778,7 +991,7 @@ document.addEventListener('DOMContentLoaded', function () {
         </h5>
     </div>
     <div class="card-body">
-        <div class="table-responsive dashboard-table-wrapper">
+        <div class="table-responsive dashboard-table-wrapper customers-table-container">
             <table class="table dashboard-table align-middle">
                 <thead>
                     <tr>
