@@ -502,6 +502,11 @@ $salaries = $db->query(
     $params
 );
 
+// استبعاد المديرين من قائمة الرواتب المعروضة
+$salaries = array_values(array_filter($salaries, function ($salary) {
+    return isset($salary['role']) ? strtolower($salary['role']) !== 'manager' : true;
+}));
+
 // الحصول على طلبات تعديل الرواتب المعلقة (للمدير فقط)
 $pendingModifications = [];
 if ($currentUser['role'] === 'manager') {
@@ -536,6 +541,15 @@ if ($currentScript === '' || strpos($currentScript, 'dashboard/') !== 0) {
     $currentScript = 'dashboard/accountant.php';
 }
 $currentUrl = getRelativeUrl($currentScript);
+$viewBaseQuery = [
+    'page' => 'salaries',
+    'month' => $selectedMonth,
+    'year' => $selectedYear,
+];
+$buildViewUrl = function (string $targetView, array $extra = []) use ($currentUrl, $viewBaseQuery) {
+    $query = array_merge($viewBaseQuery, ['view' => $targetView], $extra);
+    return $currentUrl . '?' . http_build_query($query);
+};
 
 // جلب طلبات السلف
 $advances = [];
@@ -567,7 +581,7 @@ if (isset($_GET['ajax']) && $_GET['ajax'] == '1' && $salaryId > 0) {
         [$salaryId]
     );
     
-    if ($salary) {
+    if ($salary && (!isset($salary['role']) || strtolower($salary['role']) !== 'manager')) {
         ?>
         <div class="row g-3">
             <div class="col-md-6">
@@ -623,7 +637,7 @@ if (isset($_GET['ajax']) && $_GET['ajax'] == '1' && $salaryId > 0) {
         </div>
         <?php
     } else {
-        echo '<div class="alert alert-danger">الراتب غير موجود</div>';
+        echo '<div class="alert alert-danger">الراتب غير موجود أو غير متاح للعرض.</div>';
     }
     exit;
 }
@@ -671,29 +685,29 @@ if (isset($_GET['ajax']) && $_GET['ajax'] == '1' && $salaryId > 0) {
 <!-- التبويبات -->
 <ul class="nav nav-tabs mb-4" role="tablist">
     <li class="nav-item" role="presentation">
-        <button class="nav-link <?php echo $view === 'calculate' ? 'active' : ''; ?>" 
-                onclick="switchTab('calculate')" type="button">
+        <a class="nav-link <?php echo $view === 'calculate' ? 'active' : ''; ?>" 
+           href="<?php echo htmlspecialchars($buildViewUrl('calculate')); ?>">
             <i class="bi bi-calculator me-2"></i>حساب الرواتب
-        </button>
+        </a>
     </li>
     <li class="nav-item" role="presentation">
-        <button class="nav-link <?php echo $view === 'list' ? 'active' : ''; ?>" 
-                onclick="switchTab('list')" type="button">
+        <a class="nav-link <?php echo $view === 'list' ? 'active' : ''; ?>" 
+           href="<?php echo htmlspecialchars($buildViewUrl('list')); ?>">
             <i class="bi bi-list-ul me-2"></i>قائمة الرواتب
-        </button>
+        </a>
     </li>
     <?php if ($currentUser['role'] === 'manager' && !empty($pendingModifications)): ?>
     <li class="nav-item" role="presentation">
-        <button class="nav-link <?php echo $view === 'pending' ? 'active' : ''; ?>" 
-                onclick="switchTab('pending')" type="button">
+        <a class="nav-link <?php echo $view === 'pending' ? 'active' : ''; ?>" 
+           href="<?php echo htmlspecialchars($buildViewUrl('pending')); ?>">
             <i class="bi bi-hourglass-split me-2"></i>طلبات معلقة 
             <span class="badge bg-warning text-dark ms-1"><?php echo count($pendingModifications); ?></span>
-        </button>
+        </a>
     </li>
     <?php endif; ?>
     <li class="nav-item" role="presentation">
-        <button class="nav-link <?php echo $view === 'advances' ? 'active' : ''; ?>" 
-                onclick="switchTab('advances')" type="button">
+        <a class="nav-link <?php echo $view === 'advances' ? 'active' : ''; ?>" 
+           href="<?php echo htmlspecialchars($buildViewUrl('advances')); ?>">
             <i class="bi bi-cash-coin me-2"></i>السلف
             <?php 
             $pendingAdvances = array_filter($advances, function($adv) {
@@ -703,7 +717,7 @@ if (isset($_GET['ajax']) && $_GET['ajax'] == '1' && $salaryId > 0) {
             ?>
             <span class="badge bg-danger ms-1"><?php echo count($pendingAdvances); ?></span>
             <?php endif; ?>
-        </button>
+        </a>
     </li>
 </ul>
 
@@ -1379,8 +1393,16 @@ if (isset($_GET['ajax']) && $_GET['ajax'] == '1' && $salaryId > 0) {
 <?php endif; ?>
 
 <script>
+const salaryViewUrls = <?php echo json_encode([
+    'calculate' => $buildViewUrl('calculate'),
+    'list' => $buildViewUrl('list'),
+    'pending' => $buildViewUrl('pending'),
+    'advances' => $buildViewUrl('advances'),
+], JSON_UNESCAPED_SLASHES); ?>;
+
 function switchTab(tabName) {
-    window.location.href = <?php echo json_encode($currentUrl, JSON_UNESCAPED_SLASHES); ?> + '?page=salaries&view=' + tabName + '&month=<?php echo $selectedMonth; ?>&year=<?php echo $selectedYear; ?>';
+    const target = salaryViewUrls[tabName] || salaryViewUrls.calculate;
+    window.location.href = target;
 }
 
 function calculateAllSalaries() {
