@@ -173,6 +173,27 @@ if ($hasUnitColumn) {
 
 // الحصول على العملاء
 $customers = $db->query("SELECT id, name, phone FROM customers WHERE status = 'active' ORDER BY name");
+
+$totalProductsCount = is_array($products) ? count($products) : 0;
+$totalQuantity = 0.0;
+$totalStockValue = 0.0;
+$uniqueCategories = [];
+
+if ($totalProductsCount > 0) {
+    foreach ($products as $product) {
+        $quantity = (float)($product['quantity'] ?? 0);
+        $unitPrice = (float)($product['unit_price'] ?? 0);
+        $totalQuantity += $quantity;
+        $totalStockValue += $quantity * $unitPrice;
+
+        $categoryLabel = trim((string)($product['category'] ?? ''));
+        if ($categoryLabel !== '') {
+            $uniqueCategories[$categoryLabel] = true;
+        }
+    }
+}
+
+$totalCategories = count($uniqueCategories);
 ?>
 
 <div class="d-flex justify-content-between align-items-center mb-4">
