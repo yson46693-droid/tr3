@@ -79,11 +79,11 @@ $selectedMonth = isset($_GET['month']) ? intval($_GET['month']) : date('n');
 $selectedYear = isset($_GET['year']) ? intval($_GET['year']) : date('Y');
 $selectedUserId = isset($_GET['user_id']) ? intval($_GET['user_id']) : 0;
 $salaryId = isset($_GET['id']) ? intval($_GET['id']) : 0;
-$view = isset($_GET['view']) ? $_GET['view'] : ''; // 'calculate' أو 'list' أو 'details'
+$view = isset($_GET['view']) ? $_GET['view'] : ''; // 'list' أو 'pending' أو 'advances'
 
 // تحديد التبويب الافتراضي
 if (empty($view)) {
-    $view = 'calculate'; // الافتراضي: حساب الرواتب
+    $view = 'list'; // الافتراضي: قائمة الرواتب
 }
 
 // التحقق من طلب عرض التقرير الشهري
@@ -98,37 +98,7 @@ if ($showReport) {
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     $action = $_POST['action'] ?? '';
     
-    if ($action === 'calculate_salary') {
-        $userId = intval($_POST['user_id'] ?? 0);
-        $month = intval($_POST['month'] ?? $selectedMonth);
-        $year = intval($_POST['year'] ?? $selectedYear);
-        $bonus = floatval($_POST['bonus'] ?? 0);
-        $deductions = floatval($_POST['deductions'] ?? 0);
-        $notes = trim($_POST['notes'] ?? '');
-        
-        if ($userId <= 0) {
-            $error = 'يجب اختيار مستخدم';
-        } else {
-            $result = createOrUpdateSalary($userId, $month, $year, $bonus, $deductions, $notes);
-            
-            if ($result['success']) {
-                // طلب موافقة
-                requestApproval('salary', $result['salary_id'], $currentUser['id'], $notes);
-                
-                logAudit($currentUser['id'], 'create_salary', 'salary', $result['salary_id'], null, [
-                    'user_id' => $userId,
-                    'month' => $month,
-                    'year' => $year,
-                    'amount' => $result['calculation']['total_amount']
-                ]);
-                
-                $success = $result['message'];
-                $view = 'list'; // الانتقال إلى قائمة الرواتب بعد الحساب
-            } else {
-                $error = $result['message'];
-            }
-        }
-    } elseif ($action === 'calculate_all') {
+    if ($action === 'calculate_all') {
         $month = intval($_POST['month'] ?? $selectedMonth);
         $year = intval($_POST['year'] ?? $selectedYear);
         
@@ -334,13 +304,14 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     
                     // إرسال إشعار للمدير
                     $managers = $db->query("SELECT id FROM users WHERE role = 'manager' AND status = 'active'");
+                    $managerAdvancesLink = $buildViewUrl('advances');
                     foreach ($managers as $manager) {
                         createNotification(
                             $manager['id'],
                             'طلب سلفة يحتاج موافقتك',
                             "طلب سلفة بمبلغ " . number_format($advance['amount'], 2) . " ج.م يحتاج موافقتك",
                             'warning',
-                            '?page=salaries&view=advances',
+                            $managerAdvancesLink,
                             false
                         );
                     }
@@ -535,10 +506,20 @@ if ($currentUser['role'] === 'manager') {
 }
 
 require_once __DIR__ . '/../../includes/path_helper.php';
-$currentScript = $_SERVER['PHP_SELF'] ?? '/dashboard/accountant.php';
-$currentScript = ltrim($currentScript, '/');
-if ($currentScript === '' || strpos($currentScript, 'dashboard/') !== 0) {
+$rawScript = $_SERVER['PHP_SELF'] ?? '/dashboard/accountant.php';
+$rawScript = ltrim($rawScript, '/');
+if ($rawScript === '') {
     $currentScript = 'dashboard/accountant.php';
+} else {
+    $dashboardPos = strpos($rawScript, 'dashboard/');
+    if ($dashboardPos !== false) {
+        $currentScript = substr($rawScript, $dashboardPos);
+    } else {
+        $currentScript = $rawScript;
+    }
+    if (strpos($currentScript, 'dashboard/') !== 0) {
+        $currentScript = 'dashboard/accountant.php';
+    }
 }
 $currentUrl = getRelativeUrl($currentScript);
 $viewBaseQuery = [
@@ -645,7 +626,7 @@ if (isset($_GET['ajax']) && $_GET['ajax'] == '1' && $salaryId > 0) {
 <div class="d-flex justify-content-between align-items-center mb-4 flex-wrap">
     <h2 class="mb-0"><i class="bi bi-currency-dollar me-2"></i><?php echo isset($lang['salaries']) ? $lang['salaries'] : 'الرواتب'; ?></h2>
     <div class="d-flex align-items-center gap-3 mt-2 mt-md-0">
-        <form method="GET" class="d-inline">
+        <form method="GET" class="d-inline" action="<?php echo htmlspecialchars($currentUrl); ?>">
             <input type="hidden" name="page" value="salaries">
             <input type="hidden" name="view" value="<?php echo htmlspecialchars($view); ?>">
             <select name="month" class="form-select d-inline" style="width: auto;" onchange="this.form.submit()">
@@ -684,12 +665,6 @@ if (isset($_GET['ajax']) && $_GET['ajax'] == '1' && $salaryId > 0) {
 
 <!-- التبويبات -->
 <ul class="nav nav-tabs mb-4" role="tablist">
-    <li class="nav-item" role="presentation">
-        <a class="nav-link <?php echo $view === 'calculate' ? 'active' : ''; ?>" 
-           href="<?php echo htmlspecialchars($buildViewUrl('calculate')); ?>">
-            <i class="bi bi-calculator me-2"></i>حساب الرواتب
-        </a>
-    </li>
     <li class="nav-item" role="presentation">
         <a class="nav-link <?php echo $view === 'list' ? 'active' : ''; ?>" 
            href="<?php echo htmlspecialchars($buildViewUrl('list')); ?>">
@@ -868,71 +843,12 @@ if (isset($_GET['ajax']) && $_GET['ajax'] == '1' && $salaryId > 0) {
 </div>
 <?php endif; ?>
 
-<!-- تبويب حساب الرواتب -->
-<div id="calculateTab" class="tab-content" style="display: <?php echo $view === 'calculate' ? 'block' : 'none'; ?>;">
-    <!-- نموذج حساب راتب -->
-    <div class="card shadow-sm mb-4">
-        <div class="card-header bg-primary text-white">
-            <h5 class="mb-0"><i class="bi bi-calculator me-2"></i>حساب راتب</h5>
-        </div>
-        <div class="card-body">
-            <form method="POST" action="">
-                <input type="hidden" name="action" value="calculate_salary">
-                <input type="hidden" name="month" value="<?php echo $selectedMonth; ?>">
-                <input type="hidden" name="year" value="<?php echo $selectedYear; ?>">
-                
-                <div class="row">
-                    <div class="col-md-4 mb-3">
-                        <label for="user_id" class="form-label">المستخدم <span class="text-danger">*</span></label>
-                        <select class="form-select" id="user_id" name="user_id" required>
-                            <option value="">اختر مستخدم</option>
-                            <?php foreach ($users as $user): ?>
-                                <option value="<?php echo $user['id']; ?>" data-hourly-rate="<?php echo $user['hourly_rate']; ?>">
-                                    <?php echo htmlspecialchars($user['full_name'] ?? $user['username']); ?> 
-                                    (<?php echo formatCurrency($user['hourly_rate']); ?>/ساعة)
-                                </option>
-                            <?php endforeach; ?>
-                        </select>
-                    </div>
-                    
-                    <div class="col-md-2 mb-3">
-                        <label for="bonus" class="form-label">مكافأة</label>
-                        <input type="number" step="0.01" class="form-control" id="bonus" name="bonus" value="0" min="0">
-                    </div>
-                    
-                    <div class="col-md-2 mb-3">
-                        <label for="deductions" class="form-label">خصومات</label>
-                        <input type="number" step="0.01" class="form-control" id="deductions" name="deductions" value="0" min="0">
-                    </div>
-                    
-                    <div class="col-md-4 mb-3">
-                        <label for="notes" class="form-label">ملاحظات</label>
-                        <input type="text" class="form-control" id="notes" name="notes" placeholder="ملاحظات إضافية">
-                    </div>
-                </div>
-                
-                <div class="d-grid gap-2 d-md-flex justify-content-md-end">
-                    <button type="submit" class="btn btn-primary">
-                        <i class="bi bi-calculator me-2"></i>حساب الراتب
-                    </button>
-                    <button type="button" class="btn btn-success" onclick="calculateAllSalaries()">
-                        <i class="bi bi-calculator-fill me-2"></i>حساب جميع الرواتب
-                    </button>
-                    <button type="button" class="btn btn-info" onclick="showMonthlyReport()">
-                        <i class="bi bi-file-earmark-text me-2"></i>تقرير شهري شامل
-                    </button>
-                </div>
-            </form>
-        </div>
-    </div>
-</div>
-
 <!-- تبويب قائمة الرواتب -->
-<div id="listTab" class="tab-content" style="display: <?php echo $view === 'list' ? 'block' : 'none'; ?>;">
+<div id="listTab" class="tab-content">
     <!-- فلترة -->
     <div class="card shadow-sm mb-4">
         <div class="card-body">
-            <form method="GET" class="row g-3">
+            <form method="GET" class="row g-3" action="<?php echo htmlspecialchars($currentUrl); ?>">
                 <input type="hidden" name="page" value="salaries">
                 <input type="hidden" name="view" value="list">
                 <div class="col-md-3">
@@ -971,14 +887,9 @@ if (isset($_GET['ajax']) && $_GET['ajax'] == '1' && $salaryId > 0) {
                 </div>
                 <div class="col-md-2">
                     <label class="form-label">&nbsp;</label>
-                    <div class="d-grid gap-2">
-                        <button type="button" class="btn btn-secondary" onclick="switchTab('calculate')">
-                            <i class="bi bi-plus-circle me-2"></i>حساب جديد
-                        </button>
-                        <button type="button" class="btn btn-info" onclick="showMonthlyReport()">
-                            <i class="bi bi-file-earmark-text me-2"></i>تقرير شهري شامل
-                        </button>
-                    </div>
+                    <button type="button" class="btn btn-info w-100" onclick="showMonthlyReport()">
+                        <i class="bi bi-file-earmark-text me-2"></i>تقرير شهري شامل
+                    </button>
                 </div>
             </form>
         </div>
@@ -1393,18 +1304,6 @@ if (isset($_GET['ajax']) && $_GET['ajax'] == '1' && $salaryId > 0) {
 <?php endif; ?>
 
 <script>
-const salaryViewUrls = <?php echo json_encode([
-    'calculate' => $buildViewUrl('calculate'),
-    'list' => $buildViewUrl('list'),
-    'pending' => $buildViewUrl('pending'),
-    'advances' => $buildViewUrl('advances'),
-], JSON_UNESCAPED_SLASHES); ?>;
-
-function switchTab(tabName) {
-    const target = salaryViewUrls[tabName] || salaryViewUrls.calculate;
-    window.location.href = target;
-}
-
 function calculateAllSalaries() {
     if (confirm('هل تريد حساب رواتب جميع المستخدمين للشهر الحالي؟')) {
         const form = document.createElement('form');
