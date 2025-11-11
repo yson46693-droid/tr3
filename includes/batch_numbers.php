@@ -173,16 +173,145 @@ function createBatchNumber(
         ];
     }
 
+    $persisted = false;
+    $batchNumberValue = $creationResult['batch_number'] ?? null;
+
+    if ($batchNumberValue) {
+        try {
+            $tableCheck = $db->queryOne("SHOW TABLES LIKE 'batch_numbers'");
+            if (!empty($tableCheck)) {
+                $productIdValue = $creationResult['product_id'] ?? ($productId ?: null);
+                $productionDateValue = $creationResult['production_date'] ?? $productionDate;
+                $expiryDateValue = $creationResult['expiry_date'] ?? $expiryDate;
+                $quantityValue = (int) ($creationResult['quantity'] ?? $units);
+                $statusValue = $quantityValue > 0 ? 'completed' : 'in_production';
+
+                $packagingMaterials = array_values(array_filter(
+                    array_map('intval', is_array($packagingMaterials) ? $packagingMaterials : []),
+                    static function ($value) {
+                        return $value > 0;
+                    }
+                ));
+                $workersList = array_values(array_filter(
+                    array_map('intval', is_array($workers) ? $workers : []),
+                    static function ($value) {
+                        return $value > 0;
+                    }
+                ));
+
+                $packagingJson = !empty($packagingMaterials) ? json_encode($packagingMaterials, JSON_UNESCAPED_UNICODE) : null;
+                $workersJson = !empty($workersList) ? json_encode($workersList, JSON_UNESCAPED_UNICODE) : null;
+                $allSuppliersJsonOptions = defined('JSON_INVALID_UTF8_SUBSTITUTE')
+                    ? JSON_UNESCAPED_UNICODE | JSON_INVALID_UTF8_SUBSTITUTE
+                    : JSON_UNESCAPED_UNICODE;
+                $allSuppliersJson = !empty($allSuppliers) ? json_encode($allSuppliers, $allSuppliersJsonOptions) : null;
+
+                $createdByValue = $createdBy;
+                if ($createdByValue === null) {
+                    if (!function_exists('getCurrentUser')) {
+                        $authPath = __DIR__ . '/auth.php';
+                        if (file_exists($authPath)) {
+                            require_once $authPath;
+                        }
+                    }
+                    if (function_exists('getCurrentUser')) {
+                        $currentUser = getCurrentUser();
+                        if (!empty($currentUser['id'])) {
+                            $createdByValue = (int) $currentUser['id'];
+                        }
+                    }
+                }
+                if ($createdByValue === null) {
+                    $createdByValue = 0;
+                }
+
+                $columns = [
+                    'batch_number',
+                    'product_id',
+                    'production_id',
+                    'production_date',
+                    'honey_supplier_id',
+                    'packaging_materials',
+                    'packaging_supplier_id',
+                    'workers',
+                    'quantity',
+                    'status',
+                    'expiry_date',
+                    'notes',
+                    'created_by',
+                ];
+                $placeholders = array_fill(0, count($columns), '?');
+                $values = [
+                    $batchNumberValue,
+                    $productIdValue ?: null,
+                    $productionId ?: null,
+                    $productionDateValue ?: null,
+                    $honeySupplierId ?: null,
+                    $packagingJson,
+                    $packagingSupplierId ?: null,
+                    $workersJson,
+                    $quantityValue,
+                    $statusValue,
+                    $expiryDateValue ?: null,
+                    $notes ?: null,
+                    $createdByValue,
+                ];
+
+                $hasAllSuppliersColumn = $db->queryOne("SHOW COLUMNS FROM batch_numbers LIKE 'all_suppliers'");
+                if (!empty($hasAllSuppliersColumn)) {
+                    $columns[] = 'all_suppliers';
+                    $placeholders[] = '?';
+                    $values[] = $allSuppliersJson;
+                }
+
+                $hasHoneyVarietyColumn = $db->queryOne("SHOW COLUMNS FROM batch_numbers LIKE 'honey_variety'");
+                if (!empty($hasHoneyVarietyColumn)) {
+                    $columns[] = 'honey_variety';
+                    $placeholders[] = '?';
+                    $values[] = $honeyVariety ?? null;
+                }
+
+                $insertSql = sprintf(
+                    "INSERT INTO batch_numbers (%s) VALUES (%s)
+                     ON DUPLICATE KEY UPDATE
+                        product_id = VALUES(product_id),
+                        production_id = VALUES(production_id),
+                        production_date = VALUES(production_date),
+                        honey_supplier_id = VALUES(honey_supplier_id),
+                        packaging_materials = VALUES(packaging_materials),
+                        packaging_supplier_id = VALUES(packaging_supplier_id),
+                        workers = VALUES(workers),
+                        quantity = VALUES(quantity),
+                        status = VALUES(status),
+                        expiry_date = VALUES(expiry_date),
+                        notes = VALUES(notes),
+                        created_by = VALUES(created_by)%s%s,
+                        updated_at = NOW()",
+                    implode(', ', $columns),
+                    implode(', ', $placeholders),
+                    !empty($hasAllSuppliersColumn) ? ",\n                        all_suppliers = VALUES(all_suppliers)" : '',
+                    !empty($hasHoneyVarietyColumn) ? ",\n                        honey_variety = VALUES(honey_variety)" : ''
+                );
+
+                $db->execute($insertSql, $values);
+                $persisted = true;
+            }
+        } catch (Throwable $storageException) {
+            error_log('Batch numbers persistence error: ' . $storageException->getMessage());
+        }
+    }
+
     return [
         'success'        => true,
         'message'        => $creationResult['message'] ?? 'تم إنشاء التشغيله بنجاح',
         'batch_id'       => $creationResult['batch_id'] ?? null,
-        'batch_number'   => $creationResult['batch_number'] ?? null,
+        'batch_number'   => $batchNumberValue,
         'product_id'     => $creationResult['product_id'] ?? ($productId ?: null),
         'product_name'   => $creationResult['product_name'] ?? null,
         'quantity'       => $creationResult['quantity'] ?? $units,
         'production_date'=> $creationResult['production_date'] ?? $productionDate,
         'expiry_date'    => $creationResult['expiry_date'] ?? $expiryDate,
+        'persisted'      => $persisted,
     ];
 }
 

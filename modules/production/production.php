@@ -772,9 +772,51 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     [$templateId]
                 );
 
-                $packagingIds = array_filter(array_map(function ($item) {
-                    return $item['packaging_material_id'] ?? null;
-                }, $packagingItems));
+                $packagingIdsMap = [];
+                $packagingTableExists = !empty($db->queryOne("SHOW TABLES LIKE 'packaging_materials'"));
+                $packagingProductColumnExists = $packagingTableExists && productionColumnExists('packaging_materials', 'product_id');
+                $packagingAliasColumnExists = $packagingTableExists && productionColumnExists('packaging_materials', 'alias');
+                $packagingSelectColumns = $packagingProductColumnExists ? 'id, name, unit, product_id' : 'id, name, unit';
+                $packagingNameCache = [];
+                $resolvePackagingByName = static function (string $name) use ($db, &$packagingNameCache, $packagingSelectColumns, $packagingAliasColumnExists) {
+                    $trimmedName = trim($name);
+                    if ($trimmedName === '') {
+                        return null;
+                    }
+
+                    $normalizedSource = function_exists('mb_strtolower')
+                        ? mb_strtolower(preg_replace('/\s+/u', ' ', $trimmedName), 'UTF-8')
+                        : strtolower(preg_replace('/\s+/', ' ', $trimmedName));
+
+                    if (!array_key_exists($normalizedSource, $packagingNameCache)) {
+                        $params = [$trimmedName];
+                        $query = "SELECT {$packagingSelectColumns} FROM packaging_materials WHERE name = ?";
+                        if ($packagingAliasColumnExists) {
+                            $query .= " OR alias = ?";
+                            $params[] = $trimmedName;
+                        }
+                        $query .= " LIMIT 1";
+                        $match = $db->queryOne($query, $params);
+
+                        if (!$match) {
+                            $fallbackParams = [$trimmedName];
+                            $fallbackQuery = "SELECT {$packagingSelectColumns} 
+                                FROM packaging_materials 
+                                WHERE LOWER(REPLACE(name, ' ', '')) = LOWER(REPLACE(?, ' ', ''))";
+                            if ($packagingAliasColumnExists) {
+                                $fallbackQuery .= " OR LOWER(REPLACE(IFNULL(alias, ''), ' ', '')) = LOWER(REPLACE(?, ' ', ''))";
+                                $fallbackParams[] = $trimmedName;
+                            }
+                            $fallbackQuery .= " LIMIT 1";
+                            $match = $db->queryOne($fallbackQuery, $fallbackParams);
+                        }
+
+                        $packagingNameCache[$normalizedSource] = $match ?: false;
+                    }
+
+                    $cached = $packagingNameCache[$normalizedSource];
+                    return is_array($cached) && !empty($cached['id']) ? $cached : null;
+                };
 
                 $materialsConsumption = [
                     'raw' => [],
@@ -787,7 +829,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 $honeyVariety = null;
 
                 foreach ($packagingItems as $pkg) {
-                    $packagingMaterialId = $pkg['packaging_material_id'] ?? null;
+                    $packagingMaterialId = isset($pkg['packaging_material_id']) ? (int)$pkg['packaging_material_id'] : 0;
                     $pkgKey = 'pack_' . ($packagingMaterialId ?: $pkg['id']);
                     $selectedSupplierId = $materialSuppliers[$pkgKey] ?? 0;
                     if ($selectedSupplierId <= 0) {
@@ -799,40 +841,58 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                         throw new Exception('مورد غير صالح لأداة التعبئة: ' . ($pkg['packaging_name'] ?? 'غير معروف'));
                     }
 
-                    $packagingName = $pkg['packaging_name'] ?? null;
+                    $packagingName = trim((string)($pkg['packaging_name'] ?? ''));
                     $packagingUnit = 'قطعة';
                     $packagingProductId = null;
+                    $packagingRow = null;
 
-                    if ($packagingMaterialId) {
-                        $packagingProductColumnExists = productionColumnExists('packaging_materials', 'product_id');
-                        $selectColumns = $packagingProductColumnExists
-                            ? 'id, name, unit, product_id'
-                            : 'id, name, unit';
+                    if ($packagingMaterialId > 0 && $packagingTableExists) {
                         $packagingRow = $db->queryOne(
-                            "SELECT {$selectColumns} FROM packaging_materials WHERE id = ?",
+                            "SELECT {$packagingSelectColumns} FROM packaging_materials WHERE id = ?",
                             [$packagingMaterialId]
                         );
-                        if ($packagingRow) {
-                            $packagingName = $packagingName ?: $packagingRow['name'];
-                            $packagingUnit = $packagingRow['unit'] ?? $packagingUnit;
-                            if ($packagingProductColumnExists && !empty($packagingRow['product_id'])) {
-                                $packagingProductId = (int)$packagingRow['product_id'];
-                            }
+                        if (!$packagingRow) {
+                            $packagingMaterialId = 0;
+                        }
+                    }
+
+                    if ($packagingMaterialId <= 0 && $packagingTableExists) {
+                        $lookupName = $packagingName !== '' ? $packagingName : trim((string)($pkg['packaging_name'] ?? ''));
+                        $resolvedRow = $resolvePackagingByName($lookupName);
+                        if ($resolvedRow) {
+                            $packagingRow = $resolvedRow;
+                            $packagingMaterialId = (int)$resolvedRow['id'];
+                        }
+                    }
+
+                    if ($packagingRow) {
+                        if ($packagingName === '' && !empty($packagingRow['name'])) {
+                            $packagingName = (string)$packagingRow['name'];
+                        }
+                        if (!empty($packagingRow['unit'])) {
+                            $packagingUnit = $packagingRow['unit'];
+                        }
+                        if ($packagingProductColumnExists && !empty($packagingRow['product_id'])) {
+                            $packagingProductId = (int)$packagingRow['product_id'];
                         }
                     }
 
                     if (!$packagingProductId) {
                         $packagingProductId = ensureProductionMaterialProductId(
-                            $packagingName ?: ('مادة تعبئة #' . ($packagingMaterialId ?: $pkg['id'])),
+                            $packagingName !== '' ? $packagingName : ('مادة تعبئة #' . ($packagingMaterialId ?: $pkg['id'])),
                             'packaging',
                             $packagingUnit
                         );
                     }
 
+                    if ($packagingMaterialId > 0) {
+                        $packagingIdsMap[$packagingMaterialId] = true;
+                    }
+
                     $materialsConsumption['packaging'][] = [
-                        'material_id' => $packagingMaterialId,
+                        'material_id' => $packagingMaterialId > 0 ? $packagingMaterialId : null,
                         'quantity' => (float)($pkg['quantity_per_unit'] ?? 1.0) * $quantity,
-                        'name' => $packagingName ?? 'مادة تعبئة',
+                        'name' => $packagingName !== '' ? $packagingName : 'مادة تعبئة',
                         'unit' => $packagingUnit,
                         'product_id' => $packagingProductId,
                         'supplier_id' => $selectedSupplierId
@@ -842,7 +902,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                         'id' => $supplierInfo['id'],
                         'name' => $supplierInfo['name'],
                         'type' => $supplierInfo['type'],
-                        'material' => $packagingName ?? 'مادة تعبئة'
+                        'material' => $packagingName !== '' ? $packagingName : 'مادة تعبئة'
                     ];
 
                     if (!$packagingSupplierId) {
@@ -907,6 +967,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                         }
                     }
                 }
+
+                $packagingIds = array_map('intval', array_keys($packagingIdsMap));
                 
                 // إنشاء المنتج إذا لم يكن موجودًا
                 $productId = $template['product_id'] ?? 0;
@@ -1213,10 +1275,18 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                         }
                     }
 
-                    foreach ($materialsConsumption['packaging'] as $packItem) {
-                        $packMaterialId = $packItem['material_id'] ?? null;
+                    foreach ($materialsConsumption['packaging'] as &$packItem) {
+                        $packMaterialId = isset($packItem['material_id']) ? (int)$packItem['material_id'] : 0;
                         $packQuantity = (float)($packItem['quantity'] ?? 0);
-                        if ($packMaterialId && $packQuantity > 0) {
+                        if ($packMaterialId <= 0 && $packQuantity > 0 && $packagingTableExists) {
+                            $lookupName = trim((string)($packItem['name'] ?? ''));
+                            $resolvedRow = $resolvePackagingByName($lookupName);
+                            if ($resolvedRow) {
+                                $packMaterialId = (int)$resolvedRow['id'];
+                                $packItem['material_id'] = $packMaterialId;
+                            }
+                        }
+                        if ($packMaterialId > 0 && $packQuantity > 0) {
                             $db->execute(
                                 "UPDATE packaging_materials 
                                  SET quantity = GREATEST(quantity - ?, 0), updated_at = NOW() 
@@ -1225,6 +1295,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                             );
                         }
                     }
+                    unset($packItem);
                 } catch (Exception $stockWarning) {
                     error_log('Production stock deduction warning: ' . $stockWarning->getMessage());
                 }
@@ -2405,21 +2476,10 @@ $lang = isset($translations) ? $translations : [];
                             <div class="col-md-6">
                                 <label class="form-label fw-bold">الكمية المراد إنتاجها <span class="text-danger">*</span></label>
                                 <input type="number" name="quantity" class="form-control" min="1" required value="1">
-                                <small class="text-muted">سيتم إنشاء رقم تشغيلة واحد (LOT) لجميع المنتجات</small>
-                            </div>
-                            <div class="col-md-6">
-                                <label class="form-label fw-bold">تاريخ الإنتاج <span class="text-danger">*</span></label>
-                                <input type="date" name="production_date" class="form-control" value="<?php echo date('Y-m-d'); ?>" required>
+                                <small class="text-muted d-block mt-1">سيتم إنشاء رقم تشغيلة واحد (LOT) لجميع المنتجات، مع استخدام تاريخ اليوم تلقائياً.</small>
                             </div>
                         </div>
-                    </div>
-                    
-                    <!-- ملخص المكونات في القالب -->
-                    <div class="mb-3 section-block d-none" id="templateComponentsSummary">
-                        <h6 class="text-primary section-heading">
-                            <i class="bi bi-activity me-2"></i>ملخص المكونات
-                        </h6>
-                        <div class="template-summary-grid" id="templateComponentsSummaryGrid"></div>
+                        <input type="hidden" name="production_date" value="<?php echo date('Y-m-d'); ?>">
                     </div>
                     
                     <!-- الموردون لكل مادة -->
@@ -2431,55 +2491,6 @@ $lang = isset($translations) ? $translations : [];
                         <div class="row g-3" id="templateSuppliersContainer"></div>
                     </div>
 
-                    <!-- معلومات إضافية اختيارية -->
-                    <div class="mb-3 section-block">
-                        <h6 class="text-primary section-heading">
-                            <i class="bi bi-list-check me-2"></i>معلومات إضافية (اختياري)
-                        </h6>
-                        <div class="row g-3">
-                            <div class="col-12">
-                                <label class="form-label fw-bold d-flex align-items-center gap-2">
-                                    <i class="bi bi-diagram-3 text-primary"></i>
-                                    المواد المستخدمة في القالب
-                                </label>
-                                <div id="templateMaterialsInfo" class="template-materials-info">
-                                    <div class="text-muted small">سيتم عرض المواد والمقادير الخاصة بالقالب بعد اختيار قالب الإنتاج.</div>
-                                </div>
-                            </div>
-                            <div class="col-12 col-md-6">
-                                <label class="form-label fw-bold">موردون إضافيون</label>
-                                <?php if (!empty($additionalSuppliersOptions)): ?>
-                                    <select id="extraSuppliersSelect"
-                                            name="extra_supplier_ids[]"
-                                            class="form-select"
-                                            multiple
-                                            size="<?php echo (int)$additionalSuppliersSelectSize; ?>">
-                                        <?php foreach ($additionalSuppliersOptions as $option): ?>
-                                            <?php
-                                            $supplierId = (int)($option['id'] ?? 0);
-                                            $supplierName = trim((string)($option['name'] ?? ''));
-                                            $supplierType = trim((string)($option['type'] ?? ''));
-                                            if ($supplierName === '') {
-                                                $supplierName = 'مورد #' . $supplierId;
-                                            }
-                                            $supplierLabel = $supplierName;
-                                            if ($supplierType !== '') {
-                                                $supplierLabel .= ' (' . $supplierType . ')';
-                                            }
-                                            ?>
-                                            <option value="<?php echo $supplierId; ?>">
-                                                <?php echo htmlspecialchars($supplierLabel, ENT_QUOTES, 'UTF-8'); ?>
-                                            </option>
-                                        <?php endforeach; ?>
-                                    </select>
-                                    <small class="text-muted">استخدم التحديد المتعدد لتعيين أكثر من مورد مشارك.</small>
-                                <?php else: ?>
-                                    <div class="form-control-plaintext text-muted">لا توجد بيانات موردين إضافية متاحة.</div>
-                                <?php endif; ?>
-                            </div>
-                        </div>
-                    </div>
-                    
                     <!-- عمال الإنتاج الحاضرون -->
                     <div class="mb-3 section-block">
                         <h6 class="text-primary section-heading"><i class="bi bi-people me-2"></i>عمال الإنتاج الحاضرون</h6>

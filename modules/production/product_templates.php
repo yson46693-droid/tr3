@@ -422,107 +422,104 @@ $lang = isset($translations) ? $translations : [];
             <?php
             $packaging = $template['packaging_details'] ?? [];
             $rawMaterials = $template['material_details'] ?? [];
+
+            $primaryMaterialName = $rawMaterials[0]['material_name'] ?? '';
+            $materialIconTheme = [
+                'icon' => 'bi-box-seam',
+                'color' => '#0d6efd',
+                'background' => 'rgba(13, 110, 253, 0.12)'
+            ];
+
+            $materialKeywordThemes = [
+                'عسل' => ['icon' => 'bi-droplet-fill', 'color' => '#d97706', 'background' => 'rgba(217, 119, 6, 0.18)'],
+                'شمع' => ['icon' => 'bi-hexagon-fill', 'color' => '#f97316', 'background' => 'rgba(249, 115, 22, 0.18)'],
+                'زيت' => ['icon' => 'bi-bucket-fill', 'color' => '#15803d', 'background' => 'rgba(21, 128, 61, 0.16)'],
+                'زيوت' => ['icon' => 'bi-bucket-fill', 'color' => '#15803d', 'background' => 'rgba(21, 128, 61, 0.16)'],
+                'مكسر' => ['icon' => 'bi-nut', 'color' => '#7c3aed', 'background' => 'rgba(124, 58, 237, 0.16)'],
+                'لوز' => ['icon' => 'bi-nut', 'color' => '#7c3aed', 'background' => 'rgba(124, 58, 237, 0.16)'],
+                'بندق' => ['icon' => 'bi-nut', 'color' => '#7c3aed', 'background' => 'rgba(124, 58, 237, 0.16)'],
+                'فستق' => ['icon' => 'bi-nut', 'color' => '#7c3aed', 'background' => 'rgba(124, 58, 237, 0.16)'],
+                'سكر' => ['icon' => 'bi-cup-straw', 'color' => '#db2777', 'background' => 'rgba(219, 39, 119, 0.15)'],
+                'ماء' => ['icon' => 'bi-droplet', 'color' => '#0284c7', 'background' => 'rgba(2, 132, 199, 0.15)'],
+                'لقاح' => ['icon' => 'bi-flower1', 'color' => '#0ea5e9', 'background' => 'rgba(14, 165, 233, 0.16)'],
+                'حبوب' => ['icon' => 'bi-flower1', 'color' => '#0ea5e9', 'background' => 'rgba(14, 165, 233, 0.16)'],
+                'مشتق' => ['icon' => 'bi-diagram-3', 'color' => '#2563eb', 'background' => 'rgba(37, 99, 235, 0.14)']
+            ];
+
+            $normalizedMaterialName = $primaryMaterialName;
+            if ($normalizedMaterialName !== '') {
+                $normalizedMaterialName = function_exists('mb_strtolower')
+                    ? mb_strtolower($normalizedMaterialName, 'UTF-8')
+                    : strtolower($normalizedMaterialName);
+                foreach ($materialKeywordThemes as $keyword => $theme) {
+                    $positionFound = function_exists('mb_stripos')
+                        ? mb_stripos($normalizedMaterialName, $keyword, 0, 'UTF-8')
+                        : stripos($normalizedMaterialName, $keyword);
+                    if ($positionFound !== false) {
+                        $materialIconTheme = $theme;
+                        break;
+                    }
+                }
+            }
+
+            if ($materialIconTheme['icon'] === 'bi-box-seam') {
+                $templateTypeThemes = [
+                    'honey' => ['icon' => 'bi-droplet-fill', 'color' => '#d97706', 'background' => 'rgba(217, 119, 6, 0.18)'],
+                    'honey_filtered' => ['icon' => 'bi-droplet-fill', 'color' => '#d97706', 'background' => 'rgba(217, 119, 6, 0.18)'],
+                    'honey_raw' => ['icon' => 'bi-droplet-half', 'color' => '#d97706', 'background' => 'rgba(217, 119, 6, 0.18)'],
+                    'olive_oil' => ['icon' => 'bi-bucket-fill', 'color' => '#15803d', 'background' => 'rgba(21, 128, 61, 0.16)'],
+                    'beeswax' => ['icon' => 'bi-hexagon-fill', 'color' => '#f97316', 'background' => 'rgba(249, 115, 22, 0.18)'],
+                    'derivatives' => ['icon' => 'bi-diagram-3', 'color' => '#2563eb', 'background' => 'rgba(37, 99, 235, 0.14)'],
+                    'nuts' => ['icon' => 'bi-nut', 'color' => '#7c3aed', 'background' => 'rgba(124, 58, 237, 0.16)'],
+                    'general' => ['icon' => 'bi-box-seam', 'color' => '#0d6efd', 'background' => 'rgba(13, 110, 253, 0.12)']
+                ];
+                $templateType = $template['template_type'] ?? 'general';
+                if (isset($templateTypeThemes[$templateType])) {
+                    $materialIconTheme = $templateTypeThemes[$templateType];
+                } else {
+                    $materialIconTheme = $templateTypeThemes['general'];
+                }
+            }
+
+            $iconStyle = sprintf(
+                'background-color:%s; color:%s;',
+                htmlspecialchars($materialIconTheme['background'], ENT_QUOTES, 'UTF-8'),
+                htmlspecialchars($materialIconTheme['color'], ENT_QUOTES, 'UTF-8')
+            );
+            $cardAccentColor = htmlspecialchars($materialIconTheme['color'], ENT_QUOTES, 'UTF-8');
+            $statusBadgeClass = $template['status'] === 'active' ? 'bg-success' : 'bg-secondary';
+            $statusLabel = $template['status'] === 'active' ? 'نشط' : 'غير نشط';
+            $createdAtLabel = formatDate($template['created_at']);
             ?>
             <div class="col-lg-4 col-md-6">
-                <div class="card shadow-sm h-100 template-card" style="border-top: 4px solid #0d6efd; transition: transform 0.2s, box-shadow 0.2s;">
-                    <div class="card-body">
-                        <!-- Header -->
-                        <div class="d-flex justify-content-between align-items-start mb-3">
-                            <div class="flex-grow-1">
-                                <h5 class="card-title mb-1 text-primary">
-                                    <i class="bi bi-box-seam me-2"></i>
-                                    <?php echo htmlspecialchars($template['product_name']); ?>
-                                </h5>
-                                <small class="text-muted">
-                                    <i class="bi bi-person me-1"></i>
-                                    <?php echo htmlspecialchars($template['creator_name'] ?? 'غير محدد'); ?>
-                                </small>
-                            </div>
-                            <span class="badge bg-<?php echo $template['status'] === 'active' ? 'success' : 'secondary'; ?>">
-                                <?php echo $template['status'] === 'active' ? 'نشط' : 'غير نشط'; ?>
-                            </span>
+                <div class="card shadow-sm h-100 template-card" style="border-top: 4px solid <?php echo $cardAccentColor; ?>; transition: transform 0.2s, box-shadow 0.2s;">
+                    <span class="badge template-status-badge <?php echo $statusBadgeClass; ?>"><?php echo $statusLabel; ?></span>
+                    <div class="card-body template-card-body text-center">
+                        <div class="template-icon" style="<?php echo $iconStyle; ?>" title="<?php echo htmlspecialchars($primaryMaterialName ?: 'نوع المادة غير محدد'); ?>">
+                            <i class="bi <?php echo htmlspecialchars($materialIconTheme['icon']); ?>"></i>
                         </div>
-                        
-                        <!-- كمية العسل -->
-                        <div class="mb-3 p-3 bg-light rounded">
-                            <div class="d-flex align-items-center">
-                                <div class="flex-shrink-0">
-                                    <div class="bg-warning bg-opacity-25 rounded-circle p-3">
-                                        <i class="bi bi-droplet-fill text-warning fs-4"></i>
-                                    </div>
-                                </div>
-                                <div class="flex-grow-1 ms-3">
-                                    <div class="text-muted small">كمية العسل</div>
-                                    <div class="h5 mb-0 text-warning">
-                                        <?php echo number_format($template['honey_quantity'], 3); ?> 
-                                        <small class="fs-6">جرام</small>
-                                    </div>
-                                </div>
-                            </div>
+                        <h4 class="template-product-name">
+                            <?php echo htmlspecialchars($template['product_name']); ?>
+                        </h4>
+                    </div>
+                    <div class="card-footer template-card-footer d-flex justify-content-between align-items-center">
+                        <button type="button"
+                                class="btn btn-sm btn-primary"
+                                onclick="createBatch(<?php echo $template['id']; ?>, '<?php echo htmlspecialchars($template['product_name'], ENT_QUOTES, 'UTF-8'); ?>', this)">
+                            <i class="bi bi-gear-wide-connected me-1"></i>
+                            تشغيل تشغيلة
+                        </button>
+                        <div class="d-flex align-items-center text-muted small">
+                            <i class="bi bi-calendar3 me-1"></i>
+                            <?php echo $createdAtLabel; ?>
                         </div>
-                        
-                        <!-- أدوات التعبئة -->
-                        <div class="mb-3">
-                            <div class="d-flex align-items-center mb-2">
-                                <i class="bi bi-box-seam text-info me-2"></i>
-                                <strong class="small">أدوات التعبئة:</strong>
-                            </div>
-                            <?php if (!empty($packaging)): ?>
-                                <div class="d-flex flex-wrap gap-1">
-                                    <?php foreach ($packaging as $pkg): ?>
-                                        <span class="badge bg-info text-white">
-                                            <i class="bi bi-check-circle me-1"></i>
-                                            <?php echo htmlspecialchars($pkg['packaging_name']); ?>
-                                        </span>
-                                    <?php endforeach; ?>
-                                </div>
-                            <?php else: ?>
-                                <span class="text-muted small">لا توجد أدوات تعبئة</span>
-                            <?php endif; ?>
-                        </div>
-                        
-                        <!-- المواد الخام الأخرى -->
-                        <?php if (!empty($rawMaterials)): ?>
-                            <div class="mb-3">
-                                <div class="d-flex align-items-center mb-2">
-                                    <i class="bi bi-capsule text-secondary me-2"></i>
-                                    <strong class="small">مواد خام أخرى:</strong>
-                                </div>
-                                <div class="d-flex flex-wrap gap-1">
-                                    <?php foreach ($rawMaterials as $raw): ?>
-                                        <span class="badge bg-secondary text-white">
-                                            <?php echo htmlspecialchars($raw['material_name']); ?>
-                                            <small>
-                                                (<?php echo number_format($raw['quantity_per_unit'], 2); ?> <?php echo htmlspecialchars($raw['unit']); ?>)
-                                            </small>
-                                        </span>
-                                    <?php endforeach; ?>
-                                </div>
-                            </div>
+                        <?php if ($currentUser['role'] === 'manager'): ?>
+                            <button class="btn btn-sm btn-outline-danger"
+                                    onclick="deleteTemplate(<?php echo $template['id']; ?>, '<?php echo htmlspecialchars($template['product_name']); ?>')"
+                                    title="حذف القالب">
+                                <i class="bi bi-trash"></i>
+                            </button>
                         <?php endif; ?>
-                        
-                        <!-- Footer -->
-                        <div class="d-flex justify-content-between align-items-center pt-3 border-top">
-                            <div class="d-flex flex-wrap align-items-center gap-2">
-                                <button type="button"
-                                        class="btn btn-sm btn-primary"
-                                        onclick="createBatch(<?php echo $template['id']; ?>, '<?php echo htmlspecialchars($template['product_name'], ENT_QUOTES, 'UTF-8'); ?>', this)">
-                                    <i class="bi bi-gear-wide-connected me-1"></i>
-                                    تشغيل تشغيلة
-                                </button>
-                                <small class="text-muted d-block">
-                                    <i class="bi bi-calendar3 me-1"></i>
-                                    <?php echo formatDate($template['created_at']); ?>
-                                </small>
-                            </div>
-                            <?php if ($currentUser['role'] === 'manager'): ?>
-                                <button class="btn btn-sm btn-danger" 
-                                        onclick="deleteTemplate(<?php echo $template['id']; ?>, '<?php echo htmlspecialchars($template['product_name']); ?>')"
-                                        title="حذف">
-                                    <i class="bi bi-trash"></i>
-                                </button>
-                            <?php endif; ?>
-                        </div>
                     </div>
                 </div>
             </div>
@@ -533,11 +530,72 @@ $lang = isset($translations) ? $translations : [];
 <style>
 .template-card {
     cursor: pointer;
+    position: relative;
+    border-top-width: 4px;
+    border-top-style: solid;
 }
 
 .template-card:hover {
     transform: translateY(-5px);
-    box-shadow: 0 0.5rem 1rem rgba(0, 0, 0, 0.15) !important;
+    box-shadow: 0 0.75rem 1.25rem rgba(15, 23, 42, 0.18) !important;
+}
+
+.template-card:hover .template-icon {
+    transform: scale(1.05);
+}
+
+.template-status-badge {
+    position: absolute;
+    top: 14px;
+    inset-inline-end: 14px;
+    padding: 0.4rem 0.65rem;
+    font-size: 0.75rem;
+    border-radius: 999px;
+}
+
+.template-card-body {
+    min-height: 220px;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    padding: 2.75rem 1.5rem 1.75rem;
+    text-align: center;
+}
+
+.template-icon {
+    width: 96px;
+    height: 96px;
+    border-radius: 50%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 2.75rem;
+    box-shadow: 0 18px 40px rgba(15, 23, 42, 0.12);
+    transition: transform 0.2s ease;
+}
+
+.template-product-name {
+    font-size: 1.4rem;
+    font-weight: 700;
+    color: #0f172a;
+    margin-top: 1.5rem;
+    margin-bottom: 0;
+    line-height: 1.4;
+}
+
+.template-card-footer {
+    background-color: transparent;
+    border-top: none;
+    padding: 0 1.5rem 1.25rem;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 0.75rem;
+}
+
+.template-card-footer .btn {
+    flex-shrink: 0;
 }
 
 .template-toast {
@@ -569,6 +627,18 @@ $lang = isset($translations) ? $translations : [];
 @media (max-width: 768px) {
     .template-card {
         margin-bottom: 1rem;
+    }
+    .template-card-body {
+        padding: 2.25rem 1.25rem 1.5rem;
+        min-height: 200px;
+    }
+    .template-icon {
+        width: 82px;
+        height: 82px;
+        font-size: 2.35rem;
+    }
+    .template-product-name {
+        font-size: 1.25rem;
     }
     .template-toast {
         inset-inline: 16px;
