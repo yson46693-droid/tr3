@@ -1251,7 +1251,15 @@ $_SESSION['reader_session_id'] = $_SESSION['reader_session_id'] ?? bin2hex(rando
                     body: JSON.stringify({ batch_number: batchNumber }),
                 });
 
-                const data = await response.json();
+                let data = null;
+                try {
+                    data = await response.json();
+                } catch (parseError) {
+                    const responseText = await response.text();
+                    console.error('Reader API parse error:', parseError, 'Response:', responseText);
+                    renderError('الخادم لم يرجع بيانات JSON صحيحة. تأكد من أن الخدمة تعمل ثم أعد المحاولة.');
+                    return;
+                }
                 if (!response.ok || !data.success) {
                     renderError(data.message ?? 'تعذر استرجاع بيانات رقم التشغيلة.');
                     return;
