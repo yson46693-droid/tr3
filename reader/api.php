@@ -195,12 +195,16 @@ try {
     }
 
     if (!$batch) {
+        $notFoundMessage = 'رقم التشغيلة غير موجود أو غير صحيح.';
+        if ($batchQueryError) {
+            $notFoundMessage .= ' (تفاصيل تقنية: Fallback query failed أو نتائج فارغة.)';
+        }
         http_response_code(404);
         if ($db) {
             try {
                 $db->execute(
                     "INSERT INTO reader_access_log (session_id, ip_address, batch_number, status, message) VALUES (?, ?, ?, 'not_found', ?)",
-                    [$sessionId, $ipAddress, $batchNumber, 'رقم التشغيلة غير موجود.']
+                    [$sessionId, $ipAddress, $batchNumber, $notFoundMessage]
                 );
                 enforceReaderAccessLogLimit($db, $readerLogMaxRows);
             } catch (Throwable $logError) {
@@ -209,7 +213,7 @@ try {
         }
         echo json_encode([
             'success' => false,
-            'message' => 'رقم التشغيلة غير موجود أو غير صحيح.'
+            'message' => $notFoundMessage
         ], JSON_UNESCAPED_UNICODE);
         exit;
     }
@@ -224,7 +228,15 @@ try {
     ];
 
     $packagingDetails = [];
-    if ($batchId > 0 && readerTableExists($db, 'batch_packaging')) {
+    $packagingAvailable = $batchId > 0 && readerTableExists($db, 'batch_packaging');
+    if (!$packagingAvailable) {
+        if ($batchQueryError) {
+            $response['notes'][] = 'تحذير: تعذر تحميل مواد التغليف بسبب مشكلة في قاعدة البيانات.';
+        } else {
+            $response['notes'][] = 'ملاحظة: جدول مواد التغليف غير متوفر.';
+        }
+    }
+    if ($packagingAvailable) {
         $hasPackagingMaterials = readerTableExists($db, 'packaging_materials');
         $selectColumns = [
             'bp.id',
@@ -253,7 +265,15 @@ try {
     }
 
     $rawMaterials = [];
-    if ($batchId > 0 && readerTableExists($db, 'batch_raw_materials')) {
+    $rawAvailable = $batchId > 0 && readerTableExists($db, 'batch_raw_materials');
+    if (!$rawAvailable) {
+        if ($batchQueryError) {
+            $response['notes'][] = 'تحذير: تعذر تحميل المواد الخام بسبب مشكلة في قاعدة البيانات.';
+        } else {
+            $response['notes'][] = 'ملاحظة: جدول المواد الخام غير متوفر.';
+        }
+    }
+    if ($rawAvailable) {
         $hasRawMaterials = readerTableExists($db, 'raw_materials');
         $selectColumns = [
             'brm.id',
@@ -282,7 +302,15 @@ try {
     }
 
     $workersDetails = [];
-    if ($batchId > 0 && readerTableExists($db, 'batch_workers')) {
+    $workersAvailable = $batchId > 0 && readerTableExists($db, 'batch_workers');
+    if (!$workersAvailable) {
+        if ($batchQueryError) {
+            $response['notes'][] = 'تحذير: تعذر تحميل العمال بسبب مشكلة في قاعدة البيانات.';
+        } else {
+            $response['notes'][] = 'ملاحظة: جدول العمال غير متوفر.';
+        }
+    }
+    if ($workersAvailable) {
         try {
             $joinEmployees = readerTableExists($db, 'employees');
             $joinUsers = readerTableExists($db, 'users');

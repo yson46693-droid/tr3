@@ -1251,17 +1251,22 @@ $_SESSION['reader_session_id'] = $_SESSION['reader_session_id'] ?? bin2hex(rando
                     body: JSON.stringify({ batch_number: batchNumber }),
                 });
 
+                const rawText = await response.text();
                 let data = null;
                 try {
-                    data = await response.json();
+                    data = rawText ? JSON.parse(rawText) : null;
                 } catch (parseError) {
-                    const responseText = await response.text();
-                    console.error('Reader API parse error:', parseError, 'Response:', responseText);
-                    renderError('الخادم لم يرجع بيانات JSON صحيحة. تأكد من أن الخدمة تعمل ثم أعد المحاولة.');
+                    console.error('Reader API parse error:', parseError, 'Response:', rawText);
+                    if (rawText && rawText.trim().startsWith('<')) {
+                        renderError('الخادم أعاد استجابة HTML. يرجى التأكد من أن قاعدة البيانات جاهزة وجداول التشغيلات متاحة.');
+                    } else {
+                        renderError('الخادم لم يرجع بيانات JSON صحيحة. تأكد من أن الخدمة تعمل ثم أعد المحاولة.');
+                    }
                     return;
                 }
-                if (!response.ok || !data.success) {
-                    renderError(data.message ?? 'تعذر استرجاع بيانات رقم التشغيلة.');
+
+                if (!response.ok || !data?.success) {
+                    renderError(data?.message ?? 'تعذر استرجاع بيانات رقم التشغيلة.');
                     return;
                 }
 
