@@ -347,8 +347,7 @@ $lang = isset($translations) ? $translations : [];
                         $monthRecords = $db->query(
                             "SELECT date, 
                                     COUNT(*) as records_count,
-                                    SUM(work_hours) as total_hours,
-                                    AVG(delay_minutes) as avg_delay,
+                                    COALESCE(SUM(work_hours), 0) as total_hours,
                                     MIN(check_in_time) as first_check_in,
                                     MAX(check_out_time) as last_check_out
                              FROM attendance_records 
@@ -363,7 +362,15 @@ $lang = isset($translations) ? $translations : [];
                                 <td colspan="5" class="text-center text-muted">لا توجد سجلات لهذا الشهر</td>
                             </tr>
                         <?php else: ?>
+                            <?php
+                            $dailyDelayDetails = $delayStats['details'] ?? [];
+                            ?>
                             <?php foreach ($monthRecords as $record): ?>
+                                <?php
+                                $dayDelay = isset($dailyDelayDetails[$record['date']]['delay'])
+                                    ? (float) $dailyDelayDetails[$record['date']]['delay']
+                                    : 0.0;
+                                ?>
                                 <tr>
                                     <td data-label="التاريخ"><?php echo formatDate($record['date']); ?></td>
                                     <td data-label="عدد التسجيلات">
@@ -372,9 +379,9 @@ $lang = isset($translations) ? $translations : [];
                                     <td data-label="ساعات العمل">
                                         <strong><?php echo number_format($record['total_hours'] ?? 0, 2); ?> ساعة</strong>
                                     </td>
-                                    <td data-label="متوسط التأخير">
-                                        <?php if (isset($record['avg_delay']) && $record['avg_delay'] > 0): ?>
-                                            <span class="badge bg-warning"><?php echo round($record['avg_delay']); ?> دقيقة</span>
+                                    <td data-label="التأخير">
+                                        <?php if ($dayDelay > 0): ?>
+                                            <span class="badge bg-warning"><?php echo number_format($dayDelay, 2); ?> دقيقة</span>
                                         <?php else: ?>
                                             <span class="badge bg-success">في الوقت</span>
                                         <?php endif; ?>

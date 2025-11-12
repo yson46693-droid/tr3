@@ -291,8 +291,12 @@ function createWarehouseTransfer($fromWarehouseId, $toWarehouseId, $transferDate
         }
         
         // تحديد نوع النقل
-        $fromWarehouse = $db->queryOne("SELECT warehouse_type FROM warehouses WHERE id = ?", [$fromWarehouseId]);
-        $toWarehouse = $db->queryOne("SELECT warehouse_type FROM warehouses WHERE id = ?", [$toWarehouseId]);
+        $fromWarehouse = $db->queryOne("SELECT id, name, warehouse_type FROM warehouses WHERE id = ?", [$fromWarehouseId]);
+        $toWarehouse = $db->queryOne("SELECT id, name, warehouse_type FROM warehouses WHERE id = ?", [$toWarehouseId]);
+        
+        if (!$fromWarehouse || !$toWarehouse) {
+            return ['success' => false, 'message' => 'المخزن المحدد غير موجود.'];
+        }
         
         $transferType = 'between_warehouses';
         if ($fromWarehouse['warehouse_type'] === 'main' && $toWarehouse['warehouse_type'] === 'vehicle') {
@@ -380,12 +384,17 @@ function createWarehouseTransfer($fromWarehouseId, $toWarehouseId, $transferDate
         }
         
         // إرسال إشعار للمديرين للموافقة
-        notifyManagers(
-            'طلب نقل منتجات بين المخازن',
-            "تم إنشاء طلب نقل جديد رقم {$transferNumber}",
-            'info',
-            "dashboard/manager.php?page=warehouse_transfers&id={$transferId}"
+        require_once __DIR__ . '/approval_system.php';
+        $approvalNotes = sprintf(
+            "طلب نقل منتجات من المخزن %s إلى المخزن %s بتاريخ %s",
+            $fromWarehouse['name'] ?? ('#' . $fromWarehouseId),
+            $toWarehouse['name'] ?? ('#' . $toWarehouseId),
+            $transferDate
         );
+        $approvalResult = requestApproval('warehouse_transfer', $transferId, $requestedBy, $approvalNotes);
+        if (!($approvalResult['success'] ?? false)) {
+            error_log('Warehouse transfer approval request warning: ' . ($approvalResult['message'] ?? 'Unknown error'));
+        }
         
         logAudit($requestedBy, 'create_transfer', 'warehouse_transfer', $transferId, null, [
             'transfer_number' => $transferNumber,
@@ -509,6 +518,14 @@ function approveWarehouseTransfer($transferId, $approvedBy = null) {
             "UPDATE warehouse_transfers SET status = 'completed' WHERE id = ?",
             [$transferId]
         );
+
+        // تحديث سجل الموافقات إن وجد
+        $db->execute(
+            "UPDATE approvals 
+             SET status = 'approved', approved_by = ?, updated_at = NOW() 
+             WHERE type = 'warehouse_transfer' AND entity_id = ? AND status = 'pending'",
+            [$approvedBy, $transferId]
+        );
         
         $db->getConnection()->commit();
         
@@ -548,6 +565,13 @@ function rejectWarehouseTransfer($transferId, $rejectionReason, $rejectedBy = nu
             "UPDATE warehouse_transfers 
              SET status = 'rejected', approved_by = ?, rejection_reason = ?, approved_at = NOW() 
              WHERE id = ?",
+            [$rejectedBy, $rejectionReason, $transferId]
+        );
+
+        $db->execute(
+            "UPDATE approvals 
+             SET status = 'rejected', approved_by = ?, rejection_reason = ?, updated_at = NOW() 
+             WHERE type = 'warehouse_transfer' AND entity_id = ? AND status = 'pending'",
             [$rejectedBy, $rejectionReason, $transferId]
         );
         

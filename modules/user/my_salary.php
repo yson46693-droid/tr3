@@ -11,6 +11,7 @@ require_once __DIR__ . '/../../includes/config.php';
 require_once __DIR__ . '/../../includes/db.php';
 require_once __DIR__ . '/../../includes/auth.php';
 require_once __DIR__ . '/../../includes/salary_calculator.php';
+require_once __DIR__ . '/../../includes/attendance.php';
 require_once __DIR__ . '/../../includes/notifications.php';
 require_once __DIR__ . '/../../includes/audit_log.php';
 require_once __DIR__ . '/../../includes/path_helper.php';
@@ -517,6 +518,8 @@ if ($currentSalary) {
     $monthStats['collections_bonus'] = 0;
     $maxAdvance = 0;
 }
+
+$delaySummary = calculateMonthlyDelaySummary($currentUser['id'], $selectedMonth, $selectedYear);
 ?>
 <?php
 $dashboardUrl = getDashboardUrl($currentUser['role']);
@@ -1225,17 +1228,28 @@ $lang = isset($translations) ? $translations : [];
     <div class="salary-card-inner">
         <!-- Header -->
         <div class="salary-header-modern">
-            <div class="d-flex justify-content-between align-items-center">
-                <h2 class="salary-header-title">
-                    <i class="bi bi-wallet2"></i>
-                    تفاصيل الراتب - <?php echo date('F', mktime(0, 0, 0, $selectedMonth, 1)); ?> <?php echo $selectedYear; ?>
-                </h2>
-        <?php if ($isTemporary): ?>
+            <div class="d-flex flex-wrap gap-2 justify-content-between align-items-center">
+                <div class="d-flex align-items-center gap-2">
+                    <h2 class="salary-header-title mb-0">
+                        <i class="bi bi-wallet2"></i>
+                        تفاصيل الراتب - <?php echo date('F', mktime(0, 0, 0, $selectedMonth, 1)); ?> <?php echo $selectedYear; ?>
+                    </h2>
+            <?php if ($isTemporary): ?>
                     <span class="temp-badge-modern">
                         <i class="bi bi-clock-history me-1"></i>حساب مؤقت
-            </span>
-        <?php endif; ?>
-    </div>
+                    </span>
+            <?php endif; ?>
+                </div>
+                <button
+                    type="button"
+                    id="printSalaryReportButton"
+                    class="btn btn-outline-primary btn-sm d-print-none ms-auto"
+                    aria-label="طباعة تفاصيل الراتب"
+                >
+                    <i class="bi bi-printer me-1"></i>
+                    طباعة التقرير
+                </button>
+            </div>
         </div>
 
         <!-- Alerts -->
@@ -1288,6 +1302,30 @@ $lang = isset($translations) ? $translations : [];
                 <div class="salary-cell value">
                     <span class="salary-amount primary"><?php echo number_format($monthStats['total_hours'], 2); ?> ساعة</span>
                     <span class="salary-description">إجمالي ساعات العمل</span>
+                </div>
+            </div>
+
+            <!-- إجمالي التأخير -->
+            <div class="salary-row">
+                <div class="salary-cell label">
+                    إجمالي التأخير
+                </div>
+                <div class="salary-cell value">
+                    <span class="salary-amount danger"><?php echo number_format($delaySummary['total_minutes'] ?? 0, 2); ?> دقيقة</span>
+                    <span class="salary-description">بحسب أول تسجيل حضور يومي</span>
+                </div>
+            </div>
+
+            <!-- متوسط التأخير -->
+            <div class="salary-row">
+                <div class="salary-cell label">
+                    متوسط التأخير
+                </div>
+                <div class="salary-cell value">
+                    <span class="salary-amount warning"><?php echo number_format($delaySummary['average_minutes'] ?? 0, 2); ?> دقيقة</span>
+                    <span class="salary-description">
+                        <?php echo (int) ($delaySummary['delay_days'] ?? 0); ?> يوم تأخير من أصل <?php echo (int) ($delaySummary['attendance_days'] ?? 0); ?> يوم حضور
+                    </span>
                 </div>
             </div>
 
@@ -1761,6 +1799,13 @@ document.addEventListener('DOMContentLoaded', function() {
     var tooltipList = tooltipTriggerList.map(function (tooltipTriggerEl) {
         return new bootstrap.Tooltip(tooltipTriggerEl);
     });
+
+    const printButton = document.getElementById('printSalaryReportButton');
+    if (printButton) {
+        printButton.addEventListener('click', function () {
+            window.print();
+        });
+    }
     
     // Form validation
     const forms = document.querySelectorAll('.needs-validation');

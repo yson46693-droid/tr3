@@ -262,6 +262,26 @@ function updateEntityStatus($type, $entityId, $status, $approvedBy) {
                 }
             }
             break;
+
+        case 'warehouse_transfer':
+            require_once __DIR__ . '/vehicle_inventory.php';
+            if ($status === 'approved') {
+                $result = approveWarehouseTransfer($entityId, $approvedBy);
+                if (!($result['success'] ?? false)) {
+                    throw new Exception($result['message'] ?? 'تعذر الموافقة على طلب النقل.');
+                }
+            } elseif ($status === 'rejected') {
+                $approvalRow = $db->queryOne(
+                    "SELECT rejection_reason FROM approvals WHERE type = 'warehouse_transfer' AND entity_id = ? ORDER BY updated_at DESC LIMIT 1",
+                    [$entityId]
+                );
+                $reason = $approvalRow['rejection_reason'] ?? 'تم رفض طلب النقل.';
+                $result = rejectWarehouseTransfer($entityId, $reason, $approvedBy);
+                if (!($result['success'] ?? false)) {
+                    throw new Exception($result['message'] ?? 'تعذر رفض طلب النقل.');
+                }
+            }
+            break;
     }
 }
 
@@ -291,6 +311,10 @@ function getEntityName($type, $entityId) {
         case 'salary':
             $entity = $db->queryOne("SELECT s.*, u.full_name FROM salaries s LEFT JOIN users u ON s.user_id = u.id WHERE s.id = ?", [$entityId]);
             return $entity ? "راتب #{$entityId} - {$entity['full_name']}" : "راتب #{$entityId}";
+
+        case 'warehouse_transfer':
+            $entity = $db->queryOne("SELECT transfer_number FROM warehouse_transfers WHERE id = ?", [$entityId]);
+            return $entity ? "طلب نقل مخزني {$entity['transfer_number']}" : "طلب نقل مخزني #{$entityId}";
             
         default:
             return "كيان #{$entityId}";
@@ -318,6 +342,9 @@ function getEntityLink($type, $entityId) {
             
         case 'salary':
             return $baseUrl . 'accountant.php?page=salaries&id=' . $entityId;
+
+        case 'warehouse_transfer':
+            return $baseUrl . 'manager.php?page=warehouse_transfers&id=' . $entityId;
             
         default:
             return $baseUrl . 'manager.php?page=approvals';

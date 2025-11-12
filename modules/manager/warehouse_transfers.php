@@ -11,6 +11,7 @@ require_once __DIR__ . '/../../includes/config.php';
 require_once __DIR__ . '/../../includes/db.php';
 require_once __DIR__ . '/../../includes/auth.php';
 require_once __DIR__ . '/../../includes/vehicle_inventory.php';
+require_once __DIR__ . '/../../includes/approval_system.php';
 require_once __DIR__ . '/../../includes/audit_log.php';
 require_once __DIR__ . '/../../includes/table_styles.php';
 
@@ -51,11 +52,25 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         $transferId = intval($_POST['transfer_id'] ?? 0);
         
         if ($transferId > 0) {
-            $result = approveWarehouseTransfer($transferId);
-            if ($result['success']) {
-                $_SESSION['warehouse_transfer_success'] = $result['message'];
+            $approval = $db->queryOne(
+                "SELECT id FROM approvals WHERE type = 'warehouse_transfer' AND entity_id = ? AND status = 'pending'",
+                [$transferId]
+            );
+            
+            if ($approval) {
+                $result = approveRequest($approval['id'], $currentUser['id'], 'الموافقة على طلب نقل المنتجات.');
+                if ($result['success']) {
+                    $_SESSION['warehouse_transfer_success'] = 'تمت الموافقة على طلب النقل وسيتم تنفيذه تلقائياً.';
+                } else {
+                    $_SESSION['warehouse_transfer_error'] = $result['message'] ?? 'تعذر الموافقة على طلب النقل.';
+                }
             } else {
-                $_SESSION['warehouse_transfer_error'] = $result['message'];
+                $result = approveWarehouseTransfer($transferId, $currentUser['id']);
+                if ($result['success']) {
+                    $_SESSION['warehouse_transfer_success'] = $result['message'];
+                } else {
+                    $_SESSION['warehouse_transfer_error'] = $result['message'];
+                }
             }
         }
     } elseif ($action === 'reject_transfer') {
@@ -63,12 +78,28 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         $rejectionReason = trim($_POST['rejection_reason'] ?? '');
         
         if ($transferId > 0 && !empty($rejectionReason)) {
-            $result = rejectWarehouseTransfer($transferId, $rejectionReason);
-            if ($result['success']) {
-                $_SESSION['warehouse_transfer_success'] = $result['message'];
+            $approval = $db->queryOne(
+                "SELECT id FROM approvals WHERE type = 'warehouse_transfer' AND entity_id = ? AND status = 'pending'",
+                [$transferId]
+            );
+            
+            if ($approval) {
+                $result = rejectRequest($approval['id'], $currentUser['id'], $rejectionReason);
+                if ($result['success']) {
+                    $_SESSION['warehouse_transfer_success'] = 'تم رفض طلب النقل.';
+                } else {
+                    $_SESSION['warehouse_transfer_error'] = $result['message'] ?? 'تعذر رفض طلب النقل.';
+                }
             } else {
-                $_SESSION['warehouse_transfer_error'] = $result['message'];
+                $result = rejectWarehouseTransfer($transferId, $rejectionReason, $currentUser['id']);
+                if ($result['success']) {
+                    $_SESSION['warehouse_transfer_success'] = $result['message'];
+                } else {
+                    $_SESSION['warehouse_transfer_error'] = $result['message'];
+                }
             }
+        } else {
+            $_SESSION['warehouse_transfer_error'] = 'يجب إدخال سبب الرفض';
         }
     }
     
