@@ -188,6 +188,57 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         if (isset($_POST['packaging_ids']) && is_array($_POST['packaging_ids'])) {
             $packagingIds = array_filter(array_map('intval', $_POST['packaging_ids']));
         }
+
+        $packagingSelections = [];
+        if (!empty($packagingIds)) {
+            $packagingTableExists = false;
+            try {
+                $packagingTableExists = !empty($db->queryOne("SHOW TABLES LIKE 'packaging_materials'"));
+            } catch (Exception $e) {
+                $packagingTableExists = false;
+                error_log('Packaging table detection failed: ' . $e->getMessage());
+            }
+
+            $packagingMetadata = [];
+            if ($packagingTableExists) {
+                $placeholders = implode(', ', array_fill(0, count($packagingIds), '?'));
+                try {
+                    $packagingRows = $db->query(
+                        "SELECT id, name, unit FROM packaging_materials WHERE id IN ($placeholders)",
+                        $packagingIds
+                    );
+                    foreach ($packagingRows as $row) {
+                        $rowId = isset($row['id']) ? (int)$row['id'] : null;
+                        if ($rowId) {
+                            $packagingMetadata[$rowId] = [
+                                'name' => $row['name'] ?? '',
+                                'unit' => $row['unit'] ?? ''
+                            ];
+                        }
+                    }
+                } catch (Exception $e) {
+                    error_log('Packaging metadata lookup failed: ' . $e->getMessage());
+                    $packagingMetadata = [];
+                }
+            }
+
+            foreach ($packagingIds as $packagingId) {
+                $metadata = $packagingMetadata[$packagingId] ?? ['name' => '', 'unit' => ''];
+                $packagingName = trim((string)$metadata['name']) !== ''
+                    ? trim((string)$metadata['name'])
+                    : ('أداة تعبئة #' . $packagingId);
+                $packagingUnit = trim((string)$metadata['unit']) !== ''
+                    ? trim((string)$metadata['unit'])
+                    : 'وحدة';
+
+                $packagingSelections[] = [
+                    'id' => $packagingId,
+                    'name' => $packagingName,
+                    'unit' => $packagingUnit,
+                    'quantity_per_unit' => 1.0
+                ];
+            }
+        }
         
         // المواد الخام الأخرى (للاستخدام لاحقاً)
         $rawMaterials = [];
@@ -230,31 +281,86 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             try {
                 $db->beginTransaction();
                 
+                $rawMaterialsPayload = [];
+                if ($honeyQuantity > 0) {
+                    $rawMaterialsPayload[] = [
+                        'type' => 'honey',
+                        'name' => 'عسل',
+                        'material_name' => 'عسل',
+                        'quantity' => $honeyQuantity,
+                        'quantity_per_unit' => $honeyQuantity,
+                        'unit' => 'جرام'
+                    ];
+                }
+
+                foreach ($rawMaterials as $materialEntry) {
+                    $rawMaterialsPayload[] = [
+                        'type' => 'ingredient',
+                        'name' => $materialEntry['name'],
+                        'material_name' => $materialEntry['name'],
+                        'quantity' => $materialEntry['quantity'],
+                        'quantity_per_unit' => $materialEntry['quantity'],
+                        'unit' => $materialEntry['unit']
+                    ];
+                }
+
+                $packagingPayload = array_map(static function (array $packaging) {
+                    return [
+                        'id' => $packaging['id'],
+                        'packaging_material_id' => $packaging['id'],
+                        'name' => $packaging['name'],
+                        'packaging_name' => $packaging['name'],
+                        'quantity_per_unit' => $packaging['quantity_per_unit'],
+                        'unit' => $packaging['unit']
+                    ];
+                }, $packagingSelections);
+
+                $templateDetailsPayload = [
+                    'product_name' => $productName,
+                    'status' => 'active',
+                    'template_type' => 'legacy',
+                    'honey_quantity' => $honeyQuantity,
+                    'raw_materials' => $rawMaterialsPayload,
+                    'packaging' => $packagingPayload,
+                    'submitted_at' => date('c'),
+                    'submitted_by' => $currentUser['id']
+                ];
+
+                $templateDetailsJson = json_encode(
+                    $templateDetailsPayload,
+                    JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES
+                );
+                if ($templateDetailsJson === false) {
+                    $templateDetailsJson = null;
+                }
+
                 // إنشاء القالب
                 $result = $db->execute(
                     "INSERT INTO product_templates (product_name, honey_quantity, created_by, status, template_type, main_supplier_id, notes, details_json) 
-                     VALUES (?, ?, ?, 'active', ?, NULL, NULL, NULL)",
-                    [$productName, $honeyQuantity, $currentUser['id'], 'legacy']
+                     VALUES (?, ?, ?, 'active', ?, NULL, NULL, ?)",
+                    [$productName, $honeyQuantity, $currentUser['id'], 'legacy', $templateDetailsJson]
                 );
                 
                 $templateId = $result['insert_id'];
                 
                 // إضافة أدوات التعبئة
-                $packagingTableCheck = $db->queryOne("SHOW TABLES LIKE 'packaging_materials'");
-                foreach ($packagingIds as $packagingId) {
-                    $packagingName = '';
-                    if (!empty($packagingTableCheck)) {
-                        $packaging = $db->queryOne("SELECT name FROM packaging_materials WHERE id = ?", [$packagingId]);
-                        $packagingName = $packaging['name'] ?? '';
-                    }
-                    
+                foreach ($packagingSelections as $packaging) {
                     $db->execute(
                         "INSERT INTO product_template_packaging (template_id, packaging_material_id, packaging_name, quantity_per_unit) 
                          VALUES (?, ?, ?, 1.000)",
-                        [$templateId, $packagingId, $packagingName]
+                        [$templateId, $packaging['id'], $packaging['name']]
                     );
                 }
                 
+                // إضافة مادة العسل الأساسية
+                if ($honeyQuantity > 0) {
+                    $db->execute(
+                        "INSERT INTO product_template_raw_materials (template_id, material_name, quantity_per_unit, unit) 
+                         VALUES (?, ?, ?, ?)",
+                        [$templateId, 'عسل', $honeyQuantity, 'جرام']
+                    );
+                }
+
                 // إضافة المواد الخام الأخرى
                 foreach ($rawMaterials as $material) {
                     $db->execute(
