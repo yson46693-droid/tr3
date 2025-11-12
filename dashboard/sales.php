@@ -38,6 +38,9 @@ if (in_array($pageParam, ['sales', 'collections', 'sales_collections'], true)) {
 $pageStylesheets = isset($pageStylesheets) && is_array($pageStylesheets) ? $pageStylesheets : [];
 $extraScripts = isset($extraScripts) && is_array($extraScripts) ? $extraScripts : [];
 if ($page === 'group_chat') {
+    if (!defined('GROUP_CHAT_ASSETS_EMITTED')) {
+        define('GROUP_CHAT_ASSETS_EMITTED', true);
+    }
     $pageStylesheets[] = 'assets/css/group-chat.css';
     $extraScripts[] = getRelativeUrl('assets/js/group-chat.js');
 }
