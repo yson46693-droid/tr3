@@ -27,6 +27,8 @@ $initialMessages = array_map(static function (array $message) use ($currentUser,
     return $message;
 }, $initialMessages);
 
+$chatTitle = $lang['menu_group_chat'] ?? 'الدردشة الجماعية';
+
 $apiUrl = getRelativeUrl('api/group_chat.php');
 $pollIntervalMs = 10000;
 
@@ -46,7 +48,7 @@ $chatConfig = [
 <div class="group-chat-page" data-chat-root>
     <div class="page-header d-flex align-items-center justify-content-between">
         <div>
-            <h2 class="mb-1"><i class="bi bi-chat-dots-fill me-2"></i>الدردشة الجماعية</h2>
+            <h2 class="mb-1"><i class="bi bi-chat-dots-fill me-2"></i><?php echo htmlspecialchars($chatTitle); ?></h2>
             <p class="text-muted mb-0">تواصل مباشر بين جميع أعضاء الفريق مع إمكانية الرد والتعديل والحذف.</p>
         </div>
         <span class="badge bg-gradient" style="background: linear-gradient(135deg, #0f5bea, #1bb0f8);" id="groupChatMessageCount">0</span>
@@ -55,7 +57,7 @@ $chatConfig = [
     <div class="group-chat-shell">
         <div class="group-chat-card">
             <div class="group-chat-header">
-                <h2><i class="bi bi-people-fill"></i>قناة الفريق المشتركة</h2>
+                <h2><i class="bi bi-people-fill"></i><?php echo htmlspecialchars($chatTitle); ?></h2>
                 <div class="group-chat-meta">
                     <span class="status-dot"></span>
                     <span>متصل</span>

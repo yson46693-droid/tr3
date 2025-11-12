@@ -165,6 +165,13 @@ switch ($role) {
                 'badge' => null
             ],
             [
+                'title' => $lang['menu_group_chat'] ?? 'الدردشة الجماعية',
+                'icon' => 'bi-chat-dots',
+                'url' => $baseUrl . 'accountant.php?page=group_chat',
+                'active' => ($currentPage === 'accountant.php' && $currentPageParam === 'group_chat'),
+                'badge' => null
+            ],
+            [
                 'title' => isset($lang['menu_suppliers']) ? $lang['menu_suppliers'] : 'الموردين',
                 'icon' => 'bi-truck',
                 'url' => $baseUrl . 'accountant.php?page=suppliers',
@@ -248,6 +255,13 @@ switch ($role) {
                 'badge' => null
             ],
             [
+                'title' => $lang['menu_group_chat'] ?? 'الدردشة الجماعية',
+                'icon' => 'bi-chat-dots',
+                'url' => $baseUrl . 'sales.php?page=group_chat',
+                'active' => ($currentPage === 'sales.php' && $currentPageParam === 'group_chat'),
+                'badge' => null
+            ],
+            [
                 'title' => isset($lang['sales_and_collections']) ? $lang['sales_and_collections'] : 'مبيعات و تحصيلات',
                 'icon' => 'bi-cart-check',
                 'url' => $baseUrl . 'sales.php?page=sales_collections',
@@ -321,6 +335,13 @@ switch ($role) {
                 'icon' => 'bi-list-check',
                 'url' => $baseUrl . 'production.php?page=tasks',
                 'active' => ($currentPage === 'production.php' && $currentPageParam === 'tasks'),
+                'badge' => null
+            ],
+            [
+                'title' => $lang['menu_group_chat'] ?? 'الدردشة الجماعية',
+                'icon' => 'bi-chat-dots',
+                'url' => $baseUrl . 'production.php?page=group_chat',
+                'active' => ($currentPage === 'production.php' && $currentPageParam === 'group_chat'),
                 'badge' => null
             ],
             [

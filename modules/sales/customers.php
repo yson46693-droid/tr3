@@ -13,6 +13,7 @@ require_once __DIR__ . '/../../includes/db.php';
 require_once __DIR__ . '/../../includes/auth.php';
 require_once __DIR__ . '/../../includes/audit_log.php';
 require_once __DIR__ . '/../../includes/path_helper.php';
+require_once __DIR__ . '/../../includes/customer_history.php';
 
 requireRole(['sales', 'accountant', 'manager']);
 
@@ -54,6 +55,38 @@ if ($currentRole === 'manager') {
     $customersBaseScript = 'accountant.php';
 }
 $customersPageBase = $customersBaseScript . '?page=customers';
+$customersPageBaseWithSection = $customersPageBase . '&section=' . urlencode($section);
+
+// معالجة طلبات سجل مشتريات العميل (للمدير فقط)
+if (
+    $currentRole === 'manager' &&
+    isset($_GET['ajax'], $_GET['action']) &&
+    $_GET['ajax'] === 'purchase_history' &&
+    $_GET['action'] === 'purchase_history'
+) {
+    header('Content-Type: application/json; charset=utf-8');
+
+    $customerId = isset($_GET['customer_id']) ? (int)$_GET['customer_id'] : 0;
+    if ($customerId <= 0) {
+        echo json_encode([
+            'success' => false,
+            'message' => 'معرف العميل غير صالح.'
+        ], JSON_UNESCAPED_UNICODE);
+        exit;
+    }
+
+    try {
+        $historyPayload = customerHistoryGetHistory($customerId);
+        echo json_encode($historyPayload, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
+    } catch (Throwable $historyError) {
+        error_log('customers purchase history ajax error: ' . $historyError->getMessage());
+        echo json_encode([
+            'success' => false,
+            'message' => 'تعذر تحميل سجل مشتريات العميل.'
+        ], JSON_UNESCAPED_UNICODE);
+    }
+    exit;
+}
 
 // بيانات قسم مناديب المبيعات
 $delegateSearch = '';
@@ -692,6 +725,128 @@ $collectionsLabel = $isSalesUser ? 'تحصيلاتي' : 'إجمالي التحص
         </div>
     </div>
 </div>
+
+<?php if ($currentRole === 'manager'): ?>
+<!-- Modal سجل مشتريات العميل -->
+<div class="modal fade" id="customerHistoryModal" tabindex="-1" aria-hidden="true">
+    <div class="modal-dialog modal-xl modal-dialog-scrollable">
+        <div class="modal-content">
+            <div class="modal-header bg-dark text-white">
+                <h5 class="modal-title">
+                    <i class="bi bi-journal-text me-2"></i>
+                    سجل مشتريات العميل
+                </h5>
+                <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal" aria-label="إغلاق"></button>
+            </div>
+            <div class="modal-body">
+                <div class="mb-3">
+                    <div class="text-muted small fw-semibold">العميل</div>
+                    <div class="fs-4 fw-bold customer-history-name">-</div>
+                    <div class="text-muted small">
+                        يعرض هذا السجل آخر ستة أشهر فقط من مشتريات العميل.
+                    </div>
+                </div>
+
+                <div class="customer-history-loading text-center py-4">
+                    <div class="spinner-border text-primary" role="status">
+                        <span class="visually-hidden">جاري التحميل...</span>
+                    </div>
+                </div>
+
+                <div class="alert alert-danger d-none customer-history-error"></div>
+
+                <div class="customer-history-content d-none">
+                    <div class="row g-3 mb-4">
+                        <div class="col-sm-6 col-lg-3">
+                            <div class="card shadow-sm border-0 h-100">
+                                <div class="card-body">
+                                    <div class="text-muted small">عدد الفواتير</div>
+                                    <div class="fs-4 fw-semibold history-total-invoices">0</div>
+                                </div>
+                            </div>
+                        </div>
+                        <div class="col-sm-6 col-lg-3">
+                            <div class="card shadow-sm border-0 h-100">
+                                <div class="card-body">
+                                    <div class="text-muted small">إجمالي المشتريات</div>
+                                    <div class="fs-4 fw-semibold history-total-invoiced">0.00</div>
+                                </div>
+                            </div>
+                        </div>
+                        <div class="col-sm-6 col-lg-3">
+                            <div class="card shadow-sm border-0 h-100">
+                                <div class="card-body">
+                                    <div class="text-muted small">إجمالي المرتجعات</div>
+                                    <div class="fs-4 fw-semibold history-total-returns text-danger">0.00</div>
+                                </div>
+                            </div>
+                        </div>
+                        <div class="col-sm-6 col-lg-3">
+                            <div class="card shadow-sm border-0 h-100">
+                                <div class="card-body">
+                                    <div class="text-muted small">القيمة الصافية</div>
+                                    <div class="fs-4 fw-semibold history-net-total">0.00</div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="card shadow-sm mb-4">
+                        <div class="card-header bg-primary text-white">
+                            <h6 class="mb-0"><i class="bi bi-receipt-cutoff me-2"></i>الفواتير خلال آخر 6 أشهر</h6>
+                        </div>
+                        <div class="card-body p-0">
+                            <div class="table-responsive">
+                                <table class="table table-striped table-hover mb-0 customer-history-table">
+                                    <thead class="table-light">
+                                        <tr>
+                                            <th>رقم الفاتورة</th>
+                                            <th>التاريخ</th>
+                                            <th>الإجمالي</th>
+                                            <th>المدفوع</th>
+                                            <th>المرتجعات</th>
+                                            <th>الاستبدالات</th>
+                                            <th>الصافي</th>
+                                            <th>الحالة</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody></tbody>
+                                </table>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="row g-3">
+                        <div class="col-lg-6">
+                            <div class="card shadow-sm h-100">
+                                <div class="card-header bg-secondary text-white">
+                                    <h6 class="mb-0"><i class="bi bi-arrow-counterclockwise me-2"></i>المرتجعات الأخيرة</h6>
+                                </div>
+                                <div class="card-body customer-history-returns">
+                                    <div class="text-muted">لا توجد مرتجعات خلال الفترة.</div>
+                                </div>
+                            </div>
+                        </div>
+                        <div class="col-lg-6">
+                            <div class="card shadow-sm h-100">
+                                <div class="card-header bg-secondary text-white">
+                                    <h6 class="mb-0"><i class="bi bi-arrow-repeat me-2"></i>حالات الاستبدال</h6>
+                                </div>
+                                <div class="card-body customer-history-exchanges">
+                                    <div class="text-muted">لا توجد حالات استبدال خلال الفترة.</div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">إغلاق</button>
+            </div>
+        </div>
+    </div>
+</div>
+<?php endif; ?>
 
 <?php endif; ?>
 
@@ -1782,6 +1937,16 @@ document.addEventListener('DOMContentLoaded', function () {
                                         >
                                             <i class="bi bi-cash-coin me-1"></i>تحصيل
                                         </button>
+                                        <?php if ($currentRole === 'manager'): ?>
+                                        <button
+                                            type="button"
+                                            class="btn btn-sm btn-outline-dark js-customer-history"
+                                            data-customer-id="<?php echo (int)$customer['id']; ?>"
+                                            data-customer-name="<?php echo htmlspecialchars($customer['name']); ?>"
+                                        >
+                                            <i class="bi bi-journal-text me-1"></i>سجل المشتريات
+                                        </button>
+                                        <?php endif; ?>
                                     </div>
                                 </td>
                             </tr>

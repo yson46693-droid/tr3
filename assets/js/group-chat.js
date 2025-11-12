@@ -34,12 +34,6 @@
         pollTimer: null,
     };
 
-    const escapeHtml = (value) => {
-        const span = document.createElement('span');
-        span.textContent = value ?? '';
-        return span.innerHTML;
-    };
-
     const getInitials = (message) => {
         const author = message.author || {};
         const fullName = author.full_name || author.username || '';

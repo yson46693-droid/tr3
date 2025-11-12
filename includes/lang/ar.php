@@ -72,6 +72,7 @@ $translations = [
     'menu_sales' => 'المبيعات',
     'menu_production' => 'الإنتاج',
     'menu_tasks' => 'المهام',
+    'menu_group_chat' => 'الدردشة الجماعية',
     'menu_inventory' => 'المخزون',
     'menu_approvals' => 'الموافقات',
     'menu_audit_logs' => 'سجل التدقيق',
