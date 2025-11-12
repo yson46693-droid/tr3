@@ -2836,6 +2836,67 @@ if ($section === 'honey') {
         LEFT JOIN suppliers s ON hs.supplier_id = s.id
         ORDER BY s.name ASC, hs.honey_variety ASC
     ");
+
+    // تنظيم المخزون حسب المورد
+    $groupedHoneyStock = [];
+    foreach ($honeyStock as $stock) {
+        $supplierId = (int)($stock['supplier_id'] ?? 0);
+        $groupKey = $supplierId > 0 ? $supplierId : ('unknown_' . $stock['id']);
+        $supplierName = trim((string)($stock['supplier_name'] ?? ''));
+        if ($supplierName === '') {
+            $supplierName = 'مورد غير محدد';
+        }
+        if (!isset($groupedHoneyStock[$groupKey])) {
+            $groupedHoneyStock[$groupKey] = [
+                'supplier_id' => $supplierId,
+                'supplier_name' => $supplierName,
+                'supplier_phone' => $stock['supplier_phone'] ?? null,
+                'total_raw' => 0.0,
+                'total_filtered' => 0.0,
+                'items' => []
+            ];
+        }
+
+        $varietyDisplay = formatHoneyVarietyWithCode($stock['honey_variety'] ?? 'أخرى');
+        $groupedHoneyStock[$groupKey]['items'][] = [
+            'id' => (int)($stock['id'] ?? 0),
+            'variety_raw' => $stock['honey_variety'] ?? '',
+            'variety_display' => $varietyDisplay,
+            'raw_quantity' => (float)($stock['raw_honey_quantity'] ?? 0),
+            'filtered_quantity' => (float)($stock['filtered_honey_quantity'] ?? 0),
+        ];
+        $groupedHoneyStock[$groupKey]['total_raw'] += (float)($stock['raw_honey_quantity'] ?? 0);
+        $groupedHoneyStock[$groupKey]['total_filtered'] += (float)($stock['filtered_honey_quantity'] ?? 0);
+    }
+
+    $groupedHoneyStock = array_values($groupedHoneyStock);
+    foreach ($groupedHoneyStock as &$honeyGroup) {
+        usort($honeyGroup['items'], static function ($a, $b) use ($normalizeHoneyVariety = null) {
+            $normalize = $normalizeHoneyVariety ?? static function ($value) {
+                $value = trim((string)$value);
+                if ($value === '') {
+                    return '';
+                }
+                $value = preg_replace('/\s+/u', ' ', $value);
+                return function_exists('mb_strtolower') ? mb_strtolower($value, 'UTF-8') : strtolower($value);
+            };
+            return strcmp($normalize($a['variety_display']), $normalize($b['variety_display']));
+        });
+        $honeyGroup['varieties_count'] = count($honeyGroup['items']);
+    }
+    unset($honeyGroup);
+
+    usort($groupedHoneyStock, static function ($a, $b) {
+        $normalize = static function ($value) {
+            $value = trim((string)$value);
+            if ($value === '') {
+                return '';
+            }
+            $value = preg_replace('/\s+/u', ' ', $value);
+            return function_exists('mb_strtolower') ? mb_strtolower($value, 'UTF-8') : strtolower($value);
+        };
+        return strcmp($normalize($a['supplier_name']), $normalize($b['supplier_name']));
+    });
     ?>
     
     <!-- إحصائيات العسل -->
@@ -2889,58 +2950,87 @@ if ($section === 'honey') {
             </button>
         </div>
         <div class="card-body">
-            <?php if (empty($honeyStock)): ?>
+            <?php if (empty($groupedHoneyStock)): ?>
                 <div class="text-center text-muted py-5">
                     <i class="bi bi-inbox fs-1 d-block mb-3"></i>
                     لا يوجد مخزون عسل
                 </div>
             <?php else: ?>
-                <div class="table-responsive">
-                    <table class="table table-hover">
-                        <thead class="table-light">
-                            <tr>
-                                <th>المورد</th>
-                                <th>النوع</th>
-                                <th class="text-center">العسل الخام</th>
-                                <th class="text-center">العسل المصفى</th>
-                                <th class="text-center">الإجراءات</th>
-                            </tr>
-                        </thead>
-                        <tbody>
-                            <?php foreach ($honeyStock as $stock): ?>
-                                <?php
-                                    $varietyRaw = $stock['honey_variety'] ?? 'أخرى';
-                                    $varietyDisplay = formatHoneyVarietyWithCode($varietyRaw);
-                                    $varietyDisplayEscaped = htmlspecialchars($varietyDisplay, ENT_QUOTES, 'UTF-8');
-                                ?>
-                                <tr>
-                                    <td>
-                                        <strong><?php echo htmlspecialchars($stock['supplier_name']); ?></strong>
-                                        <?php if ($stock['supplier_phone']): ?>
-                                            <br><small class="text-muted"><?php echo htmlspecialchars($stock['supplier_phone']); ?></small>
-                                        <?php endif; ?>
-                                    </td>
-                                    <td><span class="badge bg-info"><?php echo htmlspecialchars($varietyDisplay); ?></span></td>
-                                    <td class="text-center"><strong class="text-warning"><?php echo number_format($stock['raw_honey_quantity'], 2); ?></strong> كجم</td>
-                                    <td class="text-center"><strong class="text-success"><?php echo number_format($stock['filtered_honey_quantity'], 2); ?></strong> كجم</td>
-                                    <td class="text-center">
-                                        <div class="btn-group-vertical btn-group-sm" role="group">
-                                            <button class="btn btn-warning btn-sm mb-1" 
-                                                    onclick="filterHoney(<?php echo $stock['id']; ?>, '<?php echo htmlspecialchars($stock['supplier_name'], ENT_QUOTES, 'UTF-8'); ?>', '<?php echo $varietyDisplayEscaped; ?>', <?php echo $stock['raw_honey_quantity']; ?>)"
-                                                    <?php echo $stock['raw_honey_quantity'] <= 0 ? 'disabled' : ''; ?>>
-                                                <i class="bi bi-funnel"></i> تصفية
-                                            </button>
-                                            <button class="btn btn-danger btn-sm"
-                                                    onclick="openHoneyDamageModal(<?php echo $stock['id']; ?>, '<?php echo htmlspecialchars($stock['supplier_name'], ENT_QUOTES, 'UTF-8'); ?>', '<?php echo $varietyDisplayEscaped; ?>', <?php echo $stock['raw_honey_quantity']; ?>, <?php echo $stock['filtered_honey_quantity']; ?>)"
-                                                    <?php echo ($stock['raw_honey_quantity'] <= 0 && $stock['filtered_honey_quantity'] <= 0) ? 'disabled' : ''; ?>>
-                                                <i class="bi bi-exclamation-triangle"></i> تسجيل تالف
-                                            </button>
+                <div class="supplier-honey-groups">
+                    <?php foreach ($groupedHoneyStock as $supplierGroup): ?>
+                        <?php
+                            $supplierDisplay = $supplierGroup['supplier_name'] ?? 'مورد غير محدد';
+                            $supplierDisplayEscaped = htmlspecialchars($supplierDisplay, ENT_QUOTES, 'UTF-8');
+                            $supplierPhone = trim((string)($supplierGroup['supplier_phone'] ?? ''));
+                        ?>
+                        <div class="supplier-honey-card border rounded-3 mb-4 shadow-sm">
+                            <div class="p-3 d-flex flex-column flex-lg-row justify-content-between align-items-lg-center gap-3">
+                                <div>
+                                    <h6 class="mb-1">
+                                        <i class="bi bi-person-square me-2 text-warning"></i>
+                                        <?php echo htmlspecialchars($supplierDisplay); ?>
+                                    </h6>
+                                    <?php if ($supplierPhone !== ''): ?>
+                                        <div class="text-muted small">
+                                            <i class="bi bi-telephone me-1"></i><?php echo htmlspecialchars($supplierPhone); ?>
                                         </div>
-                                    </td>
-                                </tr>
-                            <?php endforeach; ?>
-                        </tbody>
-                    </table>
+                                    <?php endif; ?>
+                                </div>
+                                <div class="d-flex flex-wrap gap-2">
+                                    <span class="badge bg-warning text-dark">
+                                        <i class="bi bi-droplet-half me-1"></i>
+                                        خام: <?php echo number_format($supplierGroup['total_raw'], 2); ?> كجم
+                                    </span>
+                                    <span class="badge bg-success">
+                                        <i class="bi bi-droplet me-1"></i>
+                                        مصفى: <?php echo number_format($supplierGroup['total_filtered'], 2); ?> كجم
+                                    </span>
+                                    <span class="badge bg-secondary">
+                                        <i class="bi bi-tag me-1"></i>
+                                        الأنواع: <?php echo $supplierGroup['varieties_count']; ?>
+                                    </span>
+                                </div>
+                            </div>
+                            <div class="table-responsive">
+                                <table class="table table-hover mb-0">
+                                    <thead class="table-light">
+                                        <tr>
+                                            <th>النوع</th>
+                                            <th class="text-center">العسل الخام</th>
+                                            <th class="text-center">العسل المصفى</th>
+                                            <th class="text-center">الإجراءات</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody>
+                                        <?php foreach ($supplierGroup['items'] as $item): ?>
+                                            <?php $varietyDisplayEscaped = htmlspecialchars($item['variety_display'], ENT_QUOTES, 'UTF-8'); ?>
+                                            <tr>
+                                                <td>
+                                                    <span class="badge bg-info"><?php echo htmlspecialchars($item['variety_display']); ?></span>
+                                                </td>
+                                                <td class="text-center"><strong class="text-warning"><?php echo number_format($item['raw_quantity'], 2); ?></strong> كجم</td>
+                                                <td class="text-center"><strong class="text-success"><?php echo number_format($item['filtered_quantity'], 2); ?></strong> كجم</td>
+                                                <td class="text-center">
+                                                    <div class="btn-group-vertical btn-group-sm" role="group">
+                                                        <button class="btn btn-warning btn-sm mb-1" 
+                                                                onclick="filterHoney(<?php echo $item['id']; ?>, '<?php echo $supplierDisplayEscaped; ?>', '<?php echo $varietyDisplayEscaped; ?>', <?php echo $item['raw_quantity']; ?>)"
+                                                                <?php echo $item['raw_quantity'] <= 0 ? 'disabled' : ''; ?>>
+                                                            <i class="bi bi-funnel"></i> تصفية
+                                                        </button>
+                                                        <button class="btn btn-danger btn-sm"
+                                                                onclick="openHoneyDamageModal(<?php echo $item['id']; ?>, '<?php echo $supplierDisplayEscaped; ?>', '<?php echo $varietyDisplayEscaped; ?>', <?php echo $item['raw_quantity']; ?>, <?php echo $item['filtered_quantity']; ?>)"
+                                                                <?php echo ($item['raw_quantity'] <= 0 && $item['filtered_quantity'] <= 0) ? 'disabled' : ''; ?>>
+                                                            <i class="bi bi-exclamation-triangle"></i> تسجيل تالف
+                                                        </button>
+                                                    </div>
+                                                </td>
+                                            </tr>
+                                        <?php endforeach; ?>
+                                    </tbody>
+                                </table>
+                            </div>
+                        </div>
+                    <?php endforeach; ?>
                 </div>
             <?php endif; ?>
         </div>

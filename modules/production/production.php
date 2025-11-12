@@ -2464,19 +2464,14 @@ $lang = isset($translations) ? $translations : [];
                 <input type="hidden" name="template_mode" id="template_mode" value="advanced">
                 <input type="hidden" name="template_type" id="template_type" value="">
                 <div class="modal-body production-template-body">
-                    <!-- معلومات المنتج -->
+                    <!-- معلومات المنتج والتشغيلة -->
                     <div class="mb-3 section-block">
-                        <h6 class="text-primary section-heading"><i class="bi bi-box-seam me-2"></i>معلومات المنتج</h6>
-                        <div class="mb-3">
-                            <label class="form-label fw-bold">اسم المنتج</label>
-                            <input type="text" class="form-control" id="template_product_name" readonly>
-                        </div>
-                    </div>
-                    
-                    <!-- معلومات التشغيلة -->
-                    <div class="mb-3 section-block">
-                        <h6 class="text-primary section-heading"><i class="bi bi-info-circle me-2"></i>معلومات التشغيلة</h6>
+                        <h6 class="text-primary section-heading"><i class="bi bi-box-seam me-2"></i>معلومات المنتج والتشغيلة</h6>
                         <div class="row g-3">
+                            <div class="col-md-6">
+                                <label class="form-label fw-bold">اسم المنتج</label>
+                                <input type="text" class="form-control" id="template_product_name" readonly>
+                            </div>
                             <div class="col-md-6">
                                 <label class="form-label fw-bold">الكمية المراد إنتاجها <span class="text-danger">*</span></label>
                                 <input type="number" name="quantity" class="form-control" min="1" required value="1">
