@@ -751,6 +751,15 @@ function recordAttendanceCheckOut($userId, $photoBase64 = null) {
     } catch (Exception $e) {
         error_log("Failed to clear attendance checkout reminders for user {$userId}: " . $e->getMessage());
     }
+
+    // في حال كان اليوم هو آخر يوم في الشهر، يتم إرسال تقرير التأخيرات الشهري تلقائياً (مرة واحدة فقط)
+    if (date('Y-m-d') === date('Y-m-t')) {
+        try {
+            maybeSendMonthlyAttendanceTelegramReport((int) date('n'), (int) date('Y'));
+        } catch (Throwable $reportException) {
+            error_log('Automatic monthly attendance report dispatch failed: ' . $reportException->getMessage());
+        }
+    }
     
     return [
         'success' => true,
@@ -860,6 +869,7 @@ function getAttendanceStatistics($userId, $month = null) {
         'total_hours' => 0,
         'average_delay' => 0,
         'delay_count' => 0,
+        'total_delay_minutes' => 0,
         'today_hours' => 0,
         'today_records' => []
     ];
@@ -888,8 +898,11 @@ function getAttendanceStatistics($userId, $month = null) {
     
     $stats['present_days'] = $monthStats['present_days'] ?? 0;
     $stats['total_hours'] = round($monthStats['total_hours'] ?? 0, 2);
-    $stats['average_delay'] = round($monthStats['avg_delay'] ?? 0, 2);
-    $stats['delay_count'] = $monthStats['delay_count'] ?? 0;
+    
+    $delaySummary = calculateMonthlyDelaySummary($userId, $month);
+    $stats['average_delay'] = $delaySummary['average_minutes'];
+    $stats['delay_count'] = $delaySummary['delay_days'];
+    $stats['total_delay_minutes'] = $delaySummary['total_minutes'];
     
     // ساعات اليوم
     $today = date('Y-m-d');
@@ -897,5 +910,381 @@ function getAttendanceStatistics($userId, $month = null) {
     $stats['today_records'] = getTodayAttendanceRecords($userId, $today);
     
     return $stats;
+}
+
+/**
+ * التأكد من وجود جدول سجلات تقارير التأخير الشهرية
+ */
+function ensureAttendanceMonthlyReportLogTable(): void
+{
+    static $ensured = false;
+
+    if ($ensured) {
+        return;
+    }
+
+    try {
+        $db = db();
+        $db->execute("
+            CREATE TABLE IF NOT EXISTS `attendance_monthly_report_logs` (
+              `id` int(11) NOT NULL AUTO_INCREMENT,
+              `month_key` char(7) NOT NULL COMMENT 'YYYY-MM',
+              `month_number` tinyint(2) NOT NULL,
+              `year_number` smallint(4) NOT NULL,
+              `sent_via` varchar(32) NOT NULL COMMENT 'telegram_auto, telegram_manual, manual_export, ...',
+              `triggered_by` int(11) DEFAULT NULL COMMENT 'المستخدم الذي أنشأ التقرير يدوياً (إن وجد)',
+              `sent_at` timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP,
+              `report_snapshot` longtext DEFAULT NULL COMMENT 'نسخة JSON من التقرير',
+              PRIMARY KEY (`id`),
+              KEY `month_key_idx` (`month_key`),
+              KEY `sent_via_idx` (`sent_via`)
+            ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
+        ");
+        $ensured = true;
+    } catch (Exception $e) {
+        error_log('ensureAttendanceMonthlyReportLogTable error: ' . $e->getMessage());
+    }
+}
+
+/**
+ * التحقق مما إذا تم إرسال تقرير التأخيرات الشهري عبر قناة معينة
+ */
+function hasAttendanceMonthlyReportBeenSent(string $monthKey, string $via = 'telegram_auto'): bool
+{
+    ensureAttendanceMonthlyReportLogTable();
+
+    try {
+        $db = db();
+        $row = $db->queryOne(
+            "SELECT id FROM attendance_monthly_report_logs WHERE month_key = ? AND sent_via = ? LIMIT 1",
+            [$monthKey, $via]
+        );
+        return !empty($row);
+    } catch (Exception $e) {
+        error_log('hasAttendanceMonthlyReportBeenSent error: ' . $e->getMessage());
+        return false;
+    }
+}
+
+/**
+ * تسجيل إرسال تقرير التأخير الشهري
+ *
+ * @param array<string,mixed>|null $snapshot
+ */
+function markAttendanceMonthlyReportSent(
+    string $monthKey,
+    string $via,
+    ?array $snapshot = null,
+    ?int $triggeredBy = null
+): void {
+    ensureAttendanceMonthlyReportLogTable();
+
+    $parts = resolveAttendanceMonthParts($monthKey);
+
+    try {
+        $db = db();
+        $db->execute(
+            "INSERT INTO attendance_monthly_report_logs (month_key, month_number, year_number, sent_via, triggered_by, report_snapshot, sent_at)
+             VALUES (?, ?, ?, ?, ?, ?, NOW())",
+            [
+                $parts['month_key'],
+                $parts['month'],
+                $parts['year'],
+                $via,
+                $triggeredBy,
+                $snapshot ? json_encode($snapshot, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES) : null,
+            ]
+        );
+    } catch (Exception $e) {
+        error_log('markAttendanceMonthlyReportSent error: ' . $e->getMessage());
+    }
+}
+
+/**
+ * إنشاء تقرير حضور وتأخيرات شهري لجميع الموظفين
+ *
+ * @return array{
+ *   month:int,
+ *   year:int,
+ *   month_key:string,
+ *   generated_at:string,
+ *   total_employees:int,
+ *   total_hours:float,
+ *   total_delay_minutes:float,
+ *   average_delay_minutes:float,
+ *   total_salary_amount:float,
+ *   employees: array<int, array<string,mixed>>
+ * }
+ */
+function getMonthlyAttendanceDelayReport(int $month, int $year): array
+{
+    $db = db();
+    $parts = resolveAttendanceMonthParts($month, $year);
+
+    $report = [
+        'month'                 => $parts['month'],
+        'year'                  => $parts['year'],
+        'month_key'             => $parts['month_key'],
+        'generated_at'          => date('Y-m-d H:i:s'),
+        'total_employees'       => 0,
+        'total_hours'           => 0.0,
+        'total_delay_minutes'   => 0.0,
+        'average_delay_minutes' => 0.0,
+        'total_salary_amount'   => 0.0,
+        'employees'             => [],
+    ];
+
+    $users = $db->query(
+        "SELECT id, username, full_name, role, hourly_rate
+         FROM users
+         WHERE status = 'active'
+         AND role != 'manager'
+         ORDER BY full_name ASC"
+    );
+
+    foreach ($users as $user) {
+        $userId = (int) $user['id'];
+        $delaySummary = calculateMonthlyDelaySummary($userId, $parts['month'], $parts['year']);
+
+        // ترك فقط المستخدمين الذين لديهم سجلات حضور في هذا الشهر
+        if ($delaySummary['attendance_days'] === 0 && $delaySummary['total_minutes'] <= 0) {
+            continue;
+        }
+
+        $monthHours = calculateMonthHours($userId, $parts['month_key']);
+
+        $salarySummary = getSalarySummary($userId, $parts['month'], $parts['year']);
+        $salaryAmount = 0.0;
+        $salaryStatus = 'غير محسوب';
+
+        if (!empty($salarySummary['exists']) && !empty($salarySummary['salary'])) {
+            $salaryAmount = (float) ($salarySummary['salary']['total_amount'] ?? 0);
+            $salaryStatus = $salarySummary['salary']['status'] ?? 'غير محدد';
+        } elseif (!empty($salarySummary['calculation']) && !empty($salarySummary['calculation']['success'])) {
+            $salaryAmount = (float) ($salarySummary['calculation']['total_amount'] ?? 0);
+            $salaryStatus = 'محسوب (غير محفوظ)';
+        }
+
+        $employeeName = $user['full_name'] ?? $user['username'] ?? ('موظف #' . $userId);
+
+        $report['employees'][] = [
+            'user_id'               => $userId,
+            'name'                  => $employeeName,
+            'role'                  => $user['role'],
+            'hourly_rate'           => (float) ($user['hourly_rate'] ?? 0),
+            'attendance_days'       => $delaySummary['attendance_days'],
+            'delay_days'            => $delaySummary['delay_days'],
+            'total_delay_minutes'   => $delaySummary['total_minutes'],
+            'average_delay_minutes' => $delaySummary['average_minutes'],
+            'total_hours'           => $monthHours,
+            'salary_amount'         => $salaryAmount,
+            'salary_status'         => $salaryStatus,
+        ];
+
+        $report['total_hours'] += $monthHours;
+        $report['total_delay_minutes'] += $delaySummary['total_minutes'];
+        $report['total_salary_amount'] += $salaryAmount;
+    }
+
+    $report['total_employees'] = count($report['employees']);
+    $report['average_delay_minutes'] = $report['total_employees'] > 0
+        ? round($report['total_delay_minutes'] / $report['total_employees'], 2)
+        : 0.0;
+
+    return $report;
+}
+
+/**
+ * إنشاء ملف CSV مؤقت لتقرير الحضور الشهري
+ */
+function buildMonthlyAttendanceReportCsv(array $report): ?string
+{
+    $tempDir = sys_get_temp_dir();
+    if (!$tempDir || !is_writable($tempDir)) {
+        $tempDir = __DIR__ . '/../uploads/temp';
+        if (!is_dir($tempDir)) {
+            @mkdir($tempDir, 0755, true);
+        }
+        if (!is_dir($tempDir) || !is_writable($tempDir)) {
+            error_log('buildMonthlyAttendanceReportCsv: temp directory unavailable');
+            return null;
+        }
+    }
+
+    $filePath = rtrim($tempDir, DIRECTORY_SEPARATOR) . DIRECTORY_SEPARATOR
+        . sprintf('attendance_report_%s_%s.csv', $report['month_key'], uniqid());
+
+    $handle = @fopen($filePath, 'w');
+    if ($handle === false) {
+        error_log('buildMonthlyAttendanceReportCsv: unable to open file for writing');
+        return null;
+    }
+
+    // كتابة BOM لدعم اللغة العربية في Excel
+    fwrite($handle, "\xEF\xBB\xBF");
+
+    $headers = [
+        'الموظف',
+        'الدور',
+        'أيام الحضور',
+        'أيام التأخير',
+        'إجمالي التأخير (دقائق)',
+        'متوسط التأخير (دقائق)',
+        'إجمالي الساعات',
+        'الراتب المستحق',
+        'حالة الراتب',
+    ];
+    fputcsv($handle, $headers);
+
+    foreach ($report['employees'] as $employee) {
+        fputcsv($handle, [
+            $employee['name'],
+            formatRoleName($employee['role']),
+            $employee['attendance_days'],
+            $employee['delay_days'],
+            number_format($employee['total_delay_minutes'], 2, '.', ''),
+            number_format($employee['average_delay_minutes'], 2, '.', ''),
+            number_format($employee['total_hours'], 2, '.', ''),
+            number_format($employee['salary_amount'], 2, '.', ''),
+            $employee['salary_status'],
+        ]);
+    }
+
+    fclose($handle);
+    return $filePath;
+}
+
+/**
+ * إرسال تقرير الحضور والتأخير الشهري إلى Telegram
+ *
+ * @param array<string,mixed> $options force=>bool, triggered_by=>int|null, include_csv=>bool
+ * @return array{success:bool,message:string}
+ */
+function sendMonthlyAttendanceReportToTelegram(int $month, int $year, array $options = []): array
+{
+    if (!isTelegramConfigured()) {
+        return [
+            'success' => false,
+            'message' => 'Telegram bot غير مهيأ',
+        ];
+    }
+
+    $forceSend   = $options['force'] ?? false;
+    $triggeredBy = $options['triggered_by'] ?? null;
+    $includeCsv  = $options['include_csv'] ?? true;
+
+    $parts = resolveAttendanceMonthParts($month, $year);
+    $monthKey = $parts['month_key'];
+
+    if (!$forceSend) {
+        $today = date('Y-m-d');
+        $lastDay = date('Y-m-t', strtotime($today));
+        if ($today !== $lastDay || hasAttendanceMonthlyReportBeenSent($monthKey, 'telegram_auto')) {
+            return [
+                'success' => false,
+                'message' => 'ليس آخر يوم في الشهر أو تم الإرسال مسبقاً',
+            ];
+        }
+    }
+
+    $report = getMonthlyAttendanceDelayReport($parts['month'], $parts['year']);
+
+    if (empty($report['employees'])) {
+        return [
+            'success' => false,
+            'message' => 'لا توجد سجلات حضور لهذا الشهر',
+        ];
+    }
+
+    $monthName = date('F', mktime(0, 0, 0, $report['month'], 1));
+    $headerLines = [
+        "📊 <b>تقرير الحضور الشهري</b>",
+        "📅 <b>الشهر:</b> {$monthName} {$report['year']}",
+        "👥 <b>عدد الموظفين:</b> {$report['total_employees']}",
+        "⏱️ <b>إجمالي الساعات:</b> " . number_format($report['total_hours'], 2) . " ساعة",
+        "⏳ <b>إجمالي التأخيرات:</b> " . number_format($report['total_delay_minutes'], 2) . " دقيقة",
+        "⏳ <b>متوسط التأخير:</b> " . number_format($report['average_delay_minutes'], 2) . " دقيقة",
+        "💰 <b>مجموع الرواتب المستحقة:</b> " . number_format($report['total_salary_amount'], 2)
+    ];
+
+    // إبراز أعلى 5 حالات تأخير
+    $topEmployees = $report['employees'];
+    usort($topEmployees, static function ($a, $b) {
+        return $b['total_delay_minutes'] <=> $a['total_delay_minutes'];
+    });
+    $topEmployees = array_slice($topEmployees, 0, min(5, count($topEmployees)));
+
+    if (!empty($topEmployees)) {
+        $headerLines[] = "\n🏅 <b>أعلى حالات التأخير:</b>";
+        foreach ($topEmployees as $employee) {
+            $headerLines[] = sprintf(
+                "• %s (%s) — تأخير كلي: %s دقيقة | متوسط: %s دقيقة | ساعات: %s",
+                $employee['name'],
+                formatRoleName($employee['role']),
+                number_format($employee['total_delay_minutes'], 2),
+                number_format($employee['average_delay_minutes'], 2),
+                number_format($employee['total_hours'], 2)
+            );
+        }
+    }
+
+    $headerLines[] = "\nتم إرفاق ملف CSV بالتفاصيل الكاملة.";
+
+    $message = implode("\n", $headerLines);
+
+    $sendResult = sendTelegramMessage($message);
+    if ($sendResult === false) {
+        return [
+            'success' => false,
+            'message' => 'تعذر إرسال الرسالة إلى Telegram',
+        ];
+    }
+
+    $csvPath = null;
+    if ($includeCsv) {
+        $csvPath = buildMonthlyAttendanceReportCsv($report);
+        if ($csvPath) {
+            $caption = "تقرير الحضور - {$monthName} {$report['year']}";
+            sendTelegramFile($csvPath, $caption);
+            // حذف الملف المؤقت
+            if (file_exists($csvPath)) {
+                @unlink($csvPath);
+            }
+        }
+    }
+
+    $logChannel = $forceSend ? 'telegram_manual' : 'telegram_auto';
+    markAttendanceMonthlyReportSent($monthKey, $logChannel, $report, $triggeredBy);
+
+    return [
+        'success' => true,
+        'message' => 'تم إرسال تقرير الحضور إلى Telegram بنجاح',
+    ];
+}
+
+/**
+ * إرسال التقرير الشهري تلقائياً إذا كان اليوم هو آخر يوم في الشهر
+ */
+function maybeSendMonthlyAttendanceTelegramReport(int $month, int $year): void
+{
+    $today = date('Y-m-d');
+    $lastDay = date('Y-m-t', strtotime($today));
+
+    if ($today !== $lastDay) {
+        return;
+    }
+
+    $parts = resolveAttendanceMonthParts($month, $year);
+    if (hasAttendanceMonthlyReportBeenSent($parts['month_key'], 'telegram_auto')) {
+        return;
+    }
+
+    $result = sendMonthlyAttendanceReportToTelegram($parts['month'], $parts['year'], [
+        'force' => false,
+    ]);
+
+    if (!$result['success']) {
+        error_log('maybeSendMonthlyAttendanceTelegramReport failed: ' . $result['message']);
+    }
 }
 

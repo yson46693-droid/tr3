@@ -674,12 +674,24 @@ function generateMonthlySalaryReport($month, $year) {
         'total_users' => 0,
         'total_hours' => 0,
         'total_amount' => 0,
+        'total_delay_minutes' => 0,
+        'average_delay_minutes' => 0,
         'salaries' => []
     ];
     
     foreach ($users as $user) {
         // حساب أو الحصول على الراتب
         $salaryData = getSalarySummary($user['id'], $month, $year);
+        $delaySummary = [
+            'total_minutes' => 0.0,
+            'average_minutes' => 0.0,
+            'delay_days' => 0,
+            'attendance_days' => 0,
+        ];
+
+        if (function_exists('calculateMonthlyDelaySummary')) {
+            $delaySummary = calculateMonthlyDelaySummary($user['id'], $month, $year);
+        }
         
         if ($salaryData['exists']) {
             $salary = $salaryData['salary'];
@@ -704,11 +716,16 @@ function generateMonthlySalaryReport($month, $year) {
                 'bonus' => $salary['bonus'] ?? 0,
                 'deductions' => $salary['deductions'] ?? 0,
                 'total_amount' => $salary['total_amount'],
-                'status' => $salary['status'] ?? 'pending'
+                'status' => $salary['status'] ?? 'pending',
+                'total_delay_minutes' => $delaySummary['total_minutes'],
+                'average_delay_minutes' => $delaySummary['average_minutes'],
+                'delay_days' => $delaySummary['delay_days'],
+                'attendance_days' => $delaySummary['attendance_days'],
             ];
             
             $report['total_hours'] += $salary['total_hours'];
             $report['total_amount'] += $salary['total_amount'];
+            $report['total_delay_minutes'] += $delaySummary['total_minutes'];
         } else if (isset($salaryData['calculation']) && $salaryData['calculation']['success']) {
             // حساب الراتب إذا لم يكن موجوداً
             $calc = $salaryData['calculation'];
@@ -724,15 +741,23 @@ function generateMonthlySalaryReport($month, $year) {
                 'bonus' => $calc['bonus'],
                 'deductions' => $calc['deductions'],
                 'total_amount' => $calc['total_amount'],
-                'status' => 'not_calculated'
+                'status' => 'not_calculated',
+                'total_delay_minutes' => $delaySummary['total_minutes'],
+                'average_delay_minutes' => $delaySummary['average_minutes'],
+                'delay_days' => $delaySummary['delay_days'],
+                'attendance_days' => $delaySummary['attendance_days'],
             ];
             
             $report['total_hours'] += $calc['total_hours'];
             $report['total_amount'] += $calc['total_amount'];
+            $report['total_delay_minutes'] += $delaySummary['total_minutes'];
         }
     }
     
     $report['total_users'] = count($report['salaries']);
+    $report['average_delay_minutes'] = $report['total_users'] > 0
+        ? round($report['total_delay_minutes'] / $report['total_users'], 2)
+        : 0;
     
     return $report;
 }
