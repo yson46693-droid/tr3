@@ -1357,26 +1357,26 @@ document.addEventListener('DOMContentLoaded', function () {
             return;
         }
 
-        const modalElement = document.getElementById('batchDetailsModal');
-        if (!modalElement) {
-            alert('تعذر العثور على نافذة تفاصيل التشغيلة. يرجى تحديث الصفحة ثم المحاولة مرة أخرى.');
-            return;
-        }
-
-        const modalInstance = bootstrap.Modal.getOrCreateInstance(modalElement);
-        const loader = document.getElementById('batchDetailsLoading');
-        const errorAlert = document.getElementById('batchDetailsError');
-        const contentWrapper = document.getElementById('batchDetailsContent');
-
-        if (!loader || !errorAlert || !contentWrapper) {
-            modalInstance.hide();
+        const structure = ensureBatchDetailsModalStructure();
+        if (!structure || !structure.modalElement || !structure.loader || !structure.errorAlert || !structure.contentWrapper) {
             alert('تعذر تهيئة عرض تفاصيل التشغيلة. يرجى تحديث الصفحة والمحاولة لاحقاً.');
             return;
         }
 
-        modalElement.querySelector('.modal-title').textContent = productName
-            ? `تفاصيل التشغيلة - ${productName}`
-            : 'تفاصيل التشغيلة';
+        if (batchDetailsRetryTimeoutId) {
+            clearTimeout(batchDetailsRetryTimeoutId);
+            batchDetailsRetryTimeoutId = null;
+        }
+
+        const { modalElement, loader, errorAlert, contentWrapper } = structure;
+        const modalInstance = bootstrap.Modal.getOrCreateInstance(modalElement);
+        const modalTitle = modalElement.querySelector('.modal-title');
+
+        if (modalTitle) {
+            modalTitle.textContent = productName
+                ? `تفاصيل التشغيلة - ${productName}`
+                : 'تفاصيل التشغيلة';
+        }
 
         loader.classList.remove('d-none');
         errorAlert.classList.add('d-none');
@@ -1385,6 +1385,12 @@ document.addEventListener('DOMContentLoaded', function () {
         batchDetailsIsLoading = true;
 
         modalInstance.show();
+
+        fetchBatchDetailsData(batchNumber, 1, structure);
+    }
+
+    function fetchBatchDetailsData(batchNumber, attempt, elements) {
+        const { loader, errorAlert, contentWrapper } = elements;
 
         fetch(batchDetailsEndpoint, {
             method: 'POST',
@@ -1408,18 +1414,40 @@ document.addEventListener('DOMContentLoaded', function () {
                 throw new Error(payload.message ?? 'تعذر تحميل تفاصيل التشغيلة.');
             }
 
+            return payload;
+        })
+        .then((payload) => {
             loader.classList.add('d-none');
+            errorAlert.classList.add('d-none');
+            errorAlert.textContent = '';
             contentWrapper.classList.remove('d-none');
             renderBatchDetails(payload.batch);
+            batchDetailsIsLoading = false;
+            batchDetailsRetryTimeoutId = null;
         })
         .catch((error) => {
+            if (attempt < batchDetailsMaxRetries) {
+                loader.classList.add('d-none');
+                contentWrapper.classList.add('d-none');
+                errorAlert.textContent = `${error.message || 'تعذر تحميل تفاصيل التشغيلة.'} سيتم إعادة المحاولة خلال ثانيتين.`;
+                errorAlert.classList.remove('d-none');
+
+                batchDetailsRetryTimeoutId = window.setTimeout(() => {
+                    batchDetailsRetryTimeoutId = null;
+                    loader.classList.remove('d-none');
+                    errorAlert.classList.add('d-none');
+                    errorAlert.textContent = '';
+                    fetchBatchDetailsData(batchNumber, attempt + 1, elements);
+                }, batchDetailsRetryDelay);
+                return;
+            }
+
             loader.classList.add('d-none');
             contentWrapper.classList.add('d-none');
             errorAlert.textContent = error.message || 'تعذر تحميل تفاصيل التشغيلة.';
             errorAlert.classList.remove('d-none');
-        })
-        .finally(() => {
             batchDetailsIsLoading = false;
+            batchDetailsRetryTimeoutId = null;
         });
     }
 
