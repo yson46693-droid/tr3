@@ -114,15 +114,32 @@ if ($isTemplateAjax) {
                     $defaultHoneyVariety = $rawDefaults[$name]['honey_variety'] ?? null;
                 }
 
+                $isHoneyMaterial = false;
+                $componentType = 'raw_general';
+                $hasHoneyKeyword = (mb_stripos($name, 'عسل') !== false) || (stripos($name, 'honey') !== false);
+                if ($hasHoneyKeyword) {
+                    $isHoneyMaterial = true;
+                    $hasFilteredKeyword = (mb_stripos($name, 'مصفى') !== false) || (stripos($name, 'filtered') !== false);
+                    $hasRawKeyword = (mb_stripos($name, 'خام') !== false) || (stripos($name, 'raw') !== false);
+
+                    if ($hasFilteredKeyword && !$hasRawKeyword) {
+                        $componentType = 'honey_filtered';
+                    } elseif ($hasRawKeyword && !$hasFilteredKeyword) {
+                        $componentType = 'honey_raw';
+                    } else {
+                        $componentType = 'honey_general';
+                    }
+                }
+
                 $components[] = [
                     'key' => 'raw_' . $rawMaterial['id'],
                     'name' => $name,
                     'label' => 'مورد المادة: ' . $name,
                     'description' => 'الكمية لكل وحدة: ' . $quantity . ' ' . $unit,
-                    'type' => 'raw_general',
+                    'type' => $componentType,
                     'default_supplier' => $defaultSupplier,
                     'honey_variety' => $defaultHoneyVariety,
-                    'requires_variety' => (mb_stripos($name, 'عسل') !== false)
+                    'requires_variety' => $isHoneyMaterial
                 ];
             }
             if (empty($rawMaterials) && !empty($detailsPayload['raw_materials']) && is_array($detailsPayload['raw_materials'])) {
@@ -139,15 +156,33 @@ if ($isTemplateAjax) {
                     $unit = $rawItem['unit'] ?? 'وحدة';
                     $defaultSupplier = $rawItem['supplier_id'] ?? null;
                     $defaultHoneyVariety = $rawItem['honey_variety'] ?? null;
+
+                    $isHoneyMaterial = false;
+                    $componentType = 'raw_general';
+                    $hasHoneyKeyword = (mb_stripos($name, 'عسل') !== false) || (stripos($name, 'honey') !== false);
+                    if ($hasHoneyKeyword) {
+                        $isHoneyMaterial = true;
+                        $hasFilteredKeyword = (mb_stripos($name, 'مصفى') !== false) || (stripos($name, 'filtered') !== false);
+                        $hasRawKeyword = (mb_stripos($name, 'خام') !== false) || (stripos($name, 'raw') !== false);
+
+                        if ($hasFilteredKeyword && !$hasRawKeyword) {
+                            $componentType = 'honey_filtered';
+                        } elseif ($hasRawKeyword && !$hasFilteredKeyword) {
+                            $componentType = 'honey_raw';
+                        } else {
+                            $componentType = 'honey_general';
+                        }
+                    }
+
                     $components[] = [
                         'key' => 'raw_fallback_' . $index,
                         'name' => $name,
                         'label' => 'مورد المادة: ' . $name,
                         'description' => 'الكمية لكل وحدة: ' . $quantity . ' ' . $unit,
-                        'type' => 'raw_general',
+                        'type' => $componentType,
                         'default_supplier' => $defaultSupplier,
                         'honey_variety' => $defaultHoneyVariety,
-                        'requires_variety' => (mb_stripos($name, 'عسل') !== false)
+                        'requires_variety' => $isHoneyMaterial
                     ];
                 }
             }

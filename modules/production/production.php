@@ -2919,6 +2919,16 @@ function isHoneyComponent(component) {
     if (type && HONEY_COMPONENT_TYPES.includes(type)) {
         return true;
     }
+    const requiresVariety = component.requires_variety;
+    if (
+        requiresVariety === true
+        || requiresVariety === 1
+        || requiresVariety === '1'
+        || (typeof requiresVariety === 'string' && requiresVariety.trim().toLowerCase() === 'true')
+        || (typeof requiresVariety === 'string' && requiresVariety.trim().toLowerCase() === 'yes')
+    ) {
+        return true;
+    }
     const key = (component.key || '').toString();
     return key.startsWith('honey_');
 }
@@ -3126,6 +3136,25 @@ function renderTemplateSuppliers(details) {
     }
 
     const components = Array.isArray(details?.components) ? details.components : [];
+    const normalizeBoolean = (value) => {
+        if (value === true || value === false) {
+            return value;
+        }
+        if (typeof value === 'number') {
+            return value === 1;
+        }
+        if (typeof value === 'string') {
+            const normalized = value.trim().toLowerCase();
+            return ['1', 'true', 'yes', 'y', 't'].includes(normalized);
+        }
+        return false;
+    };
+    const requiresHoneyVariety = (component) => {
+        if (!component) {
+            return false;
+        }
+        return normalizeBoolean(component.requires_variety);
+    };
 
     container.innerHTML = '';
     if (summaryGrid) {
@@ -3162,7 +3191,13 @@ function renderTemplateSuppliers(details) {
         }
         const type = (component.type || '').toString().toLowerCase();
         if (type) {
+            if (requiresHoneyVariety(component) && !HONEY_COMPONENT_TYPES.includes(type)) {
+                return 'honey_general';
+            }
             return type;
+        }
+        if (requiresHoneyVariety(component)) {
+            return 'honey_general';
         }
         const key = (component.key || '').toString().toLowerCase();
         if (key.startsWith('pack_')) return 'packaging';
@@ -3180,6 +3215,7 @@ function renderTemplateSuppliers(details) {
         honey_raw: '#f59e0b',
         honey_filtered: '#fb923c',
         honey_main: '#facc15',
+        honey_general: '#facc15',
         olive_oil: '#22c55e',
         beeswax: '#a855f7',
         derivatives: '#6366f1',
@@ -3194,6 +3230,7 @@ function renderTemplateSuppliers(details) {
         honey_raw: 'عسل خام',
         honey_filtered: 'عسل مصفى',
         honey_main: 'عسل',
+        honey_general: 'عسل',
         olive_oil: 'زيت زيتون',
         beeswax: 'شمع عسل',
         derivatives: 'مشتقات',
@@ -3207,6 +3244,7 @@ function renderTemplateSuppliers(details) {
         honey_raw: 'bi-droplet-half',
         honey_filtered: 'bi-droplet',
         honey_main: 'bi-bezier',
+        honey_general: 'bi-bezier',
         olive_oil: 'bi-bezier2',
         beeswax: 'bi-hexagon',
         derivatives: 'bi-intersect',
@@ -3290,7 +3328,14 @@ function renderTemplateSuppliers(details) {
             stats.packaging += 1;
             return;
         }
-        if (isHoneyComponent(component) || canonicalType === 'honey_raw' || canonicalType === 'honey_filtered' || canonicalType === 'honey_main') {
+        if (
+            isHoneyComponent(component)
+            || canonicalType === 'honey_raw'
+            || canonicalType === 'honey_filtered'
+            || canonicalType === 'honey_main'
+            || canonicalType === 'honey_general'
+            || requiresHoneyVariety(component)
+        ) {
             stats.honey += 1;
             stats.raw += 1;
             return;
@@ -3348,7 +3393,11 @@ function renderTemplateSuppliers(details) {
     const honeyComponentEntries = components
         .filter(component => {
             const canonicalType = determineComponentType(component);
-            return isHoneyComponent(component) || ['honey_raw', 'honey_filtered', 'honey_main'].includes(canonicalType);
+            return (
+                isHoneyComponent(component)
+                || requiresHoneyVariety(component)
+                || ['honey_raw', 'honey_filtered', 'honey_main', 'honey_general'].includes(canonicalType)
+            );
         })
         .map(component => ({
             component,
@@ -3363,12 +3412,18 @@ function renderTemplateSuppliers(details) {
     };
 
     components.forEach(function(component) {
-        const canonicalType = determineComponentType(component);
+        let canonicalType = determineComponentType(component);
         const componentKey = resolveComponentKey(component);
+        const honeyVarietyRequired = requiresHoneyVariety(component);
+        if (honeyVarietyRequired && !HONEY_COMPONENT_TYPES.includes(canonicalType)) {
+            canonicalType = 'honey_general';
+        }
         const isHoneyType = isHoneyComponent(component)
+            || honeyVarietyRequired
             || canonicalType === 'honey_raw'
             || canonicalType === 'honey_filtered'
-            || canonicalType === 'honey_main';
+            || canonicalType === 'honey_main'
+            || canonicalType === 'honey_general';
 
         if (isHoneyType && honeyGroup.renderAggregated && honeyGroup.baseEntry && componentKey !== honeyGroup.baseEntry.key) {
             return;
@@ -3427,7 +3482,7 @@ function renderTemplateSuppliers(details) {
 
         const chipsWrapper = document.createElement('div');
         chipsWrapper.className = 'component-card-chips';
-        if (component.requires_variety || isHoneyType) {
+        if (isHoneyType) {
             chipsWrapper.appendChild(createChip('bi-stars', 'يتطلب تحديد نوع العسل'));
         }
         if (component.default_supplier) {
@@ -3458,7 +3513,9 @@ function renderTemplateSuppliers(details) {
 
         const controlLabel = document.createElement('label');
         controlLabel.className = 'form-label fw-semibold small text-muted mb-1';
-        controlLabel.textContent = isAggregatedHoneyCard ? 'اختر المورد للعسل' : 'اختر المورد المناسب';
+        controlLabel.textContent = (isAggregatedHoneyCard || isHoneyType)
+            ? 'اختر المورد للعسل'
+            : 'اختر المورد المناسب';
         card.appendChild(controlLabel);
 
         const select = document.createElement('select');
@@ -3466,7 +3523,7 @@ function renderTemplateSuppliers(details) {
         select.name = 'material_suppliers[' + componentKey + ']';
         select.dataset.role = 'component-supplier';
         select.required = component.required !== false;
-        select.dataset.componentType = component.type || '';
+        select.dataset.componentType = canonicalType || component.type || '';
 
         const placeholderOption = document.createElement('option');
         placeholderOption.value = '';
@@ -3590,8 +3647,11 @@ function renderTemplateSuppliers(details) {
                     : 'لا توجد كميات مسجلة لهذا النوع لدى المورد.';
             };
 
+            const normalizedHoneyComponent = { ...component };
+            normalizedHoneyComponent.type = canonicalType || normalizedHoneyComponent.type;
+
             const handleSupplierChange = () => {
-                populateHoneyVarietyOptions(honeySelect, select.value, component);
+                populateHoneyVarietyOptions(honeySelect, select.value, normalizedHoneyComponent);
                 updateHoneyHelperMessage();
                 syncHiddenInputs();
             };
