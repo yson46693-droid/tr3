@@ -487,4 +487,25 @@ if (!function_exists('deleteGroupChatMessage')) {
     }
 }
 
+if (!function_exists('purgeGroupChatMessages')) {
+    /**
+     * حذف جميع رسائل الدردشة نهائياً.
+     */
+    function purgeGroupChatMessages(): void
+    {
+        if (!ensureGroupChatTables()) {
+            return;
+        }
+
+        $db = db();
+
+        try {
+            $db->execute('DELETE FROM group_chat_messages');
+        } catch (Throwable $e) {
+            error_log('Failed purging chat messages: ' . $e->getMessage());
+            throw $e;
+        }
+    }
+}
+
 ?>

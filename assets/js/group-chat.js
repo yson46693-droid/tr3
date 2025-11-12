@@ -18,6 +18,7 @@
         dismissReply: document.getElementById('groupChatDismissReply'),
         typingIndicator: document.getElementById('groupChatLoading'),
         headerBadge: document.getElementById('groupChatMessageCount'),
+        purgeButton: document.getElementById('groupChatPurge'),
     };
 
     if (!elements.container || !apiUrl) {
@@ -523,6 +524,49 @@
         elements.textarea.style.height = `${newHeight}px`;
     }
 
+    const handlePurge = async () => {
+        if (!elements.purgeButton) {
+            return;
+        }
+
+        const confirmMessage = elements.purgeButton.dataset.confirm || 'Delete all chat messages?';
+        if (!window.confirm(confirmMessage)) {
+            return;
+        }
+
+        try {
+            elements.purgeButton.disabled = true;
+
+            const response = await fetch(apiUrl, {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'X-Requested-With': 'XMLHttpRequest',
+                },
+                credentials: 'same-origin',
+                body: JSON.stringify({ action: 'purge' }),
+            });
+
+            if (!response.ok) {
+                throw new Error('Purge failed');
+            }
+
+            const data = await response.json();
+            if (!data.success) {
+                throw new Error(data.error || 'Purge failed');
+            }
+
+            state.messages = [];
+            state.latestId = null;
+            renderMessages();
+            showToast('تم حذف جميع الرسائل.', 'info');
+        } catch (error) {
+            showToast('تعذر حذف الرسائل حالياً.', 'error');
+        } finally {
+            elements.purgeButton.disabled = false;
+        }
+    };
+
     const registerEvents = () => {
         elements.sendButton?.addEventListener('click', submitMessage);
         elements.cancelReply?.addEventListener('click', () => {
@@ -554,6 +598,8 @@
             const hasText = elements.textarea.value.trim().length > 0;
             setSendButtonState(state.isSending || !hasText);
         });
+
+        elements.purgeButton?.addEventListener('click', handlePurge);
     };
 
     sortMessages();

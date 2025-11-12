@@ -160,6 +160,22 @@ try {
             exit;
         }
 
+        if ($action === 'purge') {
+            if (!$canModerate) {
+                http_response_code(403);
+                echo json_encode(['success' => false, 'error' => 'Unauthorized']);
+                exit;
+            }
+
+            purgeGroupChatMessages();
+
+            echo json_encode([
+                'success' => true,
+                'data' => ['purged' => true],
+            ]);
+            exit;
+        }
+
         http_response_code(400);
         echo json_encode(['success' => false, 'error' => 'Unknown action']);
         exit;

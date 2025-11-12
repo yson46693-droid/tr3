@@ -42,6 +42,7 @@ $chatConfig = [
         'username' => $currentUser['username'] ?? '',
     ],
     'initialMessages' => $initialMessages,
+    'canModerate' => $canModerate,
 ];
 ?>
 
@@ -51,7 +52,15 @@ $chatConfig = [
             <h2 class="mb-1"><i class="bi bi-chat-dots-fill me-2"></i><?php echo htmlspecialchars($chatTitle); ?></h2>
             <p class="text-muted mb-0">تواصل مباشر بين جميع أعضاء الفريق مع إمكانية الرد والتعديل والحذف.</p>
         </div>
-        <span class="badge bg-gradient" style="background: linear-gradient(135deg, #0f5bea, #1bb0f8);" id="groupChatMessageCount">0</span>
+        <div class="d-flex align-items-center gap-2">
+            <span class="badge bg-gradient" style="background: linear-gradient(135deg, #0f5bea, #1bb0f8);" id="groupChatMessageCount">0</span>
+            <?php if ($canModerate): ?>
+                <button type="button" class="btn btn-outline-danger btn-sm" id="groupChatPurge" data-confirm="هل أنت متأكد من حذف جميع الرسائل؟" title="حذف جميع رسائل الدردشة">
+                    <i class="bi bi-trash3"></i>
+                    مسح الكل
+                </button>
+            <?php endif; ?>
+        </div>
     </div>
 
     <div class="group-chat-shell">

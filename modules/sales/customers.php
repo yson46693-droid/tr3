@@ -337,10 +337,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action'])) {
         $address = trim($_POST['address'] ?? '');
         $balance = isset($_POST['balance']) ? cleanFinancialValue($_POST['balance']) : 0;
 
-        if ($balance < 0) {
-            $balance = 0;
-        }
-
         if (empty($name)) {
             $error = 'يجب إدخال اسم العميل';
         } else {
@@ -2125,7 +2121,20 @@ document.addEventListener('DOMContentLoaded', function () {
                             <tr>
                                 <td><strong><?php echo htmlspecialchars($customer['name']); ?></strong></td>
                                 <td><?php echo htmlspecialchars($customer['phone'] ?? '-'); ?></td>
-                                <td><?php echo formatCurrency($customer['balance'] ?? 0); ?></td>
+                                <td>
+                                    <?php
+                                        $customerBalanceValue = isset($customer['balance']) ? (float) $customer['balance'] : 0.0;
+                                        $balanceBadgeClass = $customerBalanceValue > 0
+                                            ? 'bg-warning-subtle text-warning'
+                                            : ($customerBalanceValue < 0 ? 'bg-info-subtle text-info' : 'bg-secondary-subtle text-secondary');
+                                    ?>
+                                    <strong><?php echo formatCurrency($customerBalanceValue); ?></strong>
+                                    <?php if ($customerBalanceValue !== 0.0): ?>
+                                        <span class="badge <?php echo $balanceBadgeClass; ?> ms-1">
+                                            <?php echo $customerBalanceValue > 0 ? 'رصيد مستحق' : 'رصيد دائن'; ?>
+                                        </span>
+                                    <?php endif; ?>
+                                </td>
                                 <td><?php echo htmlspecialchars($customer['address'] ?? '-'); ?></td>
                                 <td>
                                     <?php
@@ -2347,7 +2356,8 @@ document.addEventListener('DOMContentLoaded', function () {
                     </div>
                     <div class="mb-3">
                         <label class="form-label">ديون العميل</label>
-                        <input type="number" class="form-control" name="balance" step="0.01" min="0" value="0">
+                        <input type="number" class="form-control" name="balance" step="0.01" value="0" placeholder="مثال: 0 أو -500">
+                        <small class="text-muted">يمكن إدخال قيمة سالبة لتمثل رصيداً دائنًا لصالح العميل.</small>
                     </div>
                     <div class="mb-3">
                         <label class="form-label">العنوان</label>
