@@ -13,14 +13,10 @@ requireRole(['production', 'accountant', 'manager']);
 
 $batchNumber = $_GET['batch'] ?? '';
 $quantity = isset($_GET['quantity']) ? max(1, intval($_GET['quantity'])) : 1;
-$format = $_GET['format'] ?? 'single';
+$format = 'single';
 
 if ($quantity < 1) {
     $quantity = 1;
-}
-
-if ($format !== 'single') {
-    $format = 'single';
 }
 
 if (empty($batchNumber)) {
@@ -32,63 +28,9 @@ if (!$batch) {
     die('رقم التشغيلة غير موجود');
 }
 
-/**
- * حساب رقم التحقق EAN-13
- */
-function calculateEan13Checksum(string $digits12): int
-{
-    $digits = array_map('intval', str_split($digits12));
-    $sumEven = 0;
-    $sumOdd = 0;
-    foreach ($digits as $index => $digit) {
-        if (($index % 2) === 0) {
-            $sumOdd += $digit;
-        } else {
-            $sumEven += $digit;
-        }
-    }
-    $total = ($sumEven * 3) + $sumOdd;
-    $nearestTen = ceil($total / 10) * 10;
-    return ($nearestTen - $total) % 10;
-}
+$batchNumber = trim($batchNumber);
+$encodedBatchNumber = json_encode($batchNumber, JSON_UNESCAPED_UNICODE);
 
-/**
- * تحويل رقم التشغيلة إلى رمز EAN-13 صالح
- */
-function convertBatchNumberToEan13(string $batchNumber): array
-{
-    $original = trim($batchNumber);
-    $digitsOnly = preg_replace('/\D+/', '', $original);
-
-    if ($digitsOnly === '') {
-        $digitsOnly = (string) abs(crc32($original));
-    }
-
-    if (strlen($digitsOnly) >= 12) {
-        $digitsOnly = substr($digitsOnly, 0, 12);
-    } else {
-        $digitsOnly = str_pad($digitsOnly, 12, '0', STR_PAD_RIGHT);
-    }
-
-    $checksum = calculateEan13Checksum($digitsOnly);
-    $ean13 = $digitsOnly . $checksum;
-
-    return [
-        'ean13' => $ean13,
-        'digits_only' => $digitsOnly,
-        'checksum' => $checksum,
-        'display_number' => $ean13,
-    ];
-}
-
-$eanData = convertBatchNumberToEan13($batchNumber);
-$labelProductName = $batch['product_name'] ?? 'تشغيلة إنتاج';
-$productionDate = !empty($batch['production_date']) ? formatDate($batch['production_date']) : '';
-
-$eanValueForJs = json_encode($eanData['ean13'], JSON_UNESCAPED_UNICODE);
-$displayNumberForJs = json_encode($eanData['display_number'], JSON_UNESCAPED_UNICODE);
-$productNameJs = json_encode($labelProductName, JSON_UNESCAPED_UNICODE);
-$productionDateJs = json_encode($productionDate, JSON_UNESCAPED_UNICODE);
 ?>
 <!DOCTYPE html>
 <html lang="ar" dir="rtl">
@@ -127,6 +69,13 @@ $productionDateJs = json_encode($productionDate, JSON_UNESCAPED_UNICODE);
             display: none;
         }
 
+        .labels-container {
+            display: flex;
+            flex-wrap: wrap;
+            justify-content: center;
+            gap: 6mm;
+        }
+
         .label-wrapper {
             width: var(--label-width);
             height: var(--label-height);
@@ -136,23 +85,6 @@ $productionDateJs = json_encode($productionDate, JSON_UNESCAPED_UNICODE);
             align-items: center;
             padding: 4mm 3mm;
             background: #fff;
-        }
-
-        .label-header {
-            width: 100%;
-            text-align: center;
-            margin-bottom: 3mm;
-        }
-
-        .label-header h2 {
-            font-size: 10pt;
-            font-weight: 600;
-            margin-bottom: 1mm;
-        }
-
-        .label-header .meta {
-            font-size: 7.5pt;
-            color: #333;
         }
 
         .barcode-box {
@@ -177,13 +109,6 @@ $productionDateJs = json_encode($productionDate, JSON_UNESCAPED_UNICODE);
             letter-spacing: 1px;
             text-align: center;
             margin-top: 2mm;
-        }
-
-        .label-footer {
-            margin-top: 2mm;
-            font-size: 7pt;
-            color: #333;
-            text-align: center;
         }
 
         .manual-actions {
@@ -218,7 +143,6 @@ $productionDateJs = json_encode($productionDate, JSON_UNESCAPED_UNICODE);
                 background: #f5f5f5;
                 padding: 20px;
             }
-
             .print-controls {
                 display: block;
                 max-width: 320px;
@@ -236,6 +160,19 @@ $productionDateJs = json_encode($productionDate, JSON_UNESCAPED_UNICODE);
                 border-radius: 8px;
             }
         }
+
+        @media print {
+            body {
+                background: #fff;
+            }
+            .labels-container {
+                gap: 0;
+            }
+            .label-wrapper {
+                box-shadow: none;
+                border-radius: 0;
+            }
+        }
     </style>
 </head>
 <body>
@@ -248,62 +185,49 @@ $productionDateJs = json_encode($productionDate, JSON_UNESCAPED_UNICODE);
         </div>
     </div>
 
-    <div class="label-wrapper">
-        <div class="label-header">
-            <h2><?php echo htmlspecialchars($labelProductName); ?></h2>
-            <?php if (!empty($productionDate)): ?>
-                <div class="meta">تاريخ الإنتاج: <?php echo htmlspecialchars($productionDate); ?></div>
-            <?php endif; ?>
-        </div>
-
-        <div class="barcode-box">
-            <svg id="batchBarcode" class="barcode-svg" role="img" aria-label="EAN-13 barcode"></svg>
-        </div>
-
-        <div class="barcode-number" id="barcodeNumberText"></div>
-
-        <div class="label-footer">
-            رقم التشغيلة (EAN-13): <?php echo htmlspecialchars($eanData['display_number']); ?>
-        </div>
+    <div class="labels-container">
+        <?php for ($i = 0; $i < $quantity; $i++): ?>
+            <div class="label-wrapper">
+                <div class="barcode-box">
+                    <svg class="barcode-svg" role="img" aria-label="Batch barcode"></svg>
+                </div>
+                <div class="barcode-number"></div>
+            </div>
+        <?php endfor; ?>
     </div>
 
     <script>
-        const eanValue = <?php echo $eanValueForJs; ?>;
-        const displayNumber = <?php echo $displayNumberForJs; ?>;
+        const batchNumberValue = <?php echo $encodedBatchNumber; ?>;
 
-        function renderBarcode() {
-            const target = document.getElementById('batchBarcode');
-            const numberNode = document.getElementById('barcodeNumberText');
-            if (!target || !eanValue) {
-                if (numberNode) {
-                    numberNode.textContent = displayNumber || '';
-                }
+        function renderBarcodes() {
+            if (!batchNumberValue) {
                 return;
             }
+            const barcodeNodes = document.querySelectorAll('.barcode-svg');
+            const numberNodes = document.querySelectorAll('.barcode-number');
+            if (numberNodes.length) {
+                numberNodes.forEach(node => node.textContent = batchNumberValue);
+            }
             try {
-                JsBarcode(target, eanValue, {
-                    format: 'EAN13',
+                JsBarcode('.barcode-svg', batchNumberValue, {
+                    format: 'CODE128',
                     background: '#ffffff',
                     lineColor: '#000000',
-                    margin: 0,
+                    margin: 10,
                     width: 1.1,
                     height: 80,
                     displayValue: false,
                     flat: true
                 });
-                if (numberNode) {
-                    numberNode.textContent = displayNumber || '';
-                }
             } catch (error) {
                 console.error('Barcode render error', error);
-                if (numberNode) {
-                    numberNode.textContent = displayNumber || eanValue;
-                }
-                target.innerHTML = '<text x="50%" y="50%" text-anchor="middle" font-size="12" fill="#000">EAN-13 غير مدعوم</text>';
+                barcodeNodes.forEach(node => {
+                    node.innerHTML = '<text x="50%" y="50%" text-anchor="middle" font-size="12" fill="#000">Barcode Error</text>';
+                });
             }
         }
 
-        renderBarcode();
+        renderBarcodes();
 
         if (window.location.search.includes('print=1')) {
             setTimeout(function() {
