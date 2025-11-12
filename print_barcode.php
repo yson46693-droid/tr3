@@ -80,7 +80,6 @@ $encodedBatchNumber = json_encode($batchNumber, JSON_UNESCAPED_UNICODE);
             width: var(--label-width);
             height: var(--label-height);
             display: flex;
-            flex-direction: column;
             justify-content: center;
             align-items: center;
             padding: 2mm;
@@ -91,17 +90,17 @@ $encodedBatchNumber = json_encode($batchNumber, JSON_UNESCAPED_UNICODE);
             width: var(--barcode-width);
             height: var(--barcode-height);
             background: #fff;
-            border: 0.25mm solid #000;
+            border: 0.3mm solid #000;
             display: flex;
+            flex-direction: column;
             align-items: center;
             justify-content: center;
-            padding: 0 var(--quiet-zone);
-            margin-bottom: 2mm;
+            padding: 2mm var(--quiet-zone);
         }
 
         .barcode-svg {
             width: calc(var(--barcode-width) - (var(--quiet-zone) * 2));
-            height: calc(var(--barcode-height) - 5mm);
+            height: calc(var(--barcode-height) - 7mm);
         }
 
         .barcode-number {
@@ -109,7 +108,8 @@ $encodedBatchNumber = json_encode($batchNumber, JSON_UNESCAPED_UNICODE);
             font-weight: 600;
             letter-spacing: 1px;
             text-align: center;
-            margin-top: 1mm;
+            margin-top: 0.8mm;
+            width: 100%;
         }
 
         .manual-actions {
@@ -191,8 +191,8 @@ $encodedBatchNumber = json_encode($batchNumber, JSON_UNESCAPED_UNICODE);
             <div class="label-wrapper">
                 <div class="barcode-box">
                     <svg class="barcode-svg" role="img" aria-label="Batch barcode"></svg>
+                    <div class="barcode-number"></div>
                 </div>
-                <div class="barcode-number"></div>
             </div>
         <?php endfor; ?>
     </div>
