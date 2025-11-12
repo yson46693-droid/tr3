@@ -44,8 +44,8 @@ $encodedBatchNumber = json_encode($batchNumber, JSON_UNESCAPED_UNICODE);
         :root {
             --label-width: 58mm;
             --label-height: 40mm;
-            --barcode-width: 32mm;
-            --barcode-height: 22mm;
+            --barcode-width: 52mm;
+            --barcode-height: 28mm;
             --quiet-zone: 2.6mm;
             --font-main: 'Roboto', 'Arial', sans-serif;
         }
@@ -73,7 +73,7 @@ $encodedBatchNumber = json_encode($batchNumber, JSON_UNESCAPED_UNICODE);
             display: flex;
             flex-wrap: wrap;
             justify-content: center;
-            gap: 6mm;
+            gap: 0;
         }
 
         .label-wrapper {
@@ -83,32 +83,33 @@ $encodedBatchNumber = json_encode($batchNumber, JSON_UNESCAPED_UNICODE);
             flex-direction: column;
             justify-content: center;
             align-items: center;
-            padding: 4mm 3mm;
+            padding: 2mm;
             background: #fff;
         }
 
         .barcode-box {
             width: var(--barcode-width);
             height: var(--barcode-height);
-            padding: 0 var(--quiet-zone);
             background: #fff;
-            border: 0.2mm solid #d0d0d0;
+            border: 0.25mm solid #000;
             display: flex;
             align-items: center;
             justify-content: center;
+            padding: 0 var(--quiet-zone);
+            margin-bottom: 2mm;
         }
 
         .barcode-svg {
             width: calc(var(--barcode-width) - (var(--quiet-zone) * 2));
-            height: calc(var(--barcode-height) - 6mm);
+            height: calc(var(--barcode-height) - 5mm);
         }
 
         .barcode-number {
-            font-size: 8.5pt;
+            font-size: 9pt;
             font-weight: 600;
             letter-spacing: 1px;
             text-align: center;
-            margin-top: 2mm;
+            margin-top: 1mm;
         }
 
         .manual-actions {
@@ -213,9 +214,9 @@ $encodedBatchNumber = json_encode($batchNumber, JSON_UNESCAPED_UNICODE);
                     format: 'CODE128',
                     background: '#ffffff',
                     lineColor: '#000000',
-                    margin: 10,
-                    width: 1.1,
-                    height: 80,
+                    margin: 8,
+                    width: 1.25,
+                    height: 90,
                     displayValue: false,
                     flat: true
                 });
