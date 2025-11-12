@@ -1623,7 +1623,7 @@ $productionDateColumnCheck2 = $db->queryOne("SHOW COLUMNS FROM production LIKE '
 $productionDateColumn = !empty($productionDateColumnCheck) ? 'date' : (!empty($productionDateColumnCheck2) ? 'production_date' : 'created_at');
 
 // معالجة AJAX لعرض التفاصيل - يجب أن يكون في بداية الملف قبل أي محتوى HTML
-if (isset($_GET['ajax']) && $_GET['ajax'] == '1' && isset($_GET['material_id'])) {
+if (isset($_GET['ajax']) && isset($_GET['material_id'])) {
     // بدء output buffering لمنع أي إخراج غير مرغوب فيه
     while (ob_get_level() > 0) {
         ob_end_clean();

@@ -23,7 +23,7 @@ $db = db();
 $page = $_GET['page'] ?? 'overview';
 
 // معالجة AJAX قبل أي إخراج HTML - خاصة لصفحة مخزن أدوات التعبئة
-if ($page === 'packaging_warehouse' && isset($_GET['ajax']) && $_GET['ajax'] == '1' && isset($_GET['material_id'])) {
+if ($page === 'packaging_warehouse' && isset($_GET['ajax']) && isset($_GET['material_id'])) {
     // تحميل ملف packaging_warehouse.php مباشرة للتعامل مع AJAX
     $modulePath = __DIR__ . '/../modules/production/packaging_warehouse.php';
     if (file_exists($modulePath)) {

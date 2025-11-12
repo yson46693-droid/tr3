@@ -1117,6 +1117,88 @@ document.addEventListener('DOMContentLoaded', function () {
         'rejected': 'مرفوضة'
     };
     let batchDetailsIsLoading = false;
+    const batchDetailsRetryDelay = 2000;
+    const batchDetailsMaxRetries = 3;
+    let batchDetailsRetryTimeoutId = null;
+
+    function getBatchDetailsModalBodyTemplate() {
+        return `
+            <div id="batchDetailsLoading" class="d-flex justify-content-center py-4">
+                <div class="spinner-border text-primary" role="status">
+                    <span class="visually-hidden">جارٍ التحميل...</span>
+                </div>
+            </div>
+            <div id="batchDetailsError" class="alert alert-danger d-none" role="alert"></div>
+            <div id="batchDetailsContent" class="d-none">
+                <div id="batchSummarySection" class="mb-4"></div>
+                <div id="batchMaterialsSection" class="mb-4"></div>
+                <div id="batchRawMaterialsSection" class="mb-4"></div>
+                <div id="batchWorkersSection" class="mb-0"></div>
+            </div>
+        `;
+    }
+
+    function resetBatchDetailsModalState() {
+        if (batchDetailsRetryTimeoutId) {
+            clearTimeout(batchDetailsRetryTimeoutId);
+            batchDetailsRetryTimeoutId = null;
+        }
+        batchDetailsIsLoading = false;
+    }
+
+    function ensureBatchDetailsModalStructure() {
+        if (typeof document === 'undefined') {
+            return null;
+        }
+
+        let modalElement = document.getElementById('batchDetailsModal');
+
+        if (!modalElement && document.body) {
+            modalElement = document.createElement('div');
+            modalElement.className = 'modal fade';
+            modalElement.id = 'batchDetailsModal';
+            modalElement.tabIndex = -1;
+            modalElement.setAttribute('aria-hidden', 'true');
+            modalElement.innerHTML = `
+                <div class="modal-dialog modal-lg modal-dialog-scrollable modal-dialog-centered">
+                    <div class="modal-content">
+                        <div class="modal-header">
+                            <h5 class="modal-title">تفاصيل التشغيلة</h5>
+                            <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="إغلاق"></button>
+                        </div>
+                        <div class="modal-body">
+                            ${getBatchDetailsModalBodyTemplate()}
+                        </div>
+                        <div class="modal-footer">
+                            <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">إغلاق</button>
+                        </div>
+                    </div>
+                </div>
+            `;
+            document.body.appendChild(modalElement);
+        }
+
+        if (!modalElement) {
+            return null;
+        }
+
+        const modalBody = modalElement.querySelector('.modal-body');
+        if (modalBody && !modalBody.querySelector('#batchDetailsContent')) {
+            modalBody.innerHTML = getBatchDetailsModalBodyTemplate();
+        }
+
+        if (!modalElement.dataset.batchDetailsInit) {
+            modalElement.addEventListener('hidden.bs.modal', resetBatchDetailsModalState);
+            modalElement.dataset.batchDetailsInit = 'true';
+        }
+
+        return {
+            modalElement,
+            loader: modalElement.querySelector('#batchDetailsLoading'),
+            errorAlert: modalElement.querySelector('#batchDetailsError'),
+            contentWrapper: modalElement.querySelector('#batchDetailsContent')
+        };
+    }
 
     function formatDateValue(value) {
         return value ? value : '—';
