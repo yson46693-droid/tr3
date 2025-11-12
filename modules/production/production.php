@@ -536,6 +536,17 @@ try {
     $hasBatchNumbersTable = false;
 }
 
+$hasFinishedProductsTable = false;
+try {
+    $finishedProductsTableCheck = $db->queryOne("SHOW TABLES LIKE 'finished_products'");
+    if (!empty($finishedProductsTableCheck)) {
+        $hasFinishedProductsTable = true;
+    }
+} catch (Exception $e) {
+    error_log("Finished products table check error: " . $e->getMessage());
+    $hasFinishedProductsTable = false;
+}
+
 // استرجاع رسالة النجاح من الجلسة (بعد إعادة التوجيه)
 $sessionSuccess = getSuccessMessage();
 if ($sessionSuccess) {
@@ -1568,17 +1579,29 @@ $whereConditions = ['1=1'];
 $params = [];
 
 if ($search) {
+    $searchParam = '%' . $search . '%';
+    $searchConditions = [
+        'p.id LIKE ?',
+        'pr.name LIKE ?'
+    ];
+    $searchParams = [
+        $searchParam,
+        $searchParam
+    ];
+
+    if ($hasBatchNumbersTable && $hasFinishedProductsTable) {
+        $searchConditions[] = 'fp_template.template_product_name LIKE ?';
+        $searchParams[] = $searchParam;
+    }
+
     if ($userIdColumn) {
-        $whereConditions[] = "(p.id LIKE ? OR pr.name LIKE ? OR u.full_name LIKE ?)";
-        $searchParam = '%' . $search . '%';
-        $params[] = $searchParam;
-        $params[] = $searchParam;
-        $params[] = $searchParam;
-    } else {
-        $whereConditions[] = "(p.id LIKE ? OR pr.name LIKE ?)";
-        $searchParam = '%' . $search . '%';
-        $params[] = $searchParam;
-        $params[] = $searchParam;
+        $searchConditions[] = 'u.full_name LIKE ?';
+        $searchParams[] = $searchParam;
+    }
+
+    $whereConditions[] = '(' . implode(' OR ', $searchConditions) . ')';
+    foreach ($searchParams as $paramValue) {
+        $params[] = $paramValue;
     }
 }
 
@@ -1604,17 +1627,32 @@ if ($dateTo) {
 
 $whereClause = implode(' AND ', $whereConditions);
 
+$productNameSelect = 'pr.name AS product_name';
+$templateProductJoin = '';
+if ($hasBatchNumbersTable && $hasFinishedProductsTable) {
+    $templateProductJoin = "
+                 LEFT JOIN (
+                     SELECT 
+                         bn_inner.production_id, 
+                         MAX(fp_inner.product_name) AS template_product_name
+                     FROM batch_numbers bn_inner
+                     INNER JOIN finished_products fp_inner ON fp_inner.batch_number = bn_inner.batch_number
+                     GROUP BY bn_inner.production_id
+                 ) fp_template ON fp_template.production_id = p.id";
+    $productNameSelect = 'COALESCE(fp_template.template_product_name, pr.name) AS product_name';
+}
+
 // حساب إجمالي السجلات
 if ($userIdColumn) {
     $countSql = "SELECT COUNT(*) as total 
                  FROM production p
-                 LEFT JOIN products pr ON p.product_id = pr.id
+                 LEFT JOIN products pr ON p.product_id = pr.id" . $templateProductJoin . "
                  LEFT JOIN users u ON p.{$userIdColumn} = u.id
                  WHERE $whereClause";
 } else {
     $countSql = "SELECT COUNT(*) as total 
                  FROM production p
-                 LEFT JOIN products pr ON p.product_id = pr.id
+                 LEFT JOIN products pr ON p.product_id = pr.id" . $templateProductJoin . "
                  WHERE $whereClause";
 }
 
@@ -1647,13 +1685,13 @@ if ($hasBatchNumbersTable) {
 
 if ($userIdColumn) {
     $sql = "SELECT p.*, 
-                   pr.name as product_name, 
+                   {$productNameSelect}, 
                    pr.category as product_category,
                    u.full_name as worker_name,
                    u.username as worker_username
                    $batchJoinSelect
             FROM production p
-            LEFT JOIN products pr ON p.product_id = pr.id
+            LEFT JOIN products pr ON p.product_id = pr.id" . $templateProductJoin . "
             LEFT JOIN users u ON p.{$userIdColumn} = u.id
             $batchJoinClause
             WHERE $whereClause
@@ -1661,13 +1699,13 @@ if ($userIdColumn) {
             LIMIT ? OFFSET ?";
 } else {
     $sql = "SELECT p.*, 
-                   pr.name as product_name, 
+                   {$productNameSelect}, 
                    pr.category as product_category,
                    'غير محدد' as worker_name,
                    'غير محدد' as worker_username
                    $batchJoinSelect
             FROM production p
-            LEFT JOIN products pr ON p.product_id = pr.id
+            LEFT JOIN products pr ON p.product_id = pr.id" . $templateProductJoin . "
             $batchJoinClause
             WHERE $whereClause
             ORDER BY p.$dateColumn DESC, p.created_at DESC

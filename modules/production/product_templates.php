@@ -413,18 +413,62 @@ $templates = $db->query(
      ORDER BY pt.created_at DESC"
 );
 
+$packagingMaterialsTableExistsForDetails = false;
+try {
+    $packagingMaterialsTableExistsForDetails = !empty($db->queryOne("SHOW TABLES LIKE 'packaging_materials'"));
+} catch (Exception $packagingMetaException) {
+    $packagingMaterialsTableExistsForDetails = false;
+}
+
 foreach ($templates as &$template) {
     $templateId = (int)($template['id'] ?? 0);
 
     // أدوات التعبئة
-    $packagingDetails = $db->query(
-        "SELECT packaging_material_id, packaging_name, quantity_per_unit 
-         FROM product_template_packaging 
-         WHERE template_id = ?",
-        [$templateId]
-    );
-    $template['packaging_details'] = $packagingDetails;
-    $template['packaging_count'] = count($packagingDetails);
+    if ($packagingMaterialsTableExistsForDetails) {
+        $packagingDetails = $db->query(
+            "SELECT ptp.packaging_material_id, ptp.packaging_name, ptp.quantity_per_unit, COALESCE(pm.unit, '') AS packaging_unit
+             FROM product_template_packaging ptp
+             LEFT JOIN packaging_materials pm ON pm.id = ptp.packaging_material_id
+             WHERE ptp.template_id = ?",
+            [$templateId]
+        );
+    } else {
+        $packagingDetails = $db->query(
+            "SELECT packaging_material_id, packaging_name, quantity_per_unit, '' AS packaging_unit
+             FROM product_template_packaging 
+             WHERE template_id = ?",
+            [$templateId]
+        );
+    }
+
+    $normalisedPackaging = [];
+    foreach ($packagingDetails as $pack) {
+        $packName = trim((string)($pack['packaging_name'] ?? ''));
+        if ($packName === '') {
+            $packId = (int)($pack['packaging_material_id'] ?? 0);
+            $packName = $packId > 0 ? ('أداة تعبئة #' . $packId) : 'أداة تعبئة';
+        }
+
+        $quantityPerUnit = isset($pack['quantity_per_unit']) ? (float)$pack['quantity_per_unit'] : 0.0;
+        if ($quantityPerUnit <= 0) {
+            $quantityPerUnit = 1.0;
+        }
+
+        $packUnit = trim((string)($pack['packaging_unit'] ?? ''));
+        if ($packUnit === '') {
+            $packUnit = 'وحدة';
+        }
+
+        $normalisedPackaging[] = [
+            'packaging_material_id' => isset($pack['packaging_material_id']) ? (int)$pack['packaging_material_id'] : null,
+            'packaging_name'        => $packName,
+            'quantity_per_unit'     => $quantityPerUnit,
+            'unit'                  => $packUnit,
+        ];
+    }
+
+    $template['packaging_details'] = $normalisedPackaging;
+    $template['packaging_count'] = count($normalisedPackaging);
 
     // المواد الخام
     $rawMaterialsRows = $db->query(
@@ -455,6 +499,28 @@ foreach ($templates as &$template) {
     $template['raw_materials_count'] = count($materialDetails);
     $template['template_type'] = $template['template_type'] ?: 'general';
     $template['products_count'] = 1;
+
+    $statusLabel = $template['status'] === 'active' ? 'نشط' : 'غير نشط';
+    $createdAtLabel = formatDate($template['created_at']);
+
+    $template['status_label'] = $statusLabel;
+    $template['created_at_label'] = $createdAtLabel;
+
+    $template['details_payload'] = [
+        'id'                 => $templateId,
+        'product_name'       => $template['product_name'],
+        'status'             => $template['status'],
+        'status_label'       => $statusLabel,
+        'template_type'      => $template['template_type'],
+        'notes'              => trim((string)($template['notes'] ?? '')),
+        'created_at_label'   => $createdAtLabel,
+        'creator_name'       => (string)($template['creator_name'] ?? ''),
+        'honey_quantity'     => isset($template['honey_quantity']) ? (float)$template['honey_quantity'] : 0.0,
+        'raw_materials'      => $materialDetails,
+        'packaging'          => $normalisedPackaging,
+        'packaging_count'    => count($normalisedPackaging),
+        'raw_materials_count'=> count($materialDetails),
+    ];
 }
 unset($template);
 
@@ -530,6 +596,23 @@ $lang = isset($translations) ? $translations : [];
             $rawMaterials = $template['material_details'] ?? [];
 
             $primaryMaterialName = $rawMaterials[0]['material_name'] ?? '';
+            $packagingPreview = array_slice($packaging, 0, 3);
+            $rawMaterialsPreview = array_slice($rawMaterials, 0, 3);
+            $remainingPackaging = max(0, count($packaging) - count($packagingPreview));
+            $remainingRawMaterials = max(0, count($rawMaterials) - count($rawMaterialsPreview));
+            $templateDetailsJson = '';
+            if (!empty($template['details_payload'])) {
+                $encodedDetails = json_encode(
+                    $template['details_payload'],
+                    JSON_UNESCAPED_UNICODE | JSON_HEX_TAG | JSON_HEX_APOS | JSON_HEX_AMP | JSON_HEX_QUOT
+                );
+                if ($encodedDetails !== false) {
+                    $templateDetailsJson = htmlspecialchars($encodedDetails, ENT_QUOTES, 'UTF-8');
+                }
+            }
+            if ($templateDetailsJson === '') {
+                $templateDetailsJson = '{}';
+            }
             $materialIconTheme = [
                 'icon' => 'bi-box-seam',
                 'color' => '#0d6efd',
@@ -594,8 +677,8 @@ $lang = isset($translations) ? $translations : [];
             );
             $cardAccentColor = htmlspecialchars($materialIconTheme['color'], ENT_QUOTES, 'UTF-8');
             $statusBadgeClass = $template['status'] === 'active' ? 'bg-success' : 'bg-secondary';
-            $statusLabel = $template['status'] === 'active' ? 'نشط' : 'غير نشط';
-            $createdAtLabel = formatDate($template['created_at']);
+            $statusLabel = $template['status_label'] ?? ($template['status'] === 'active' ? 'نشط' : 'غير نشط');
+            $createdAtLabel = $template['created_at_label'] ?? formatDate($template['created_at']);
             ?>
             <div class="col-lg-4 col-md-6">
                 <div class="card shadow-sm h-100 template-card" style="border-top: 4px solid <?php echo $cardAccentColor; ?>; transition: transform 0.2s, box-shadow 0.2s;">
@@ -607,14 +690,73 @@ $lang = isset($translations) ? $translations : [];
                         <h4 class="template-product-name">
                             <?php echo htmlspecialchars($template['product_name']); ?>
                         </h4>
+                        <div class="template-details-snippet text-start w-100 mt-4">
+                            <div class="template-snippet-section mb-3">
+                                <div class="template-snippet-header">
+                                    <i class="bi bi-diagram-3 me-1"></i>
+                                    المواد الخام
+                                </div>
+                                <?php if (empty($rawMaterialsPreview)): ?>
+                                    <div class="template-snippet-empty">لا توجد مواد خام مسجلة.</div>
+                                <?php else: ?>
+                                    <ul class="template-snippet-list mb-0">
+                                        <?php foreach ($rawMaterialsPreview as $item): ?>
+                                            <li>
+                                                <span class="template-snippet-name"><?php echo htmlspecialchars($item['material_name']); ?></span>
+                                                <span class="template-snippet-qty">
+                                                    <?php echo number_format((float)$item['quantity_per_unit'], 3); ?>
+                                                    <span class="template-snippet-unit"><?php echo htmlspecialchars($item['unit'] ?? 'وحدة'); ?></span>
+                                                </span>
+                                            </li>
+                                        <?php endforeach; ?>
+                                    </ul>
+                                    <?php if ($remainingRawMaterials > 0): ?>
+                                        <div class="template-snippet-more">+<?php echo $remainingRawMaterials; ?> عناصر إضافية</div>
+                                    <?php endif; ?>
+                                <?php endif; ?>
+                            </div>
+                            <div class="template-snippet-section">
+                                <div class="template-snippet-header">
+                                    <i class="bi bi-box2-heart me-1"></i>
+                                    أدوات التعبئة
+                                </div>
+                                <?php if (empty($packagingPreview)): ?>
+                                    <div class="template-snippet-empty">لا توجد أدوات تعبئة مسجلة.</div>
+                                <?php else: ?>
+                                    <ul class="template-snippet-list mb-0">
+                                        <?php foreach ($packagingPreview as $item): ?>
+                                            <li>
+                                                <span class="template-snippet-name"><?php echo htmlspecialchars($item['packaging_name']); ?></span>
+                                                <span class="template-snippet-qty">
+                                                    <?php echo number_format((float)$item['quantity_per_unit'], 3); ?>
+                                                    <span class="template-snippet-unit"><?php echo htmlspecialchars($item['unit'] ?? 'وحدة'); ?></span>
+                                                </span>
+                                            </li>
+                                        <?php endforeach; ?>
+                                    </ul>
+                                    <?php if ($remainingPackaging > 0): ?>
+                                        <div class="template-snippet-more">+<?php echo $remainingPackaging; ?> عناصر إضافية</div>
+                                    <?php endif; ?>
+                                <?php endif; ?>
+                            </div>
+                        </div>
                     </div>
                     <div class="card-footer template-card-footer d-flex justify-content-between align-items-center">
-                        <button type="button"
-                                class="btn btn-sm btn-primary"
-                                onclick="createBatch(<?php echo $template['id']; ?>, '<?php echo htmlspecialchars($template['product_name'], ENT_QUOTES, 'UTF-8'); ?>', this)">
-                            <i class="bi bi-gear-wide-connected me-1"></i>
-                            تشغيل تشغيلة
-                        </button>
+                        <div class="d-flex gap-2 flex-wrap">
+                            <button type="button"
+                                    class="btn btn-sm btn-outline-secondary"
+                                    data-template="<?php echo $templateDetailsJson; ?>"
+                                    onclick="showTemplateDetails(this)">
+                                <i class="bi bi-info-circle me-1"></i>
+                                عرض التفاصيل
+                            </button>
+                            <button type="button"
+                                    class="btn btn-sm btn-primary"
+                                    onclick="createBatch(<?php echo $template['id']; ?>, '<?php echo htmlspecialchars($template['product_name'], ENT_QUOTES, 'UTF-8'); ?>', this)">
+                                <i class="bi bi-gear-wide-connected me-1"></i>
+                                تشغيل تشغيلة
+                            </button>
+                        </div>
                         <div class="d-flex align-items-center text-muted small">
                             <i class="bi bi-calendar3 me-1"></i>
                             <?php echo $createdAtLabel; ?>
@@ -698,10 +840,155 @@ $lang = isset($translations) ? $translations : [];
     align-items: center;
     justify-content: space-between;
     gap: 0.75rem;
+    flex-wrap: wrap;
 }
 
 .template-card-footer .btn {
     flex-shrink: 0;
+}
+
+.template-details-snippet {
+    font-size: 0.9rem;
+    color: #475569;
+}
+
+.template-snippet-section {
+    border: 1px solid #e2e8f0;
+    border-radius: 12px;
+    padding: 0.75rem 0.9rem;
+    background-color: #f8fafc;
+}
+
+.template-snippet-section + .template-snippet-section {
+    margin-top: 0.75rem;
+}
+
+.template-snippet-header {
+    font-weight: 600;
+    color: #0f172a;
+    margin-bottom: 0.5rem;
+}
+
+.template-snippet-list {
+    list-style: none;
+    padding: 0;
+    margin: 0;
+}
+
+.template-snippet-list li {
+    display: flex;
+    justify-content: space-between;
+    align-items: baseline;
+    padding: 0.25rem 0;
+    border-bottom: 1px dashed rgba(148, 163, 184, 0.4);
+}
+
+.template-snippet-list li:last-child {
+    border-bottom: none;
+}
+
+.template-snippet-name {
+    font-weight: 500;
+    color: #0f172a;
+}
+
+.template-snippet-qty {
+    font-weight: 600;
+    color: #0ea5e9;
+}
+
+.template-snippet-unit {
+    font-weight: 500;
+    color: #64748b;
+    margin-inline-start: 0.25rem;
+}
+
+.template-snippet-empty {
+    color: #94a3b8;
+    font-size: 0.85rem;
+}
+
+.template-snippet-more {
+    margin-top: 0.35rem;
+    font-size: 0.8rem;
+    color: #64748b;
+}
+
+.template-details-meta {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.75rem 1rem;
+    align-items: center;
+    font-size: 0.92rem;
+    color: #475569;
+}
+
+.template-details-meta-item {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.35rem;
+}
+
+.template-details-notes {
+    background-color: #fef3c7;
+    color: #92400e;
+    border-radius: 12px;
+    padding: 0.75rem 1rem;
+    line-height: 1.6;
+}
+
+.details-section-title {
+    font-weight: 700;
+    color: #0f172a;
+    margin-bottom: 0.75rem;
+}
+
+.details-list-wrapper {
+    border: 1px solid #e2e8f0;
+    border-radius: 12px;
+    padding: 0.75rem 1rem;
+    background-color: #f8fafc;
+    min-height: 180px;
+}
+
+.details-list {
+    list-style: none;
+    margin: 0;
+    padding: 0;
+}
+
+.details-list li {
+    display: flex;
+    justify-content: space-between;
+    align-items: baseline;
+    padding: 0.4rem 0;
+    border-bottom: 1px dashed rgba(148, 163, 184, 0.35);
+    font-size: 0.95rem;
+}
+
+.details-list li:last-child {
+    border-bottom: none;
+}
+
+.details-list-name {
+    font-weight: 600;
+    color: #0f172a;
+}
+
+.details-list-qty {
+    font-weight: 600;
+    color: #0ea5e9;
+}
+
+.details-list-unit {
+    font-weight: 500;
+    color: #64748b;
+    margin-inline-start: 0.25rem;
+}
+
+.details-list-empty {
+    color: #94a3b8;
+    font-size: 0.9rem;
 }
 
 .template-toast {
@@ -737,6 +1024,15 @@ $lang = isset($translations) ? $translations : [];
     .template-card-body {
         padding: 2.25rem 1.25rem 1.5rem;
         min-height: 200px;
+    }
+    .template-details-snippet {
+        font-size: 0.85rem;
+    }
+    .template-snippet-section {
+        padding: 0.6rem 0.75rem;
+    }
+    .details-list-wrapper {
+        min-height: auto;
     }
     .template-icon {
         width: 82px;
@@ -819,6 +1115,60 @@ $lang = isset($translations) ? $translations : [];
                     </button>
                 </div>
             </form>
+        </div>
+    </div>
+</div>
+
+<!-- Modal تفاصيل القالب -->
+<div class="modal fade" id="templateDetailsModal" tabindex="-1">
+    <div class="modal-dialog modal-lg modal-dialog-centered">
+        <div class="modal-content">
+            <div class="modal-header bg-light">
+                <h5 class="modal-title">
+                    <i class="bi bi-info-circle me-2"></i>
+                    <span id="templateDetailsTitle">تفاصيل القالب</span>
+                </h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body">
+                <div class="template-details-meta mb-3">
+                    <span class="badge rounded-pill px-3 py-2" id="templateDetailsStatusBadge">-</span>
+                    <span class="template-details-meta-item">
+                        <i class="bi bi-calendar-event me-1"></i>
+                        <span id="templateDetailsCreatedAt">-</span>
+                    </span>
+                    <span class="template-details-meta-item">
+                        <i class="bi bi-person-circle me-1"></i>
+                        <span id="templateDetailsCreator">-</span>
+                    </span>
+                    <span class="template-details-meta-item">
+                        <i class="bi bi-diagram-3 me-1"></i>
+                        <span id="templateDetailsType">-</span>
+                    </span>
+                    <span class="template-details-meta-item">
+                        <i class="bi bi-droplet-half me-1"></i>
+                        <span id="templateDetailsHoney">-</span>
+                    </span>
+                </div>
+                <div id="templateDetailsNotes" class="template-details-notes mb-4 d-none"></div>
+                <div class="row g-4">
+                    <div class="col-md-6">
+                        <h6 class="details-section-title">
+                            <i class="bi bi-diagram-3 me-2"></i>المواد الخام
+                        </h6>
+                        <div id="templateDetailsRawMaterials" class="details-list-wrapper"></div>
+                    </div>
+                    <div class="col-md-6">
+                        <h6 class="details-section-title">
+                            <i class="bi bi-box2-heart me-2"></i>أدوات التعبئة
+                        </h6>
+                        <div id="templateDetailsPackaging" class="details-list-wrapper"></div>
+                    </div>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">إغلاق</button>
+            </div>
         </div>
     </div>
 </div>
@@ -930,6 +1280,174 @@ function addRawMaterial() {
 
 function removeRawMaterial(btn) {
     btn.closest('.raw-material-item').remove();
+}
+
+function formatTemplateQuantity(value) {
+    const numericValue = Number(value);
+    if (!Number.isFinite(numericValue)) {
+        return '-';
+    }
+    try {
+        return numericValue.toLocaleString(undefined, {
+            minimumFractionDigits: 3,
+            maximumFractionDigits: 3
+        });
+    } catch (formatError) {
+        return numericValue.toFixed(3);
+    }
+}
+
+function renderTemplateDetailsList(container, items, emptyMessage) {
+    if (!container) {
+        return;
+    }
+    container.textContent = '';
+    if (!Array.isArray(items) || items.length === 0) {
+        const emptyEl = document.createElement('div');
+        emptyEl.className = 'details-list-empty';
+        emptyEl.textContent = emptyMessage;
+        container.appendChild(emptyEl);
+        return;
+    }
+
+    const listEl = document.createElement('ul');
+    listEl.className = 'details-list';
+
+    items.forEach((item) => {
+        const name = typeof item.name === 'string' && item.name.trim() !== ''
+            ? item.name.trim()
+            : (typeof item.material_name === 'string' && item.material_name.trim() !== '' ? item.material_name.trim() : (typeof item.packaging_name === 'string' ? item.packaging_name.trim() : ''));
+        const quantityValue = item.quantity_per_unit ?? item.quantity ?? null;
+        const unitValue = typeof item.unit === 'string' && item.unit.trim() !== ''
+            ? item.unit.trim()
+            : (typeof item.material_unit === 'string' && item.material_unit.trim() !== '' ? item.material_unit.trim() : 'وحدة');
+
+        const listItem = document.createElement('li');
+
+        const nameSpan = document.createElement('span');
+        nameSpan.className = 'details-list-name';
+        nameSpan.textContent = name || 'مادة غير مسماة';
+
+        const qtySpan = document.createElement('span');
+        qtySpan.className = 'details-list-qty';
+        qtySpan.textContent = formatTemplateQuantity(quantityValue);
+
+        if (qtySpan.textContent !== '-' && unitValue) {
+            const unitSpan = document.createElement('span');
+            unitSpan.className = 'details-list-unit';
+            unitSpan.textContent = unitValue;
+            qtySpan.appendChild(unitSpan);
+        }
+
+        listItem.appendChild(nameSpan);
+        listItem.appendChild(qtySpan);
+        listEl.appendChild(listItem);
+    });
+
+    container.appendChild(listEl);
+}
+
+function showTemplateDetails(triggerButton) {
+    if (!(triggerButton instanceof HTMLElement)) {
+        return;
+    }
+    const payloadRaw = triggerButton.getAttribute('data-template');
+    if (!payloadRaw) {
+        alert('لا تتوفر بيانات لعرض تفاصيل القالب.');
+        return;
+    }
+
+    let data;
+    try {
+        data = JSON.parse(payloadRaw);
+    } catch (jsonError) {
+        console.error('Template details parse error:', jsonError);
+        alert('تعذر قراءة بيانات القالب.');
+        return;
+    }
+
+    const modalElement = document.getElementById('templateDetailsModal');
+    if (!modalElement) {
+        alert('لا يمكن فتح تفاصيل القالب حالياً.');
+        return;
+    }
+
+    const titleEl = document.getElementById('templateDetailsTitle');
+    if (titleEl) {
+        titleEl.textContent = data.product_name || 'تفاصيل القالب';
+    }
+
+    const statusBadge = document.getElementById('templateDetailsStatusBadge');
+    if (statusBadge) {
+        const statusClass = (data.status === 'active') ? 'bg-success' : (data.status === 'inactive' ? 'bg-secondary' : 'bg-warning');
+        statusBadge.className = 'badge rounded-pill px-3 py-2 ' + statusClass;
+        statusBadge.textContent = data.status_label || 'غير محدد';
+    }
+
+    const createdAtEl = document.getElementById('templateDetailsCreatedAt');
+    if (createdAtEl) {
+        createdAtEl.textContent = data.created_at_label || '-';
+    }
+
+    const creatorEl = document.getElementById('templateDetailsCreator');
+    if (creatorEl) {
+        creatorEl.textContent = (data.creator_name && data.creator_name.trim() !== '') ? data.creator_name : 'غير محدد';
+    }
+
+    const typeEl = document.getElementById('templateDetailsType');
+    if (typeEl) {
+        const typeLabels = {
+            honey: 'قالب عسل',
+            honey_filtered: 'قالب عسل مفلتر',
+            honey_raw: 'قالب عسل خام',
+            olive_oil: 'قالب زيت زيتون',
+            beeswax: 'قالب شمع عسل',
+            derivatives: 'قالب مشتقات',
+            nuts: 'قالب مكسرات',
+            unified: 'قالب موحد',
+            legacy: 'قالب سابق',
+            general: 'قالب عام'
+        };
+        const templateType = typeof data.template_type === 'string' ? data.template_type : 'general';
+        typeEl.textContent = typeLabels[templateType] || templateType;
+    }
+
+    const honeyEl = document.getElementById('templateDetailsHoney');
+    if (honeyEl) {
+        const honeyQuantity = Number(data.honey_quantity);
+        if (Number.isFinite(honeyQuantity) && honeyQuantity > 0) {
+            honeyEl.textContent = formatTemplateQuantity(honeyQuantity) + ' جرام';
+        } else {
+            honeyEl.textContent = 'لا توجد كمية عسل محددة';
+        }
+    }
+
+    const notesEl = document.getElementById('templateDetailsNotes');
+    if (notesEl) {
+        const notes = typeof data.notes === 'string' ? data.notes.trim() : '';
+        if (notes !== '') {
+            notesEl.textContent = notes;
+            notesEl.classList.remove('d-none');
+        } else {
+            notesEl.textContent = '';
+            notesEl.classList.add('d-none');
+        }
+    }
+
+    renderTemplateDetailsList(
+        document.getElementById('templateDetailsRawMaterials'),
+        data.raw_materials,
+        'لا توجد مواد خام مسجلة.'
+    );
+
+    renderTemplateDetailsList(
+        document.getElementById('templateDetailsPackaging'),
+        data.packaging,
+        'لا توجد أدوات تعبئة مسجلة.'
+    );
+
+    const modalInstance = bootstrap.Modal.getOrCreateInstance(modalElement);
+    modalInstance.show();
 }
 
 function createBatch(templateId, templateName, triggerButton) {

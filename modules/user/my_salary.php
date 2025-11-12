@@ -962,7 +962,7 @@ $lang = isset($translations) ? $translations : [];
     border-radius: 20px;
     border: 1px solid #e4e9f2;
     background: #ffffff;
-    padding: 1.5rem;
+    padding: 1.1rem 1.25rem;
     box-shadow: 0 18px 36px rgba(15, 42, 91, 0.08);
     transition: transform 0.3s ease, box-shadow 0.3s ease;
     position: relative;
@@ -994,7 +994,7 @@ $lang = isset($translations) ? $translations : [];
     justify-content: space-between;
     align-items: center;
     gap: 1rem;
-    margin-bottom: 1.25rem;
+    margin-bottom: 1rem;
 }
 
 .advance-request-card__title {
@@ -1031,8 +1031,8 @@ $lang = isset($translations) ? $translations : [];
 .advance-request-card__meta {
     display: flex;
     flex-wrap: wrap;
-    gap: 1.5rem;
-    margin-bottom: 1.25rem;
+    gap: 1rem;
+    margin-bottom: 1rem;
 }
 
 .advance-request-card__meta-item {
@@ -1057,16 +1057,16 @@ $lang = isset($translations) ? $translations : [];
 .advance-request-card__hint {
     font-size: 0.85rem;
     color: #6c757d;
-    margin-bottom: 1rem;
+    margin-bottom: 0.75rem;
 }
 
 .advance-request-card__reason {
     background: linear-gradient(135deg, rgba(102,126,234,0.08) 0%, rgba(118,75,162,0.08) 100%);
     border-radius: 16px;
-    padding: 0.9rem 1.1rem;
+    padding: 0.75rem 1rem;
     font-size: 0.95rem;
     color: #3d4465;
-    margin-bottom: 1rem;
+    margin-bottom: 0.75rem;
     line-height: 1.6;
 }
 
@@ -1081,20 +1081,20 @@ $lang = isset($translations) ? $translations : [];
     gap: 0.6rem;
     font-size: 0.9rem;
     color: #495057;
-    margin-bottom: 1.2rem;
+    margin-bottom: 0.85rem;
 }
 
 .advance-timeline {
     list-style: none;
     margin: 0;
-    padding: 0 0 0 1.5rem;
+    padding: 0 0 0 1.1rem;
     border-left: 2px solid #e3e7f3;
 }
 
 .advance-timeline__item {
     position: relative;
     padding-left: 0.6rem;
-    margin-bottom: 1rem;
+    margin-bottom: 0.75rem;
 }
 
 .advance-timeline__item::before {
@@ -1181,7 +1181,7 @@ $lang = isset($translations) ? $translations : [];
 
 @media (max-width: 768px) {
     .advance-request-card {
-        padding: 1.25rem;
+        padding: 1rem;
     }
 
     .advance-request-card__header {
@@ -1195,7 +1195,7 @@ $lang = isset($translations) ? $translations : [];
 
     .advance-request-card__meta {
         flex-direction: column;
-        gap: 0.9rem;
+        gap: 0.75rem;
     }
 
     .advance-timeline {
