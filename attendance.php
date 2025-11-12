@@ -101,8 +101,8 @@ $monthStats = getAttendanceStatistics($currentUser['id'], date('Y-m'));
 // حساب الساعات الحالية اليوم
 $todayHours = calculateTodayHours($currentUser['id'], $today);
 
-// حساب متوسط التأخير الشهري
-$delayStats = calculateAverageDelay($currentUser['id'], date('Y-m'));
+// حساب إحصائيات التأخير الشهرية بالاعتماد على أول تسجيل حضور يومي
+$delayStats = calculateMonthlyDelaySummary($currentUser['id'], date('Y-m'));
 
 require_once __DIR__ . '/includes/lang/' . getCurrentLanguage() . '.php';
 $lang = isset($translations) ? $translations : [];
@@ -171,8 +171,9 @@ $lang = isset($translations) ? $translations : [];
                             </div>
                         </div>
                         <div class="flex-grow-1 ms-3">
-                            <div class="text-muted small">متوسط التأخير</div>
-                            <div class="h4 mb-0"><?php echo $delayStats['average']; ?> دقيقة</div>
+                        <div class="text-muted small">متوسط التأخير</div>
+                        <div class="h4 mb-0"><?php echo number_format($delayStats['average_minutes'] ?? 0, 2); ?> دقيقة</div>
+                        <div class="text-muted small mt-1">إجمالي التأخير: <?php echo number_format($delayStats['total_minutes'] ?? 0, 2); ?> دقيقة</div>
                         </div>
                     </div>
                 </div>
@@ -185,12 +186,13 @@ $lang = isset($translations) ? $translations : [];
                     <div class="d-flex align-items-center">
                         <div class="flex-shrink-0">
                             <div class="stat-card-icon purple">
-                                <i class="bi bi-calendar-check"></i>
+                                <i class="bi bi-clock"></i>
                             </div>
                         </div>
                         <div class="flex-grow-1 ms-3">
-                            <div class="text-muted small">أيام الحضور</div>
-                            <div class="h4 mb-0"><?php echo $monthStats['present_days']; ?></div>
+                            <div class="text-muted small">مرات التأخير</div>
+                            <div class="h4 mb-0"><?php echo (int) ($delayStats['delay_days'] ?? 0); ?></div>
+                            <div class="text-muted small mt-1">من إجمالي <?php echo (int) ($delayStats['attendance_days'] ?? 0); ?> أيام حضور</div>
                         </div>
                     </div>
                 </div>

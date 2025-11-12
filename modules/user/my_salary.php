@@ -1851,6 +1851,8 @@ document.addEventListener('DOMContentLoaded', function() {
         const formData = new FormData(advanceForm);
         formData.append('is_ajax', '1');
 
+        let lastRawResponse = '';
+
         fetch(window.location.href, {
             method: 'POST',
             body: formData,
@@ -1860,6 +1862,7 @@ document.addEventListener('DOMContentLoaded', function() {
         })
             .then(async response => {
                 const rawBody = await response.text();
+                lastRawResponse = rawBody;
                 let data = null;
                 let parseWarning = null;
 
@@ -1948,6 +1951,35 @@ document.addEventListener('DOMContentLoaded', function() {
                 }
             })
             .catch(error => {
+                if (lastRawResponse && lastRawResponse.indexOf('"success":true') !== -1) {
+                    const fallbackAlert = document.createElement('div');
+                    fallbackAlert.className = 'alert alert-success alert-dismissible fade show';
+                    fallbackAlert.innerHTML = '<i class="bi bi-check-circle-fill me-2"></i>تم إرسال طلب السلفة بنجاح.' +
+                        '<button type="button" class="btn-close" data-bs-dismiss="alert"></button>';
+
+                    if (alertContainer) {
+                        alertContainer.innerHTML = '';
+                        alertContainer.appendChild(fallbackAlert);
+                    }
+
+                    advanceForm.reset();
+                    advanceForm.classList.remove('was-validated');
+
+                    if (lastRawResponse.indexOf('"redirect"') !== -1) {
+                        const redirectMatch = lastRawResponse.match(/"redirect"\s*:\s*"([^"]*)"/);
+                        const redirectUrl = redirectMatch ? redirectMatch[1] : null;
+                        setTimeout(function() {
+                            window.location.href = redirectUrl || window.location.href;
+                        }, 1200);
+                    } else {
+                        setTimeout(function() {
+                            window.location.reload();
+                        }, 1200);
+                    }
+
+                    return;
+                }
+
                 const alert = document.createElement('div');
                 alert.className = 'alert alert-danger alert-dismissible fade show';
                 alert.innerHTML = `<i class="bi bi-exclamation-triangle-fill me-2"></i>${error.message || 'تعذر إرسال طلب السلفة.'}` +
