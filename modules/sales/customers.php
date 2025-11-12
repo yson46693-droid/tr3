@@ -1864,13 +1864,20 @@ document.addEventListener('DOMContentLoaded', function () {
                 var customerName = triggerButton.getAttribute('data-customer-name') || '-';
                 var balanceRaw = triggerButton.getAttribute('data-customer-balance') || '0';
                 var balanceFormatted = triggerButton.getAttribute('data-customer-balance-formatted') || balanceRaw;
+                var numericBalance = parseFloat(balanceRaw);
+                if (!Number.isFinite(numericBalance)) {
+                    numericBalance = 0;
+                }
+                var debtAmount = numericBalance > 0 ? numericBalance : 0;
 
                 nameElement.textContent = customerName;
                 debtElement.textContent = balanceFormatted;
                 customerIdInput.value = triggerButton.getAttribute('data-customer-id') || '';
 
-                amountInput.value = balanceRaw;
-                amountInput.setAttribute('max', balanceRaw);
+                amountInput.value = debtAmount.toFixed(2);
+                amountInput.setAttribute('max', debtAmount.toFixed(2));
+                amountInput.setAttribute('min', '0');
+                amountInput.readOnly = debtAmount <= 0;
                 amountInput.focus();
             });
 
@@ -2104,7 +2111,7 @@ document.addEventListener('DOMContentLoaded', function () {
                     <tr>
                         <th>الاسم</th>
                         <th>رقم الهاتف</th>
-                        <th>ديون العميل</th>
+                        <th>الرصيد</th>
                         <th>العنوان</th>
                         <th>الموقع</th>
                         <th>تاريخ الإضافة</th>

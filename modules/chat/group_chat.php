@@ -15,6 +15,17 @@ require_once __DIR__ . '/../../includes/path_helper.php';
 
 requireLogin();
 
+$pageStylesheets = isset($pageStylesheets) && is_array($pageStylesheets) ? $pageStylesheets : [];
+if (!in_array('assets/css/group-chat.css', $pageStylesheets, true)) {
+    $pageStylesheets[] = 'assets/css/group-chat.css';
+}
+
+$extraScripts = isset($extraScripts) && is_array($extraScripts) ? $extraScripts : [];
+$groupChatScriptPath = getRelativeUrl('assets/js/group-chat.js');
+if (!in_array($groupChatScriptPath, $extraScripts, true)) {
+    $extraScripts[] = $groupChatScriptPath;
+}
+
 $currentUser = getCurrentUser();
 $canModerate = isGroupChatModeratorRole($currentUser['role'] ?? null);
 
