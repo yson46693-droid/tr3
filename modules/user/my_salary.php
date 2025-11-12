@@ -208,12 +208,17 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['
         if (!$isAjaxRequest) {
             return false;
         }
-        header('Content-Type: application/json; charset=utf-8');
+        if (!headers_sent()) {
+            http_response_code($success ? 200 : 400);
+            header('Content-Type: application/json; charset=utf-8');
+        } else {
+            error_log('Advance request AJAX response headers were already sent before JSON output.');
+        }
         echo json_encode([
             'success' => $success,
             'message' => $message,
             'redirect' => $redirect
-        ], JSON_UNESCAPED_UNICODE);
+        ], JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
         exit;
     };
 
