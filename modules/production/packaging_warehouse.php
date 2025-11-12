@@ -243,7 +243,17 @@ if (!function_exists('getPackagingTypeOptions')) {
             }
         }
 
-        return array_values(array_unique($options));
+        $options[] = 'ملصقات';
+        $normalized = [];
+        foreach ($options as $label) {
+            $label = trim((string)$label);
+            if ($label === '') {
+                continue;
+            }
+            $normalized[$label] = $label;
+        }
+
+        return array_values($normalized);
     }
 }
 
