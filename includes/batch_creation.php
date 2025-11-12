@@ -987,9 +987,6 @@ function batchCreationCreate(int $templateId, int $units, array $rawUsage = [], 
 
         if (!empty($materialsForStockDeduction)) {
             foreach ($materialsForStockDeduction as &$stockMaterial) {
-                if (!empty($stockMaterial['supplier_id'])) {
-                    continue;
-                }
                 $usageEntry = null;
                 $templateItemId = isset($stockMaterial['template_item_id']) ? (int)$stockMaterial['template_item_id'] : 0;
                 if ($templateItemId > 0 && isset($rawUsageByTemplateId[$templateItemId])) {
@@ -998,8 +995,48 @@ function batchCreationCreate(int $templateId, int $units, array $rawUsage = [], 
                 if ($usageEntry === null) {
                     $usageEntry = $rawUsageByName[$normalizeName($stockMaterial['material_name'] ?? '')] ?? null;
                 }
-                if ($usageEntry && !empty($usageEntry['supplier_id'])) {
-                    $stockMaterial['supplier_id'] = (int)$usageEntry['supplier_id'];
+
+                if ($usageEntry) {
+                    if (empty($stockMaterial['supplier_id']) && !empty($usageEntry['supplier_id'])) {
+                        $stockMaterial['supplier_id'] = (int)$usageEntry['supplier_id'];
+                    }
+
+                    if (!empty($usageEntry['honey_variety'])) {
+                        $stockMaterial['honey_variety'] = trim((string)$usageEntry['honey_variety']);
+                    }
+
+                    if (!empty($usageEntry['material_type'])) {
+                        $usageType = trim((string)$usageEntry['material_type']);
+                        if ($usageType !== '') {
+                            $lowerUsageType = function_exists('mb_strtolower') ? mb_strtolower($usageType, 'UTF-8') : strtolower($usageType);
+                            if ($lowerUsageType === 'honey') {
+                                $lowerUsageType = 'honey_filtered';
+                            } elseif ($lowerUsageType === 'honey_main') {
+                                $lowerUsageType = 'honey_filtered';
+                            }
+                            $stockMaterial['material_type'] = $lowerUsageType;
+                        }
+                    }
+
+                    $usageQuantity = 0.0;
+                    if (isset($usageEntry['quantity']) && is_numeric($usageEntry['quantity'])) {
+                        $usageQuantity = (float)$usageEntry['quantity'];
+                    } elseif (isset($usageEntry['quantity_used']) && is_numeric($usageEntry['quantity_used'])) {
+                        $usageQuantity = (float)$usageEntry['quantity_used'];
+                    } elseif (isset($usageEntry['quantity_per_unit']) && is_numeric($usageEntry['quantity_per_unit'])) {
+                        $usageQuantity = (float)$usageEntry['quantity_per_unit'] * (float)$units;
+                    }
+
+                    if ($usageQuantity > 0 && $units > 0) {
+                        $computedPerUnit = $usageQuantity / $units;
+                        if ($computedPerUnit > 0) {
+                            $stockMaterial['quantity_per_unit'] = $computedPerUnit;
+                        }
+                    }
+                } else {
+                    if (empty($stockMaterial['supplier_id'])) {
+                        $stockMaterial['supplier_id'] = null;
+                    }
                 }
             }
             unset($stockMaterial);
