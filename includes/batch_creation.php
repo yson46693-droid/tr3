@@ -1150,7 +1150,7 @@ function batchCreationCreate(int $templateId, int $units, array $rawUsage = [], 
                 if ($batchRawMaterialsExists && $batchRawInsertStatement instanceof PDOStatement) {
                     $qtyUsed = (float)($stockMaterial['quantity_per_unit'] ?? 0) * $units;
                     $pendingRawMaterialRows[] = [
-                        'raw_material_id' => null,
+                        'raw_material_id' => isset($stockMaterial['raw_id']) ? (int)$stockMaterial['raw_id'] : (isset($stockMaterial['material_id']) ? (int)$stockMaterial['material_id'] : null),
                         'quantity_used'   => $qtyUsed,
                         'material_name'   => $batchRawHasNameColumn ? (string)($stockMaterial['material_name'] ?? '') : null,
                         'unit'            => $batchRawHasUnitColumn ? ($stockMaterial['unit'] ?? null) : null,
