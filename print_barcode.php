@@ -1,6 +1,6 @@
 <?php
 /**
- * صفحة طباعة الباركود - مبسطة
+ * صفحة طباعة الباركود - ملصق EAN-13 للطباعة
  */
 
 define('ACCESS_ALLOWED', true);
@@ -8,13 +8,20 @@ require_once __DIR__ . '/includes/config.php';
 require_once __DIR__ . '/includes/db.php';
 require_once __DIR__ . '/includes/auth.php';
 require_once __DIR__ . '/includes/batch_numbers.php';
-require_once __DIR__ . '/includes/simple_barcode.php';
 
 requireRole(['production', 'accountant', 'manager']);
 
 $batchNumber = $_GET['batch'] ?? '';
 $quantity = isset($_GET['quantity']) ? max(1, intval($_GET['quantity'])) : 1;
 $format = $_GET['format'] ?? 'single';
+
+if ($quantity < 1) {
+    $quantity = 1;
+}
+
+if ($format !== 'single') {
+    $format = 'single';
+}
 
 if (empty($batchNumber)) {
     die('رقم التشغيلة مطلوب');
@@ -24,6 +31,64 @@ $batch = getBatchByNumber($batchNumber);
 if (!$batch) {
     die('رقم التشغيلة غير موجود');
 }
+
+/**
+ * حساب رقم التحقق EAN-13
+ */
+function calculateEan13Checksum(string $digits12): int
+{
+    $digits = array_map('intval', str_split($digits12));
+    $sumEven = 0;
+    $sumOdd = 0;
+    foreach ($digits as $index => $digit) {
+        if (($index % 2) === 0) {
+            $sumOdd += $digit;
+        } else {
+            $sumEven += $digit;
+        }
+    }
+    $total = ($sumEven * 3) + $sumOdd;
+    $nearestTen = ceil($total / 10) * 10;
+    return ($nearestTen - $total) % 10;
+}
+
+/**
+ * تحويل رقم التشغيلة إلى رمز EAN-13 صالح
+ */
+function convertBatchNumberToEan13(string $batchNumber): array
+{
+    $original = trim($batchNumber);
+    $digitsOnly = preg_replace('/\D+/', '', $original);
+
+    if ($digitsOnly === '') {
+        $digitsOnly = (string) abs(crc32($original));
+    }
+
+    if (strlen($digitsOnly) >= 12) {
+        $digitsOnly = substr($digitsOnly, 0, 12);
+    } else {
+        $digitsOnly = str_pad($digitsOnly, 12, '0', STR_PAD_RIGHT);
+    }
+
+    $checksum = calculateEan13Checksum($digitsOnly);
+    $ean13 = $digitsOnly . $checksum;
+
+    return [
+        'ean13' => $ean13,
+        'digits_only' => $digitsOnly,
+        'checksum' => $checksum,
+        'display_number' => $ean13,
+    ];
+}
+
+$eanData = convertBatchNumberToEan13($batchNumber);
+$labelProductName = $batch['product_name'] ?? 'تشغيلة إنتاج';
+$productionDate = !empty($batch['production_date']) ? formatDate($batch['production_date']) : '';
+
+$eanValueForJs = json_encode($eanData['ean13'], JSON_UNESCAPED_UNICODE);
+$displayNumberForJs = json_encode($eanData['display_number'], JSON_UNESCAPED_UNICODE);
+$productNameJs = json_encode($labelProductName, JSON_UNESCAPED_UNICODE);
+$productionDateJs = json_encode($productionDate, JSON_UNESCAPED_UNICODE);
 ?>
 <!DOCTYPE html>
 <html lang="ar" dir="rtl">
@@ -34,168 +99,216 @@ if (!$batch) {
     <script src="https://cdn.jsdelivr.net/npm/jsbarcode@3.11.5/dist/JsBarcode.all.min.js"></script>
     <style>
         * { margin: 0; padding: 0; box-sizing: border-box; }
-        
-        @media print {
-            .no-print { display: none !important; }
-            @page { margin: 0.3cm; size: A4; }
-            body { margin: 0; padding: 5px; }
-            .barcode-item { page-break-inside: avoid; margin: 2mm; }
+        :root {
+            --label-width: 58mm;
+            --label-height: 40mm;
+            --barcode-width: 32mm;
+            --barcode-height: 22mm;
+            --quiet-zone: 2.6mm;
+            --font-main: 'Roboto', 'Arial', sans-serif;
         }
-        
+
+        @page {
+            size: var(--label-width) var(--label-height);
+            margin: 0;
+        }
+
         body {
-            font-family: Arial, sans-serif;
-            padding: 20px;
-            background: #f5f5f5;
-        }
-        
-        .print-controls {
-            text-align: center;
-            padding: 20px;
-            background: white;
-            border-radius: 5px;
-            margin-bottom: 20px;
-            box-shadow: 0 2px 5px rgba(0,0,0,0.1);
-        }
-        
-        .print-controls h4 {
-            margin-bottom: 10px;
-            color: #1e3a5f;
-        }
-        
-        .print-controls p {
-            margin-bottom: 15px;
-            color: #666;
-        }
-        
-        .btn {
-            padding: 10px 20px;
-            margin: 0 5px;
-            border: none;
-            border-radius: 5px;
-            cursor: pointer;
-            font-size: 16px;
-            font-weight: bold;
-        }
-        
-        .btn-primary {
-            background: #1e3a5f;
-            color: white;
-        }
-        
-        .btn-primary:hover {
-            background: #2c5282;
-        }
-        
-        .btn-secondary {
-            background: #6c757d;
-            color: white;
-        }
-        
-        .btn-secondary:hover {
-            background: #5a6268;
-        }
-        
-        .print-container {
-            max-width: 210mm;
+            font-family: var(--font-main);
+            background: #ffffff;
+            width: var(--label-width);
+            height: var(--label-height);
             margin: 0 auto;
-            background: white;
-            padding: 10px;
+            padding: 0;
+            color: #000;
         }
-        
-        .barcode-item {
-            border: 1px solid #000;
-            padding: 8px;
-            margin: 5px;
-            display: inline-block;
+
+        .print-controls {
+            display: none;
+        }
+
+        .label-wrapper {
+            width: var(--label-width);
+            height: var(--label-height);
+            display: flex;
+            flex-direction: column;
+            justify-content: center;
+            align-items: center;
+            padding: 4mm 3mm;
+            background: #fff;
+        }
+
+        .label-header {
+            width: 100%;
             text-align: center;
-            vertical-align: top;
-            width: <?php echo $format === 'single' ? '100%' : '48mm'; ?>;
-            min-width: 45mm;
-            max-width: 50mm;
-            min-height: 70mm;
-            box-sizing: border-box;
+            margin-bottom: 3mm;
         }
-        
+
+        .label-header h2 {
+            font-size: 10pt;
+            font-weight: 600;
+            margin-bottom: 1mm;
+        }
+
+        .label-header .meta {
+            font-size: 7.5pt;
+            color: #333;
+        }
+
+        .barcode-box {
+            width: var(--barcode-width);
+            height: var(--barcode-height);
+            padding: 0 var(--quiet-zone);
+            background: #fff;
+            border: 0.2mm solid #d0d0d0;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+
         .barcode-svg {
-            margin: 5px 0;
-            max-width: 100%;
-            height: auto;
+            width: calc(var(--barcode-width) - (var(--quiet-zone) * 2));
+            height: calc(var(--barcode-height) - 6mm);
         }
-        
-        .barcode-label {
-            font-weight: bold;
-            font-size: 10px;
-            margin-bottom: 5px;
-            color: #1e3a5f;
-        }
-        
+
         .barcode-number {
-            font-size: 9px;
-            font-weight: bold;
-            margin: 3px 0;
-            word-break: break-all;
+            font-size: 8.5pt;
+            font-weight: 600;
+            letter-spacing: 1px;
+            text-align: center;
+            margin-top: 2mm;
         }
-        
-        .barcode-info {
-            font-size: 8px;
-            margin-top: 5px;
-            line-height: 1.3;
+
+        .label-footer {
+            margin-top: 2mm;
+            font-size: 7pt;
+            color: #333;
+            text-align: center;
         }
-        
-        @media print {
-            body { background: white; padding: 0; }
-            .barcode-item {
-                width: 48mm !important;
-                min-width: 48mm !important;
-                max-width: 48mm !important;
-                height: 70mm !important;
+
+        .manual-actions {
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            gap: 8px;
+            margin: 12px 0;
+        }
+
+        .manual-actions button {
+            padding: 8px 16px;
+            border-radius: 6px;
+            border: none;
+            cursor: pointer;
+            font-weight: 600;
+            font-size: 14px;
+        }
+
+        .manual-actions .btn-primary {
+            background: #1d4ed8;
+            color: #fff;
+        }
+
+        .manual-actions .btn-secondary {
+            background: #64748b;
+            color: #fff;
+        }
+
+        @media screen {
+            body {
+                background: #f5f5f5;
+                padding: 20px;
+            }
+
+            .print-controls {
+                display: block;
+                max-width: 320px;
+                margin: 0 auto 20px;
+                text-align: center;
+                padding: 15px;
+                border-radius: 8px;
+                background: #fff;
+                box-shadow: 0 3px 12px rgba(0,0,0,0.1);
+            }
+
+            .label-wrapper {
+                margin: 0 auto;
+                box-shadow: 0 10px 30px rgba(0,0,0,0.12);
+                border-radius: 8px;
             }
         }
     </style>
 </head>
 <body>
-    <div class="print-controls no-print">
-        <h4>طباعة باركود - <?php echo htmlspecialchars($batchNumber); ?></h4>
-        <p>الكمية: <?php echo $quantity; ?> | التنسيق: <?php echo $format === 'single' ? 'فردية' : 'متعددة'; ?></p>
-        <button onclick="window.print()" class="btn btn-primary">🖨️ طباعة</button>
-        <button onclick="window.close()" class="btn btn-secondary">✕ إغلاق</button>
+    <div class="print-controls">
+        <h4>طباعة باركود تشغيلة</h4>
+        <p>رقم التشغيلة: <?php echo htmlspecialchars($batchNumber); ?></p>
+        <div class="manual-actions">
+            <button class="btn-primary" onclick="window.print()">طباعة</button>
+            <button class="btn-secondary" onclick="window.close()">إغلاق</button>
+        </div>
     </div>
-    
-    <div class="print-container">
-        <?php for ($i = 0; $i < $quantity; $i++): ?>
-            <div class="barcode-item">
-                <div class="barcode-label"><?php echo htmlspecialchars(COMPANY_NAME); ?></div>
-                <div class="barcode-label" style="font-size: 12px;"><?php echo htmlspecialchars($batch['product_name'] ?? ''); ?></div>
-                
-                <div class="barcode-svg">
-                    <?php echo generateBarcode($batchNumber, 'barcode'); ?>
-                </div>
-                
-                <div class="barcode-number"><?php echo htmlspecialchars($batchNumber); ?></div>
-                
-                <div class="barcode-info">
-                    <div><strong>تاريخ الإنتاج:</strong> <?php echo formatDate($batch['production_date']); ?></div>
-                    <?php if ($batch['expiry_date']): ?>
-                        <div><strong>تاريخ انتهاء:</strong> <?php echo formatDate($batch['expiry_date']); ?></div>
-                    <?php endif; ?>
-                    <?php if ($batch['honey_supplier_name']): ?>
-                        <div><strong>مورد:</strong> <?php echo htmlspecialchars($batch['honey_supplier_name']); ?></div>
-                    <?php endif; ?>
-                </div>
-            </div>
-            
-            <?php if (($i + 1) % 2 == 0 && $format === 'multiple'): ?>
-                <div style="page-break-after: always;"></div>
+
+    <div class="label-wrapper">
+        <div class="label-header">
+            <h2><?php echo htmlspecialchars($labelProductName); ?></h2>
+            <?php if (!empty($productionDate)): ?>
+                <div class="meta">تاريخ الإنتاج: <?php echo htmlspecialchars($productionDate); ?></div>
             <?php endif; ?>
-        <?php endfor; ?>
+        </div>
+
+        <div class="barcode-box">
+            <svg id="batchBarcode" class="barcode-svg" role="img" aria-label="EAN-13 barcode"></svg>
+        </div>
+
+        <div class="barcode-number" id="barcodeNumberText"></div>
+
+        <div class="label-footer">
+            رقم التشغيلة (EAN-13): <?php echo htmlspecialchars($eanData['display_number']); ?>
+        </div>
     </div>
-    
+
     <script>
-        // طباعة تلقائية
+        const eanValue = <?php echo $eanValueForJs; ?>;
+        const displayNumber = <?php echo $displayNumberForJs; ?>;
+
+        function renderBarcode() {
+            const target = document.getElementById('batchBarcode');
+            const numberNode = document.getElementById('barcodeNumberText');
+            if (!target || !eanValue) {
+                if (numberNode) {
+                    numberNode.textContent = displayNumber || '';
+                }
+                return;
+            }
+            try {
+                JsBarcode(target, eanValue, {
+                    format: 'EAN13',
+                    background: '#ffffff',
+                    lineColor: '#000000',
+                    margin: 0,
+                    width: 1.1,
+                    height: 80,
+                    displayValue: false,
+                    flat: true
+                });
+                if (numberNode) {
+                    numberNode.textContent = displayNumber || '';
+                }
+            } catch (error) {
+                console.error('Barcode render error', error);
+                if (numberNode) {
+                    numberNode.textContent = displayNumber || eanValue;
+                }
+                target.innerHTML = '<text x="50%" y="50%" text-anchor="middle" font-size="12" fill="#000">EAN-13 غير مدعوم</text>';
+            }
+        }
+
+        renderBarcode();
+
         if (window.location.search.includes('print=1')) {
             setTimeout(function() {
                 window.print();
-            }, 500);
+            }, 400);
         }
     </script>
 </body>

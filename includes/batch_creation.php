@@ -358,6 +358,7 @@ function batchCreationEnsureTables(PDO $pdo): void
             `id` int(11) NOT NULL AUTO_INCREMENT,
             `batch_id` int(11) NOT NULL,
             `employee_id` int(11) NOT NULL,
+            `worker_name` varchar(255) DEFAULT NULL,
             `created_at` timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP,
             PRIMARY KEY (`id`),
             KEY `batch_id` (`batch_id`),
@@ -368,6 +369,7 @@ function batchCreationEnsureTables(PDO $pdo): void
             `id` int(11) NOT NULL AUTO_INCREMENT,
             `batch_id` int(11) NOT NULL,
             `supplier_id` int(11) NOT NULL,
+            `supplier_name` varchar(255) DEFAULT NULL,
             `role` varchar(100) DEFAULT NULL,
             `created_at` timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP,
             PRIMARY KEY (`id`),
@@ -469,6 +471,7 @@ function batchCreationEnsureTables(PDO $pdo): void
                   `id` int(11) NOT NULL AUTO_INCREMENT,
                   `batch_id` int(11) NOT NULL,
                   `supplier_id` int(11) NOT NULL,
+                  `supplier_name` varchar(255) DEFAULT NULL,
                   `role` varchar(100) DEFAULT NULL,
                   `created_at` timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP,
                   PRIMARY KEY (`id`),
@@ -479,6 +482,28 @@ function batchCreationEnsureTables(PDO $pdo): void
         }
     } catch (Throwable $e) {
         error_log('batchCreationEnsureTables: failed ensuring batch_suppliers table -> ' . $e->getMessage());
+    }
+
+    try {
+        if (batchCreationTableExists($pdo, 'batch_suppliers') && !batchCreationColumnExists($pdo, 'batch_suppliers', 'supplier_name')) {
+            $pdo->exec("
+                ALTER TABLE `batch_suppliers`
+                ADD COLUMN `supplier_name` varchar(255) DEFAULT NULL AFTER `supplier_id`
+            ");
+        }
+    } catch (Throwable $e) {
+        error_log('batchCreationEnsureTables: failed adding supplier_name column to batch_suppliers -> ' . $e->getMessage());
+    }
+
+    try {
+        if (batchCreationTableExists($pdo, 'batch_workers') && !batchCreationColumnExists($pdo, 'batch_workers', 'worker_name')) {
+            $pdo->exec("
+                ALTER TABLE `batch_workers`
+                ADD COLUMN `worker_name` varchar(255) DEFAULT NULL AFTER `employee_id`
+            ");
+        }
+    } catch (Throwable $e) {
+        error_log('batchCreationEnsureTables: failed adding worker_name column to batch_workers -> ' . $e->getMessage());
     }
 
     $ensured = true;
@@ -644,17 +669,39 @@ function batchCreationCreate(int $templateId, int $units, array $rawUsage = [], 
         }
 
         $batchSuppliersExists = batchCreationTableExists($pdo, 'batch_suppliers');
-        $batchSuppliersInsertStatement = $batchSuppliersExists
-            ? $pdo->prepare('INSERT INTO batch_suppliers (batch_id, supplier_id, role) VALUES (?, ?, ?)')
-            : null;
+        $batchSuppliersHasNameColumn = $batchSuppliersExists && batchCreationColumnExists($pdo, 'batch_suppliers', 'supplier_name');
+        $batchSuppliersInsertStatement = null;
+        if ($batchSuppliersExists) {
+            $supplierInsertColumns = ['batch_id', 'supplier_id'];
+            $supplierInsertPlaceholders = ['?', '?'];
+            if ($batchSuppliersHasNameColumn) {
+                $supplierInsertColumns[] = 'supplier_name';
+                $supplierInsertPlaceholders[] = '?';
+            }
+            $supplierInsertColumns[] = 'role';
+            $supplierInsertPlaceholders[] = '?';
+            $batchSuppliersInsertStatement = $pdo->prepare(
+                'INSERT INTO batch_suppliers (' . implode(', ', $supplierInsertColumns) . ') VALUES (' . implode(', ', $supplierInsertPlaceholders) . ')'
+            );
+        }
 
-        $supplierRoles = [];
-        $collectSupplier = static function (?int $supplierId, string $role) use (&$supplierRoles): void {
+        $supplierSnapshots = [];
+        $collectSupplier = static function (?int $supplierId, string $role, ?string $name = null) use (&$supplierSnapshots): void {
             if ($supplierId !== null && $supplierId > 0) {
-                if (!isset($supplierRoles[$supplierId])) {
-                    $supplierRoles[$supplierId] = [];
+                if (!isset($supplierSnapshots[$supplierId])) {
+                    $supplierSnapshots[$supplierId] = [
+                        'roles' => [],
+                        'name'  => null,
+                    ];
                 }
-                $supplierRoles[$supplierId][$role] = true;
+                $supplierSnapshots[$supplierId]['roles'][$role] = true;
+
+                if ($name !== null) {
+                    $trimmed = trim((string) $name);
+                    if ($trimmed !== '') {
+                        $supplierSnapshots[$supplierId]['name'] = $trimmed;
+                    }
+                }
             }
         };
 
@@ -1145,6 +1192,43 @@ function batchCreationCreate(int $templateId, int $units, array $rawUsage = [], 
         }
         unset($pack);
 
+        if (!empty($supplierSnapshots)) {
+            $supplierIds = array_keys($supplierSnapshots);
+            $resolvedSupplierNames = [];
+
+            if (!empty($supplierIds) && batchCreationTableExists($pdo, 'suppliers')) {
+                $placeholders = implode(',', array_fill(0, count($supplierIds), '?'));
+                if ($placeholders !== '') {
+                    $supplierStmt = $pdo->prepare('SELECT id, name FROM suppliers WHERE id IN (' . $placeholders . ')');
+                    $supplierStmt->execute($supplierIds);
+                    foreach ($supplierStmt->fetchAll(PDO::FETCH_ASSOC) as $supplierRow) {
+                        $supplierId = isset($supplierRow['id']) ? (int) $supplierRow['id'] : 0;
+                        if ($supplierId <= 0) {
+                            continue;
+                        }
+                        $name = trim((string) ($supplierRow['name'] ?? ''));
+                        if ($name !== '') {
+                            $resolvedSupplierNames[$supplierId] = $name;
+                        }
+                    }
+                }
+            }
+
+            foreach ($supplierSnapshots as $supplierId => &$snapshot) {
+                $currentName = isset($snapshot['name']) ? trim((string) $snapshot['name']) : '';
+                if ($currentName === '') {
+                    $fallback = $resolvedSupplierNames[$supplierId] ?? null;
+                    if ($fallback === null || trim($fallback) === '') {
+                        $fallback = 'مورد #' . $supplierId;
+                    }
+                    $snapshot['name'] = $fallback;
+                } else {
+                    $snapshot['name'] = $currentName;
+                }
+            }
+            unset($snapshot);
+        }
+
         // التحقق من توفر المخزون في حالة وجود جدول مخزون عام
         if ($canUpdateRawStock && !empty($materials)) {
             foreach ($materials as $material) {
@@ -1353,9 +1437,13 @@ function batchCreationCreate(int $templateId, int $units, array $rawUsage = [], 
                 static function (array $carry, array $worker): array {
                     $workerId = (int) ($worker['id'] ?? 0);
                     if ($workerId > 0) {
+                        $name = isset($worker['name']) ? trim((string) $worker['name']) : '';
+                        if ($name === '') {
+                            $name = 'الموظف #' . $workerId;
+                        }
                         $carry[$workerId] = [
                             'id' => $workerId,
-                            'name' => (string) ($worker['name'] ?? ('الموظف #' . $workerId)),
+                            'name' => $name,
                         ];
                     }
                     return $carry;
@@ -1363,6 +1451,9 @@ function batchCreationCreate(int $templateId, int $units, array $rawUsage = [], 
                 []
             ));
         }
+
+        $batchWorkersExists = batchCreationTableExists($pdo, 'batch_workers');
+        $batchWorkersHasNameColumn = $batchWorkersExists && batchCreationColumnExists($pdo, 'batch_workers', 'worker_name');
 
         $batchNumber    = batchCreationGenerateNumber($pdo);
         $productionDate = date('Y-m-d');
@@ -1465,25 +1556,54 @@ function batchCreationCreate(int $templateId, int $units, array $rawUsage = [], 
             }
         }
 
-        if ($batchSuppliersExists && $batchSuppliersInsertStatement instanceof PDOStatement && !empty($supplierRoles)) {
-            foreach ($supplierRoles as $supplierId => $roles) {
-                $roleString = implode(',', array_keys($roles));
-                $batchSuppliersInsertStatement->execute([
-                    $batchId,
-                    $supplierId,
-                    $roleString !== '' ? $roleString : null,
-                ]);
+        if ($batchSuppliersExists && $batchSuppliersInsertStatement instanceof PDOStatement && !empty($supplierSnapshots)) {
+            foreach ($supplierSnapshots as $supplierId => $snapshot) {
+                $roles = isset($snapshot['roles']) && is_array($snapshot['roles'])
+                    ? array_keys($snapshot['roles'])
+                    : [];
+                sort($roles);
+                $roleString = !empty($roles) ? implode(',', $roles) : null;
+                $supplierName = isset($snapshot['name']) ? trim((string) $snapshot['name']) : '';
+                if ($supplierName === '') {
+                    $supplierName = 'مورد #' . $supplierId;
+                }
+
+                $params = [$batchId, (int) $supplierId];
+                if ($batchSuppliersHasNameColumn) {
+                    $params[] = $supplierName;
+                }
+                $params[] = $roleString !== null && $roleString !== '' ? $roleString : null;
+
+                $batchSuppliersInsertStatement->execute($params);
             }
         }
 
         if (!empty($workers)) {
-            if (!batchCreationTableExists($pdo, 'batch_workers')) {
+            if (!$batchWorkersExists) {
                 throw new RuntimeException('جدول العمال المرتبطين بالتشغيلة غير موجود');
             }
 
-            $insertWorker = $pdo->prepare('INSERT INTO batch_workers (batch_id, employee_id) VALUES (?, ?)');
+            $workerInsertColumns = ['batch_id', 'employee_id'];
+            $workerInsertPlaceholders = ['?', '?'];
+            if ($batchWorkersHasNameColumn) {
+                $workerInsertColumns[] = 'worker_name';
+                $workerInsertPlaceholders[] = '?';
+            }
+
+            $insertWorker = $pdo->prepare(
+                'INSERT INTO batch_workers (' . implode(', ', $workerInsertColumns) . ') VALUES (' . implode(', ', $workerInsertPlaceholders) . ')'
+            );
+
             foreach ($workers as $worker) {
-                $insertWorker->execute([$batchId, $worker['id']]);
+                $params = [$batchId, (int) $worker['id']];
+                if ($batchWorkersHasNameColumn) {
+                    $workerName = isset($worker['name']) ? trim((string) $worker['name']) : '';
+                    if ($workerName === '') {
+                        $workerName = 'الموظف #' . (int) $worker['id'];
+                    }
+                    $params[] = $workerName;
+                }
+                $insertWorker->execute($params);
             }
         }
 
@@ -1518,7 +1638,7 @@ function batchCreationCreate(int $templateId, int $units, array $rawUsage = [], 
                 static function (array $worker): array {
                     return [
                         'id'   => (int) $worker['id'],
-                        'name' => (string) $worker['name'],
+                        'name' => trim((string) $worker['name']),
                     ];
                 },
                 $workers
