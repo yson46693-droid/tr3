@@ -2440,7 +2440,20 @@ $lang = isset($translations) ? $translations : [];
                                 </td>
                                 <td>
                                     <?php if (!empty($prod['batch_number'])): ?>
-                                        <span class="badge bg-secondary text-wrap" style="white-space: normal;"><?php echo htmlspecialchars($prod['batch_number']); ?></span>
+                                        <div class="d-flex align-items-center flex-wrap gap-2">
+                                            <span class="badge bg-secondary text-wrap" style="white-space: normal;"><?php echo htmlspecialchars($prod['batch_number']); ?></span>
+                                            <button
+                                                type="button"
+                                                class="btn btn-outline-primary btn-sm print-batch-barcode"
+                                                data-batch="<?php echo htmlspecialchars($prod['batch_number'], ENT_QUOTES, 'UTF-8'); ?>"
+                                                data-product="<?php echo htmlspecialchars($prod['product_name'] ?? '', ENT_QUOTES, 'UTF-8'); ?>"
+                                                data-quantity="<?php echo max(1, (int) round($prod['quantity'] ?? 1)); ?>"
+                                                title="طباعة باركود التشغيلة"
+                                            >
+                                                <i class="bi bi-printer"></i>
+                                                <span class="d-none d-lg-inline ms-1">طباعة</span>
+                                            </button>
+                                        </div>
                                     <?php else: ?>
                                         <span class="text-muted">غير متوفر</span>
                                     <?php endif; ?>
@@ -3005,6 +3018,7 @@ echo json_encode(array_map(function($supplier) {
 window.honeyStockData = <?php echo json_encode($honeyStockDataForJs, JSON_UNESCAPED_UNICODE); ?>;
 let currentTemplateMode = 'advanced';
 const TEMPLATE_DETAILS_BASE_URL = '<?php echo addslashes(getRelativeUrl('dashboard/production.php')); ?>';
+const PRINT_BARCODE_URL = '<?php echo addslashes(getRelativeUrl('print_barcode.php')); ?>';
 
 const HONEY_COMPONENT_TYPES = ['honey_raw', 'honey_filtered', 'honey_general', 'honey_main'];
 
@@ -3210,6 +3224,63 @@ document.addEventListener('DOMContentLoaded', function() {
         });
     });
 });
+
+document.addEventListener('DOMContentLoaded', function() {
+    document.querySelectorAll('.print-batch-barcode').forEach(function(button) {
+        button.addEventListener('click', function() {
+            const batchNumber = button.getAttribute('data-batch') || '';
+            if (!batchNumber) {
+                alert('رقم التشغيلة غير متوفر للطباعة.');
+                return;
+            }
+            const productName = button.getAttribute('data-product') || '';
+            const quantityAttr = parseInt(button.getAttribute('data-quantity'), 10);
+            const defaultQuantity = Number.isFinite(quantityAttr) && quantityAttr > 0 ? quantityAttr : 1;
+            showBarcodeModal(batchNumber, productName, defaultQuantity);
+        });
+    });
+});
+
+function showBarcodeModal(batchNumber, productName, defaultQuantity) {
+    const modalElement = document.getElementById('printBarcodesModal');
+    const quantity = defaultQuantity > 0 ? defaultQuantity : 1;
+
+    window.batchNumbersToPrint = [batchNumber];
+
+    const productNameInput = document.getElementById('barcode_product_name');
+    if (productNameInput) {
+        productNameInput.value = productName || '';
+    }
+
+    const quantityText = document.getElementById('barcode_quantity');
+    if (quantityText) {
+        quantityText.textContent = quantity;
+    }
+
+    const quantityInput = document.getElementById('barcode_print_quantity');
+    if (quantityInput) {
+        quantityInput.value = quantity;
+    }
+
+    const batchListContainer = document.getElementById('batch_numbers_list');
+    if (batchListContainer) {
+        batchListContainer.innerHTML = `
+            <div class="alert alert-info mb-0">
+                <i class="bi bi-info-circle me-2"></i>
+                <strong>رقم التشغيلة:</strong> ${batchNumber}<br>
+                <small>ستتم طباعة نفس رقم التشغيلة بعدد ${quantity} باركود</small>
+            </div>
+        `;
+    }
+
+    if (modalElement && typeof bootstrap !== 'undefined' && bootstrap.Modal) {
+        const modal = bootstrap.Modal.getOrCreateInstance(modalElement);
+        modal.show();
+    } else {
+        const fallbackUrl = `${PRINT_BARCODE_URL}?batch=${encodeURIComponent(batchNumber)}&quantity=${quantity}&print=1`;
+        window.open(fallbackUrl, '_blank');
+    }
+}
 
 function renderTemplateSuppliers(details) {
     const cacheKey = details?.cache_key;
@@ -3544,74 +3615,48 @@ function renderTemplateSuppliers(details) {
         card.className = `component-card component-type-${safeTypeClass}`;
         card.style.setProperty('--component-accent', accentColors[effectiveType] || accentColors.default);
 
-        const header = document.createElement('div');
-        header.className = 'component-card-header';
+        if (!isHoneyType) {
+            const header = document.createElement('div');
+            header.className = 'component-card-header';
 
-        const title = document.createElement('span');
-        title.className = 'component-card-title';
-        if (isAggregatedHoneyCard) {
-            title.textContent = 'مكوّنات العسل';
-        } else {
+            const title = document.createElement('span');
+            title.className = 'component-card-title';
             title.textContent = component.name || component.label || 'مكوّن';
-        }
 
-        const badge = document.createElement('span');
-        badge.className = 'component-card-badge';
-        badge.textContent = typeLabelsMap[effectiveType] || typeLabelsMap.generic;
+            const badge = document.createElement('span');
+            badge.className = 'component-card-badge';
+            badge.textContent = typeLabelsMap[effectiveType] || typeLabelsMap.generic;
 
-        header.appendChild(title);
-        header.appendChild(badge);
-        card.appendChild(header);
+            header.appendChild(title);
+            header.appendChild(badge);
+            card.appendChild(header);
 
-        const meta = document.createElement('div');
-        meta.className = 'component-card-meta';
-        const metaIcon = document.createElement('i');
-        metaIcon.className = `bi ${componentIcons[effectiveType] || componentIcons.generic} me-2`;
-        meta.appendChild(metaIcon);
-        const metaText = document.createElement('span');
-        if (isAggregatedHoneyCard) {
-            metaText.textContent = 'سيتم تطبيق نفس المورد ونوع العسل على جميع العناصر المرتبطة بالقالب.';
-        } else {
+            const meta = document.createElement('div');
+            meta.className = 'component-card-meta';
+            const metaIcon = document.createElement('i');
+            metaIcon.className = `bi ${componentIcons[effectiveType] || componentIcons.generic} me-2`;
+            meta.appendChild(metaIcon);
+            const metaText = document.createElement('span');
             metaText.textContent = component.description || 'لا توجد تفاصيل إضافية.';
-        }
-        meta.appendChild(metaText);
-        card.appendChild(meta);
+            meta.appendChild(metaText);
+            card.appendChild(meta);
 
-        const chipsWrapper = document.createElement('div');
-        chipsWrapper.className = 'component-card-chips';
-        if (isHoneyType) {
-            chipsWrapper.appendChild(createChip('bi-stars', 'يتطلب تحديد نوع العسل'));
-        }
-        if (component.default_supplier) {
-            chipsWrapper.appendChild(createChip('bi-person-check', 'مورد مقترح'));
-        }
-        if (isAggregatedHoneyCard) {
-            chipsWrapper.appendChild(createChip('bi-collection', `يشمل ${aggregatedEntries.length} عناصر`));
-        }
-        if (chipsWrapper.children.length > 0) {
-            card.appendChild(chipsWrapper);
-        }
-
-        if (isAggregatedHoneyCard) {
-            const honeyList = document.createElement('div');
-            honeyList.className = 'aggregated-honey-list text-muted small mt-2';
-            honeyList.innerHTML = aggregatedEntries.map(entry => {
-                const name = entry.component.name || entry.component.label || 'عسل';
-                const quantityLabel = formatComponentQuantity(entry.component);
-                return `
-                    <div class="d-flex align-items-center mb-1">
-                        <i class="bi bi-dot text-warning me-2"></i>
-                        <span>${name} — ${quantityLabel}</span>
-                    </div>
-                `;
-            }).join('');
-            card.appendChild(honeyList);
+            const chipsWrapper = document.createElement('div');
+            chipsWrapper.className = 'component-card-chips';
+            if (component.default_supplier) {
+                chipsWrapper.appendChild(createChip('bi-person-check', 'مورد مقترح'));
+            }
+            if (chipsWrapper.children.length > 0) {
+                card.appendChild(chipsWrapper);
+            }
+        } else {
+            card.classList.add('component-card-compact');
         }
 
         const controlLabel = document.createElement('label');
         controlLabel.className = 'form-label fw-semibold small text-muted mb-1';
-        controlLabel.textContent = (isAggregatedHoneyCard || isHoneyType)
-            ? 'اختر المورد للعسل'
+        controlLabel.textContent = isHoneyType
+            ? 'المورد'
             : 'اختر المورد المناسب';
         card.appendChild(controlLabel);
 
@@ -3657,11 +3702,11 @@ function renderTemplateSuppliers(details) {
 
         if (isHoneyType) {
             const honeyWrapper = document.createElement('div');
-            honeyWrapper.className = 'mt-2';
+            honeyWrapper.className = 'mt-1';
 
             const honeyLabel = document.createElement('label');
             honeyLabel.className = 'form-label fw-bold mb-1';
-            honeyLabel.textContent = 'نوع العسل لدى المورد المختار';
+            honeyLabel.textContent = 'نوع العسل';
 
             const honeySelect = document.createElement('select');
             honeySelect.className = 'form-select form-select-sm';
@@ -3681,8 +3726,8 @@ function renderTemplateSuppliers(details) {
             const honeyHelper = document.createElement('small');
             honeyHelper.className = 'text-muted d-block mt-1';
             honeyHelper.textContent = isAggregatedHoneyCard
-                ? 'سيتم تطبيق هذا النوع على جميع عناصر العسل في القالب.'
-                : 'اختر نوع العسل المناسب حسب الكمية المتاحة لدى المورد.';
+                ? 'سيتم تطبيق الاختيار على جميع مواد العسل.'
+                : 'حدد نوع العسل المتاح لدى المورد.';
 
             honeyWrapper.appendChild(honeyLabel);
             honeyWrapper.appendChild(honeySelect);
@@ -3726,8 +3771,8 @@ function renderTemplateSuppliers(details) {
                 const selectedOption = honeySelect.options[honeySelect.selectedIndex];
                 if (!selectedOption || !selectedOption.value) {
                     honeyHelper.textContent = isAggregatedHoneyCard
-                        ? 'سيتم تطبيق هذا النوع على جميع عناصر العسل في القالب.'
-                        : 'اختر نوع العسل المناسب حسب الكمية المتاحة لدى المورد.';
+                        ? 'سيتم تطبيق الاختيار على جميع مواد العسل.'
+                        : 'حدد نوع العسل المتاح لدى المورد.';
                     return;
                 }
                 const rawQty = parseFloat(selectedOption.dataset.raw || '0');
@@ -4049,7 +4094,7 @@ function printBarcodes() {
     // طباعة الباركودات - كل باركود يحمل نفس رقم التشغيلة
     // الكمية المطلوبة للطباعة
     const batchNumber = batchNumbers[0]; // كل الباركودات تشترك في نفس الرقم
-    const printUrl = 'print_barcode.php?batch=' + encodeURIComponent(batchNumber) + '&quantity=' + printQuantity + '&print=1';
+    const printUrl = `${PRINT_BARCODE_URL}?batch=${encodeURIComponent(batchNumber)}&quantity=${printQuantity}&print=1`;
     
     window.open(printUrl, '_blank');
 }
