@@ -2869,33 +2869,26 @@ if ($section === 'honey') {
         $groupedHoneyStock[$groupKey]['total_filtered'] += (float)($stock['filtered_honey_quantity'] ?? 0);
     }
 
+    $normalizeText = static function ($value) {
+        $value = trim((string)$value);
+        if ($value === '') {
+            return '';
+        }
+        $value = preg_replace('/\s+/u', ' ', $value);
+        return function_exists('mb_strtolower') ? mb_strtolower($value, 'UTF-8') : strtolower($value);
+    };
+
     $groupedHoneyStock = array_values($groupedHoneyStock);
     foreach ($groupedHoneyStock as &$honeyGroup) {
-        usort($honeyGroup['items'], static function ($a, $b) use ($normalizeHoneyVariety = null) {
-            $normalize = $normalizeHoneyVariety ?? static function ($value) {
-                $value = trim((string)$value);
-                if ($value === '') {
-                    return '';
-                }
-                $value = preg_replace('/\s+/u', ' ', $value);
-                return function_exists('mb_strtolower') ? mb_strtolower($value, 'UTF-8') : strtolower($value);
-            };
-            return strcmp($normalize($a['variety_display']), $normalize($b['variety_display']));
+        usort($honeyGroup['items'], static function ($a, $b) use ($normalizeText) {
+            return strcmp($normalizeText($a['variety_display']), $normalizeText($b['variety_display']));
         });
         $honeyGroup['varieties_count'] = count($honeyGroup['items']);
     }
     unset($honeyGroup);
 
-    usort($groupedHoneyStock, static function ($a, $b) {
-        $normalize = static function ($value) {
-            $value = trim((string)$value);
-            if ($value === '') {
-                return '';
-            }
-            $value = preg_replace('/\s+/u', ' ', $value);
-            return function_exists('mb_strtolower') ? mb_strtolower($value, 'UTF-8') : strtolower($value);
-        };
-        return strcmp($normalize($a['supplier_name']), $normalize($b['supplier_name']));
+    usort($groupedHoneyStock, static function ($a, $b) use ($normalizeText) {
+        return strcmp($normalizeText($a['supplier_name']), $normalizeText($b['supplier_name']));
     });
     ?>
     
