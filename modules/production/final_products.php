@@ -820,7 +820,7 @@ if (!empty($finalProducts)) {
 }
 
 // الحصول على المنتجات وخطوط الإنتاج للفلترة
-$products = $db->query("SELECT id, name, category FROM products WHERE status = 'active' ORDER BY name");
+$products = $db->query("SELECT id, name, category FROM products WHERE status = 'active' AND (product_type IS NULL OR product_type = 'internal') ORDER BY name");
 // حساب الإحصائيات
 $statsSql = "SELECT 
                 COUNT(DISTINCT p.product_id) as total_products,
@@ -1961,50 +1961,134 @@ document.addEventListener('DOMContentLoaded', function () {
             return;
         }
 
-    const copyButton = event.target.closest('.js-copy-batch');
-    if (!copyButton) {
-        return;
-    }
+        const copyButton = event.target.closest('.js-copy-batch');
+        if (copyButton) {
+            const batchNumber = copyButton.dataset.batch;
+            if (!batchNumber) {
+                return;
+            }
 
-    const batchNumber = copyButton.dataset.batch;
-    if (!batchNumber) {
-        return;
-    }
+            const originalHtml = copyButton.innerHTML;
+            const originalClasses = copyButton.className;
 
-    const originalHtml = copyButton.innerHTML;
-    const originalClasses = copyButton.className;
+            function showCopiedFeedback(success) {
+                copyButton.className = success ? 'btn btn-success btn-sm' : 'btn btn-warning btn-sm';
+                copyButton.innerHTML = success
+                    ? '<i class="bi bi-check-circle"></i> تم النسخ'
+                    : '<i class="bi bi-exclamation-triangle"></i> تعذر النسخ';
 
-    function showCopiedFeedback(success) {
-        copyButton.className = success ? 'btn btn-success btn-sm' : 'btn btn-warning btn-sm';
-        copyButton.innerHTML = success
-            ? '<i class="bi bi-check-circle"></i> تم النسخ'
-            : '<i class="bi bi-exclamation-triangle"></i> تعذر النسخ';
+                setTimeout(() => {
+                    copyButton.className = originalClasses;
+                    copyButton.innerHTML = originalHtml;
+                }, 2000);
+            }
 
-        setTimeout(() => {
-            copyButton.className = originalClasses;
-            copyButton.innerHTML = originalHtml;
-        }, 2000);
-    }
-
-    if (navigator.clipboard && navigator.clipboard.writeText) {
-        navigator.clipboard.writeText(batchNumber)
-            .then(() => showCopiedFeedback(true))
-            .catch(() => showCopiedFeedback(false));
-    } else {
-        const tempInput = document.createElement('input');
-        tempInput.style.position = 'fixed';
-        tempInput.style.opacity = '0';
-        tempInput.value = batchNumber;
-        document.body.appendChild(tempInput);
-        tempInput.select();
-        try {
-            const successful = document.execCommand('copy');
-            showCopiedFeedback(successful);
-        } catch (err) {
-            showCopiedFeedback(false);
+            if (navigator.clipboard && navigator.clipboard.writeText) {
+                navigator.clipboard.writeText(batchNumber)
+                    .then(() => showCopiedFeedback(true))
+                    .catch(() => showCopiedFeedback(false));
+            } else {
+                const tempInput = document.createElement('input');
+                tempInput.style.position = 'fixed';
+                tempInput.style.opacity = '0';
+                tempInput.value = batchNumber;
+                document.body.appendChild(tempInput);
+                tempInput.select();
+                try {
+                    const successful = document.execCommand('copy');
+                    showCopiedFeedback(successful);
+                } catch (err) {
+                    showCopiedFeedback(false);
+                }
+                document.body.removeChild(tempInput);
+            }
+            return;
         }
-        document.body.removeChild(tempInput);
-    }
-});
+
+        const adjustButton = event.target.closest('.js-external-adjust');
+        if (adjustButton) {
+            const modal = document.getElementById('externalStockModal');
+            if (!modal) {
+                return;
+            }
+            const form = modal.querySelector('form');
+            const productIdInput = form?.querySelector('input[name="product_id"]');
+            const operationInput = form?.querySelector('input[name="operation"]');
+            const nameField = modal.querySelector('.js-external-stock-name');
+            const title = modal.querySelector('.js-external-stock-title');
+            const label = modal.querySelector('.js-external-stock-label');
+            const submitButton = modal.querySelector('.js-external-stock-submit');
+
+            const productId = adjustButton.dataset.product || '';
+            const productName = adjustButton.dataset.name || '';
+            const mode = adjustButton.dataset.mode === 'discard' ? 'discard' : 'add';
+
+            if (productIdInput) {
+                productIdInput.value = productId;
+            }
+            if (operationInput) {
+                operationInput.value = mode;
+            }
+            if (nameField) {
+                nameField.value = productName;
+            }
+            if (title) {
+                title.textContent = mode === 'discard'
+                    ? 'إتلاف كمية من المنتج الخارجي'
+                    : 'إضافة كمية للمنتج الخارجي';
+            }
+            if (label) {
+                label.textContent = mode === 'discard'
+                    ? 'الكمية المراد إتلافها'
+                    : 'الكمية المراد إضافتها';
+            }
+            if (submitButton) {
+                submitButton.textContent = mode === 'discard' ? 'تأكيد الإتلاف' : 'حفظ الكمية';
+                submitButton.className = mode === 'discard'
+                    ? 'btn btn-danger js-external-stock-submit'
+                    : 'btn btn-primary js-external-stock-submit';
+            }
+            return;
+        }
+
+        const editButton = event.target.closest('.js-external-edit');
+        if (editButton) {
+            const modal = document.getElementById('editExternalProductModal');
+            if (!modal) {
+                return;
+            }
+            const form = modal.querySelector('form');
+            if (!form) {
+                return;
+            }
+
+            const productIdInput = form.querySelector('input[name="product_id"]');
+            const nameInput = form.querySelector('input[name="edit_name"]');
+            const channelSelect = form.querySelector('select[name="edit_channel"]');
+            const priceInput = form.querySelector('input[name="edit_price"]');
+            const unitInput = form.querySelector('input[name="edit_unit"]');
+            const descriptionInput = form.querySelector('textarea[name="edit_description"]');
+
+            if (productIdInput) {
+                productIdInput.value = editButton.dataset.product || '';
+            }
+            if (nameInput) {
+                nameInput.value = editButton.dataset.name || '';
+            }
+            if (channelSelect) {
+                const channelValue = editButton.dataset.channel || 'company';
+                channelSelect.value = ['company', 'delegate', 'other'].includes(channelValue) ? channelValue : 'company';
+            }
+            if (priceInput) {
+                priceInput.value = editButton.dataset.price || '0';
+            }
+            if (unitInput) {
+                unitInput.value = editButton.dataset.unit || 'قطعة';
+            }
+            if (descriptionInput) {
+                descriptionInput.value = editButton.dataset.description || '';
+            }
+        }
+    });
 </script>
 

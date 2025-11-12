@@ -21,6 +21,31 @@ $db = db();
 $error = '';
 $success = '';
 
+$productTypeCheck = $db->queryOne("SHOW COLUMNS FROM products LIKE 'product_type'");
+$hasProductType = !empty($productTypeCheck);
+
+if (!$hasProductType) {
+    try {
+        $db->execute("ALTER TABLE products ADD COLUMN product_type ENUM('internal','external') DEFAULT 'internal' AFTER category");
+        $db->execute("UPDATE products SET product_type = 'internal' WHERE product_type IS NULL OR product_type = ''");
+        $hasProductType = true;
+    } catch (Exception $e) {
+        error_log("Error adding product_type column: " . $e->getMessage());
+    }
+}
+
+$externalChannelCheck = $db->queryOne("SHOW COLUMNS FROM products LIKE 'external_channel'");
+$hasExternalChannel = !empty($externalChannelCheck);
+
+if (!$hasExternalChannel) {
+    try {
+        $db->execute("ALTER TABLE products ADD COLUMN external_channel ENUM('company','delegate','other') DEFAULT NULL AFTER product_type");
+        $hasExternalChannel = true;
+    } catch (Exception $e) {
+        error_log("Error adding external_channel column: " . $e->getMessage());
+    }
+}
+
 // معالجة العمليات
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     $action = $_POST['action'] ?? '';
@@ -52,6 +77,18 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             if ($hasUnit) {
                 $columns[] = 'unit';
                 $values[] = $unit;
+                $placeholders[] = '?';
+            }
+
+            if ($hasProductType) {
+                $columns[] = 'product_type';
+                $values[] = 'internal';
+                $placeholders[] = '?';
+            }
+
+            if ($hasExternalChannel) {
+                $columns[] = 'external_channel';
+                $values[] = null;
                 $placeholders[] = '?';
             }
             
@@ -92,41 +129,45 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         if ($productId <= 0) {
             $error = 'يجب اختيار منتج';
         } else {
-            $product = $db->queryOne("SELECT quantity FROM products WHERE id = ?", [$productId]);
-            $oldQuantity = $product['quantity'];
-            
-            if ($type === 'add') {
-                $newQuantity = $oldQuantity + $quantity;
-            } elseif ($type === 'subtract') {
-                $newQuantity = $oldQuantity - $quantity;
+            $product = $db->queryOne("SELECT quantity FROM products WHERE id = ? AND (product_type IS NULL OR product_type = 'internal')", [$productId]);
+            if (!$product) {
+                $error = 'المنتج المحدد غير موجود أو ليس من مخزون الشركة.';
             } else {
-                $newQuantity = $quantity;
-            }
+                $oldQuantity = $product['quantity'];
             
-            $db->execute(
-                "UPDATE products SET quantity = ?, updated_at = NOW() WHERE id = ?",
-                [$newQuantity, $productId]
-            );
-            
-            logAudit($currentUser['id'], 'update_stock', 'product', $productId, 
-                     ['quantity' => $oldQuantity], ['quantity' => $newQuantity]);
-            
-            // التحقق من الحد الأدنى
-            $columnCheck = $db->queryOne("SHOW COLUMNS FROM products LIKE 'min_stock'");
-            if ($columnCheck) {
-                $product = $db->queryOne("SELECT min_stock, name FROM products WHERE id = ?", [$productId]);
-                if ($product && isset($product['min_stock']) && $newQuantity <= $product['min_stock']) {
-                    notifyManagers('تنبيه مخزون', "انخفض مخزون {$product['name']} إلى {$newQuantity}", 'warning');
+                if ($type === 'add') {
+                    $newQuantity = $oldQuantity + $quantity;
+                } elseif ($type === 'subtract') {
+                    $newQuantity = $oldQuantity - $quantity;
+                } else {
+                    $newQuantity = $quantity;
                 }
-            } else {
-                // إذا لم يكن العمود موجوداً، تحقق من المخزون الصفر
-                $product = $db->queryOne("SELECT name FROM products WHERE id = ?", [$productId]);
-                if ($product && $newQuantity <= 0) {
-                    notifyManagers('تنبيه مخزون', "انخفض مخزون {$product['name']} إلى {$newQuantity}", 'warning');
-                }
-            }
             
-            $success = 'تم تحديث المخزون بنجاح';
+                $db->execute(
+                    "UPDATE products SET quantity = ?, updated_at = NOW() WHERE id = ? AND (product_type IS NULL OR product_type = 'internal')",
+                    [$newQuantity, $productId]
+                );
+            
+                logAudit($currentUser['id'], 'update_stock', 'product', $productId, 
+                         ['quantity' => $oldQuantity], ['quantity' => $newQuantity]);
+            
+                // التحقق من الحد الأدنى
+                $columnCheck = $db->queryOne("SHOW COLUMNS FROM products LIKE 'min_stock'");
+                if ($columnCheck) {
+                    $product = $db->queryOne("SELECT min_stock, name FROM products WHERE id = ?", [$productId]);
+                    if ($product && isset($product['min_stock']) && $newQuantity <= $product['min_stock']) {
+                        notifyManagers('تنبيه مخزون', "انخفض مخزون {$product['name']} إلى {$newQuantity}", 'warning');
+                    }
+                } else {
+                    // إذا لم يكن العمود موجوداً، تحقق من المخزون الصفر
+                    $product = $db->queryOne("SELECT name FROM products WHERE id = ?", [$productId]);
+                    if ($product && $newQuantity <= 0) {
+                        notifyManagers('تنبيه مخزون', "انخفض مخزون {$product['name']} إلى {$newQuantity}", 'warning');
+                    }
+                }
+            
+                $success = 'تم تحديث المخزون بنجاح';
+            }
         }
     }
 }
@@ -170,8 +211,8 @@ if (!$hasUnit) {
     }
 }
 
-$sql = "SELECT * FROM products WHERE 1=1";
-$countSql = "SELECT COUNT(*) as total FROM products WHERE 1=1";
+$sql = "SELECT * FROM products WHERE (product_type IS NULL OR product_type = 'internal')";
+$countSql = "SELECT COUNT(*) as total FROM products WHERE (product_type IS NULL OR product_type = 'internal')";
 $params = [];
 
 if (!empty($search)) {
@@ -199,7 +240,7 @@ $params[] = $offset;
 $products = $db->query($sql, $params);
 
 // الحصول على الفئات
-$categories = $db->query("SELECT DISTINCT category FROM products WHERE category IS NOT NULL ORDER BY category");
+$categories = $db->query("SELECT DISTINCT category FROM products WHERE category IS NOT NULL AND (product_type IS NULL OR product_type = 'internal') ORDER BY category");
 
 // المنتجات منخفضة المخزون
 // التحقق من وجود عمود min_stock أولاً
@@ -212,7 +253,7 @@ try {
         // العمود موجود
         $lowStock = $db->query(
             "SELECT * FROM products 
-             WHERE quantity <= min_stock AND status = 'active'
+             WHERE quantity <= min_stock AND status = 'active' AND (product_type IS NULL OR product_type = 'internal')
              ORDER BY (quantity / NULLIF(min_stock, 0)) ASC
              LIMIT 10"
         );
@@ -234,7 +275,7 @@ try {
     // في حالة الخطأ، استخدم استعلام بديل
     $lowStock = $db->query(
         "SELECT * FROM products 
-         WHERE quantity <= 0 AND status = 'active'
+         WHERE quantity <= 0 AND status = 'active' AND (product_type IS NULL OR product_type = 'internal')
          ORDER BY quantity ASC
          LIMIT 10"
     );
@@ -246,7 +287,7 @@ $inventorySummary = $db->queryOne("
         COALESCE(SUM(quantity), 0) AS total_quantity,
         COALESCE(SUM(quantity * unit_price), 0) AS total_value
     FROM products
-    WHERE status = 'active'
+    WHERE status = 'active' AND (product_type IS NULL OR product_type = 'internal')
 ");
 
 $lowStockCount = is_array($lowStock) ? count($lowStock) : 0;

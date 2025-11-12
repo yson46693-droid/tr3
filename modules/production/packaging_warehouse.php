@@ -2241,8 +2241,17 @@ $packagingReportGeneratedAt = $packagingReport['generated_at'] ?? date('Y-m-d H:
 
 <!-- قائمة أدوات التعبئة -->
 <div class="card shadow-sm">
-    <div class="card-header bg-primary text-white d-flex justify-content-between align-items-center">
+    <div class="card-header bg-primary text-white d-flex flex-wrap gap-2 justify-content-between align-items-center">
         <h5 class="mb-0">قائمة أدوات التعبئة (<?php echo $totalMaterials; ?>)</h5>
+        <button
+            type="button"
+            id="printPackagingWarehouseReportButton"
+            class="btn btn-outline-light btn-sm d-print-none"
+            aria-label="طباعة تقرير أدوات التعبئة"
+        >
+            <i class="bi bi-printer me-1"></i>
+            طباعة التقرير
+        </button>
     </div>
     <div class="card-body">
         <?php if (empty($paginatedMaterials)): ?>
@@ -2898,6 +2907,13 @@ const aliasApiUrl = '<?php echo getRelativeUrl('api/update_packaging_alias.php')
 const nextCodeApiUrl = '<?php echo getRelativeUrl('production.php?page=packaging_warehouse&ajax=next_code'); ?>';
 
 document.addEventListener('DOMContentLoaded', function () {
+    const headerPrintButton = document.getElementById('printPackagingWarehouseReportButton');
+    if (headerPrintButton) {
+        headerPrintButton.addEventListener('click', function () {
+            window.print();
+        });
+    }
+
     const reportButton = document.getElementById('generatePackagingReportBtn');
     const reportModalElement = document.getElementById('packagingReportModal');
     const viewButton = document.getElementById('packagingReportViewBtn');
