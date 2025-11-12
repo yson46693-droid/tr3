@@ -831,6 +831,52 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     [$templateId]
                 );
 
+                $normalizeRawName = static function ($value): string {
+                    if (!is_string($value)) {
+                        $value = (string) $value;
+                    }
+                    $trimmed = trim($value);
+                    if ($trimmed === '') {
+                        return '';
+                    }
+                    $normalizedWhitespace = preg_replace('/\s+/u', ' ', $trimmed);
+                    return function_exists('mb_strtolower')
+                        ? mb_strtolower($normalizedWhitespace, 'UTF-8')
+                        : strtolower($normalizedWhitespace);
+                };
+
+                $templateRawDetailsById = [];
+                $templateRawDetailsByName = [];
+                if (!empty($template['details_json'])) {
+                    $decodedTemplateDetails = json_decode((string) $template['details_json'], true);
+                    if (json_last_error() === JSON_ERROR_NONE && is_array($decodedTemplateDetails)) {
+                        $rawDetailsList = $decodedTemplateDetails['raw_materials'] ?? [];
+                        if (is_array($rawDetailsList)) {
+                            foreach ($rawDetailsList as $rawDetail) {
+                                if (!is_array($rawDetail)) {
+                                    continue;
+                                }
+                                if (isset($rawDetail['template_item_id'])) {
+                                    $templateRawDetailsById[(int) $rawDetail['template_item_id']] = $rawDetail;
+                                }
+                                if (isset($rawDetail['id'])) {
+                                    $templateRawDetailsById[(int) $rawDetail['id']] = $rawDetail;
+                                }
+                                $detailName = '';
+                                if (!empty($rawDetail['name'])) {
+                                    $detailName = (string) $rawDetail['name'];
+                                } elseif (!empty($rawDetail['material_name'])) {
+                                    $detailName = (string) $rawDetail['material_name'];
+                                }
+                                $normalizedDetailName = $normalizeRawName($detailName);
+                                if ($normalizedDetailName !== '' && !isset($templateRawDetailsByName[$normalizedDetailName])) {
+                                    $templateRawDetailsByName[$normalizedDetailName] = $rawDetail;
+                                }
+                            }
+                        }
+                    }
+                }
+
                 $packagingIdsMap = [];
                 $packagingTableExists = !empty($db->queryOne("SHOW TABLES LIKE 'packaging_materials'"));
                 $packagingProductColumnExists = $packagingTableExists && productionColumnExists('packaging_materials', 'product_id');
@@ -973,7 +1019,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 }
 
                 foreach ($rawMaterials as $raw) {
-                    $rawKey = 'raw_' . $raw['id'];
+                    $rawId = isset($raw['id']) ? (int)$raw['id'] : 0;
+                    $rawKey = 'raw_' . $rawId;
                     $selectedSupplierId = $materialSuppliers[$rawKey] ?? 0;
                     if ($selectedSupplierId <= 0) {
                         throw new Exception('يرجى اختيار المورد المناسب لكل مادة خام قبل إنشاء التشغيلة.');
@@ -984,24 +1031,70 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                         throw new Exception('مورد غير صالح للمادة الخام: ' . ($raw['material_name'] ?? 'غير معروف'));
                     }
 
-                    $rawName = $raw['material_name'] ?? 'مادة خام';
+                    $rawName = (string)($raw['material_name'] ?? 'مادة خام');
                     $rawUnit = $raw['unit'] ?? 'كجم';
                     $rawQuantityPerUnit = (float)($raw['quantity_per_unit'] ?? 0);
                     $rawProductId = ensureProductionMaterialProductId($rawName, 'raw_material', $rawUnit);
 
-                    $materialType = 'raw_general';
-                    if (mb_stripos($rawName, 'عسل') !== false) {
-                        $materialType = 'honey_filtered';
-                        if (!$honeySupplierId) {
-                            $honeySupplierId = $supplierInfo['id'];
-                        }
-                        $selectedHoneyVariety = trim((string)($materialHoneyVarieties[$rawKey] ?? ''));
-                        if ($selectedHoneyVariety !== '') {
-                            $honeyVariety = $selectedHoneyVariety;
+                    $detailEntry = null;
+                    if ($rawId > 0 && isset($templateRawDetailsById[$rawId])) {
+                        $detailEntry = $templateRawDetailsById[$rawId];
+                    } else {
+                        $normalizedRawName = $normalizeRawName($rawName);
+                        if ($normalizedRawName !== '' && isset($templateRawDetailsByName[$normalizedRawName])) {
+                            $detailEntry = $templateRawDetailsByName[$normalizedRawName];
                         }
                     }
 
-                $materialsConsumption['raw'][] = [
+                    $detailType = '';
+                    if ($detailEntry && isset($detailEntry['type']) && is_string($detailEntry['type'])) {
+                        $detailType = trim((string)$detailEntry['type']);
+                    } elseif ($detailEntry && isset($detailEntry['material_type']) && is_string($detailEntry['material_type'])) {
+                        $detailType = trim((string)$detailEntry['material_type']);
+                    }
+
+                    $materialType = $detailType !== '' ? $detailType : 'raw_general';
+                    $materialType = function_exists('mb_strtolower') ? mb_strtolower($materialType, 'UTF-8') : strtolower($materialType);
+                    if ($materialType === 'honey') {
+                        $materialType = 'honey_filtered';
+                    } elseif ($materialType === 'honey_general') {
+                        $materialType = 'honey_filtered';
+                    }
+
+                    $isHoneyName = (mb_stripos($rawName, 'عسل') !== false) || (stripos($rawName, 'honey') !== false);
+                    if (!in_array($materialType, ['honey_raw', 'honey_filtered', 'olive_oil', 'beeswax', 'derivatives', 'nuts'], true)) {
+                        if ($isHoneyName) {
+                            $hasRawKeyword = (mb_stripos($rawName, 'خام') !== false) || (stripos($rawName, 'raw') !== false);
+                            $hasFilteredKeyword = (mb_stripos($rawName, 'مصفى') !== false) || (stripos($rawName, 'filtered') !== false);
+                            if ($hasRawKeyword && !$hasFilteredKeyword) {
+                                $materialType = 'honey_raw';
+                            } elseif ($hasFilteredKeyword && !$hasRawKeyword) {
+                                $materialType = 'honey_filtered';
+                            } else {
+                                $materialType = 'honey_filtered';
+                            }
+                        } else {
+                            $materialType = 'raw_general';
+                        }
+                    }
+
+                    $selectedHoneyVariety = trim((string)($materialHoneyVarieties[$rawKey] ?? ''));
+                    if ($selectedHoneyVariety === '' && $detailEntry && !empty($detailEntry['honey_variety'])) {
+                        $selectedHoneyVariety = trim((string)$detailEntry['honey_variety']);
+                    }
+
+                    if (in_array($materialType, ['honey_raw', 'honey_filtered'], true)) {
+                        if (!$honeySupplierId) {
+                            $honeySupplierId = $supplierInfo['id'];
+                        }
+                        if ($selectedHoneyVariety !== '') {
+                            $honeyVariety = $selectedHoneyVariety;
+                        } elseif (is_array($detailEntry) && !empty($detailEntry['honey_variety'])) {
+                            $honeyVariety = (string) $detailEntry['honey_variety'];
+                        }
+                    }
+
+                    $materialsConsumption['raw'][] = [
                         'product_id' => $rawProductId,
                         'quantity' => $rawQuantityPerUnit * $quantity,
                         'material_name' => $rawName,
@@ -1009,8 +1102,10 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                         'unit' => $rawUnit,
                         'material_type' => $materialType,
                         'display_name' => $rawName,
-                        'honey_variety' => $materialHoneyVarieties[$rawKey] ?? null,
-                        'template_item_id' => (int)($raw['id'] ?? 0)
+                        'honey_variety' => $selectedHoneyVariety !== ''
+                            ? $selectedHoneyVariety
+                            : (is_array($detailEntry) && isset($detailEntry['honey_variety']) ? $detailEntry['honey_variety'] : null),
+                        'template_item_id' => $rawId
                     ];
 
                     $allSuppliers[] = [
@@ -1018,7 +1113,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                         'name' => $supplierInfo['name'],
                         'type' => $supplierInfo['type'],
                         'material' => $rawName,
-                        'honey_variety' => $materialHoneyVarieties[$rawKey] ?? null
+                        'honey_variety' => $selectedHoneyVariety !== ''
+                            ? $selectedHoneyVariety
+                            : (is_array($detailEntry) && isset($detailEntry['honey_variety']) ? $detailEntry['honey_variety'] : null)
                     ];
                 }
 

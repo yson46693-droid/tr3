@@ -58,14 +58,33 @@ if ($isTemplateAjax) {
                 }
             }
 
+            $normalizeMaterialName = static function ($value): string {
+                if (!is_string($value)) {
+                    $value = (string) $value;
+                }
+                $trimmed = trim($value);
+                if ($trimmed === '') {
+                    return '';
+                }
+                $normalizedWhitespace = preg_replace('/\s+/u', ' ', $trimmed);
+                return function_exists('mb_strtolower')
+                    ? mb_strtolower($normalizedWhitespace, 'UTF-8')
+                    : strtolower($normalizedWhitespace);
+            };
+
             $rawDefaults = [];
             if (!empty($detailsPayload['raw_materials']) && is_array($detailsPayload['raw_materials'])) {
                 foreach ($detailsPayload['raw_materials'] as $rawItem) {
                     $nameKey = trim((string)($rawItem['name'] ?? ''));
-                    if ($nameKey !== '') {
-                        $rawDefaults[$nameKey] = [
+                    if ($nameKey === '' && !empty($rawItem['material_name'])) {
+                        $nameKey = trim((string)$rawItem['material_name']);
+                    }
+                    $normalizedKey = $nameKey !== '' ? $normalizeMaterialName($nameKey) : '';
+                    if ($normalizedKey !== '') {
+                        $rawDefaults[$normalizedKey] = [
                             'supplier_id' => $rawItem['supplier_id'] ?? null,
-                            'honey_variety' => $rawItem['honey_variety'] ?? null
+                            'honey_variety' => $rawItem['honey_variety'] ?? null,
+                            'type' => $rawItem['type'] ?? ($rawItem['material_type'] ?? null)
                         ];
                     }
                 }
@@ -109,15 +128,22 @@ if ($isTemplateAjax) {
                 $unit = $rawMaterial['unit'] ?? 'وحدة';
                 $defaultSupplier = null;
                 $defaultHoneyVariety = null;
-                if ($name !== '' && isset($rawDefaults[$name])) {
-                    $defaultSupplier = $rawDefaults[$name]['supplier_id'] ?? null;
-                    $defaultHoneyVariety = $rawDefaults[$name]['honey_variety'] ?? null;
+                $detailType = null;
+                if ($name !== '') {
+                    $normalizedName = $normalizeMaterialName($name);
+                    if ($normalizedName !== '' && isset($rawDefaults[$normalizedName])) {
+                        $defaultSupplier = $rawDefaults[$normalizedName]['supplier_id'] ?? null;
+                        $defaultHoneyVariety = $rawDefaults[$normalizedName]['honey_variety'] ?? null;
+                        if (!empty($rawDefaults[$normalizedName]['type'])) {
+                            $detailType = (string)$rawDefaults[$normalizedName]['type'];
+                        }
+                    }
                 }
 
                 $isHoneyMaterial = false;
-                $componentType = 'raw_general';
+                $componentType = $detailType !== null ? trim((string)$detailType) : 'raw_general';
                 $hasHoneyKeyword = (mb_stripos($name, 'عسل') !== false) || (stripos($name, 'honey') !== false);
-                if ($hasHoneyKeyword) {
+                if ($detailType === null && $hasHoneyKeyword) {
                     $isHoneyMaterial = true;
                     $hasFilteredKeyword = (mb_stripos($name, 'مصفى') !== false) || (stripos($name, 'filtered') !== false);
                     $hasRawKeyword = (mb_stripos($name, 'خام') !== false) || (stripos($name, 'raw') !== false);
@@ -129,6 +155,8 @@ if ($isTemplateAjax) {
                     } else {
                         $componentType = 'honey_general';
                     }
+                } elseif ($detailType !== null) {
+                    $isHoneyMaterial = in_array($componentType, ['honey_raw', 'honey_filtered', 'honey_main', 'honey_general'], true);
                 }
 
                 $components[] = [
@@ -158,9 +186,10 @@ if ($isTemplateAjax) {
                     $defaultHoneyVariety = $rawItem['honey_variety'] ?? null;
 
                     $isHoneyMaterial = false;
-                    $componentType = 'raw_general';
+                    $detailType = isset($rawItem['type']) ? (string)$rawItem['type'] : (isset($rawItem['material_type']) ? (string)$rawItem['material_type'] : '');
+                    $componentType = $detailType !== '' ? trim($detailType) : 'raw_general';
                     $hasHoneyKeyword = (mb_stripos($name, 'عسل') !== false) || (stripos($name, 'honey') !== false);
-                    if ($hasHoneyKeyword) {
+                    if ($detailType === '' && $hasHoneyKeyword) {
                         $isHoneyMaterial = true;
                         $hasFilteredKeyword = (mb_stripos($name, 'مصفى') !== false) || (stripos($name, 'filtered') !== false);
                         $hasRawKeyword = (mb_stripos($name, 'خام') !== false) || (stripos($name, 'raw') !== false);
@@ -172,6 +201,8 @@ if ($isTemplateAjax) {
                         } else {
                             $componentType = 'honey_general';
                         }
+                    } elseif ($detailType !== '') {
+                        $isHoneyMaterial = in_array($componentType, ['honey_raw', 'honey_filtered', 'honey_main', 'honey_general'], true);
                     }
 
                     $components[] = [
