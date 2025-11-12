@@ -34,7 +34,7 @@
 }
 
 .production-template-dialog .modal-header {
-    background: linear-gradient(135deg, #1f4db8, #042475);
+    background: linear-gradient(135deg, #1f4db8, #4a7dfb);
     color: #fff;
     border-bottom: 0;
     box-shadow: inset 0 -1px 0 rgba(255, 255, 255, 0.15);

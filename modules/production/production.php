@@ -889,13 +889,14 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                         $packagingIdsMap[$packagingMaterialId] = true;
                     }
 
-                    $materialsConsumption['packaging'][] = [
+                $materialsConsumption['packaging'][] = [
                         'material_id' => $packagingMaterialId > 0 ? $packagingMaterialId : null,
                         'quantity' => (float)($pkg['quantity_per_unit'] ?? 1.0) * $quantity,
                         'name' => $packagingName !== '' ? $packagingName : 'مادة تعبئة',
                         'unit' => $packagingUnit,
                         'product_id' => $packagingProductId,
-                        'supplier_id' => $selectedSupplierId
+                        'supplier_id' => $selectedSupplierId,
+                        'template_item_id' => (int)($pkg['id'] ?? 0)
                     ];
 
                     $allSuppliers[] = [
@@ -939,7 +940,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                         }
                     }
 
-                    $materialsConsumption['raw'][] = [
+                $materialsConsumption['raw'][] = [
                         'product_id' => $rawProductId,
                         'quantity' => $rawQuantityPerUnit * $quantity,
                         'material_name' => $rawName,
@@ -947,7 +948,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                         'unit' => $rawUnit,
                         'material_type' => $materialType,
                         'display_name' => $rawName,
-                        'honey_variety' => $materialHoneyVarieties[$rawKey] ?? null
+                        'honey_variety' => $materialHoneyVarieties[$rawKey] ?? null,
+                        'template_item_id' => (int)($raw['id'] ?? 0)
                     ];
 
                     $allSuppliers[] = [
@@ -1180,7 +1182,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     $currentUser['id'],
                     $allSuppliers, // جميع الموردين مع المواد
                     $honeyVariety ?? null, // نوع العسل المستخدم
-                    $templateId
+                    $templateId,
+                    $materialsConsumption['raw'],
+                    $materialsConsumption['packaging']
                 );
                 
                 if (!$batchResult['success']) {

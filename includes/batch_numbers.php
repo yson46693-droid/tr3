@@ -148,7 +148,9 @@ function createBatchNumber(
     $createdBy = null,
     $allSuppliers = [],
     $honeyVariety = null,
-    $templateId = null
+    $templateId = null,
+    array $rawMaterialsUsage = [],
+    array $packagingUsage = []
 ) {
     $templateId = $templateId !== null ? (int) $templateId : 0;
     $units = (int) $quantity;
@@ -164,7 +166,7 @@ function createBatchNumber(
         $units = 1;
     }
 
-    $creationResult = batchCreationCreate($templateId, $units);
+    $creationResult = batchCreationCreate($templateId, $units, $rawMaterialsUsage, $packagingUsage);
 
     if (empty($creationResult['success'])) {
         return [

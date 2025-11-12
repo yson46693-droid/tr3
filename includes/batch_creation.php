@@ -521,7 +521,7 @@ function batchCreationGenerateNumber(PDO $pdo): string
  *     workers?: array<int, array{id:int,name:string}>
  * }
  */
-function batchCreationCreate(int $templateId, int $units): array
+function batchCreationCreate(int $templateId, int $units, array $rawUsage = [], array $packagingUsage = []): array
 {
     if ($templateId <= 0) {
         return ['success' => false, 'message' => 'معرف القالب غير صالح'];
@@ -542,6 +542,55 @@ function batchCreationCreate(int $templateId, int $units): array
         }
 
         $pdo->beginTransaction();
+
+        $normalizeName = static function ($value): string {
+            if ($value === null) {
+                return '';
+            }
+            $trimmed = trim((string)$value);
+            if ($trimmed === '') {
+                return '';
+            }
+            $collapsed = preg_replace('/\s+/u', ' ', $trimmed);
+            if (function_exists('mb_strtolower')) {
+                return mb_strtolower($collapsed, 'UTF-8');
+            }
+            return strtolower($collapsed);
+        };
+
+        $rawUsageByTemplateId = [];
+        $rawUsageByName = [];
+        foreach ($rawUsage as $usageEntry) {
+            if (!is_array($usageEntry)) {
+                continue;
+            }
+            $templateItemId = isset($usageEntry['template_item_id']) ? (int)$usageEntry['template_item_id'] : 0;
+            if ($templateItemId > 0 && !isset($rawUsageByTemplateId[$templateItemId])) {
+                $rawUsageByTemplateId[$templateItemId] = $usageEntry;
+            }
+            $nameCandidate = $usageEntry['material_name'] ?? ($usageEntry['display_name'] ?? '');
+            $normalizedName = $normalizeName($nameCandidate);
+            if ($normalizedName !== '' && !isset($rawUsageByName[$normalizedName])) {
+                $rawUsageByName[$normalizedName] = $usageEntry;
+            }
+        }
+
+        $packagingUsageByTemplateId = [];
+        $packagingUsageByName = [];
+        foreach ($packagingUsage as $packUsage) {
+            if (!is_array($packUsage)) {
+                continue;
+            }
+            $templateItemId = isset($packUsage['template_item_id']) ? (int)$packUsage['template_item_id'] : 0;
+            if ($templateItemId > 0 && !isset($packagingUsageByTemplateId[$templateItemId])) {
+                $packagingUsageByTemplateId[$templateItemId] = $packUsage;
+            }
+            $packName = $packUsage['name'] ?? '';
+            $normalizedName = $normalizeName($packName);
+            if ($normalizedName !== '' && !isset($packagingUsageByName[$normalizedName])) {
+                $packagingUsageByName[$normalizedName] = $packUsage;
+            }
+        }
 
         $batchRawMaterialsExists = batchCreationTableExists($pdo, 'batch_raw_materials');
         $batchRawHasNameColumn = $batchRawMaterialsExists && batchCreationColumnExists($pdo, 'batch_raw_materials', 'material_name');
@@ -828,6 +877,11 @@ function batchCreationCreate(int $templateId, int $units): array
                     $collectSupplier($supplierId, 'raw_material');
                 }
 
+                $usageMatch = $rawUsageByTemplateId[(int)($materialRow['id'] ?? 0)] ?? $rawUsageByName[$normalizeName($materialName)] ?? null;
+                if ($usageMatch && $supplierId === null && !empty($usageMatch['supplier_id'])) {
+                    $supplierId = (int)$usageMatch['supplier_id'];
+                }
+
                 $materialsForStockDeduction[] = [
                     'material_type'    => $materialType,
                     'material_name'    => $materialName !== '' ? $materialName : ($detailEntry['name'] ?? $detailEntry['material_name'] ?? 'مادة خام'),
@@ -835,6 +889,7 @@ function batchCreationCreate(int $templateId, int $units): array
                     'quantity_per_unit'=> $quantityPerUnit,
                     'unit'             => $detailEntry['unit'] ?? ($materialRow['unit'] ?? 'كجم'),
                     'honey_variety'    => $detailEntry['honey_variety'] ?? null,
+                    'template_item_id' => (int)($materialRow['id'] ?? 0),
                 ];
             }
         } else {
@@ -898,13 +953,19 @@ function batchCreationCreate(int $templateId, int $units): array
                     $supplierId = (int) $material['inventory_supplier_id'];
                 } elseif (isset($templateRawDetailsById[(int) ($material['raw_id'] ?? 0)]['supplier_id'])) {
                     $supplierId = (int) $templateRawDetailsById[(int) $material['raw_id']]['supplier_id'];
-                } else {
-                    $rawName = (string) ($material['raw_name'] ?? '');
-                    $normalizedRawName = $rawName !== ''
-                        ? (function_exists('mb_strtolower') ? mb_strtolower(trim($rawName), 'UTF-8') : strtolower(trim($rawName)))
-                        : '';
-                    if ($normalizedRawName !== '' && isset($templateRawDetailsByName[$normalizedRawName]['supplier_id'])) {
-                        $supplierId = (int) $templateRawDetailsByName[$normalizedRawName]['supplier_id'];
+                }
+
+                $rawName = (string) ($material['raw_name'] ?? '');
+                $normalizedRawName = $normalizeName($rawName);
+
+                if ($supplierId === null && $normalizedRawName !== '' && isset($templateRawDetailsByName[$normalizedRawName]['supplier_id'])) {
+                    $supplierId = (int) $templateRawDetailsByName[$normalizedRawName]['supplier_id'];
+                }
+
+                if ($supplierId === null && $normalizedRawName !== '' && isset($rawUsageByName[$normalizedRawName])) {
+                    $usageEntry = $rawUsageByName[$normalizedRawName];
+                    if (!empty($usageEntry['supplier_id'])) {
+                        $supplierId = (int)$usageEntry['supplier_id'];
                     }
                 }
 
@@ -922,6 +983,26 @@ function batchCreationCreate(int $templateId, int $units): array
 
         if (empty($materials) && empty($materialsForStockDeduction)) {
             throw new RuntimeException('القالب لا يحتوي على مواد خام صالحة للإنتاج');
+        }
+
+        if (!empty($materialsForStockDeduction)) {
+            foreach ($materialsForStockDeduction as &$stockMaterial) {
+                if (!empty($stockMaterial['supplier_id'])) {
+                    continue;
+                }
+                $usageEntry = null;
+                $templateItemId = isset($stockMaterial['template_item_id']) ? (int)$stockMaterial['template_item_id'] : 0;
+                if ($templateItemId > 0 && isset($rawUsageByTemplateId[$templateItemId])) {
+                    $usageEntry = $rawUsageByTemplateId[$templateItemId];
+                }
+                if ($usageEntry === null) {
+                    $usageEntry = $rawUsageByName[$normalizeName($stockMaterial['material_name'] ?? '')] ?? null;
+                }
+                if ($usageEntry && !empty($usageEntry['supplier_id'])) {
+                    $stockMaterial['supplier_id'] = (int)$usageEntry['supplier_id'];
+                }
+            }
+            unset($stockMaterial);
         }
 
         // تجهيز جداول أدوات التعبئة
@@ -969,6 +1050,7 @@ function batchCreationCreate(int $templateId, int $units): array
         $packUnitExpression = $packagingUnitColumn !== null ? 'pm.' . $packagingUnitColumn : 'NULL';
 
         $packSelectParts = [
+            'tp.id AS template_item_id',
             'pm.id AS pack_id',
             $packNameExpression . ' AS pack_name',
             'tp.quantity_per_unit',
@@ -995,15 +1077,30 @@ function batchCreationCreate(int $templateId, int $units): array
                 $supplierId = (int) $pack['inventory_supplier_id'];
             } elseif (isset($templatePackagingDetailsById[(int) ($pack['pack_id'] ?? 0)]['supplier_id'])) {
                 $supplierId = (int) $templatePackagingDetailsById[(int) $pack['pack_id']]['supplier_id'];
-            } else {
-                $packName = (string) ($pack['pack_name'] ?? '');
-                $normalizedPackName = $packName !== ''
-                    ? (function_exists('mb_strtolower') ? mb_strtolower(trim($packName), 'UTF-8') : strtolower(trim($packName)))
-                    : '';
-                if ($normalizedPackName !== '' && isset($templatePackagingDetailsByName[$normalizedPackName]['supplier_id'])) {
-                    $supplierId = (int) $templatePackagingDetailsByName[$normalizedPackName]['supplier_id'];
+            }
+
+            $packName = (string) ($pack['pack_name'] ?? '');
+            $normalizedPackName = $normalizeName($packName);
+            $templatePackId = isset($pack['template_item_id']) ? (int)$pack['template_item_id'] : 0;
+
+            if ($supplierId === null && $normalizedPackName !== '' && isset($templatePackagingDetailsByName[$normalizedPackName]['supplier_id'])) {
+                $supplierId = (int) $templatePackagingDetailsByName[$normalizedPackName]['supplier_id'];
+            }
+
+            if ($supplierId === null && $templatePackId > 0 && isset($packagingUsageByTemplateId[$templatePackId])) {
+                $usagePack = $packagingUsageByTemplateId[$templatePackId];
+                if (!empty($usagePack['supplier_id'])) {
+                    $supplierId = (int)$usagePack['supplier_id'];
                 }
             }
+
+            if ($supplierId === null && $normalizedPackName !== '' && isset($packagingUsageByName[$normalizedPackName])) {
+                $usagePack = $packagingUsageByName[$normalizedPackName];
+                if (!empty($usagePack['supplier_id'])) {
+                    $supplierId = (int)$usagePack['supplier_id'];
+                }
+            }
+
             $pack['supplier_id'] = $supplierId ?: null;
             if ($supplierId) {
                 $collectSupplier($supplierId, 'packaging');
