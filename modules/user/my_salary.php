@@ -208,8 +208,12 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['
         if (!$isAjaxRequest) {
             return false;
         }
-        while (ob_get_level() > 0) {
-            ob_end_clean();
+        $safetyCounter = 0;
+        while (ob_get_level() > 0 && $safetyCounter < 10) {
+            if (@ob_end_clean() === false) {
+                break;
+            }
+            $safetyCounter++;
         }
 
         if (!headers_sent()) {
@@ -1863,6 +1867,16 @@ document.addEventListener('DOMContentLoaded', function() {
                         data = JSON.parse(rawBody);
                     } catch (parseError) {
                         console.error('Failed to parse advance response JSON:', parseError, rawBody);
+                        const jsonStart = rawBody.indexOf('{');
+                        const jsonEnd = rawBody.lastIndexOf('}');
+                        if (jsonStart !== -1 && jsonEnd !== -1 && jsonEnd > jsonStart) {
+                            try {
+                                const possibleJson = rawBody.slice(jsonStart, jsonEnd + 1);
+                                data = JSON.parse(possibleJson);
+                            } catch (nestedParseError) {
+                                console.error('Secondary JSON parse attempt failed:', nestedParseError);
+                            }
+                        }
                     }
                 }
 
