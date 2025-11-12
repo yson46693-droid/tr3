@@ -9,6 +9,7 @@ require_once __DIR__ . '/../includes/db.php';
 require_once __DIR__ . '/../includes/auth.php';
 require_once __DIR__ . '/../includes/audit_log.php';
 require_once __DIR__ . '/../includes/notifications.php';
+require_once __DIR__ . '/../includes/path_helper.php';
 
 requireRole('sales');
 
@@ -34,11 +35,21 @@ if (in_array($pageParam, ['sales', 'collections', 'sales_collections'], true)) {
     $page = 'sales_collections';
 }
 
+$pageStylesheets = isset($pageStylesheets) && is_array($pageStylesheets) ? $pageStylesheets : [];
+$extraScripts = isset($extraScripts) && is_array($extraScripts) ? $extraScripts : [];
+if ($page === 'group_chat') {
+    $pageStylesheets[] = 'assets/css/group-chat.css';
+    $extraScripts[] = getRelativeUrl('assets/js/group-chat.js');
+}
+
 require_once __DIR__ . '/../includes/lang/' . getCurrentLanguage() . '.php';
 $lang = isset($translations) ? $translations : [];
 $pageTitle = isset($lang['sales_dashboard']) ? $lang['sales_dashboard'] : 'لوحة المبيعات';
 if ($page === 'sales_collections') {
     $pageTitle = isset($lang['sales_and_collections']) ? $lang['sales_and_collections'] : 'مبيعات و تحصيلات';
+}
+if ($page === 'group_chat') {
+    $pageTitle = $lang['menu_group_chat'] ?? 'الدردشة الجماعية';
 }
 ?>
 <?php include __DIR__ . '/../templates/header.php'; ?>

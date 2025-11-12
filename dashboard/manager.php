@@ -33,9 +33,19 @@ if ($page === 'packaging_warehouse' && isset($_GET['ajax']) && isset($_GET['mate
     }
 }
 
+$pageStylesheets = isset($pageStylesheets) && is_array($pageStylesheets) ? $pageStylesheets : [];
+$extraScripts = isset($extraScripts) && is_array($extraScripts) ? $extraScripts : [];
+if ($page === 'group_chat') {
+    $pageStylesheets[] = 'assets/css/group-chat.css';
+    $extraScripts[] = getRelativeUrl('assets/js/group-chat.js');
+}
+
 require_once __DIR__ . '/../includes/lang/' . getCurrentLanguage() . '.php';
 $lang = $translations;
 $pageTitle = isset($lang['manager_dashboard']) ? $lang['manager_dashboard'] : 'لوحة المدير';
+if ($page === 'group_chat') {
+    $pageTitle = $lang['menu_group_chat'] ?? 'الدردشة الجماعية';
+}
 ?>
 <?php include __DIR__ . '/../templates/header.php'; ?>
 
@@ -237,6 +247,9 @@ $pageTitle = isset($lang['manager_dashboard']) ? $lang['manager_dashboard'] : '�
                         <div class="stat-card-description">هذا الشهر</div>
                     </div>
                 </div>
+
+            <?php elseif ($page === 'group_chat'): ?>
+                <?php include __DIR__ . '/../modules/chat/group_chat.php'; ?>
 
             <?php elseif ($page === 'invoices'): ?>
                 <?php include __DIR__ . '/../modules/accountant/invoices.php'; ?>

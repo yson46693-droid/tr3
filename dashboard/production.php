@@ -361,8 +361,10 @@ if ($isPackagingPost) {
 }
 
 $pageStylesheets = isset($pageStylesheets) && is_array($pageStylesheets) ? $pageStylesheets : [];
-if ($page === 'production') {
-    $pageStylesheets[] = 'assets/css/production-page.css';
+$extraScripts = isset($extraScripts) && is_array($extraScripts) ? $extraScripts : [];
+if ($page === 'group_chat') {
+    $pageStylesheets[] = 'assets/css/group-chat.css';
+    $extraScripts[] = getRelativeUrl('assets/js/group-chat.js');
 }
 
 $isAjaxRequest = (
@@ -398,6 +400,9 @@ if ($page === 'packaging_warehouse' && isset($_GET['ajax']) && $_GET['ajax'] == 
 require_once __DIR__ . '/../includes/lang/' . getCurrentLanguage() . '.php';
 $lang = isset($translations) ? $translations : [];
 $pageTitle = isset($lang['production_dashboard']) ? $lang['production_dashboard'] : 'لوحة الإنتاج';
+if ($page === 'group_chat') {
+    $pageTitle = $lang['menu_group_chat'] ?? 'الدردشة الجماعية';
+}
 ?>
 <?php include __DIR__ . '/../templates/header.php'; ?>
 
@@ -804,6 +809,9 @@ $pageTitle = isset($lang['production_dashboard']) ? $lang['production_dashboard'
                     </div>
                 </div>
                 
+            <?php elseif ($page === 'group_chat'): ?>
+                <?php include __DIR__ . '/../modules/chat/group_chat.php'; ?>
+
             <?php elseif ($page === 'production'): ?>
                 <!-- صفحة إدارة الإنتاج -->
                 <?php 
