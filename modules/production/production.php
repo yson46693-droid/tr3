@@ -30,14 +30,14 @@ syncAllUnifiedTemplatesToProductTemplates($db);
 /**
  * التحقق من توفر المكونات المستخدمة في صناعة المنتج
  */
-function checkMaterialsAvailability($db, $templateId, $productionQuantity) {
+function checkMaterialsAvailability($db, $templateId, $productionQuantity, array $materialSuppliers = []) {
     $missingMaterials = [];
     $insufficientMaterials = [];
     
     // 1. التحقق من مواد التعبئة
     $packagingNameExpression = getColumnSelectExpression('product_template_packaging', 'packaging_name');
     $packagingMaterials = $db->query(
-        "SELECT packaging_material_id, quantity_per_unit, {$packagingNameExpression}
+        "SELECT id, packaging_material_id, quantity_per_unit, {$packagingNameExpression}
          FROM product_template_packaging 
          WHERE template_id = ?",
         [$templateId]
@@ -45,56 +45,115 @@ function checkMaterialsAvailability($db, $templateId, $productionQuantity) {
     
     foreach ($packagingMaterials as $packaging) {
         $packagingId = $packaging['packaging_material_id'] ?? null;
+        $packagingTemplateRowId = isset($packaging['id']) ? (int)$packaging['id'] : 0;
         $requiredQuantity = floatval($packaging['quantity_per_unit']) * $productionQuantity;
-        
+        $packagingName = $packaging['packaging_name'] ?? 'مادة تعبئة';
+
+        $supplierKeys = [];
         if ($packagingId) {
-            // البحث في جدول المنتجات أولاً
+            $supplierKeys[] = 'pack_' . $packagingId;
+        }
+        if ($packagingTemplateRowId > 0) {
+            $supplierKeys[] = 'pack_' . $packagingTemplateRowId;
+        }
+        if (!empty($packagingName)) {
+            $normalizedNameKey = mb_strtolower(trim((string)$packagingName), 'UTF-8');
+            if ($normalizedNameKey !== '') {
+                $supplierKeys[] = 'pack_' . md5($normalizedNameKey);
+            }
+        }
+
+        $hasSupplierSelection = false;
+        foreach ($supplierKeys as $supplierKey) {
+            if (isset($materialSuppliers[$supplierKey]) && intval($materialSuppliers[$supplierKey]) > 0) {
+                $hasSupplierSelection = true;
+                break;
+            }
+        }
+
+        $bestAvailability = null;
+        $availabilityChecked = false;
+
+        $packagingTableCheck = $db->queryOne("SHOW TABLES LIKE 'packaging_materials'");
+        if (!empty($packagingTableCheck)) {
+            $packagingMaterial = null;
+            if ($packagingId) {
+                $packagingMaterial = $db->queryOne(
+                    "SELECT id, name, quantity FROM packaging_materials WHERE id = ?",
+                    [$packagingId]
+                );
+                if (!$packagingMaterial) {
+                    $packagingMaterial = $db->queryOne(
+                        "SELECT id, name, quantity FROM packaging_materials WHERE product_id = ?",
+                        [$packagingId]
+                    );
+                }
+            }
+            if (!$packagingMaterial && !empty($packagingName)) {
+                $packagingMaterial = $db->queryOne(
+                    "SELECT id, name, quantity FROM packaging_materials WHERE name = ? LIMIT 1",
+                    [$packagingName]
+                );
+            }
+
+            if ($packagingMaterial) {
+                $availabilityChecked = true;
+                $availableQuantity = floatval($packagingMaterial['quantity'] ?? 0);
+                $candidateName = $packagingMaterial['name'] ?? $packagingName;
+                $bestAvailability = [
+                    'available' => $availableQuantity,
+                    'name' => $candidateName
+                ];
+            }
+        }
+
+        $product = null;
+        if ($packagingId) {
             $product = $db->queryOne(
                 "SELECT id, name, quantity FROM products WHERE id = ? AND status = 'active'",
                 [$packagingId]
             );
-            
-            if ($product) {
-                $availableQuantity = floatval($product['quantity'] ?? 0);
-                if ($availableQuantity < $requiredQuantity) {
-                    $insufficientMaterials[] = [
-                        'name' => $product['name'],
-                        'required' => $requiredQuantity,
-                        'available' => $availableQuantity,
-                        'type' => 'مواد التعبئة'
-                    ];
-                }
-            } else {
-                // البحث في جدول مواد التعبئة إذا كان موجوداً
-                $packagingTableCheck = $db->queryOne("SHOW TABLES LIKE 'packaging_materials'");
-                if ($packagingTableCheck) {
-                    $packagingMaterial = $db->queryOne(
-                        "SELECT id, name, quantity FROM packaging_materials WHERE id = ?",
-                        [$packagingId]
-                    );
-                    if ($packagingMaterial) {
-                        $availableQuantity = floatval($packagingMaterial['quantity'] ?? 0);
-                        if ($availableQuantity < $requiredQuantity) {
-                            $insufficientMaterials[] = [
-                                'name' => $packagingMaterial['name'],
-                                'required' => $requiredQuantity,
-                                'available' => $availableQuantity,
-                                'type' => 'مواد التعبئة'
-                            ];
-                        }
-                    } else {
-                        $missingMaterials[] = [
-                            'name' => $packaging['packaging_name'] ?? 'مادة تعبئة غير معروفة',
-                            'type' => 'مواد التعبئة'
-                        ];
-                    }
-                } else {
-                    $missingMaterials[] = [
-                        'name' => $packaging['packaging_name'] ?? 'مادة تعبئة غير معروفة',
-                        'type' => 'مواد التعبئة'
-                    ];
-                }
+        }
+        if (!$product && !empty($packagingName)) {
+            $product = $db->queryOne(
+                "SELECT id, name, quantity FROM products WHERE name = ? AND status = 'active' LIMIT 1",
+                [$packagingName]
+            );
+        }
+
+        if ($product) {
+            $availabilityChecked = true;
+            $availableQuantity = floatval($product['quantity'] ?? 0);
+            $candidateName = $product['name'] ?? $packagingName;
+            if ($bestAvailability === null || $availableQuantity > $bestAvailability['available']) {
+                $bestAvailability = [
+                    'available' => $availableQuantity,
+                    'name' => $candidateName
+                ];
             }
+        }
+
+        if ($bestAvailability !== null && $bestAvailability['available'] >= $requiredQuantity) {
+            continue;
+        }
+
+        if ($hasSupplierSelection) {
+            continue;
+        }
+
+        if ($availabilityChecked) {
+            $insufficientMaterials[] = [
+                'name' => $bestAvailability['name'] ?? $packagingName,
+                'required' => $requiredQuantity,
+                'available' => max(0, $bestAvailability['available'] ?? 0),
+                'type' => 'مواد التعبئة',
+                'unit' => 'قطعة'
+            ];
+        } else {
+            $missingMaterials[] = [
+                'name' => $packagingName !== '' ? $packagingName : 'مادة تعبئة غير معروفة',
+                'type' => 'مواد التعبئة'
+            ];
         }
     }
     
@@ -753,7 +812,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     throw new Exception('القالب غير موجود');
                 }
 
-                $materialsCheck = checkMaterialsAvailability($db, $templateId, $quantity);
+                $materialsCheck = checkMaterialsAvailability($db, $templateId, $quantity, $materialSuppliers);
                 if (!$materialsCheck['available']) {
                     throw new Exception('المكونات غير متوفرة: ' . $materialsCheck['message']);
                 }

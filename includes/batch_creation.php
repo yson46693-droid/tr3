@@ -1130,8 +1130,13 @@ function batchCreationCreate(int $templateId, int $units, array $rawUsage = [], 
         foreach ($packaging as $pack) {
             $requiredQty = (float) $pack['quantity_per_unit'] * $units;
             $available   = (float) ($pack['available_stock'] ?? 0);
+            $packSupplierId = !empty($pack['supplier_id']) ? (int)$pack['supplier_id'] : 0;
 
             if ($requiredQty > $available) {
+                if ($packSupplierId > 0) {
+                    // يتم الاعتماد على المورد الخارجي لتوفير أداة التعبئة، لذا يتم تجاوز التحقق الصارم للمخزون.
+                    continue;
+                }
                 throw new RuntimeException(
                     sprintf(
                         'المخزون غير كافٍ لأداة التعبئة "%s" (المتاح: %s، المطلوب: %s)',
