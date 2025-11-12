@@ -1969,6 +1969,7 @@ if (!empty($unifiedTemplatesCheck)) {
         $template['packaging_details'] = $packagingDetails;
         $template['packaging_count'] = count($packagingDetails);
     }
+    unset($template);
     
     // تصفية القوالب: تجاهل القوالب التي لا تحتوي على مواد
     $unifiedTemplates = array_filter($unifiedTemplates, function($template) {
@@ -2000,6 +2001,7 @@ if (!empty($honeyTemplatesCheck)) {
             ]
         ];
     }
+    unset($template);
     $templates = array_merge($templates, $honeyTemplates);
 }
 
@@ -2023,6 +2025,7 @@ if (!empty($oliveOilTemplatesCheck)) {
         ];
         $template['creator_name'] = '';
     }
+    unset($template);
     $templates = array_merge($templates, $oliveOilTemplates);
 }
 
@@ -2046,6 +2049,7 @@ if (!empty($beeswaxTemplatesCheck)) {
         ];
         $template['creator_name'] = '';
     }
+    unset($template);
     $templates = array_merge($templates, $beeswaxTemplates);
 }
 
@@ -2081,6 +2085,7 @@ if (!empty($derivativesTemplatesCheck)) {
         ];
         $template['creator_name'] = '';
     }
+    unset($template);
     $templates = array_merge($templates, $derivativesTemplates);
 }
 
