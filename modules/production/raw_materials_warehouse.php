@@ -1567,10 +1567,12 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     ]
                 );
                 
-                $success = 'تم إضافة العسل بنجاح';
-                // إعادة تحميل الصفحة باستخدام JavaScript
-                echo '<script>window.location.href = "' . $dashboardUrl . '?page=raw_materials_warehouse&section=honey";</script>';
-                echo '<noscript><meta http-equiv="refresh" content="0;url=' . $dashboardUrl . '?page=raw_materials_warehouse&section=honey"></noscript>';
+                preventDuplicateSubmission(
+                    'تم إضافة العسل بنجاح',
+                    ['page' => 'raw_materials_warehouse', 'section' => 'honey'],
+                    null,
+                    $dashboardSlug
+                );
             }
         }
         
@@ -2715,13 +2717,6 @@ $rawMaterialsReportGeneratedAt = $rawWarehouseReport['generated_at'] ?? date('Y-
         <button type="button" class="btn text-white" style="background: linear-gradient(135deg, #17a2b8 0%, #138496 100%);" data-bs-toggle="modal" data-bs-target="#createUnifiedTemplateModal">
             <i class="bi bi-plus-circle me-2"></i>إنشاء قالب منتج
         </button>
-        <a
-            class="btn btn-outline-primary"
-            href="<?php echo htmlspecialchars(getRelativeUrl('dashboard/production.php?page=product_templates'), ENT_QUOTES, 'UTF-8'); ?>"
-        >
-            <i class="bi bi-box-arrow-up-right me-1"></i>
-            فتح صفحة القوالب
-        </a>
     </div>
 </div>
 
