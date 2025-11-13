@@ -1323,15 +1323,24 @@ if (!$error) {
     const inventory = <?php
         $inventoryForJs = [];
         foreach ($vehicleInventory as $item) {
+            $snapshot = null;
+            if (!empty($item['product_snapshot'])) {
+                $decodedSnapshot = json_decode($item['product_snapshot'], true);
+                if (json_last_error() === JSON_ERROR_NONE) {
+                    $snapshot = $decodedSnapshot;
+                }
+            }
+
             $inventoryForJs[] = [
                 'product_id' => (int) ($item['product_id'] ?? 0),
                 'name' => $item['product_name'] ?? '',
-                'category' => $item['category'] ?? '',
+                'category' => $item['category'] ?? ($item['product_category'] ?? ''),
                 'quantity' => (float) ($item['quantity'] ?? 0),
                 'unit_price' => (float) ($item['unit_price'] ?? 0),
-                'unit' => $item['unit'] ?? '',
+                'unit' => $item['unit'] ?? ($item['product_unit'] ?? ''),
                 'total_value' => (float) ($item['total_value'] ?? 0),
                 'last_updated_at' => $item['last_updated_at'] ?? null,
+                'snapshot' => $snapshot,
             ];
         }
         echo json_encode($inventoryForJs, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);

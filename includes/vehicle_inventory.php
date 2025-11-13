@@ -13,6 +13,88 @@ require_once __DIR__ . '/audit_log.php';
 require_once __DIR__ . '/notifications.php';
 require_once __DIR__ . '/inventory_movements.php';
 
+if (!function_exists('ensureVehicleInventoryProductColumns')) {
+    /**
+     * التأكد من أن جدول vehicle_inventory يحتوي على أعمدة بيانات المنتج التفصيلية.
+     */
+    function ensureVehicleInventoryProductColumns(): void
+    {
+        static $ensured = false;
+
+        if ($ensured) {
+            return;
+        }
+
+        try {
+            $db = db();
+        } catch (Throwable $e) {
+            return;
+        }
+
+        try {
+            $exists = $db->queryOne("SHOW TABLES LIKE 'vehicle_inventory'");
+            if (empty($exists)) {
+                return;
+            }
+        } catch (Throwable $e) {
+            return;
+        }
+
+        try {
+            $columns = $db->query("SHOW COLUMNS FROM vehicle_inventory") ?? [];
+        } catch (Throwable $e) {
+            $columns = [];
+        }
+
+        $existing = [];
+        foreach ($columns as $info) {
+            if (!empty($info['Field'])) {
+                $existing[strtolower($info['Field'])] = true;
+            }
+        }
+
+        $alterParts = [];
+
+        if (!isset($existing['product_name'])) {
+            $alterParts[] = "ADD COLUMN `product_name` varchar(255) DEFAULT NULL AFTER `product_id`";
+        }
+        if (!isset($existing['product_category'])) {
+            $alterParts[] = "ADD COLUMN `product_category` varchar(100) DEFAULT NULL AFTER `product_name`";
+        }
+        if (!isset($existing['product_unit'])) {
+            $alterParts[] = "ADD COLUMN `product_unit` varchar(50) DEFAULT NULL AFTER `product_category`";
+        }
+        if (!isset($existing['product_unit_price'])) {
+            $alterParts[] = "ADD COLUMN `product_unit_price` decimal(15,2) DEFAULT NULL AFTER `product_unit`";
+        }
+        if (!isset($existing['product_snapshot'])) {
+            $alterParts[] = "ADD COLUMN `product_snapshot` longtext DEFAULT NULL AFTER `product_unit_price`";
+        }
+
+        if (!isset($existing['created_at'])) {
+            $alterParts[] = "ADD COLUMN `created_at` timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP AFTER `last_updated_at`";
+        }
+
+        if (!isset($existing['last_updated_at'])) {
+            $alterParts[] = "ADD COLUMN `last_updated_at` timestamp NULL DEFAULT NULL ON UPDATE CURRENT_TIMESTAMP AFTER `last_updated_by`";
+        }
+
+        if (!isset($existing['warehouse_id'])) {
+            $alterParts[] = "ADD COLUMN `warehouse_id` int(11) DEFAULT NULL COMMENT 'مخزن السيارة' AFTER `vehicle_id`";
+        }
+
+        if ($alterParts) {
+            try {
+                $db->execute("ALTER TABLE vehicle_inventory " . implode(', ', $alterParts));
+            } catch (Throwable $alterError) {
+                error_log('VehicleInventory schema update error: ' . $alterError->getMessage());
+            }
+        }
+
+        $ensured = true;
+    }
+}
+
 /**
  * ضمان وجود أعمدة رقم التشغيلة في جدول عناصر طلبات النقل
  */
@@ -166,6 +248,7 @@ function getVehicleWarehouse($vehicleId) {
  */
 function getVehicleInventory($vehicleId, $filters = []) {
     $db = db();
+    ensureVehicleInventoryProductColumns();
     
     $warehouse = getVehicleWarehouse($vehicleId);
     
@@ -173,8 +256,20 @@ function getVehicleInventory($vehicleId, $filters = []) {
         return [];
     }
     
-    $sql = "SELECT vi.*, p.name as product_name, p.unit_price, p.category,
-                   (vi.quantity * p.unit_price) as total_value
+    $nameExpr = "COALESCE(p.name, vi.product_name)";
+    $categoryExpr = "COALESCE(p.category, vi.product_category)";
+    $unitExpr = "COALESCE(p.unit, vi.product_unit)";
+    $unitPriceExpr = "COALESCE(p.unit_price, vi.product_unit_price, 0)";
+
+    $sql = "SELECT 
+                vi.*,
+                {$nameExpr} AS product_name,
+                {$categoryExpr} AS product_category,
+                {$categoryExpr} AS category,
+                {$unitExpr} AS product_unit,
+                {$unitExpr} AS unit,
+                {$unitPriceExpr} AS unit_price,
+                (vi.quantity * {$unitPriceExpr}) AS total_value
             FROM vehicle_inventory vi
             LEFT JOIN products p ON vi.product_id = p.id
             WHERE vi.vehicle_id = ? AND vi.quantity > 0";
@@ -187,11 +282,12 @@ function getVehicleInventory($vehicleId, $filters = []) {
     }
     
     if (!empty($filters['product_name'])) {
-        $sql .= " AND p.name LIKE ?";
+        $sql .= " AND (p.name LIKE ? OR vi.product_name LIKE ?)";
+        $params[] = "%{$filters['product_name']}%";
         $params[] = "%{$filters['product_name']}%";
     }
     
-    $sql .= " ORDER BY p.name ASC";
+    $sql .= " ORDER BY {$nameExpr} ASC";
     
     return $db->query($sql, $params);
 }
@@ -202,6 +298,7 @@ function getVehicleInventory($vehicleId, $filters = []) {
 function updateVehicleInventory($vehicleId, $productId, $quantity, $userId = null) {
     try {
         $db = db();
+        ensureVehicleInventoryProductColumns();
         
         if ($userId === null) {
             require_once __DIR__ . '/auth.php';
@@ -223,22 +320,88 @@ function updateVehicleInventory($vehicleId, $productId, $quantity, $userId = nul
         
         // التحقق من وجود السجل
         $existing = $db->queryOne(
-            "SELECT id, quantity FROM vehicle_inventory WHERE vehicle_id = ? AND product_id = ?",
+            "SELECT id, quantity, product_name, product_category, product_unit, product_unit_price, product_snapshot 
+             FROM vehicle_inventory WHERE vehicle_id = ? AND product_id = ?",
             [$vehicleId, $productId]
         );
+
+        $productName = null;
+        $productCategory = null;
+        $productUnit = null;
+        $productUnitPrice = null;
+        $productSnapshot = null;
+
+        if ($productId > 0) {
+            try {
+                $productRecord = $db->queryOne(
+                    "SELECT id, name, category, unit, unit_price, description, status, quantity, min_stock, created_at, updated_at 
+                     FROM products WHERE id = ?",
+                    [$productId]
+                );
+            } catch (Throwable $productError) {
+                $productRecord = null;
+            }
+
+            if ($productRecord) {
+                $productName = $productRecord['name'] ?? null;
+                $productCategory = $productRecord['category'] ?? null;
+                $productUnit = $productRecord['unit'] ?? null;
+                $productUnitPrice = isset($productRecord['unit_price']) ? (float)$productRecord['unit_price'] : null;
+                $productSnapshot = json_encode($productRecord, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
+            }
+        }
+
+        if ($existing && !$productName) {
+            $productName = $existing['product_name'] ?? $productName;
+        }
+        if ($existing && !$productCategory) {
+            $productCategory = $existing['product_category'] ?? $productCategory;
+        }
+        if ($existing && !$productUnit) {
+            $productUnit = $existing['product_unit'] ?? $productUnit;
+        }
+        if ($existing && ($productUnitPrice === null)) {
+            $productUnitPrice = isset($existing['product_unit_price']) ? (float)$existing['product_unit_price'] : null;
+        }
+        if ($existing && !$productSnapshot) {
+            $productSnapshot = $existing['product_snapshot'] ?? null;
+        }
         
         if ($existing) {
             $db->execute(
                 "UPDATE vehicle_inventory 
-                 SET quantity = ?, last_updated_by = ?, last_updated_at = NOW() 
+                 SET quantity = ?, last_updated_by = ?, last_updated_at = NOW(),
+                     product_name = ?, product_category = ?, product_unit = ?, product_unit_price = ?, product_snapshot = ?
                  WHERE id = ?",
-                [$quantity, $userId, $existing['id']]
+                [
+                    $quantity,
+                    $userId,
+                    $productName,
+                    $productCategory,
+                    $productUnit,
+                    $productUnitPrice,
+                    $productSnapshot,
+                    $existing['id']
+                ]
             );
         } else {
             $db->execute(
-                "INSERT INTO vehicle_inventory (vehicle_id, warehouse_id, product_id, quantity, last_updated_by) 
-                 VALUES (?, ?, ?, ?, ?)",
-                [$vehicleId, $warehouseId, $productId, $quantity, $userId]
+                "INSERT INTO vehicle_inventory (
+                    vehicle_id, warehouse_id, product_id, product_name, product_category,
+                    product_unit, product_unit_price, product_snapshot, quantity, last_updated_by
+                 ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                [
+                    $vehicleId,
+                    $warehouseId,
+                    $productId,
+                    $productName,
+                    $productCategory,
+                    $productUnit,
+                    $productUnitPrice,
+                    $productSnapshot,
+                    $quantity,
+                    $userId
+                ]
             );
         }
         

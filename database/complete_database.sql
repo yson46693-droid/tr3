@@ -408,7 +408,7 @@ DEALLOCATE PREPARE alterIfNotExists;
 CREATE TABLE IF NOT EXISTS `inventory_movements` (
   `id` int(11) NOT NULL AUTO_INCREMENT,
   `product_id` int(11) NOT NULL,
-  `warehouse_id` int(11) DEFAULT NULL,
+  `warehouse_id` int(11) DEFAULT NULL COMMENT 'مخزن السيارة',
   `type` enum('in','out','adjustment','transfer') NOT NULL,
   `quantity` decimal(10,2) NOT NULL,
   `quantity_before` decimal(10,2) NOT NULL,
@@ -981,7 +981,8 @@ CREATE TABLE IF NOT EXISTS `vehicle_inventory` (
   `product_snapshot` longtext DEFAULT NULL,
   `quantity` decimal(10,2) NOT NULL DEFAULT 0.00,
   `last_updated_by` int(11) DEFAULT NULL,
-  `last_updated_at` timestamp DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  `last_updated_at` timestamp NULL DEFAULT NULL ON UPDATE CURRENT_TIMESTAMP,
+  `created_at` timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP,
   PRIMARY KEY (`id`),
   UNIQUE KEY `vehicle_product_unique` (`vehicle_id`, `product_id`),
   KEY `product_id` (`product_id`),

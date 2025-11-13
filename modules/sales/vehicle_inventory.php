@@ -351,7 +351,19 @@ foreach ($vehicleInventory as $item) {
                         <?php else: ?>
                             <?php foreach ($vehicleInventory as $item): ?>
                                 <tr>
-                                    <td><?php echo htmlspecialchars($item['product_name'] ?? '-'); ?></td>
+                                    <td>
+                                        <strong><?php echo htmlspecialchars($item['product_name'] ?? '-'); ?></strong>
+                                        <?php if (!empty($item['category']) || !empty($item['unit'])): ?>
+                                            <div class="text-muted small">
+                                                <?php if (!empty($item['category'])): ?>
+                                                    <span><?php echo htmlspecialchars($item['category']); ?></span>
+                                                <?php endif; ?>
+                                                <?php if (!empty($item['unit'])): ?>
+                                                    <span class="ms-2">الوحدة: <?php echo htmlspecialchars($item['unit']); ?></span>
+                                                <?php endif; ?>
+                                            </div>
+                                        <?php endif; ?>
+                                    </td>
                                     <td><strong><?php echo number_format($item['quantity'], 2); ?></strong></td>
                                     <td><?php echo formatCurrency($item['unit_price'] ?? 0); ?></td>
                                     <td><?php echo formatCurrency($item['total_value'] ?? 0); ?></td>
