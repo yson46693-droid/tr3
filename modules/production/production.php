@@ -3879,8 +3879,8 @@ $lang = isset($translations) ? $translations : [];
             </div>
             <div class="modal-footer">
                 <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">إغلاق</button>
-                <button type="button" class="btn btn-primary" onclick="printBarcodes()">
-                    <i class="bi bi-printer me-2"></i>طباعة الباركودات
+                <button type="button" class="btn btn-primary" id="sendBarcodeToTelegramBtn" onclick="printBarcodes()">
+                    <i class="bi bi-send-check me-2"></i>إرسال رابط الطباعة
                 </button>
             </div>
         </div>
@@ -5172,24 +5172,36 @@ document.getElementById('createFromTemplateModal')?.addEventListener('hidden.bs.
 
 // طباعة الباركودات
 function printBarcodes() {
+    const actionButton = document.getElementById('sendBarcodeToTelegramBtn');
+    const setLoadingState = (isLoading) => {
+        if (!actionButton) {
+            return;
+        }
+        if (isLoading) {
+            if (!actionButton.dataset.originalContent) {
+                actionButton.dataset.originalContent = actionButton.innerHTML;
+            }
+            actionButton.disabled = true;
+            actionButton.innerHTML = '<span class="spinner-border spinner-border-sm me-2" role="status" aria-hidden="true"></span>جاري الإرسال...';
+        } else {
+            const original = actionButton.dataset.originalContent;
+            if (original) {
+                actionButton.innerHTML = original;
+            }
+            actionButton.disabled = false;
+        }
+    };
+
     const batchNumbers = window.batchNumbersToPrint || [];
-    const quantityInput = document.getElementById('barcode_print_quantity');
-    const printQuantity = parseInt(quantityInput && quantityInput.value ? quantityInput.value : '1', 10) || 1;
-    
     if (batchNumbers.length === 0) {
         alert('لا توجد أرقام تشغيل للطباعة');
         return;
     }
-    
-    // طباعة الباركودات - كل باركود يحمل نفس رقم التشغيلة
-    // الكمية المطلوبة للطباعة
-    const batchNumber = batchNumbers[0]; // كل الباركودات تشترك في نفس الرقم
-    const printUrl = `${PRINT_BARCODE_URL}?batch=${encodeURIComponent(batchNumber)}&quantity=${printQuantity}&print=1`;
 
-    const openedWindow = window.open(printUrl, '_blank');
-    if (openedWindow && typeof openedWindow.focus === 'function') {
-        openedWindow.focus();
-    }
+    const quantityInput = document.getElementById('barcode_print_quantity');
+    const printQuantity = parseInt(quantityInput && quantityInput.value ? quantityInput.value : '1', 10) || 1;
+    const batchNumber = batchNumbers[0];
+    const printUrl = `${PRINT_BARCODE_URL}?batch=${encodeURIComponent(batchNumber)}&quantity=${printQuantity}&print=1`;
 
     const batchInfo = (typeof window.batchPrintInfo === 'object' && window.batchPrintInfo !== null)
         ? window.batchPrintInfo
@@ -5197,10 +5209,28 @@ function printBarcodes() {
     const telegramEnabled = !!(batchInfo.telegram_enabled);
     const contextToken = batchInfo.context_token || '';
     const hasEndpoint = typeof SEND_BARCODE_TELEGRAM_URL === 'string' && SEND_BARCODE_TELEGRAM_URL !== '';
+    let fallbackTriggered = false;
+
+    const fallbackToDirectPrint = (message) => {
+        if (fallbackTriggered) {
+            return;
+        }
+        fallbackTriggered = true;
+        if (message) {
+            alert(message);
+        }
+        const openedWindow = window.open(printUrl, '_blank');
+        if (openedWindow && typeof openedWindow.focus === 'function') {
+            openedWindow.focus();
+        }
+    };
 
     if (!telegramEnabled || !contextToken || !hasEndpoint) {
+        fallbackToDirectPrint('تم فتح صفحة الطباعة مباشرة لأن إرسال الرابط عبر تليجرام غير متاح حالياً.');
         return;
     }
+
+    setLoadingState(true);
 
     const payload = {
         batch_number: batchNumber,
@@ -5237,13 +5267,26 @@ function printBarcodes() {
         .then((data) => {
             if (!data || data.success !== true) {
                 console.warn('فشل إرسال إشعار الطباعة إلى تليجرام', data && data.error ? data.error : data);
+                setLoadingState(false);
+                fallbackToDirectPrint('تعذر إرسال الرابط إلى تليجرام، سيتم فتح صفحة الطباعة الآن.');
                 return;
             }
             batchInfo.telegram_last_sent_at = Date.now();
             batchInfo.telegram_last_response = data;
+            setLoadingState(false);
+            alert('تم إرسال رابط الطباعة إلى تليجرام بنجاح. يمكن للمدير فتح الرابط والبدء بالطباعة.');
+            const modalElement = document.getElementById('printBarcodesModal');
+            if (modalElement && typeof bootstrap !== 'undefined' && bootstrap.Modal) {
+                const modalInstance = bootstrap.Modal.getInstance(modalElement);
+                if (modalInstance) {
+                    modalInstance.hide();
+                }
+            }
         })
         .catch((error) => {
             console.error('خطأ أثناء إرسال إشعار الطباعة إلى تليجرام', error);
+            setLoadingState(false);
+            fallbackToDirectPrint('حدث خطأ أثناء محاولة الإرسال إلى تليجرام، سيتم فتح صفحة الطباعة الآن.');
         });
 }
 

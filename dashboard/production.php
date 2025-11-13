@@ -104,15 +104,20 @@ if ($isTemplateAjax) {
 
             $honeyQuantity = (float)($template['honey_quantity'] ?? 0);
             if ($honeyQuantity > 0) {
+                $honeyQuantityDisplay = number_format($honeyQuantity, 3);
                 $components[] = [
                     'key' => 'honey_main',
                     'name' => 'عسل',
                     'label' => 'مورد العسل',
-                    'description' => 'الكمية لكل وحدة: ' . number_format($honeyQuantity, 3) . ' جرام',
+                    'description' => 'الكمية لكل وحدة: ' . $honeyQuantityDisplay . ' كجم',
                     'type' => 'honey_main',
                     'requires_variety' => true,
                     'default_supplier' => $detailsPayload['main_supplier_id'] ?? null,
-                    'honey_variety' => $detailsPayload['honey_variety'] ?? null
+                    'honey_variety' => $detailsPayload['honey_variety'] ?? null,
+                    'quantity_per_unit' => $honeyQuantity,
+                    'quantity_display' => $honeyQuantityDisplay . ' كجم',
+                    'unit' => 'كجم',
+                    'unit_label' => 'كجم'
                 ];
             }
 
@@ -159,6 +164,7 @@ if ($isTemplateAjax) {
                     $isHoneyMaterial = in_array($componentType, ['honey_raw', 'honey_filtered', 'honey_main', 'honey_general'], true);
                 }
 
+                $quantityDisplay = $quantity . ' ' . $unit;
                 $components[] = [
                     'key' => 'raw_' . $rawMaterial['id'],
                     'name' => $name,
@@ -167,7 +173,11 @@ if ($isTemplateAjax) {
                     'type' => $componentType,
                     'default_supplier' => $defaultSupplier,
                     'honey_variety' => $defaultHoneyVariety,
-                    'requires_variety' => $isHoneyMaterial
+                    'requires_variety' => $isHoneyMaterial,
+                    'quantity_per_unit' => (float)($rawMaterial['quantity_per_unit'] ?? 0),
+                    'quantity_display' => $quantityDisplay,
+                    'unit' => $unit,
+                    'unit_label' => $unit
                 ];
             }
             if (empty($rawMaterials) && !empty($detailsPayload['raw_materials']) && is_array($detailsPayload['raw_materials'])) {
@@ -205,6 +215,7 @@ if ($isTemplateAjax) {
                         $isHoneyMaterial = in_array($componentType, ['honey_raw', 'honey_filtered', 'honey_main', 'honey_general'], true);
                     }
 
+                    $quantityDisplay = $quantity . ' ' . $unit;
                     $components[] = [
                         'key' => 'raw_fallback_' . $index,
                         'name' => $name,
@@ -213,7 +224,11 @@ if ($isTemplateAjax) {
                         'type' => $componentType,
                         'default_supplier' => $defaultSupplier,
                         'honey_variety' => $defaultHoneyVariety,
-                        'requires_variety' => $isHoneyMaterial
+                        'requires_variety' => $isHoneyMaterial,
+                        'quantity_per_unit' => $quantityValue,
+                        'quantity_display' => $quantityDisplay,
+                        'unit' => $unit,
+                        'unit_label' => $unit
                     ];
                 }
             }
@@ -233,13 +248,18 @@ if ($isTemplateAjax) {
                     $defaultSupplier = $packagingDefaults[$packagingId]['supplier_id'] ?? null;
                 }
 
+                $quantityDisplay = $quantity . ' قطعة';
                 $components[] = [
                     'key' => 'pack_' . ($packagingId ?: $packItem['id']),
                     'name' => $name,
                     'label' => 'مورد أداة التعبئة: ' . $name,
                     'description' => 'الكمية لكل وحدة: ' . $quantity . ' قطعة',
                     'type' => 'packaging',
-                    'default_supplier' => $defaultSupplier
+                    'default_supplier' => $defaultSupplier,
+                    'quantity_per_unit' => (float)($packItem['quantity_per_unit'] ?? 0),
+                    'quantity_display' => $quantityDisplay,
+                    'unit' => 'قطعة',
+                    'unit_label' => 'قطعة'
                 ];
             }
             if (empty($packagingItems) && !empty($detailsPayload['packaging']) && is_array($detailsPayload['packaging'])) {
@@ -266,6 +286,7 @@ if ($isTemplateAjax) {
                     } else {
                         $name .= ' #' . ($index + 1);
                     }
+                    $quantityDisplay = $quantity . ' قطعة';
 
                     $components[] = [
                         'key' => 'pack_fallback_' . ($packagingId ?: $index),
@@ -273,7 +294,11 @@ if ($isTemplateAjax) {
                         'label' => 'مورد أداة التعبئة: ' . $name,
                         'description' => 'الكمية لكل وحدة: ' . $quantity . ' قطعة',
                         'type' => 'packaging',
-                        'default_supplier' => $packItem['supplier_id'] ?? null
+                        'default_supplier' => $packItem['supplier_id'] ?? null,
+                        'quantity_per_unit' => $quantityValue,
+                        'quantity_display' => $quantityDisplay,
+                        'unit' => 'قطعة',
+                        'unit_label' => 'قطعة'
                     ];
                 }
             }
