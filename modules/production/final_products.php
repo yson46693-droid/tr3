@@ -486,6 +486,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                             foreach ($transferItems as $item) {
                                 $productId = isset($item['product_id']) ? (int)$item['product_id'] : null;
                                 $quantity = (float)($item['quantity'] ?? 0);
+                                $batchIdValue = isset($item['batch_id']) ? (int)$item['batch_id'] : null;
 
                                 if ($quantity <= 0) {
                                     continue;
@@ -498,10 +499,25 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                                     );
                                 }
 
+                                if ($batchIdValue) {
+                                    $finishedProd = $db->queryOne(
+                                        "SELECT quantity_produced FROM finished_products WHERE id = ? LIMIT 1",
+                                        [$batchIdValue]
+                                    );
+                                    $currentRemaining = $finishedProd ? (float)$finishedProd['quantity_produced'] : null;
+                                    if ($currentRemaining !== null) {
+                                        $newRemaining = max($currentRemaining - $quantity, 0);
+                                        $db->execute(
+                                            "UPDATE finished_products SET quantity_produced = ?, updated_at = NOW() WHERE id = ?",
+                                            [$newRemaining, $batchIdValue]
+                                        );
+                                    }
+                                }
+
                                 $transferItemParams = [
                                     $result['transfer_id'],
                                     $productId,
-                                    $item['batch_id'] ?? null,
+                                    $batchIdValue ?: null,
                                     $item['batch_number'] ?? null,
                                     $quantity,
                                     $item['notes'] ?? null,
