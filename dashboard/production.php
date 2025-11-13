@@ -317,6 +317,218 @@ if ($isTemplateAjax) {
         exit;
     }
 
+    if ($ajaxAction === 'bootstrap_batch_print' && isset($_GET['batch'])) {
+        header('Content-Type: application/json; charset=utf-8');
+
+        $batchNumber = trim((string)$_GET['batch']);
+
+        if ($batchNumber === '') {
+            echo json_encode(['success' => false, 'error' => 'رقم التشغيلة مطلوب.'], JSON_UNESCAPED_UNICODE);
+            exit;
+        }
+
+        try {
+            $batchDetails = getBatchByNumber($batchNumber);
+        } catch (Throwable $batchError) {
+            error_log('bootstrap_batch_print getBatchByNumber error: ' . $batchError->getMessage());
+            echo json_encode(['success' => false, 'error' => 'تعذر تحميل بيانات التشغيلة.'], JSON_UNESCAPED_UNICODE);
+            exit;
+        }
+
+        if (!$batchDetails) {
+            echo json_encode(['success' => false, 'error' => 'لم يتم العثور على التشغيلة المطلوبة.'], JSON_UNESCAPED_UNICODE);
+            exit;
+        }
+
+        $batchNumberRow = null;
+        try {
+            $batchNumberRow = $db->queryOne("SELECT * FROM batch_numbers WHERE batch_number = ? LIMIT 1", [$batchNumber]);
+        } catch (Throwable $batchRowError) {
+            error_log('bootstrap_batch_print batch_numbers query failed: ' . $batchRowError->getMessage());
+        }
+
+        $generateToken = static function (): string {
+            if (function_exists('random_bytes')) {
+                try {
+                    return bin2hex(random_bytes(16));
+                } catch (Throwable $ignored) {
+                }
+            }
+            if (function_exists('openssl_random_pseudo_bytes')) {
+                $opensslBytes = @openssl_random_pseudo_bytes(16);
+                if ($opensslBytes !== false) {
+                    return bin2hex($opensslBytes);
+                }
+            }
+            return sha1(uniqid((string)mt_rand(), true));
+        };
+
+        $contextToken = $generateToken();
+
+        $quantityValue = null;
+        if (isset($batchNumberRow['quantity'])) {
+            $quantityValue = (int)$batchNumberRow['quantity'];
+        } elseif (isset($batchDetails['quantity_produced'])) {
+            $quantityValue = (int)$batchDetails['quantity_produced'];
+        } elseif (isset($batchDetails['quantity'])) {
+            $quantityValue = (int)$batchDetails['quantity'];
+        }
+        if ($quantityValue === null || $quantityValue <= 0) {
+            $quantityValue = 1;
+        }
+
+        $productName = $batchDetails['product_name'] ?? '';
+
+        $workersNames = [];
+        if (!empty($batchDetails['workers_details']) && is_array($batchDetails['workers_details'])) {
+            foreach ($batchDetails['workers_details'] as $worker) {
+                $name = trim((string)($worker['full_name'] ?? ''));
+                if ($name === '' && isset($worker['id'])) {
+                    $name = 'عامل #' . (int)$worker['id'];
+                }
+                if ($name !== '') {
+                    $workersNames[] = $name;
+                }
+            }
+        }
+        $workersNames = array_values(array_unique($workersNames));
+
+        $rawMaterialsSummary = [];
+        if (!empty($batchDetails['raw_materials']) && is_array($batchDetails['raw_materials'])) {
+            foreach ($batchDetails['raw_materials'] as $item) {
+                $rawMaterialsSummary[] = [
+                    'name' => trim((string)($item['name'] ?? 'مادة خام')),
+                    'quantity' => isset($item['quantity_used']) ? (float)$item['quantity_used'] : null,
+                    'unit' => $item['unit'] ?? null,
+                ];
+            }
+        }
+
+        $packagingSummary = [];
+        if (!empty($batchDetails['packaging_materials_details']) && is_array($batchDetails['packaging_materials_details'])) {
+            foreach ($batchDetails['packaging_materials_details'] as $item) {
+                $packagingSummary[] = [
+                    'name' => trim((string)($item['name'] ?? 'مادة تغليف')),
+                    'quantity' => isset($item['quantity_used']) ? (float)$item['quantity_used'] : null,
+                    'unit' => $item['unit'] ?? null,
+                ];
+            }
+        }
+
+        $honeySupplierName = null;
+        $honeySupplierId = null;
+        $packagingSupplierName = null;
+        $packagingSupplierId = null;
+        $extraSuppliers = [];
+        $notes = null;
+        $templateId = null;
+        $quantityUnitLabel = null;
+        $createdByName = '';
+        $createdById = null;
+
+        if (is_array($batchNumberRow)) {
+            $honeySupplierId = isset($batchNumberRow['honey_supplier_id']) ? (int)$batchNumberRow['honey_supplier_id'] : null;
+            $packagingSupplierId = isset($batchNumberRow['packaging_supplier_id']) ? (int)$batchNumberRow['packaging_supplier_id'] : null;
+            $notes = $batchNumberRow['notes'] ?? null;
+            $templateId = isset($batchNumberRow['template_id']) ? (int)$batchNumberRow['template_id'] : null;
+            $createdById = isset($batchNumberRow['created_by']) ? (int)$batchNumberRow['created_by'] : null;
+
+            if (array_key_exists('unit', $batchNumberRow) && $batchNumberRow['unit'] !== null) {
+                $quantityUnitLabel = (string)$batchNumberRow['unit'];
+            } elseif (array_key_exists('quantity_unit_label', $batchNumberRow) && $batchNumberRow['quantity_unit_label'] !== null) {
+                $quantityUnitLabel = (string)$batchNumberRow['quantity_unit_label'];
+            }
+
+            if (!empty($batchNumberRow['all_suppliers'])) {
+                $decodedSuppliers = json_decode((string)$batchNumberRow['all_suppliers'], true);
+                if (is_array($decodedSuppliers)) {
+                    foreach ($decodedSuppliers as $supplierRow) {
+                        $label = trim((string)($supplierRow['name'] ?? ''));
+                        if ($label === '' && !empty($supplierRow['type'])) {
+                            $label = 'مورد (' . $supplierRow['type'] . ')';
+                        }
+                        if ($label !== '') {
+                            $extraSuppliers[] = $label;
+                        }
+                    }
+                }
+            }
+        }
+
+        if ($honeySupplierId) {
+            try {
+                $row = $db->queryOne("SELECT name FROM suppliers WHERE id = ? LIMIT 1", [$honeySupplierId]);
+                if (!empty($row['name'])) {
+                    $honeySupplierName = $row['name'];
+                }
+            } catch (Throwable $supplierError) {
+                error_log('bootstrap_batch_print honey supplier lookup failed: ' . $supplierError->getMessage());
+            }
+        }
+
+        if ($packagingSupplierId) {
+            try {
+                $row = $db->queryOne("SELECT name FROM suppliers WHERE id = ? LIMIT 1", [$packagingSupplierId]);
+                if (!empty($row['name'])) {
+                    $packagingSupplierName = $row['name'];
+                }
+            } catch (Throwable $supplierError) {
+                error_log('bootstrap_batch_print packaging supplier lookup failed: ' . $supplierError->getMessage());
+            }
+        }
+
+        if ($createdById) {
+            try {
+                $userRow = $db->queryOne("SELECT full_name, username FROM users WHERE id = ? LIMIT 1", [$createdById]);
+                if (!empty($userRow)) {
+                    $createdByName = trim((string)($userRow['full_name'] ?? $userRow['username'] ?? ''));
+                }
+            } catch (Throwable $userError) {
+                error_log('bootstrap_batch_print user lookup failed: ' . $userError->getMessage());
+            }
+        }
+
+        $metadata = [
+            'batch_number' => $batchNumber,
+            'batch_id' => $batchDetails['id'] ?? null,
+            'product_id' => $batchDetails['product_id'] ?? ($batchNumberRow['product_id'] ?? null),
+            'product_name' => $productName,
+            'production_date' => $batchDetails['production_date'] ?? null,
+            'quantity' => $quantityValue,
+            'unit' => $quantityUnitLabel ?? 'قطعة',
+            'quantity_unit_label' => $quantityUnitLabel ?? 'قطعة',
+            'created_by' => $createdByName,
+            'created_by_id' => $createdById,
+            'workers' => $workersNames,
+            'honey_supplier_name' => $honeySupplierName,
+            'honey_supplier_id' => $honeySupplierId,
+            'packaging_supplier_name' => $packagingSupplierName,
+            'packaging_supplier_id' => $packagingSupplierId,
+            'extra_suppliers' => $extraSuppliers,
+            'notes' => $notes,
+            'raw_materials' => $rawMaterialsSummary,
+            'packaging_materials' => $packagingSummary,
+            'template_id' => $templateId,
+            'context_token' => $contextToken,
+        ];
+
+        $_SESSION['created_batch_context_token'] = $contextToken;
+        $_SESSION['created_batch_metadata'] = $metadata;
+        $_SESSION['created_batch_numbers'] = [$batchNumber];
+        $_SESSION['created_batch_product_name'] = $productName;
+        $_SESSION['created_batch_quantity'] = $quantityValue;
+
+        echo json_encode([
+            'success' => true,
+            'context_token' => $contextToken,
+            'metadata' => $metadata,
+            'quantity' => $quantityValue,
+            'product_name' => $productName,
+            'telegram_enabled' => isTelegramConfigured(),
+        ], JSON_UNESCAPED_UNICODE);
+        exit;
+    }
+
     if ($ajaxAction === '1' && isset($_GET['id'])) {
         header('Content-Type: application/json; charset=utf-8');
 

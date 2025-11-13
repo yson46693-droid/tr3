@@ -4387,6 +4387,75 @@ function showBarcodeModal(batchNumber, productName, defaultQuantity) {
         const fallbackUrl = `${PRINT_BARCODE_URL}?batch=${encodeURIComponent(batchNumber)}&quantity=${quantity}&print=1`;
         window.open(fallbackUrl, '_blank');
     }
+
+    if (!window.batchPrintInfo || window.batchPrintInfo.batch_number !== batchNumber) {
+        bootstrapBatchPrintContext(batchNumber, quantity, productName);
+    }
+}
+
+function bootstrapBatchPrintContext(batchNumber, fallbackQuantity, productName) {
+    if (!batchNumber) {
+        return;
+    }
+
+    if (typeof TEMPLATE_DETAILS_BASE_URL !== 'string' || TEMPLATE_DETAILS_BASE_URL === '') {
+        return;
+    }
+
+    const requestUrl = `${TEMPLATE_DETAILS_BASE_URL}?page=production&ajax=bootstrap_batch_print&batch=${encodeURIComponent(batchNumber)}`;
+
+    fetch(requestUrl, { cache: 'no-store', credentials: 'same-origin' })
+        .then((response) => response.json().catch(() => ({})))
+        .then((data) => {
+            if (!data || data.success !== true) {
+                console.warn('تعذر تهيئة بيانات الطباعة للتشغيلة', data && data.error ? data.error : data);
+                return;
+            }
+
+            const metadata = (typeof data.metadata === 'object' && data.metadata !== null)
+                ? data.metadata
+                : {};
+
+            metadata.batch_number = metadata.batch_number || batchNumber;
+
+            if (data.context_token) {
+                metadata.context_token = data.context_token;
+            }
+
+            if (data.telegram_enabled !== undefined) {
+                metadata.telegram_enabled = data.telegram_enabled;
+            }
+
+            window.batchPrintInfo = metadata;
+
+            if (!Array.isArray(window.batchNumbersToPrint) || window.batchNumbersToPrint.length === 0) {
+                window.batchNumbersToPrint = [batchNumber];
+            }
+
+            const parsedQuantity = parseInt(data.quantity, 10);
+            const resolvedQuantity = Number.isFinite(parsedQuantity) && parsedQuantity > 0
+                ? parsedQuantity
+                : fallbackQuantity;
+            const resolvedProductName = data.product_name || productName || '';
+
+            const productNameInput = document.getElementById('barcode_product_name');
+            if (productNameInput && resolvedProductName !== '') {
+                productNameInput.value = resolvedProductName;
+            }
+
+            const quantityText = document.getElementById('barcode_quantity');
+            if (quantityText && resolvedQuantity > 0) {
+                quantityText.textContent = resolvedQuantity;
+            }
+
+            const quantityInput = document.getElementById('barcode_print_quantity');
+            if (quantityInput && resolvedQuantity > 0) {
+                quantityInput.value = resolvedQuantity;
+            }
+        })
+        .catch((error) => {
+            console.error('Failed to prepare batch print context', error);
+        });
 }
 
 function renderTemplateSuppliers(details) {
