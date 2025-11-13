@@ -27,7 +27,16 @@ $filters = [
     'product_id' => $_GET['product_id'] ?? '',
     'date_from' => $_GET['date_from'] ?? date('Y-m-01'), // بداية الشهر الحالي
     'date_to' => $_GET['date_to'] ?? date('Y-m-t'), // نهاية الشهر الحالي
-    'report_type' => $_GET['report_type'] ?? 'daily' // daily, weekly, monthly
+    'report_type' => $_GET['report_type'] ?? 'daily', // daily, weekly, monthly
+    'supply_category' => $_GET['supply_category'] ?? ''
+];
+
+$supplyCategoryLabels = [
+    'honey' => 'العسل',
+    'olive_oil' => 'زيت الزيتون',
+    'beeswax' => 'شمع العسل',
+    'derivatives' => 'المشتقات',
+    'nuts' => 'المكسرات'
 ];
 
 // الحصول على رسالة النجاح من session (بعد redirect)
@@ -55,6 +64,24 @@ $productivityData = getProductivityReport(
     $filters['date_from'],
     $filters['date_to']
 );
+
+$supplyCategoryFilter = isset($filters['supply_category']) ? trim((string)$filters['supply_category']) : '';
+$supplyLogs = getProductionSupplyLogs(
+    $filters['date_from'],
+    $filters['date_to'],
+    $supplyCategoryFilter !== '' ? $supplyCategoryFilter : null
+);
+$supplyTotalQuantity = 0.0;
+$supplySuppliersSet = [];
+foreach ($supplyLogs as $logItem) {
+    $supplyTotalQuantity += isset($logItem['quantity']) ? (float)$logItem['quantity'] : 0.0;
+    if (!empty($logItem['supplier_id'])) {
+        $supplySuppliersSet['id_' . $logItem['supplier_id']] = true;
+    } elseif (!empty($logItem['supplier_name'])) {
+        $supplySuppliersSet['name_' . mb_strtolower(trim((string)$logItem['supplier_name']), 'UTF-8')] = true;
+    }
+}
+$supplySuppliersCount = count($supplySuppliersSet);
 
 // إحصائيات الإنتاجية
 $stats = [
@@ -251,6 +278,18 @@ $products = $db->query("SELECT id, name FROM products WHERE status = 'active' OR
                     <option value="monthly" <?php echo ($filters['report_type'] ?? '') === 'monthly' ? 'selected' : ''; ?>>شهري</option>
                 </select>
             </div>
+            <div class="col-md-3">
+                <label class="form-label">قسم التوريدات</label>
+                <select class="form-select" name="supply_category">
+                    <option value="">جميع الأقسام</option>
+                    <?php foreach ($supplyCategoryLabels as $categoryKey => $categoryLabel): ?>
+                        <option value="<?php echo htmlspecialchars($categoryKey); ?>"
+                            <?php echo ($filters['supply_category'] ?? '') === $categoryKey ? 'selected' : ''; ?>>
+                            <?php echo htmlspecialchars($categoryLabel); ?>
+                        </option>
+                    <?php endforeach; ?>
+                </select>
+            </div>
             <div class="col-md-12">
                 <button type="submit" class="btn btn-primary">
                     <i class="bi bi-search me-2"></i>عرض التقرير
@@ -432,6 +471,86 @@ $products = $db->query("SELECT id, name FROM products WHERE status = 'active' OR
                     </ol>
                 <?php endif; ?>
             </div>
+        </div>
+    </div>
+</div>
+
+<!-- سجل التوريدات -->
+<div class="card shadow-sm mt-4">
+    <div class="card-header bg-warning bg-gradient">
+        <div class="d-flex flex-wrap justify-content-between align-items-center gap-2">
+            <h5 class="mb-0 text-dark">
+                <i class="bi bi-truck me-2"></i>سجل التوريدات
+            </h5>
+            <div class="text-dark small fw-semibold">
+                إجمالي الكميات: 
+                <span class="text-primary"><?php echo number_format($supplyTotalQuantity, 3); ?></span>
+                <?php if ($supplyCategoryFilter !== '' && isset($supplyCategoryLabels[$supplyCategoryFilter])): ?>
+                    <span class="badge bg-primary text-white ms-2">
+                        <?php echo htmlspecialchars($supplyCategoryLabels[$supplyCategoryFilter]); ?>
+                    </span>
+                <?php else: ?>
+                    <span class="badge bg-secondary text-white ms-2">جميع الأقسام</span>
+                <?php endif; ?>
+                <span class="ms-3 text-muted">
+                    عدد الموردين: <?php echo $supplySuppliersCount; ?>
+                </span>
+            </div>
+        </div>
+    </div>
+    <div class="card-body">
+        <div class="table-responsive dashboard-table-wrapper">
+            <table class="table dashboard-table align-middle mb-0">
+                <thead>
+                    <tr>
+                        <th>التاريخ</th>
+                        <th>القسم</th>
+                        <th>المورد</th>
+                        <th>الكمية</th>
+                        <th>التفاصيل</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    <?php if (empty($supplyLogs)): ?>
+                        <tr>
+                            <td colspan="5" class="text-center text-muted py-4">
+                                <i class="bi bi-inbox me-2"></i>لا توجد توريدات في الفترة المحددة
+                            </td>
+                        </tr>
+                    <?php else: ?>
+                        <?php foreach ($supplyLogs as $supplyLog): ?>
+                            <tr>
+                                <td>
+                                    <div class="fw-semibold"><?php echo formatDate($supplyLog['recorded_at']); ?></div>
+                                    <div class="text-muted small"><?php echo htmlspecialchars(date('H:i', strtotime($supplyLog['recorded_at']))); ?></div>
+                                </td>
+                                <td>
+                                    <?php 
+                                        $categoryKey = $supplyLog['material_category'] ?? '';
+                                        echo htmlspecialchars($supplyCategoryLabels[$categoryKey] ?? $categoryKey ?: '-'); 
+                                    ?>
+                                </td>
+                                <td>
+                                    <?php echo htmlspecialchars($supplyLog['supplier_name'] ?: '-'); ?>
+                                </td>
+                                <td>
+                                    <span class="fw-semibold text-primary">
+                                        <?php echo number_format((float)($supplyLog['quantity'] ?? 0), 3); ?>
+                                    </span>
+                                    <span class="text-muted small"><?php echo htmlspecialchars($supplyLog['unit'] ?? 'كجم'); ?></span>
+                                </td>
+                                <td>
+                                    <?php if (!empty($supplyLog['details'])): ?>
+                                        <span><?php echo htmlspecialchars($supplyLog['details']); ?></span>
+                                    <?php else: ?>
+                                        <span class="text-muted">-</span>
+                                    <?php endif; ?>
+                                </td>
+                            </tr>
+                        <?php endforeach; ?>
+                    <?php endif; ?>
+                </tbody>
+            </table>
         </div>
     </div>
 </div>

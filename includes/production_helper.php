@@ -101,6 +101,171 @@ function ensureProductionMaterialsSupplierColumn(): bool
 }
 
 /**
+ * التأكد من وجود جدول سجل التوريدات
+ */
+function ensureProductionSupplyLogsTable(): bool
+{
+    static $ensured = false;
+
+    if ($ensured) {
+        return true;
+    }
+
+    $db = db();
+
+    try {
+        $db->execute("
+            CREATE TABLE IF NOT EXISTS `production_supply_logs` (
+              `id` int(11) NOT NULL AUTO_INCREMENT,
+              `material_category` varchar(50) NOT NULL,
+              `material_label` varchar(190) DEFAULT NULL,
+              `stock_source` varchar(80) DEFAULT NULL,
+              `stock_id` int(11) DEFAULT NULL,
+              `supplier_id` int(11) DEFAULT NULL,
+              `supplier_name` varchar(190) DEFAULT NULL,
+              `quantity` decimal(12,3) NOT NULL DEFAULT 0.000,
+              `unit` varchar(20) DEFAULT 'كجم',
+              `details` text DEFAULT NULL,
+              `recorded_by` int(11) DEFAULT NULL,
+              `recorded_at` timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP,
+              PRIMARY KEY (`id`),
+              KEY `production_supply_logs_category_date_idx` (`material_category`, `recorded_at`),
+              KEY `production_supply_logs_supplier_idx` (`supplier_id`),
+              KEY `production_supply_logs_recorded_at_idx` (`recorded_at`)
+            ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
+        ");
+        $ensured = true;
+        return true;
+    } catch (Exception $e) {
+        error_log('Production Helper: unable to ensure production_supply_logs table: ' . $e->getMessage());
+        return false;
+    }
+}
+
+/**
+ * تسجيل توريد جديد في سجل الإنتاج
+ *
+ * @param array{
+ *     material_category:string,
+ *     material_label?:string|null,
+ *     stock_source?:string|null,
+ *     stock_id?:int|null,
+ *     supplier_id?:int|null,
+ *     supplier_name?:string|null,
+ *     quantity?:float|int|string|null,
+ *     unit?:string|null,
+ *     details?:string|null,
+ *     recorded_by?:int|null,
+ *     recorded_at?:string|null
+ * } $payload
+ */
+function recordProductionSupplyLog(array $payload): bool
+{
+    if (empty($payload['material_category'])) {
+        return false;
+    }
+
+    if (!ensureProductionSupplyLogsTable()) {
+        return false;
+    }
+
+    $db = db();
+
+    $materialCategory = mb_substr(trim((string)$payload['material_category']), 0, 50, 'UTF-8');
+    $materialLabel = isset($payload['material_label']) ? mb_substr(trim((string)$payload['material_label']), 0, 190, 'UTF-8') : null;
+    $stockSource = isset($payload['stock_source']) ? mb_substr(trim((string)$payload['stock_source']), 0, 80, 'UTF-8') : null;
+    $stockId = isset($payload['stock_id']) ? (int)$payload['stock_id'] : null;
+    $supplierId = isset($payload['supplier_id']) && $payload['supplier_id'] !== '' ? (int)$payload['supplier_id'] : null;
+    $supplierName = isset($payload['supplier_name']) ? mb_substr(trim((string)$payload['supplier_name']), 0, 190, 'UTF-8') : null;
+    $quantity = isset($payload['quantity']) ? (float)$payload['quantity'] : 0.0;
+    $unit = isset($payload['unit']) ? mb_substr(trim((string)$payload['unit']), 0, 20, 'UTF-8') : 'كجم';
+    $details = isset($payload['details']) ? mb_substr(trim((string)$payload['details']), 0, 1000, 'UTF-8') : null;
+    $recordedBy = isset($payload['recorded_by']) ? (int)$payload['recorded_by'] : null;
+    $recordedAt = isset($payload['recorded_at']) ? trim((string)$payload['recorded_at']) : null;
+
+    try {
+        if ($supplierId && $supplierName === null) {
+            $supplier = $db->queryOne("SELECT name FROM suppliers WHERE id = ? LIMIT 1", [$supplierId]);
+            if ($supplier && isset($supplier['name'])) {
+                $supplierName = mb_substr(trim((string)$supplier['name']), 0, 190, 'UTF-8');
+            }
+        }
+
+        $params = [
+            $materialCategory,
+            $materialLabel ?: null,
+            $stockSource ?: null,
+            $stockId ?: null,
+            $supplierId ?: null,
+            $supplierName ?: null,
+            round($quantity, 3),
+            $unit ?: 'كجم',
+            $details ?: null,
+            $recordedBy ?: null,
+        ];
+
+        $sql = "
+            INSERT INTO production_supply_logs
+                (material_category, material_label, stock_source, stock_id, supplier_id, supplier_name, quantity, unit, details, recorded_by, recorded_at)
+            VALUES
+                (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, " . ($recordedAt ? '?' : 'DEFAULT') . ")
+        ";
+
+        if ($recordedAt) {
+            $params[] = $recordedAt;
+        }
+
+        $db->execute($sql, $params);
+        return true;
+    } catch (Exception $e) {
+        error_log('Production Helper: unable to record supply log: ' . $e->getMessage());
+        return false;
+    }
+}
+
+/**
+ * الحصول على سجل التوريدات حسب الفترة التصنيفية
+ *
+ * @param string $dateFrom تاريخ البداية (YYYY-MM-DD)
+ * @param string $dateTo   تاريخ النهاية (YYYY-MM-DD)
+ * @param string|null $category تصنيف المادة (اختياري)
+ * @return array<int, array<string, mixed>>
+ */
+function getProductionSupplyLogs(string $dateFrom, string $dateTo, ?string $category = null): array
+{
+    if (!ensureProductionSupplyLogsTable()) {
+        return [];
+    }
+
+    $db = db();
+
+    $start = date('Y-m-d 00:00:00', strtotime($dateFrom));
+    $end = date('Y-m-d 23:59:59', strtotime($dateTo));
+
+    $sql = "
+        SELECT id, material_category, material_label, stock_source, stock_id, supplier_id, supplier_name,
+               quantity, unit, details, recorded_by, recorded_at
+        FROM production_supply_logs
+        WHERE recorded_at BETWEEN ? AND ?
+    ";
+    $params = [$start, $end];
+
+    if ($category !== null && $category !== '') {
+        $sql .= " AND material_category = ? ";
+        $params[] = $category;
+    }
+
+    $sql .= " ORDER BY recorded_at DESC, id DESC LIMIT 500";
+
+    try {
+        return $db->query($sql, $params);
+    } catch (Exception $e) {
+        error_log('Production Helper: unable to fetch supply logs: ' . $e->getMessage());
+        return [];
+    }
+}
+
+/**
  * ربط مواد التغليف بعملية إنتاج
  */
 function linkPackagingToProduction($productionId, $materials) {

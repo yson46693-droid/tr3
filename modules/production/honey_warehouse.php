@@ -110,6 +110,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         $honeyVariety = $_POST['honey_variety'] ?? 'أخرى';
         $quantity = floatval($_POST['quantity'] ?? 0);
         $honeyType = $_POST['honey_type'] ?? 'raw'; // raw or filtered
+        $supplyStockId = null;
         
         // التحقق من صحة نوع العسل
         if (!in_array($honeyVariety, $validHoneyVarieties, true)) {
@@ -127,6 +128,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 "SELECT * FROM honey_stock WHERE supplier_id = ? AND honey_variety = ?",
                 [$supplierId, $honeyVariety]
             );
+            if ($existingStock && isset($existingStock['id'])) {
+                $supplyStockId = (int)$existingStock['id'];
+            }
             
             if ($existingStock) {
                 // تحديث الكمية
@@ -144,15 +148,18 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             } else {
                 // إنشاء سجل جديد
                 if ($honeyType === 'raw') {
-                    $db->execute(
+                    $insertResult = $db->execute(
                         "INSERT INTO honey_stock (supplier_id, honey_variety, raw_honey_quantity, filtered_honey_quantity) VALUES (?, ?, ?, 0)",
                         [$supplierId, $honeyVariety, $quantity]
                     );
                 } else {
-                    $db->execute(
+                    $insertResult = $db->execute(
                         "INSERT INTO honey_stock (supplier_id, honey_variety, raw_honey_quantity, filtered_honey_quantity) VALUES (?, ?, 0, ?)",
                         [$supplierId, $honeyVariety, $quantity]
                     );
+                }
+                if (!empty($insertResult['insert_id'])) {
+                    $supplyStockId = (int)$insertResult['insert_id'];
                 }
             }
             
@@ -170,6 +177,29 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     'type' => $honeyType,
                 ]
             );
+
+            $supplierRow = $db->queryOne("SELECT name FROM suppliers WHERE id = ? LIMIT 1", [$supplierId]);
+            $supplierName = $supplierRow['name'] ?? null;
+            $varietyLabel = $honeyVarietiesCatalog[$honeyVariety]['label'] ?? $honeyVariety;
+            $materialLabel = trim($varietyLabel . ($honeyVarietyCode ? ' - ' . $honeyVarietyCode : ''));
+            $details = sprintf(
+                'إضافة %s - الحالة: %s',
+                $materialLabel ?: $varietyLabel,
+                $honeyType === 'filtered' ? 'عسل مصفى' : 'عسل خام'
+            );
+
+            recordProductionSupplyLog([
+                'material_category' => 'honey',
+                'material_label' => $materialLabel !== '' ? $materialLabel : $varietyLabel,
+                'stock_source' => 'honey_stock',
+                'stock_id' => $supplyStockId,
+                'supplier_id' => $supplierId,
+                'supplier_name' => $supplierName,
+                'quantity' => $quantity,
+                'unit' => 'كجم',
+                'details' => $details,
+                'recorded_by' => $currentUser['id'] ?? null,
+            ]);
             
             $success = 'تم إضافة العسل بنجاح';
         }
