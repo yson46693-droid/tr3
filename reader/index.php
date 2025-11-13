@@ -775,9 +775,12 @@ $_SESSION['reader_session_id'] = $_SESSION['reader_session_id'] ?? bin2hex(rando
                 ['الفئة', data.product_category ?? '—'],
                 ['التاريخ', data.production_date ?? '—'],
                 ['الكمية', data.quantity ?? '—'],
-                ['الحالة', data.status_label ?? '—'],
+                ['الحالة', data.status_label ?? data.status ?? '—'],
             ];
 
+            if (data.quantity_produced && data.quantity_produced !== data.quantity) {
+                summaryRows.push(['الكمية المنتجة', data.quantity_produced]);
+            }
             if (data.honey_supplier_name) {
                 summaryRows.push(['مورد العسل', data.honey_supplier_name]);
             }
@@ -804,22 +807,78 @@ $_SESSION['reader_session_id'] = $_SESSION['reader_session_id'] ?? bin2hex(rando
                 </table>
             `;
 
-            if (Array.isArray(data.materials) && data.materials.length) {
-                materialsCard.hidden = false;
-                materialsCard.innerHTML = `
-                    <h2>مواد التعبئة المستخدمة</h2>
+            const packagingItems = Array.isArray(data.materials) && data.materials.length
+                ? data.materials.map(item => formatMaterialEntry(item, 'مادة تعبئة'))
+                : Array.isArray(data.packaging_materials)
+                    ? data.packaging_materials.map(item => formatMaterialEntry(item, 'مادة تعبئة'))
+                    : [];
+
+            const rawItems = Array.isArray(data.raw_materials) && data.raw_materials.length
+                ? data.raw_materials.map(item => formatMaterialEntry(item, 'مادة خام'))
+                : Array.isArray(data.raw_materials_source)
+                    ? data.raw_materials_source.map(item => formatMaterialEntry(item, 'مادة خام'))
+                    : [];
+
+            const materialSections = [];
+            if (packagingItems.length) {
+                materialSections.push(`
+                    <h3>مواد التعبئة</h3>
                     <table>
-                        ${data.materials.map(item => `
+                        ${packagingItems.map(item => `
                             <tr>
                                 <th>${item.name ?? '—'}</th>
                                 <td>${item.details ?? ''}</td>
                             </tr>
                         `).join('')}
                     </table>
+                `);
+            }
+            if (rawItems.length) {
+                materialSections.push(`
+                    <h3>المواد الخام</h3>
+                    <table>
+                        ${rawItems.map(item => `
+                            <tr>
+                                <th>${item.name ?? '—'}</th>
+                                <td>${item.details ?? ''}</td>
+                            </tr>
+                        `).join('')}
+                    </table>
+                `);
+            }
+
+            if (materialSections.length) {
+                materialsCard.hidden = false;
+                materialsCard.innerHTML = `
+                    <h2>تفاصيل المواد</h2>
+                    ${materialSections.join('<hr>')}
                 `;
             } else {
                 materialsCard.hidden = true;
                 materialsCard.innerHTML = '';
+            }
+
+            if (Array.isArray(data.suppliers) && data.suppliers.length) {
+                suppliersCard.hidden = false;
+                suppliersCard.innerHTML = `
+                    <h2>الموردون المرتبطون</h2>
+                    <table>
+                        ${data.suppliers.map(supplier => {
+                            const roles = Array.isArray(supplier.roles) && supplier.roles.length
+                                ? supplier.roles.join('، ')
+                                : (supplier.role ?? '—');
+                            return `
+                                <tr>
+                                    <th>${supplier.name ?? '—'}</th>
+                                    <td>${roles}</td>
+                                </tr>
+                            `;
+                        }).join('')}
+                    </table>
+                `;
+            } else {
+                suppliersCard.hidden = true;
+                suppliersCard.innerHTML = '';
             }
 
             if (Array.isArray(data.workers) && data.workers.length) {

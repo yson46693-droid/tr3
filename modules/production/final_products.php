@@ -59,26 +59,6 @@ try {
     error_log('final_products: failed ensuring external_channel column -> ' . $e->getMessage());
 }
 
-$productSpecifications = [];
-if (!$isManager) {
-    try {
-        $specSql = <<<SQL
-        SELECT ps.*, 
-               creator.full_name AS creator_name,
-               updater.full_name AS updater_name
-        FROM product_specifications ps
-        LEFT JOIN users creator ON ps.created_by = creator.id
-        LEFT JOIN users updater ON ps.updated_by = updater.id
-        ORDER BY ps.created_at DESC
-        SQL;
-
-        $productSpecifications = $db->query($specSql);
-    } catch (Exception $e) {
-        error_log('final_products: failed retrieving product specifications -> ' . $e->getMessage());
-        $productSpecifications = [];
-    }
-}
-
 $currentPageSlug = $_GET['page'] ?? 'inventory';
 $currentSection = $_GET['section'] ?? null;
 $baseQueryString = '?page=' . urlencode($currentPageSlug);
@@ -1137,80 +1117,6 @@ if ($isManager) {
         <?php endif; ?>
     </div>
 <?php endif; ?>
-<?php if (!$isManager): ?>
-<?php
-$specificationsCount = is_countable($productSpecifications) ? count($productSpecifications) : 0;
-?>
-<div class="card shadow-sm mt-4">
-    <div class="card-header bg-secondary text-white d-flex justify-content-between align-items-center flex-wrap gap-2">
-        <h5 class="mb-0"><i class="bi bi-journal-text me-2"></i>مواصفات المنتجات (الوصفات المرجعية)</h5>
-        <div class="d-flex align-items-center gap-2">
-            <span class="badge bg-light text-dark"><?php echo number_format($specificationsCount); ?> مواصفة</span>
-        </div>
-    </div>
-    <div class="card-body">
-        <?php if ($specificationsCount === 0): ?>
-            <div class="alert alert-info mb-0">
-                <i class="bi bi-info-circle me-2"></i>
-                لم يتم تسجيل مواصفات بعد.
-            </div>
-        <?php else: ?>
-            <div class="table-responsive dashboard-table-wrapper">
-                <table class="table dashboard-table align-middle">
-                    <thead class="table-light">
-                        <tr>
-                            <th>اسم المنتج</th>
-                            <th width="24%">المواد الخام</th>
-                            <th width="24%">أدوات التعبئة</th>
-                            <th width="22%">ملاحظات الإنشاء</th>
-                            <th>آخر تحديث</th>
-                        </tr>
-                    </thead>
-                    <tbody>
-                        <?php foreach ($productSpecifications as $specification): ?>
-                            <tr>
-                                <td data-label="اسم المنتج">
-                                    <strong><?php echo htmlspecialchars($specification['product_name']); ?></strong>
-                                </td>
-                                <td data-label="المواد الخام">
-                                    <div class="text-muted small">الأوزان / الكميات</div>
-                                    <div class="mt-1" style="white-space: pre-line;"><?php echo $specification['raw_materials'] !== null && $specification['raw_materials'] !== '' ? nl2br(htmlspecialchars($specification['raw_materials'])) : '<span class="text-muted">—</span>'; ?></div>
-                                </td>
-                                <td data-label="أدوات التعبئة">
-                                    <div class="text-muted small">الأعداد / الأحجام</div>
-                                    <div class="mt-1" style="white-space: pre-line;"><?php echo $specification['packaging'] !== null && $specification['packaging'] !== '' ? nl2br(htmlspecialchars($specification['packaging'])) : '<span class="text-muted">—</span>'; ?></div>
-                                </td>
-                                <td data-label="ملاحظات الإنشاء" style="white-space: pre-line;">
-                                    <?php echo $specification['notes'] !== null && $specification['notes'] !== '' ? nl2br(htmlspecialchars($specification['notes'])) : '<span class="text-muted">—</span>'; ?>
-                                </td>
-                                <td data-label="آخر تحديث">
-                                    <?php
-                                        $updatedAt = $specification['updated_at'] ?? null;
-                                        $createdAt = $specification['created_at'] ?? null;
-                                        echo $updatedAt
-                                            ? htmlspecialchars(formatDateTime($updatedAt))
-                                            : ($createdAt ? htmlspecialchars(formatDateTime($createdAt)) : '—');
-                                    ?>
-                                    <div class="text-muted small mt-1">
-                                        <?php if (!empty($specification['updated_by'])): ?>
-                                            بواسطة <?php echo htmlspecialchars($specification['updater_name'] ?? 'غير محدد'); ?>
-                                        <?php elseif (!empty($specification['created_by'])): ?>
-                                            مسجل بواسطة <?php echo htmlspecialchars($specification['creator_name'] ?? 'غير محدد'); ?>
-                                        <?php else: ?>
-                                            —
-                                        <?php endif; ?>
-                                    </div>
-                                </td>
-                            </tr>
-                        <?php endforeach; ?>
-                    </tbody>
-                </table>
-            </div>
-        <?php endif; ?>
-    </div>
-</div>
-<?php endif; ?>
-
 <?php if ($isManager): ?>
 <div class="modal fade" id="addExternalProductModal" tabindex="-1" aria-hidden="true">
     <div class="modal-dialog">
