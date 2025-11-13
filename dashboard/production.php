@@ -362,6 +362,11 @@ if ($isPackagingPost) {
 
 $pageStylesheets = isset($pageStylesheets) && is_array($pageStylesheets) ? $pageStylesheets : [];
 $extraScripts = isset($extraScripts) && is_array($extraScripts) ? $extraScripts : [];
+if ($page === 'chat') {
+    $pageStylesheets[] = 'assets/css/chat.css';
+    $chatScriptPath = getRelativeUrl('assets/js/chat.js');
+    $extraScripts[] = $chatScriptPath . '?v=' . urlencode(APP_VERSION);
+}
 
 $isAjaxRequest = (
     (isset($_SERVER['HTTP_X_REQUESTED_WITH']) && strtolower($_SERVER['HTTP_X_REQUESTED_WITH']) === 'xmlhttprequest') ||

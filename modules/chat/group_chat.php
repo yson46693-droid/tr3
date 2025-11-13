@@ -20,8 +20,6 @@ $currentUserId = (int) ($currentUser['id'] ?? 0);
 $currentUserName = $currentUser['full_name'] ?? ($currentUser['username'] ?? 'عضو');
 $currentUserRole = $currentUser['role'] ?? 'member';
 
-$cssPath = getRelativeUrl('assets/css/chat.css');
-$jsPath = getRelativeUrl('assets/js/chat.js');
 $apiBase = getRelativeUrl('api/chat');
 $roomName = 'غرفة فريق الشركة';
 
@@ -35,7 +33,6 @@ foreach ($onlineUsers as $onlineUser) {
 $membersCount = count($onlineUsers);
 ?>
 
-<link rel="stylesheet" href="<?php echo htmlspecialchars($cssPath, ENT_QUOTES, 'UTF-8'); ?>">
 <div class="chat-app" data-chat-app
      data-current-user-id="<?php echo $currentUserId; ?>"
      data-current-user-name="<?php echo htmlspecialchars($currentUserName, ENT_QUOTES, 'UTF-8'); ?>"
@@ -96,5 +93,4 @@ $membersCount = count($onlineUsers);
 <script>
     window.CHAT_API_BASE = '<?php echo htmlspecialchars($apiBase, ENT_QUOTES, 'UTF-8'); ?>';
 </script>
-<script src="<?php echo htmlspecialchars($jsPath, ENT_QUOTES, 'UTF-8'); ?>" defer></script>
 

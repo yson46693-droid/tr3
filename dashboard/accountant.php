@@ -131,6 +131,11 @@ if ($page === 'financial' && $_SERVER['REQUEST_METHOD'] === 'POST') {
 
 $pageStylesheets = isset($pageStylesheets) && is_array($pageStylesheets) ? $pageStylesheets : [];
 $extraScripts = isset($extraScripts) && is_array($extraScripts) ? $extraScripts : [];
+if ($page === 'chat') {
+    $pageStylesheets[] = 'assets/css/chat.css';
+    $chatScriptPath = getRelativeUrl('assets/js/chat.js');
+    $extraScripts[] = $chatScriptPath . '?v=' . urlencode(APP_VERSION);
+}
 
 require_once __DIR__ . '/../includes/lang/' . getCurrentLanguage() . '.php';
 $lang = isset($translations) ? $translations : [];

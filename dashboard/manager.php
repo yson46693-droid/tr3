@@ -37,7 +37,8 @@ $pageStylesheets = isset($pageStylesheets) && is_array($pageStylesheets) ? $page
 $extraScripts = isset($extraScripts) && is_array($extraScripts) ? $extraScripts : [];
 if ($page === 'chat') {
     $pageStylesheets[] = 'assets/css/chat.css';
-    $extraScripts[] = getRelativeUrl('assets/js/chat.js');
+    $chatScriptPath = getRelativeUrl('assets/js/chat.js');
+    $extraScripts[] = $chatScriptPath . '?v=' . urlencode(APP_VERSION);
 }
 require_once __DIR__ . '/../includes/lang/' . getCurrentLanguage() . '.php';
 $lang = $translations;
