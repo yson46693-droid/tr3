@@ -3897,10 +3897,14 @@ $lang = isset($translations) ? $translations : [];
                     <div class="border rounded p-3" style="max-height: 200px; overflow-y: auto;">
                         <div id="batch_numbers_list"></div>
                     </div>
+                    <div id="barcodeFallbackMessages" class="d-none mt-3"></div>
                 </div>
             </div>
             <div class="modal-footer">
                 <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">إغلاق</button>
+                <button type="button" class="btn btn-outline-primary d-none" id="openDirectPrintBtn">
+                    <i class="bi bi-printer me-2"></i>فتح صفحة الطباعة
+                </button>
                 <button type="button" class="btn btn-primary" id="sendBarcodeToTelegramBtn" onclick="printBarcodes()">
                     <i class="bi bi-send-check me-2"></i>إرسال رابط الطباعة
                 </button>
@@ -5257,9 +5261,40 @@ document.getElementById('createFromTemplateModal')?.addEventListener('hidden.bs.
     }
 });
 
+document.getElementById('printBarcodesModal')?.addEventListener('hidden.bs.modal', function() {
+    const fallbackMessages = document.getElementById('barcodeFallbackMessages');
+    if (fallbackMessages) {
+        fallbackMessages.classList.add('d-none');
+        fallbackMessages.innerHTML = '';
+    }
+
+    const directPrintButton = document.getElementById('openDirectPrintBtn');
+    if (directPrintButton) {
+        directPrintButton.classList.add('d-none');
+        directPrintButton.dataset.printUrl = '';
+        directPrintButton.disabled = false;
+        directPrintButton.onclick = null;
+    }
+});
+
 // طباعة الباركودات
 function printBarcodes() {
     const actionButton = document.getElementById('sendBarcodeToTelegramBtn');
+    const fallbackMessages = document.getElementById('barcodeFallbackMessages');
+    const directPrintButton = document.getElementById('openDirectPrintBtn');
+
+    if (fallbackMessages) {
+        fallbackMessages.classList.add('d-none');
+        fallbackMessages.innerHTML = '';
+    }
+
+    if (directPrintButton) {
+        directPrintButton.classList.add('d-none');
+        directPrintButton.dataset.printUrl = '';
+        directPrintButton.disabled = false;
+        directPrintButton.onclick = null;
+    }
+
     const setLoadingState = (isLoading) => {
         if (!actionButton) {
             return;
@@ -5298,22 +5333,148 @@ function printBarcodes() {
     const hasEndpoint = typeof SEND_BARCODE_TELEGRAM_URL === 'string' && SEND_BARCODE_TELEGRAM_URL !== '';
     let fallbackTriggered = false;
 
-    const fallbackToDirectPrint = (message) => {
+    const fallbackToDirectPrint = (message, options = {}) => {
         if (fallbackTriggered) {
             return;
         }
         fallbackTriggered = true;
-        if (message) {
-            alert(message);
+
+        const { autoOpen = true } = options;
+        const finalMessage = message || 'تعذر إرسال الرابط إلى تليجرام، يمكنك استخدام الرابط التالي للطباعة اليدوية.';
+
+        const buildFallbackMessage = () => {
+            if (!fallbackMessages) {
+                if (finalMessage) {
+                    alert(finalMessage);
+                }
+                return;
+            }
+
+            const copyToClipboard = (text, onSuccess, onFailure) => {
+                const fallbackCopy = () => {
+                    const tempTextarea = document.createElement('textarea');
+                    tempTextarea.value = text;
+                    tempTextarea.style.position = 'fixed';
+                    tempTextarea.style.opacity = '0';
+                    tempTextarea.style.pointerEvents = 'none';
+                    document.body.appendChild(tempTextarea);
+                    tempTextarea.focus();
+                    tempTextarea.select();
+                    let successful = false;
+                    try {
+                        successful = document.execCommand('copy');
+                    } catch (err) {
+                        successful = false;
+                    }
+                    document.body.removeChild(tempTextarea);
+                    if (successful) {
+                        onSuccess();
+                    } else {
+                        onFailure();
+                    }
+                };
+
+                if (navigator.clipboard && navigator.clipboard.writeText) {
+                    navigator.clipboard.writeText(text)
+                        .then(onSuccess)
+                        .catch(() => fallbackCopy());
+                } else {
+                    fallbackCopy();
+                }
+            };
+
+            fallbackMessages.classList.remove('d-none');
+            fallbackMessages.innerHTML = '';
+
+            const alertWrapper = document.createElement('div');
+            alertWrapper.className = 'alert alert-warning d-flex align-items-start gap-3 mb-0';
+
+            const icon = document.createElement('i');
+            icon.className = 'bi bi-exclamation-triangle-fill fs-4 text-warning';
+
+            const content = document.createElement('div');
+
+            const title = document.createElement('div');
+            title.className = 'fw-semibold mb-1';
+            title.textContent = finalMessage;
+
+            const helper = document.createElement('p');
+            helper.className = 'mb-2 small text-muted';
+            helper.textContent = 'يمكنك فتح صفحة الطباعة أو نسخ الرابط وإرساله يدوياً.';
+
+            const inputGroup = document.createElement('div');
+            inputGroup.className = 'input-group input-group-sm';
+
+            const urlInput = document.createElement('input');
+            urlInput.type = 'text';
+            urlInput.className = 'form-control';
+            urlInput.value = printUrl;
+            urlInput.readOnly = true;
+            urlInput.setAttribute('aria-label', 'رابط الطباعة');
+
+            const copyButton = document.createElement('button');
+            copyButton.type = 'button';
+            copyButton.className = 'btn btn-outline-primary';
+            copyButton.textContent = 'نسخ الرابط';
+
+            const resetCopyButton = (text = 'نسخ الرابط') => {
+                setTimeout(() => {
+                    copyButton.textContent = text;
+                }, 2000);
+            };
+
+            copyButton.addEventListener('click', () => {
+                copyButton.disabled = true;
+                copyToClipboard(
+                    printUrl,
+                    () => {
+                        copyButton.textContent = 'تم النسخ!';
+                        copyButton.disabled = false;
+                        resetCopyButton();
+                    },
+                    () => {
+                        copyButton.textContent = 'تعذّر النسخ';
+                        copyButton.disabled = false;
+                        resetCopyButton();
+                    }
+                );
+            });
+
+            inputGroup.append(urlInput, copyButton);
+
+            content.append(title, helper, inputGroup);
+            alertWrapper.append(icon, content);
+            fallbackMessages.append(alertWrapper);
+        };
+
+        buildFallbackMessage();
+
+        if (directPrintButton) {
+            directPrintButton.classList.remove('d-none');
+            directPrintButton.dataset.printUrl = printUrl;
+            directPrintButton.onclick = () => {
+                const targetUrl = directPrintButton.dataset.printUrl;
+                if (!targetUrl) {
+                    return;
+                }
+                const manualWindow = window.open(targetUrl, '_blank');
+                if (manualWindow && typeof manualWindow.focus === 'function') {
+                    manualWindow.focus();
+                }
+            };
         }
-        const openedWindow = window.open(printUrl, '_blank');
-        if (openedWindow && typeof openedWindow.focus === 'function') {
-            openedWindow.focus();
+
+        if (autoOpen) {
+            const openedWindow = window.open(printUrl, '_blank');
+            if (openedWindow && typeof openedWindow.focus === 'function') {
+                openedWindow.focus();
+            }
         }
     };
 
     if (!telegramEnabled || !contextToken || !hasEndpoint) {
-        fallbackToDirectPrint('تم فتح صفحة الطباعة مباشرة لأن إرسال الرابط عبر تليجرام غير متاح حالياً.');
+        setLoadingState(false);
+        fallbackToDirectPrint('لا يمكن إرسال رابط الطباعة عبر تليجرام حالياً. استخدم الرابط أدناه للطباعة اليدوية.', { autoOpen: false });
         return;
     }
 
