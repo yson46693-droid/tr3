@@ -13,6 +13,7 @@ require_once __DIR__ . '/../../includes/db.php';
 require_once __DIR__ . '/../../includes/auth.php';
 require_once __DIR__ . '/../../includes/path_helper.php';
 require_once __DIR__ . '/../../includes/audit_log.php';
+require_once __DIR__ . '/../../includes/production_helper.php';
 
 if (!function_exists('generateNextPackagingMaterialCode')) {
     /**
@@ -1031,6 +1032,26 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
                     $db->commit();
 
+                    if ($initialQuantity > 0) {
+                        $initialDetails = 'توريد ابتدائي عند إنشاء أداة التعبئة';
+                        if ($aliasValue !== '') {
+                            $initialDetails .= ' (اسم مختصر: ' . $aliasValue . ')';
+                        }
+                        $supplyLogged = recordProductionSupplyLog([
+                            'material_category' => 'packaging',
+                            'material_label' => $aliasValue !== '' ? $aliasValue : $name,
+                            'stock_source' => $usePackagingTable ? 'packaging_materials' : 'products',
+                            'stock_id' => $newId,
+                            'quantity' => $initialQuantity,
+                            'unit' => $unitValue,
+                            'details' => $initialDetails,
+                            'recorded_by' => $currentUser['id'] ?? null,
+                        ]);
+                        if (!$supplyLogged) {
+                            error_log('packaging_warehouse: failed recording initial supply log for packaging material ' . $newId);
+                        }
+                    }
+
                     $successMessage = sprintf('تم إضافة أداة التعبئة "%s" بنجاح.', $name);
                     $redirectParams = ['page' => 'packaging_warehouse'];
                     foreach (['search', 'material_id', 'date_from', 'date_to'] as $param) {
@@ -1220,6 +1241,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
                 $quantityBefore = floatval($material['quantity'] ?? 0);
                 $quantityAfter = $quantityBefore + $additionalQuantity;
+                $unitLabel = $material['unit'] ?? 'وحدة';
 
                 if ($usePackagingTable) {
                     $db->execute(
@@ -1257,7 +1279,21 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
                 $db->commit();
 
-                $unitLabel = $material['unit'] ?? 'وحدة';
+                $supplyDetails = $notes !== '' ? mb_substr($notes, 0, 300, 'UTF-8') : 'إضافة كمية عبر مخزن أدوات التعبئة';
+                $supplyLogged = recordProductionSupplyLog([
+                    'material_category' => 'packaging',
+                    'material_label' => $material['name'] ?? ('أداة #' . $materialId),
+                    'stock_source' => $usePackagingTable ? 'packaging_materials' : 'products',
+                    'stock_id' => $materialId,
+                    'quantity' => $additionalQuantity,
+                    'unit' => $unitLabel,
+                    'details' => $supplyDetails,
+                    'recorded_by' => $currentUser['id'] ?? null,
+                ]);
+                if (!$supplyLogged) {
+                    error_log('packaging_warehouse: failed recording supply log for material ' . $materialId);
+                }
+
                 $successMessage = sprintf(
                     'تمت إضافة %.2f %s إلى %s بنجاح.',
                     $additionalQuantity,

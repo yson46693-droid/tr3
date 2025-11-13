@@ -2403,6 +2403,18 @@ if (strtotime($productionReportsMonthEnd) > strtotime($productionReportsTodayDat
     $productionReportsMonthEnd = $productionReportsTodayDate;
 }
 
+$supplyCategoryLabels = [
+    'honey' => 'العسل',
+    'olive_oil' => 'زيت الزيتون',
+    'beeswax' => 'شمع العسل',
+    'derivatives' => 'المشتقات',
+    'nuts' => 'المكسرات'
+];
+$supplyCategoryParam = isset($_GET['supply_category']) ? trim((string)$_GET['supply_category']) : '';
+if ($supplyCategoryParam !== '' && !array_key_exists($supplyCategoryParam, $supplyCategoryLabels)) {
+    $supplyCategoryParam = '';
+}
+
 $reportDayParam = isset($_GET['report_day']) ? trim((string)$_GET['report_day']) : '';
 $reportFilterType = isset($_GET['report_type']) ? strtolower(trim((string)$_GET['report_type'])) : 'all';
 if (!in_array($reportFilterType, ['all', 'packaging', 'raw'], true)) {
@@ -2446,6 +2458,26 @@ if ($reportFilterType === 'all' && $reportFilterQuery === '') {
     $monthRawSubTotals = $productionReportsMonth['raw']['sub_totals'] ?? [];
 } else {
     $monthRawSubTotals = productionPageBuildSubTotals($filteredMonthRawItems);
+}
+
+$supplyLogsMonth = getProductionSupplyLogs($productionReportsMonthStart, $productionReportsMonthEnd, $supplyCategoryParam !== '' ? $supplyCategoryParam : null);
+$supplyLogsDay = getProductionSupplyLogs($selectedReportDay, $selectedReportDay, $supplyCategoryParam !== '' ? $supplyCategoryParam : null);
+
+$supplyMonthTotalQuantity = 0.0;
+$supplyMonthSuppliersSet = [];
+foreach ($supplyLogsMonth as $logItem) {
+    $supplyMonthTotalQuantity += isset($logItem['quantity']) ? (float)$logItem['quantity'] : 0.0;
+    if (!empty($logItem['supplier_id'])) {
+        $supplyMonthSuppliersSet['id_' . $logItem['supplier_id']] = true;
+    } elseif (!empty($logItem['supplier_name'])) {
+        $supplyMonthSuppliersSet['name_' . mb_strtolower(trim((string)$logItem['supplier_name']), 'UTF-8')] = true;
+    }
+}
+$supplyMonthSuppliersCount = count($supplyMonthSuppliersSet);
+
+$supplyDayTotalQuantity = 0.0;
+foreach ($supplyLogsDay as $logItem) {
+    $supplyDayTotalQuantity += isset($logItem['quantity']) ? (float)$logItem['quantity'] : 0.0;
 }
 
 $hasActiveFilters = ($reportFilterType !== 'all') || ($reportFilterQuery !== '') || ($selectedReportDay !== $productionReportsTodayDate);
@@ -3063,6 +3095,18 @@ $lang = isset($translations) ? $translations : [];
                         <option value="raw" <?php echo $reportFilterType === 'raw' ? 'selected' : ''; ?>>المواد الخام</option>
                     </select>
                 </div>
+                <div class="col-lg-3 col-md-4">
+                    <label class="form-label fw-semibold">قسم التوريدات</label>
+                    <select class="form-select" name="supply_category">
+                        <option value="">جميع الأقسام</option>
+                        <?php foreach ($supplyCategoryLabels as $categoryKey => $categoryLabel): ?>
+                            <option value="<?php echo htmlspecialchars($categoryKey); ?>"
+                                <?php echo $supplyCategoryParam === $categoryKey ? 'selected' : ''; ?>>
+                                <?php echo htmlspecialchars($categoryLabel); ?>
+                            </option>
+                        <?php endforeach; ?>
+                    </select>
+                </div>
                 <div class="col-lg-4 col-md-6">
                     <label class="form-label fw-semibold">بحث عن مادة</label>
                     <input type="search"
@@ -3149,6 +3193,155 @@ $lang = isset($translations) ? $translations : [];
                         ?>
                     </span>
                 </div>
+            </div>
+        </div>
+    </div>
+
+    <div class="card production-report-card shadow-sm mb-4">
+        <div class="card-header bg-warning text-dark d-flex flex-wrap justify-content-between align-items-center gap-2">
+            <div class="d-flex align-items-center gap-2">
+                <i class="bi bi-truck"></i>
+                <span>توريدات المواد خلال الفترة</span>
+                <span class="badge bg-light text-dark border">
+                    <?php echo htmlspecialchars($monthRangeLabelStart); ?> - <?php echo htmlspecialchars($monthRangeLabelEnd); ?>
+                </span>
+            </div>
+            <div class="d-flex align-items-center gap-3 small text-dark">
+                <span>إجمالي الكميات: <strong class="text-primary"><?php echo number_format($supplyMonthTotalQuantity, 3); ?></strong></span>
+                <span>عدد الموردين: <strong><?php echo $supplyMonthSuppliersCount; ?></strong></span>
+                <span>
+                    القسم:
+                    <?php if ($supplyCategoryParam !== '' && isset($supplyCategoryLabels[$supplyCategoryParam])): ?>
+                        <span class="badge bg-primary text-white"><?php echo htmlspecialchars($supplyCategoryLabels[$supplyCategoryParam]); ?></span>
+                    <?php else: ?>
+                        <span class="badge bg-secondary text-white">جميع الأقسام</span>
+                    <?php endif; ?>
+                </span>
+            </div>
+        </div>
+        <div class="card-body">
+            <div class="table-responsive dashboard-table-wrapper">
+                <table class="table dashboard-table align-middle mb-0">
+                    <thead>
+                        <tr>
+                            <th>التاريخ</th>
+                            <th>القسم</th>
+                            <th>المورد</th>
+                            <th>الكمية</th>
+                            <th>الوصف</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        <?php if (empty($supplyLogsMonth)): ?>
+                            <tr>
+                                <td colspan="5" class="text-center text-muted py-4">
+                                    <i class="bi bi-inbox me-2"></i>لا توجد توريدات ضمن الفترة المحددة
+                                </td>
+                            </tr>
+                        <?php else: ?>
+                            <?php foreach ($supplyLogsMonth as $supplyLog): ?>
+                                <tr>
+                                    <td>
+                                        <div class="fw-semibold">
+                                            <?php echo htmlspecialchars(formatDate($supplyLog['recorded_at'] ?? '')); ?>
+                                        </div>
+                                        <div class="text-muted small">
+                                            <?php echo htmlspecialchars(formatTime($supplyLog['recorded_at'] ?? '')); ?>
+                                        </div>
+                                    </td>
+                                    <td>
+                                        <?php
+                                            $categoryKey = $supplyLog['material_category'] ?? '';
+                                            echo htmlspecialchars($supplyCategoryLabels[$categoryKey] ?? $categoryKey ?: '-');
+                                        ?>
+                                    </td>
+                                    <td><?php echo htmlspecialchars($supplyLog['supplier_name'] ?: '-'); ?></td>
+                                    <td>
+                                        <span class="fw-semibold text-primary">
+                                            <?php echo number_format((float)($supplyLog['quantity'] ?? 0), 3); ?>
+                                        </span>
+                                        <span class="text-muted small"><?php echo htmlspecialchars($supplyLog['unit'] ?? 'كجم'); ?></span>
+                                    </td>
+                                    <td>
+                                        <?php if (!empty($supplyLog['details'])): ?>
+                                            <?php echo htmlspecialchars($supplyLog['details']); ?>
+                                        <?php else: ?>
+                                            <span class="text-muted">-</span>
+                                        <?php endif; ?>
+                                    </td>
+                                </tr>
+                            <?php endforeach; ?>
+                        <?php endif; ?>
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+
+    <div class="card production-report-card shadow-sm mb-4">
+        <div class="card-header bg-warning text-dark d-flex flex-wrap justify-content-between align-items-center gap-2">
+            <div>
+                <i class="bi bi-truck me-2"></i>توريدات المواد خلال يوم <?php echo htmlspecialchars($selectedDayLabel); ?>
+            </div>
+            <div class="small text-dark">
+                إجمالي الكميات: <strong class="text-primary"><?php echo number_format($supplyDayTotalQuantity, 3); ?></strong>
+            </div>
+        </div>
+        <div class="card-body">
+            <div class="table-responsive dashboard-table-wrapper">
+                <table class="table dashboard-table align-middle mb-0">
+                    <thead>
+                        <tr>
+                            <th>التاريخ</th>
+                            <th>القسم</th>
+                            <th>المورد</th>
+                            <th>الكمية</th>
+                            <th>الوصف</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        <?php if (empty($supplyLogsDay)): ?>
+                            <tr>
+                                <td colspan="5" class="text-center text-muted py-4">
+                                    <i class="bi bi-inbox me-2"></i>لا توجد توريدات مسجلة في هذا اليوم
+                                </td>
+                            </tr>
+                        <?php else: ?>
+                            <?php foreach ($supplyLogsDay as $supplyLog): ?>
+                                <tr>
+                                    <td>
+                                        <div class="fw-semibold">
+                                            <?php echo htmlspecialchars(formatDate($supplyLog['recorded_at'] ?? '')); ?>
+                                        </div>
+                                        <div class="text-muted small">
+                                            <?php echo htmlspecialchars(formatTime($supplyLog['recorded_at'] ?? '')); ?>
+                                        </div>
+                                    </td>
+                                    <td>
+                                        <?php
+                                            $categoryKey = $supplyLog['material_category'] ?? '';
+                                            echo htmlspecialchars($supplyCategoryLabels[$categoryKey] ?? $categoryKey ?: '-');
+                                        ?>
+                                    </td>
+                                    <td><?php echo htmlspecialchars($supplyLog['supplier_name'] ?: '-'); ?></td>
+                                    <td>
+                                        <span class="fw-semibold text-primary">
+                                            <?php echo number_format((float)($supplyLog['quantity'] ?? 0), 3); ?>
+                                        </span>
+                                        <span class="text-muted small"><?php echo htmlspecialchars($supplyLog['unit'] ?? 'كجم'); ?></span>
+                                    </td>
+                                    <td>
+                                        <?php if (!empty($supplyLog['details'])): ?>
+                                            <?php echo htmlspecialchars($supplyLog['details']); ?>
+                                        <?php else: ?>
+                                            <span class="text-muted">-</span>
+                                        <?php endif; ?>
+                                    </td>
+                                </tr>
+                            <?php endforeach; ?>
+                        <?php endif; ?>
+                    </tbody>
+                </table>
             </div>
         </div>
     </div>
