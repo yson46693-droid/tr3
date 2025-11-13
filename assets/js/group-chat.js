@@ -19,6 +19,7 @@
         typingIndicator: document.getElementById('groupChatLoading'),
         headerBadge: document.getElementById('groupChatMessageCount'),
         purgeButton: document.getElementById('groupChatPurge'),
+        statsMessageCount: document.querySelector('[data-chat-stat=\"messages\"]'),
     };
 
     if (!elements.container || !apiUrl) {
@@ -91,11 +92,12 @@
     };
 
     const updateMessageCount = () => {
-        if (!elements.headerBadge) {
-            return;
-        }
         const visibleMessages = state.messages.filter((msg) => !msg.deleted_at);
-        elements.headerBadge.textContent = visibleMessages.length.toString();
+        const countText = visibleMessages.length.toString();
+        elements.headerBadge && (elements.headerBadge.textContent = countText);
+        if (elements.statsMessageCount) {
+            elements.statsMessageCount.textContent = countText;
+        }
     };
 
     const toggleLoading = (isLoading) => {

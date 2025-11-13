@@ -37,6 +37,25 @@ $initialMessages = array_map(static function (array $message) use ($currentUser,
 
 $chatTitle = $lang['menu_group_chat'] ?? 'الدردشة الجماعية';
 
+$chatWords = preg_split('/\s+/u', trim((string) $chatTitle));
+$chatInitials = '';
+if (is_array($chatWords)) {
+    foreach ($chatWords as $word) {
+        if ($word === '') {
+            continue;
+        }
+        $chatInitials .= mb_substr($word, 0, 1, 'UTF-8');
+        if (mb_strlen($chatInitials, 'UTF-8') >= 2) {
+            break;
+        }
+    }
+}
+
+$chatInitials = mb_strtoupper(mb_substr($chatInitials, 0, 2, 'UTF-8'), 'UTF-8');
+if ($chatInitials === '') {
+    $chatInitials = 'GC';
+}
+
 $apiUrl = getRelativeUrl('api/group_chat.php');
 $pollIntervalMs = 10000;
 
@@ -55,29 +74,38 @@ $chatConfig = [
 ?>
 
 <div class="group-chat-page" data-chat-root>
-    <div class="page-header d-flex align-items-center justify-content-between">
-        <div>
-            <h2 class="mb-1"><i class="bi bi-chat-dots-fill me-2"></i><?php echo htmlspecialchars($chatTitle); ?></h2>
-            <p class="text-muted mb-0">تواصل مباشر بين جميع أعضاء الفريق مع إمكانية الرد والتعديل والحذف.</p>
-        </div>
-        <div class="d-flex align-items-center gap-2">
-            <span class="badge bg-gradient" style="background: linear-gradient(135deg, #0f5bea, #1bb0f8);" id="groupChatMessageCount">0</span>
-            <?php if ($canModerate): ?>
-                <button type="button" class="btn btn-outline-danger btn-sm" id="groupChatPurge" data-confirm="هل أنت متأكد من حذف جميع الرسائل؟" title="حذف جميع رسائل الدردشة">
-                    <i class="bi bi-trash3"></i>
-                    مسح الكل
-                </button>
-            <?php endif; ?>
-        </div>
+    <div class="page-header group-chat-page-header">
+        <h2 class="page-title">
+            <i class="bi bi-chat-dots-fill me-2"></i><?php echo htmlspecialchars($chatTitle); ?>
+        </h2>
+        <p class="page-subtitle">تواصل مباشر بين جميع أعضاء الفريق مع إمكانية الرد والتعديل والحذف.</p>
     </div>
 
     <div class="group-chat-shell">
         <div class="group-chat-card">
             <div class="group-chat-header">
-                <h2><i class="bi bi-people-fill"></i><?php echo htmlspecialchars($chatTitle); ?></h2>
-                <div class="group-chat-meta">
-                    <span class="status-dot"></span>
-                    <span>متصل</span>
+                <div class="conversation-header">
+                    <div class="conversation-avatar" aria-hidden="true">
+                        <span class="avatar-initials"><?php echo htmlspecialchars($chatInitials); ?></span>
+                        <span class="avatar-status"></span>
+                    </div>
+                    <div class="conversation-details">
+                        <h3 class="conversation-title"><?php echo htmlspecialchars($chatTitle); ?></h3>
+                        <div class="group-chat-meta">
+                            <span class="status-dot" aria-hidden="true"></span>
+                            <span class="meta-text">متصل الآن</span>
+                            <span class="meta-divider">•</span>
+                            <span class="meta-text">يتم التحديث كل <?php echo (int) ($pollIntervalMs / 1000); ?> ثوانٍ</span>
+                        </div>
+                    </div>
+                </div>
+                <div class="header-actions">
+                    <span class="header-pill" id="groupChatMessageCount">0</span>
+                    <?php if ($canModerate): ?>
+                        <button type="button" class="header-action-btn" id="groupChatPurge" data-confirm="هل أنت متأكد من حذف جميع الرسائل؟" title="حذف جميع رسائل الدردشة">
+                            <i class="bi bi-trash3"></i>
+                        </button>
+                    <?php endif; ?>
                 </div>
             </div>
 
@@ -92,20 +120,33 @@ $chatConfig = [
                 </div>
 
                 <aside class="chat-sidebar">
-                    <div>
+                    <section class="chat-sidebar-card">
+                        <h3><i class="bi bi-info-circle me-2"></i>تفاصيل المحادثة</h3>
+                        <ul class="chat-sidebar-list">
+                            <li>
+                                <span>تحديث تلقائي</span>
+                                <span><?php echo (int) ($pollIntervalMs / 1000); ?> ثانية</span>
+                            </li>
+                            <li>
+                                <span>إجمالي الرسائل</span>
+                                <span class="info-value" data-chat-stat="messages">—</span>
+                            </li>
+                        </ul>
+                    </section>
+                    <section class="chat-sidebar-card">
                         <h3><i class="bi bi-lightning-charge-fill me-2"></i>نصائح سريعة</h3>
                         <div class="chat-tip">
                             <i class="bi bi-reply-fill"></i>
                             استخدم زر <strong>الرد</strong> لربط رسالتك بالسياق المناسب وإبقاء النقاش منظمًا.
                         </div>
-                    </div>
-                    <div>
+                    </section>
+                    <section class="chat-sidebar-card">
                         <h3><i class="bi bi-shield-lock-fill me-2"></i>سياسة الأمان</h3>
                         <div class="chat-tip">
                             <i class="bi bi-info-circle-fill"></i>
                             يمكن لكل مستخدم تعديل أو حذف رسائله الخاصة، بينما يمتلك المدير صلاحية الإشراف الكامل لضمان تجربة آمنة.
                         </div>
-                    </div>
+                    </section>
                     <div class="loading-indicator d-none" id="groupChatLoading">
                         <div class="spinner-border text-primary" role="status"></div>
                         <span>يتم تحميل التحديثات...</span>
