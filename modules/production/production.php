@@ -139,6 +139,288 @@ if (!function_exists('productionPageBuildSubTotals')) {
     }
 }
 
+if (!function_exists('productionPageFormatDatePart')) {
+    function productionPageFormatDatePart(?string $timestamp): string
+    {
+        if (empty($timestamp)) {
+            return '—';
+        }
+
+        $ts = strtotime((string)$timestamp);
+        if ($ts === false) {
+            return '—';
+        }
+
+        if (function_exists('formatDate')) {
+            $formatted = formatDate($timestamp);
+            if (is_string($formatted) && $formatted !== '') {
+                return $formatted;
+            }
+        }
+
+        return date('Y-m-d', $ts);
+    }
+}
+
+if (!function_exists('productionPageFormatTimePart')) {
+    function productionPageFormatTimePart(?string $timestamp): string
+    {
+        if (empty($timestamp)) {
+            return '';
+        }
+
+        $ts = strtotime((string)$timestamp);
+        if ($ts === false) {
+            return '';
+        }
+
+        if (function_exists('formatTime')) {
+            $formatted = formatTime($timestamp);
+            if (is_string($formatted) && $formatted !== '') {
+                return $formatted;
+            }
+        }
+
+        return date('H:i', $ts);
+    }
+}
+
+if (!function_exists('productionPageFormatDateTimeLabel')) {
+    function productionPageFormatDateTimeLabel(?string $timestamp): string
+    {
+        if (empty($timestamp)) {
+            return '';
+        }
+
+        $date = productionPageFormatDatePart($timestamp);
+        $time = productionPageFormatTimePart($timestamp);
+
+        return trim($date . ' ' . $time);
+    }
+}
+
+if (!function_exists('productionPageBuildDamagePayload')) {
+    /**
+     * @param array<string, mixed> $packagingDamage
+     * @param array<string, mixed> $rawDamage
+     * @return array{
+     *     summary: array<int, array<string, mixed>>,
+     *     logs: array<int, array<string, mixed>>,
+     *     total: float,
+     *     entries: int,
+     *     latest_at: ?string,
+     *     latest_label: string
+     * }
+     */
+    function productionPageBuildDamagePayload(array $packagingDamage, array $rawDamage): array
+    {
+        $summaryRows = [];
+        $rawCategoryLabels = [];
+
+        foreach (($rawDamage['categories'] ?? []) as $categoryKey => $categoryData) {
+            $rawCategoryLabels[$categoryKey] = $categoryData['label'] ?? $categoryKey;
+        }
+
+        $packagingTotal = isset($packagingDamage['total']) ? (float)$packagingDamage['total'] : 0.0;
+        $packagingEntries = isset($packagingDamage['entries']) ? (int)$packagingDamage['entries'] : (is_countable($packagingDamage['logs'] ?? null) ? count($packagingDamage['logs']) : 0);
+        $packagingLastRecordedAt = $packagingDamage['last_recorded_at'] ?? null;
+        $packagingLastRecordedBy = $packagingDamage['last_recorded_by'] ?? null;
+
+        if ($packagingEntries > 0 || $packagingTotal > 0.0) {
+            $summaryRows[] = [
+                'label' => 'أدوات التعبئة',
+                'category_key' => 'packaging',
+                'total' => round($packagingTotal, 3),
+                'entries' => $packagingEntries,
+                'last_recorded_at' => $packagingLastRecordedAt,
+                'last_recorded_by' => $packagingLastRecordedBy,
+                'has_records' => $packagingEntries > 0,
+            ];
+        }
+
+        foreach (($rawDamage['categories'] ?? []) as $categoryKey => $categoryData) {
+            $categoryTotal = isset($categoryData['total']) ? (float)$categoryData['total'] : 0.0;
+            $categoryEntries = isset($categoryData['entries']) ? (int)$categoryData['entries'] : (is_countable($categoryData['items'] ?? null) ? count($categoryData['items']) : 0);
+
+            if ($categoryEntries <= 0 && $categoryTotal <= 0.0) {
+                continue;
+            }
+
+            $summaryRows[] = [
+                'label' => 'قسم ' . ($categoryData['label'] ?? $categoryKey),
+                'category_key' => $categoryKey,
+                'total' => round($categoryTotal, 3),
+                'entries' => $categoryEntries,
+                'last_recorded_at' => $categoryData['last_recorded_at'] ?? null,
+                'last_recorded_by' => $categoryData['last_recorded_by'] ?? null,
+                'has_records' => $categoryEntries > 0,
+            ];
+        }
+
+        usort(
+            $summaryRows,
+            static function ($a, $b): int {
+                $totalComparison = ($b['total'] ?? 0) <=> ($a['total'] ?? 0);
+                if ($totalComparison !== 0) {
+                    return $totalComparison;
+                }
+
+                return strcmp($a['label'] ?? '', $b['label'] ?? '');
+            }
+        );
+
+        $entries = [];
+        $latestTimestamp = null;
+
+        foreach (($packagingDamage['logs'] ?? []) as $log) {
+            $createdAt = $log['created_at'] ?? null;
+            if ($createdAt && ($latestTimestamp === null || strtotime((string)$createdAt) > strtotime((string)$latestTimestamp))) {
+                $latestTimestamp = $createdAt;
+            }
+
+            $materialName = trim((string)($log['material_label'] ?? $log['material_name'] ?? ''));
+            if ($materialName === '') {
+                $materialId = isset($log['material_id']) ? (int)$log['material_id'] : 0;
+                $materialName = 'أداة #' . ($materialId > 0 ? $materialId : '?');
+            }
+
+            $entries[] = [
+                'recorded_at_raw' => $createdAt,
+                'recorded_date' => productionPageFormatDatePart($createdAt),
+                'recorded_time' => productionPageFormatTimePart($createdAt),
+                'category_label' => 'أدوات التعبئة',
+                'item_label' => $materialName,
+                'quantity_formatted' => number_format((float)($log['damaged_quantity'] ?? 0), 3),
+                'quantity_raw' => (float)($log['damaged_quantity'] ?? 0),
+                'unit' => trim((string)($log['unit'] ?? 'وحدة')),
+                'reason' => trim((string)($log['reason'] ?? '')),
+                'recorded_by' => trim((string)($log['recorded_by_name'] ?? '')),
+                'supplier' => '',
+                'source' => ($log['source_table'] ?? '') === 'products' ? 'مخزن المنتجات' : 'مخزن التعبئة',
+            ];
+        }
+
+        foreach (($rawDamage['logs'] ?? []) as $log) {
+            $createdAt = $log['created_at'] ?? null;
+            if ($createdAt && ($latestTimestamp === null || strtotime((string)$createdAt) > strtotime((string)$latestTimestamp))) {
+                $latestTimestamp = $createdAt;
+            }
+
+            $categoryKey = $log['material_category'] ?? '';
+            $categoryLabel = $rawCategoryLabels[$categoryKey] ?? 'مواد خام';
+            $itemName = trim((string)($log['item_label'] ?? 'مادة خام'));
+            $variety = trim((string)($log['variety'] ?? ''));
+            if ($variety !== '') {
+                $itemName .= ' - ' . $variety;
+            }
+
+            $entries[] = [
+                'recorded_at_raw' => $createdAt,
+                'recorded_date' => productionPageFormatDatePart($createdAt),
+                'recorded_time' => productionPageFormatTimePart($createdAt),
+                'category_label' => 'قسم ' . $categoryLabel,
+                'item_label' => $itemName,
+                'quantity_formatted' => number_format((float)($log['quantity'] ?? 0), 3),
+                'quantity_raw' => (float)($log['quantity'] ?? 0),
+                'unit' => trim((string)($log['unit'] ?? 'كجم')),
+                'reason' => trim((string)($log['reason'] ?? '')),
+                'recorded_by' => trim((string)($log['recorded_by_name'] ?? '')),
+                'supplier' => trim((string)($log['supplier_name'] ?? '')),
+                'source' => 'مخزن المواد الخام',
+            ];
+        }
+
+        usort(
+            $entries,
+            static function ($a, $b): int {
+                return strcmp($b['recorded_at_raw'] ?? '', $a['recorded_at_raw'] ?? '');
+            }
+        );
+
+        $latestLabel = productionPageFormatDateTimeLabel($latestTimestamp);
+
+        $total = round(
+            (float)($packagingDamage['total'] ?? 0) + (float)($rawDamage['total'] ?? 0),
+            3
+        );
+
+        return [
+            'summary' => $summaryRows,
+            'logs' => $entries,
+            'total' => $total,
+            'entries' => count($entries),
+            'latest_at' => $latestTimestamp,
+            'latest_label' => $latestLabel,
+        ];
+    }
+}
+
+if (!function_exists('productionPageRenderDamageLogsTable')) {
+    /**
+     * @param array<int, array<string, mixed>> $logs
+     */
+    function productionPageRenderDamageLogsTable(array $logs, string $emptyMessage): void
+    {
+        if (empty($logs)) {
+            echo '<div class="alert alert-light border border-danger-subtle text-muted mb-0">';
+            echo '<i class="bi bi-inbox me-2"></i>' . htmlspecialchars($emptyMessage, ENT_QUOTES, 'UTF-8');
+            echo '</div>';
+            return;
+        }
+
+        echo '<div class="table-responsive dashboard-table-wrapper">';
+        echo '<table class="table dashboard-table align-middle mb-0">';
+        echo '<thead>';
+        echo '<tr>';
+        echo '<th>التاريخ</th><th>القسم</th><th>المادة التالفة</th><th>الكمية</th><th>السبب</th><th>المصدر / المورد</th><th>المسجل</th>';
+        echo '</tr>';
+        echo '</thead>';
+        echo '<tbody>';
+
+        foreach ($logs as $log) {
+            $recordedDate = htmlspecialchars($log['recorded_date'] ?? '—', ENT_QUOTES, 'UTF-8');
+            $recordedTimeRaw = trim((string)($log['recorded_time'] ?? ''));
+            $recordedTime = htmlspecialchars($recordedTimeRaw, ENT_QUOTES, 'UTF-8');
+            $category = htmlspecialchars($log['category_label'] ?? '-', ENT_QUOTES, 'UTF-8');
+            $item = htmlspecialchars($log['item_label'] ?? '-', ENT_QUOTES, 'UTF-8');
+            $quantity = htmlspecialchars($log['quantity_formatted'] ?? '0', ENT_QUOTES, 'UTF-8');
+            $unit = htmlspecialchars($log['unit'] ?? '', ENT_QUOTES, 'UTF-8');
+            $reasonRaw = trim((string)($log['reason'] ?? ''));
+            $supplierRaw = trim((string)($log['supplier'] ?? ''));
+            $source = htmlspecialchars($log['source'] ?? '-', ENT_QUOTES, 'UTF-8');
+            $recordedByRaw = trim((string)($log['recorded_by'] ?? ''));
+            $recordedBy = $recordedByRaw !== '' ? htmlspecialchars($recordedByRaw, ENT_QUOTES, 'UTF-8') : 'غير محدد';
+
+            echo '<tr>';
+            echo '<td><div class="fw-semibold">' . $recordedDate . '</div>';
+            if ($recordedTimeRaw !== '') {
+                echo '<div class="text-muted small">' . $recordedTime . '</div>';
+            }
+            echo '</td>';
+            echo '<td>' . $category . '</td>';
+            echo '<td>' . $item . '</td>';
+            echo '<td><span class="fw-semibold text-danger">' . $quantity . '</span> <span class="text-muted small">' . $unit . '</span></td>';
+            if ($reasonRaw !== '') {
+                echo '<td>' . htmlspecialchars($reasonRaw, ENT_QUOTES, 'UTF-8') . '</td>';
+            } else {
+                echo '<td><span class="text-muted">—</span></td>';
+            }
+            echo '<td>';
+            if ($supplierRaw !== '') {
+                echo '<div>' . htmlspecialchars($supplierRaw, ENT_QUOTES, 'UTF-8') . '</div>';
+            }
+            echo '<div class="text-muted small">' . $source . '</div>';
+            echo '</td>';
+            echo '<td>' . $recordedBy . '</td>';
+            echo '</tr>';
+        }
+
+        echo '</tbody>';
+        echo '</table>';
+        echo '</div>';
+    }
+}
+
 /**
  * التحقق من توفر المكونات المستخدمة في صناعة المنتج
  */
@@ -2658,6 +2940,26 @@ $supplyDayTotalQuantity = 0.0;
 foreach ($supplyLogsDay as $logItem) {
     $supplyDayTotalQuantity += isset($logItem['quantity']) ? (float)$logItem['quantity'] : 0.0;
 }
+
+$damageMonthPayload = productionPageBuildDamagePayload(
+    $productionReportsMonth['packaging_damage'] ?? [],
+    $productionReportsMonth['raw_damage'] ?? []
+);
+$damageMonthSummaryRows = $damageMonthPayload['summary'];
+$damageMonthLogs = $damageMonthPayload['logs'];
+$damageMonthTotal = $damageMonthPayload['total'];
+$damageMonthEntries = $damageMonthPayload['entries'];
+$damageMonthLatestLabel = $damageMonthPayload['latest_label'];
+
+$damageDayPayload = productionPageBuildDamagePayload(
+    $productionReportsSelectedDay['packaging_damage'] ?? [],
+    $productionReportsSelectedDay['raw_damage'] ?? []
+);
+$damageDaySummaryRows = $damageDayPayload['summary'];
+$damageDayLogs = $damageDayPayload['logs'];
+$damageDayTotal = $damageDayPayload['total'];
+$damageDayEntries = $damageDayPayload['entries'];
+$damageDayLatestLabel = $damageDayPayload['latest_label'];
 
 $hasActiveFilters = ($reportFilterType !== 'all') || ($reportFilterQuery !== '') || ($selectedReportDay !== $productionReportsTodayDate);
 
