@@ -1590,9 +1590,18 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     
                     logAudit($currentUser['id'], 'filter_honey', 'honey_filtration', $stockId, null, ['raw' => $rawQuantity, 'filtered' => $filteredQuantity]);
                     
-                    $success = 'تمت عملية التصفية بنجاح';
-                    echo '<script>window.location.href = "' . $dashboardUrl . '?page=raw_materials_warehouse&section=honey";</script>';
-                    echo '<noscript><meta http-equiv="refresh" content="0;url=' . $dashboardUrl . '?page=raw_materials_warehouse&section=honey"></noscript>';
+                    $successMessage = sprintf(
+                        'تمت عملية التصفية بنجاح. الكمية بعد التصفية: %s كجم (الخسارة: %s كجم)',
+                        number_format($filteredQuantity, 2),
+                        number_format($filtrationLoss, 2)
+                    );
+                    
+                    preventDuplicateSubmission(
+                        $successMessage,
+                        ['page' => 'raw_materials_warehouse', 'section' => 'honey'],
+                        null,
+                        $dashboardSlug
+                    );
                 }
             }
         }
