@@ -27,11 +27,10 @@
     lastMessageId: 0,
     replyTo: null,
     editMessage: null,
-    fetchDelayTimer: null,
     statusTimer: null,
     isSending: false,
     initialized: false,
-    lastFetchTime: 0,
+    pendingFetchTimeout: null,
   };
 
   const elements = {};
@@ -395,14 +394,6 @@
 
   async function fetchMessages(initial = false) {
     try {
-      const now = Date.now();
-      if (!initial && now - state.lastFetchTime < 400) {
-        scheduleFetch(400 - (now - state.lastFetchTime));
-        return;
-      }
-
-      state.lastFetchTime = now;
-
       const params = new URLSearchParams();
       if (state.latestTimestamp) {
         params.set('since', state.latestTimestamp);
@@ -444,13 +435,18 @@
         state.latestTimestamp = latestTimestamp;
       }
 
-      if (!initial) {
-        scheduleFetch(hasNewMessages ? 700 : 2500);
+      if (hasNewMessages && !initial) {
+        if (state.pendingFetchTimeout) {
+          window.clearTimeout(state.pendingFetchTimeout);
+        }
+        state.pendingFetchTimeout = window.setTimeout(() => {
+          state.pendingFetchTimeout = null;
+          fetchMessages();
+        }, 600);
       }
     } catch (error) {
       console.error(error);
       showToast(error.message || 'تعذر تحديث الرسائل', true);
-      scheduleFetch(4000); // retry later even on failure
     }
   }
 
@@ -713,21 +709,6 @@
     elements.userList.appendChild(fragment);
   }
 
-  function scheduleFetch(delay) {
-    cancelScheduledFetch();
-    state.fetchDelayTimer = window.setTimeout(() => {
-      state.fetchDelayTimer = null;
-      fetchMessages();
-    }, Math.max(delay, 300));
-  }
-
-  function cancelScheduledFetch() {
-    if (state.fetchDelayTimer) {
-      window.clearTimeout(state.fetchDelayTimer);
-      state.fetchDelayTimer = null;
-    }
-  }
-
   function startPresenceUpdates() {
     updatePresence(true).catch(() => null);
 
@@ -883,5 +864,12 @@
   }
 
   document.addEventListener('DOMContentLoaded', init);
+
+  window.addEventListener('beforeunload', () => {
+    if (state.pendingFetchTimeout) {
+      window.clearTimeout(state.pendingFetchTimeout);
+      state.pendingFetchTimeout = null;
+    }
+  });
 })();
 

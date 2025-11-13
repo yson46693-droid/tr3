@@ -53,8 +53,9 @@ define('TIME_FORMAT', 'g:i A'); // نظام 12 ساعة صباحاً ومساء�
 define('DATETIME_FORMAT', 'd/m/Y g:i A');
 
 // إعدادات الجلسة
-define('SESSION_LIFETIME', 3600 * 8); // 8 ساعات
+define('SESSION_LIFETIME', 3600 * 24); // 24 ساعة
 ini_set('session.gc_maxlifetime', SESSION_LIFETIME);
+ini_set('session.cookie_lifetime', SESSION_LIFETIME);
 
 $isHttps = (
     (!empty($_SERVER['HTTPS']) && $_SERVER['HTTPS'] !== 'off') ||

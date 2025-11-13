@@ -60,6 +60,11 @@ $pageTitle = isset($lang['manager_dashboard']) ? $lang['manager_dashboard'] : '�
                         'url' => getRelativeUrl('dashboard/manager.php?page=final_products')
                     ],
                     [
+                        'label' => 'مواصفات المنتجات',
+                        'icon' => 'bi-journal-text',
+                        'url' => getRelativeUrl('dashboard/manager.php?page=product_specifications')
+                    ],
+                    [
                         'label' => 'مخزن أدوات التعبئة',
                         'icon' => 'bi-box-seam',
                         'url' => getRelativeUrl('dashboard/manager.php?page=packaging_warehouse')
@@ -736,6 +741,16 @@ $pageTitle = isset($lang['manager_dashboard']) ? $lang['manager_dashboard'] : '�
                     }
                     ?>
                 </div>
+                
+            <?php elseif ($page === 'product_specifications'): ?>
+                <?php 
+                $modulePath = __DIR__ . '/../modules/manager/product_specifications.php';
+                if (file_exists($modulePath)) {
+                    include $modulePath;
+                } else {
+                    echo '<div class="alert alert-warning">صفحة مواصفات المنتجات غير متاحة حالياً</div>';
+                }
+                ?>
                 
             <?php elseif ($page === 'import_packaging'): ?>
                 <!-- صفحة استيراد أدوات التعبئة -->

@@ -60,7 +60,8 @@
 }
 
 .chat-sidebar {
-  width: 320px;
+  width: 260px;
+  min-width: 240px;
   background: var(--chat-sidebar-bg);
   display: flex;
   flex-direction: column;
@@ -210,7 +211,8 @@
   flex-direction: column;
   background: radial-gradient(circle at top left, rgba(58, 118, 240, 0.09), transparent 52%), var(--chat-bg);
   position: relative;
-  max-height: calc(100vh - 120px);
+  height: calc(100vh - 100px);
+  max-height: none;
   overflow: hidden;
 }
 
@@ -428,8 +430,12 @@
   border-radius: 12px;
   background: var(--chat-reply-highlight);
   font-size: 13px;
-  color: var(--chat-muted);
+  color: var(--chat-text);
   max-width: 95%;
+}
+
+.chat-reply-preview strong {
+  color: var(--chat-accent);
 }
 
 .chat-message.deleted .chat-message-bubble {

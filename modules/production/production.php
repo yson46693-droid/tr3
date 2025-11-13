@@ -2160,6 +2160,42 @@ try {
 
 $additionalSuppliersSelectSize = max(4, min(10, count($additionalSuppliersOptions)));
 
+$productSpecifications = [];
+$specificationsCount = 0;
+$totalSpecificationsCount = 0;
+try {
+    $specificationsTableCheck = $db->queryOne("SHOW TABLES LIKE 'product_specifications'");
+    if (!empty($specificationsTableCheck)) {
+        $totalRow = $db->queryOne("SELECT COUNT(*) AS total_specs FROM product_specifications");
+        if (is_array($totalRow) && isset($totalRow['total_specs'])) {
+            $totalSpecificationsCount = (int) $totalRow['total_specs'];
+        }
+
+        $specSql = <<<SQL
+        SELECT ps.*,
+               creator.full_name AS creator_name,
+               updater.full_name AS updater_name
+        FROM product_specifications ps
+        LEFT JOIN users creator ON ps.created_by = creator.id
+        LEFT JOIN users updater ON ps.updated_by = updater.id
+        ORDER BY COALESCE(ps.updated_at, ps.created_at) DESC
+        LIMIT 12
+        SQL;
+
+        $productSpecifications = $db->query($specSql);
+        if (!is_array($productSpecifications)) {
+            $productSpecifications = [];
+        }
+    }
+} catch (Throwable $productSpecificationsError) {
+    error_log('production page: failed loading product specifications -> ' . $productSpecificationsError->getMessage());
+    $productSpecifications = [];
+}
+$specificationsCount = is_countable($productSpecifications) ? count($productSpecifications) : 0;
+if ($totalSpecificationsCount === 0 && $specificationsCount > 0) {
+    $totalSpecificationsCount = $specificationsCount;
+}
+
 if (!function_exists('productionPageRenderConsumptionTable')) {
     function productionPageRenderConsumptionTable(array $items, bool $includeCategory = false): void
     {
@@ -2435,6 +2471,118 @@ $lang = isset($translations) ? $translations : [];
             </a>
         </div>
     <?php endif; ?>
+</div>
+
+<!-- قسم مواصفات المنتجات (الوصفات المرجعية) -->
+<div class="card shadow-sm mt-4">
+    <div class="card-header bg-secondary text-white d-flex justify-content-between align-items-center flex-wrap gap-2">
+        <h5 class="mb-0"><i class="bi bi-journal-text me-2"></i>مواصفات المنتجات (الوصفات المرجعية)</h5>
+        <div class="d-flex align-items-center gap-2">
+            <span class="badge bg-light text-dark">
+                <?php echo number_format($totalSpecificationsCount); ?>
+                مواصفة
+            </span>
+            <?php if (($currentUser['role'] ?? '') === 'manager'): ?>
+                <a href="<?php echo getDashboardUrl('manager'); ?>?page=product_specifications" class="btn btn-light btn-sm">
+                    <i class="bi bi-gear me-1"></i>إدارة المواصفات
+                </a>
+            <?php endif; ?>
+        </div>
+    </div>
+    <div class="card-body">
+        <?php if ($specificationsCount === 0): ?>
+            <div class="alert alert-info mb-0">
+                <i class="bi bi-info-circle me-2"></i>
+                لم يتم تسجيل مواصفات بعد. تواصل مع المشرف لإضافة الوصفات المرجعية.
+            </div>
+        <?php else: ?>
+            <div class="table-responsive dashboard-table-wrapper">
+                <table class="table dashboard-table align-middle">
+                    <thead class="table-light">
+                        <tr>
+                            <th>اسم المنتج</th>
+                            <th width="24%">المواد الخام</th>
+                            <th width="24%">أدوات التعبئة</th>
+                            <th width="22%">ملاحظات الإنشاء</th>
+                            <th>آخر تحديث</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        <?php foreach ($productSpecifications as $specification): ?>
+                            <tr>
+                                <td data-label="اسم المنتج">
+                                    <strong><?php echo htmlspecialchars($specification['product_name'] ?? '—'); ?></strong>
+                                </td>
+                                <td data-label="المواد الخام">
+                                    <div class="text-muted small">الأوزان / الكميات</div>
+                                    <div class="mt-1" style="white-space: pre-line;">
+                                        <?php
+                                        $rawMaterials = $specification['raw_materials'] ?? '';
+                                        echo $rawMaterials !== null && $rawMaterials !== ''
+                                            ? nl2br(htmlspecialchars($rawMaterials, ENT_QUOTES, 'UTF-8'))
+                                            : '<span class="text-muted">—</span>';
+                                        ?>
+                                    </div>
+                                </td>
+                                <td data-label="أدوات التعبئة">
+                                    <div class="text-muted small">الأعداد / الأحجام</div>
+                                    <div class="mt-1" style="white-space: pre-line;">
+                                        <?php
+                                        $packaging = $specification['packaging'] ?? '';
+                                        echo $packaging !== null && $packaging !== ''
+                                            ? nl2br(htmlspecialchars($packaging, ENT_QUOTES, 'UTF-8'))
+                                            : '<span class="text-muted">—</span>';
+                                        ?>
+                                    </div>
+                                </td>
+                                <td data-label="ملاحظات الإنشاء" style="white-space: pre-line;">
+                                    <?php
+                                    $notes = $specification['notes'] ?? '';
+                                    echo $notes !== null && $notes !== ''
+                                        ? nl2br(htmlspecialchars($notes, ENT_QUOTES, 'UTF-8'))
+                                        : '<span class="text-muted">—</span>';
+                                    ?>
+                                </td>
+                                <td data-label="آخر تحديث">
+                                    <?php
+                                        $updatedAt = $specification['updated_at'] ?? null;
+                                        $createdAt = $specification['created_at'] ?? null;
+                                        $timestamp = $updatedAt ?: $createdAt;
+                                        $formattedTimestamp = '—';
+                                        if ($timestamp) {
+                                            if (function_exists('formatDateTime')) {
+                                                $formattedTimestamp = htmlspecialchars(formatDateTime($timestamp));
+                                            } else {
+                                                $formattedTimestamp = htmlspecialchars(date('Y-m-d H:i', strtotime($timestamp)));
+                                            }
+                                        }
+                                        echo $formattedTimestamp;
+                                    ?>
+                                    <div class="text-muted small mt-1">
+                                        <?php if (!empty($specification['updated_by'])): ?>
+                                            بواسطة <?php echo htmlspecialchars($specification['updater_name'] ?? 'غير محدد'); ?>
+                                        <?php elseif (!empty($specification['created_by'])): ?>
+                                            مسجل بواسطة <?php echo htmlspecialchars($specification['creator_name'] ?? 'غير محدد'); ?>
+                                        <?php else: ?>
+                                            —
+                                        <?php endif; ?>
+                                    </div>
+                                </td>
+                            </tr>
+                        <?php endforeach; ?>
+                    </tbody>
+                </table>
+            </div>
+            <?php if ($totalSpecificationsCount > $specificationsCount): ?>
+                <div class="text-muted small mt-3 d-flex justify-content-between flex-wrap gap-2">
+                    <span>يعرض آخر <?php echo number_format($specificationsCount); ?> من إجمالي <?php echo number_format($totalSpecificationsCount); ?> مواصفة.</span>
+                    <a class="text-decoration-none" href="<?php echo getDashboardUrl('manager'); ?>?page=product_specifications">
+                        <i class="bi bi-box-arrow-up-right me-1"></i>عرض جميع المواصفات
+                    </a>
+                </div>
+            <?php endif; ?>
+        <?php endif; ?>
+    </div>
 </div>
 
 <!-- جدول الإنتاج -->
