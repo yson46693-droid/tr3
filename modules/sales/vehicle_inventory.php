@@ -339,43 +339,27 @@ foreach ($vehicleInventory as $item) {
                             <th>المنتج</th>
                             <th>رقم التشغيلة</th>
                             <th>تاريخ الإنتاج</th>
-                            <th>كمية التشغيلة</th>
                             <th>الكمية</th>
-                            <th>سعر الوحدة (المدير)</th>
+                            <th>سعر الوحدة</th>
                             <th>القيمة الإجمالية</th>
-                            <th>العمال المشاركون</th>
-                            <th>آخر تحديث</th>
                         </tr>
                     </thead>
                     <tbody>
                         <?php if (empty($vehicleInventory)): ?>
                             <tr>
-                                <td colspan="8" class="text-center text-muted">لا توجد منتجات في مخزن هذه السيارة</td>
+                                <td colspan="6" class="text-center text-muted">لا توجد منتجات في مخزن هذه السيارة</td>
                             </tr>
                         <?php else: ?>
                             <?php foreach ($vehicleInventory as $item): ?>
                                 <tr>
                                     <td>
                                         <strong><?php echo htmlspecialchars($item['product_name'] ?? '-'); ?></strong>
-                                        <?php if (!empty($item['category']) || !empty($item['unit'])): ?>
-                                            <div class="text-muted small">
-                                                <?php if (!empty($item['category'])): ?>
-                                                    <span><?php echo htmlspecialchars($item['category']); ?></span>
-                                                <?php endif; ?>
-                                                <?php if (!empty($item['unit'])): ?>
-                                                    <span class="ms-2">الوحدة: <?php echo htmlspecialchars($item['unit']); ?></span>
-                                                <?php endif; ?>
-                                            </div>
-                                        <?php endif; ?>
                                     </td>
                                     <td><?php echo htmlspecialchars($item['finished_batch_number'] ?? '—'); ?></td>
                                     <td><?php echo !empty($item['finished_production_date']) ? htmlspecialchars(formatDate($item['finished_production_date'])) : '—'; ?></td>
-                                    <td><?php echo isset($item['finished_quantity_produced']) ? number_format((float)$item['finished_quantity_produced'], 2) : '—'; ?></td>
                                     <td><strong><?php echo number_format($item['quantity'], 2); ?></strong></td>
                                     <td><?php echo formatCurrency($item['manager_unit_price'] ?? $item['unit_price'] ?? 0); ?></td>
                                     <td><?php echo formatCurrency($item['total_value'] ?? 0); ?></td>
-                                    <td><?php echo !empty($item['finished_workers']) ? htmlspecialchars($item['finished_workers']) : '—'; ?></td>
-                                    <td><?php echo $item['last_updated_at'] ? formatDateTime($item['last_updated_at']) : '-'; ?></td>
                                 </tr>
                             <?php endforeach; ?>
                         <?php endif; ?>
