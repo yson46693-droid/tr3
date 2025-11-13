@@ -25,6 +25,25 @@ if (!is_array($payload)) {
     $payload = $_POST;
 }
 
+$readerPublicParam = $payload['reader_public'] ?? ($payload['reader_mode'] ?? ($_GET['reader_public'] ?? null));
+
+$isReaderRequest = false;
+if (is_bool($readerPublicParam)) {
+    $isReaderRequest = $readerPublicParam;
+} elseif (is_numeric($readerPublicParam)) {
+    $isReaderRequest = ((int) $readerPublicParam) === 1;
+} elseif (is_string($readerPublicParam)) {
+    $normalizedFlag = strtolower(trim($readerPublicParam));
+    $isReaderRequest = in_array($normalizedFlag, ['1', 'true', 'yes', 'on', 'reader', 'public'], true);
+}
+
+if (!$isReaderRequest) {
+    $sourceHint = $payload['source'] ?? ($_GET['source'] ?? null);
+    if (is_string($sourceHint) && strtolower(trim($sourceHint)) === 'reader') {
+        $isReaderRequest = true;
+    }
+}
+
 $batchNumber = trim((string)($payload['batch_number'] ?? ''));
 
 if ($batchNumber === '') {
