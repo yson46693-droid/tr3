@@ -341,55 +341,94 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             }
 
             if (empty($transferErrors)) {
-                $productIds = array_values(array_filter(
-                    array_unique(array_column($transferItems, 'product_id')),
-                    static function ($value) {
-                        return is_numeric($value) && (int)$value > 0;
-                    }
-                ));
-
-                $stockMap = [];
-
-                if (!empty($productIds)) {
-                    $placeholders = implode(',', array_fill(0, count($productIds), '?'));
-                    $stockRows = $db->query(
-                        "SELECT id, name, quantity FROM products WHERE id IN ($placeholders) AND (product_type IS NULL OR product_type = 'internal')",
-                        $productIds
-                    );
-
-                    foreach ($stockRows as $row) {
-                        $stockMap[intval($row['id'])] = [
-                            'quantity' => floatval($row['quantity'] ?? 0),
-                            'name' => $row['name'] ?? ''
-                        ];
-                    }
-                }
-
+                // محاولة تعيين معرف المنتج تلقائياً للتشغيلات المختارة إن لم يتم إرساله من الواجهة
+                $resolveBatchIds = [];
                 foreach ($transferItems as $transferItem) {
                     $productId = isset($transferItem['product_id']) ? (int)$transferItem['product_id'] : 0;
                     $batchId = isset($transferItem['batch_id']) ? (int)$transferItem['batch_id'] : 0;
+                    if ($productId <= 0 && $batchId > 0) {
+                        $resolveBatchIds[$batchId] = $batchId;
+                    }
+                }
 
-                    if ($productId <= 0) {
-                        if ($batchId <= 0) {
-                            $transferErrors[] = 'المنتج المحدد غير صالح للنقل.';
+                $batchProductMap = [];
+                if (!empty($resolveBatchIds)) {
+                    $placeholders = implode(',', array_fill(0, count($resolveBatchIds), '?'));
+                    $batchRows = $db->query(
+                        "SELECT id, product_id FROM finished_products WHERE id IN ($placeholders)",
+                        array_values($resolveBatchIds)
+                    );
+                    foreach ($batchRows as $batchRow) {
+                        $batchId = (int)($batchRow['id'] ?? 0);
+                        $productId = (int)($batchRow['product_id'] ?? 0);
+                        if ($batchId > 0 && $productId > 0) {
+                            $batchProductMap[$batchId] = $productId;
+                        }
+                    }
+                }
+
+                foreach ($transferItems as &$transferItem) {
+                    $productId = isset($transferItem['product_id']) ? (int)$transferItem['product_id'] : 0;
+                    if ($productId > 0) {
+                        continue;
+                    }
+                    $batchId = isset($transferItem['batch_id']) ? (int)$transferItem['batch_id'] : 0;
+                    if ($batchId > 0 && isset($batchProductMap[$batchId])) {
+                        $transferItem['product_id'] = $batchProductMap[$batchId];
+                        continue;
+                    }
+                    if ($batchId <= 0) {
+                        $transferErrors[] = 'المنتج المحدد غير صالح للنقل.';
+                        break;
+                    }
+                    $transferErrors[] = 'لا يمكن تحديد المنتج المرتبط بالتشغيلة المختارة. يرجى مراجعة البيانات.';
+                    break;
+                }
+                unset($transferItem);
+
+                if (empty($transferErrors)) {
+                    $productIds = array_values(array_filter(
+                        array_unique(array_column($transferItems, 'product_id')),
+                        static function ($value) {
+                            return is_numeric($value) && (int)$value > 0;
+                        }
+                    ));
+
+                    $stockMap = [];
+
+                    if (!empty($productIds)) {
+                        $placeholders = implode(',', array_fill(0, count($productIds), '?'));
+                        $stockRows = $db->query(
+                            "SELECT id, name, quantity FROM products WHERE id IN ($placeholders) AND (product_type IS NULL OR product_type = 'internal')",
+                            $productIds
+                        );
+
+                        foreach ($stockRows as $row) {
+                            $stockMap[intval($row['id'])] = [
+                                'quantity' => floatval($row['quantity'] ?? 0),
+                                'name' => $row['name'] ?? ''
+                            ];
+                        }
+                    }
+
+                    foreach ($transferItems as $transferItem) {
+                        $productId = isset($transferItem['product_id']) ? (int)$transferItem['product_id'] : 0;
+                        if ($productId <= 0) {
+                            continue; // تمت معالجة هذه الحالة سابقاً
+                        }
+
+                        if (!isset($stockMap[$productId])) {
+                            $transferErrors[] = 'المنتج المحدد غير موجود في المخزن الرئيسي.';
                             break;
                         }
 
-                        // سيتم التحقق من كميات التشغيلات لاحقاً أثناء إنشاء طلب النقل
-                        continue;
-                    }
-
-                    if (!isset($stockMap[$productId])) {
-                        $transferErrors[] = 'المنتج المحدد غير موجود في المخزن الرئيسي.';
-                        break;
-                    }
-
-                    if ($transferItem['quantity'] > $stockMap[$productId]['quantity']) {
-                        $transferErrors[] = sprintf(
-                            'الكمية المطلوبة للمنتج "%s" غير متاحة في المخزون الحالي.',
-                            $stockMap[$productId]['name']
-                        );
-                        break;
+                        if ($transferItem['quantity'] > $stockMap[$productId]['quantity']) {
+                            $transferErrors[] = sprintf(
+                                'الكمية المطلوبة للمنتج "%s" غير متاحة في المخزون الحالي.',
+                                $stockMap[$productId]['name']
+                            );
+                            break;
+                        }
                     }
                 }
             }
