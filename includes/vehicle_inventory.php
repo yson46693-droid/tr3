@@ -31,17 +31,9 @@ if (!function_exists('ensureVehicleInventoryProductColumns')) {
             return;
         }
 
-        // Global flag to ensure only once per execution
+        // Global flag to track migrations between deployments while still checking for new columns
         $flagFile = __DIR__ . '/../runtime/vehicle_inventory_upgrade.flag';
-        $alreadyRun = false;
-        if (file_exists($flagFile)) {
-            $alreadyRun = true;
-        }
-
-        if ($alreadyRun) {
-            $ensured = true;
-            return;
-        }
+        $alreadyRun = file_exists($flagFile);
 
         try {
             $exists = $db->queryOne("SHOW TABLES LIKE 'vehicle_inventory'");
@@ -126,7 +118,9 @@ if (!function_exists('ensureVehicleInventoryProductColumns')) {
         if (!is_dir(dirname($flagFile))) {
             @mkdir(dirname($flagFile), 0775, true);
         }
-        @file_put_contents($flagFile, date('c'));
+        if (!$alreadyRun || $alterParts) {
+            @file_put_contents($flagFile, date('c'));
+        }
     }
 }
 
@@ -300,9 +294,18 @@ function getVehicleInventory($vehicleId, $filters = []) {
     $nameExpr = "COALESCE(p.name, vi.product_name)";
     $categoryExpr = "COALESCE(p.category, vi.product_category)";
     $unitExpr = "COALESCE(p.unit, vi.product_unit)";
-    $unitPriceExpr = "COALESCE(vi.manager_unit_price, vi.product_unit_price, p.unit_price, 0)";
 
-    $sql = "SELECT 
+    $buildQuery = static function (bool $withManagerPrice) use (
+        $nameExpr,
+        $categoryExpr,
+        $unitExpr
+    ) {
+        $unitPriceExpr = $withManagerPrice
+            ? "COALESCE(vi.manager_unit_price, vi.product_unit_price, p.unit_price, 0)"
+            : "COALESCE(vi.product_unit_price, p.unit_price, 0)";
+
+        return [
+            "SELECT 
                 vi.*,
                 {$nameExpr} AS product_name,
                 {$categoryExpr} AS product_category,
@@ -313,24 +316,42 @@ function getVehicleInventory($vehicleId, $filters = []) {
                 (vi.quantity * {$unitPriceExpr}) AS total_value
             FROM vehicle_inventory vi
             LEFT JOIN products p ON vi.product_id = p.id
-            WHERE vi.vehicle_id = ? AND vi.quantity > 0";
-    
+            WHERE vi.vehicle_id = ? AND vi.quantity > 0",
+            $unitPriceExpr,
+        ];
+    };
+
+    [$sql, $unitPriceExpr] = $buildQuery(true);
     $params = [$vehicleId];
-    
+
     if (!empty($filters['product_id'])) {
         $sql .= " AND vi.product_id = ?";
         $params[] = $filters['product_id'];
     }
-    
+
     if (!empty($filters['product_name'])) {
         $sql .= " AND (p.name LIKE ? OR vi.product_name LIKE ?)";
         $params[] = "%{$filters['product_name']}%";
         $params[] = "%{$filters['product_name']}%";
     }
-    
+
     $sql .= " ORDER BY {$nameExpr} ASC";
-    
-    return $db->query($sql, $params);
+
+    try {
+        return $db->query($sql, $params);
+    } catch (Throwable $queryError) {
+        $message = $queryError->getMessage();
+        if ($message && stripos($message, "unknown column 'vi.manager_unit_price'") !== false) {
+            [$sqlFallback] = $buildQuery(false);
+            $sqlFallback .= " ORDER BY {$nameExpr} ASC";
+            try {
+                return $db->query($sqlFallback, $params);
+            } catch (Throwable $fallbackError) {
+                throw $fallbackError;
+            }
+        }
+        throw $queryError;
+    }
 }
 
 /**
