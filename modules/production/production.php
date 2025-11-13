@@ -2316,6 +2316,45 @@ if (strtotime($selectedReportDay) > strtotime($productionReportsMonthEnd)) {
 $productionReportsMonth = getConsumptionSummary($productionReportsMonthStart, $productionReportsMonthEnd);
 $productionReportsSelectedDay = getConsumptionSummary($selectedReportDay, $selectedReportDay);
 
+$showPackagingReports = $reportFilterType === 'all' || $reportFilterType === 'packaging';
+$showRawReports = $reportFilterType === 'all' || $reportFilterType === 'raw';
+
+$filteredMonthPackagingItems = productionPageFilterItems($productionReportsMonth['packaging']['items'] ?? [], $reportFilterType, $reportFilterQuery, 'packaging');
+$filteredMonthRawItems = productionPageFilterItems($productionReportsMonth['raw']['items'] ?? [], $reportFilterType, $reportFilterQuery, 'raw');
+
+$filteredDayPackagingItems = productionPageFilterItems($productionReportsSelectedDay['packaging']['items'] ?? [], $reportFilterType, $reportFilterQuery, 'packaging');
+$filteredDayRawItems = productionPageFilterItems($productionReportsSelectedDay['raw']['items'] ?? [], $reportFilterType, $reportFilterQuery, 'raw');
+
+$dayPackagingTotals = productionPageAggregateTotals($filteredDayPackagingItems);
+$dayRawTotals = productionPageAggregateTotals($filteredDayRawItems);
+$dayNetCombined = round($dayPackagingTotals['net'] + $dayRawTotals['net'], 3);
+$dayMovementsTotal = $dayPackagingTotals['movements'] + $dayRawTotals['movements'];
+$dayRawSubTotals = productionPageBuildSubTotals($filteredDayRawItems);
+
+if ($reportFilterType === 'all' && $reportFilterQuery === '') {
+    $monthRawSubTotals = $productionReportsMonth['raw']['sub_totals'] ?? [];
+} else {
+    $monthRawSubTotals = productionPageBuildSubTotals($filteredMonthRawItems);
+}
+
+$hasActiveFilters = ($reportFilterType !== 'all') || ($reportFilterQuery !== '') || ($selectedReportDay !== $productionReportsTodayDate);
+
+$selectedDayLabel = function_exists('formatDate') ? formatDate($selectedReportDay) : $selectedReportDay;
+$monthRangeLabelStart = function_exists('formatDate') ? formatDate($productionReportsMonthStart) : $productionReportsMonthStart;
+$monthRangeLabelEnd = function_exists('formatDate') ? formatDate($productionReportsMonthEnd) : $productionReportsMonthEnd;
+$monthGeneratedAt = $productionReportsMonth['generated_at'] ?? date('Y-m-d H:i:s');
+$dayGeneratedAt = $productionReportsSelectedDay['generated_at'] ?? date('Y-m-d H:i:s');
+
+$activeFilterLabels = [];
+if ($reportFilterType === 'packaging') {
+    $activeFilterLabels[] = 'عرض أدوات التعبئة فقط';
+} elseif ($reportFilterType === 'raw') {
+    $activeFilterLabels[] = 'عرض المواد الخام فقط';
+}
+if ($reportFilterQuery !== '') {
+    $activeFilterLabels[] = 'بحث: ' . $reportFilterQuery;
+}
+
 $additionalSuppliersOptions = [];
 try {
     $suppliersStatusColumnCheck = $db->queryOne("SHOW COLUMNS FROM suppliers LIKE 'status'");
@@ -3002,106 +3041,95 @@ $lang = isset($translations) ? $translations : [];
 
 
 <section id="productionReportsSection" class="production-section d-none">
-    <div class="production-report-layout">
-        <section class="production-report-column" aria-label="تقارير اليوم">
-            <div class="card production-report-card shadow-sm mb-4">
+    <div class="card shadow-sm mb-4">
         <div class="card-body">
-            <div class="d-flex justify-content-between align-items-center flex-wrap gap-3">
-                <div>
-                    <h4 class="mb-1"><i class="bi bi-calendar-day me-2"></i>ملخص اليوم الحالي</h4>
-                    <p class="text-muted mb-0">
-                        <?php echo htmlspecialchars($productionReportsToday['date_from'] ?? $productionReportsTodayDate); ?>
-                        إلى
-                        <?php echo htmlspecialchars($productionReportsToday['date_to'] ?? $productionReportsTodayDate); ?>
-                    </p>
+            <form method="get" class="row g-3 align-items-end" action="<?php echo htmlspecialchars(getDashboardUrl($currentUser['role'] ?? 'production')); ?>">
+                <input type="hidden" name="page" value="production">
+                <input type="hidden" name="section" value="reports">
+                <div class="col-lg-3 col-md-4">
+                    <label class="form-label fw-semibold"><i class="bi bi-calendar-day me-2"></i>اليوم المراد تحليله</label>
+                    <input type="date"
+                           class="form-control"
+                           name="report_day"
+                           value="<?php echo htmlspecialchars($selectedReportDay); ?>"
+                           min="<?php echo htmlspecialchars($productionReportsMonthStart); ?>"
+                           max="<?php echo htmlspecialchars($productionReportsMonthEnd); ?>">
                 </div>
-                <span class="badge bg-light text-primary border border-primary-subtle">
-                    آخر تحديث: <?php echo htmlspecialchars($productionReportsToday['generated_at'] ?? date('Y-m-d H:i:s')); ?>
-                </span>
-            </div>
-            <div class="production-summary-grid mt-3">
-                <div class="summary-card">
-                    <span class="summary-label">استهلاك أدوات التعبئة</span>
-                    <span class="summary-value text-primary">
-                        <?php echo number_format((float)($productionReportsToday['packaging']['total_out'] ?? 0), 3); ?>
-                    </span>
+                <div class="col-lg-3 col-md-4">
+                    <label class="form-label fw-semibold">نوع المواد</label>
+                    <select class="form-select" name="report_type">
+                        <option value="all" <?php echo $reportFilterType === 'all' ? 'selected' : ''; ?>>الكل</option>
+                        <option value="packaging" <?php echo $reportFilterType === 'packaging' ? 'selected' : ''; ?>>أدوات التعبئة</option>
+                        <option value="raw" <?php echo $reportFilterType === 'raw' ? 'selected' : ''; ?>>المواد الخام</option>
+                    </select>
                 </div>
-                <div class="summary-card">
-                    <span class="summary-label">استهلاك المواد الخام</span>
-                    <span class="summary-value text-primary">
-                        <?php echo number_format((float)($productionReportsToday['raw']['total_out'] ?? 0), 3); ?>
-                    </span>
+                <div class="col-lg-4 col-md-6">
+                    <label class="form-label fw-semibold">بحث عن مادة</label>
+                    <input type="search"
+                           class="form-control"
+                           name="report_query"
+                           placeholder="مثال: عبوات زجاجية أو عسل سداسي"
+                           value="<?php echo htmlspecialchars($reportFilterQuery); ?>">
                 </div>
-                <div class="summary-card">
-                    <span class="summary-label">الصافي الكلي</span>
-                    <span class="summary-value text-success">
-                        <?php
-                        $todayNet = (float)($productionReportsToday['packaging']['net'] ?? 0) + (float)($productionReportsToday['raw']['net'] ?? 0);
-                        echo number_format($todayNet, 3);
-                        ?>
-                    </span>
+                <div class="col-lg-2 col-md-4">
+                    <button type="submit" class="btn btn-primary w-100">
+                        <i class="bi bi-funnel me-2"></i>تطبيق
+                    </button>
                 </div>
-                <div class="summary-card">
-                    <span class="summary-label">إجمالي الحركات</span>
-                    <span class="summary-value text-secondary">
-                        <?php
-                        $todayMovements = productionPageSumMovements($productionReportsToday['packaging']['items'] ?? [])
-                            + productionPageSumMovements($productionReportsToday['raw']['items'] ?? []);
-                        echo number_format($todayMovements);
-                        ?>
-                    </span>
-                </div>
-            </div>
+                <?php if ($hasActiveFilters): ?>
+                    <div class="col-12 d-flex justify-content-end">
+                        <a href="<?php echo htmlspecialchars(getDashboardUrl($currentUser['role'] ?? 'production') . '?page=production&section=reports'); ?>"
+                           class="btn btn-link text-decoration-none">
+                            <i class="bi bi-arrow-counterclockwise me-1"></i>إعادة التعيين
+                        </a>
+                    </div>
+                <?php endif; ?>
+            </form>
         </div>
     </div>
+
+    <?php if (!empty($activeFilterLabels)): ?>
+        <div class="alert alert-info d-flex flex-wrap align-items-center gap-2 mb-4">
+            <i class="bi bi-funnel-fill"></i>
+            <span>تم تطبيق التصفية التالية:</span>
+            <?php foreach ($activeFilterLabels as $label): ?>
+                <span class="badge bg-primary text-white"><?php echo htmlspecialchars($label); ?></span>
+            <?php endforeach; ?>
+        </div>
+    <?php endif; ?>
 
     <div class="card production-report-card shadow-sm mb-4">
-        <div class="card-header bg-primary text-white d-flex justify-content-between align-items-center">
-            <span><i class="bi bi-box-seam me-2"></i>أدوات التعبئة المستهلكة اليوم</span>
-        </div>
-        <div class="card-body">
-            <?php productionPageRenderConsumptionTable($productionReportsToday['packaging']['items'] ?? []); ?>
-        </div>
-    </div>
-
-    <div class="card production-report-card shadow-sm mb-5">
-        <div class="card-header bg-primary text-white d-flex justify-content-between align-items-center">
-            <span><i class="bi bi-droplet-half me-2"></i>المواد الخام المستهلكة اليوم</span>
-        </div>
-        <div class="card-body">
-            <?php productionPageRenderConsumptionTable($productionReportsToday['raw']['items'] ?? [], true); ?>
-        </div>
-    </div>
-        </section>
-        <section class="production-report-column" aria-label="تقارير الشهر">
-            <div class="card production-report-card shadow-sm mb-4">
         <div class="card-body">
             <div class="d-flex justify-content-between align-items-center flex-wrap gap-3">
                 <div>
                     <h4 class="mb-1"><i class="bi bi-calendar-month me-2"></i>ملخص الشهر الحالي</h4>
                     <p class="text-muted mb-0">
-                        <?php echo htmlspecialchars($productionReportsMonth['date_from'] ?? $productionReportsMonthStart); ?>
+                        <?php echo htmlspecialchars($monthRangeLabelStart); ?>
                         إلى
-                        <?php echo htmlspecialchars($productionReportsMonth['date_to'] ?? $productionReportsTodayDate); ?>
+                        <?php echo htmlspecialchars($monthRangeLabelEnd); ?>
                     </p>
                 </div>
                 <span class="badge bg-light text-primary border border-primary-subtle">
-                    آخر تحديث: <?php echo htmlspecialchars($productionReportsMonth['generated_at'] ?? date('Y-m-d H:i:s')); ?>
+                    آخر تحديث: <?php echo htmlspecialchars($monthGeneratedAt); ?>
                 </span>
             </div>
             <div class="production-summary-grid mt-3">
-                <div class="summary-card">
-                    <span class="summary-label">إجمالي استهلاك التعبئة</span>
-                    <span class="summary-value text-primary">
-                        <?php echo number_format((float)($productionReportsMonth['packaging']['total_out'] ?? 0), 3); ?>
-                    </span>
-                </div>
-                <div class="summary-card">
-                    <span class="summary-label">إجمالي استهلاك المواد الخام</span>
-                    <span class="summary-value text-primary">
-                        <?php echo number_format((float)($productionReportsMonth['raw']['total_out'] ?? 0), 3); ?>
-                    </span>
-                </div>
+                <?php if ($showPackagingReports): ?>
+                    <div class="summary-card">
+                        <span class="summary-label">إجمالي استهلاك التعبئة</span>
+                        <span class="summary-value text-primary">
+                            <?php echo number_format((float)($productionReportsMonth['packaging']['total_out'] ?? 0), 3); ?>
+                        </span>
+                    </div>
+                <?php endif; ?>
+                <?php if ($showRawReports): ?>
+                    <div class="summary-card">
+                        <span class="summary-label">إجمالي استهلاك المواد الخام</span>
+                        <span class="summary-value text-primary">
+                            <?php echo number_format((float)($productionReportsMonth['raw']['total_out'] ?? 0), 3); ?>
+                        </span>
+                    </div>
+                <?php endif; ?>
                 <div class="summary-card">
                     <span class="summary-label">الصافي الشهري</span>
                     <span class="summary-value text-success">
@@ -3125,38 +3153,121 @@ $lang = isset($translations) ? $translations : [];
         </div>
     </div>
 
-    <div class="card production-report-card shadow-sm mb-4">
-        <div class="card-header bg-secondary text-white d-flex justify-content-between align-items-center">
-            <span><i class="bi bi-box-seam me-2"></i>أدوات التعبئة خلال الشهر</span>
+    <?php if ($showPackagingReports): ?>
+        <div class="card production-report-card shadow-sm mb-4">
+            <div class="card-header bg-secondary text-white d-flex justify-content-between align-items-center">
+                <span><i class="bi bi-box-seam me-2"></i>أدوات التعبئة خلال الشهر</span>
+            </div>
+            <div class="card-body">
+                <?php productionPageRenderConsumptionTable($filteredMonthPackagingItems); ?>
+            </div>
         </div>
+    <?php endif; ?>
+
+    <?php if ($showRawReports): ?>
+        <div class="card production-report-card shadow-sm mb-4">
+            <div class="card-header bg-secondary text-white d-flex justify-content-between align-items-center">
+                <span><i class="bi bi-droplet-half me-2"></i>المواد الخام خلال الشهر</span>
+            </div>
+            <div class="card-body">
+                <?php if (!empty($monthRawSubTotals)): ?>
+                    <div class="mb-3">
+                        <div class="d-flex flex-wrap gap-2">
+                            <?php foreach ($monthRawSubTotals as $subTotal): ?>
+                                <span class="badge bg-light text-dark border">
+                                    <?php echo htmlspecialchars($subTotal['label'] ?? 'غير مصنف'); ?>:
+                                    <?php echo number_format((float)($subTotal['total_out'] ?? 0), 3); ?>
+                                    (صافي <?php echo number_format((float)($subTotal['net'] ?? 0), 3); ?>)
+                                </span>
+                            <?php endforeach; ?>
+                        </div>
+                    </div>
+                <?php endif; ?>
+                <?php productionPageRenderConsumptionTable($filteredMonthRawItems, true); ?>
+            </div>
+        </div>
+    <?php endif; ?>
+
+    <div class="card production-report-card shadow-sm mb-4">
         <div class="card-body">
-            <?php productionPageRenderConsumptionTable($productionReportsMonth['packaging']['items'] ?? []); ?>
+            <div class="d-flex justify-content-between align-items-center flex-wrap gap-3">
+                <div>
+                    <h4 class="mb-1"><i class="bi bi-bar-chart-fill me-2"></i>استهلاك يوم <?php echo htmlspecialchars($selectedDayLabel); ?></h4>
+                    <p class="text-muted mb-0">
+                        ضمن فترة الشهر: <?php echo htmlspecialchars($monthRangeLabelStart); ?> إلى <?php echo htmlspecialchars($monthRangeLabelEnd); ?>
+                    </p>
+                </div>
+                <span class="badge bg-light text-primary border border-primary-subtle">
+                    آخر تحديث: <?php echo htmlspecialchars($dayGeneratedAt); ?>
+                </span>
+            </div>
+            <div class="production-summary-grid mt-3">
+                <?php if ($showPackagingReports): ?>
+                    <div class="summary-card">
+                        <span class="summary-label">استهلاك أدوات التعبئة</span>
+                        <span class="summary-value text-primary">
+                            <?php echo number_format($dayPackagingTotals['total_out'], 3); ?>
+                        </span>
+                    </div>
+                <?php endif; ?>
+                <?php if ($showRawReports): ?>
+                    <div class="summary-card">
+                        <span class="summary-label">استهلاك المواد الخام</span>
+                        <span class="summary-value text-primary">
+                            <?php echo number_format($dayRawTotals['total_out'], 3); ?>
+                        </span>
+                    </div>
+                <?php endif; ?>
+                <div class="summary-card">
+                    <span class="summary-label">الصافي اليومي</span>
+                    <span class="summary-value text-success">
+                        <?php echo number_format($dayNetCombined, 3); ?>
+                    </span>
+                </div>
+                <div class="summary-card">
+                    <span class="summary-label">إجمالي الحركات</span>
+                    <span class="summary-value text-secondary">
+                        <?php echo number_format($dayMovementsTotal); ?>
+                    </span>
+                </div>
+            </div>
         </div>
     </div>
 
-    <div class="card production-report-card shadow-sm">
-        <div class="card-header bg-secondary text-white d-flex justify-content-between align-items-center">
-            <span><i class="bi bi-droplet-half me-2"></i>المواد الخام خلال الشهر</span>
+    <?php if ($showPackagingReports): ?>
+        <div class="card production-report-card shadow-sm mb-4">
+            <div class="card-header bg-primary text-white d-flex justify-content-between align-items-center">
+                <span><i class="bi bi-box-seam me-2"></i>أدوات التعبئة خلال يوم <?php echo htmlspecialchars($selectedDayLabel); ?></span>
+            </div>
+            <div class="card-body">
+                <?php productionPageRenderConsumptionTable($filteredDayPackagingItems); ?>
+            </div>
         </div>
-        <div class="card-body">
-            <?php if (!empty($productionReportsMonth['raw']['sub_totals'])): ?>
-                <div class="mb-3">
-                    <div class="d-flex flex-wrap gap-2">
-                        <?php foreach ($productionReportsMonth['raw']['sub_totals'] as $subTotal): ?>
-                            <span class="badge bg-light text-dark border">
-                                <?php echo htmlspecialchars($subTotal['label'] ?? 'غير مصنف'); ?>:
-                                <?php echo number_format((float)($subTotal['total_out'] ?? 0), 3); ?>
-                                (صافي <?php echo number_format((float)($subTotal['net'] ?? 0), 3); ?>)
-                            </span>
-                        <?php endforeach; ?>
+    <?php endif; ?>
+
+    <?php if ($showRawReports): ?>
+        <div class="card production-report-card shadow-sm">
+            <div class="card-header bg-primary text-white d-flex justify-content-between align-items-center">
+                <span><i class="bi bi-droplet-half me-2"></i>المواد الخام خلال يوم <?php echo htmlspecialchars($selectedDayLabel); ?></span>
+            </div>
+            <div class="card-body">
+                <?php if (!empty($dayRawSubTotals)): ?>
+                    <div class="mb-3">
+                        <div class="d-flex flex-wrap gap-2">
+                            <?php foreach ($dayRawSubTotals as $subTotal): ?>
+                                <span class="badge bg-light text-dark border">
+                                    <?php echo htmlspecialchars($subTotal['label'] ?? 'غير مصنف'); ?>:
+                                    <?php echo number_format((float)($subTotal['total_out'] ?? 0), 3); ?>
+                                    (صافي <?php echo number_format((float)($subTotal['net'] ?? 0), 3); ?>)
+                                </span>
+                            <?php endforeach; ?>
+                        </div>
                     </div>
-                </div>
-            <?php endif; ?>
-            <?php productionPageRenderConsumptionTable($productionReportsMonth['raw']['items'] ?? [], true); ?>
+                <?php endif; ?>
+                <?php productionPageRenderConsumptionTable($filteredDayRawItems, true); ?>
+            </div>
         </div>
-    </div>
-        </section>
-    </div>
+    <?php endif; ?>
 </section>
 </div>
 
@@ -3712,6 +3823,18 @@ document.addEventListener('DOMContentLoaded', function() {
             }
         });
     });
+
+    const params = new URLSearchParams(window.location.search);
+    const shouldShowReports = params.get('section') === 'reports'
+        || params.has('report_day')
+        || params.has('report_type')
+        || params.has('report_query');
+    if (shouldShowReports) {
+        const reportsButton = document.querySelector('[data-production-tab="reports"]');
+        if (reportsButton) {
+            reportsButton.click();
+        }
+    }
 });
 
 document.addEventListener('DOMContentLoaded', function() {

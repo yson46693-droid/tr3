@@ -2921,15 +2921,6 @@ if ($section === 'honey') {
         <div class="card-header text-white d-flex flex-wrap gap-2 justify-content-between align-items-center" style="background: linear-gradient(135deg, #ffd89b 0%, #19547b 100%);">
             <h5 class="mb-0"><i class="bi bi-droplet me-2"></i>مخزون العسل</h5>
             <div class="d-flex flex-wrap gap-2 align-items-center">
-                <button
-                    type="button"
-                    id="printRawMaterialsReportButton"
-                    class="btn btn-outline-light btn-sm d-print-none"
-                    aria-label="طباعة تقرير مخزون الخامات"
-                >
-                    <i class="bi bi-printer me-1"></i>
-                    طباعة التقرير
-                </button>
                 <button class="btn btn-light btn-sm" data-bs-toggle="modal" data-bs-target="#addHoneyModal">
                     <i class="bi bi-plus-circle me-1"></i>إضافة عسل
                 </button>
@@ -4472,14 +4463,6 @@ document.addEventListener('DOMContentLoaded', function () {
     const reportModalElement = document.getElementById('rawMaterialsReportModal');
     const viewButton = document.getElementById('rawReportViewBtn');
     const printButton = document.getElementById('rawReportPrintBtn');
-    const inlinePrintButton = document.getElementById('printRawMaterialsReportButton');
-
-    if (inlinePrintButton) {
-        inlinePrintButton.addEventListener('click', function () {
-            window.print();
-        });
-    }
-
     const openInNewTab = (url) => {
         if (!url) {
             alert('تعذّر فتح التقرير الآن. يرجى تحديث الصفحة وإعادة المحاولة.');
