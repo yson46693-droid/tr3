@@ -29,13 +29,23 @@ if ($_SERVER['HTTP_HOST'] == 'localhost' || $_SERVER['SERVER_NAME'] == 'localhos
 date_default_timezone_set('Africa/Cairo');
 
 // إعدادات اللغة
-define('DEFAULT_LANGUAGE', 'ar');
-define('SUPPORTED_LANGUAGES', ['ar', 'en']);
+if (!defined('DEFAULT_LANGUAGE')) {
+    define('DEFAULT_LANGUAGE', 'ar');
+}
+if (!defined('SUPPORTED_LANGUAGES')) {
+    define('SUPPORTED_LANGUAGES', ['ar', 'en']);
+}
 
 // إعدادات العملة
-define('CURRENCY', 'جنيه');
-define('CURRENCY_SYMBOL', 'ج.م');
-define('CURRENCY_CODE', 'EGP');
+if (!defined('CURRENCY')) {
+    define('CURRENCY', 'جنيه');
+}
+if (!defined('CURRENCY_SYMBOL')) {
+    define('CURRENCY_SYMBOL', 'ج.م');
+}
+if (!defined('CURRENCY_CODE')) {
+    define('CURRENCY_CODE', 'EGP');
+}
 
 // إعدادات التاريخ والوقت
 define('DATE_FORMAT', 'd/m/Y');
