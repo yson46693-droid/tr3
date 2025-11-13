@@ -3001,6 +3001,12 @@ if ($section === 'honey') {
         ORDER BY s.name ASC, hs.honey_variety ASC
     ");
 
+    $nowTimestamp = time();
+    $legacyThresholdDays = 30;
+    $legacyThresholdTimestamp = $nowTimestamp - ($legacyThresholdDays * 86400);
+    $recentThresholdDays = 7;
+    $recentThresholdTimestamp = $nowTimestamp - ($recentThresholdDays * 86400);
+
     // تنظيم المخزون حسب المورد
     $groupedHoneyStock = [];
     foreach ($honeyStock as $stock) {
@@ -3022,12 +3028,31 @@ if ($section === 'honey') {
         }
 
         $varietyDisplay = formatHoneyVarietyWithCode($stock['honey_variety'] ?? 'أخرى');
+        $createdAtTs = null;
+        $updatedAtTs = null;
+        if (!empty($stock['created_at'])) {
+            $createdAtTs = strtotime($stock['created_at']);
+        }
+        if (!empty($stock['updated_at'])) {
+            $updatedAtTs = strtotime($stock['updated_at']);
+        }
+        $lastActivityTs = $updatedAtTs ?? $createdAtTs;
+        $isLegacyEntry = ($lastActivityTs === null) || ($lastActivityTs <= $legacyThresholdTimestamp);
+        $isRecentEntry = ($lastActivityTs !== null) && ($lastActivityTs >= $recentThresholdTimestamp);
+        $lastActivityLabel = null;
+        if ($lastActivityTs !== null) {
+            $lastActivityLabel = date('Y/m/d H:i', $lastActivityTs);
+        }
+
         $groupedHoneyStock[$groupKey]['items'][] = [
             'id' => (int)($stock['id'] ?? 0),
             'variety_raw' => $stock['honey_variety'] ?? '',
             'variety_display' => $varietyDisplay,
             'raw_quantity' => (float)($stock['raw_honey_quantity'] ?? 0),
             'filtered_quantity' => (float)($stock['filtered_honey_quantity'] ?? 0),
+            'is_legacy' => $isLegacyEntry,
+            'is_recent' => $isRecentEntry,
+            'last_activity_label' => $lastActivityLabel,
         ];
         $groupedHoneyStock[$groupKey]['total_raw'] += (float)($stock['raw_honey_quantity'] ?? 0);
         $groupedHoneyStock[$groupKey]['total_filtered'] += (float)($stock['filtered_honey_quantity'] ?? 0);
@@ -3166,6 +3191,15 @@ if ($section === 'honey') {
                                             <tr>
                                                 <td>
                                                     <span class="badge bg-info"><?php echo htmlspecialchars($item['variety_display']); ?></span>
+                                                    <?php if (!empty($item['is_legacy'])): ?>
+                                                        <span class="badge bg-secondary text-light ms-1 legacy-honey-badge" title="<?php echo $item['last_activity_label'] ? 'آخر تحديث: ' . htmlspecialchars($item['last_activity_label']) : 'سجل قديم'; ?>">
+                                                            <i class="bi bi-clock-history me-1"></i>قديم
+                                                        </span>
+                                                    <?php elseif (!empty($item['is_recent'])): ?>
+                                                        <span class="badge bg-primary ms-1 new-honey-badge" title="<?php echo $item['last_activity_label'] ? 'آخر تحديث: ' . htmlspecialchars($item['last_activity_label']) : 'تمت الإضافة حديثاً'; ?>">
+                                                            <i class="bi bi-stars me-1"></i>جديد
+                                                        </span>
+                                                    <?php endif; ?>
                                                 </td>
                                                 <td class="text-center"><strong class="text-warning"><?php echo number_format($item['raw_quantity'], 2); ?></strong> كجم</td>
                                                 <td class="text-center"><strong class="text-success"><?php echo number_format($item['filtered_quantity'], 2); ?></strong> كجم</td>
