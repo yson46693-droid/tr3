@@ -19,10 +19,6 @@ if (!function_exists('getHoneyVarietiesCatalog')) {
                 'code' => 'KI002',
                 'label' => 'سدر',
             ],
-            'جبلي' => [
-                'code' => 'KI003',
-                'label' => 'جبلي',
-            ],
             'موالح' => [
                 'code' => 'KI004',
                 'label' => 'موالح',
