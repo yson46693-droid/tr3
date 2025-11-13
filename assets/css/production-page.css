@@ -659,6 +659,32 @@
     background: rgba(37, 99, 235, 0.04) !important;
 }
 
+#filterHoneyModal .modal-dialog {
+    max-width: 520px;
+    margin: 1.75rem auto;
+}
+
+#filterHoneyModal .modal-content {
+    display: flex;
+    flex-direction: column;
+    max-height: calc(100vh - 2rem);
+}
+
+#filterHoneyModal .modal-body {
+    flex: 1 1 auto;
+    overflow-y: auto;
+}
+
+@media (max-width: 576px) {
+    #filterHoneyModal .modal-dialog {
+        margin: 0.5rem;
+    }
+
+    #filterHoneyModal .modal-content {
+        max-height: calc(100vh - 1rem);
+    }
+}
+
 .badge {
     border-radius: 6px !important;
     padding: 0.4rem 0.8rem !important;

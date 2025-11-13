@@ -3024,7 +3024,7 @@ if ($section === 'honey') {
                 <form method="POST">
                     <input type="hidden" name="action" value="add_honey">
                     <input type="hidden" name="submit_token" value="">
-                    <div class="modal-body">
+                    <div class="modal-body" style="max-height: calc(100vh - 220px); overflow-y: auto;">
                         <div class="mb-3">
                             <label class="form-label">المورد <span class="text-danger">*</span></label>
                             <select class="form-select" name="supplier_id" required>
