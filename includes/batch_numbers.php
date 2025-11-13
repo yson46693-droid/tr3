@@ -315,6 +315,7 @@ function createBatchNumber(
         'production_date'=> $creationResult['production_date'] ?? $productionDate,
         'expiry_date'    => $creationResult['expiry_date'] ?? $expiryDate,
         'persisted'      => $persisted,
+        'stock_deducted' => !empty($creationResult['stock_deducted']),
     ];
 }
 

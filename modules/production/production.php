@@ -1596,8 +1596,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
                 storeProductionMaterialsUsage($productionId, $materialsConsumption['raw'], $materialsConsumption['packaging']);
 
-                try {
-                    foreach ($materialsConsumption['raw'] as $rawItem) {
+                if (empty($batchResult['stock_deducted'])) {
+                    try {
+                        foreach ($materialsConsumption['raw'] as $rawItem) {
                         $deductQuantity = (float)($rawItem['quantity'] ?? 0);
                         if ($deductQuantity <= 0) {
                             continue;
@@ -1680,7 +1681,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                         }
                     }
 
-                    foreach ($materialsConsumption['packaging'] as &$packItem) {
+                        foreach ($materialsConsumption['packaging'] as &$packItem) {
                         $packMaterialId = isset($packItem['material_id']) ? (int)$packItem['material_id'] : 0;
                         $packQuantity = (float)($packItem['quantity'] ?? 0);
                         if ($packMaterialId <= 0 && $packQuantity > 0 && $packagingTableExists) {
@@ -1751,10 +1752,11 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                                 }
                             }
                         }
+                        }
+                        unset($packItem);
+                    } catch (Exception $stockWarning) {
+                        error_log('Production stock deduction warning: ' . $stockWarning->getMessage());
                     }
-                    unset($packItem);
-                } catch (Exception $stockWarning) {
-                    error_log('Production stock deduction warning: ' . $stockWarning->getMessage());
                 }
                 
                 // إنشاء أرقام باركود بعدد الكمية المنتجة

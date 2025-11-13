@@ -1651,6 +1651,7 @@ function batchCreationCreate(int $templateId, int $units, array $rawUsage = [], 
                 },
                 $workers
             ),
+            'stock_deducted'  => true,
         ];
     } catch (RuntimeException $runtimeException) {
         if ($pdo->inTransaction()) {
@@ -1659,6 +1660,7 @@ function batchCreationCreate(int $templateId, int $units, array $rawUsage = [], 
         return [
             'success' => false,
             'message' => $runtimeException->getMessage(),
+            'stock_deducted' => false,
         ];
     } catch (Throwable $throwable) {
         if ($pdo->inTransaction()) {
@@ -1669,6 +1671,7 @@ function batchCreationCreate(int $templateId, int $units, array $rawUsage = [], 
         return [
             'success' => false,
             'message' => 'حدث خطأ غير متوقع أثناء إنشاء التشغيله',
+            'stock_deducted' => false,
         ];
     }
 }
