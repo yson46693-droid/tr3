@@ -67,132 +67,293 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             }
         }
     } elseif ($action === 'complete_sale') {
-        // إتمام عملية البيع
-        $customerId = intval($_POST['customer_id'] ?? 0);
-        $items = json_decode($_POST['items'] ?? '[]', true);
-        $discountAmount = floatval($_POST['discount_amount'] ?? 0);
+        $customerId = (int)($_POST['customer_id'] ?? 0);
+        $itemsPayload = $_POST['items'] ?? '[]';
+        $rawItems = json_decode($itemsPayload, true);
+        $discountInput = cleanFinancialValue($_POST['discount_amount'] ?? 0);
+        $paymentType = $_POST['payment_type'] ?? 'full';
+        $partialAmountInput = cleanFinancialValue($_POST['partial_amount'] ?? 0);
         $notes = trim($_POST['notes'] ?? '');
-        
+
+        $validationErrors = [];
+
         if ($customerId <= 0) {
-            $error = 'يجب اختيار العميل';
-        } elseif (empty($items) || !is_array($items)) {
-            $error = 'يجب إضافة منتجات للبيع';
-        } else {
-            // التحقق من توفر الكميات
-            $insufficientProducts = [];
-            foreach ($items as $item) {
-                $productId = intval($item['product_id'] ?? 0);
-                $quantity = floatval($item['quantity'] ?? 0);
-                
-                if ($productId > 0 && $quantity > 0) {
-                    $product = $db->queryOne("SELECT name, quantity FROM products WHERE id = ?", [$productId]);
-                    if (!$product) {
-                        $insufficientProducts[] = "المنتج غير موجود";
-                    } elseif ($product['quantity'] < $quantity) {
-                        $insufficientProducts[] = $product['name'] . " (المتاح: " . $product['quantity'] . ")";
+            $validationErrors[] = 'يجب اختيار العميل.';
+        }
+
+        if (!is_array($rawItems) || empty($rawItems)) {
+            $validationErrors[] = 'يجب إضافة منتجات للبيع.';
+        }
+
+        if (empty($validationErrors)) {
+            try {
+                $conn = $db->getConnection();
+                $conn->begin_transaction();
+
+                $normalizedCart = [];
+                $subtotal = 0.0;
+
+                foreach ($rawItems as $index => $itemRow) {
+                    $productId = isset($itemRow['product_id']) ? (int)$itemRow['product_id'] : 0;
+                    $quantityRequested = cleanFinancialValue($itemRow['quantity'] ?? 0);
+                    $postedUnitPrice = cleanFinancialValue($itemRow['unit_price'] ?? 0);
+
+                    if ($productId <= 0 || $quantityRequested <= 0) {
+                        throw new RuntimeException('المنتج أو الكمية غير صالحة في الصف #' . ($index + 1) . '.');
                     }
-                }
-            }
-            
-            if (!empty($insufficientProducts)) {
-                $error = 'الكميات غير كافية للمنتجات التالية: ' . implode(', ', $insufficientProducts);
-            } else {
-                // إنشاء الفاتورة
-                $invoiceItems = [];
-                foreach ($items as $item) {
-                    $invoiceItems[] = [
-                        'product_id' => intval($item['product_id']),
-                        'description' => trim($item['description'] ?? ''),
-                        'quantity' => floatval($item['quantity']),
-                        'unit_price' => floatval($item['unit_price'])
+
+                    $productRow = $db->queryOne(
+                        "SELECT id, name, quantity, unit_price, category FROM products WHERE id = ? FOR UPDATE",
+                        [$productId]
+                    );
+
+                    if (!$productRow) {
+                        throw new RuntimeException('المنتج المحدد غير موجود (معرف: ' . $productId . ').');
+                    }
+
+                    $availableQuantity = (float)($productRow['quantity'] ?? 0);
+                    if ($quantityRequested > $availableQuantity) {
+                        throw new RuntimeException('الكمية المتاحة للمنتج ' . $productRow['name'] . ' غير كافية. المتاح حالياً: ' . $availableQuantity);
+                    }
+
+                    $unitPrice = $postedUnitPrice > 0 ? $postedUnitPrice : (float)($productRow['unit_price'] ?? 0);
+                    if ($unitPrice <= 0) {
+                        throw new RuntimeException('لا يمكن تحديد سعر المنتج ' . $productRow['name'] . '.');
+                    }
+
+                    $lineTotal = round($unitPrice * $quantityRequested, 2);
+                    $subtotal += $lineTotal;
+
+                    $normalizedCart[] = [
+                        'product_id' => $productId,
+                        'name' => $productRow['name'] ?? 'منتج',
+                        'category' => $productRow['category'] ?? null,
+                        'quantity' => $quantityRequested,
+                        'unit_price' => $unitPrice,
+                        'line_total' => $lineTotal,
                     ];
                 }
-                
-                $result = createInvoice($customerId, null, date('Y-m-d'), $invoiceItems, 0, $discountAmount, $notes);
-                
-                if ($result['success']) {
-                    // تحديث المخزون
-                    foreach ($items as $item) {
-                        $productId = intval($item['product_id']);
-                        $quantity = floatval($item['quantity']);
-                        
-                        recordInventoryMovement(
-                            $productId,
-                            $mainWarehouse['id'],
-                            'out',
-                            $quantity,
-                            'invoice',
-                            $result['invoice_id'],
-                            'بيع مباشر من نقطة البيع'
-                        );
-                    }
-                    
-                    // تحديث حالة الفاتورة إلى مدفوعة (نقداً)
-                    $db->execute(
-                        "UPDATE invoices SET status = 'paid', paid_amount = total_amount, remaining_amount = 0 WHERE id = ?",
-                        [$result['invoice_id']]
-                    );
-                    
-                    logAudit($currentUser['id'], 'pos_sale', 'invoice', $result['invoice_id'], null, [
-                        'invoice_number' => $result['invoice_number'],
-                        'total_amount' => $result['total_amount'] ?? 0
-                    ]);
-                    
-                    $success = 'تم إتمام عملية البيع بنجاح - رقم الفاتورة: ' . $result['invoice_number'];
-                } else {
-                    $error = $result['message'] ?? 'حدث خطأ في إنشاء الفاتورة';
+
+                if ($subtotal <= 0) {
+                    throw new RuntimeException('لا يمكن إتمام عملية بيع بمجموع صفري.');
                 }
+
+                $discountAmount = min(max($discountInput, 0), $subtotal);
+                $netTotal = round(max(0, $subtotal - $discountAmount), 2);
+
+                if ($netTotal <= 0) {
+                    throw new RuntimeException('القيمة النهائية بعد الخصم يجب أن تكون أكبر من صفر.');
+                }
+
+                if (!in_array($paymentType, ['full', 'partial', 'credit'], true)) {
+                    $paymentType = 'full';
+                }
+
+                $effectivePaidAmount = 0.0;
+                if ($paymentType === 'full') {
+                    $effectivePaidAmount = $netTotal;
+                    $partialAmountInput = 0;
+                } elseif ($paymentType === 'partial') {
+                    if ($partialAmountInput <= 0) {
+                        throw new RuntimeException('يجب إدخال مبلغ التحصيل الجزئي.');
+                    }
+                    if ($partialAmountInput >= $netTotal) {
+                        throw new RuntimeException('مبلغ التحصيل الجزئي يجب أن يكون أقل من الإجمالي بعد الخصم.');
+                    }
+                    $effectivePaidAmount = $partialAmountInput;
+                } else {
+                    $partialAmountInput = 0;
+                    $effectivePaidAmount = 0.0;
+                }
+
+                $baseDueAmount = round(max(0, $netTotal - $effectivePaidAmount), 2);
+                $dueAmount = $baseDueAmount;
+                $creditUsed = 0.0;
+
+                $customerRow = $db->queryOne(
+                    "SELECT id, balance FROM customers WHERE id = ? FOR UPDATE",
+                    [$customerId]
+                );
+
+                if (!$customerRow) {
+                    throw new RuntimeException('تعذر تحميل بيانات العميل أثناء المعالجة.');
+                }
+
+                $currentBalance = (float)($customerRow['balance'] ?? 0);
+                if ($currentBalance < 0 && $dueAmount > 0) {
+                    $creditUsed = min(abs($currentBalance), $dueAmount);
+                    $dueAmount = round($dueAmount - $creditUsed, 2);
+                }
+
+                $newBalance = round($currentBalance + $creditUsed + $dueAmount, 2);
+                if (abs($newBalance - $currentBalance) > 0.0001) {
+                    $db->execute("UPDATE customers SET balance = ? WHERE id = ?", [$newBalance, $customerId]);
+                }
+
+                $invoiceItems = [];
+                foreach ($normalizedCart as $item) {
+                    $invoiceItems[] = [
+                        'product_id' => $item['product_id'],
+                        'description' => $item['name'],
+                        'quantity' => $item['quantity'],
+                        'unit_price' => $item['unit_price'],
+                    ];
+                }
+
+                $invoiceResult = createInvoice(
+                    $customerId,
+                    $currentUser['id'],
+                    date('Y-m-d'),
+                    $invoiceItems,
+                    0,
+                    $discountAmount,
+                    $notes,
+                    $currentUser['id']
+                );
+
+                if (empty($invoiceResult['success'])) {
+                    throw new RuntimeException($invoiceResult['message'] ?? 'تعذر إنشاء الفاتورة.');
+                }
+
+                $invoiceId = (int)$invoiceResult['invoice_id'];
+                $invoiceNumber = $invoiceResult['invoice_number'] ?? '';
+
+                $invoiceStatus = 'sent';
+                if ($dueAmount <= 0.0001) {
+                    $invoiceStatus = 'paid';
+                } elseif ($effectivePaidAmount > 0) {
+                    $invoiceStatus = 'partial';
+                }
+
+                $db->execute(
+                    "UPDATE invoices SET paid_amount = ?, remaining_amount = ?, status = ?, updated_at = NOW() WHERE id = ?",
+                    [$effectivePaidAmount, $dueAmount, $invoiceStatus, $invoiceId]
+                );
+
+                foreach ($normalizedCart as $item) {
+                    $movement = recordInventoryMovement(
+                        $item['product_id'],
+                        $mainWarehouse['id'],
+                        'out',
+                        $item['quantity'],
+                        'invoice',
+                        $invoiceId,
+                        'بيع مباشر من نقطة البيع',
+                        $currentUser['id']
+                    );
+
+                    if (empty($movement['success'])) {
+                        throw new RuntimeException($movement['message'] ?? 'تعذر تحديث المخزون.');
+                    }
+                }
+
+                logAudit($currentUser['id'], 'pos_local_sale', 'invoice', $invoiceId, null, [
+                    'invoice_number' => $invoiceNumber,
+                    'net_total' => $netTotal,
+                    'paid_amount' => $effectivePaidAmount,
+                    'due_amount' => $dueAmount,
+                    'discount' => $discountAmount,
+                    'payment_type' => $paymentType,
+                    'credit_used' => $creditUsed,
+                ]);
+
+                $conn->commit();
+
+                $success = 'تم إتمام عملية البيع بنجاح - رقم الفاتورة: ' . $invoiceNumber;
+                if ($dueAmount > 0) {
+                    $success .= ' (المتبقي على العميل: ' . formatCurrency($dueAmount) . ')';
+                }
+
+                // إعادة تحميل المنتجات والإحصائيات بعد البيع
+                [$products, $productStats, $productsMap] = $loadLocalPosProducts();
+                $totalProductsCount = $productStats['total_products'];
+                $totalQuantity = $productStats['total_quantity'];
+                $totalStockValue = $productStats['total_value'];
+                $uniqueCategories = $productStats['categories'];
+                $totalCategories = count($uniqueCategories);
+            } catch (Throwable $exception) {
+                if (isset($conn) && $conn) {
+                    $conn->rollback();
+                }
+                $error = 'حدث خطأ أثناء إتمام عملية البيع: ' . $exception->getMessage();
             }
+        } else {
+            $error = implode('<br>', array_map('htmlspecialchars', $validationErrors));
         }
     }
 }
 
 // الحصول على المنتجات من المخزن الرئيسي
 $unitColumnCheck = $db->queryOne("SHOW COLUMNS FROM products LIKE 'unit'");
-$hasUnitColumn = !empty($unitColumnCheck);
+$warehouseColumnCheck = $db->queryOne("SHOW COLUMNS FROM products LIKE 'warehouse_id'");
+$productTypeColumnCheck = $db->queryOne("SHOW COLUMNS FROM products LIKE 'product_type'");
 
-if ($hasUnitColumn) {
-    $products = $db->query(
-        "SELECT id, name, quantity, unit_price, unit, category 
-         FROM products 
-         WHERE status = 'active' AND quantity > 0 
-         ORDER BY name"
-    );
-} else {
-    $products = $db->query(
-        "SELECT id, name, quantity, unit_price, category 
-         FROM products 
-         WHERE status = 'active' AND quantity > 0 
-         ORDER BY name"
-    );
-    // إضافة unit افتراضي
-    foreach ($products as &$product) {
-        $product['unit'] = 'قطعة';
+$hasUnitColumn = !empty($unitColumnCheck);
+$hasWarehouseColumn = !empty($warehouseColumnCheck);
+$hasProductTypeColumn = !empty($productTypeColumnCheck);
+
+$loadLocalPosProducts = static function () use ($db, $mainWarehouse, $hasUnitColumn, $hasWarehouseColumn, $hasProductTypeColumn) {
+    $fields = ['id', 'name', 'quantity', 'unit_price', 'category'];
+    if ($hasUnitColumn) {
+        $fields[] = 'unit';
     }
-}
+
+    $sql = "SELECT " . implode(', ', $fields) . " FROM products WHERE status = 'active' AND quantity > 0";
+    $params = [];
+
+    if ($hasProductTypeColumn) {
+        $sql .= " AND (product_type IS NULL OR product_type = 'internal')";
+    }
+
+    if ($hasWarehouseColumn && !empty($mainWarehouse['id'])) {
+        $sql .= " AND (warehouse_id = ? OR warehouse_id IS NULL)";
+        $params[] = $mainWarehouse['id'];
+    }
+
+    $sql .= " ORDER BY name";
+
+    $list = $db->query($sql, $params);
+
+    if (!$hasUnitColumn) {
+        foreach ($list as &$productRow) {
+            if (!isset($productRow['unit'])) {
+                $productRow['unit'] = 'قطعة';
+            }
+        }
+        unset($productRow);
+    }
+
+    $stats = [
+        'total_products' => 0,
+        'total_quantity' => 0.0,
+        'total_value' => 0.0,
+        'categories' => [],
+    ];
+
+    $map = [];
+    foreach ($list as $row) {
+        $stats['total_products']++;
+        $stats['total_quantity'] += (float)($row['quantity'] ?? 0);
+        $stats['total_value'] += (float)($row['quantity'] ?? 0) * (float)($row['unit_price'] ?? 0);
+        $label = trim((string)($row['category'] ?? ''));
+        if ($label !== '') {
+            $stats['categories'][$label] = true;
+        }
+        $map[(int)$row['id']] = $row;
+    }
+
+    return [$list, $stats, $map];
+};
+
+[$products, $productStats, $productsMap] = $loadLocalPosProducts();
 
 // الحصول على العملاء
 $customers = $db->query("SELECT id, name, phone FROM customers WHERE status = 'active' ORDER BY name");
 
-$totalProductsCount = is_array($products) ? count($products) : 0;
-$totalQuantity = 0.0;
-$totalStockValue = 0.0;
-$uniqueCategories = [];
-
-if ($totalProductsCount > 0) {
-    foreach ($products as $product) {
-        $quantity = (float)($product['quantity'] ?? 0);
-        $unitPrice = (float)($product['unit_price'] ?? 0);
-        $totalQuantity += $quantity;
-        $totalStockValue += $quantity * $unitPrice;
-
-        $categoryLabel = trim((string)($product['category'] ?? ''));
-        if ($categoryLabel !== '') {
-            $uniqueCategories[$categoryLabel] = true;
-        }
-    }
-}
-
+$totalProductsCount = $productStats['total_products'];
+$totalQuantity = $productStats['total_quantity'];
+$totalStockValue = $productStats['total_value'];
+$uniqueCategories = $productStats['categories'];
 $totalCategories = count($uniqueCategories);
 ?>
 <div class="pos-page-header mb-4 d-flex flex-wrap justify-content-between align-items-center gap-3">
@@ -364,8 +525,52 @@ $totalCategories = count($uniqueCategories);
                         <span class="total" id="posCartSubtotal"><?php echo formatCurrency(0); ?></span>
                     </div>
                     <div class="d-flex justify-content-between align-items-center mt-2">
-                        <span>الإجمالي المستحق</span>
-                        <span class="total text-success" id="posCartTotal"><?php echo formatCurrency(0); ?></span>
+                        <span>الإجمالي بعد الخصم</span>
+                        <span class="total" id="posNetTotal"><?php echo formatCurrency(0); ?></span>
+                    </div>
+                    <div class="d-flex justify-content-between align-items-center mt-2">
+                        <span>المتبقي على العميل</span>
+                        <span class="total text-warning" id="posDueAmount"><?php echo formatCurrency(0); ?></span>
+                    </div>
+                </div>
+
+                <div class="mb-3 mt-3">
+                    <label class="form-label">طريقة الدفع</label>
+                    <div class="pos-payment-options">
+                        <label class="pos-payment-option active" for="posPaymentFull" data-payment-option>
+                            <input class="form-check-input" type="radio" name="payment_type" id="posPaymentFull" value="full" checked>
+                            <div class="pos-payment-option-icon">
+                                <i class="bi bi-cash-stack"></i>
+                            </div>
+                            <div class="pos-payment-option-details">
+                                <span class="pos-payment-option-title">دفع كامل الآن</span>
+                                <span class="pos-payment-option-desc">تحصيل المبلغ بالكامل دون أي ديون.</span>
+                            </div>
+                        </label>
+                        <label class="pos-payment-option" for="posPaymentPartial" data-payment-option>
+                            <input class="form-check-input" type="radio" name="payment_type" id="posPaymentPartial" value="partial">
+                            <div class="pos-payment-option-icon">
+                                <i class="bi bi-cash-coin"></i>
+                            </div>
+                            <div class="pos-payment-option-details">
+                                <span class="pos-payment-option-title">تحصيل جزئي</span>
+                                <span class="pos-payment-option-desc">استلام جزء من المبلغ وتسجيل الباقي كدين.</span>
+                            </div>
+                        </label>
+                        <label class="pos-payment-option" for="posPaymentCredit" data-payment-option>
+                            <input class="form-check-input" type="radio" name="payment_type" id="posPaymentCredit" value="credit">
+                            <div class="pos-payment-option-icon">
+                                <i class="bi bi-receipt"></i>
+                            </div>
+                            <div class="pos-payment-option-details">
+                                <span class="pos-payment-option-title">بيع بالآجل</span>
+                                <span class="pos-payment-option-desc">تسجيل المبلغ كدين كامل للمتابعة لاحقاً.</span>
+                            </div>
+                        </label>
+                    </div>
+                    <div class="mt-3 d-none" id="posPartialWrapper">
+                        <label class="form-label">مبلغ التحصيل الجزئي</label>
+                        <input type="number" step="0.01" min="0" value="0" class="form-control" id="posPartialAmount" name="partial_amount">
                     </div>
                 </div>
 
@@ -430,10 +635,15 @@ const cartEmptyState = document.getElementById('posCartEmpty');
 const cartTableWrapper = document.getElementById('posCartTableWrapper');
 const cartBody = document.getElementById('posCartBody');
 const subtotalEl = document.getElementById('posCartSubtotal');
-const totalEl = document.getElementById('posCartTotal');
+const totalEl = document.getElementById('posNetTotal');
+const dueEl = document.getElementById('posDueAmount');
 const discountInput = document.getElementById('posDiscountInput');
 const completeSaleBtn = document.getElementById('posCompleteSaleBtn');
 const clearCartBtn = document.getElementById('posClearCartBtn');
+const paymentRadios = Array.from(document.querySelectorAll('input[name="payment_type"]'));
+const paymentOptionLabels = Array.from(document.querySelectorAll('[data-payment-option]'));
+const partialWrapper = document.getElementById('posPartialWrapper');
+const partialInput = document.getElementById('posPartialAmount');
 
 function filterProducts() {
     if (!productSearchInput) {
@@ -569,12 +779,26 @@ function updateCartDisplay() {
     updateTotals(subtotal);
 }
 
+function sanitizeNumber(value) {
+    if (typeof value === 'number') {
+        return isNaN(value) ? 0 : value;
+    }
+    if (typeof value === 'string') {
+        const normalized = value.replace(/[^0-9.\-]/g, '');
+        if (normalized === '' || normalized === '-') {
+            return 0;
+        }
+        return parseFloat(normalized) || 0;
+    }
+    return 0;
+}
+
 function updateTotals(forcedSubtotal) {
     const subtotal = typeof forcedSubtotal === 'number'
         ? forcedSubtotal
         : cart.reduce((sum, item) => sum + (item.quantity * item.unit_price), 0);
 
-    const discountValue = parseFloat(discountInput ? discountInput.value : '0');
+    const discountValue = sanitizeNumber(discountInput ? discountInput.value : '0');
     const sanitizedDiscount = Math.min(Math.max(discountValue, 0), subtotal);
 
     if (discountInput && sanitizedDiscount !== discountValue) {
@@ -584,9 +808,80 @@ function updateTotals(forcedSubtotal) {
     if (subtotalEl) {
         subtotalEl.textContent = formatCurrency(subtotal);
     }
+
+    const netTotal = Math.max(0, subtotal - sanitizedDiscount);
     if (totalEl) {
-        totalEl.textContent = formatCurrency(Math.max(0, subtotal - sanitizedDiscount));
+        totalEl.textContent = formatCurrency(netTotal);
     }
+
+    const paymentType = getSelectedPaymentType();
+    let dueAmount = netTotal;
+
+    if (paymentType === 'full') {
+        dueAmount = 0;
+        if (partialInput) {
+            partialInput.value = '0.00';
+        }
+    } else if (paymentType === 'partial') {
+        if (partialInput) {
+            let partialValue = sanitizeNumber(partialInput.value);
+            if (partialValue < 0) {
+                partialValue = 0;
+            }
+            if (partialValue >= netTotal && netTotal > 0) {
+                partialValue = Math.max(0, netTotal - 0.01);
+            }
+            partialInput.value = partialValue.toFixed(2);
+            dueAmount = Math.max(0, netTotal - partialValue);
+        }
+    } else {
+        if (partialInput) {
+            partialInput.value = '0.00';
+        }
+        dueAmount = netTotal;
+    }
+
+    if (dueEl) {
+        dueEl.textContent = formatCurrency(dueAmount);
+    }
+
+    if (completeSaleBtn) {
+        let shouldDisable = cart.length === 0 || netTotal <= 0;
+        if (paymentType === 'partial') {
+            const partialValue = sanitizeNumber(partialInput ? partialInput.value : 0);
+            if (partialValue <= 0 || partialValue >= netTotal) {
+                shouldDisable = true;
+            }
+        }
+        completeSaleBtn.disabled = shouldDisable;
+    }
+}
+
+function getSelectedPaymentType() {
+    const activeRadio = paymentRadios.find((input) => input.checked);
+    return activeRadio ? activeRadio.value : 'full';
+}
+
+function handlePaymentChange() {
+    const selectedType = getSelectedPaymentType();
+
+    paymentOptionLabels.forEach((label) => {
+        const input = label.querySelector('input[type="radio"]');
+        label.classList.toggle('active', input && input.checked);
+    });
+
+    if (partialWrapper) {
+        if (selectedType === 'partial') {
+            partialWrapper.classList.remove('d-none');
+        } else {
+            partialWrapper.classList.add('d-none');
+            if (partialInput) {
+                partialInput.value = '0.00';
+            }
+        }
+    }
+
+    updateTotals();
 }
 
 function updateQuantity(index, change) {
@@ -650,12 +945,21 @@ if (discountInput) {
     discountInput.addEventListener('input', () => updateTotals());
 }
 
+if (partialInput) {
+    partialInput.addEventListener('input', () => updateTotals());
+}
+
+paymentRadios.forEach((input) => {
+    input.addEventListener('change', handlePaymentChange);
+});
+
 if (clearCartBtn) {
     clearCartBtn.addEventListener('click', clearCart);
 }
 
 filterProducts();
 updateCartDisplay();
+handlePaymentChange();
 
 <?php if ($success && isset($_POST['action']) && $_POST['action'] === 'create_customer'): ?>
     setTimeout(() => window.location.reload(), 800);
@@ -910,6 +1214,63 @@ updateCartDisplay();
 .pos-summary-card-neutral .total {
     font-weight: 700;
     font-size: 1.2rem;
+}
+.pos-payment-options {
+    display: grid;
+    gap: 0.75rem;
+}
+.pos-payment-option {
+    position: relative;
+    display: flex;
+    align-items: center;
+    gap: 0.9rem;
+    padding: 0.85rem 1rem;
+    border: 1px solid rgba(15, 23, 42, 0.12);
+    border-radius: 14px;
+    background: #f8fafc;
+    transition: all 0.2s ease;
+    cursor: pointer;
+}
+.pos-payment-option:hover {
+    border-color: rgba(30, 64, 175, 0.35);
+    background: #ffffff;
+    box-shadow: 0 12px 26px rgba(15, 23, 42, 0.12);
+}
+.pos-payment-option.active {
+    border-color: rgba(22, 163, 74, 0.7);
+    background: #ffffff;
+    box-shadow: 0 14px 32px rgba(22, 163, 74, 0.18);
+}
+.pos-payment-option input[type="radio"] {
+    display: none;
+}
+.pos-payment-option-icon {
+    width: 44px;
+    height: 44px;
+    border-radius: 50%;
+    background: rgba(15, 23, 42, 0.06);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 1.25rem;
+    color: #0f172a;
+}
+.pos-payment-option.active .pos-payment-option-icon {
+    background: rgba(34, 197, 94, 0.18);
+    color: #15803d;
+}
+.pos-payment-option-details {
+    display: flex;
+    flex-direction: column;
+    gap: 0.1rem;
+}
+.pos-payment-option-title {
+    font-weight: 600;
+    color: #0f172a;
+}
+.pos-payment-option-desc {
+    font-size: 0.85rem;
+    color: #475569;
 }
 .pos-panel .btn-success {
     border-radius: 12px;
