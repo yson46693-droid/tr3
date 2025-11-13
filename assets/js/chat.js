@@ -270,7 +270,6 @@
       elements.input.value = '';
       clearReplyAndEdit();
       appendMessages([data.data], true);
-      scheduleFetch(400);
       showToast('تم إرسال الرسالة');
       scrollToBottom(true);
     } catch (error) {
@@ -306,7 +305,6 @@
       elements.input.value = '';
       clearReplyAndEdit();
       applyMessageUpdate(data.data);
-      scheduleFetch(400);
       showToast('تم تحديث الرسالة');
     } catch (error) {
       console.error(error);
