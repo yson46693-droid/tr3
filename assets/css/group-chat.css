@@ -24,10 +24,11 @@
 }
 
 .group-chat-page {
-    background: linear-gradient(180deg, #0b141a 0%, #121b22 55%, #182229 100%);
+    background: radial-gradient(circle at top, rgba(0, 168, 132, 0.08), transparent 55%), linear-gradient(180deg, #0b141a 0%, #121b22 50%, #182229 100%);
     min-height: calc(100vh - 140px);
-    padding-bottom: 2.5rem;
+    padding: 1.75rem 0 2.5rem;
     color: var(--signal-text-primary);
+    direction: rtl;
 }
 
 .group-chat-page-header {
@@ -66,6 +67,9 @@
     display: flex;
     flex-direction: column;
     gap: 1.5rem;
+    max-width: 1100px;
+    margin: 0 auto;
+    position: relative;
 }
 
 .group-chat-card {
@@ -258,6 +262,50 @@
     text-align: center;
     color: var(--signal-text-secondary);
     padding: 4rem 1rem;
+}
+
+.chat-empty-illustration {
+    display: flex;
+    flex-direction: column;
+    gap: 1rem;
+    margin-bottom: 2rem;
+    align-items: center;
+}
+
+.chat-empty-illustration .bubble {
+    position: relative;
+    max-width: 240px;
+    padding: 0.85rem 1rem;
+    border-radius: 18px;
+    display: flex;
+    flex-direction: column;
+    gap: 0.35rem;
+    font-size: 0.9rem;
+    line-height: 1.5;
+    box-shadow: 0 12px 26px rgba(3, 10, 14, 0.35);
+    border: 1px solid rgba(255, 255, 255, 0.06);
+}
+
+.chat-empty-illustration .bubble .bubble-author {
+    font-weight: 600;
+    color: rgba(255, 255, 255, 0.85);
+}
+
+.chat-empty-illustration .bubble .bubble-time {
+    font-size: 0.75rem;
+    color: rgba(255, 255, 255, 0.6);
+    align-self: flex-end;
+}
+
+.chat-empty-illustration .bubble-in {
+    background: var(--signal-message-in);
+    border-top-left-radius: 6px;
+}
+
+.chat-empty-illustration .bubble-out {
+    background: var(--signal-message-out);
+    border-bottom-right-radius: 6px;
+    margin-right: auto;
 }
 
 .chat-empty-state i {
@@ -704,6 +752,10 @@
     .chat-sidebar {
         order: -1;
     }
+
+    .chat-sidebar {
+        order: -1;
+    }
 }
 
 @media (max-width: 992px) {
@@ -749,6 +801,10 @@
 }
 
 @media (max-width: 576px) {
+    .group-chat-shell {
+        padding: 0 0.6rem;
+    }
+
     .group-chat-page-header {
         padding: 1.3rem 1.25rem;
     }

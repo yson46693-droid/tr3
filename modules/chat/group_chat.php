@@ -113,9 +113,21 @@ $chatConfig = [
                 <div class="chat-messages-wrapper">
                     <div class="chat-messages-scroll" id="groupChatMessages"></div>
                     <div class="chat-empty-state d-none" id="groupChatEmptyState">
+                        <div class="chat-empty-illustration">
+                            <div class="bubble bubble-in">
+                                <span class="bubble-author">أحمد</span>
+                                <span class="bubble-text">مرحباً بالجميع 👋</span>
+                                <span class="bubble-time">9:41 م</span>
+                            </div>
+                            <div class="bubble bubble-out">
+                                <span class="bubble-author">أنا</span>
+                                <span class="bubble-text">أهلاً! هذا المثال يوضح شكل المحادثة.</span>
+                                <span class="bubble-time">9:42 م</span>
+                            </div>
+                        </div>
                         <i class="bi bi-stars"></i>
-                        <p class="mb-1">ابدأ المحادثة برسالتك الأولى!</p>
-                        <small>شارك المستجدات والمهام مع الفريق بكل سهولة.</small>
+                        <p class="mb-1">ابدأ المحادثة الآن</p>
+                        <small>أرسل أول رسالة وستظهر المحادثة بتنسيق شبيه بـ Signal.</small>
                     </div>
                 </div>
 
