@@ -678,6 +678,10 @@ $pageTitle = isset($lang['production_dashboard']) ? $lang['production_dashboard'
                     $hasUserIdColumn = !empty($userIdColumnCheck);
                     $hasWorkerIdColumn = !empty($workerIdColumnCheck);
                     $userIdColumn = $hasUserIdColumn ? 'user_id' : ($hasWorkerIdColumn ? 'worker_id' : null);
+                    $productionHasProductNameColumn = !empty($db->queryOne("SHOW COLUMNS FROM production LIKE 'product_name'"));
+                    $productNameExpression = $productionHasProductNameColumn
+                        ? "COALESCE(p.product_name, pr.name)"
+                        : "pr.name";
 
                     // الحصول على ملخص الأنشطة
                     $activitySummary = getProductionActivitySummary();
@@ -686,7 +690,7 @@ $pageTitle = isset($lang['production_dashboard']) ? $lang['production_dashboard'
                     $dateExpression = $dateColumn === 'created_at' ? 'created_at' : $dateColumn;
                     if ($userIdColumn) {
                         $todayProduction = $db->query(
-                            "SELECT p.*, COALESCE(p.product_name, pr.name) as product_name, u.full_name as worker_name 
+                            "SELECT p.*, {$productNameExpression} AS product_name, u.full_name as worker_name 
                              FROM production p 
                              LEFT JOIN products pr ON p.product_id = pr.id 
                              LEFT JOIN users u ON p.{$userIdColumn} = u.id 
@@ -696,7 +700,7 @@ $pageTitle = isset($lang['production_dashboard']) ? $lang['production_dashboard'
                         );
                     } else {
                         $todayProduction = $db->query(
-                            "SELECT p.*, COALESCE(p.product_name, pr.name) as product_name, 'غير محدد' as worker_name 
+                            "SELECT p.*, {$productNameExpression} AS product_name, 'غير محدد' as worker_name 
                              FROM production p 
                              LEFT JOIN products pr ON p.product_id = pr.id 
                              WHERE DATE(p.{$dateExpression}) = CURDATE() 
