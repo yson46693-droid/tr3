@@ -1447,12 +1447,15 @@ $_SESSION['reader_session_id'] = $_SESSION['reader_session_id'] ?? bin2hex(rando
 
             setLoading(true);
             try {
-                const response = await fetch('api.php', {
+                const response = await fetch('../api/production/get_batch_details.php', {
                     method: 'POST',
                     headers: {
                         'Content-Type': 'application/json',
                     },
-                    body: JSON.stringify({ batch_number: batchNumber }),
+                    body: JSON.stringify({
+                        batch_number: batchNumber,
+                        reader_public: true,
+                    }),
                 });
 
                 const rawText = await response.text();

@@ -109,7 +109,9 @@ if (!function_exists('readerColumnExists')) {
     }
 }
 
-if (!isLoggedIn()) {
+$allowPublicReader = defined('ALLOW_PUBLIC_READER') && ALLOW_PUBLIC_READER;
+
+if (!$allowPublicReader && !isLoggedIn()) {
     http_response_code(401);
     echo json_encode([
         'success' => false,
