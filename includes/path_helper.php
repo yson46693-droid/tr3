@@ -234,7 +234,14 @@ function redirectAfterPost($page, $filters = [], $excludeParams = ['id'], $role 
     
     $redirectUrl = getDashboardUrl($role) . '?' . http_build_query($redirectParams);
     
-    header('Location: ' . $redirectUrl);
+    if (!headers_sent()) {
+        header('Location: ' . $redirectUrl);
+        exit;
+    }
+
+    $escapedUrl = htmlspecialchars($redirectUrl, ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8');
+    echo '<script>window.location.href = "' . $escapedUrl . '";</script>';
+    echo '<noscript><meta http-equiv="refresh" content="0;url=' . $escapedUrl . '"></noscript>';
     exit;
 }
 
