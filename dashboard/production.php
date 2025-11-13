@@ -802,9 +802,6 @@ $pageTitle = isset($lang['production_dashboard']) ? $lang['production_dashboard'
                     </div>
                 </div>
                 
-            <?php elseif ($page === 'group_chat'): ?>
-                <?php include __DIR__ . '/../modules/chat/group_chat.php'; ?>
-
             <?php elseif ($page === 'production'): ?>
                 <!-- صفحة إدارة الإنتاج -->
                 <?php 

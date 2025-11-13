@@ -38,14 +38,6 @@ $baseUrl = getDashboardUrl();
             </li>
 
             <li class="nav-item">
-                <a class="nav-link <?php echo (isset($_GET['page']) && $_GET['page'] === 'group_chat') ? 'active' : ''; ?>"
-                   href="<?php echo $baseUrl; ?>production.php?page=group_chat">
-                    <i class="bi bi-chat-dots"></i>
-                    <span><?php echo $lang['menu_group_chat'] ?? 'الدردشة الجماعية'; ?></span>
-                </a>
-            </li>
-            
-            <li class="nav-item">
                 <a class="nav-link" href="<?php echo $baseUrl; ?>production.php?page=inventory">
                     <i class="bi bi-boxes"></i>
                     <span><?php echo isset($lang['menu_inventory']) ? $lang['menu_inventory'] : 'المخزون'; ?></span>

@@ -35,14 +35,6 @@ $baseUrl = getDashboardUrl();
                 </a>
             </li>
 
-            <li class="nav-item">
-                <a class="nav-link <?php echo (isset($_GET['page']) && $_GET['page'] === 'group_chat') ? 'active' : ''; ?>"
-                   href="<?php echo $baseUrl; ?>accountant.php?page=group_chat">
-                    <i class="bi bi-chat-dots"></i>
-                    <span><?php echo $lang['menu_group_chat'] ?? 'الدردشة الجماعية'; ?></span>
-                </a>
-            </li>
-            
             <div class="sidebar-section">
                 <div class="sidebar-section-title">Finance</div>
                 
