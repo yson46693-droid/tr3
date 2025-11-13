@@ -28,7 +28,7 @@ try {
 } catch (Throwable $e) {
     error_log('chat/user_status bootstrap error: ' . $e->getMessage());
     http_response_code(500);
-    echo json_encode(['success' => false, 'error' => 'Initialization error']);
+    echo json_encode(['success' => false, 'error' => 'Initialization error: ' . $e->getMessage()]);
     exit;
 }
 
