@@ -2843,7 +2843,15 @@ $lang = isset($translations) ? $translations : [];
                 'beeswax' => 'شمع عسل',
                 'derivatives' => 'مشتقات'
             ];
+            $typeIconMap = [
+                'unified' => 'bi-diagram-3',
+                'honey' => 'bi-droplet-fill',
+                'olive_oil' => 'bi-bucket-fill',
+                'beeswax' => 'bi-hexagon-fill',
+                'derivatives' => 'bi-bezier'
+            ];
             $typeLabel = $templateTypeLabels[$template['template_type']] ?? 'غير محدد';
+            $typeIcon = $typeIconMap[$template['template_type']] ?? 'bi-box-seam';
             $typeAccents = [
                 'unified' => ['#0f172a', '#0f172a22'],
                 'honey' => ['#f59e0b', '#f59e0b22'],
@@ -2852,29 +2860,70 @@ $lang = isset($translations) ? $translations : [];
                 'derivatives' => ['#7c3aed', '#7c3aed22']
             ];
             $accentPair = $typeAccents[$template['template_type']] ?? ['#334155', '#33415522'];
-            $materialDetails = $template['material_details'] ?? [];
+            $materialDetails = is_array($template['material_details'] ?? null) ? $template['material_details'] : [];
+            $materialsCount = (int)($template['materials_count'] ?? count($materialDetails));
+            if ($materialsCount === 0 && !empty($materialDetails)) {
+                $materialsCount = count($materialDetails);
+            }
             $materialsPreview = array_slice($materialDetails, 0, 3);
-            $hasMoreMaterials = count($materialDetails) > 3;
-            $packagingCount = (int)($template['packaging_count'] ?? 0);
-            $rawCount = count($materialDetails);
-            $productsCount = (int)($template['products_count'] ?? 1);
+            $hasMoreMaterials = $materialsCount > count($materialsPreview);
+            $packagingDetails = is_array($template['packaging_details'] ?? null) ? $template['packaging_details'] : [];
+            $packagingCount = (int)($template['packaging_count'] ?? count($packagingDetails));
+            if ($packagingCount === 0 && !empty($packagingDetails)) {
+                $packagingCount = count($packagingDetails);
+            }
+            $packagingPreview = array_slice($packagingDetails, 0, 2);
+            $hasMorePackaging = $packagingCount > count($packagingPreview);
+            $productsCount = (int)($template['products_count'] ?? 0);
+            if ($productsCount <= 0) {
+                $productsCount = $packagingCount > 0 ? $packagingCount : 1;
+            }
+            $mainSupplierName = trim((string)($template['main_supplier_name'] ?? ''));
+            $mainSupplierPhone = trim((string)($template['main_supplier_phone'] ?? ''));
+            $creatorName = trim((string)($template['creator_name'] ?? ''));
+            $templateName = trim((string)($template['product_name'] ?? ''));
+            if ($templateName === '') {
+                $templateName = 'منتج غير مسمى';
+            }
+            $templateNotes = trim((string)($template['notes'] ?? ''));
+            $updatedAtRaw = $template['updated_at'] ?? $template['created_at'] ?? null;
+            $updatedAtDisplay = '—';
+            $updatedAtIso = '';
+            if (!empty($updatedAtRaw)) {
+                $updatedTimestamp = strtotime((string)$updatedAtRaw);
+                if ($updatedTimestamp !== false) {
+                    $updatedAtDisplay = date('Y/m/d', $updatedTimestamp);
+                    $updatedAtIso = date(DATE_ATOM, $updatedTimestamp);
+                }
+            }
+            $cardAttributes = '';
+            if ($updatedAtIso !== '') {
+                $cardAttributes .= ' data-template-updated="' . htmlspecialchars($updatedAtIso, ENT_QUOTES, 'UTF-8') . '"';
+            }
+            if ($mainSupplierName !== '') {
+                $cardAttributes .= ' data-template-supplier="' . htmlspecialchars($mainSupplierName, ENT_QUOTES, 'UTF-8') . '"';
+            }
+            $materialsCountLabel = $materialsCount;
             ?>
             <div class="template-card-modern"
                  style="--template-accent: <?php echo $accentPair[0]; ?>; --template-accent-light: <?php echo $accentPair[1]; ?>;"
                  data-template-id="<?php echo $template['id']; ?>"
-                 data-template-name="<?php echo htmlspecialchars($template['product_name']); ?>"
-                 data-template-type="<?php echo htmlspecialchars($template['template_type'] ?? 'legacy'); ?>"
+                 data-template-name="<?php echo htmlspecialchars($templateName, ENT_QUOTES, 'UTF-8'); ?>"
+                 data-template-type="<?php echo htmlspecialchars($template['template_type'] ?? 'legacy', ENT_QUOTES, 'UTF-8'); ?>"
+                 <?php echo $cardAttributes; ?>
                  onclick="openCreateFromTemplateModal(this)">
 
                 <div class="template-card-header">
                     <div>
                         <span class="template-type-pill">
-                            <i class="bi bi-droplet-half me-1"></i><?php echo $typeLabel; ?>
+                            <i class="bi <?php echo htmlspecialchars($typeIcon, ENT_QUOTES, 'UTF-8'); ?> me-1"></i><?php echo $typeLabel; ?>
                         </span>
-                        <h6 class="template-title mt-2"><?php echo htmlspecialchars($template['product_name']); ?></h6>
+                        <h6 class="template-title mt-2"<?php echo $templateNotes !== '' ? ' title="' . htmlspecialchars($templateNotes, ENT_QUOTES, 'UTF-8') . '"' : ''; ?>>
+                            <?php echo htmlspecialchars($templateName, ENT_QUOTES, 'UTF-8'); ?>
+                        </h6>
                     </div>
-                    <div class="template-products-count">
-                        <i class="bi bi-box me-1"></i>
+                    <div class="template-products-count" title="عدد المنتجات المخطط لها من هذا القالب">
+                        <i class="bi bi-box-seam me-1"></i>
                         <?php echo $productsCount; ?>
                         <span>منتج</span>
                     </div>
@@ -2888,14 +2937,12 @@ $lang = isset($translations) ? $translations : [];
                     <div class="metric-separator"></div>
                     <div class="metric-item">
                         <span class="metric-label">مواد خام</span>
-                        <span class="metric-value"><?php echo $rawCount; ?></span>
+                        <span class="metric-value"><?php echo $materialsCountLabel; ?></span>
                     </div>
                     <div class="metric-separator"></div>
                     <div class="metric-item">
-                        <span class="metric-label">آخر تعديل</span>
-                        <span class="metric-value">
-                            <?php echo htmlspecialchars(date('Y/m/d', strtotime($template['updated_at'] ?? $template['created_at'] ?? 'now'))); ?>
-                        </span>
+                        <span class="metric-label">آخر تحديث</span>
+                        <span class="metric-value"><?php echo htmlspecialchars($updatedAtDisplay, ENT_QUOTES, 'UTF-8'); ?></span>
                     </div>
                 </div>
 
@@ -2905,8 +2952,8 @@ $lang = isset($translations) ? $translations : [];
                         <?php
                         $materialIconKey = $material['material_type'] ?? '';
                         $materialIconClass = $materialIconMap[$materialIconKey] ?? null;
-                        $materialName = $material['type'] ?? '';
-                        if (!$materialIconClass && $materialName !== '') {
+                        $materialName = trim((string)($material['type'] ?? ''));
+                        if ($materialIconClass === null && $materialName !== '') {
                             foreach ($materialKeywordIconMap as $keyword => $iconClass) {
                                 $hasMbStripos = function_exists('mb_stripos');
                                 $positionFound = $hasMbStripos
@@ -2926,32 +2973,114 @@ $lang = isset($translations) ? $translations : [];
                                 $materialInitial = substr($materialName, 0, 1);
                             }
                         }
+                        $materialQuantity = isset($material['quantity']) ? (float)$material['quantity'] : 0.0;
+                        $materialRounded = round($materialQuantity, 3);
+                        $materialDecimals = 3;
+                        if (abs($materialRounded - round($materialRounded, 2)) < 0.0005) {
+                            $materialDecimals = 2;
+                        }
+                        if (abs($materialRounded - round($materialRounded, 1)) < 0.0005) {
+                            $materialDecimals = min($materialDecimals, 1);
+                        }
+                        if (abs($materialRounded - round($materialRounded)) < 0.0005) {
+                            $materialDecimals = 0;
+                        }
+                        $materialQuantityFormatted = number_format($materialRounded, $materialDecimals);
+                        $materialUnit = trim((string)($material['unit'] ?? ''));
+                        if ($materialUnit === '') {
+                            $materialUnit = 'وحدة';
+                        }
+                        $materialHoneyVariety = trim((string)($material['honey_variety'] ?? ''));
                         ?>
                         <div class="material-row">
                             <div class="material-icon">
                                 <?php if ($materialIconClass): ?>
-                                    <i class="bi <?php echo htmlspecialchars($materialIconClass); ?>"></i>
+                                    <i class="bi <?php echo htmlspecialchars($materialIconClass, ENT_QUOTES, 'UTF-8'); ?>"></i>
                                 <?php else: ?>
-                                    <span><?php echo htmlspecialchars($materialInitial !== '' ? $materialInitial : '•'); ?></span>
+                                    <span><?php echo htmlspecialchars($materialInitial !== '' ? $materialInitial : '•', ENT_QUOTES, 'UTF-8'); ?></span>
                                 <?php endif; ?>
                             </div>
                             <div class="material-info">
-                                <div class="material-name"><?php echo htmlspecialchars($material['type']); ?></div>
+                                <div class="material-name"><?php echo htmlspecialchars($materialName !== '' ? $materialName : 'مادة خام', ENT_QUOTES, 'UTF-8'); ?></div>
                                 <div class="material-quantity">
-                                    <?php echo number_format($material['quantity'], 2); ?>
-                                    <span><?php echo htmlspecialchars($material['unit']); ?></span>
+                                    <?php echo $materialQuantityFormatted; ?>
+                                    <span><?php echo htmlspecialchars($materialUnit, ENT_QUOTES, 'UTF-8'); ?></span>
                                 </div>
                             </div>
-                            <?php if (!empty($material['honey_variety'])): ?>
-                                <span class="material-tag"><?php echo htmlspecialchars($material['honey_variety']); ?></span>
+                            <?php if ($materialHoneyVariety !== ''): ?>
+                                <span class="material-tag"><?php echo htmlspecialchars($materialHoneyVariety, ENT_QUOTES, 'UTF-8'); ?></span>
                             <?php endif; ?>
                         </div>
                     <?php endforeach; ?>
                     <?php if ($hasMoreMaterials): ?>
-                        <div class="materials-more">+ <?php echo $rawCount - count($materialsPreview); ?> مواد إضافية</div>
+                        <div class="materials-more">+ <?php echo max(0, $materialsCountLabel - count($materialsPreview)); ?> مواد إضافية</div>
                     <?php endif; ?>
                 </div>
                 <?php endif; ?>
+
+                <?php if (!empty($packagingPreview)): ?>
+                <div class="template-packaging">
+                    <div class="template-packaging-title">
+                        <i class="bi bi-box2-heart me-1"></i>أبرز أدوات التعبئة
+                    </div>
+                    <div class="template-packaging-pills">
+                        <?php foreach ($packagingPreview as $packaging): ?>
+                            <?php
+                            $packName = trim((string)($packaging['name'] ?? 'أداة تعبئة'));
+                            if ($packName === '') {
+                                $packName = 'أداة تعبئة';
+                            }
+                            $packQuantity = isset($packaging['quantity_per_unit']) ? (float)$packaging['quantity_per_unit'] : 0.0;
+                            $packRounded = round($packQuantity, 3);
+                            $packDecimals = 3;
+                            if (abs($packRounded - round($packRounded, 2)) < 0.0005) {
+                                $packDecimals = 2;
+                            }
+                            if (abs($packRounded - round($packRounded, 1)) < 0.0005) {
+                                $packDecimals = min($packDecimals, 1);
+                            }
+                            if (abs($packRounded - round($packRounded)) < 0.0005) {
+                                $packDecimals = 0;
+                            }
+                            $packQuantityFormatted = number_format($packRounded, $packDecimals);
+                            $packUnit = trim((string)($packaging['unit'] ?? ''));
+                            if ($packUnit === '') {
+                                $packUnit = 'وحدة';
+                            }
+                            $packUnitEsc = htmlspecialchars($packUnit, ENT_QUOTES, 'UTF-8');
+                            $packTitle = htmlspecialchars($packQuantityFormatted . ' ' . $packUnit, ENT_QUOTES, 'UTF-8');
+                            ?>
+                            <span class="template-packaging-pill" title="المقدار لكل وحدة إنتاج: <?php echo $packTitle; ?>">
+                                <i class="bi bi-boxes me-1"></i>
+                                <?php echo htmlspecialchars($packName, ENT_QUOTES, 'UTF-8'); ?>
+                                <small><?php echo $packQuantityFormatted; ?> <?php echo $packUnitEsc; ?></small>
+                            </span>
+                        <?php endforeach; ?>
+                        <?php if ($hasMorePackaging): ?>
+                            <span class="template-packaging-pill more">+ <?php echo max(0, $packagingCount - count($packagingPreview)); ?> عناصر إضافية</span>
+                        <?php endif; ?>
+                    </div>
+                </div>
+                <?php endif; ?>
+
+                <div class="template-meta">
+                    <?php
+                    $supplierTitleAttr = '';
+                    if ($mainSupplierPhone !== '') {
+                        $supplierTitleAttr = ' title="' . htmlspecialchars('هاتف المورد: ' . $mainSupplierPhone, ENT_QUOTES, 'UTF-8') . '"';
+                    }
+                    ?>
+                    <?php if ($mainSupplierName !== ''): ?>
+                        <span class="template-meta-item"<?php echo $supplierTitleAttr; ?>>
+                            <i class="bi bi-truck-front-fill me-1"></i><?php echo htmlspecialchars($mainSupplierName, ENT_QUOTES, 'UTF-8'); ?>
+                        </span>
+                    <?php endif; ?>
+                    <?php if ($creatorName !== ''): ?>
+                        <span class="template-meta-item">
+                            <i class="bi bi-person-circle me-1"></i><?php echo htmlspecialchars($creatorName, ENT_QUOTES, 'UTF-8'); ?>
+                        </span>
+                    <?php endif; ?>
+                </div>
 
                 <div class="template-actions">
                     <span class="template-action-badge">
