@@ -273,6 +273,7 @@
       appendMessages([data.data], true);
       scheduleFetch(400);
       showToast('تم إرسال الرسالة');
+      scrollToBottom(true);
     } catch (error) {
       console.error(error);
       showToast(error.message || 'حدث خطأ أثناء الإرسال', true);
@@ -320,16 +321,40 @@
   function applyMessageUpdate(updated) {
     const index = state.messages.findIndex((item) => item.id === updated.id);
     if (index === -1) {
-      return;
+      return false;
     }
 
-    state.messages[index] = {
-      ...state.messages[index],
+    const before = state.messages[index];
+    const serializedBefore = JSON.stringify(before);
+    const merged = {
+      ...before,
       ...updated,
       edited: 1,
     };
+    const serializedAfter = JSON.stringify(merged);
+    if (serializedBefore === serializedAfter) {
+      return false;
+    }
+
+    state.messages[index] = merged;
 
     renderMessages();
+    highlightMessage(updated.id);
+    return true;
+  }
+
+  function highlightMessage(messageId) {
+    if (!elements.messageList) {
+      return;
+    }
+    const target = elements.messageList.querySelector(`[data-chat-message-id="${messageId}"]`);
+    if (!target) {
+      return;
+    }
+    target.classList.add('highlight');
+    setTimeout(() => {
+      target.classList.remove('highlight');
+    }, 1200);
   }
 
   async function confirmDelete(message) {
@@ -445,8 +470,8 @@
         state.messages.push(message);
         state.lastMessageId = Math.max(state.lastMessageId, message.id);
         hasNew = message.user_id !== currentUser.id;
-      } else {
-        applyMessageUpdate(message);
+      } else if (applyMessageUpdate(message)) {
+        hasNew = true;
       }
     });
 
