@@ -208,291 +208,302 @@ try {
 
     $batchId = isset($batch['id']) ? (int) $batch['id'] : 0;
 
+    $batchNumberRecord = null;
+    if (readerTableExists($db, 'batch_numbers')) {
+        try {
+            $batchNumberRecord = $db->queryOne(
+                "SELECT 
+                    bn.*,
+                    p.name AS product_name_lookup,
+                    p.category AS product_category_lookup,
+                    u.full_name AS created_by_full_name,
+                    u.username AS created_by_username
+                 FROM batch_numbers bn
+                 LEFT JOIN products p ON p.id = bn.product_id
+                 LEFT JOIN users u ON u.id = bn.created_by
+                 WHERE bn.batch_number = ?
+                 LIMIT 1",
+                [$batchNumber]
+            );
+        } catch (Throwable $batchNumberError) {
+            error_log('Reader batch_numbers query error: ' . $batchNumberError->getMessage());
+            $batchNumberRecord = null;
+        }
+    }
+
     $statusLabels = [
         'in_production' => 'قيد الإنتاج',
         'completed' => 'مكتملة',
+        'in_stock' => 'في المخزون',
+        'sold' => 'مباعة',
+        'expired' => 'منتهية',
         'archived' => 'مؤرشفة',
         'cancelled' => 'ملغاة',
     ];
 
-    $packagingDetails = [];
-    $packagingAvailable = $batchId > 0 && function_exists('readerTableExists') && readerTableExists($db, 'batch_packaging');
-    if (!$packagingAvailable) {
-        // Packaging table not available; skip adding notes per requirements
-    }
-    if ($packagingAvailable) {
-        $hasPackagingMaterials = readerTableExists($db, 'packaging_materials');
-        $packagingHasSupplierDetails = readerTableExists($db, 'suppliers') && readerTableExists($db, 'packaging_materials') && readerTableExists($db, 'suppliers');
-        $hasPackagingSupplierColumn = readerTableExists($db, 'batch_packaging') && batchCreationColumnExists($db, 'batch_packaging', 'supplier_id');
+    $statusKey = $batchNumberRecord['status'] ?? ($batch['status'] ?? null);
+    $statusLabel = $statusKey !== null ? ($statusLabels[$statusKey] ?? $statusKey) : null;
 
-        $selectColumns = [
-            'bp.id',
-            'bp.quantity_used',
-            $hasPackagingMaterials ? 'COALESCE(bp.packaging_name, pm.name) AS name' : 'bp.packaging_name AS name',
-            $hasPackagingMaterials ? 'COALESCE(bp.unit, pm.unit) AS unit' : 'bp.unit AS unit'
-        ];
-
-        if ($hasPackagingSupplierColumn) {
-            $selectColumns[] = 'bp.supplier_id AS supplier_id';
-            $selectColumns[] = 's.name AS supplier_name';
-        } else {
-            $selectColumns[] = 'NULL AS supplier_id';
-            $selectColumns[] = 'NULL AS supplier_name';
-        }
-
-        $query = "SELECT " . implode(', ', $selectColumns) . " FROM batch_packaging bp";
-        if ($hasPackagingMaterials) {
-            $query .= " LEFT JOIN packaging_materials pm ON pm.id = bp.packaging_material_id";
-        }
-        if ($hasPackagingSupplierColumn && readerTableExists($db, 'suppliers')) {
-            $query .= " LEFT JOIN suppliers s ON s.id = bp.supplier_id";
-        }
-
-        try {
-            $packagingDetails = $db->query($query, [$batchId]);
-        } catch (Throwable $packagingError) {
-            error_log('Reader packaging query error: ' . $packagingError->getMessage());
-            $packagingDetails = [];
-        }
+    $productionDate = $batchNumberRecord['production_date'] ?? ($batch['production_date'] ?? null);
+    $quantityValue = $batchNumberRecord['quantity'] ?? ($batch['quantity'] ?? null);
+    if ($quantityValue !== null && is_numeric($quantityValue)) {
+        $quantityValue = (int) $quantityValue;
     }
 
-    $packagingFormatted = array_map(static function (array $row) {
-        return [
-            'id' => $row['id'] ?? null,
-            'name' => $row['name'] ?? null,
-            'unit' => $row['unit'] ?? null,
-            'quantity_used' => isset($row['quantity_used']) ? (float) $row['quantity_used'] : null,
-            'supplier_id' => isset($row['supplier_id']) ? (int) $row['supplier_id'] : null,
-            'supplier_name' => $row['supplier_name'] ?? null,
-        ];
-    }, $packagingDetails);
+    $productName = $batch['product_name'] ?? ($batchNumberRecord['product_name_lookup'] ?? null);
+    $productCategory = $batch['product_category'] ?? ($batchNumberRecord['product_category_lookup'] ?? null);
+    $notes = $batchNumberRecord['notes'] ?? null;
 
-    $rawMaterials = [];
-    $rawMaterialsFormatted = null;
-    $rawAvailable = $batchId > 0 && function_exists('readerTableExists') && readerTableExists($db, 'batch_raw_materials');
-    if (!$rawAvailable) {
-        // Raw materials table not available; no notes returned
-    }
-    if ($rawAvailable) {
-        $hasRawMaterials = readerTableExists($db, 'raw_materials');
-        $selectColumns = [
-            'brm.id',
-            'brm.quantity_used',
-        ];
-        if ($hasRawMaterials) {
-            $selectColumns[] = 'COALESCE(brm.material_name, rm.name) AS name';
-            $selectColumns[] = 'COALESCE(brm.unit, rm.unit) AS unit';
-        } else {
-            $selectColumns[] = 'brm.material_name AS name';
-            $selectColumns[] = 'brm.unit AS unit';
-        }
-        if (readerTableExists($db, 'raw_materials') && readerTableExists($db, 'suppliers') && batchCreationColumnExists($db, 'raw_materials', 'supplier_id')) {
-            $selectColumns[] = 's.name AS supplier_name';
-            $selectColumns[] = 's.id AS supplier_id';
-        } else {
-            $selectColumns[] = 'NULL AS supplier_name';
-            $selectColumns[] = 'brm.supplier_id AS supplier_id';
-        }
-
-        $query = "SELECT " . implode(', ', $selectColumns) . " FROM batch_raw_materials brm";
-        if ($hasRawMaterials) {
-            $query .= " LEFT JOIN raw_materials rm ON rm.id = brm.raw_material_id";
-            if (readerTableExists($db, 'suppliers') && batchCreationColumnExists($db, 'raw_materials', 'supplier_id')) {
-                $query .= " LEFT JOIN suppliers s ON s.id = rm.supplier_id";
-            }
-        }
-        $query .= " WHERE brm.batch_id = ?";
-
-        try {
-            $rawMaterials = $db->query($query, [$batchId]);
-        } catch (Throwable $rawError) {
-            error_log('Reader raw materials query error: ' . $rawError->getMessage());
-            $rawMaterials = [];
-        }
-
-        $rawMaterialsFormatted = array_map(static function (array $row) {
-            return [
-                'id' => $row['id'] ?? null,
-                'name' => $row['name'] ?? null,
-                'unit' => $row['unit'] ?? null,
-                'quantity_used' => isset($row['quantity_used']) ? (float) $row['quantity_used'] : null,
-                'supplier_id' => isset($row['supplier_id']) ? (int) $row['supplier_id'] : null,
-                'supplier_name' => $row['supplier_name'] ?? null,
-            ];
-        }, $rawMaterials);
-    }
-
-    $workersDetails = [];
-    $workersAvailable = $batchId > 0 && function_exists('readerTableExists') && readerTableExists($db, 'batch_workers');
-    $workersHaveStoredNames = false;
-    if (!$workersAvailable) {
-        // Workers table not available; no notes returned
-    }
-    if ($workersAvailable) {
-        try {
-            $workersHaveStoredNames = batchCreationColumnExists(batchCreationGetPdo(), 'batch_workers', 'worker_name');
-        } catch (Throwable $workersColumnError) {
-            error_log('Reader workers column detection error: ' . $workersColumnError->getMessage());
-            $workersHaveStoredNames = false;
-        }
-
-        try {
-            $joinEmployees = function_exists('readerTableExists') && readerTableExists($db, 'employees');
-            $joinUsers = function_exists('readerTableExists') && readerTableExists($db, 'users');
-
-            $selectParts = [
-                'bw.id',
-                'bw.employee_id',
-            ];
-            if ($workersHaveStoredNames) {
-                $selectParts[] = 'bw.worker_name AS stored_worker_name';
-            }
-            if ($joinEmployees) {
-                $selectParts[] = 'e.name AS employee_name';
-            }
-            if ($joinUsers) {
-                $selectParts[] = 'u.full_name';
-                $selectParts[] = 'u.username';
-                $selectParts[] = 'u.role';
-            }
-
-            $query = "SELECT " . implode(', ', $selectParts) . " FROM batch_workers bw";
-            if ($joinEmployees) {
-                $query .= " LEFT JOIN employees e ON e.id = bw.employee_id";
-            }
-            if ($joinUsers) {
-                $query .= " LEFT JOIN users u ON u.id = bw.employee_id";
-            }
-            $query .= " WHERE bw.batch_id = ?";
-
-            $workersDetails = $db->query($query, [$batchId]);
-        } catch (Throwable $workersError) {
-            error_log('Reader workers query error: ' . $workersError->getMessage());
-            $workersDetails = [];
-        }
-    }
-
-    $workersFormatted = array_map(static function (array $row) use ($workersHaveStoredNames) {
-        $candidates = [];
-        if ($workersHaveStoredNames && array_key_exists('stored_worker_name', $row)) {
-            $candidates[] = $row['stored_worker_name'];
-        }
-        if (array_key_exists('employee_name', $row)) {
-            $candidates[] = $row['employee_name'];
-        }
-        if (array_key_exists('full_name', $row)) {
-            $candidates[] = $row['full_name'];
-        }
-        if (array_key_exists('username', $row)) {
-            $candidates[] = $row['username'];
-        }
-
-        $finalName = null;
-        foreach ($candidates as $candidate) {
-            if (is_string($candidate)) {
-                $trimmed = trim($candidate);
-                if ($trimmed !== '') {
-                    $finalName = $trimmed;
+    $createdByName = null;
+    if ($batchNumberRecord) {
+        foreach (['created_by_full_name', 'created_by_username'] as $createdKey) {
+            if (!empty($batchNumberRecord[$createdKey])) {
+                $candidate = trim((string) $batchNumberRecord[$createdKey]);
+                if ($candidate !== '') {
+                    $createdByName = $candidate;
                     break;
                 }
             }
         }
-        if ($finalName === null && isset($row['employee_id'])) {
-            $finalName = 'عامل #' . (int) $row['employee_id'];
+        if ($createdByName === null && !empty($batchNumberRecord['created_by'])) {
+            $createdByName = 'المستخدم #' . (int) $batchNumberRecord['created_by'];
         }
+    }
 
-        return [
-            'assignment_id' => $row['id'] ?? null,
-            'worker_id' => isset($row['employee_id']) ? (int) $row['employee_id'] : null,
-            'full_name' => $finalName,
-            'role' => $row['role'] ?? 'عامل إنتاج',
-        ];
-    }, $workersDetails);
+    $honeySupplierId = isset($batchNumberRecord['honey_supplier_id']) ? (int) $batchNumberRecord['honey_supplier_id'] : null;
+    $packagingSupplierId = isset($batchNumberRecord['packaging_supplier_id']) ? (int) $batchNumberRecord['packaging_supplier_id'] : null;
 
+    $suppliersRows = [];
     $suppliersFormatted = [];
-    $suppliersTableAvailable = function_exists('readerTableExists') && readerTableExists($db, 'batch_suppliers');
-    $suppliersLookupAvailable = function_exists('readerTableExists') && readerTableExists($db, 'suppliers');
-    $suppliersHaveStoredNames = false;
-
-    if ($suppliersTableAvailable) {
-        try {
-            $suppliersHaveStoredNames = batchCreationColumnExists(batchCreationGetPdo(), 'batch_suppliers', 'supplier_name');
-        } catch (Throwable $suppliersColumnError) {
-            error_log('Reader suppliers column detection error: ' . $suppliersColumnError->getMessage());
-            $suppliersHaveStoredNames = false;
+    $supplierNameMap = [];
+    if ($batchId > 0 && readerTableExists($db, 'batch_suppliers')) {
+        $suppliersHaveStoredNames = readerColumnExists($db, 'batch_suppliers', 'supplier_name');
+        $selectSupplierColumns = ['bs.id', 'bs.supplier_id', 'bs.role'];
+        if ($suppliersHaveStoredNames) {
+            $selectSupplierColumns[] = 'bs.supplier_name';
         }
-
         try {
-            $selectSupplierColumns = [
-                'bs.supplier_id',
-                'bs.role',
-            ];
-
-            if ($suppliersHaveStoredNames) {
-                $selectSupplierColumns[] = 'bs.supplier_name AS stored_supplier_name';
-            }
-
-            if ($suppliersLookupAvailable) {
-                $selectSupplierColumns[] = 's.name AS lookup_supplier_name';
-            }
-
-            $query = "SELECT " . implode(', ', $selectSupplierColumns) . " FROM batch_suppliers bs";
-            if ($suppliersLookupAvailable) {
-                $query .= " LEFT JOIN suppliers s ON s.id = bs.supplier_id";
-            }
-            $query .= " WHERE bs.batch_id = ?";
-
-            $suppliersFormatted = $db->query($query, [$batchId]);
+            $suppliersRows = $db->query(
+                "SELECT " . implode(', ', $selectSupplierColumns) . " FROM batch_suppliers bs WHERE bs.batch_id = ?",
+                [$batchId]
+            );
         } catch (Throwable $supplierError) {
             error_log('Reader suppliers query error: ' . $supplierError->getMessage());
-            $suppliersFormatted = [];
+            $suppliersRows = [];
         }
     }
 
-    $suppliersFormatted = array_map(static function (array $row) use ($suppliersHaveStoredNames, $suppliersLookupAvailable) {
-        $supplierId = isset($row['supplier_id']) ? (int) $row['supplier_id'] : null;
-        $storedName = $suppliersHaveStoredNames && array_key_exists('stored_supplier_name', $row)
-            ? $row['stored_supplier_name']
-            : null;
-        $lookupName = $suppliersLookupAvailable && array_key_exists('lookup_supplier_name', $row)
-            ? $row['lookup_supplier_name']
-            : null;
-
-        $finalName = null;
-        foreach ([$storedName, $lookupName] as $candidate) {
-            if (is_string($candidate)) {
-                $trimmed = trim($candidate);
-                if ($trimmed !== '') {
-                    $finalName = $trimmed;
-                    break;
-                }
+    foreach ($suppliersRows as $row) {
+        $supplierIdValue = isset($row['supplier_id']) ? (int) $row['supplier_id'] : null;
+        if ($supplierIdValue !== null && $supplierIdValue > 0) {
+            $storedNameValue = '';
+            if (array_key_exists('supplier_name', $row)) {
+                $storedNameValue = trim((string) $row['supplier_name']);
             }
+            $supplierNameMap[$supplierIdValue] = $storedNameValue !== '' ? $storedNameValue : ('مورد #' . $supplierIdValue);
         }
+    }
 
-        if ($finalName === null && $supplierId !== null && $supplierId > 0) {
-            $finalName = 'مورد #' . $supplierId;
-        }
-
+    $suppliersFormatted = array_map(static function (array $row) {
+        $supplierId = isset($row['supplier_id']) ? (int) $row['supplier_id'] : null;
+        $storedName = array_key_exists('supplier_name', $row) ? trim((string) $row['supplier_name']) : '';
+        $finalName = $storedName !== '' ? $storedName : ($supplierId ? 'مورد #' . $supplierId : 'مورد غير معروف');
+        $rolesRaw = isset($row['role']) ? (string) $row['role'] : '';
+        $rolesList = array_values(array_filter(array_map('trim', explode(',', $rolesRaw))));
         return [
             'supplier_id' => $supplierId,
             'name' => $finalName,
-            'role' => $row['role'] ?? null,
+            'role' => $rolesRaw !== '' ? $rolesRaw : null,
+            'roles' => $rolesList,
         ];
-    }, $suppliersFormatted);
+    }, $suppliersRows);
+
+    $lookupSupplierName = static function (?int $supplierId) use ($supplierNameMap, $suppliersFormatted) {
+        if ($supplierId === null || $supplierId <= 0) {
+            return null;
+        }
+        if (isset($supplierNameMap[$supplierId])) {
+            return $supplierNameMap[$supplierId];
+        }
+        foreach ($suppliersFormatted as $entry) {
+            if (isset($entry['supplier_id']) && (int) $entry['supplier_id'] === $supplierId && !empty($entry['name'])) {
+                return $entry['name'];
+            }
+        }
+        return 'مورد #' . $supplierId;
+    };
+
+    $honeySupplierName = $lookupSupplierName($honeySupplierId);
+    $packagingSupplierName = $lookupSupplierName($packagingSupplierId);
+
+    $packagingRows = [];
+    if ($batchId > 0 && readerTableExists($db, 'batch_packaging')) {
+        try {
+            $packagingRows = $db->query(
+                "SELECT id, packaging_material_id, packaging_name, unit, supplier_id, quantity_used
+                 FROM batch_packaging
+                 WHERE batch_id = ?",
+                [$batchId]
+            );
+        } catch (Throwable $packagingError) {
+            error_log('Reader packaging query error: ' . $packagingError->getMessage());
+            $packagingRows = [];
+        }
+    }
+
+    $packagingFormatted = array_map(static function (array $row) use ($supplierNameMap) {
+        $supplierId = isset($row['supplier_id']) ? (int) $row['supplier_id'] : null;
+        $quantity = isset($row['quantity_used']) ? (float) $row['quantity_used'] : null;
+        return [
+            'id' => $row['id'] ?? null,
+            'packaging_material_id' => isset($row['packaging_material_id']) ? (int) $row['packaging_material_id'] : null,
+            'name' => $row['packaging_name'] ?? null,
+            'unit' => $row['unit'] ?? null,
+            'quantity_used' => $quantity,
+            'supplier_id' => $supplierId,
+            'supplier_name' => ($supplierId && isset($supplierNameMap[$supplierId]))
+                ? $supplierNameMap[$supplierId]
+                : ($supplierId ? 'مورد #' . $supplierId : null),
+        ];
+    }, $packagingRows);
+
+    $formatQuantity = static function ($value) {
+        if ($value === null || $value === '') {
+            return null;
+        }
+        $numeric = (float) $value;
+        if (abs($numeric - round($numeric)) < 0.0001) {
+            return number_format($numeric, 0, '.', '');
+        }
+        return rtrim(rtrim(number_format($numeric, 3, '.', ''), '0'), '.');
+    };
+
+    $materialsList = array_map(static function (array $item) use ($formatQuantity) {
+        $details = [];
+        if (isset($item['quantity_used']) && $item['quantity_used'] !== null) {
+            $quantityLabel = $formatQuantity($item['quantity_used']);
+            if ($quantityLabel !== null) {
+                $unit = $item['unit'] ?? '';
+                $details[] = trim($quantityLabel . ($unit ? ' ' . $unit : ''));
+            }
+        }
+        if (!empty($item['supplier_name'])) {
+            $details[] = 'المورد: ' . $item['supplier_name'];
+        }
+        return [
+            'name' => $item['name'] ?? 'مادة تعبئة',
+            'details' => implode(' • ', array_filter($details)),
+        ];
+    }, $packagingFormatted);
+
+    $rawRows = [];
+    if ($batchId > 0 && readerTableExists($db, 'batch_raw_materials')) {
+        try {
+            $rawRows = $db->query(
+                "SELECT id, raw_material_id, material_name, unit, supplier_id, quantity_used
+                 FROM batch_raw_materials
+                 WHERE batch_id = ?",
+                [$batchId]
+            );
+        } catch (Throwable $rawError) {
+            error_log('Reader raw materials query error: ' . $rawError->getMessage());
+            $rawRows = [];
+        }
+    }
+
+    $rawMaterialsFormatted = array_map(static function (array $row) use ($supplierNameMap) {
+        $supplierId = isset($row['supplier_id']) ? (int) $row['supplier_id'] : null;
+        $quantity = isset($row['quantity_used']) ? (float) $row['quantity_used'] : null;
+        return [
+            'id' => $row['id'] ?? null,
+            'raw_material_id' => isset($row['raw_material_id']) ? (int) $row['raw_material_id'] : null,
+            'name' => $row['material_name'] ?? null,
+            'unit' => $row['unit'] ?? null,
+            'quantity_used' => $quantity,
+            'supplier_id' => $supplierId,
+            'supplier_name' => ($supplierId && isset($supplierNameMap[$supplierId]))
+                ? $supplierNameMap[$supplierId]
+                : ($supplierId ? 'مورد #' . $supplierId : null),
+        ];
+    }, $rawRows);
+
+    $rawMaterialsDisplay = array_map(static function (array $item) use ($formatQuantity) {
+        $details = [];
+        if (isset($item['quantity_used']) && $item['quantity_used'] !== null) {
+            $quantityLabel = $formatQuantity($item['quantity_used']);
+            if ($quantityLabel !== null) {
+                $unit = $item['unit'] ?? '';
+                $details[] = trim($quantityLabel . ($unit ? ' ' . $unit : ''));
+            }
+        }
+        if (!empty($item['supplier_name'])) {
+            $details[] = 'المورد: ' . $item['supplier_name'];
+        }
+        return [
+            'name' => $item['name'] ?? 'مادة خام',
+            'details' => implode(' • ', array_filter($details)),
+        ];
+    }, $rawMaterialsFormatted);
+
+    $workersFormatted = [];
+    if ($batchId > 0 && readerTableExists($db, 'batch_workers')) {
+        $workersHaveStoredNames = readerColumnExists($db, 'batch_workers', 'worker_name');
+        $selectWorkerColumns = ['id', 'employee_id'];
+        if ($workersHaveStoredNames) {
+            $selectWorkerColumns[] = 'worker_name';
+        }
+        try {
+            $workersRows = $db->query(
+                "SELECT " . implode(', ', $selectWorkerColumns) . " FROM batch_workers WHERE batch_id = ?",
+                [$batchId]
+            );
+        } catch (Throwable $workersError) {
+            error_log('Reader workers query error: ' . $workersError->getMessage());
+            $workersRows = [];
+        }
+
+        $workersFormatted = array_map(static function (array $row) use ($workersHaveStoredNames) {
+            $name = '';
+            if ($workersHaveStoredNames && isset($row['worker_name'])) {
+                $name = trim((string) $row['worker_name']);
+            }
+            if ($name === '' && isset($row['employee_id']) && (int) $row['employee_id'] > 0) {
+                $name = 'الموظف #' . (int) $row['employee_id'];
+            }
+            if ($name === '') {
+                $name = 'عامل إنتاج';
+            }
+            return [
+                'assignment_id' => $row['id'] ?? null,
+                'worker_id' => isset($row['employee_id']) ? (int) $row['employee_id'] : null,
+                'full_name' => $name,
+                'role' => 'عامل إنتاج',
+            ];
+        }, $workersRows ?? []);
+    }
 
     $response = [
         'success' => true,
         'batch' => [
             'id' => $batch['id'] ?? null,
             'batch_number' => $batch['batch_number'] ?? $batchNumber,
-            'product_name' => $batch['product_name'] ?? null,
-            'production_date' => $batch['production_date'] ?? null,
-            'quantity' => $batch['quantity'] ?? null,
-            'quantity_produced' => $batch['quantity_produced'] ?? null,
-            'packaging_materials' => $packagingFormatted,
-            'raw_materials' => $rawMaterialsFormatted,
+            'product_name' => $productName,
+            'product_category' => $productCategory,
+            'production_date' => $productionDate,
+            'quantity' => $quantityValue ?? ($batch['quantity'] ?? null),
+            'quantity_produced' => $batch['quantity_produced'] ?? ($quantityValue ?? null),
+            'status' => $statusKey,
+            'status_label' => $statusLabel,
+            'honey_supplier_name' => $honeySupplierName,
+            'packaging_supplier_name' => $packagingSupplierName,
+            'created_by_name' => $createdByName,
+            'notes' => $notes,
+            'materials' => $materialsList,
+            'raw_materials' => $rawMaterialsDisplay,
             'workers' => $workersFormatted,
-            'suppliers' => $suppliersFormatted
+            'suppliers' => $suppliersFormatted,
+            'packaging_materials' => $packagingFormatted,
+            'raw_materials_source' => $rawMaterialsFormatted,
         ]
     ];
 
@@ -552,6 +563,33 @@ if (!function_exists('readerTableExists')) {
         }
 
         return $cache[$table];
+    }
+}
+
+if (!function_exists('readerColumnExists')) {
+    function readerColumnExists($dbInstance, string $table, string $column): bool
+    {
+        static $cache = [];
+        $table = trim($table);
+        $column = trim($column);
+        if ($table === '' || $column === '') {
+            return false;
+        }
+
+        $cacheKey = strtolower($table . ':' . $column);
+        if (array_key_exists($cacheKey, $cache)) {
+            return $cache[$cacheKey];
+        }
+
+        try {
+            $result = $dbInstance->queryOne("SHOW COLUMNS FROM `{$table}` LIKE ?", [$column]);
+            $cache[$cacheKey] = !empty($result);
+        } catch (Throwable $e) {
+            error_log('Reader column exists check error for ' . $table . '.' . $column . ': ' . $e->getMessage());
+            $cache[$cacheKey] = false;
+        }
+
+        return $cache[$cacheKey];
     }
 }
 

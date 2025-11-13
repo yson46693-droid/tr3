@@ -544,6 +544,7 @@ $_SESSION['reader_session_id'] = $_SESSION['reader_session_id'] ?? bin2hex(rando
             <div id="feedbackArea"></div>
             <div class="card" id="batchSummary" hidden></div>
             <div class="card" id="materialsCard" hidden></div>
+            <div class="card" id="suppliersCard" hidden></div>
             <div class="card" id="workersCard" hidden></div>
         </div>
         <div class="history" id="historyLog" hidden></div>
@@ -635,6 +636,7 @@ $_SESSION['reader_session_id'] = $_SESSION['reader_session_id'] ?? bin2hex(rando
         const resultsContainer = document.getElementById('resultsContainer');
         const batchSummary = document.getElementById('batchSummary');
         const materialsCard = document.getElementById('materialsCard');
+        const suppliersCard = document.getElementById('suppliersCard');
         const workersCard = document.getElementById('workersCard');
         const feedbackArea = document.getElementById('feedbackArea');
         const historyLog = document.getElementById('historyLog');
@@ -683,6 +685,43 @@ $_SESSION['reader_session_id'] = $_SESSION['reader_session_id'] ?? bin2hex(rando
 
         const historyEntries = [];
 
+        function formatQuantity(value) {
+            if (value === null || value === undefined) {
+                return null;
+            }
+            const numeric = Number(value);
+            if (!Number.isFinite(numeric)) {
+                return null;
+            }
+            if (Math.abs(numeric - Math.round(numeric)) < 1e-6) {
+                return Math.round(numeric).toString();
+            }
+            return numeric.toFixed(3).replace(/\.?0+$/, '');
+        }
+
+        function formatMaterialEntry(entry, fallbackName) {
+            if (!entry || typeof entry !== 'object') {
+                return { name: fallbackName, details: '' };
+            }
+            const name = entry.name ?? fallbackName;
+            if (entry.details) {
+                return { name, details: entry.details };
+            }
+            const detailsParts = [];
+            const quantityLabel = formatQuantity(entry.quantity_used);
+            if (quantityLabel) {
+                const unitLabel = entry.unit ? ` ${entry.unit}` : '';
+                detailsParts.push(`${quantityLabel}${unitLabel}`.trim());
+            }
+            if (entry.supplier_name) {
+                detailsParts.push(`المورد: ${entry.supplier_name}`);
+            }
+            return {
+                name,
+                details: detailsParts.filter(Boolean).join(' • ')
+            };
+        }
+
         if (advancedModeToggle) {
             advancedMode = localStorage.getItem('reader-advanced-mode') === '1';
             advancedModeToggle.checked = advancedMode;
@@ -705,7 +744,11 @@ $_SESSION['reader_session_id'] = $_SESSION['reader_session_id'] ?? bin2hex(rando
             resultsContainer.hidden = false;
             batchSummary.hidden = true;
             materialsCard.hidden = true;
+            materialsCard.innerHTML = '';
+            suppliersCard.hidden = true;
+            suppliersCard.innerHTML = '';
             workersCard.hidden = true;
+            workersCard.innerHTML = '';
             feedbackArea.innerHTML = `<div class="error-message">${message}</div>`;
         }
 

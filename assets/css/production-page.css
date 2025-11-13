@@ -1171,3 +1171,14 @@ h5 {
     }
 }
 
+.scrollable-modal-body {
+    max-height: calc(100vh - 220px);
+    overflow-y: auto;
+}
+
+@media (max-width: 576px) {
+    .scrollable-modal-body {
+        max-height: calc(100vh - 160px);
+    }
+}
+

@@ -1715,6 +1715,96 @@ function batchCreationCreate(int $templateId, int $units, array $rawUsage = [], 
             $units,
         ]);
 
+        if ($productId > 0) {
+            try {
+                $productQuery = $pdo->prepare(
+                    "SELECT quantity, warehouse_id, product_type FROM products WHERE id = ? LIMIT 1"
+                );
+                $productQuery->execute([$productId]);
+                $productRow = $productQuery->fetch(PDO::FETCH_ASSOC);
+
+                if ($productRow) {
+                    $quantityBefore = (float)($productRow['quantity'] ?? 0);
+                    $quantityAfter = $quantityBefore + (float)$units;
+                    $assignedWarehouseId = isset($productRow['warehouse_id']) ? (int)$productRow['warehouse_id'] : 0;
+
+                    if ($assignedWarehouseId <= 0 && batchCreationTableExists($pdo, 'warehouses')) {
+                        $primaryWarehouseStmt = $pdo->query("
+                            SELECT id
+                            FROM warehouses
+                            WHERE warehouse_type = 'main'
+                            ORDER BY status = 'active' DESC, id ASC
+                            LIMIT 1
+                        ");
+                        $primaryWarehouseRow = $primaryWarehouseStmt ? $primaryWarehouseStmt->fetch(PDO::FETCH_ASSOC) : null;
+                        if (!empty($primaryWarehouseRow['id'])) {
+                            $assignedWarehouseId = (int)$primaryWarehouseRow['id'];
+                        } else {
+                            $createWarehouseStmt = $pdo->prepare("
+                                INSERT INTO warehouses (name, location, description, warehouse_type, status)
+                                VALUES (?, ?, ?, 'main', 'active')
+                            ");
+                            $createWarehouseStmt->execute([
+                                'المخزن الرئيسي',
+                                'الموقع الرئيسي للشركة',
+                                'تم إنشاؤه تلقائياً أثناء حفظ إنتاج جديد'
+                            ]);
+                            $assignedWarehouseId = (int)$pdo->lastInsertId();
+                        }
+                    }
+
+                    $updateSql = "UPDATE products SET quantity = ?, updated_at = NOW()";
+                    $updateParams = [$quantityAfter];
+                    if ($assignedWarehouseId > 0) {
+                        $updateSql .= ", warehouse_id = ?";
+                        $updateParams[] = $assignedWarehouseId;
+                    }
+                    $updateSql .= " WHERE id = ?";
+                    $updateParams[] = $productId;
+
+                    $updateProductStmt = $pdo->prepare($updateSql);
+                    $updateProductStmt->execute($updateParams);
+
+                    if (batchCreationTableExists($pdo, 'inventory_movements')) {
+                        if (!function_exists('getCurrentUser')) {
+                            $authFile = __DIR__ . '/auth.php';
+                            if (file_exists($authFile)) {
+                                require_once $authFile;
+                            }
+                        }
+
+                        $movementCreatedBy = null;
+                        if (function_exists('getCurrentUser')) {
+                            $currentUser = getCurrentUser();
+                            if (!empty($currentUser['id'])) {
+                                $movementCreatedBy = (int)$currentUser['id'];
+                            }
+                        }
+
+                        if ($movementCreatedBy) {
+                            $movementStmt = $pdo->prepare("
+                                INSERT INTO inventory_movements
+                                    (product_id, warehouse_id, type, quantity, quantity_before, quantity_after, reference_type, reference_id, notes, created_by)
+                                VALUES (?, ?, 'in', ?, ?, ?, 'production', ?, ?, ?)
+                            ");
+                            $movementStmt->execute([
+                                $productId,
+                                $assignedWarehouseId > 0 ? $assignedWarehouseId : null,
+                                (float)$units,
+                                $quantityBefore,
+                                $quantityAfter,
+                                $batchId,
+                                'إضافة تلقائية من عملية الإنتاج',
+                                $movementCreatedBy
+                            ]);
+                        }
+                    }
+                }
+            } catch (Throwable $inventorySyncError) {
+                error_log('batchCreationCreate inventory sync error: ' . $inventorySyncError->getMessage());
+            }
+        }
+
         $pdo->commit();
 
         return [

@@ -1358,7 +1358,7 @@ $specificationsCount = is_countable($productSpecifications) ? count($productSpec
             <form method="POST" id="mainWarehouseTransferForm">
                 <input type="hidden" name="action" value="create_transfer">
                 <input type="hidden" name="from_warehouse_id" value="<?php echo intval($primaryWarehouse['id']); ?>">
-                <div class="modal-body">
+                <div class="modal-body scrollable-modal-body">
                     <?php if (!$canCreateTransfers): ?>
                         <div class="alert alert-warning d-flex align-items-center gap-2 mb-0">
                             <i class="bi bi-exclamation-triangle-fill fs-5"></i>
@@ -1771,8 +1771,16 @@ document.addEventListener('DOMContentLoaded', function () {
         }
 
         const modalBody = modalElement.querySelector('.modal-body');
-        if (modalBody && !modalBody.querySelector('#batchDetailsContent')) {
-            modalBody.innerHTML = getBatchDetailsModalBodyTemplate();
+        if (modalBody) {
+            if (!modalBody.classList.contains('scrollable-modal-body')) {
+                modalBody.classList.add('scrollable-modal-body');
+            }
+            const hasLoader = modalBody.querySelector('#batchDetailsLoading');
+            const hasError = modalBody.querySelector('#batchDetailsError');
+            const hasContent = modalBody.querySelector('#batchDetailsContent');
+            if (!hasLoader || !hasError || !hasContent) {
+                modalBody.innerHTML = getBatchDetailsModalBodyTemplate();
+            }
         }
 
         if (!modalElement.dataset.batchDetailsInit) {
@@ -1780,11 +1788,19 @@ document.addEventListener('DOMContentLoaded', function () {
             modalElement.dataset.batchDetailsInit = 'true';
         }
 
+        const loader = modalElement.querySelector('#batchDetailsLoading');
+        const errorAlert = modalElement.querySelector('#batchDetailsError');
+        const contentWrapper = modalElement.querySelector('#batchDetailsContent');
+
+        if (!loader || !errorAlert || !contentWrapper) {
+            return null;
+        }
+
         return {
             modalElement,
-            loader: modalElement.querySelector('#batchDetailsLoading'),
-            errorAlert: modalElement.querySelector('#batchDetailsError'),
-            contentWrapper: modalElement.querySelector('#batchDetailsContent')
+            loader,
+            errorAlert,
+            contentWrapper
         };
     }
 
