@@ -77,7 +77,7 @@ try {
             `handed_over_at` timestamp NULL DEFAULT NULL,
             `delivered_at` timestamp NULL DEFAULT NULL,
             `notes` text DEFAULT NULL,
-            `created_by` int(11) NOT NULL,
+            `created_by` int(11) DEFAULT NULL,
             `updated_by` int(11) DEFAULT NULL,
             `created_at` timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP,
             `updated_at` timestamp NULL DEFAULT NULL ON UPDATE CURRENT_TIMESTAMP,
@@ -445,10 +445,14 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         }
 
         try {
-            $db->execute(
+            $updateResult = $db->execute(
                 "UPDATE shipping_company_orders SET status = ?, updated_by = ?, updated_at = NOW() WHERE id = ? AND status = 'assigned'",
                 [$newStatus, $currentUser['id'] ?? null, $orderId]
             );
+
+            if (($updateResult['affected_rows'] ?? 0) < 1) {
+                throw new RuntimeException('لا يمكن تحديث حالة هذا الطلب في الوقت الحالي.');
+            }
 
             logAudit(
                 $currentUser['id'] ?? null,
