@@ -2223,18 +2223,28 @@ if (!empty($unifiedTemplatesCheck)) {
         }
     }
     
-    $unifiedTemplates = $db->query(
-        "SELECT upt.*, 
-                'unified' as template_type,
-                u.full_name AS creator_name,
-                ms.name AS main_supplier_name,
-                ms.phone AS main_supplier_phone
-         FROM unified_product_templates upt
-         LEFT JOIN users u ON upt.created_by = u.id
-         LEFT JOIN suppliers ms ON upt.main_supplier_id = ms.id
-         WHERE upt.status = 'active'
-         ORDER BY upt.created_at DESC"
-    );
+    $unifiedHasMainSupplierColumn = productionColumnExists('unified_product_templates', 'main_supplier_id');
+    $unifiedSql = "
+        SELECT upt.*, 
+               'unified' AS template_type,
+               u.full_name AS creator_name";
+    if ($unifiedHasMainSupplierColumn) {
+        $unifiedSql .= ",
+               ms.name AS main_supplier_name,
+               ms.phone AS main_supplier_phone";
+    }
+    $unifiedSql .= "
+        FROM unified_product_templates upt
+        LEFT JOIN users u ON upt.created_by = u.id";
+    if ($unifiedHasMainSupplierColumn) {
+        $unifiedSql .= "
+        LEFT JOIN suppliers ms ON upt.main_supplier_id = ms.id";
+    }
+    $unifiedSql .= "
+        WHERE upt.status = 'active'
+        ORDER BY upt.created_at DESC";
+
+    $unifiedTemplates = $db->query($unifiedSql);
     
     $templatePackagingCheck = $db->queryOne("SHOW TABLES LIKE 'template_packaging'");
 
@@ -2390,18 +2400,28 @@ if (!empty($unifiedTemplatesCheck)) {
 // 1. قوالب العسل (القوالب التقليدية)
 $honeyTemplatesCheck = $db->queryOne("SHOW TABLES LIKE 'product_templates'");
 if (!empty($honeyTemplatesCheck)) {
-    $honeyTemplates = $db->query(
-        "SELECT pt.*, 
-                'honey' as template_type,
-                u.full_name AS creator_name,
-                ms.name AS main_supplier_name,
-                ms.phone AS main_supplier_phone
-         FROM product_templates pt
-         LEFT JOIN users u ON pt.created_by = u.id
-         LEFT JOIN suppliers ms ON pt.main_supplier_id = ms.id
-         WHERE pt.status = 'active'
-         ORDER BY pt.created_at DESC"
-    );
+    $productTemplatesHasMainSupplier = productionColumnExists('product_templates', 'main_supplier_id');
+    $honeySql = "
+        SELECT pt.*, 
+               'honey' AS template_type,
+               u.full_name AS creator_name";
+    if ($productTemplatesHasMainSupplier) {
+        $honeySql .= ",
+               ms.name AS main_supplier_name,
+               ms.phone AS main_supplier_phone";
+    }
+    $honeySql .= "
+        FROM product_templates pt
+        LEFT JOIN users u ON pt.created_by = u.id";
+    if ($productTemplatesHasMainSupplier) {
+        $honeySql .= "
+        LEFT JOIN suppliers ms ON pt.main_supplier_id = ms.id";
+    }
+    $honeySql .= "
+        WHERE pt.status = 'active'
+        ORDER BY pt.created_at DESC";
+
+    $honeyTemplates = $db->query($honeySql);
     foreach ($honeyTemplates as &$template) {
         $honeyQuantity = isset($template['honey_quantity']) ? (float)$template['honey_quantity'] : 0.0;
         $materialDetails = [
