@@ -4007,7 +4007,7 @@ $nutsSuppliers = $db->query("SELECT id, name, phone FROM suppliers WHERE status 
                 <input type="hidden" name="stock_id" id="damage_nuts_stock_id">
                 <input type="hidden" name="damage_unit" value="كجم">
                 <input type="hidden" name="submit_token" value="<?php echo uniqid('tok_', true); ?>">
-                <div class="modal-body">
+                <div class="modal-body scrollable-modal-body">
                     <div class="mb-3">
                         <label class="form-label">المورد</label>
                         <input type="text" class="form-control" id="damage_nuts_supplier" readonly>
@@ -4152,7 +4152,7 @@ $nutsSuppliers = $db->query("SELECT id, name, phone FROM suppliers WHERE status 
                 <form method="POST">
                     <input type="hidden" name="action" value="add_single_nuts">
                     <input type="hidden" name="submit_token" value="">
-                    <div class="modal-body">
+                    <div class="modal-body scrollable-modal-body">
                         <div class="mb-3">
                             <label class="form-label">المورد <span class="text-danger">*</span></label>
                             <select name="supplier_id" class="form-select" required>
@@ -4211,7 +4211,7 @@ $nutsSuppliers = $db->query("SELECT id, name, phone FROM suppliers WHERE status 
                 <form method="POST" id="mixedNutsForm">
                     <input type="hidden" name="action" value="create_mixed_nuts">
                     <input type="hidden" name="submit_token" value="">
-                    <div class="modal-body">
+                    <div class="modal-body scrollable-modal-body">
                         <div class="mb-3">
                             <label class="form-label">اسم الخلطة <span class="text-danger">*</span></label>
                             <input type="text" name="batch_name" class="form-control" required 
@@ -4377,7 +4377,7 @@ $nutsSuppliers = $db->query("SELECT id, name, phone FROM suppliers WHERE status 
                 <input type="hidden" name="action" value="create_unified_template">
                 <input type="hidden" name="submit_token" value="">
                 
-                <div class="modal-body" style="max-height: 70vh; overflow-y: auto;">
+                <div class="modal-body scrollable-modal-body">
                     <!-- اسم المنتج -->
                     <div class="mb-4">
                         <label class="form-label fw-bold">اسم المنتج <span class="text-danger">*</span></label>
