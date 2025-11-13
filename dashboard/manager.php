@@ -35,6 +35,9 @@ if ($page === 'packaging_warehouse' && isset($_GET['ajax']) && isset($_GET['mate
 
 $pageStylesheets = isset($pageStylesheets) && is_array($pageStylesheets) ? $pageStylesheets : [];
 $extraScripts = isset($extraScripts) && is_array($extraScripts) ? $extraScripts : [];
+if ($page === 'final_products' && !in_array('assets/css/production-page.css', $pageStylesheets, true)) {
+    $pageStylesheets[] = 'assets/css/production-page.css';
+}
 require_once __DIR__ . '/../includes/lang/' . getCurrentLanguage() . '.php';
 $lang = $translations;
 $pageTitle = isset($lang['manager_dashboard']) ? $lang['manager_dashboard'] : 'لوحة المدير';
@@ -679,37 +682,41 @@ $pageTitle = isset($lang['manager_dashboard']) ? $lang['manager_dashboard'] : '�
                 <div class="page-header mb-4 d-flex flex-wrap justify-content-between align-items-center">
                     <h2 class="mb-2 mb-md-0"><i class="bi bi-boxes me-2"></i>مخازن المنتجات</h2>
                 </div>
-                <ul class="nav nav-pills gap-2">
+                <ul class="nav nav-pills gap-2 production-tab-toggle">
                     <li class="nav-item">
-                        <a class="nav-link <?php echo $section === 'company' ? 'active' : ''; ?>" href="manager.php?page=final_products&section=company">
+                        <a class="nav-link production-tab-btn <?php echo $section === 'company' ? 'active' : ''; ?>" href="manager.php?page=final_products&section=company">
                             <i class="bi bi-building me-2"></i>مخزن منتجات الشركة
                         </a>
                     </li>
                     <li class="nav-item">
-                        <a class="nav-link <?php echo $section === 'delegates' ? 'active' : ''; ?>" href="manager.php?page=final_products&section=delegates">
+                        <a class="nav-link production-tab-btn <?php echo $section === 'delegates' ? 'active' : ''; ?>" href="manager.php?page=final_products&section=delegates">
                             <i class="bi bi-truck me-2"></i>مخازن المناديب
                         </a>
                     </li>
                 </ul>
-                <div class="mt-4">
-                    <?php 
-                    if ($section === 'delegates') {
+                <div class="mt-4 <?php echo $section === 'company' ? 'production-page manager-final-products-page' : ''; ?>">
+                    <?php if ($section === 'delegates'): ?>
+                        <?php 
                         $delegatesModule = __DIR__ . '/../modules/sales/vehicle_inventory.php';
                         if (file_exists($delegatesModule)) {
                             include $delegatesModule;
                         } else {
                             echo '<div class="alert alert-warning">صفحة مخازن المناديب غير متاحة حالياً</div>';
                         }
-                    } else {
-                        $_GET['section'] = 'company';
-                        $modulePath = __DIR__ . '/../modules/production/final_products.php';
-                        if (file_exists($modulePath)) {
-                            include $modulePath;
-                        } else {
-                            echo '<div class="alert alert-warning">صفحة مخزن المنتجات غير متاحة حالياً</div>';
-                        }
-                    }
-                    ?>
+                        ?>
+                    <?php else: ?>
+                        <div class="production-section">
+                            <?php 
+                            $_GET['section'] = 'company';
+                            $modulePath = __DIR__ . '/../modules/production/final_products.php';
+                            if (file_exists($modulePath)) {
+                                include $modulePath;
+                            } else {
+                                echo '<div class="alert alert-warning">صفحة مخزن المنتجات غير متاحة حالياً</div>';
+                            }
+                            ?>
+                        </div>
+                    <?php endif; ?>
                 </div>
                 
             <?php elseif ($page === 'product_specifications'): ?>
