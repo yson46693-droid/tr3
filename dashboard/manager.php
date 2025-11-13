@@ -656,9 +656,9 @@ $pageTitle = isset($lang['manager_dashboard']) ? $lang['manager_dashboard'] : '�
                 ?>
                 
             <?php elseif ($page === 'pos'): ?>
-                <!-- صفحة نقطة البيع المحلية -->
+                <!-- صفحة نقطة البيع المحلية وشركات الشحن -->
                 <?php 
-                $modulePath = __DIR__ . '/../modules/accountant/pos.php';
+                $modulePath = __DIR__ . '/../modules/manager/pos.php';
                 if (file_exists($modulePath)) {
                     include $modulePath;
                 }
