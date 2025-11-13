@@ -1636,6 +1636,48 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 }
             }
         }
+
+        elseif ($action === 'add_remaining_filtered_honey') {
+            $stockId = intval($_POST['stock_id'] ?? 0);
+            $additionalQuantity = floatval($_POST['additional_filtered_quantity'] ?? 0);
+
+            if ($stockId <= 0) {
+                $error = 'معرف السجل غير صحيح';
+            } elseif ($additionalQuantity <= 0) {
+                $error = 'يجب إدخال كمية صحيحة أكبر من الصفر';
+            } else {
+                $stock = $db->queryOne("SELECT * FROM honey_stock WHERE id = ?", [$stockId]);
+
+                if (!$stock) {
+                    $error = 'لا يوجد سجل مخزون';
+                } else {
+                    $db->execute(
+                        "UPDATE honey_stock SET filtered_honey_quantity = filtered_honey_quantity + ?, updated_at = NOW() WHERE id = ?",
+                        [$additionalQuantity, $stockId]
+                    );
+
+                    logAudit(
+                        $currentUser['id'],
+                        'add_remaining_filtered_honey',
+                        'honey_stock',
+                        $stockId,
+                        null,
+                        [
+                            'supplier_id' => $stock['supplier_id'],
+                            'honey_variety' => $stock['honey_variety'],
+                            'additional_filtered' => $additionalQuantity,
+                        ]
+                    );
+
+                    preventDuplicateSubmission(
+                        'تم إضافة الكمية المصفاة بنجاح',
+                        ['page' => 'raw_materials_warehouse', 'section' => 'honey'],
+                        null,
+                        $dashboardSlug
+                    );
+                }
+            }
+        }
         
         elseif ($action === 'record_damage') {
             $materialCategory = $_POST['material_category'] ?? '';
@@ -3137,6 +3179,11 @@ if ($section === 'honey') {
                                                                 <?php echo $item['raw_quantity'] <= 0 ? 'disabled' : ''; ?>>
                                                             <i class="bi bi-funnel"></i> تصفية
                                                         </button>
+                                                        <button class="btn btn-success btn-sm mb-1"
+                                                                onclick="openAddRemainingFilteredModal(<?php echo $item['id']; ?>, '<?php echo $supplierDisplayEscaped; ?>', '<?php echo $varietyDisplayEscaped; ?>', <?php echo $item['filtered_quantity']; ?>)"
+                                                        >
+                                                            <i class="bi bi-plus-circle"></i> إضافة باقي التصفية
+                                                        </button>
                                                         <button class="btn btn-danger btn-sm"
                                                                 onclick="openHoneyDamageModal(<?php echo $item['id']; ?>, '<?php echo $supplierDisplayEscaped; ?>', '<?php echo $varietyDisplayEscaped; ?>', <?php echo $item['raw_quantity']; ?>, <?php echo $item['filtered_quantity']; ?>)"
                                                                 <?php echo ($item['raw_quantity'] <= 0 && $item['filtered_quantity'] <= 0) ? 'disabled' : ''; ?>>
@@ -3258,6 +3305,52 @@ if ($section === 'honey') {
         </div>
     </div>
     
+<!-- Modal إضافة باقي التصفية -->
+<div class="modal fade" id="addRemainingFilteredModal" tabindex="-1">
+    <div class="modal-dialog modal-dialog-scrollable">
+        <div class="modal-content">
+            <div class="modal-header bg-success text-white">
+                <h5 class="modal-title"><i class="bi bi-plus-circle me-2"></i>إضافة باقي التصفية</h5>
+                <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+            </div>
+            <form method="POST">
+                <input type="hidden" name="action" value="add_remaining_filtered_honey">
+                <input type="hidden" name="submit_token" value="<?php echo uniqid('tok_', true); ?>">
+                <input type="hidden" name="stock_id" id="add_remaining_stock_id">
+                <div class="modal-body scrollable-modal-body">
+                    <div class="mb-3">
+                        <label class="form-label">المورد</label>
+                        <input type="text" class="form-control" id="add_remaining_supplier_name" readonly>
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label">نوع العسل</label>
+                        <input type="text" class="form-control" id="add_remaining_variety" readonly>
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label">الكمية الحالية من العسل المصفى</label>
+                        <div class="form-control bg-light">
+                            <span id="add_remaining_current_filtered">0.00</span> كجم
+                        </div>
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label">الكمية المضافة (كجم) <span class="text-danger">*</span></label>
+                        <input type="number" class="form-control" name="additional_filtered_quantity" id="add_remaining_quantity" step="0.01" min="0.01" required>
+                        <small class="text-muted d-block mt-1">سيتم إضافة هذه الكمية إلى العسل المصفى للمورد المحدد فقط.</small>
+                    </div>
+                    <div class="alert alert-info mb-0">
+                        <i class="bi bi-info-circle me-2"></i>
+                        لا يتم تسجيل هذه العملية ضمن سجل التوريدات.
+                    </div>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">إلغاء</button>
+                    <button type="submit" class="btn btn-success">إضافة الكمية</button>
+                </div>
+            </form>
+        </div>
+    </div>
+</div>
+
 <!-- Modal تسجيل تالف للعسل -->
 <div class="modal fade" id="damageHoneyModal" tabindex="-1">
     <div class="modal-dialog modal-dialog-scrollable">
@@ -3319,6 +3412,15 @@ if ($section === 'honey') {
         document.getElementById('filter_variety').value = variety;
         document.getElementById('filter_available').value = parseFloat(available).toFixed(2) + ' كجم';
         new bootstrap.Modal(document.getElementById('filterHoneyModal')).show();
+    }
+
+    function openAddRemainingFilteredModal(id, supplier, variety, filteredQty) {
+        document.getElementById('add_remaining_stock_id').value = id;
+        document.getElementById('add_remaining_supplier_name').value = supplier;
+        document.getElementById('add_remaining_variety').value = variety;
+        document.getElementById('add_remaining_current_filtered').textContent = (parseFloat(filteredQty) || 0).toFixed(2);
+        document.getElementById('add_remaining_quantity').value = '';
+        new bootstrap.Modal(document.getElementById('addRemainingFilteredModal')).show();
     }
 
     function openHoneyDamageModal(id, supplier, variety, rawQty, filteredQty) {

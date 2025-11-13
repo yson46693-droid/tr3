@@ -70,6 +70,7 @@ switch ($type) {
         break;
     case 'export':
     case 'consumption':
+    case 'production':
         $usesSettingsTable = false;
         break;
     default:
@@ -140,7 +141,7 @@ if ($usesSettingsTable) {
         renderReportError(403, 'مسار الملف غير آمن.');
     }
 
-    $allowedPrefixes = ['exports/', 'consumption/'];
+    $allowedPrefixes = ['exports/', 'consumption/', 'production/'];
     $isAllowed = false;
     foreach ($allowedPrefixes as $prefix) {
         if (str_starts_with($relativePath, $prefix)) {

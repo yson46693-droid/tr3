@@ -11,6 +11,7 @@ require_once __DIR__ . '/../includes/audit_log.php';
 require_once __DIR__ . '/../includes/notifications.php';
 require_once __DIR__ . '/../includes/approval_system.php';
 require_once __DIR__ . '/../includes/table_styles.php';
+require_once __DIR__ . '/../includes/production_reports.php';
 
 requireRole('accountant');
 
@@ -37,7 +38,20 @@ if ($page === 'financial') {
     }
 }
 
-if (in_array($page, ['pos', 'reports'], true)) {
+$reportsSuccess = '';
+$reportsError = '';
+if ($page === 'reports') {
+    if (isset($_SESSION['reports_success'])) {
+        $reportsSuccess = $_SESSION['reports_success'];
+        unset($_SESSION['reports_success']);
+    }
+    if (isset($_SESSION['reports_error'])) {
+        $reportsError = $_SESSION['reports_error'];
+        unset($_SESSION['reports_error']);
+    }
+}
+
+if ($page === 'pos') {
     $page = 'dashboard';
 }
 
@@ -125,6 +139,40 @@ if ($page === 'financial' && $_SERVER['REQUEST_METHOD'] === 'POST') {
         } else {
             echo '<script>window.location.href = ' . json_encode($redirectTarget) . ';</script>';
         }
+        exit;
+    }
+}
+
+if ($page === 'reports' && $_SERVER['REQUEST_METHOD'] === 'POST') {
+    $token = $_POST['csrf_token'] ?? '';
+    if (!verifyCSRFToken($token)) {
+        $_SESSION['reports_error'] = 'رمز الحماية غير صالح. يرجى إعادة المحاولة.';
+        header('Location: accountant.php?page=reports');
+        exit;
+    }
+
+    $action = $_POST['action'] ?? '';
+    if ($action === 'send_monthly_production_report') {
+        $reportMonth = isset($_POST['report_month']) ? max(1, min(12, (int) $_POST['report_month'])) : (int) date('n');
+        $reportYear = isset($_POST['report_year']) ? max(2000, (int) $_POST['report_year']) : (int) date('Y');
+
+        $result = sendMonthlyProductionDetailedReportToTelegram(
+            $reportMonth,
+            $reportYear,
+            [
+                'force' => true,
+                'triggered_by' => $currentUser['id'] ?? null,
+                'date_to' => date('Y-m-d'),
+            ]
+        );
+
+        if (!empty($result['success'])) {
+            $_SESSION['reports_success'] = $result['message'] ?? 'تم إرسال التقرير الشهري التفصيلي إلى Telegram.';
+        } else {
+            $_SESSION['reports_error'] = $result['message'] ?? 'تعذر إرسال التقرير الشهري التفصيلي.';
+        }
+
+        header('Location: accountant.php?page=reports');
         exit;
     }
 }
@@ -473,6 +521,45 @@ $pageTitle = isset($lang['accountant_dashboard']) ? $lang['accountant_dashboard'
                 }
                 ?>
                 
+            <?php elseif ($page === 'reports'): ?>
+                <?php $reportsCsrfToken = generateCSRFToken(); ?>
+                <div class="page-header mb-4">
+                    <h2><i class="bi bi-bar-chart-fill me-2"></i>تقارير الإنتاج</h2>
+                    <p class="text-muted mb-0">الوصول السريع للتقرير الشهري التفصيلي لخط الإنتاج وإرساله عبر Telegram.</p>
+                </div>
+
+                <?php if ($reportsError): ?>
+                    <div class="alert alert-danger alert-dismissible fade show" role="alert">
+                        <i class="bi bi-exclamation-triangle-fill me-2"></i><?php echo htmlspecialchars($reportsError, ENT_QUOTES, 'UTF-8'); ?>
+                        <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
+                    </div>
+                <?php endif; ?>
+
+                <?php if ($reportsSuccess): ?>
+                    <div class="alert alert-success alert-dismissible fade show" role="alert">
+                        <i class="bi bi-check-circle-fill me-2"></i><?php echo htmlspecialchars($reportsSuccess, ENT_QUOTES, 'UTF-8'); ?>
+                        <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
+                    </div>
+                <?php endif; ?>
+
+                <div class="card shadow-sm">
+                    <div class="card-body d-flex flex-column flex-lg-row align-items-lg-center justify-content-between gap-3">
+                        <div>
+                            <h5 class="mb-1"><i class="bi bi-clipboard-pulse me-2 text-primary"></i>التقرير الشهري المفصل لخط الإنتاج</h5>
+                            <p class="text-muted mb-0">يتضمن ملخص استهلاك المواد الخام وأدوات التعبئة بالإضافة إلى سجل التوريدات ويرسل مباشرة إلى قناة الإدارة على Telegram.</p>
+                        </div>
+                        <form method="post" class="d-flex flex-column flex-sm-row gap-2">
+                            <input type="hidden" name="csrf_token" value="<?php echo htmlspecialchars($reportsCsrfToken); ?>">
+                            <input type="hidden" name="action" value="send_monthly_production_report">
+                            <input type="hidden" name="report_month" value="<?php echo (int) date('n'); ?>">
+                            <input type="hidden" name="report_year" value="<?php echo (int) date('Y'); ?>">
+                            <button class="btn btn-primary">
+                                <i class="bi bi-send-fill me-1"></i>إرسال التقرير الشهري المفصل
+                            </button>
+                        </form>
+                    </div>
+                </div>
+
             <?php elseif ($page === 'financial'): ?>
                 <!-- صفحة الخزنة -->
                 <div class="page-header mb-4">

@@ -19,6 +19,7 @@ require_once __DIR__ . '/../includes/path_helper.php';
 require_once __DIR__ . '/../includes/notifications.php';
 require_once __DIR__ . '/../includes/packaging_alerts.php';
 require_once __DIR__ . '/../includes/payment_schedules.php';
+require_once __DIR__ . '/../includes/production_reports.php';
 
 // تحديد اللغة الحالية
 $currentLang = getCurrentLanguage();
@@ -51,6 +52,14 @@ if ($currentUser && $currentUserRole === 'sales') {
         notifyTodayPaymentSchedules((int) $currentUser['id']);
     } catch (Throwable $paymentNotificationError) {
         error_log('Sales payment notification error: ' . $paymentNotificationError->getMessage());
+    }
+}
+
+if ($currentUser) {
+    try {
+        maybeSendMonthlyProductionDetailedReport((int) date('n'), (int) date('Y'));
+    } catch (Throwable $productionReportAutoError) {
+        error_log('Automatic monthly production detailed report dispatch failed: ' . $productionReportAutoError->getMessage());
     }
 }
 ?>

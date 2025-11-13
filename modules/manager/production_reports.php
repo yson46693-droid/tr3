@@ -8,6 +8,7 @@ require_once __DIR__ . '/../../includes/db.php';
 require_once __DIR__ . '/../../includes/auth.php';
 require_once __DIR__ . '/../../includes/path_helper.php';
 require_once __DIR__ . '/../../includes/consumption_reports.php';
+require_once __DIR__ . '/../../includes/production_reports.php';
 require_once __DIR__ . '/../../includes/table_styles.php';
 require_once __DIR__ . '/../../includes/audit_log.php';
 
@@ -385,6 +386,30 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             }
             break;
 
+            case 'send_monthly_detailed_report': {
+                $reportMonth = isset($_POST['report_month']) ? max(1, min(12, (int) $_POST['report_month'])) : (int) date('n');
+                $reportYear = isset($_POST['report_year']) ? max(2000, (int) $_POST['report_year']) : (int) date('Y');
+
+                $result = sendMonthlyProductionDetailedReportToTelegram(
+                    $reportMonth,
+                    $reportYear,
+                    [
+                        'force' => true,
+                        'triggered_by' => $currentUser['id'] ?? null,
+                        'date_to' => date('Y-m-d'),
+                    ]
+                );
+
+                if (!empty($result['success'])) {
+                    $_SESSION['success_message'] = $result['message'] ?? 'تم إرسال التقرير الشهري التفصيلي إلى Telegram.';
+                } else {
+                    $_SESSION['error_message'] = $result['message'] ?? 'تعذر إرسال التقرير الشهري التفصيلي.';
+                }
+
+                preventDuplicateSubmission(null, $redirectParams, null, 'manager');
+            }
+            break;
+
             case 'send_report':
             default: {
                 $scope = $_POST['report_scope'] ?? 'day';
@@ -651,34 +676,46 @@ $csrfToken = generateCSRFToken();
 
 ?>
 
-<div class="d-flex justify-content-between align-items-center mb-4" id="productionReportsSection">
+<div class="d-flex flex-column flex-md-row justify-content-between align-items-md-center gap-3 mb-4" id="productionReportsSection">
     <div>
         <h2 class="mb-1"><i class="bi bi-graph-up-arrow me-2"></i>تقارير الإنتاج</h2>
         <p class="text-muted mb-0">متابعة استهلاك أدوات التعبئة والمواد الخام</p>
     </div>
-    <form method="post" class="row g-2 align-items-end">
-        <input type="hidden" name="csrf_token" value="<?php echo htmlspecialchars($csrfToken); ?>">
-        <input type="hidden" name="action" value="send_report">
-        <input type="hidden" name="section" value="production_reports">
-        <div class="col-sm-5 col-lg-4">
-            <label class="form-label">نوع التقرير</label>
-            <select class="form-select" name="report_scope" id="reportScopeSelect">
-                <option value="day">تقرير عن يوم محدد</option>
-                <option value="current_month" selected>تقرير الشهر الحالي</option>
-                <option value="previous_month">تقرير الشهر السابق</option>
-            </select>
-        </div>
-        <div class="col-sm-4 col-lg-3 d-none" id="reportScopeDateField">
-            <label class="form-label">اختر اليوم</label>
-            <input type="date" class="form-control" name="report_date" value="<?php echo htmlspecialchars($today); ?>">
-        </div>
-        <div class="col-sm-3 col-lg-2">
-            <label class="form-label">&nbsp;</label>
-            <button class="btn btn-primary w-100 btn-sm btn-md" style="min-width: 180px; padding-top: 0.5rem; padding-bottom: 0.5rem;">
-                <i class="bi bi-send-check me-1"></i>إرسال التقرير
+    <div class="d-flex flex-column flex-md-row align-items-md-end gap-2">
+        <form method="post" class="row g-2 align-items-end">
+            <input type="hidden" name="csrf_token" value="<?php echo htmlspecialchars($csrfToken); ?>">
+            <input type="hidden" name="action" value="send_report">
+            <input type="hidden" name="section" value="production_reports">
+            <div class="col-sm-5 col-lg-4">
+                <label class="form-label">نوع التقرير</label>
+                <select class="form-select" name="report_scope" id="reportScopeSelect">
+                    <option value="day">تقرير عن يوم محدد</option>
+                    <option value="current_month" selected>تقرير الشهر الحالي</option>
+                    <option value="previous_month">تقرير الشهر السابق</option>
+                </select>
+            </div>
+            <div class="col-sm-4 col-lg-3 d-none" id="reportScopeDateField">
+                <label class="form-label">اختر اليوم</label>
+                <input type="date" class="form-control" name="report_date" value="<?php echo htmlspecialchars($today); ?>">
+            </div>
+            <div class="col-sm-3 col-lg-2">
+                <label class="form-label">&nbsp;</label>
+                <button class="btn btn-primary w-100 btn-sm btn-md" style="min-width: 180px; padding-top: 0.5rem; padding-bottom: 0.5rem;">
+                    <i class="bi bi-send-check me-1"></i>إرسال التقرير
+                </button>
+            </div>
+        </form>
+        <form method="post" class="d-flex">
+            <input type="hidden" name="csrf_token" value="<?php echo htmlspecialchars($csrfToken); ?>">
+            <input type="hidden" name="action" value="send_monthly_detailed_report">
+            <input type="hidden" name="section" value="production_reports">
+            <input type="hidden" name="report_month" value="<?php echo (int) date('n'); ?>">
+            <input type="hidden" name="report_year" value="<?php echo (int) date('Y'); ?>">
+            <button class="btn btn-outline-secondary btn-sm btn-md w-100" style="min-width: 220px; padding-top: 0.5rem; padding-bottom: 0.5rem;">
+                <i class="bi bi-clipboard-pulse me-1"></i>التقرير الشهري المفصل لخط الإنتاج
             </button>
-        </div>
-    </form>
+        </form>
+    </div>
 </div>
 
 <?php if ($errorMessage): ?>
