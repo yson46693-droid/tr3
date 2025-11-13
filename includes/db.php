@@ -41,6 +41,8 @@ class Database {
             } catch (Throwable $migrationError) {
                 error_log('Profile photo column migration error: ' . $migrationError->getMessage());
             }
+
+            $this->ensureVehicleInventoryAutoUpgrade();
             
         } catch (Exception $e) {
             die("Database connection error: " . $e->getMessage());
@@ -200,6 +202,149 @@ class Database {
     public function close() {
         if ($this->connection) {
             $this->connection->close();
+        }
+    }
+
+    /**
+     * تشغيل ترقية مخزن سيارات المندوبين تلقائياً مرة واحدة
+     */
+    private function ensureVehicleInventoryAutoUpgrade(): void
+    {
+        static $upgradeEnsured = false;
+
+        if ($upgradeEnsured) {
+            return;
+        }
+
+        $upgradeEnsured = true;
+
+        try {
+            $flagFile = dirname(__DIR__) . '/runtime/vehicle_inventory_upgrade.flag';
+
+            if (file_exists($flagFile)) {
+                return;
+            }
+
+            $tableExists = $this->connection->query("SHOW TABLES LIKE 'vehicle_inventory'");
+            if (!$tableExists instanceof mysqli_result || $tableExists->num_rows === 0) {
+                return;
+            }
+            $tableExists->free();
+
+            $columnsResult = $this->connection->query("SHOW COLUMNS FROM vehicle_inventory");
+            $existingColumns = [];
+            if ($columnsResult instanceof mysqli_result) {
+                while ($column = $columnsResult->fetch_assoc()) {
+                    if (!empty($column['Field'])) {
+                        $existingColumns[strtolower($column['Field'])] = true;
+                    }
+                }
+                $columnsResult->free();
+            }
+
+            $alterParts = [];
+
+            if (!isset($existingColumns['warehouse_id'])) {
+                $alterParts[] = "ADD COLUMN `warehouse_id` int(11) DEFAULT NULL COMMENT 'مخزن السيارة' AFTER `vehicle_id`";
+            }
+            if (!isset($existingColumns['product_name'])) {
+                $alterParts[] = "ADD COLUMN `product_name` varchar(255) DEFAULT NULL AFTER `product_id`";
+            }
+            if (!isset($existingColumns['product_category'])) {
+                $alterParts[] = "ADD COLUMN `product_category` varchar(100) DEFAULT NULL AFTER `product_name`";
+            }
+            if (!isset($existingColumns['product_unit'])) {
+                $alterParts[] = "ADD COLUMN `product_unit` varchar(50) DEFAULT NULL AFTER `product_category`";
+            }
+            if (!isset($existingColumns['product_unit_price'])) {
+                $alterParts[] = "ADD COLUMN `product_unit_price` decimal(15,2) DEFAULT NULL AFTER `product_unit`";
+            }
+            if (!isset($existingColumns['product_snapshot'])) {
+                $alterParts[] = "ADD COLUMN `product_snapshot` longtext DEFAULT NULL AFTER `product_unit_price`";
+            }
+            if (!isset($existingColumns['manager_unit_price'])) {
+                $alterParts[] = "ADD COLUMN `manager_unit_price` decimal(15,2) DEFAULT NULL AFTER `product_unit_price`";
+            }
+            if (!isset($existingColumns['finished_batch_id'])) {
+                $alterParts[] = "ADD COLUMN `finished_batch_id` int(11) DEFAULT NULL AFTER `manager_unit_price`";
+            }
+            if (!isset($existingColumns['finished_batch_number'])) {
+                $alterParts[] = "ADD COLUMN `finished_batch_number` varchar(100) DEFAULT NULL AFTER `finished_batch_id`";
+            }
+            if (!isset($existingColumns['finished_production_date'])) {
+                $alterParts[] = "ADD COLUMN `finished_production_date` date DEFAULT NULL AFTER `finished_batch_number`";
+            }
+            if (!isset($existingColumns['finished_quantity_produced'])) {
+                $alterParts[] = "ADD COLUMN `finished_quantity_produced` decimal(12,2) DEFAULT NULL AFTER `finished_production_date`";
+            }
+            if (!isset($existingColumns['finished_workers'])) {
+                $alterParts[] = "ADD COLUMN `finished_workers` text DEFAULT NULL AFTER `finished_quantity_produced`";
+            }
+            if (!isset($existingColumns['quantity'])) {
+                $alterParts[] = "ADD COLUMN `quantity` decimal(10,2) NOT NULL DEFAULT 0.00 AFTER `finished_workers`";
+            }
+            if (!isset($existingColumns['last_updated_by'])) {
+                $alterParts[] = "ADD COLUMN `last_updated_by` int(11) DEFAULT NULL AFTER `quantity`";
+            }
+            if (!isset($existingColumns['last_updated_at'])) {
+                $alterParts[] = "ADD COLUMN `last_updated_at` timestamp NULL DEFAULT NULL ON UPDATE CURRENT_TIMESTAMP AFTER `last_updated_by`";
+            }
+            if (!isset($existingColumns['created_at'])) {
+                $alterParts[] = "ADD COLUMN `created_at` timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP AFTER `last_updated_at`";
+            }
+
+            if (!empty($alterParts)) {
+                $this->connection->query("ALTER TABLE vehicle_inventory " . implode(', ', $alterParts));
+            }
+
+            $indexesResult = $this->connection->query("SHOW INDEXES FROM vehicle_inventory");
+            $existingIndexes = [];
+            if ($indexesResult instanceof mysqli_result) {
+                while ($index = $indexesResult->fetch_assoc()) {
+                    if (!empty($index['Key_name'])) {
+                        $existingIndexes[strtolower($index['Key_name'])] = true;
+                    }
+                }
+                $indexesResult->free();
+            }
+
+            $indexAlterParts = [];
+            if (!isset($existingIndexes['finished_batch_id'])) {
+                $indexAlterParts[] = "ADD KEY `finished_batch_id` (`finished_batch_id`)";
+            }
+            if (!isset($existingIndexes['finished_batch_number'])) {
+                $indexAlterParts[] = "ADD KEY `finished_batch_number` (`finished_batch_number`)";
+            }
+            if (!isset($existingIndexes['vehicle_product_unique']) && !isset($existingIndexes['vehicle_product'])) {
+                $indexAlterParts[] = "ADD UNIQUE KEY `vehicle_product_unique` (`vehicle_id`, `product_id`)";
+            }
+            if (!isset($existingIndexes['warehouse_id'])) {
+                $indexAlterParts[] = "ADD KEY `warehouse_id` (`warehouse_id`)";
+            }
+            if (!isset($existingIndexes['product_id'])) {
+                $indexAlterParts[] = "ADD KEY `product_id` (`product_id`)";
+            }
+            if (!isset($existingIndexes['last_updated_by'])) {
+                $indexAlterParts[] = "ADD KEY `last_updated_by` (`last_updated_by`)";
+            }
+
+            if (!empty($indexAlterParts)) {
+                $this->connection->query("ALTER TABLE vehicle_inventory " . implode(', ', $indexAlterParts));
+            }
+
+            $this->connection->query(
+                "INSERT INTO system_settings (`key`, `value`, updated_at) VALUES ('vehicle_inventory_upgraded', '1', NOW())
+                 ON DUPLICATE KEY UPDATE `value` = '1', updated_at = NOW()"
+            );
+
+            $flagDir = dirname($flagFile);
+            if (!is_dir($flagDir)) {
+                @mkdir($flagDir, 0775, true);
+            }
+            @file_put_contents($flagFile, date('c'));
+
+        } catch (Throwable $upgradeError) {
+            error_log('Vehicle inventory auto upgrade error: ' . $upgradeError->getMessage());
         }
     }
 }
