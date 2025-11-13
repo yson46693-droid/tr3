@@ -11,4 +11,3 @@ git commit -m $msg
 git push
 
 Write-Host "Done!" -ForegroundColor Green
-

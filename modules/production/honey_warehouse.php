@@ -696,7 +696,7 @@ $stats['total_honey'] = $stats['total_raw_honey'] + $stats['total_filtered_honey
                 <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
             </div>
             <form method="POST">
-                <div class="modal-body">
+                <div class="modal-body" style="max-height: calc(100vh - 220px); overflow-y: auto;">
                     <input type="hidden" name="action" value="filter_honey">
                     <input type="hidden" name="stock_id" id="filter_stock_id">
                     <div class="alert alert-info">
