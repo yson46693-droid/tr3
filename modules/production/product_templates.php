@@ -21,6 +21,98 @@ $db = db();
 $error = '';
 $success = '';
 
+// معالجة AJAX requests
+if (isset($_GET['ajax']) && $_GET['ajax'] === 'template_details' && isset($_GET['template_id'])) {
+    header('Content-Type: application/json; charset=utf-8');
+    
+    $templateId = intval($_GET['template_id'] ?? 0);
+    
+    if ($templateId <= 0) {
+        echo json_encode([
+            'success' => false,
+            'message' => 'معرف القالب غير صالح'
+        ], JSON_UNESCAPED_UNICODE);
+        exit;
+    }
+    
+    try {
+        // جلب بيانات القالب
+        $template = $db->queryOne(
+            "SELECT pt.*, u.full_name as creator_name
+             FROM product_templates pt
+             LEFT JOIN users u ON pt.created_by = u.id
+             WHERE pt.id = ?",
+            [$templateId]
+        );
+        
+        if (!$template) {
+            throw new Exception('القالب غير موجود');
+        }
+        
+        // جلب أدوات التعبئة
+        $packagingDetails = $db->query(
+            "SELECT ptp.packaging_material_id, ptp.packaging_name, ptp.quantity_per_unit, COALESCE(pm.unit, '') AS packaging_unit
+             FROM product_template_packaging ptp
+             LEFT JOIN packaging_materials pm ON pm.id = ptp.packaging_material_id
+             WHERE ptp.template_id = ?",
+            [$templateId]
+        );
+        
+        $normalisedPackaging = [];
+        foreach ($packagingDetails as $pack) {
+            $normalisedPackaging[] = [
+                'packaging_material_id' => isset($pack['packaging_material_id']) ? (int)$pack['packaging_material_id'] : null,
+                'packaging_name' => trim((string)($pack['packaging_name'] ?? '')),
+                'quantity_per_unit' => isset($pack['quantity_per_unit']) ? (float)$pack['quantity_per_unit'] : 1.0,
+                'unit' => trim((string)($pack['packaging_unit'] ?? '')) ?: 'وحدة'
+            ];
+        }
+        
+        // جلب المواد الخام
+        $rawMaterialsRows = $db->query(
+            "SELECT material_name, quantity_per_unit, unit 
+             FROM product_template_raw_materials 
+             WHERE template_id = ?",
+            [$templateId]
+        );
+        
+        $materialDetails = [];
+        foreach ($rawMaterialsRows as $raw) {
+            $materialDetails[] = [
+                'material_name' => $raw['material_name'],
+                'quantity_per_unit' => (float)($raw['quantity_per_unit'] ?? 0),
+                'unit' => $raw['unit'] ?? 'وحدة'
+            ];
+        }
+        
+        // بناء payload
+        $templateData = [
+            'id' => $templateId,
+            'product_name' => $template['product_name'],
+            'status' => $template['status'] ?? 'active',
+            'template_type' => $template['template_type'] ?? 'general',
+            'notes' => trim((string)($template['notes'] ?? '')),
+            'raw_materials' => $materialDetails,
+            'packaging' => $normalisedPackaging,
+            'packaging_count' => count($normalisedPackaging),
+            'raw_materials_count' => count($materialDetails)
+        ];
+        
+        echo json_encode([
+            'success' => true,
+            'data' => $templateData
+        ], JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
+        exit;
+        
+    } catch (Exception $e) {
+        echo json_encode([
+            'success' => false,
+            'message' => 'خطأ في جلب بيانات القالب: ' . $e->getMessage()
+        ], JSON_UNESCAPED_UNICODE);
+        exit;
+    }
+}
+
 // الحصول على رسالة النجاح من session (بعد redirect)
 $sessionSuccess = getSuccessMessage();
 if ($sessionSuccess) {
@@ -783,7 +875,9 @@ $lang = isset($translations) ? $translations : [];
                     );
                     
                     if ($encodedDetails !== false && $encodedDetails !== '' && $encodedDetails !== 'null') {
-                        // استخدام base64 لتجنب مشاكل escaping في HTML attributes
+                        // استخدام base64 مع UTF-8 encoding صحيح للتشغيل في JavaScript
+                        // في PHP: base64_encode يعمل بشكل صحيح مع UTF-8
+                        // في JavaScript: نحتاج decodeURIComponent(escape(atob()))
                         $templateDetailsJsonBase64 = base64_encode($encodedDetails);
                         $templateDetailsJson = $encodedDetails; // للاستخدام المباشر في JavaScript
                     } else {
@@ -1844,7 +1938,7 @@ function createBatch(templateId, templateName, triggerButton) {
         });
 }
 
-// دالة مساعدة لقراءة البيانات من button element
+// دالة مساعدة لقراءة البيانات من button element أو جلبها من الخادم
 function editTemplateFromButton(buttonElement) {
     if (!buttonElement || !(buttonElement instanceof HTMLElement)) {
         console.error('Invalid button element');
@@ -1852,8 +1946,6 @@ function editTemplateFromButton(buttonElement) {
     }
     
     const templateId = parseInt(buttonElement.getAttribute('data-template-id') || '0', 10);
-    const templateDataJson = buttonElement.getAttribute('data-template-data') || '';
-    const isBase64 = buttonElement.getAttribute('data-template-encoded') === 'base64';
     
     if (templateId <= 0) {
         console.error('Invalid template ID:', templateId);
@@ -1861,13 +1953,57 @@ function editTemplateFromButton(buttonElement) {
         return;
     }
     
-    if (!templateDataJson || templateDataJson.trim() === '') {
-        console.error('Template data is empty');
-        alert('لا توجد بيانات للقالب');
-        return;
-    }
+    // إظهار loading state
+    const originalContent = buttonElement.innerHTML;
+    buttonElement.disabled = true;
+    buttonElement.innerHTML = '<i class="bi bi-hourglass-split"></i>';
     
-    editTemplate(templateId, templateDataJson, isBase64);
+    // جلب البيانات من الخادم مباشرة لتجنب مشاكل encoding
+    const currentUrl = new URL(window.location.href);
+    const baseUrl = currentUrl.origin + currentUrl.pathname;
+    const fetchUrl = baseUrl + '?page=product_templates&ajax=template_details&template_id=' + templateId;
+    
+    fetch(fetchUrl, {
+        method: 'GET',
+        credentials: 'same-origin',
+        headers: {
+            'Accept': 'application/json',
+            'X-Requested-With': 'XMLHttpRequest'
+        }
+    })
+    .then(response => {
+        if (!response.ok) {
+            throw new Error('HTTP error! status: ' + response.status);
+        }
+        return response.json();
+    })
+    .then(data => {
+        buttonElement.innerHTML = originalContent;
+        buttonElement.disabled = false;
+        
+        if (data.success && data.data) {
+            // استخدام البيانات من الخادم مباشرة (بدون base64)
+            editTemplate(templateId, JSON.stringify(data.data), false);
+        } else {
+            throw new Error(data.message || 'Failed to load template data');
+        }
+    })
+    .catch(error => {
+        console.error('Error fetching template data:', error);
+        buttonElement.innerHTML = originalContent;
+        buttonElement.disabled = false;
+        
+        // محاولة استخدام البيانات من data attribute كـ fallback
+        const templateDataJson = buttonElement.getAttribute('data-template-data') || '';
+        const isBase64 = buttonElement.getAttribute('data-template-encoded') === 'base64';
+        
+        if (templateDataJson && templateDataJson.trim() !== '') {
+            console.warn('Using fallback: data from attribute');
+            editTemplate(templateId, templateDataJson, isBase64);
+        } else {
+            alert('خطأ في جلب بيانات القالب. يرجى تحديث الصفحة والمحاولة مرة أخرى.');
+        }
+    });
 }
 
 function editTemplate(templateId, templateDataJson, isBase64 = false) {
@@ -1891,16 +2027,42 @@ function editTemplate(templateId, templateDataJson, isBase64 = false) {
                     throw new Error('Base64 string is empty');
                 }
                 
-                // فك التشفير من base64 مع دعم UTF-8
-                // استخدام decodeURIComponent مع escape للتعامل مع UTF-8 بشكل صحيح
+                // فك التشفير من base64 مع دعم UTF-8 بشكل صحيح
+                // PHP base64_encode يعمل بشكل صحيح مع UTF-8
+                // لكن JavaScript atob() لا يدعم UTF-8 بشكل مباشر
+                // الحل: استخدام escape/decodeURIComponent للتعامل مع UTF-8
                 const binaryString = atob(jsonString);
-                const bytes = new Uint8Array(binaryString.length);
-                for (let i = 0; i < binaryString.length; i++) {
-                    bytes[i] = binaryString.charCodeAt(i);
-                }
                 
-                // تحويل bytes إلى UTF-8 string
-                jsonString = new TextDecoder('utf-8').decode(bytes);
+                // تحويل binary string إلى UTF-8 بشكل صحيح
+                // الطريقة الصحيحة: استخدام decodeURIComponent(escape()) أو TextDecoder
+                try {
+                    // الطريقة 1: استخدام TextDecoder (الأفضل)
+                    if (typeof TextDecoder !== 'undefined') {
+                        const bytes = new Uint8Array(binaryString.length);
+                        for (let i = 0; i < binaryString.length; i++) {
+                            bytes[i] = binaryString.charCodeAt(i);
+                        }
+                        jsonString = new TextDecoder('utf-8').decode(bytes);
+                    } else {
+                        // الطريقة 2: استخدام escape/decodeURIComponent (fallback)
+                        let decoded = '';
+                        for (let i = 0; i < binaryString.length; i++) {
+                            const charCode = binaryString.charCodeAt(i);
+                            if (charCode < 128) {
+                                // ASCII character
+                                decoded += String.fromCharCode(charCode);
+                            } else {
+                                // UTF-8 multi-byte character
+                                decoded += '%' + ('00' + charCode.toString(16)).slice(-2);
+                            }
+                        }
+                        jsonString = decodeURIComponent(decoded);
+                    }
+                } catch (utf8Error) {
+                    // إذا فشلت الطريقة، استخدم الطريقة التقليدية (قد لا تعمل مع UTF-8)
+                    console.warn('UTF-8 decoding failed, using binary string directly:', utf8Error);
+                    jsonString = binaryString;
+                }
                 
                 // التحقق من أن النتيجة بعد فك التشفير ليست فارغة
                 if (!jsonString || jsonString.trim() === '') {
@@ -1908,22 +2070,10 @@ function editTemplate(templateId, templateDataJson, isBase64 = false) {
                 }
             } catch (base64Error) {
                 console.error('Error decoding base64:', base64Error);
-                console.error('Base64 data:', templateDataJson);
+                console.error('Base64 data (first 100 chars):', templateDataJson.substring(0, 100));
                 console.error('Template ID:', templateId);
-                
-                // محاولة طريقة بديلة - استخدام decodeURIComponent
-                try {
-                    const binaryString = atob(jsonString);
-                    let decoded = '';
-                    for (let i = 0; i < binaryString.length; i++) {
-                        decoded += '%' + ('00' + binaryString.charCodeAt(i).toString(16)).slice(-2);
-                    }
-                    jsonString = decodeURIComponent(decoded);
-                } catch (altError) {
-                    console.error('Alternative decoding also failed:', altError);
-                    alert('خطأ في فك تشفير بيانات القالب. يرجى تحديث الصفحة والمحاولة مرة أخرى.');
-                    return;
-                }
+                alert('خطأ في فك تشفير بيانات القالب. يرجى تحديث الصفحة والمحاولة مرة أخرى.');
+                return;
             }
         }
         
