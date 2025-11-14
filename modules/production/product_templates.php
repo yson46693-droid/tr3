@@ -181,7 +181,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     
     if ($action === 'create_template') {
         $productName = trim($_POST['product_name'] ?? '');
-        $honeyQuantity = floatval($_POST['honey_quantity'] ?? 0);
         
         // أدوات التعبئة
         $packagingIds = [];
@@ -273,8 +272,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             $error = 'يجب إدخال اسم المنتج';
         } elseif ($existingTemplate) {
             $error = 'اسم المنتج مستخدم بالفعل. يرجى اختيار اسم مختلف.';
-        } elseif ($honeyQuantity <= 0) {
-            $error = 'يجب إدخال كمية العسل (بالجرام)';
         } elseif (empty($packagingIds)) {
             $error = 'يجب اختيار أداة تعبئة واحدة على الأقل';
         } else {
@@ -282,16 +279,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 $db->beginTransaction();
                 
                 $rawMaterialsPayload = [];
-                if ($honeyQuantity > 0) {
-                    $rawMaterialsPayload[] = [
-                        'type' => 'honey',
-                        'name' => 'عسل',
-                        'material_name' => 'عسل',
-                        'quantity' => $honeyQuantity,
-                        'quantity_per_unit' => $honeyQuantity,
-                        'unit' => 'جرام'
-                    ];
-                }
 
                 foreach ($rawMaterials as $materialEntry) {
                     $rawMaterialsPayload[] = [
@@ -319,7 +306,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     'product_name' => $productName,
                     'status' => 'active',
                     'template_type' => 'legacy',
-                    'honey_quantity' => $honeyQuantity,
                     'raw_materials' => $rawMaterialsPayload,
                     'packaging' => $packagingPayload,
                     'submitted_at' => date('c'),
@@ -337,8 +323,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 // إنشاء القالب
                 $result = $db->execute(
                     "INSERT INTO product_templates (product_name, honey_quantity, created_by, status, template_type, main_supplier_id, notes, details_json) 
-                     VALUES (?, ?, ?, 'active', ?, NULL, NULL, ?)",
-                    [$productName, $honeyQuantity, $currentUser['id'], 'legacy', $templateDetailsJson]
+                     VALUES (?, 0, ?, 'active', ?, NULL, NULL, ?)",
+                    [$productName, $currentUser['id'], 'legacy', $templateDetailsJson]
                 );
                 
                 $templateId = $result['insert_id'];
@@ -352,15 +338,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     );
                 }
                 
-                // إضافة مادة العسل الأساسية
-                if ($honeyQuantity > 0) {
-                    $db->execute(
-                        "INSERT INTO product_template_raw_materials (template_id, material_name, quantity_per_unit, unit) 
-                         VALUES (?, ?, ?, ?)",
-                        [$templateId, 'عسل', $honeyQuantity, 'جرام']
-                    );
-                }
-
                 // إضافة المواد الخام الأخرى
                 foreach ($rawMaterials as $material) {
                     $db->execute(
@@ -484,14 +461,6 @@ foreach ($templates as &$template) {
             'material_name' => $raw['material_name'],
             'quantity_per_unit' => (float)($raw['quantity_per_unit'] ?? 0),
             'unit' => $raw['unit'] ?? 'وحدة'
-        ];
-    }
-
-    if (empty($materialDetails) && (float)($template['honey_quantity'] ?? 0) > 0) {
-        $materialDetails[] = [
-            'material_name' => 'عسل',
-            'quantity_per_unit' => (float)$template['honey_quantity'],
-            'unit' => 'جرام'
         ];
     }
 
@@ -1068,13 +1037,6 @@ $lang = isset($translations) ? $translations : [];
                     </div>
                     
                     <div class="mb-3">
-                        <label class="form-label">كمية العسل (بالجرام) <span class="text-danger">*</span></label>
-                        <input type="number" class="form-control" name="honey_quantity" step="0.001" min="0.001" required 
-                               placeholder="مثل: 720.000">
-                        <small class="text-muted">كمية العسل الصافي المستخدمة في صناعة المنتج بالجرام</small>
-                    </div>
-                    
-                    <div class="mb-3">
                         <label class="form-label">أدوات التعبئة المستخدمة <span class="text-danger">*</span></label>
                         <?php if (empty($packagingMaterials)): ?>
                             <div class="alert alert-warning">
@@ -1098,8 +1060,11 @@ $lang = isset($translations) ? $translations : [];
                     
                     <!-- المواد الخام الأخرى (للاستخدام لاحقاً) -->
                     <div class="mb-3">
-                        <label class="form-label">مواد خام أخرى (اختياري)</label>
-                        <p class="text-muted small">يمكنك إضافة مواد خام أخرى مثل المكسرات (سيتم تفعيلها لاحقاً)</p>
+                        <label class="form-label">المواد الخام الأساسية</label>
+                        <p class="text-muted small mb-2">
+                            أضف جميع المكوّنات المستخدمة في المنتج (مثل العسل، المكسرات، الإضافات...).<br>
+                            <strong>ملاحظة:</strong> نوع العسل يتم تحديده لاحقاً أثناء إنشاء تشغيلة الإنتاج.
+                        </p>
                         <div id="rawMaterialsContainer">
                             <!-- سيتم إضافة المواد هنا ديناميكياً -->
                         </div>
@@ -1245,8 +1210,31 @@ let rawMaterialIndex = 0;
 const PRINT_BARCODE_URL = '<?php echo addslashes(getRelativeUrl("print_barcode.php")); ?>';
 let lastCreatedBatchInfo = null;
 
-function addRawMaterial() {
+document.getElementById('createTemplateModal')?.addEventListener('show.bs.modal', function () {
     const container = document.getElementById('rawMaterialsContainer');
+    if (container) {
+        container.innerHTML = '';
+        rawMaterialIndex = 0;
+        addRawMaterial({ name: 'عسل', unit: 'جرام' });
+    }
+});
+
+document.getElementById('createTemplateModal')?.addEventListener('hidden.bs.modal', function () {
+    const container = document.getElementById('rawMaterialsContainer');
+    if (container) {
+        container.innerHTML = '';
+    }
+    rawMaterialIndex = 0;
+});
+
+function addRawMaterial(defaults = {}) {
+    const container = document.getElementById('rawMaterialsContainer');
+    if (!container) {
+        return;
+    }
+    const defaultName = typeof defaults.name === 'string' ? defaults.name : '';
+    const defaultQuantity = typeof defaults.quantity === 'number' ? defaults.quantity : '';
+    const defaultUnit = typeof defaults.unit === 'string' ? defaults.unit : 'جرام';
     const materialHtml = `
         <div class="raw-material-item mb-2 border p-2 rounded">
             <div class="row g-2">
@@ -1275,6 +1263,21 @@ function addRawMaterial() {
         </div>
     `;
     container.insertAdjacentHTML('beforeend', materialHtml);
+    const newItem = container.lastElementChild;
+    if (newItem) {
+        const nameInput = newItem.querySelector(`input[name="raw_materials[${rawMaterialIndex}][name]"]`);
+        const quantityInput = newItem.querySelector(`input[name="raw_materials[${rawMaterialIndex}][quantity]"]`);
+        const unitInput = newItem.querySelector(`input[name="raw_materials[${rawMaterialIndex}][unit]"]`);
+        if (nameInput && defaultName) {
+            nameInput.value = defaultName;
+        }
+        if (quantityInput && defaultQuantity) {
+            quantityInput.value = Number(defaultQuantity).toFixed(3);
+        }
+        if (unitInput && defaultUnit) {
+            unitInput.value = defaultUnit;
+        }
+    }
     rawMaterialIndex++;
 }
 
