@@ -4608,7 +4608,8 @@ function populateHoneyVarietyOptions(selectEl, supplierId, component) {
                 : normalizedVariety;
             selectEl.appendChild(option);
 
-            if (!matchedOption && normalizedDefault !== '' && normalizedVariety.toLocaleLowerCase('ar') === defaultValueLower) {
+            // التحقق من تطابق نوع العسل المحدد مسبقاً في القالب
+            if (!matchedOption && defaultValue !== '' && normalizedVariety.toLocaleLowerCase('ar') === defaultValueLower) {
                 matchedOption = option;
             }
         });
@@ -4632,8 +4633,25 @@ function populateHoneyVarietyOptions(selectEl, supplierId, component) {
         matchedOption.selected = true;
         selectEl.value = matchedOption.value;
         placeholderOption.selected = false;
+        // إذا تم تحديد نوع العسل تلقائياً من القالب، قم بتشغيل حدث change
+        selectEl.dispatchEvent(new Event('change', { bubbles: true }));
     } else if (entries.length === 0) {
-        selectEl.disabled = true;
+        // إذا لم يكن نوع العسل متوفراً في المخزون لكنه موجود في القالب، أضفه مع تحذير
+        if (defaultValue !== '') {
+            const warningOption = document.createElement('option');
+            warningOption.value = defaultValue;
+            warningOption.dataset.raw = 0;
+            warningOption.dataset.filtered = 0;
+            warningOption.textContent = `${defaultValue} — (غير متوفر في المخزون الحالي - يرجى إضافة المخزون أولاً)`;
+            warningOption.style.color = '#dc3545';
+            selectEl.appendChild(warningOption);
+            warningOption.selected = true;
+            selectEl.value = defaultValue;
+            selectEl.disabled = false;
+            placeholderOption.selected = false;
+        } else {
+            selectEl.disabled = true;
+        }
     }
 }
 
@@ -5293,7 +5311,10 @@ function renderTemplateSuppliers(details) {
         select.appendChild(placeholderOption);
 
         const suppliersForComponent = getSuppliersForComponent(component);
-        const suppliersList = suppliersForComponent.length ? suppliersForComponent : (window.productionSuppliers || []);
+        // لمكوّنات العسل، استخدم موردين العسل فقط حتى لو كان عددهم 0
+        const suppliersList = isHoneyType 
+            ? suppliersForComponent 
+            : (suppliersForComponent.length ? suppliersForComponent : (window.productionSuppliers || []));
         let autoSelectSupplierId = null;
 
         suppliersList.forEach(function(supplier) {
@@ -5334,7 +5355,9 @@ function renderTemplateSuppliers(details) {
             honeySelect.dataset.role = 'honey-variety';
             honeySelect.required = true;
             honeySelect.disabled = true;
-            honeySelect.dataset.defaultValue = component.honey_variety || component.variety || '';
+            // تحديد نوع العسل من القالب المحدد مسبقاً
+            const defaultHoneyVariety = component.honey_variety || component.variety || component.material_type || '';
+            honeySelect.dataset.defaultValue = defaultHoneyVariety;
 
             const honeyPlaceholder = document.createElement('option');
             honeyPlaceholder.value = '';
@@ -5345,9 +5368,15 @@ function renderTemplateSuppliers(details) {
 
             const honeyHelper = document.createElement('small');
             honeyHelper.className = 'text-muted d-block mt-1';
-            honeyHelper.textContent = isAggregatedHoneyCard
-                ? 'بعد اختيار مورد العسل، سيتم تطبيق نوع العسل على جميع مواد العسل.'
-                : 'بعد اختيار مورد العسل، اختر نوع العسل المتوفر لديه.';
+            if (defaultHoneyVariety) {
+                honeyHelper.textContent = isAggregatedHoneyCard
+                    ? `نوع العسل المحدد مسبقاً: ${defaultHoneyVariety} - سيتم التحقق من توافره لدى المورد المختار.`
+                    : `نوع العسل المحدد مسبقاً: ${defaultHoneyVariety} - سيتم التحقق من توافره لدى المورد المختار.`;
+            } else {
+                honeyHelper.textContent = isAggregatedHoneyCard
+                    ? 'بعد اختيار مورد العسل، سيتم تطبيق نوع العسل على جميع مواد العسل.'
+                    : 'بعد اختيار مورد العسل، اختر نوع العسل المتوفر لديه.';
+            }
 
             honeyWrapper.appendChild(honeyLabel);
             honeyWrapper.appendChild(honeySelect);
