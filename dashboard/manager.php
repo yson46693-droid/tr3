@@ -801,6 +801,17 @@ $pageTitle = isset($lang['manager_dashboard']) ? $lang['manager_dashboard'] : '�
                     echo '<div class="alert alert-warning">صفحة الأمان غير متاحة حالياً</div>';
                 }
                 ?>
+                
+            <?php elseif ($page === 'attendance_management'): ?>
+                <!-- صفحة متابعة الحضور والانصراف -->
+                <?php 
+                $modulePath = __DIR__ . '/../modules/accountant/attendance_management.php';
+                if (file_exists($modulePath)) {
+                    include $modulePath;
+                } else {
+                    echo '<div class="alert alert-warning">صفحة متابعة الحضور والانصراف غير متاحة حالياً</div>';
+                }
+                ?>
             <?php endif; ?>
 
 <?php include __DIR__ . '/../templates/footer.php'; ?>

@@ -495,10 +495,72 @@ function recordAttendanceCheckIn($userId, $photoBase64 = null) {
     
     $recordId = $result['insert_id'];
     
-    // الحصول على معلومات المستخدم
-    $user = $db->queryOne("SELECT username, full_name, role FROM users WHERE id = ?", [$userId]);
-    $userName = $user['full_name'] ?? $user['username'];
-    $role = $user['role'] ?? 'unknown';
+    // التأكد من وجود عمود delay_count
+    ensureDelayCountColumn();
+    
+    // معالجة منطق التأخير إذا كان هناك تأخير
+    if ($delayMinutes > 0) {
+        // الحصول على عداد التأخيرات الحالي
+        $currentDelayCount = (int)$db->queryOne(
+            "SELECT delay_count FROM users WHERE id = ?",
+            [$userId]
+        )['delay_count'] ?? 0;
+        
+        // زيادة عداد التأخيرات بمقدار 1
+        $newDelayCount = $currentDelayCount + 1;
+        $db->execute(
+            "UPDATE users SET delay_count = ? WHERE id = ?",
+            [$newDelayCount, $userId]
+        );
+        
+        // الحصول على معلومات المستخدم
+        $user = $db->queryOne("SELECT username, full_name, role FROM users WHERE id = ?", [$userId]);
+        $userName = $user['full_name'] ?? $user['username'];
+        $role = $user['role'] ?? 'unknown';
+        
+        // إرسال إشعار للموظف بعدد التأخيرات الحالية
+        $delayMessage = "تم تسجيل حضورك مع تأخير {$delayMinutes} دقيقة. عدد حالات التأخير الحالية لهذا الشهر: {$newDelayCount}";
+        
+        createNotification(
+            $userId,
+            'تنبيه: تأخير في الحضور',
+            $delayMessage,
+            'warning',
+            getAttendanceReminderLink($role),
+            false // لا نرسل عبر Telegram هنا لأن هناك إشعار Telegram منفصل للحضور
+        );
+        
+        // إذا وصل عداد التأخيرات إلى 3 أو أكثر، إرسال إشعار للمدير
+        if ($newDelayCount >= 3) {
+            // الحصول على جميع المديرين
+            $managers = $db->query(
+                "SELECT id FROM users WHERE role = 'manager' AND status = 'active'"
+            );
+            
+            foreach ($managers as $manager) {
+                $managerId = (int)$manager['id'];
+                $managerMessage = "تنبيه: الموظف {$userName} ({$role}) قد تجاوز 3 حالات حضور متأخر خلال الشهر الحالي. إجمالي حالات التأخير: {$newDelayCount}";
+                
+                createNotification(
+                    $managerId,
+                    'تنبيه: موظف تجاوز حد التأخير',
+                    $managerMessage,
+                    'error',
+                    null,
+                    true // إرسال عبر Telegram
+                );
+            }
+            
+            error_log("Delay count alert sent to managers for user {$userId} with {$newDelayCount} delays");
+        }
+        
+        error_log("User {$userId} check-in delay: {$delayMinutes} minutes, total delay count: {$newDelayCount}");
+    } else {
+        // الحصول على معلومات المستخدم (في حالة عدم وجود تأخير)
+        $user = $db->queryOne("SELECT username, full_name, role FROM users WHERE id = ?", [$userId]);
+        $userName = $user['full_name'] ?? $user['username'];
+        $role = $user['role'] ?? 'unknown';
+    }
     
     // إرسال إشعار واحد فقط عبر Telegram (صورة مع جميع البيانات) مع منع التكرار
     $photoDeleted = false;
@@ -1347,6 +1409,32 @@ function ensureWarningCountColumn(): void
 }
 
 /**
+ * التأكد من وجود عمود delay_count في جدول users لتخزين عداد تأخيرات الحضور الشهري
+ */
+function ensureDelayCountColumn(): void
+{
+    static $ensured = false;
+    
+    if ($ensured) {
+        return;
+    }
+    
+    try {
+        $db = db();
+        $columnCheck = $db->queryOne("SHOW COLUMNS FROM users LIKE 'delay_count'");
+        
+        if (empty($columnCheck)) {
+            $db->execute("ALTER TABLE users ADD COLUMN `delay_count` int(11) DEFAULT 0 AFTER `warning_count`");
+            error_log('Added delay_count column to users table');
+        }
+        
+        $ensured = true;
+    } catch (Exception $e) {
+        error_log('Failed to ensure delay_count column: ' . $e->getMessage());
+    }
+}
+
+/**
  * تصفير عداد الإنذارات لجميع الموظفين مع بداية كل شهر جديد
  */
 function resetWarningCountsForNewMonth(): void
@@ -1375,8 +1463,10 @@ function resetWarningCountsForNewMonth(): void
             }
         }
         
-        // تصفير عداد الإنذارات لجميع الموظفين
-        $db->execute("UPDATE users SET warning_count = 0 WHERE role != 'manager'");
+        // تصفير عداد الإنذارات وعداد التأخيرات لجميع الموظفين
+        ensureWarningCountColumn();
+        ensureDelayCountColumn();
+        $db->execute("UPDATE users SET warning_count = 0, delay_count = 0 WHERE role != 'manager'");
         
         // حفظ تاريخ آخر تصفير
         if (!empty($tableCheck)) {
@@ -1388,7 +1478,7 @@ function resetWarningCountsForNewMonth(): void
             );
         }
         
-        error_log('Warning counts reset for new month: ' . $today);
+        error_log('Warning counts and delay counts reset for new month: ' . $today);
     } catch (Exception $e) {
         error_log('Failed to reset warning counts: ' . $e->getMessage());
     }

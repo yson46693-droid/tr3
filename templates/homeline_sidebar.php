@@ -136,6 +136,14 @@ switch ($role) {
                 'url' => $baseUrl . 'manager.php?page=pos',
                 'active' => ($currentPage === 'manager.php' && $currentPageParam === 'pos'),
                 'badge' => null
+            ],
+            ['divider' => true, 'title' => isset($lang['attendance_section']) ? $lang['attendance_section'] : 'الحضور والانصراف'],
+            [
+                'title' => 'متابعة الحضور والانصراف',
+                'icon' => 'bi-calendar-check',
+                'url' => $baseUrl . 'manager.php?page=attendance_management',
+                'active' => ($currentPage === 'manager.php' && $currentPageParam === 'attendance_management'),
+                'badge' => null
             ]
         ];
         break;
@@ -225,6 +233,14 @@ switch ($role) {
                 'icon' => 'bi-calendar-check',
                 'url' => getRelativeUrl('attendance.php'),
                 'active' => ($currentPage === 'attendance.php'),
+                'badge' => null
+            ],
+            ['divider' => true, 'title' => isset($lang['attendance_management']) ? $lang['attendance_management'] : 'إدارة الحضور'],
+            [
+                'title' => 'متابعة الحضور والانصراف',
+                'icon' => 'bi-bar-chart',
+                'url' => $baseUrl . 'accountant.php?page=attendance_management',
+                'active' => ($currentPage === 'accountant.php' && $currentPageParam === 'attendance_management'),
                 'badge' => null
             ]
         ];

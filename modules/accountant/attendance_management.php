@@ -29,16 +29,28 @@ $users = $db->query(
     "SELECT id, username, full_name, role FROM users WHERE status = 'active' ORDER BY full_name ASC"
 );
 
+// التأكد من وجود الأعمدة الجديدة
+ensureDelayCountColumn();
+ensureWarningCountColumn();
+
 // الحصول على إحصائيات المستخدمين
 $userStats = [];
 foreach ($users as $user) {
     $stats = getAttendanceStatistics($user['id'], $selectedMonth);
     $delayStats = calculateMonthlyDelaySummary($user['id'], $selectedMonth);
     
+    // الحصول على عداد التأخيرات وعداد الإنذارات من جدول users
+    $userCounts = $db->queryOne(
+        "SELECT delay_count, warning_count FROM users WHERE id = ?",
+        [$user['id']]
+    );
+    
     $userStats[$user['id']] = [
         'user' => $user,
         'stats' => $stats,
-        'delay' => $delayStats
+        'delay' => $delayStats,
+        'delay_count' => (int)($userCounts['delay_count'] ?? 0),
+        'warning_count' => (int)($userCounts['warning_count'] ?? 0)
     ];
 }
 
@@ -189,6 +201,67 @@ if ($selectedUserId > 0) {
         </div>
     </div>
     
+    <!-- إحصائيات إضافية: عداد التأخيرات وعداد الإنذارات -->
+    <?php
+    $selectedUserCounts = $db->queryOne(
+        "SELECT delay_count, warning_count FROM users WHERE id = ?",
+        [$selectedUserId]
+    );
+    $selectedDelayCount = (int)($selectedUserCounts['delay_count'] ?? 0);
+    $selectedWarningCount = (int)($selectedUserCounts['warning_count'] ?? 0);
+    ?>
+    <div class="row mb-4">
+        <div class="col-md-6 col-sm-6 mb-3">
+            <div class="card shadow-sm border-warning">
+                <div class="card-body">
+                    <div class="d-flex align-items-center">
+                        <div class="flex-shrink-0">
+                            <div class="stat-card-icon orange">
+                                <i class="bi bi-exclamation-triangle-fill"></i>
+                            </div>
+                        </div>
+                        <div class="flex-grow-1 ms-3">
+                            <div class="text-muted small">عداد تأخيرات الحضور الشهري</div>
+                            <div class="h4 mb-0 <?php echo $selectedDelayCount >= 3 ? 'text-danger' : ''; ?>">
+                                <?php echo $selectedDelayCount; ?>
+                            </div>
+                            <?php if ($selectedDelayCount >= 3): ?>
+                                <div class="text-danger small mt-1">
+                                    <i class="bi bi-exclamation-circle"></i> تم إبلاغ المدير
+                                </div>
+                            <?php endif; ?>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+        
+        <div class="col-md-6 col-sm-6 mb-3">
+            <div class="card shadow-sm border-danger">
+                <div class="card-body">
+                    <div class="d-flex align-items-center">
+                        <div class="flex-shrink-0">
+                            <div class="stat-card-icon red">
+                                <i class="bi bi-bell-fill"></i>
+                            </div>
+                        </div>
+                        <div class="flex-grow-1 ms-3">
+                            <div class="text-muted small">عداد إنذارات نسيان الانصراف</div>
+                            <div class="h4 mb-0 <?php echo $selectedWarningCount >= 3 ? 'text-danger' : ''; ?>">
+                                <?php echo $selectedWarningCount; ?>
+                            </div>
+                            <?php if ($selectedWarningCount >= 3): ?>
+                                <div class="text-danger small mt-1">
+                                    <i class="bi bi-exclamation-circle"></i> تم خصم ساعتين إضافيتين
+                                </div>
+                            <?php endif; ?>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+    
     <!-- سجلات المستخدم -->
     <div class="card shadow-sm">
         <div class="card-header bg-primary text-white">
@@ -265,13 +338,15 @@ if ($selectedUserId > 0) {
                             <th>ساعات العمل</th>
                             <th>متوسط التأخير</th>
                             <th>مرات التأخير</th>
+                            <th>عداد التأخيرات</th>
+                            <th>عداد الإنذارات</th>
                             <th>الإجراءات</th>
                         </tr>
                     </thead>
                     <tbody>
                         <?php if (empty($userStats)): ?>
                             <tr>
-                                <td colspan="7" class="text-center text-muted">لا توجد بيانات</td>
+                                <td colspan="9" class="text-center text-muted">لا توجد بيانات</td>
                             </tr>
                         <?php else: ?>
                             <?php foreach ($userStats as $userId => $data): ?>
@@ -297,6 +372,30 @@ if ($selectedUserId > 0) {
                                     </td>
                                     <td data-label="مرات التأخير">
                                         <span class="badge bg-danger"><?php echo (int) ($data['delay']['delay_days'] ?? 0); ?></span>
+                                    </td>
+                                    <td data-label="عداد التأخيرات">
+                                        <?php 
+                                        $delayCount = $data['delay_count'] ?? 0;
+                                        $delayBadgeClass = $delayCount >= 3 ? 'bg-danger' : ($delayCount > 0 ? 'bg-warning' : 'bg-secondary');
+                                        ?>
+                                        <span class="badge <?php echo $delayBadgeClass; ?>" title="عدد حالات التأخير في الحضور لهذا الشهر">
+                                            <?php echo $delayCount; ?>
+                                        </span>
+                                        <?php if ($delayCount >= 3): ?>
+                                            <i class="bi bi-exclamation-triangle-fill text-danger" title="تم إبلاغ المدير"></i>
+                                        <?php endif; ?>
+                                    </td>
+                                    <td data-label="عداد الإنذارات">
+                                        <?php 
+                                        $warningCount = $data['warning_count'] ?? 0;
+                                        $warningBadgeClass = $warningCount >= 3 ? 'bg-danger' : ($warningCount > 0 ? 'bg-warning' : 'bg-secondary');
+                                        ?>
+                                        <span class="badge <?php echo $warningBadgeClass; ?>" title="عدد إنذارات نسيان تسجيل الانصراف لهذا الشهر">
+                                            <?php echo $warningCount; ?>
+                                        </span>
+                                        <?php if ($warningCount >= 3): ?>
+                                            <i class="bi bi-exclamation-triangle-fill text-danger" title="تم خصم ساعتين إضافيتين"></i>
+                                        <?php endif; ?>
                                     </td>
                                     <td data-label="الإجراءات">
                                         <a href="?page=attendance_management&month=<?php echo urlencode($selectedMonth); ?>&user_id=<?php echo $userId; ?>" class="btn btn-sm btn-info">
