@@ -103,6 +103,14 @@ $baseUrl = getDashboardUrl();
                     <span><?php echo $lang['menu_reports']; ?></span>
                 </a>
             </li>
+            
+            <li class="nav-item">
+                <a class="nav-link <?php echo (isset($_GET['page']) && $_GET['page'] === 'attendance') ? 'active' : ''; ?>" 
+                   href="<?php echo $baseUrl; ?>sales.php?page=attendance">
+                    <i class="bi bi-clock-history"></i>
+                    <span>تسجيل الحضور</span>
+                </a>
+            </li>
         </ul>
     </nav>
     

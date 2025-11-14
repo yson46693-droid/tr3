@@ -174,24 +174,40 @@ if ($currentUser) {
     <?php endif; ?>
     
     <!-- Apple Touch Icons -->
+    <?php if (file_exists(__DIR__ . '/../assets/icons/apple-touch-icon.png')): ?>
+    <link rel="apple-touch-icon" sizes="180x180" href="<?php echo ASSETS_URL; ?>icons/apple-touch-icon.png">
+    <?php else: ?>
     <link rel="apple-touch-icon" sizes="180x180" href="<?php echo ASSETS_URL; ?>icons/apple-touch-icon.svg">
+    <?php endif; ?>
+    <?php if (file_exists(__DIR__ . '/../assets/icons/icon-152x152.png')): ?>
+    <link rel="apple-touch-icon" sizes="152x152" href="<?php echo ASSETS_URL; ?>icons/icon-152x152.png">
+    <?php else: ?>
     <link rel="apple-touch-icon" sizes="152x152" href="<?php echo ASSETS_URL; ?>icons/icon-152x152.svg">
+    <?php endif; ?>
+    <?php if (file_exists(__DIR__ . '/../assets/icons/icon-144x144.png')): ?>
+    <link rel="apple-touch-icon" sizes="144x144" href="<?php echo ASSETS_URL; ?>icons/icon-144x144.png">
+    <?php else: ?>
     <link rel="apple-touch-icon" sizes="144x144" href="<?php echo ASSETS_URL; ?>icons/icon-144x144.svg">
+    <?php endif; ?>
     
     <!-- Android Icons -->
+    <?php if (file_exists(__DIR__ . '/../assets/icons/icon-192x192.png')): ?>
+    <link rel="icon" type="image/png" sizes="192x192" href="<?php echo ASSETS_URL; ?>icons/icon-192x192.png">
+    <?php else: ?>
     <link rel="icon" type="image/svg+xml" sizes="192x192" href="<?php echo ASSETS_URL; ?>icons/icon-192x192.svg">
+    <?php endif; ?>
+    <?php if (file_exists(__DIR__ . '/../assets/icons/icon-512x512.png')): ?>
+    <link rel="icon" type="image/png" sizes="512x512" href="<?php echo ASSETS_URL; ?>icons/icon-512x512.png">
+    <?php else: ?>
     <link rel="icon" type="image/svg+xml" sizes="512x512" href="<?php echo ASSETS_URL; ?>icons/icon-512x512.svg">
+    <?php endif; ?>
     
     <!-- PWA Meta Tags -->
-    <meta name="theme-color" content="#1e3a5f">
+    <meta name="theme-color" content="#f1c40f">
     <meta name="apple-mobile-web-app-capable" content="yes">
     <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
     <meta name="apple-mobile-web-app-title" content="<?php echo APP_NAME; ?>">
     <meta name="mobile-web-app-capable" content="yes">
-    <meta name="apple-mobile-web-app-capable" content="yes">
-    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
-    <meta name="apple-mobile-web-app-title" content="<?php echo APP_NAME; ?>">
-    <link rel="apple-touch-icon" href="<?php echo ASSETS_URL; ?>icons/icon-192x192.png">
     
     <!-- Manifest -->
     <link rel="manifest" href="<?php echo getRelativeUrl('manifest.json'); ?>">

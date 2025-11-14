@@ -808,6 +808,21 @@ if ($page === 'sales_collections') {
                 }
                 ?>
                 
+            <?php elseif ($page === 'attendance'): ?>
+                <!-- صفحة تسجيل الحضور -->
+                <?php 
+                $modulePath = __DIR__ . '/../modules/sales/attendance.php';
+                if (file_exists($modulePath)) {
+                    include $modulePath;
+                } else {
+                ?>
+                <div class="empty-state-card">
+                    <div class="empty-state-icon"><i class="bi bi-clock-history"></i></div>
+                    <div class="empty-state-title">تسجيل الحضور</div>
+                    <div class="empty-state-description">صفحة تسجيل الحضور - سيتم إضافتها</div>
+                </div>
+                <?php } ?>
+                
             <?php elseif ($page === 'my_salary'): ?>
                 <!-- صفحة مرتب المستخدم -->
                 <?php 
