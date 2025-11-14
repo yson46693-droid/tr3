@@ -276,9 +276,11 @@ function sendTelegramFile($filePath, $caption = '', $chatId = null) {
  */
 function sendTelegramPhoto($photoData, $caption = '', $chatId = null, $isBase64 = false) {
     if (!isTelegramConfigured()) {
-        error_log("Telegram not configured");
+        error_log("Telegram not configured - cannot send photo");
         return false;
     }
+    
+    error_log("sendTelegramPhoto called - isBase64: " . ($isBase64 ? 'yes' : 'no') . ", photoData type: " . gettype($photoData));
     
     $chatId = $chatId ?? TELEGRAM_CHAT_ID;
     $url = TELEGRAM_API_URL . '/sendPhoto';
@@ -289,6 +291,11 @@ function sendTelegramPhoto($photoData, $caption = '', $chatId = null, $isBase64 
     // معالجة base64
     if ($isBase64) {
         error_log("Processing base64 image, data length: " . strlen($photoData));
+        
+        if (empty($photoData)) {
+            error_log("ERROR: Base64 photo data is empty!");
+            return false;
+        }
         
         // تنظيف البيانات من prefix إذا كان موجوداً
         $cleanData = preg_replace('#^data:image/\w+;base64,#i', '', $photoData);

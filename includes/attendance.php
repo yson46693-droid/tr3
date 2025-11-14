@@ -481,8 +481,10 @@ function recordAttendanceCheckIn($userId, $photoBase64 = null) {
     $savedPhotoAbsolute = null;
     $savedPhotoRelative = null;
     
-    // حفظ نسخة من الصورة الأصلية قبل الحفظ (لإرسالها إلى تليجرام)
-    $originalPhotoBase64 = $photoBase64;
+    // حفظ نسخة من الصورة الأصلية قبل أي معالجة (لإرسالها إلى تليجرام)
+    $originalPhotoBase64 = $photoBase64 ? (string)$photoBase64 : null;
+    
+    error_log("Check-in: Original photo received - length: " . ($originalPhotoBase64 ? strlen($originalPhotoBase64) : 0));
 
     if ($photoBase64 && !empty(trim($photoBase64))) {
         [$savedPhotoAbsolute, $savedPhotoRelative] = saveAttendancePhoto($photoBase64, $userId, 'checkin');
@@ -583,7 +585,12 @@ function recordAttendanceCheckIn($userId, $photoBase64 = null) {
             // إذا كانت الصورة متوفرة، أرسلها مع البيانات
             // استخدام الصورة الأصلية المحفوظة قبل الحفظ
             $photoToSend = $originalPhotoBase64 ?? $photoBase64;
-            error_log("Check-in: Checking photo availability - originalPhotoBase64 exists: " . ($originalPhotoBase64 ? 'yes' : 'no') . ", photoBase64 exists: " . ($photoBase64 ? 'yes' : 'no') . ", savedPhotoAbsolute: " . ($savedPhotoAbsolute ? 'yes' : 'no'));
+            
+            error_log("Check-in: Checking photo availability:");
+            error_log("   - originalPhotoBase64: " . ($originalPhotoBase64 ? 'exists (length: ' . strlen($originalPhotoBase64) . ')' : 'null'));
+            error_log("   - photoBase64: " . ($photoBase64 ? 'exists (length: ' . strlen($photoBase64) . ')' : 'null'));
+            error_log("   - savedPhotoAbsolute: " . ($savedPhotoAbsolute ? $savedPhotoAbsolute : 'null'));
+            error_log("   - photoToSend: " . ($photoToSend ? 'exists (length: ' . strlen($photoToSend) . ')' : 'null'));
             
             if ($photoToSend && !empty(trim($photoToSend))) {
                 try {
@@ -606,18 +613,21 @@ function recordAttendanceCheckIn($userId, $photoBase64 = null) {
                     }
 
                     error_log("Check-in: Sending photo with data to Telegram for user {$userId}, sendAsBase64: " . ($sendAsBase64 ? 'yes' : 'no'));
+                    error_log("Check-in: Photo data preview: " . substr($photoForTelegram, 0, 100) . '...');
+                    
                     $telegramResult = sendTelegramPhoto($photoForTelegram, $caption, null, $sendAsBase64);
                     
                     if ($telegramResult) {
                         markAttendanceEventNotificationSent($userId, 'checkin', $today, $recordId);
-                        error_log("Attendance check-in sent to Telegram successfully for user {$userId}");
+                        error_log("✅ Attendance check-in sent to Telegram successfully for user {$userId}");
                         if ($savedPhotoAbsolute && file_exists($savedPhotoAbsolute)) {
                             @unlink($savedPhotoAbsolute);
                             $savedPhotoAbsolute = null;
                             $photoDeleted = true;
                         }
                     } else {
-                        error_log("Failed to send attendance check-in to Telegram for user {$userId}");
+                        error_log("❌ Failed to send attendance check-in to Telegram for user {$userId}");
+                        error_log("   - Check error_log for more details");
                     }
                 } catch (Exception $e) {
                     error_log("Error sending attendance check-in to Telegram: " . $e->getMessage());
@@ -713,8 +723,10 @@ function recordAttendanceCheckOut($userId, $photoBase64 = null) {
     $checkoutPhotoAbsolute = null;
     $checkoutPhotoRelative = null;
     
-    // حفظ نسخة من الصورة الأصلية قبل الحفظ (لإرسالها إلى تليجرام)
-    $originalCheckoutPhotoBase64 = $photoBase64;
+    // حفظ نسخة من الصورة الأصلية قبل أي معالجة (لإرسالها إلى تليجرام)
+    $originalCheckoutPhotoBase64 = $photoBase64 ? (string)$photoBase64 : null;
+    
+    error_log("Check-out: Original photo received - length: " . ($originalCheckoutPhotoBase64 ? strlen($originalCheckoutPhotoBase64) : 0));
 
     if ($photoBase64 && !empty(trim($photoBase64))) {
         [$checkoutPhotoAbsolute, $checkoutPhotoRelative] = saveAttendancePhoto($photoBase64, $userId, 'checkout');
@@ -798,7 +810,12 @@ function recordAttendanceCheckOut($userId, $photoBase64 = null) {
             // إذا كانت الصورة متوفرة، أرسلها مع البيانات
             // استخدام الصورة الأصلية المحفوظة قبل الحفظ
             $photoToSend = $originalCheckoutPhotoBase64 ?? $photoBase64;
-            error_log("Check-out: Checking photo availability - originalCheckoutPhotoBase64 exists: " . ($originalCheckoutPhotoBase64 ? 'yes' : 'no') . ", photoBase64 exists: " . ($photoBase64 ? 'yes' : 'no') . ", checkoutPhotoAbsolute: " . ($checkoutPhotoAbsolute ? 'yes' : 'no'));
+            
+            error_log("Check-out: Checking photo availability:");
+            error_log("   - originalCheckoutPhotoBase64: " . ($originalCheckoutPhotoBase64 ? 'exists (length: ' . strlen($originalCheckoutPhotoBase64) . ')' : 'null'));
+            error_log("   - photoBase64: " . ($photoBase64 ? 'exists (length: ' . strlen($photoBase64) . ')' : 'null'));
+            error_log("   - checkoutPhotoAbsolute: " . ($checkoutPhotoAbsolute ? $checkoutPhotoAbsolute : 'null'));
+            error_log("   - photoToSend: " . ($photoToSend ? 'exists (length: ' . strlen($photoToSend) . ')' : 'null'));
             
             if ($photoToSend && !empty(trim($photoToSend))) {
                 try {
@@ -823,18 +840,21 @@ function recordAttendanceCheckOut($userId, $photoBase64 = null) {
                     }
 
                     error_log("Check-out: Sending photo with data to Telegram for user {$userId}, sendAsBase64: " . ($sendAsBase64 ? 'yes' : 'no'));
+                    error_log("Check-out: Photo data preview: " . substr($photoForTelegram, 0, 100) . '...');
+                    
                     $telegramResult = sendTelegramPhoto($photoForTelegram, $caption, null, $sendAsBase64);
                     
                     if ($telegramResult) {
                         markAttendanceEventNotificationSent($userId, 'checkout', $checkoutDate, $lastCheckIn['id']);
-                        error_log("Attendance check-out sent to Telegram successfully for user {$userId}");
+                        error_log("✅ Attendance check-out sent to Telegram successfully for user {$userId}");
                         if ($checkoutPhotoAbsolute && file_exists($checkoutPhotoAbsolute)) {
                             @unlink($checkoutPhotoAbsolute);
                             $checkoutPhotoAbsolute = null;
                             $checkoutPhotoDeleted = true;
                         }
                     } else {
-                        error_log("Failed to send attendance check-out to Telegram for user {$userId}");
+                        error_log("❌ Failed to send attendance check-out to Telegram for user {$userId}");
+                        error_log("   - Check error_log for more details");
                     }
                 } catch (Exception $e) {
                     error_log("Error sending attendance check-out to Telegram: " . $e->getMessage());
