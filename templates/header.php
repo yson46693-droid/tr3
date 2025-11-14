@@ -47,6 +47,24 @@ if (function_exists('processDailyPackagingAlert')) {
     processDailyPackagingAlert();
 }
 
+// معالجة الانصراف التلقائي للموظفين الذين لم يسجلوا انصراف
+if (function_exists('processAutoCheckoutForMissingEmployees')) {
+    try {
+        processAutoCheckoutForMissingEmployees();
+    } catch (Throwable $autoCheckoutError) {
+        error_log('Auto checkout processing error: ' . $autoCheckoutError->getMessage());
+    }
+}
+
+// تصفير عداد الإنذارات مع بداية كل شهر جديد
+if (function_exists('resetWarningCountsForNewMonth')) {
+    try {
+        resetWarningCountsForNewMonth();
+    } catch (Throwable $resetWarningError) {
+        error_log('Warning count reset error: ' . $resetWarningError->getMessage());
+    }
+}
+
 if ($currentUser && $currentUserRole === 'sales') {
     try {
         notifyTodayPaymentSchedules((int) $currentUser['id']);

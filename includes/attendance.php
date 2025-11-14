@@ -40,6 +40,11 @@ require_once __DIR__ . '/db.php';
 require_once __DIR__ . '/simple_telegram.php';
 require_once __DIR__ . '/salary_calculator.php';
 
+// تحميل notifications.php إذا لم يكن محملاً بالفعل
+if (!function_exists('createNotification')) {
+    require_once __DIR__ . '/notifications.php';
+}
+
 /**
  * الحصول على موعد العمل الرسمي للمستخدم
  * المدير ليس له حضور وانصراف
@@ -1312,6 +1317,254 @@ function maybeSendMonthlyAttendanceTelegramReport(int $month, int $year): void
 
     if (!$result['success']) {
         error_log('maybeSendMonthlyAttendanceTelegramReport failed: ' . $result['message']);
+    }
+}
+
+/**
+ * التأكد من وجود عمود warning_count في جدول users
+ */
+function ensureWarningCountColumn(): void
+{
+    static $ensured = false;
+    
+    if ($ensured) {
+        return;
+    }
+    
+    try {
+        $db = db();
+        $columnCheck = $db->queryOne("SHOW COLUMNS FROM users LIKE 'warning_count'");
+        
+        if (empty($columnCheck)) {
+            $db->execute("ALTER TABLE users ADD COLUMN `warning_count` int(11) DEFAULT 0 AFTER `status`");
+            error_log('Added warning_count column to users table');
+        }
+        
+        $ensured = true;
+    } catch (Exception $e) {
+        error_log('Failed to ensure warning_count column: ' . $e->getMessage());
+    }
+}
+
+/**
+ * تصفير عداد الإنذارات لجميع الموظفين مع بداية كل شهر جديد
+ */
+function resetWarningCountsForNewMonth(): void
+{
+    try {
+        $db = db();
+        $today = date('Y-m-d');
+        $firstDayOfMonth = date('Y-m-01');
+        
+        // التحقق من أن اليوم هو أول يوم في الشهر
+        if ($today !== $firstDayOfMonth) {
+            return;
+        }
+        
+        // التحقق من أن التصفير لم يتم بالفعل في هذا الشهر
+        // استخدام جدول بسيط أو متغير في الجلسة
+        $tableCheck = $db->queryOne("SHOW TABLES LIKE 'system_settings'");
+        
+        if (!empty($tableCheck)) {
+            $lastResetCheck = $db->queryOne(
+                "SELECT `value` FROM system_settings WHERE `key` = 'last_warning_reset_date' LIMIT 1"
+            );
+            
+            if ($lastResetCheck && $lastResetCheck['value'] === $today) {
+                return; // تم التصفير بالفعل اليوم
+            }
+        }
+        
+        // تصفير عداد الإنذارات لجميع الموظفين
+        $db->execute("UPDATE users SET warning_count = 0 WHERE role != 'manager'");
+        
+        // حفظ تاريخ آخر تصفير
+        if (!empty($tableCheck)) {
+            $db->execute(
+                "INSERT INTO system_settings (`key`, `value`, updated_at) 
+                 VALUES ('last_warning_reset_date', ?, NOW())
+                 ON DUPLICATE KEY UPDATE `value` = VALUES(`value`), updated_at = NOW()",
+                [$today]
+            );
+        }
+        
+        error_log('Warning counts reset for new month: ' . $today);
+    } catch (Exception $e) {
+        error_log('Failed to reset warning counts: ' . $e->getMessage());
+    }
+}
+
+/**
+ * التحقق من الموظفين الذين لم يسجلوا انصراف بعد 4 ساعات من وقت الانصراف الرسمي
+ * وإجراء الانصراف التلقائي
+ */
+function processAutoCheckoutForMissingEmployees(): void
+{
+    try {
+        $db = db();
+        ensureWarningCountColumn();
+        
+        $today = date('Y-m-d');
+        $now = date('Y-m-d H:i:s');
+        $nowTimestamp = strtotime($now);
+        
+        // الحصول على جميع الموظفين النشطين (ما عدا المديرين)
+        $employees = $db->query(
+            "SELECT id, full_name, username, role FROM users 
+             WHERE status = 'active' AND role != 'manager'"
+        );
+        
+        foreach ($employees as $employee) {
+            $userId = (int)$employee['id'];
+            
+            // الحصول على موعد العمل الرسمي
+            $workTime = getOfficialWorkTime($userId);
+            if (!$workTime) {
+                continue; // لا يوجد موعد عمل لهذا الموظف
+            }
+            
+            // حساب وقت الانصراف الرسمي
+            $officialCheckoutTime = $today . ' ' . $workTime['end'];
+            $officialCheckoutTimestamp = strtotime($officialCheckoutTime);
+            
+            // التحقق من أن الوقت الحالي بعد وقت الانصراف الرسمي بأكثر من 4 ساعات
+            $hoursSinceOfficialCheckout = ($nowTimestamp - $officialCheckoutTimestamp) / 3600;
+            
+            if ($hoursSinceOfficialCheckout < 4) {
+                continue; // لم يمر 4 ساعات بعد
+            }
+            
+            // التحقق من وجود تسجيل حضور بدون انصراف
+            $attendanceRecord = $db->queryOne(
+                "SELECT id, check_in_time, date FROM attendance_records 
+                 WHERE user_id = ? AND date = ? AND check_out_time IS NULL 
+                 ORDER BY check_in_time DESC LIMIT 1",
+                [$userId, $today]
+            );
+            
+            if (!$attendanceRecord) {
+                continue; // لا يوجد تسجيل حضور بدون انصراف
+            }
+            
+            // التحقق من أن الانصراف التلقائي لم يتم بالفعل
+            $autoCheckoutCheck = $db->queryOne(
+                "SELECT id FROM attendance_records 
+                 WHERE id = ? AND check_out_time IS NOT NULL",
+                [$attendanceRecord['id']]
+            );
+            
+            if ($autoCheckoutCheck) {
+                continue; // تم تسجيل الانصراف بالفعل
+            }
+            
+            // تسجيل الانصراف التلقائي
+            $autoCheckoutTime = date('Y-m-d H:i:s');
+            $workHours = calculateWorkHours($attendanceRecord['check_in_time'], $autoCheckoutTime);
+            
+            // حساب الفرق بين وقت الانصراف الرسمي ووقت الانصراف التلقائي
+            // الفرق = وقت الانصراف التلقائي - وقت الانصراف الرسمي (بالساعات)
+            $officialCheckoutTimestamp = strtotime($officialCheckoutTime);
+            $autoCheckoutTimestamp = strtotime($autoCheckoutTime);
+            $hoursDifference = ($autoCheckoutTimestamp - $officialCheckoutTimestamp) / 3600;
+            
+            // التأكد من أن الفرق موجب (الانصراف التلقائي بعد الانصراف الرسمي)
+            if ($hoursDifference < 0) {
+                $hoursDifference = 0;
+            }
+            
+            // تحديث سجل الحضور
+            $db->execute(
+                "UPDATE attendance_records 
+                 SET check_out_time = ?, work_hours = ?, updated_at = NOW() 
+                 WHERE id = ?",
+                [$autoCheckoutTime, $workHours, $attendanceRecord['id']]
+            );
+            
+            // خصم الفرق من الساعات التراكمية الشهرية
+            $attendanceDate = $attendanceRecord['date'];
+            $attendanceMonthKey = date('Y-m', strtotime($attendanceDate));
+            
+            // الحصول على الساعات الحالية للشهر
+            $currentMonthHours = calculateMonthHours($userId, $attendanceMonthKey);
+            
+            // خصم الفرق (إذا كان الفرق موجباً)
+            if ($hoursDifference > 0) {
+                // نحسب الساعات بعد الخصم
+                $adjustedHours = max(0, $currentMonthHours - $hoursDifference);
+                
+                // نحتاج لتعديل سجل الحضور ليعكس الخصم
+                // سنقوم بخصم الفرق من work_hours في السجل الحالي
+                $adjustedWorkHours = max(0, $workHours - $hoursDifference);
+                
+                $db->execute(
+                    "UPDATE attendance_records 
+                     SET work_hours = ? 
+                     WHERE id = ?",
+                    [$adjustedWorkHours, $attendanceRecord['id']]
+                );
+                
+                error_log("Auto checkout: User {$userId}, deducted {$hoursDifference} hours from monthly total");
+            }
+            
+            // زيادة عداد الإنذارات
+            $currentWarningCount = (int)$db->queryOne(
+                "SELECT warning_count FROM users WHERE id = ?",
+                [$userId]
+            )['warning_count'] ?? 0;
+            
+            $newWarningCount = $currentWarningCount + 1;
+            $db->execute(
+                "UPDATE users SET warning_count = ? WHERE id = ?",
+                [$newWarningCount, $userId]
+            );
+            
+            // إرسال إنذار للموظف
+            $userName = $employee['full_name'] ?? $employee['username'];
+            $message = "تم تسجيل انصراف تلقائي لك لأنك لم تسجل انصرافك بعد مرور 4 ساعات على وقت الانصراف الرسمي. يرجى عدم نسيان تسجيل الانصراف في المستقبل.";
+            
+            createNotification(
+                $userId,
+                'إنذار: نسيان تسجيل الانصراف',
+                $message,
+                'warning',
+                getAttendanceReminderLink($employee['role']),
+                true // إرسال عبر Telegram
+            );
+            
+            // إذا وصل عداد الإنذارات إلى 3 أو أكثر، خصم ساعتين إضافيتين
+            if ($newWarningCount >= 3) {
+                $monthHours = calculateMonthHours($userId, $attendanceMonthKey);
+                $adjustedMonthHours = max(0, $monthHours - 2);
+                
+                // نحتاج لخصم ساعتين من أحد سجلات الحضور في الشهر
+                // سنخصم من آخر سجل حضور في الشهر
+                $lastRecord = $db->queryOne(
+                    "SELECT id, work_hours FROM attendance_records 
+                     WHERE user_id = ? AND DATE_FORMAT(date, '%Y-%m') = ? 
+                     AND check_out_time IS NOT NULL 
+                     ORDER BY date DESC, check_out_time DESC LIMIT 1",
+                    [$userId, $attendanceMonthKey]
+                );
+                
+                if ($lastRecord) {
+                    $lastRecordHours = (float)($lastRecord['work_hours'] ?? 0);
+                    $adjustedLastRecordHours = max(0, $lastRecordHours - 2);
+                    
+                    $db->execute(
+                        "UPDATE attendance_records 
+                         SET work_hours = ? 
+                         WHERE id = ?",
+                        [$adjustedLastRecordHours, $lastRecord['id']]
+                    );
+                    
+                    error_log("Auto checkout: User {$userId} reached 3+ warnings, deducted 2 additional hours");
+                }
+            }
+            
+            error_log("Auto checkout processed for user {$userId} at {$autoCheckoutTime}");
+        }
+    } catch (Exception $e) {
+        error_log('Failed to process auto checkout: ' . $e->getMessage());
     }
 }
 
