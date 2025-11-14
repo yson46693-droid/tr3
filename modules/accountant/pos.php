@@ -23,6 +23,9 @@ $db = db();
 $error = '';
 $success = '';
 
+// قراءة الرسائل من session (Post-Redirect-Get pattern)
+applyPRGPattern($error, $success);
+
 // الحصول على مخزن الشركة الرئيسي
 $mainWarehouse = $db->queryOne("SELECT id, name FROM warehouses WHERE warehouse_type = 'main' AND status = 'active' LIMIT 1");
 if (!$mainWarehouse) {
@@ -63,7 +66,13 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     [$customerName, $customerPhone ?: null, $customerEmail ?: null, $customerAddress ?: null, $currentUser['id']]
                 );
                 
-                $success = 'تم إضافة العميل بنجاح';
+                // تطبيق PRG pattern لمنع التكرار
+                $currentPage = $_SERVER['PHP_SELF'] ?? '';
+                $isManagerPage = (strpos($currentPage, 'manager.php') !== false);
+                $redirectUrl = getRelativeUrl($isManagerPage ? 'dashboard/manager.php' : 'dashboard/accountant.php');
+                $redirectUrl .= '?page=' . ($isManagerPage ? 'pos&section=local' : 'pos');
+                
+                preventDuplicateSubmission('تم إضافة العميل بنجاح', [], $redirectUrl);
             }
         }
     } elseif ($action === 'complete_sale') {
@@ -259,10 +268,18 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
                 $conn->commit();
 
-                $success = 'تم إتمام عملية البيع بنجاح - رقم الفاتورة: ' . $invoiceNumber;
+                $successMessage = 'تم إتمام عملية البيع بنجاح - رقم الفاتورة: ' . $invoiceNumber;
                 if ($dueAmount > 0) {
-                    $success .= ' (المتبقي على العميل: ' . formatCurrency($dueAmount) . ')';
+                    $successMessage .= ' (المتبقي على العميل: ' . formatCurrency($dueAmount) . ')';
                 }
+
+                // تطبيق PRG pattern لمنع التكرار
+                $currentPage = $_SERVER['PHP_SELF'] ?? '';
+                $isManagerPage = (strpos($currentPage, 'manager.php') !== false);
+                $redirectUrl = getRelativeUrl($isManagerPage ? 'dashboard/manager.php' : 'dashboard/accountant.php');
+                $redirectUrl .= '?page=' . ($isManagerPage ? 'pos&section=local' : 'pos');
+                
+                preventDuplicateSubmission($successMessage, [], $redirectUrl);
 
                 // إعادة تحميل المنتجات والإحصائيات بعد البيع
                 [$products, $productStats, $productsMap] = $loadLocalPosProducts();
@@ -275,9 +292,11 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 if (isset($conn) && $conn) {
                     $conn->rollback();
                 }
+                // لا نطبق redirect عند وجود خطأ، فقط نعرض الرسالة
                 $error = 'حدث خطأ أثناء إتمام عملية البيع: ' . $exception->getMessage();
             }
         } else {
+            // لا نطبق redirect عند وجود أخطاء في التحقق، فقط نعرض الرسائل
             $error = implode('<br>', array_map('htmlspecialchars', $validationErrors));
         }
     }

@@ -732,10 +732,8 @@ $db = db();
 $error = '';
 $success = '';
 
-$sessionSuccess = getSuccessMessage();
-if ($sessionSuccess) {
-    $success = $sessionSuccess;
-}
+// قراءة الرسائل من session (Post-Redirect-Get pattern)
+applyPRGPattern($error, $success);
 
 // Pagination
 $pageNum = isset($_GET['p']) ? max(1, intval($_GET['p'])) : 1;

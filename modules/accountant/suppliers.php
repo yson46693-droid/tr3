@@ -23,6 +23,9 @@ $db = db();
 $error = '';
 $success = '';
 
+// قراءة الرسائل من session (Post-Redirect-Get pattern)
+applyPRGPattern($error, $success);
+
 // إنشاء/تحديث جدول suppliers لإضافة supplier_code و type
 try {
     $supplierCodeCheck = $db->queryOne("SHOW COLUMNS FROM suppliers LIKE 'supplier_code'");
@@ -327,14 +330,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     "INSERT INTO suppliers (supplier_code, type, name, contact_person, phone, email, address, status) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
                     [$supplierCode, $type, $name, $contact_person ?: null, $phone ?: null, $email ?: null, $address ?: null, $status]
                 );
-                $success = 'تم إضافة المورد بنجاح - كود المورد: ' . $supplierCode;
-                if (!headers_sent()) {
-                    header('Location: ?page=suppliers&success=' . urlencode($success));
-                    exit;
-                } else {
-                    echo '<script>window.location.href = "?page=suppliers&success=' . urlencode($success) . '";</script>';
-                    exit;
-                }
+                // تطبيق PRG pattern لمنع التكرار
+                $successMessage = 'تم إضافة المورد بنجاح - كود المورد: ' . $supplierCode;
+                preventDuplicateSubmission($successMessage, ['page' => 'suppliers'], null, $currentUser['role']);
             } catch (Exception $e) {
                 $error = 'حدث خطأ: ' . $e->getMessage();
             }
@@ -366,14 +364,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     "UPDATE suppliers SET supplier_code = ?, type = ?, name = ?, contact_person = ?, phone = ?, email = ?, address = ?, status = ?, updated_at = NOW() WHERE id = ?",
                     [$supplierCode, $type, $name, $contact_person ?: null, $phone ?: null, $email ?: null, $address ?: null, $status, $id]
                 );
-                $success = 'تم تحديث المورد بنجاح';
-                if (!headers_sent()) {
-                    header('Location: ?page=suppliers&success=' . urlencode($success));
-                    exit;
-                } else {
-                    echo '<script>window.location.href = "?page=suppliers&success=' . urlencode($success) . '";</script>';
-                    exit;
-                }
+                // تطبيق PRG pattern لمنع التكرار
+                $successMessage = 'تم تحديث المورد بنجاح';
+                preventDuplicateSubmission($successMessage, ['page' => 'suppliers'], null, $currentUser['role']);
             } catch (Exception $e) {
                 $error = 'حدث خطأ: ' . $e->getMessage();
             }

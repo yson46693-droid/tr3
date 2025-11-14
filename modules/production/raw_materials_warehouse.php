@@ -499,6 +499,9 @@ $db = db();
 $error = '';
 $success = '';
 
+// قراءة الرسائل من session (Post-Redirect-Get pattern)
+applyPRGPattern($error, $success);
+
 $honeyVarietiesCatalog = getHoneyVarietiesCatalog();
 $validHoneyVarieties = array_keys($honeyVarietiesCatalog);
 $defaultHoneyVariety = 'سدر';

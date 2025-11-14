@@ -367,15 +367,21 @@ function getTextAlign() {
  * منع تكرار الطلبات عند refresh
  * يستخدم Post-Redirect-Get (PRG) pattern
  * 
- * @param string $successMessage رسالة النجاح (اختياري)
+ * @param string|null $successMessage رسالة النجاح (اختياري)
  * @param array $redirectParams معاملات إعادة التوجيه
- * @param string $redirectUrl URL لإعادة التوجيه (اختياري)
- * @param string $role دور المستخدم لإعادة التوجيه (للاستخدام مع getDashboardUrl)
+ * @param string|null $redirectUrl URL لإعادة التوجيه (اختياري)
+ * @param string|null $role دور المستخدم لإعادة التوجيه (للاستخدام مع getDashboardUrl)
+ * @param string|null $errorMessage رسالة الخطأ (اختياري)
  */
-function preventDuplicateSubmission($successMessage = null, $redirectParams = [], $redirectUrl = null, $role = null) {
+function preventDuplicateSubmission($successMessage = null, $redirectParams = [], $redirectUrl = null, $role = null, $errorMessage = null) {
     // إذا كانت هناك رسالة نجاح، حفظها في session
-    if ($successMessage !== null) {
+    if ($successMessage !== null && $successMessage !== '') {
         $_SESSION['success_message'] = $successMessage;
+    }
+    
+    // إذا كانت هناك رسالة خطأ، حفظها في session
+    if ($errorMessage !== null && $errorMessage !== '') {
+        $_SESSION['error_message'] = $errorMessage;
     }
     
     // بناء URL إعادة التوجيه
@@ -444,6 +450,42 @@ function getSuccessMessage() {
         return $message;
     }
     return null;
+}
+
+/**
+ * التحقق من وجود رسالة خطأ في session وعرضها
+ * يجب استدعاؤها في بداية الصفحة بعد معالجة POST
+ * 
+ * @return string|null رسالة الخطأ أو null
+ */
+function getErrorMessage() {
+    if (isset($_SESSION['error_message'])) {
+        $message = $_SESSION['error_message'];
+        unset($_SESSION['error_message']);
+        return $message;
+    }
+    return null;
+}
+
+/**
+ * دالة مساعدة لتطبيق PRG pattern على الطلبات POST
+ * تقرأ الرسائل من session وتعرضها
+ * 
+ * @param string|null $defaultError متغير لرسالة الخطأ الافتراضي
+ * @param string|null $defaultSuccess متغير لرسالة النجاح الافتراضي
+ * @return void
+ */
+function applyPRGPattern(&$defaultError = null, &$defaultSuccess = null) {
+    $sessionSuccess = getSuccessMessage();
+    $sessionError = getErrorMessage();
+    
+    if ($sessionSuccess !== null) {
+        $defaultSuccess = $sessionSuccess;
+    }
+    
+    if ($sessionError !== null) {
+        $defaultError = $sessionError;
+    }
 }
 
 

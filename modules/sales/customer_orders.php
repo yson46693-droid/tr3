@@ -21,6 +21,10 @@ $currentUser = getCurrentUser();
 $db = db();
 $error = '';
 $success = '';
+
+// قراءة الرسائل من session (Post-Redirect-Get pattern)
+applyPRGPattern($error, $success);
+
 $userRole = $currentUser['role'] ?? '';
 $isSalesUser = $userRole === 'sales';
 $isManagerOrAccountant = in_array($userRole, ['manager', 'accountant'], true);
@@ -234,7 +238,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     'total_amount' => $totalAmount
                 ]);
 
-                $success = 'تم إنشاء الطلب بنجاح: ' . $orderNumber;
+                // تطبيق PRG pattern لمنع التكرار
+                $successMessage = 'تم إنشاء الطلب بنجاح: ' . $orderNumber;
+                preventDuplicateSubmission($successMessage, ['page' => 'orders'], null, $currentUser['role']);
             } catch (Throwable $createOrderError) {
                 if ($transactionStarted && $db->inTransaction()) {
                     $db->rollback();

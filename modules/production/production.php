@@ -25,6 +25,9 @@ $db = db();
 $error = '';
 $success = '';
 
+// قراءة الرسائل من session (Post-Redirect-Get pattern)
+applyPRGPattern($error, $success);
+
 ensureProductTemplatesExtendedSchema($db);
 syncAllUnifiedTemplatesToProductTemplates($db);
 
@@ -1069,12 +1072,6 @@ try {
 } catch (Exception $e) {
     error_log("Finished products table check error: " . $e->getMessage());
     $hasFinishedProductsTable = false;
-}
-
-// استرجاع رسالة النجاح من الجلسة (بعد إعادة التوجيه)
-$sessionSuccess = getSuccessMessage();
-if ($sessionSuccess) {
-    $success = $sessionSuccess;
 }
 
 // التحقق من وجود عمود date أو production_date

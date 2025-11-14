@@ -28,8 +28,11 @@ $buildUsersUrl = function(array $extra = []) use ($usersBaseParams) {
 };
 
 // استلام رسائل النجاح أو الخطأ من session (بعد redirect)
-$error = $_SESSION['error_message'] ?? '';
-$success = $_SESSION['success_message'] ?? '';
+$error = '';
+$success = '';
+
+// قراءة الرسائل من session (Post-Redirect-Get pattern)
+applyPRGPattern($error, $success);
 unset($_SESSION['error_message'], $_SESSION['success_message']);
 
 // Pagination
@@ -94,24 +97,14 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     'role' => $role
                 ]);
                 
-                $_SESSION['success_message'] = 'تم إضافة المستخدم بنجاح';
-                $redirectUrl = $buildUsersUrl($getFilterParams());
-                
-                if (!headers_sent()) {
-                    header('Location: ' . $redirectUrl);
-                    exit;
-                } else {
-                    echo '<script>window.location.href = ' . json_encode($redirectUrl) . ';</script>';
-                    echo '<noscript><meta http-equiv="refresh" content="0;url=' . htmlspecialchars($redirectUrl) . '"></noscript>';
-                    exit;
-                }
+                // تطبيق PRG pattern لمنع التكرار
+                preventDuplicateSubmission('تم إضافة المستخدم بنجاح', ['page' => 'users'], null, $currentUser['role']);
             }
         }
         if (!empty($error)) {
+            // عند وجود خطأ، نستخدم PRG لكن بدون redirect فوري (يتم عرض الخطأ في الصفحة)
+            // فقط نتحقق من عدم تكرار الطلب
             $_SESSION['error_message'] = $error;
-            $redirectUrl = $buildUsersUrl($getFilterParams());
-            header('Location: ' . $redirectUrl);
-            exit;
         }
     } elseif ($action === 'update_user') {
         $userId = intval($_POST['user_id'] ?? 0);

@@ -90,6 +90,33 @@ if (empty($view)) {
 
 // التحقق من طلب عرض التقرير الشهري
 $showReport = isset($_GET['report']) && $_GET['report'] == '1';
+
+// قراءة الرسائل من session (Post-Redirect-Get pattern)
+if (isset($_SESSION['salaries_success'])) {
+    $success = $_SESSION['salaries_success'];
+    unset($_SESSION['salaries_success']);
+}
+
+if (isset($_SESSION['salaries_error'])) {
+    $error = $_SESSION['salaries_error'];
+    unset($_SESSION['salaries_error']);
+}
+
+// قراءة حالة التقرير من session
+if (isset($_SESSION['salaries_show_report']) && $_SESSION['salaries_show_report']) {
+    $showReport = true;
+    if (isset($_SESSION['salaries_report_month'])) {
+        $selectedMonth = (int)$_SESSION['salaries_report_month'];
+    }
+    if (isset($_SESSION['salaries_report_year'])) {
+        $selectedYear = (int)$_SESSION['salaries_report_year'];
+    }
+    // تنظيف session
+    unset($_SESSION['salaries_show_report']);
+    unset($_SESSION['salaries_report_month']);
+    unset($_SESSION['salaries_report_year']);
+}
+
 $monthlyReport = null;
 
 if ($showReport) {
@@ -134,16 +161,34 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             'triggered_by' => $currentUser['id'] ?? null,
         ]);
 
+        // حفظ الرسالة في session لمنع التكرار
         if ($reportResult['success']) {
-            $success = $reportResult['message'];
+            $_SESSION['salaries_success'] = $reportResult['message'];
         } else {
-            $error = $reportResult['message'];
+            $_SESSION['salaries_error'] = $reportResult['message'];
         }
 
-        $selectedMonth = $month;
-        $selectedYear  = $year;
-        $showReport = true;
-        $monthlyReport = generateMonthlySalaryReport($selectedMonth, $selectedYear);
+        // حفظ حالة التقرير في session
+        $_SESSION['salaries_show_report'] = true;
+        $_SESSION['salaries_report_month'] = $month;
+        $_SESSION['salaries_report_year'] = $year;
+
+        // عمل redirect لمنع التكرار عند refresh (Post-Redirect-Get pattern)
+        // تحديد URL الصحيح بناءً على الصفحة الحالية
+        $rawScript = $_SERVER['PHP_SELF'] ?? '/dashboard/accountant.php';
+        $rawScript = ltrim($rawScript, '/');
+        
+        $isManagerPage = (strpos($rawScript, 'manager.php') !== false);
+        
+        if ($isManagerPage) {
+            $redirectUrl = getRelativeUrl('dashboard/manager.php');
+        } else {
+            $redirectUrl = getRelativeUrl('dashboard/accountant.php');
+        }
+        
+        $redirectUrl .= '?page=salaries&view=list&report=1&month=' . $month . '&year=' . $year;
+        header('Location: ' . $redirectUrl);
+        exit;
     } elseif ($action === 'modify_salary') {
         // وظيفة تعديل الراتب من salary_details.php
         $salaryId = intval($_POST['salary_id'] ?? 0);
@@ -763,8 +808,8 @@ if (isset($_GET['ajax']) && $_GET['ajax'] == '1' && $salaryId > 0) {
 <?php if ($showReport && $monthlyReport): ?>
 <!-- تقرير رواتب شهري -->
 <div class="card shadow-sm mb-4">
-    <div class="card-header bg-info text-white d-flex justify-content-between align-items-center flex-wrap gap-2">
-        <h5 class="mb-0">
+    <div class="card-header salary-header-gradient text-white d-flex justify-content-between align-items-center flex-wrap gap-2">
+        <h5 class="mb-0 fw-bold">
             <i class="bi bi-file-earmark-text me-2"></i>
             تقرير رواتب شهري - <?php echo date('F', mktime(0, 0, 0, $selectedMonth, 1)); ?> <?php echo $selectedYear; ?>
         </h5>
@@ -786,45 +831,45 @@ if (isset($_GET['ajax']) && $_GET['ajax'] == '1' && $salaryId > 0) {
         <!-- ملخص التقرير -->
         <div class="row mb-4 g-3">
             <div class="col-lg-3 col-md-6 col-sm-6">
-                <div class="card salary-summary-card bg-primary text-white h-100 shadow-sm border-0">
+                <div class="card salary-summary-card salary-card-blue text-white h-100 shadow-lg border-0">
                     <div class="card-body text-center p-4">
                         <div class="mb-2">
-                            <i class="bi bi-people fs-1 opacity-75"></i>
+                            <i class="bi bi-people fs-1"></i>
                         </div>
-                        <h6 class="card-title mb-2 fw-semibold text-uppercase small">عدد الموظفين</h6>
+                        <h6 class="card-title mb-2 fw-bold text-uppercase small">عدد الموظفين</h6>
                         <h2 class="mb-0 fw-bold"><?php echo $monthlyReport['total_users']; ?></h2>
                     </div>
                 </div>
             </div>
             <div class="col-lg-3 col-md-6 col-sm-6">
-                <div class="card salary-summary-card bg-success text-white h-100 shadow-sm border-0">
+                <div class="card salary-summary-card salary-card-green text-white h-100 shadow-lg border-0">
                     <div class="card-body text-center p-4">
                         <div class="mb-2">
-                            <i class="bi bi-clock-history fs-1 opacity-75"></i>
+                            <i class="bi bi-clock-history fs-1"></i>
                         </div>
-                        <h6 class="card-title mb-2 fw-semibold text-uppercase small">إجمالي الساعات</h6>
+                        <h6 class="card-title mb-2 fw-bold text-uppercase small">إجمالي الساعات</h6>
                         <h2 class="mb-0 fw-bold"><?php echo number_format($monthlyReport['total_hours'], 2); ?></h2>
                     </div>
                 </div>
             </div>
             <div class="col-lg-3 col-md-6 col-sm-6">
-                <div class="card salary-summary-card bg-warning text-white h-100 shadow-sm border-0">
+                <div class="card salary-summary-card salary-card-yellow text-white h-100 shadow-lg border-0">
                     <div class="card-body text-center p-4">
                         <div class="mb-2">
-                            <i class="bi bi-cash-stack fs-1 opacity-75"></i>
+                            <i class="bi bi-cash-stack fs-1"></i>
                         </div>
-                        <h6 class="card-title mb-2 fw-semibold text-uppercase small">إجمالي الرواتب</h6>
+                        <h6 class="card-title mb-2 fw-bold text-uppercase small">إجمالي الرواتب</h6>
                         <h2 class="mb-0 fw-bold"><?php echo formatCurrency($monthlyReport['total_amount']); ?></h2>
                     </div>
                 </div>
             </div>
             <div class="col-lg-3 col-md-6 col-sm-6">
-                <div class="card salary-summary-card bg-info text-white h-100 shadow-sm border-0">
+                <div class="card salary-summary-card salary-card-red text-white h-100 shadow-lg border-0">
                     <div class="card-body text-center p-4">
                         <div class="mb-2">
-                            <i class="bi bi-graph-up-arrow fs-1 opacity-75"></i>
+                            <i class="bi bi-graph-up-arrow fs-1"></i>
                         </div>
-                        <h6 class="card-title mb-2 fw-semibold text-uppercase small">متوسط الراتب</h6>
+                        <h6 class="card-title mb-2 fw-bold text-uppercase small">متوسط الراتب</h6>
                         <h2 class="mb-0 fw-bold">
                             <?php 
                             $avgSalary = $monthlyReport['total_users'] > 0 
@@ -839,23 +884,23 @@ if (isset($_GET['ajax']) && $_GET['ajax'] == '1' && $salaryId > 0) {
         </div>
         <div class="row mb-4 g-3">
             <div class="col-lg-6 col-md-6 col-sm-6">
-                <div class="card salary-summary-card bg-dark text-white h-100 shadow-sm border-0">
+                <div class="card salary-summary-card salary-card-red text-white h-100 shadow-lg border-0">
                     <div class="card-body text-center p-4">
                         <div class="mb-2">
-                            <i class="bi bi-exclamation-triangle fs-1 opacity-75"></i>
+                            <i class="bi bi-exclamation-triangle fs-1"></i>
                         </div>
-                        <h6 class="card-title mb-2 fw-semibold text-uppercase small">إجمالي التأخيرات (دقائق)</h6>
+                        <h6 class="card-title mb-2 fw-bold text-uppercase small">إجمالي التأخيرات (دقائق)</h6>
                         <h2 class="mb-0 fw-bold"><?php echo number_format($monthlyReport['total_delay_minutes'], 2); ?></h2>
                     </div>
                 </div>
             </div>
             <div class="col-lg-6 col-md-6 col-sm-6">
-                <div class="card salary-summary-card bg-secondary text-white h-100 shadow-sm border-0">
+                <div class="card salary-summary-card salary-card-yellow text-white h-100 shadow-lg border-0">
                     <div class="card-body text-center p-4">
                         <div class="mb-2">
-                            <i class="bi bi-stopwatch fs-1 opacity-75"></i>
+                            <i class="bi bi-stopwatch fs-1"></i>
                         </div>
-                        <h6 class="card-title mb-2 fw-semibold text-uppercase small">متوسط التأخير لكل موظف (دقيقة)</h6>
+                        <h6 class="card-title mb-2 fw-bold text-uppercase small">متوسط التأخير لكل موظف (دقيقة)</h6>
                         <h2 class="mb-0 fw-bold"><?php echo number_format($monthlyReport['average_delay_minutes'], 2); ?></h2>
                     </div>
                 </div>
@@ -983,110 +1028,180 @@ if (isset($_GET['ajax']) && $_GET['ajax'] == '1' && $salaryId > 0) {
 </div>
 
 <style>
-/* تحسين عرض بطاقات الملخص */
+/* تحسين عرض بطاقات الملخص - الألوان المطلوبة */
+.salary-card-blue {
+    background: linear-gradient(135deg, #2563eb 0%, #3b82f6 50%, #60a5fa 100%) !important;
+}
+
+.salary-card-green {
+    background: linear-gradient(135deg, #059669 0%, #10b981 50%, #34d399 100%) !important;
+}
+
+.salary-card-yellow {
+    background: linear-gradient(135deg, #d97706 0%, #f59e0b 50%, #fbbf24 100%) !important;
+}
+
+.salary-card-red {
+    background: linear-gradient(135deg, #dc2626 0%, #ef4444 50%, #f87171 100%) !important;
+}
+
 .salary-summary-card {
     border-radius: 16px;
     transition: all 0.3s ease;
+    border: none !important;
 }
 
 .salary-summary-card:hover {
-    transform: translateY(-5px);
-    box-shadow: 0 10px 30px rgba(0, 0, 0, 0.2) !important;
+    transform: translateY(-8px) scale(1.02);
+    box-shadow: 0 15px 40px rgba(0, 0, 0, 0.25) !important;
 }
 
 .salary-summary-card .card-body {
     position: relative;
 }
 
+.salary-summary-card i {
+    filter: drop-shadow(0 2px 4px rgba(0, 0, 0, 0.2));
+}
+
 .salary-summary-card h2 {
-    font-size: 2rem;
-    font-weight: 700;
+    font-size: 2.5rem;
+    font-weight: 800;
+    text-shadow: 0 2px 4px rgba(0, 0, 0, 0.2);
 }
 
 .salary-summary-card h6 {
-    font-size: 0.85rem;
+    font-size: 0.9rem;
     letter-spacing: 0.5px;
+    text-shadow: 0 1px 2px rgba(0, 0, 0, 0.1);
 }
 
-/* تحسين عرض الجدول */
+/* تحسين رأس التقرير - تدرج الأزرق والأبيض */
+.salary-header-gradient {
+    background: linear-gradient(135deg, #1e40af 0%, #3b82f6 30%, #60a5fa 60%, #93c5fd 100%) !important;
+    border: none;
+    box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+}
+
+/* تحسين عرض الجدول - تدرج الأزرق والأبيض */
 .salary-report-table {
     font-size: 0.95rem;
+    border-collapse: separate;
+    border-spacing: 0;
 }
 
 .salary-report-table thead th {
-    background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+    background: linear-gradient(135deg, #1e3a8a 0%, #2563eb 30%, #3b82f6 60%, #60a5fa 100%);
     color: #ffffff;
-    font-weight: 600;
-    padding: 1rem 0.75rem;
+    font-weight: 700;
+    padding: 1.25rem 0.75rem;
     border: none;
     text-align: center;
     vertical-align: middle;
-    font-size: 0.9rem;
+    font-size: 0.95rem;
     white-space: nowrap;
+    text-shadow: 0 1px 2px rgba(0, 0, 0, 0.2);
+    border-bottom: 3px solid #1e3a8a;
+}
+
+.salary-report-table thead th:first-child {
+    border-top-right-radius: 12px;
+}
+
+.salary-report-table thead th:last-child {
+    border-top-left-radius: 12px;
 }
 
 .salary-report-table tbody td {
     padding: 1rem 0.75rem;
     vertical-align: middle;
     text-align: center;
-    border-bottom: 1px solid rgba(0, 0, 0, 0.08);
+    border-bottom: 1px solid #e5e7eb;
+    background-color: #ffffff;
+    transition: all 0.2s ease;
+}
+
+.salary-report-table tbody tr {
+    transition: all 0.2s ease;
 }
 
 .salary-report-table tbody tr:hover {
-    background-color: rgba(102, 126, 234, 0.05);
-    transition: background-color 0.2s ease;
+    background: linear-gradient(90deg, rgba(59, 130, 246, 0.05) 0%, rgba(96, 165, 250, 0.1) 100%);
+    transform: scale(1.01);
+}
+
+.salary-report-table tbody tr:nth-child(even) {
+    background-color: #f8fafc;
+}
+
+.salary-report-table tbody tr:nth-child(even):hover {
+    background: linear-gradient(90deg, rgba(59, 130, 246, 0.08) 0%, rgba(96, 165, 250, 0.12) 100%);
 }
 
 .salary-report-table tbody td strong {
-    font-weight: 600;
-    color: #1f2937;
+    font-weight: 700;
+    color: #1e293b;
 }
 
 .salary-report-table .badge {
     font-size: 0.85rem;
     padding: 0.5rem 0.75rem;
-    font-weight: 500;
+    font-weight: 600;
+    box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
 }
 
-/* تحسين عرض تذييل الجدول */
+/* تحسين عرض تذييل الجدول - تدرج الأزرق الفاتح والأبيض */
 .salary-report-table tfoot {
-    background: linear-gradient(135deg, #f8fafc 0%, #e2e8f0 100%);
+    background: linear-gradient(135deg, #eff6ff 0%, #dbeafe 50%, #bfdbfe 100%);
 }
 
 .salary-report-table tfoot td {
-    font-weight: 700;
-    font-size: 1rem;
-    padding: 1.25rem 0.75rem;
-    border-top: 2px solid #667eea;
+    font-weight: 800;
+    font-size: 1.1rem;
+    padding: 1.5rem 0.75rem;
+    border-top: 3px solid #3b82f6;
+    color: #1e3a8a;
+}
+
+.salary-report-table tfoot td:first-child {
+    border-bottom-right-radius: 12px;
+}
+
+.salary-report-table tfoot td:last-child {
+    border-bottom-left-radius: 12px;
 }
 
 /* تحسين عرض الأدوار */
 .badge.bg-primary {
-    background: linear-gradient(135deg, #3b82f6 0%, #2563eb 100%) !important;
+    background: linear-gradient(135deg, #1e40af 0%, #3b82f6 100%) !important;
+    color: #ffffff;
 }
 
 .badge.bg-info {
-    background: linear-gradient(135deg, #06b6d4 0%, #0891b2 100%) !important;
+    background: linear-gradient(135deg, #0369a1 0%, #0ea5e9 100%) !important;
+    color: #ffffff;
 }
 
 .badge.bg-success {
-    background: linear-gradient(135deg, #10b981 0%, #059669 100%) !important;
+    background: linear-gradient(135deg, #059669 0%, #10b981 100%) !important;
+    color: #ffffff;
 }
 
 /* تحسين حجم الأرقام */
 .salary-report-table .text-success {
-    font-weight: 700;
-    font-size: 1.05rem;
+    font-weight: 800;
+    font-size: 1.1rem;
+    color: #059669 !important;
 }
 
 /* تحسين الاستجابة */
 @media (max-width: 768px) {
     .salary-summary-card h2 {
-        font-size: 1.5rem;
+        font-size: 1.75rem;
     }
     
     .salary-summary-card .card-body {
-        padding: 1rem !important;
+        padding: 1.25rem !important;
     }
     
     .salary-report-table {
@@ -1156,12 +1271,12 @@ if (isset($_GET['ajax']) && $_GET['ajax'] == '1' && $salaryId > 0) {
 
     <!-- قائمة الرواتب -->
     <div class="card shadow-sm">
-        <div class="card-header bg-primary text-white">
-            <h5 class="mb-0">رواتب <?php echo date('F', mktime(0, 0, 0, $selectedMonth, 1)); ?> <?php echo $selectedYear; ?></h5>
+        <div class="card-header salary-header-gradient text-white">
+            <h5 class="mb-0 fw-bold">رواتب <?php echo date('F', mktime(0, 0, 0, $selectedMonth, 1)); ?> <?php echo $selectedYear; ?></h5>
         </div>
         <div class="card-body">
             <div class="table-responsive dashboard-table-wrapper">
-                <table class="table dashboard-table align-middle">
+                <table class="table table-hover dashboard-table align-middle salary-report-table">
                     <thead>
                         <tr>
                             <th>المستخدم</th>
