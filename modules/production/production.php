@@ -4921,8 +4921,20 @@ function renderTemplateSuppliers(details) {
             return 'honey_general';
         }
         const key = (component.key || '').toString().toLowerCase();
+        const name = ((component.name || component.label || '').toString().toLowerCase());
+        
+        // فحص العسل من الاسم أيضاً
+        if (key.startsWith('honey_') || name.includes('عسل')) {
+            if (name.includes('مصفى') || name.includes('filtered') || key.includes('filtered')) {
+                return 'honey_filtered';
+            }
+            if (name.includes('خام') || name.includes('raw') || key.includes('raw')) {
+                return 'honey_raw';
+            }
+            return 'honey_general';
+        }
+        
         if (key.startsWith('pack_')) return 'packaging';
-        if (key.startsWith('honey_')) return 'honey_raw';
         if (key.startsWith('raw_')) return 'raw_general';
         if (key.startsWith('olive')) return 'olive_oil';
         if (key.startsWith('beeswax')) return 'beeswax';
@@ -5114,10 +5126,16 @@ function renderTemplateSuppliers(details) {
     const honeyComponentEntries = components
         .filter(component => {
             const canonicalType = determineComponentType(component);
+            const honeyVarietyRequired = requiresHoneyVariety(component);
+            const componentName = ((component.name || component.label || '').toString().toLowerCase());
+            const componentKeyLower = ((component.key || component.name || '').toString().toLowerCase());
+            const isHoneyByNameOrKey = componentName.includes('عسل') || componentKeyLower.includes('honey');
+            
             return (
                 isHoneyComponent(component)
-                || requiresHoneyVariety(component)
+                || honeyVarietyRequired
                 || ['honey_raw', 'honey_filtered', 'honey_main', 'honey_general'].includes(canonicalType)
+                || isHoneyByNameOrKey
             );
         })
         .map(component => ({
@@ -5129,7 +5147,8 @@ function renderTemplateSuppliers(details) {
         entries: honeyComponentEntries,
         baseEntry: honeyComponentEntries[0] || null,
         extraEntries: honeyComponentEntries.slice(1),
-        renderAggregated: honeyComponentEntries.length > 0
+        renderAggregated: honeyComponentEntries.length > 0,
+        processedKeys: new Set()
     };
 
     components.forEach(function(component) {
@@ -5139,16 +5158,32 @@ function renderTemplateSuppliers(details) {
         if (honeyVarietyRequired && !HONEY_COMPONENT_TYPES.includes(canonicalType)) {
             canonicalType = 'honey_general';
         }
+        // فحص شامل لتحديد ما إذا كان المكوّن عسل
+        const componentName = ((component.name || component.label || '').toString().toLowerCase());
+        const componentKeyLower = (componentKey || '').toString().toLowerCase();
+        const isHoneyByNameOrKey = componentName.includes('عسل') || componentKeyLower.includes('honey');
+        
         const isHoneyType = isHoneyComponent(component)
             || honeyVarietyRequired
             || canonicalType === 'honey_raw'
             || canonicalType === 'honey_filtered'
             || canonicalType === 'honey_main'
-            || canonicalType === 'honey_general';
+            || canonicalType === 'honey_general'
+            || isHoneyByNameOrKey;
 
-        // تجميع جميع مكوّنات العسل في بطاقة واحدة
-        if (isHoneyType && honeyGroup.baseEntry && componentKey !== honeyGroup.baseEntry.key) {
-            return;
+        // تجميع جميع مكوّنات العسل في بطاقة واحدة فقط
+        if (isHoneyType) {
+            // إذا كان هناك مكوّنات عسل وتم بالفعل عرض بطاقة العسل
+            if (honeyGroup.baseEntry && componentKey !== honeyGroup.baseEntry.key) {
+                return; // تخطي المكوّنات الإضافية
+            }
+            // إذا كان هذا هو المكوّن الأول من العسل، تأكد من أنه لم يتم عرضه من قبل
+            if (honeyGroup.baseEntry && componentKey === honeyGroup.baseEntry.key) {
+                if (honeyGroup.processedKeys.has(componentKey)) {
+                    return; // تم عرضه بالفعل
+                }
+                honeyGroup.processedKeys.add(componentKey);
+            }
         }
 
         const isAggregatedHoneyCard = isHoneyType
@@ -5235,6 +5270,7 @@ function renderTemplateSuppliers(details) {
         const controlLabel = document.createElement('label');
         controlLabel.className = 'form-label fw-semibold small text-muted mb-1';
         if (isHoneyType) {
+            // لمكوّنات العسل، استخدم دائماً "مورد العسل"
             controlLabel.textContent = aggregatedEntries.length > 1 
                 ? 'مورد العسل (سيتم تطبيقه على جميع مكوّنات العسل)'
                 : 'مورد العسل';
