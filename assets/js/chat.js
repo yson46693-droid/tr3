@@ -1,6 +1,7 @@
 (function () {
   const API_BASE = window.CHAT_API_BASE || '/api/chat';
   const PRESENCE_INTERVAL = 30000;
+  const POLLING_INTERVAL = 2500;
 
   const selectors = {
     app: '[data-chat-app]',
@@ -28,6 +29,7 @@
     replyTo: null,
     editMessage: null,
     statusTimer: null,
+    pollingTimer: null,
     isSending: false,
     initialized: false,
     pendingFetchTimeout: null,
@@ -68,6 +70,7 @@
     bindEvents();
     fetchMessages(true);
     startPresenceUpdates();
+    startPolling();
     document.addEventListener('visibilitychange', handleVisibilityChange);
 
     state.initialized = true;
@@ -97,12 +100,13 @@
     window.addEventListener('beforeunload', () => {
       cancelScheduledFetch();
       stopPresenceUpdates();
+      stopPolling();
       updatePresence(false).catch(() => null);
     });
   }
 
   function handleVisibilityChange() {
-    if (!document.hidden && state.messages.length === 0) {
+    if (!document.hidden) {
       fetchMessages();
     }
   }
@@ -272,6 +276,9 @@
       appendMessages([data.data], true);
       showToast('تم إرسال الرسالة');
       scrollToBottom(true);
+      setTimeout(() => {
+        fetchMessages();
+      }, 500);
     } catch (error) {
       console.error(error);
       showToast(error.message || 'حدث خطأ أثناء الإرسال', true);
@@ -306,6 +313,9 @@
       clearReplyAndEdit();
       applyMessageUpdate(data.data);
       showToast('تم تحديث الرسالة');
+      setTimeout(() => {
+        fetchMessages();
+      }, 500);
     } catch (error) {
       console.error(error);
       showToast(error.message || 'حدث خطأ أثناء التعديل', true);
@@ -379,6 +389,9 @@
       clearReplyAndEdit();
       applyMessageUpdate(data.data);
       showToast('تم حذف الرسالة');
+      setTimeout(() => {
+        fetchMessages();
+      }, 500);
     } catch (error) {
       console.error(error);
       showToast(error.message || 'حدث خطأ أثناء الحذف', true);
@@ -726,6 +739,25 @@
     }
   }
 
+  function startPolling() {
+    if (state.pollingTimer) {
+      return;
+    }
+
+    state.pollingTimer = window.setInterval(() => {
+      if (!document.hidden && state.initialized) {
+        fetchMessages();
+      }
+    }, POLLING_INTERVAL);
+  }
+
+  function stopPolling() {
+    if (state.pollingTimer) {
+      window.clearInterval(state.pollingTimer);
+      state.pollingTimer = null;
+    }
+  }
+
   async function updatePresence(isOnline) {
     try {
       await fetch(`${API_BASE}/user_status.php`, {
@@ -868,6 +900,7 @@
       window.clearTimeout(state.pendingFetchTimeout);
       state.pendingFetchTimeout = null;
     }
+    stopPolling();
   });
 })();
 

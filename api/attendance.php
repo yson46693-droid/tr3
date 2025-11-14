@@ -29,7 +29,17 @@ if (!isLoggedIn()) {
     exit;
 }
 
-$action = $_POST['action'] ?? $_GET['action'] ?? '';
+// قراءة البيانات من JSON أو POST
+$inputData = [];
+$contentType = $_SERVER['CONTENT_TYPE'] ?? '';
+if (strpos($contentType, 'application/json') !== false) {
+    $rawInput = file_get_contents('php://input');
+    $inputData = json_decode($rawInput, true) ?? [];
+} else {
+    $inputData = $_POST;
+}
+
+$action = $inputData['action'] ?? $_GET['action'] ?? '';
 $currentUser = getCurrentUser();
 $db = db();
 
@@ -66,15 +76,8 @@ try {
     }
     
     if ($action === 'check_in') {
-        // محاولة الحصول على الصورة من POST أو من input stream
-        $photoBase64 = $_POST['photo'] ?? null;
-        
-        // إذا لم تكن موجودة في POST، قد تكون في raw input (للملفات الكبيرة)
-        if (!$photoBase64) {
-            $rawInput = file_get_contents('php://input');
-            parse_str($rawInput, $parsed);
-            $photoBase64 = $parsed['photo'] ?? null;
-        }
+        // الحصول على الصورة من البيانات المرسلة
+        $photoBase64 = $inputData['photo'] ?? null;
         
         // تسجيل تفاصيل الصورة المستلمة
         if ($photoBase64) {
@@ -94,15 +97,8 @@ try {
         echo json_encode($result, JSON_UNESCAPED_UNICODE);
         
     } elseif ($action === 'check_out') {
-        // محاولة الحصول على الصورة من POST أو من input stream
-        $photoBase64 = $_POST['photo'] ?? null;
-        
-        // إذا لم تكن موجودة في POST، قد تكون في raw input (للملفات الكبيرة)
-        if (!$photoBase64) {
-            $rawInput = file_get_contents('php://input');
-            parse_str($rawInput, $parsed);
-            $photoBase64 = $parsed['photo'] ?? null;
-        }
+        // الحصول على الصورة من البيانات المرسلة
+        $photoBase64 = $inputData['photo'] ?? null;
         
         // تسجيل تفاصيل الصورة المستلمة
         if ($photoBase64) {

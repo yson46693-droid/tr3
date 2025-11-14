@@ -255,19 +255,20 @@ async function submitAttendance(action) {
             apiPath: apiPath
         });
         
-        // إرسال الصورة كـ FormData (لضمان التوافق مع PHP)
-        const formData = new FormData();
-        formData.append('action', action);
-        formData.append('photo', capturedPhoto); // base64 data URL كـ string
+        // إرسال الصورة كـ JSON (أفضل للبيانات الكبيرة)
+        const payload = {
+            action: action,
+            photo: capturedPhoto
+        };
         
-        // التحقق من أن الصورة موجودة في FormData
-        const photoValue = formData.get('photo');
-        console.log('FormData photo value:', photoValue ? 'exists (length: ' + photoValue.length + ')' : 'missing');
+        console.log('Payload photo value:', payload.photo ? 'exists (length: ' + payload.photo.length + ')' : 'missing');
         
         const response = await fetch(apiPath, {
             method: 'POST',
-            body: formData,
-            // لا نضيف headers لأن FormData يضيفها تلقائياً مع Content-Type الصحيح
+            headers: {
+                'Content-Type': 'application/json; charset=utf-8'
+            },
+            body: JSON.stringify(payload)
         });
         
         if (!response.ok) {
