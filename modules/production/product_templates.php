@@ -770,18 +770,62 @@ $lang = isset($translations) ? $translations : [];
             $rawMaterialsPreview = array_slice($rawMaterials, 0, 3);
             $remainingPackaging = max(0, count($packaging) - count($packagingPreview));
             $remainingRawMaterials = max(0, count($rawMaterials) - count($rawMaterialsPreview));
+            // تحضير JSON للاستخدام في JavaScript (base64 encoding لتجنب مشاكل escaping)
             $templateDetailsJson = '';
-            if (!empty($template['details_payload'])) {
-                $encodedDetails = json_encode(
-                    $template['details_payload'],
-                    JSON_UNESCAPED_UNICODE | JSON_HEX_TAG | JSON_HEX_APOS | JSON_HEX_AMP | JSON_HEX_QUOT
-                );
-                if ($encodedDetails !== false) {
-                    $templateDetailsJson = htmlspecialchars($encodedDetails, ENT_QUOTES, 'UTF-8');
+            $templateDetailsJsonBase64 = '';
+            
+            // التأكد من أن details_payload موجود ومكون بشكل صحيح
+            if (!empty($template['details_payload']) && is_array($template['details_payload'])) {
+                try {
+                    $encodedDetails = json_encode(
+                        $template['details_payload'],
+                        JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES | JSON_PARTIAL_OUTPUT_ON_ERROR
+                    );
+                    
+                    if ($encodedDetails !== false && $encodedDetails !== '' && $encodedDetails !== 'null') {
+                        // استخدام base64 لتجنب مشاكل escaping في HTML attributes
+                        $templateDetailsJsonBase64 = base64_encode($encodedDetails);
+                        $templateDetailsJson = $encodedDetails; // للاستخدام المباشر في JavaScript
+                    } else {
+                        // إذا فشل encoding، أنشئ payload افتراضي
+                        error_log("Template #{$template['id']}: Failed to encode details_payload");
+                        $templateDetailsJson = json_encode([
+                            'id' => $template['id'],
+                            'product_name' => $template['product_name'] ?? 'غير محدد',
+                            'status' => $template['status'] ?? 'active',
+                            'raw_materials' => $template['material_details'] ?? [],
+                            'packaging' => $template['packaging_details'] ?? []
+                        ], JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
+                        $templateDetailsJsonBase64 = base64_encode($templateDetailsJson);
+                    }
+                } catch (Exception $jsonError) {
+                    error_log("Template #{$template['id']}: JSON encoding error: " . $jsonError->getMessage());
+                    // إنشاء payload افتراضي في حالة الخطأ
+                    $templateDetailsJson = json_encode([
+                        'id' => $template['id'],
+                        'product_name' => $template['product_name'] ?? 'غير محدد',
+                        'status' => $template['status'] ?? 'active',
+                        'raw_materials' => $template['material_details'] ?? [],
+                        'packaging' => $template['packaging_details'] ?? []
+                    ], JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
+                    $templateDetailsJsonBase64 = base64_encode($templateDetailsJson);
                 }
+            } else {
+                // إذا لم يكن details_payload موجوداً، أنشئ واحداً من البيانات المتاحة
+                $templateDetailsJson = json_encode([
+                    'id' => $template['id'],
+                    'product_name' => $template['product_name'] ?? 'غير محدد',
+                    'status' => $template['status'] ?? 'active',
+                    'raw_materials' => $template['material_details'] ?? [],
+                    'packaging' => $template['packaging_details'] ?? []
+                ], JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
+                $templateDetailsJsonBase64 = base64_encode($templateDetailsJson);
             }
-            if ($templateDetailsJson === '') {
+            
+            // التأكد من أن القيم ليست فارغة
+            if (empty($templateDetailsJson) || empty($templateDetailsJsonBase64)) {
                 $templateDetailsJson = '{}';
+                $templateDetailsJsonBase64 = base64_encode('{}');
             }
             $materialIconTheme = [
                 'icon' => 'bi-box-seam',
@@ -929,7 +973,7 @@ $lang = isset($translations) ? $translations : [];
                         <?php if ($currentUser['role'] === 'manager'): ?>
                             <div class="d-flex gap-2">
                                 <button class="btn btn-sm btn-outline-primary"
-                                        onclick="editTemplate(<?php echo $template['id']; ?>, '<?php echo htmlspecialchars($templateDetailsJson, ENT_QUOTES, 'UTF-8'); ?>')"
+                                        onclick="editTemplate(<?php echo $template['id']; ?>, '<?php echo $templateDetailsJsonBase64; ?>', true)"
                                         title="تعديل القالب">
                                     <i class="bi bi-pencil"></i>
                                 </button>
@@ -1799,30 +1843,99 @@ function createBatch(templateId, templateName, triggerButton) {
 
 function editTemplate(templateId, templateDataJson, isBase64 = false) {
     let templateData;
+    
+    // التحقق من وجود البيانات
+    if (!templateDataJson || templateDataJson === '' || templateDataJson === 'undefined' || templateDataJson === 'null') {
+        console.error('Template data is empty or invalid:', templateDataJson);
+        alert('لا توجد بيانات للقالب. يرجى تحديث القالب مرة أخرى.');
+        return;
+    }
+    
     try {
         let jsonString = templateDataJson;
         
         // إذا كانت البيانات في base64، قم بفك التشفير أولاً
         if (isBase64) {
             try {
-                jsonString = atob(templateDataJson);
+                // التحقق من أن البيانات ليست فارغة قبل فك التشفير
+                if (!jsonString || jsonString.trim() === '') {
+                    throw new Error('Base64 string is empty');
+                }
+                jsonString = atob(jsonString);
+                
+                // التحقق من أن النتيجة بعد فك التشفير ليست فارغة
+                if (!jsonString || jsonString.trim() === '') {
+                    throw new Error('Decoded string is empty');
+                }
             } catch (base64Error) {
                 console.error('Error decoding base64:', base64Error);
-                alert('خطأ في قراءة بيانات القالب');
+                console.error('Base64 data:', templateDataJson);
+                console.error('Template ID:', templateId);
+                alert('خطأ في فك تشفير بيانات القالب. يرجى تحديث الصفحة والمحاولة مرة أخرى.');
                 return;
             }
         }
         
+        // التحقق من أن jsonString ليس فارغاً
+        if (!jsonString || jsonString.trim() === '') {
+            throw new Error('JSON string is empty');
+        }
+        
+        // التحقق من أن JSON صالح قبل محاولة parse
         if (typeof jsonString === 'string') {
+            // إزالة أي مسافات في البداية والنهاية
+            jsonString = jsonString.trim();
+            
+            // التحقق من أن النص يبدأ بـ { أو [
+            if (!jsonString.startsWith('{') && !jsonString.startsWith('[')) {
+                throw new Error('Invalid JSON format: string does not start with { or [');
+            }
+            
             templateData = JSON.parse(jsonString);
         } else {
             templateData = jsonString;
         }
+        
+        // التحقق من أن templateData هو object
+        if (!templateData || typeof templateData !== 'object') {
+            throw new Error('Template data is not a valid object');
+        }
+        
     } catch (e) {
         console.error('Error parsing template data:', e);
         console.error('Template data received:', templateDataJson);
-        alert('خطأ في قراءة بيانات القالب');
-        return;
+        console.error('Is Base64:', isBase64);
+        console.error('Template ID:', templateId);
+        console.error('Error message:', e.message);
+        
+        // محاولة إصلاح المشكلة: إنشاء payload بسيط من البيانات الأساسية
+        console.warn('Failed to parse template data, using fallback');
+        
+        // استخدام payload بسيط يحتوي فقط على ID واسم المنتج
+        try {
+            templateData = {
+                id: templateId,
+                product_name: '',
+                status: 'active',
+                raw_materials: [],
+                packaging: []
+            };
+            
+            // محاولة ملء اسم المنتج على الأقل
+            const templateCard = document.querySelector(`[data-template-id="${templateId}"]`);
+            if (templateCard) {
+                const productNameEl = templateCard.querySelector('.template-product-name');
+                if (productNameEl) {
+                    templateData.product_name = productNameEl.textContent.trim() || '';
+                }
+            }
+            
+            console.info('Using fallback template data:', templateData);
+        } catch (fallbackError) {
+            console.error('Fallback also failed:', fallbackError);
+            alert('خطأ في قراءة بيانات القالب. يرجى تحديث الصفحة والمحاولة مرة أخرى.');
+            return;
+        }
     }
 
     // ملء البيانات في النموذج
