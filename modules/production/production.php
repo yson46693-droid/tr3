@@ -4520,10 +4520,38 @@ function populateHoneyVarietyOptions(selectEl, supplierId, component) {
     placeholderOption.textContent = normalizedKey ? 'اختر نوع العسل' : 'اختر المورد أولاً';
     selectEl.appendChild(placeholderOption);
 
+    // استخراج نوع العسل من component.name أو component.material_name إذا كان يحتوي على " - "
+    let componentHoneyVariety = component?.honey_variety ?? component?.variety ?? component?.material_type ?? '';
+    
+    // إذا لم يكن نوع العسل محدداً مباشرة، استخرجه من اسم المادة
+    if (!componentHoneyVariety) {
+        const materialName = component?.name || component?.material_name || component?.label || '';
+        
+        // إذا كان الاسم يحتوي على " - "، استخرج النوع
+        if (materialName.includes(' - ')) {
+            const parts = materialName.split(' - ', 2);
+            if (parts.length === 2) {
+                const materialBaseName = parts[0].trim();
+                const materialType = parts[1].trim();
+                // إذا كان اسم المادة الأساسي يحتوي على "عسل"، استخدم النوع
+                if (materialBaseName.includes('عسل') || materialBaseName.toLowerCase().includes('honey')) {
+                    componentHoneyVariety = materialType;
+                }
+            }
+        }
+        // إذا كان الاسم يبدأ بـ "عسل "، استخرج النوع
+        else if (materialName.startsWith('عسل ') && materialName.length > 5) {
+            const parts = materialName.split(' ', 2);
+            if (parts.length === 2) {
+                componentHoneyVariety = parts[1].trim();
+            }
+        }
+    }
+    
     const defaultValue = normalizeVariety(
         selectEl.dataset.defaultValue !== undefined
             ? selectEl.dataset.defaultValue
-            : (component?.honey_variety ?? component?.variety ?? '')
+            : componentHoneyVariety
     );
     const defaultValueLower = defaultValue.toLocaleLowerCase('ar');
 
@@ -5365,7 +5393,34 @@ function renderTemplateSuppliers(details) {
             honeySelect.required = true;
             honeySelect.disabled = true;
             // تحديد نوع العسل من القالب المحدد مسبقاً
-            const defaultHoneyVariety = component.honey_variety || component.variety || component.material_type || '';
+            // استخراج نوع العسل من component.name أو component.material_name إذا كان يحتوي على " - "
+            let defaultHoneyVariety = component.honey_variety || component.variety || component.material_type || '';
+            
+            // إذا لم يكن نوع العسل محدداً مباشرة، استخرجه من اسم المادة
+            if (!defaultHoneyVariety) {
+                const materialName = component.name || component.material_name || component.label || '';
+                
+                // إذا كان الاسم يحتوي على " - "، استخرج النوع
+                if (materialName.includes(' - ')) {
+                    const parts = materialName.split(' - ', 2);
+                    if (parts.length === 2) {
+                        const materialBaseName = parts[0].trim();
+                        const materialType = parts[1].trim();
+                        // إذا كان اسم المادة الأساسي يحتوي على "عسل"، استخدم النوع
+                        if (materialBaseName.includes('عسل') || materialBaseName.toLowerCase().includes('honey')) {
+                            defaultHoneyVariety = materialType;
+                        }
+                    }
+                }
+                // إذا كان الاسم يبدأ بـ "عسل "، استخرج النوع
+                else if (materialName.startsWith('عسل ') && materialName.length > 5) {
+                    const parts = materialName.split(' ', 2);
+                    if (parts.length === 2) {
+                        defaultHoneyVariety = parts[1].trim();
+                    }
+                }
+            }
+            
             honeySelect.dataset.defaultValue = defaultHoneyVariety;
 
             const honeyPlaceholder = document.createElement('option');
