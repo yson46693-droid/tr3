@@ -480,9 +480,15 @@ function recordAttendanceCheckIn($userId, $photoBase64 = null) {
     // إدراج تسجيل حضور جديد
     $savedPhotoAbsolute = null;
     $savedPhotoRelative = null;
+    
+    // حفظ نسخة من الصورة الأصلية قبل الحفظ (لإرسالها إلى تليجرام)
+    $originalPhotoBase64 = $photoBase64;
 
     if ($photoBase64 && !empty(trim($photoBase64))) {
         [$savedPhotoAbsolute, $savedPhotoRelative] = saveAttendancePhoto($photoBase64, $userId, 'checkin');
+        error_log("Check-in: Photo saved - absolute: " . ($savedPhotoAbsolute ?: 'null') . ", relative: " . ($savedPhotoRelative ?: 'null'));
+    } else {
+        error_log("Check-in: No photo to save - photoBase64 is empty or null");
     }
 
     $storedPhotoValue = $savedPhotoRelative ?? ($photoBase64 ? 'captured' : null);
@@ -575,7 +581,11 @@ function recordAttendanceCheckIn($userId, $photoBase64 = null) {
             $delayText = $delayMinutes > 0 ? "⏰ تأخير: {$delayMinutes} دقيقة" : "✅ في الوقت";
 
             // إذا كانت الصورة متوفرة، أرسلها مع البيانات
-            if ($photoBase64 && !empty(trim($photoBase64))) {
+            // استخدام الصورة الأصلية المحفوظة قبل الحفظ
+            $photoToSend = $originalPhotoBase64 ?? $photoBase64;
+            error_log("Check-in: Checking photo availability - originalPhotoBase64 exists: " . ($originalPhotoBase64 ? 'yes' : 'no') . ", photoBase64 exists: " . ($photoBase64 ? 'yes' : 'no') . ", savedPhotoAbsolute: " . ($savedPhotoAbsolute ? 'yes' : 'no'));
+            
+            if ($photoToSend && !empty(trim($photoToSend))) {
                 try {
                     $caption = "🔔 <b>تسجيل حضور جديد</b>\n\n";
                     $caption .= "👤 <b>الاسم:</b> {$userName}\n";
@@ -584,10 +594,18 @@ function recordAttendanceCheckIn($userId, $photoBase64 = null) {
                     $caption .= "🕐 <b>الوقت:</b> " . formatArabicTime($now) . "\n";
                     $caption .= "{$delayText}";
                     
-                    $photoForTelegram = $savedPhotoAbsolute ?: $photoBase64;
-                    $sendAsBase64 = !$savedPhotoAbsolute;
+                    // استخدام الصورة المحفوظة إذا كانت موجودة، وإلا استخدم base64
+                    if ($savedPhotoAbsolute && file_exists($savedPhotoAbsolute)) {
+                        $photoForTelegram = $savedPhotoAbsolute;
+                        $sendAsBase64 = false;
+                        error_log("Check-in: Using saved photo file: {$savedPhotoAbsolute}");
+                    } else {
+                        $photoForTelegram = $photoToSend;
+                        $sendAsBase64 = true;
+                        error_log("Check-in: Using base64 photo, length: " . strlen($photoToSend));
+                    }
 
-                    error_log("Check-in: Sending photo with data to Telegram for user {$userId}");
+                    error_log("Check-in: Sending photo with data to Telegram for user {$userId}, sendAsBase64: " . ($sendAsBase64 ? 'yes' : 'no'));
                     $telegramResult = sendTelegramPhoto($photoForTelegram, $caption, null, $sendAsBase64);
                     
                     if ($telegramResult) {
@@ -694,9 +712,15 @@ function recordAttendanceCheckOut($userId, $photoBase64 = null) {
     // تحديث تسجيل الانصراف
     $checkoutPhotoAbsolute = null;
     $checkoutPhotoRelative = null;
+    
+    // حفظ نسخة من الصورة الأصلية قبل الحفظ (لإرسالها إلى تليجرام)
+    $originalCheckoutPhotoBase64 = $photoBase64;
 
     if ($photoBase64 && !empty(trim($photoBase64))) {
         [$checkoutPhotoAbsolute, $checkoutPhotoRelative] = saveAttendancePhoto($photoBase64, $userId, 'checkout');
+        error_log("Check-out: Photo saved - absolute: " . ($checkoutPhotoAbsolute ?: 'null') . ", relative: " . ($checkoutPhotoRelative ?: 'null'));
+    } else {
+        error_log("Check-out: No photo to save - photoBase64 is empty or null");
     }
 
     $db->execute(
@@ -772,7 +796,11 @@ function recordAttendanceCheckOut($userId, $photoBase64 = null) {
             error_log("Skipping duplicate attendance check-out notification for user {$userId} on {$checkoutDate}");
         } else {
             // إذا كانت الصورة متوفرة، أرسلها مع البيانات
-            if ($photoBase64 && !empty(trim($photoBase64))) {
+            // استخدام الصورة الأصلية المحفوظة قبل الحفظ
+            $photoToSend = $originalCheckoutPhotoBase64 ?? $photoBase64;
+            error_log("Check-out: Checking photo availability - originalCheckoutPhotoBase64 exists: " . ($originalCheckoutPhotoBase64 ? 'yes' : 'no') . ", photoBase64 exists: " . ($photoBase64 ? 'yes' : 'no') . ", checkoutPhotoAbsolute: " . ($checkoutPhotoAbsolute ? 'yes' : 'no'));
+            
+            if ($photoToSend && !empty(trim($photoToSend))) {
                 try {
                     $caption = "🔔 <b>تسجيل انصراف جديد</b>\n\n";
                     $caption .= "👤 <b>الاسم:</b> {$userName}\n";
@@ -783,10 +811,18 @@ function recordAttendanceCheckOut($userId, $photoBase64 = null) {
                     $caption .= "📊 <b>ساعات اليوم:</b> {$todayHours} ساعة\n";
                     $caption .= "📈 <b>ساعات الشهر:</b> {$monthHours} ساعة";
                     
-                    $photoForTelegram = $checkoutPhotoAbsolute ?: $photoBase64;
-                    $sendAsBase64 = !$checkoutPhotoAbsolute;
+                    // استخدام الصورة المحفوظة إذا كانت موجودة، وإلا استخدم base64
+                    if ($checkoutPhotoAbsolute && file_exists($checkoutPhotoAbsolute)) {
+                        $photoForTelegram = $checkoutPhotoAbsolute;
+                        $sendAsBase64 = false;
+                        error_log("Check-out: Using saved photo file: {$checkoutPhotoAbsolute}");
+                    } else {
+                        $photoForTelegram = $photoToSend;
+                        $sendAsBase64 = true;
+                        error_log("Check-out: Using base64 photo, length: " . strlen($photoToSend));
+                    }
 
-                    error_log("Check-out: Sending photo with data to Telegram for user {$userId}");
+                    error_log("Check-out: Sending photo with data to Telegram for user {$userId}, sendAsBase64: " . ($sendAsBase64 ? 'yes' : 'no'));
                     $telegramResult = sendTelegramPhoto($photoForTelegram, $caption, null, $sendAsBase64);
                     
                     if ($telegramResult) {
