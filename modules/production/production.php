@@ -730,18 +730,31 @@ function checkMaterialsAvailability($db, $templateId, $productionQuantity, array
         return $quantity;
     };
 
-    $checkStock = static function (string $table, string $column, ?int $supplierId = null) use ($db): float {
+    $checkStock = static function (string $table, string $column, ?int $supplierId = null, ?string $honeyVariety = null) use ($db): float {
         $sql = "SELECT SUM({$column}) AS total_quantity FROM {$table}";
         $params = [];
+        $conditions = [];
+        
         if ($supplierId) {
-            $sql .= " WHERE supplier_id = ?";
+            $conditions[] = "supplier_id = ?";
             $params[] = $supplierId;
         }
+        
+        // إذا كان الجدول هو honey_stock ونوع العسل محدد، أضفه إلى الشروط
+        if ($table === 'honey_stock' && $honeyVariety !== null && $honeyVariety !== '') {
+            $conditions[] = "honey_variety = ?";
+            $params[] = trim($honeyVariety);
+        }
+        
+        if (!empty($conditions)) {
+            $sql .= " WHERE " . implode(" AND ", $conditions);
+        }
+        
         $stockRow = $db->queryOne($sql, $params);
         return (float)($stockRow['total_quantity'] ?? 0);
     };
 
-    $resolveSpecialStock = static function (?string $materialType, ?int $supplierId, string $materialName) use ($db, $checkStock, $normalizeMaterialType, $normalizeUnitLabel): array {
+    $resolveSpecialStock = static function (?string $materialType, ?int $supplierId, string $materialName, ?string $honeyVariety = null) use ($db, $checkStock, $normalizeMaterialType, $normalizeUnitLabel): array {
         $resolved = false;
         $availableQuantity = 0.0;
         $availableUnit = '';
@@ -754,7 +767,7 @@ function checkMaterialsAvailability($db, $templateId, $productionQuantity, array
                 $honeyStockExists = $db->queryOne("SHOW TABLES LIKE 'honey_stock'");
                 if (!empty($honeyStockExists)) {
                     $column = ($normalizedType === 'honey_raw') ? 'raw_honey_quantity' : 'filtered_honey_quantity';
-                    $availableQuantity = $checkStock('honey_stock', $column, $supplierId);
+                    $availableQuantity = $checkStock('honey_stock', $column, $supplierId, $honeyVariety);
                     $resolved = true;
                     $availableUnit = 'kg';
                 }
@@ -830,6 +843,26 @@ function checkMaterialsAvailability($db, $templateId, $productionQuantity, array
         $rawDetail = $rawMaterialsDetails[$normalizedName] ?? null;
         $materialTypeMeta = $rawDetail['type'] ?? null;
         $materialSupplierMeta = isset($rawDetail['supplier_id']) ? (int)$rawDetail['supplier_id'] : null;
+        $honeyVarietyMeta = $rawDetail['honey_variety'] ?? null;
+        
+        // إذا كان نوع العسل غير محدد في rawDetail، حاول استخراجه من اسم المادة
+        if (empty($honeyVarietyMeta) && (mb_stripos($materialName, 'عسل') !== false || stripos($materialName, 'honey') !== false)) {
+            // إذا كان الاسم يحتوي على " - "، استخرج نوع العسل
+            if (mb_strpos($materialName, ' - ') !== false) {
+                $parts = explode(' - ', $materialName, 2);
+                if (count($parts) === 2) {
+                    $honeyVarietyMeta = trim($parts[1]);
+                }
+            }
+            // إذا كان الاسم يبدأ بـ "عسل "، استخرج نوع العسل
+            elseif (mb_strpos($materialName, 'عسل ') === 0 && mb_strlen($materialName) > 5) {
+                $parts = explode(' ', $materialName, 2);
+                if (count($parts) === 2) {
+                    $honeyVarietyMeta = trim($parts[1]);
+                }
+            }
+        }
+        
         $materialUnit = $raw['unit'] ?? ($rawDetail['unit'] ?? 'كجم');
         $materialUnitNormalized = $normalizeUnitLabel($materialUnit);
         
@@ -843,7 +876,7 @@ function checkMaterialsAvailability($db, $templateId, $productionQuantity, array
             $availableQuantity = floatval($product['quantity'] ?? 0);
 
             if ($availableQuantity < $requiredQuantity) {
-                $specialStock = $resolveSpecialStock($materialTypeMeta, $materialSupplierMeta, $materialName);
+                $specialStock = $resolveSpecialStock($materialTypeMeta, $materialSupplierMeta, $materialName, $honeyVarietyMeta);
                 if ($specialStock['resolved']) {
                     $availableFromSpecial = $specialStock['quantity'];
                     $availableFromSpecial = $convertQuantityUnit(
@@ -865,7 +898,7 @@ function checkMaterialsAvailability($db, $templateId, $productionQuantity, array
                 ];
             }
         } else {
-            $specialStock = $resolveSpecialStock($materialTypeMeta, $materialSupplierMeta, $materialName);
+            $specialStock = $resolveSpecialStock($materialTypeMeta, $materialSupplierMeta, $materialName, $honeyVarietyMeta);
             if ($specialStock['resolved']) {
                 $availableQuantity = $specialStock['quantity'];
                 $availableQuantity = $convertQuantityUnit(
