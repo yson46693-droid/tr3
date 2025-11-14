@@ -573,9 +573,12 @@ function recordAttendanceCheckIn($userId, $photoBase64 = null) {
     // إرسال إشعار واحد فقط عبر Telegram (صورة مع جميع البيانات) مع منع التكرار
     $photoDeleted = false;
     $telegramEnabled = isTelegramConfigured();
+    
+    error_log("Check-in: Telegram notification check - enabled: " . ($telegramEnabled ? 'yes' : 'no'));
 
     if ($telegramEnabled) {
         $alreadySent = hasAttendanceEventNotificationBeenSent($userId, 'checkin', $today);
+        error_log("Check-in: Already sent check - result: " . ($alreadySent ? 'yes' : 'no'));
 
         if ($alreadySent) {
             error_log("Skipping duplicate attendance check-in notification for user {$userId} on {$today}");
@@ -633,6 +636,7 @@ function recordAttendanceCheckIn($userId, $photoBase64 = null) {
                     error_log("Error sending attendance check-in to Telegram: " . $e->getMessage());
                 }
             } else {
+                error_log("Check-in: No photo to send - photoToSend is empty or null");
                 // إذا لم تكن هناك صورة، أرسل رسالة نصية فقط (مرة واحدة)
                 try {
                     $message = "🔔 <b>تسجيل حضور جديد</b>\n\n";
@@ -651,8 +655,10 @@ function recordAttendanceCheckIn($userId, $photoBase64 = null) {
                 }
             }
         }
+    } else {
+        error_log("Check-in: Telegram is not enabled - skipping notification");
     }
-    
+
     if ($photoDeleted) {
         try {
             $db->execute(
@@ -686,6 +692,8 @@ function recordAttendanceCheckIn($userId, $photoBase64 = null) {
  * تسجيل انصراف
  */
 function recordAttendanceCheckOut($userId, $photoBase64 = null) {
+    error_log("=== recordAttendanceCheckOut START - user_id: {$userId}, photoBase64: " . ($photoBase64 ? 'exists (length: ' . strlen($photoBase64) . ')' : 'null') . " ===");
+    
     $db = db();
     $now = date('Y-m-d H:i:s');
     $today = date('Y-m-d');
@@ -800,9 +808,12 @@ function recordAttendanceCheckOut($userId, $photoBase64 = null) {
     $checkoutPhotoDeleted = false;
     $telegramEnabled = isTelegramConfigured();
     $checkoutDate = date('Y-m-d');
+    
+    error_log("Check-out: Telegram notification check - enabled: " . ($telegramEnabled ? 'yes' : 'no'));
 
     if ($telegramEnabled) {
         $alreadySent = hasAttendanceEventNotificationBeenSent($userId, 'checkout', $checkoutDate);
+        error_log("Check-out: Already sent check - result: " . ($alreadySent ? 'yes' : 'no'));
 
         if ($alreadySent) {
             error_log("Skipping duplicate attendance check-out notification for user {$userId} on {$checkoutDate}");
@@ -860,6 +871,7 @@ function recordAttendanceCheckOut($userId, $photoBase64 = null) {
                     error_log("Error sending attendance check-out to Telegram: " . $e->getMessage());
                 }
             } else {
+                error_log("Check-out: No photo to send - photoToSend is empty or null");
                 // إذا لم تكن هناك صورة، أرسل رسالة نصية فقط (مرة واحدة)
                 try {
                     $message = "🔔 <b>تسجيل انصراف جديد</b>\n\n";
@@ -880,6 +892,8 @@ function recordAttendanceCheckOut($userId, $photoBase64 = null) {
                 }
             }
         }
+    } else {
+        error_log("Check-out: Telegram is not enabled - skipping notification");
     }
 
     if ($checkoutPhotoDeleted) {
