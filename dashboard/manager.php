@@ -679,7 +679,7 @@ $pageTitle = isset($lang['manager_dashboard']) ? $lang['manager_dashboard'] : '�
                 ?>
                 
             <?php elseif ($page === 'returns'): ?>
-                <!-- صفحة المرتجعات -->
+                <!-- صفحة المرتجعات والاستبدال -->
                 <?php 
                 $modulePath = __DIR__ . '/../modules/sales/returns.php';
                 if (file_exists($modulePath)) {
@@ -688,12 +688,9 @@ $pageTitle = isset($lang['manager_dashboard']) ? $lang['manager_dashboard'] : '�
                 ?>
                 
             <?php elseif ($page === 'exchanges'): ?>
-                <!-- صفحة الاستبدال -->
                 <?php 
-                $modulePath = __DIR__ . '/../modules/sales/exchanges.php';
-                if (file_exists($modulePath)) {
-                    include $modulePath;
-                }
+                header('Location: manager.php?page=returns&section=exchanges');
+                exit;
                 ?>
                 
             <?php elseif ($page === 'packaging_warehouse'): ?>

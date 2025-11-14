@@ -415,14 +415,6 @@ if (!empty($exchangeTableExists)) {
     }
 }
 
-$exchangeApprovedReturns = $db->query(
-    "SELECT r.id, r.return_number, c.name as customer_name 
-     FROM returns r
-     LEFT JOIN customers c ON r.customer_id = c.id
-     WHERE r.status = 'approved'
-     ORDER BY r.created_at DESC LIMIT 50"
-);
-
 // استبدال محدد للعرض
 $selectedExchange = null;
 if (isset($_GET['exchange_id'])) {
@@ -546,7 +538,7 @@ if (isset($_GET['id'])) {
     <div class="card shadow-sm mb-4">
         <div class="card-header bg-primary text-white d-flex justify-content-between align-items-center">
             <h5 class="mb-0">مرتجع رقم: <?php echo htmlspecialchars($selectedReturn['return_number']); ?></h5>
-            <a href="?page=returns" class="btn btn-light btn-sm">
+            <a href="?page=returns&section=returns" class="btn btn-light btn-sm">
                 <i class="bi bi-x"></i>
             </a>
         </div>
@@ -690,6 +682,7 @@ if (isset($_GET['id'])) {
             <?php if ($selectedReturn['status'] === 'pending' && hasRole('manager')): ?>
                 <div class="mt-3">
                     <form method="POST" class="d-inline">
+                        <input type="hidden" name="section" value="returns">
                         <input type="hidden" name="action" value="approve_return">
                         <input type="hidden" name="return_id" value="<?php echo $selectedReturn['id']; ?>">
                         <button type="submit" class="btn btn-success">
@@ -707,6 +700,7 @@ if (isset($_GET['id'])) {
     <div class="card-body">
         <form method="GET" class="row g-3">
             <input type="hidden" name="page" value="returns">
+            <input type="hidden" name="section" value="returns">
             <div class="col-md-3">
                 <label class="form-label">العميل</label>
                 <select class="form-select" name="customer_id">
@@ -780,7 +774,7 @@ if (isset($_GET['id'])) {
                         <?php foreach ($returns as $return): ?>
                             <tr>
                                 <td>
-                                    <a href="?page=returns&id=<?php echo $return['id']; ?>" class="text-decoration-none">
+                                    <a href="?page=returns&section=returns&id=<?php echo $return['id']; ?>" class="text-decoration-none">
                                         <strong><?php echo htmlspecialchars($return['return_number']); ?></strong>
                                     </a>
                                 </td>
@@ -805,7 +799,7 @@ if (isset($_GET['id'])) {
                                     </span>
                                 </td>
                                 <td>
-                                    <a href="?page=returns&id=<?php echo $return['id']; ?>" 
+                                    <a href="?page=returns&section=returns&id=<?php echo $return['id']; ?>" 
                                        class="btn btn-info btn-sm" title="عرض">
                                         <i class="bi bi-eye"></i>
                                     </a>
@@ -822,7 +816,7 @@ if (isset($_GET['id'])) {
         <nav aria-label="Page navigation" class="mt-3">
             <ul class="pagination justify-content-center flex-wrap">
                 <li class="page-item <?php echo $pageNum <= 1 ? 'disabled' : ''; ?>">
-                    <a class="page-link" href="?page=returns&p=<?php echo $pageNum - 1; ?>&<?php echo http_build_query($filters); ?>">
+                    <a class="page-link" href="?<?php echo http_build_query(array_merge(['page' => 'returns', 'section' => 'returns', 'p' => $pageNum - 1], $filters)); ?>">
                         <i class="bi bi-chevron-right"></i>
                     </a>
                 </li>
@@ -833,14 +827,14 @@ if (isset($_GET['id'])) {
                 
                 for ($i = $startPage; $i <= $endPage; $i++): ?>
                     <li class="page-item <?php echo $i == $pageNum ? 'active' : ''; ?>">
-                        <a class="page-link" href="?page=returns&p=<?php echo $i; ?>&<?php echo http_build_query($filters); ?>">
+                        <a class="page-link" href="?<?php echo http_build_query(array_merge(['page' => 'returns', 'section' => 'returns', 'p' => $i], $filters)); ?>">
                             <?php echo $i; ?>
                         </a>
                     </li>
                 <?php endfor; ?>
                 
                 <li class="page-item <?php echo $pageNum >= $totalPages ? 'disabled' : ''; ?>">
-                    <a class="page-link" href="?page=returns&p=<?php echo $pageNum + 1; ?>&<?php echo http_build_query($filters); ?>">
+                    <a class="page-link" href="?<?php echo http_build_query(array_merge(['page' => 'returns', 'section' => 'returns', 'p' => $pageNum + 1], $filters)); ?>">
                         <i class="bi bi-chevron-left"></i>
                     </a>
                 </li>
@@ -861,6 +855,7 @@ if (isset($_GET['id'])) {
             </div>
             <form method="POST" id="returnForm">
                 <input type="hidden" name="action" value="create_return">
+                <input type="hidden" name="section" value="returns">
                 <div class="modal-body">
                     <div class="row mb-3">
                         <div class="col-md-4">
@@ -991,6 +986,336 @@ document.getElementById('addReturnItemBtn')?.addEventListener('click', function(
 });
 </script>
 <?php endif; ?>
+<?php if ($section === 'exchanges'): ?>
+<div class="d-flex justify-content-between align-items-center mb-3">
+    <h3 class="mb-0"><i class="bi bi-arrow-repeat me-2"></i>إدارة الاستبدال</h3>
+    <?php if (hasRole(['sales', 'accountant'])): ?>
+    <button class="btn btn-primary" type="button" disabled title="سيتم توفير نموذج إنشاء قريباً">
+        <i class="bi bi-plus-circle me-2"></i>إنشاء استبدال جديد
+    </button>
+    <?php endif; ?>
+</div>
 
+<?php if ($exchangeError): ?>
+    <div class="alert alert-danger alert-dismissible fade show">
+        <i class="bi bi-exclamation-triangle-fill me-2"></i>
+        <?php echo htmlspecialchars($exchangeError); ?>
+        <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
+    </div>
+<?php endif; ?>
+
+<?php if ($exchangeSuccess): ?>
+    <div class="alert alert-success alert-dismissible fade show">
+        <i class="bi bi-check-circle-fill me-2"></i>
+        <?php echo htmlspecialchars($exchangeSuccess); ?>
+        <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
+    </div>
+<?php endif; ?>
+
+<?php if ($selectedExchange): ?>
+    <div class="card shadow-sm mb-4">
+        <div class="card-header bg-primary text-white d-flex justify-content-between align-items-center">
+            <h5 class="mb-0">استبدال رقم: <?php echo htmlspecialchars($selectedExchange['exchange_number']); ?></h5>
+            <a href="?<?php echo http_build_query(array_merge(['page' => 'returns', 'section' => 'exchanges'], $exchangeQueryParams)); ?>" class="btn btn-light btn-sm">
+                <i class="bi bi-x"></i>
+            </a>
+        </div>
+        <div class="card-body">
+            <div class="row">
+                <div class="col-md-6">
+                    <table class="table dashboard-table-details">
+                        <tr>
+                            <th width="40%">العميل:</th>
+                            <td><?php echo htmlspecialchars($selectedExchange['customer_name'] ?? '-'); ?></td>
+                        </tr>
+                        <tr>
+                            <th>رقم البيع الأصلي:</th>
+                            <td><?php echo htmlspecialchars($selectedExchange['sale_number'] ?? '-'); ?></td>
+                        </tr>
+                        <tr>
+                            <th>تاريخ الاستبدال:</th>
+                            <td><?php echo formatDate($selectedExchange['exchange_date']); ?></td>
+                        </tr>
+                        <tr>
+                            <th>نوع الاستبدال:</th>
+                            <td>
+                                <?php 
+                                $types = [
+                                    'same_product' => 'نفس المنتج',
+                                    'different_product' => 'منتج مختلف',
+                                    'upgrade' => 'ترقية',
+                                    'downgrade' => 'تخفيض'
+                                ];
+                                echo $types[$selectedExchange['exchange_type']] ?? $selectedExchange['exchange_type'];
+                                ?>
+                            </td>
+                        </tr>
+                    </table>
+                </div>
+                <div class="col-md-6">
+                    <table class="table dashboard-table-details">
+                        <tr>
+                            <th width="40%">الحالة:</th>
+                            <td>
+                                <span class="badge bg-<?php 
+                                    echo $selectedExchange['status'] === 'completed' ? 'success' : 
+                                        ($selectedExchange['status'] === 'rejected' ? 'danger' : 
+                                        ($selectedExchange['status'] === 'approved' ? 'info' : 'warning')); 
+                                ?>">
+                                    <?php 
+                                    $statuses = [
+                                        'pending' => 'معلق',
+                                        'approved' => 'موافق عليه',
+                                        'rejected' => 'مرفوض',
+                                        'completed' => 'مكتمل'
+                                    ];
+                                    echo $statuses[$selectedExchange['status']] ?? $selectedExchange['status'];
+                                    ?>
+                                </span>
+                            </td>
+                        </tr>
+                        <tr>
+                            <th>المبلغ الأصلي:</th>
+                            <td><?php echo formatCurrency($selectedExchange['original_total']); ?></td>
+                        </tr>
+                        <tr>
+                            <th>المبلغ الجديد:</th>
+                            <td><?php echo formatCurrency($selectedExchange['new_total']); ?></td>
+                        </tr>
+                        <tr>
+                            <th>الفرق:</th>
+                            <td>
+                                <strong class="<?php echo $selectedExchange['difference_amount'] >= 0 ? 'text-success' : 'text-danger'; ?>">
+                                    <?php echo formatCurrency($selectedExchange['difference_amount']); ?>
+                                </strong>
+                            </td>
+                        </tr>
+                    </table>
+                </div>
+            </div>
+
+            <div class="row mt-3">
+                <div class="col-md-6">
+                    <h6>المنتجات المرتجعة:</h6>
+                    <div class="table-responsive dashboard-table-wrapper">
+                        <table class="table dashboard-table dashboard-table--compact align-middle">
+                            <thead>
+                                <tr>
+                                    <th>المنتج</th>
+                                    <th>الكمية</th>
+                                    <th>السعر</th>
+                                    <th>الإجمالي</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                <?php foreach ($selectedExchange['return_items'] as $item): ?>
+                                    <tr>
+                                        <td><?php echo htmlspecialchars($item['product_name'] ?? '-'); ?></td>
+                                        <td><?php echo number_format($item['quantity'], 2); ?></td>
+                                        <td><?php echo formatCurrency($item['unit_price']); ?></td>
+                                        <td><?php echo formatCurrency($item['total_price']); ?></td>
+                                    </tr>
+                                <?php endforeach; ?>
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+                <div class="col-md-6">
+                    <h6>المنتجات الجديدة:</h6>
+                    <div class="table-responsive dashboard-table-wrapper">
+                        <table class="table dashboard-table dashboard-table--compact align-middle">
+                            <thead>
+                                <tr>
+                                    <th>المنتج</th>
+                                    <th>الكمية</th>
+                                    <th>السعر</th>
+                                    <th>الإجمالي</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                <?php foreach ($selectedExchange['new_items'] as $item): ?>
+                                    <tr>
+                                        <td><?php echo htmlspecialchars($item['product_name'] ?? '-'); ?></td>
+                                        <td><?php echo number_format($item['quantity'], 2); ?></td>
+                                        <td><?php echo formatCurrency($item['unit_price']); ?></td>
+                                        <td><?php echo formatCurrency($item['total_price']); ?></td>
+                                    </tr>
+                                <?php endforeach; ?>
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            </div>
+
+            <?php if ($selectedExchange['status'] === 'pending' && hasRole('manager')): ?>
+                <div class="mt-3">
+                    <form method="POST" class="d-inline">
+                        <input type="hidden" name="section" value="exchanges">
+                        <input type="hidden" name="action" value="approve_exchange">
+                        <input type="hidden" name="exchange_id" value="<?php echo $selectedExchange['id']; ?>">
+                        <button type="submit" class="btn btn-success">
+                            <i class="bi bi-check-circle me-2"></i>الموافقة على الاستبدال
+                        </button>
+                    </form>
+                </div>
+            <?php endif; ?>
+        </div>
+    </div>
+<?php endif; ?>
+
+<div class="card shadow-sm mb-4">
+    <div class="card-body">
+        <form method="GET" class="row g-3">
+            <input type="hidden" name="page" value="returns">
+            <input type="hidden" name="section" value="exchanges">
+            <div class="col-md-3">
+                <label class="form-label">العميل</label>
+                <select class="form-select" name="exchange_customer_id">
+                    <option value="">جميع العملاء</option>
+                    <?php 
+                    $selectedExchangeCustomer = intval($_GET['exchange_customer_id'] ?? 0);
+                    foreach ($customers as $customer): ?>
+                        <option value="<?php echo $customer['id']; ?>" <?php echo $selectedExchangeCustomer === intval($customer['id']) ? 'selected' : ''; ?>>
+                            <?php echo htmlspecialchars($customer['name']); ?>
+                        </option>
+                    <?php endforeach; ?>
+                </select>
+            </div>
+            <div class="col-md-2">
+                <label class="form-label">الحالة</label>
+                <select class="form-select" name="exchange_status">
+                    <option value="">جميع الحالات</option>
+                    <option value="pending" <?php echo ($_GET['exchange_status'] ?? '') === 'pending' ? 'selected' : ''; ?>>معلق</option>
+                    <option value="approved" <?php echo ($_GET['exchange_status'] ?? '') === 'approved' ? 'selected' : ''; ?>>موافق عليه</option>
+                    <option value="rejected" <?php echo ($_GET['exchange_status'] ?? '') === 'rejected' ? 'selected' : ''; ?>>مرفوض</option>
+                    <option value="completed" <?php echo ($_GET['exchange_status'] ?? '') === 'completed' ? 'selected' : ''; ?>>مكتمل</option>
+                </select>
+            </div>
+            <div class="col-md-2">
+                <label class="form-label">من تاريخ</label>
+                <input type="date" class="form-control" name="exchange_date_from" value="<?php echo htmlspecialchars($_GET['exchange_date_from'] ?? ''); ?>">
+            </div>
+            <div class="col-md-2">
+                <label class="form-label">إلى تاريخ</label>
+                <input type="date" class="form-control" name="exchange_date_to" value="<?php echo htmlspecialchars($_GET['exchange_date_to'] ?? ''); ?>">
+            </div>
+            <div class="col-md-1">
+                <label class="form-label">&nbsp;</label>
+                <button type="submit" class="btn btn-primary w-100">
+                    <i class="bi bi-search"></i>
+                </button>
+            </div>
+        </form>
+    </div>
+</div>
+
+<div class="card shadow-sm">
+    <div class="card-header bg-primary text-white">
+        <h5 class="mb-0">قائمة الاستبدالات (<?php echo $exchangeTotal; ?>)</h5>
+    </div>
+    <div class="card-body">
+        <div class="table-responsive dashboard-table-wrapper">
+            <table class="table dashboard-table align-middle">
+                <thead>
+                    <tr>
+                        <th>رقم الاستبدال</th>
+                        <th>العميل</th>
+                        <th>تاريخ الاستبدال</th>
+                        <th>المبلغ الأصلي</th>
+                        <th>المبلغ الجديد</th>
+                        <th>الفرق</th>
+                        <th>الحالة</th>
+                        <th>الإجراءات</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    <?php if (empty($exchangeList)): ?>
+                        <tr>
+                            <td colspan="8" class="text-center text-muted">لا توجد استبدالات</td>
+                        </tr>
+                    <?php else: ?>
+                        <?php foreach ($exchangeList as $exchange): ?>
+                            <tr>
+                                <td>
+                                    <a href="?<?php echo http_build_query(array_merge(['page' => 'returns', 'section' => 'exchanges', 'exchange_id' => $exchange['id'], 'exch_p' => $exchangePageNum], $exchangeQueryParams)); ?>" class="text-decoration-none">
+                                        <strong><?php echo htmlspecialchars($exchange['exchange_number']); ?></strong>
+                                    </a>
+                                </td>
+                                <td><?php echo htmlspecialchars($exchange['customer_name'] ?? '-'); ?></td>
+                                <td><?php echo formatDate($exchange['exchange_date']); ?></td>
+                                <td><?php echo formatCurrency($exchange['original_total']); ?></td>
+                                <td><?php echo formatCurrency($exchange['new_total']); ?></td>
+                                <td>
+                                    <span class="<?php echo $exchange['difference_amount'] >= 0 ? 'text-success' : 'text-danger'; ?>">
+                                        <?php echo formatCurrency($exchange['difference_amount']); ?>
+                                    </span>
+                                </td>
+                                <td>
+                                    <span class="badge bg-<?php 
+                                        echo $exchange['status'] === 'completed' ? 'success' : 
+                                            ($exchange['status'] === 'rejected' ? 'danger' : 
+                                            ($exchange['status'] === 'approved' ? 'info' : 'warning')); 
+                                    ?>">
+                                        <?php 
+                                        $statuses = [
+                                            'pending' => 'معلق',
+                                            'approved' => 'موافق عليه',
+                                            'rejected' => 'مرفوض',
+                                            'completed' => 'مكتمل'
+                                        ];
+                                        echo $statuses[$exchange['status']] ?? $exchange['status'];
+                                        ?>
+                                    </span>
+                                </td>
+                                <td>
+                                    <a href="?<?php echo http_build_query(array_merge(['page' => 'returns', 'section' => 'exchanges', 'exchange_id' => $exchange['id'], 'exch_p' => $exchangePageNum], $exchangeQueryParams)); ?>" 
+                                       class="btn btn-info btn-sm" title="عرض">
+                                        <i class="bi bi-eye"></i>
+                                    </a>
+                                </td>
+                            </tr>
+                        <?php endforeach; ?>
+                    <?php endif; ?>
+                </tbody>
+            </table>
+        </div>
+
+        <?php if ($exchangeTotalPages > 1): ?>
+        <nav aria-label="exchanges pagination" class="mt-3">
+            <ul class="pagination justify-content-center flex-wrap">
+                <li class="page-item <?php echo $exchangePageNum <= 1 ? 'disabled' : ''; ?>">
+                    <a class="page-link" href="?<?php echo http_build_query(array_merge(['page' => 'returns', 'section' => 'exchanges', 'exch_p' => $exchangePageNum - 1], $exchangeQueryParams)); ?>">
+                        <i class="bi bi-chevron-right"></i>
+                    </a>
+                </li>
+
+                <?php 
+                $exchangeStartPage = max(1, $exchangePageNum - 2);
+                $exchangeEndPage = min($exchangeTotalPages, $exchangePageNum + 2);
+                for ($i = $exchangeStartPage; $i <= $exchangeEndPage; $i++): ?>
+                    <li class="page-item <?php echo $i === $exchangePageNum ? 'active' : ''; ?>">
+                        <a class="page-link" href="?<?php echo http_build_query(array_merge(['page' => 'returns', 'section' => 'exchanges', 'exch_p' => $i], $exchangeQueryParams)); ?>">
+                            <?php echo $i; ?>
+                        </a>
+                    </li>
+                <?php endfor; ?>
+
+                <li class="page-item <?php echo $exchangePageNum >= $exchangeTotalPages ? 'disabled' : ''; ?>">
+                    <a class="page-link" href="?<?php echo http_build_query(array_merge(['page' => 'returns', 'section' => 'exchanges', 'exch_p' => $exchangePageNum + 1], $exchangeQueryParams)); ?>">
+                        <i class="bi bi-chevron-left"></i>
+                    </a>
+                </li>
+            </ul>
+        </nav>
+        <?php endif; ?>
+    </div>
+</div>
+
+<?php if (hasRole(['sales', 'accountant'])): ?>
+<div class="alert alert-info d-flex align-items-center" role="alert">
+    <i class="bi bi-info-circle me-2"></i>
+    يتم العمل على واجهة إنشاء الاستبدال من خلال هذه الصفحة، يرجى التواصل مع فريق التطوير عند الحاجة.
+</div>
+<?php endif; ?>
 <?php endif; ?>
 

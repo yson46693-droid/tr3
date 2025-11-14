@@ -85,17 +85,10 @@ switch ($role) {
                 'badge' => null
             ],
             [
-                'title' => 'المرتجعات',
-                'icon' => 'bi-arrow-return-left',
+                'title' => 'المرتجعات والاستبدال',
+                'icon' => 'bi-arrow-left-right',
                 'url' => $baseUrl . 'manager.php?page=returns',
                 'active' => (isset($_GET['page']) && $_GET['page'] === 'returns'),
-                'badge' => null
-            ],
-            [
-                'title' => 'الاستبدال',
-                'icon' => 'bi-arrow-repeat',
-                'url' => $baseUrl . 'manager.php?page=exchanges',
-                'active' => (isset($_GET['page']) && $_GET['page'] === 'exchanges'),
                 'badge' => null
             ]
         ];

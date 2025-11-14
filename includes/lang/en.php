@@ -77,6 +77,7 @@ $translations = [
     'menu_audit_logs' => 'Audit Logs',
     'menu_performance' => 'Performance',
     'menu_notifications' => 'Notifications',
+    'menu_returns_exchanges' => 'Returns & Exchanges',
     
     // Financial
     'financial_dashboard' => 'Financial Dashboard',

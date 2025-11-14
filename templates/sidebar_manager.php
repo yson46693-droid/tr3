@@ -104,16 +104,9 @@ $baseUrl = getDashboardUrl();
                 </li>
                 
                 <li class="nav-item">
-                    <a class="nav-link" href="<?php echo $baseUrl; ?>manager.php?page=returns">
-                        <i class="bi bi-arrow-return-left"></i>
-                        <span>المرتجعات</span>
-                    </a>
-                </li>
-                
-                <li class="nav-item">
-                    <a class="nav-link" href="<?php echo $baseUrl; ?>manager.php?page=exchanges">
-                        <i class="bi bi-arrow-repeat"></i>
-                        <span>الاستبدال</span>
+                    <a class="nav-link <?php echo (isset($_GET['page']) && $_GET['page'] === 'returns') ? 'active' : ''; ?>" href="<?php echo $baseUrl; ?>manager.php?page=returns">
+                        <i class="bi bi-arrow-left-right"></i>
+                        <span>المرتجعات والاستبدال</span>
                     </a>
                 </li>
             </div>

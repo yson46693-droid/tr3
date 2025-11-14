@@ -56,6 +56,10 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         $deliveryDate = !empty($_POST['delivery_date']) ? $_POST['delivery_date'] : null;
         $priority = $_POST['priority'] ?? 'normal';
         $notes = trim($_POST['notes'] ?? '');
+        $createNewCustomer = isset($_POST['create_new_customer']) && $_POST['create_new_customer'] === '1';
+        $newCustomerName = trim($_POST['new_customer_name'] ?? '');
+        $newCustomerPhone = trim($_POST['new_customer_phone'] ?? '');
+        $newCustomerAddress = trim($_POST['new_customer_address'] ?? '');
         
         // معالجة العناصر
         $items = [];
@@ -72,84 +76,172 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             }
         }
         
-        if ($customerId <= 0 || empty($items)) {
-            $error = 'يجب إدخال العميل وعناصر الطلب';
+        if (empty($items)) {
+            $error = 'يجب إضافة عنصر واحد على الأقل للطلب.';
+        } elseif (!$createNewCustomer && $customerId <= 0) {
+            $error = 'يجب اختيار العميل أو تحديد خيار العميل الجديد.';
+        } elseif ($createNewCustomer && $newCustomerName === '') {
+            $error = 'اسم العميل الجديد مطلوب.';
         } else {
-            // توليد رقم طلب
-            $year = date('Y');
-            $month = date('m');
-            $lastOrder = $db->queryOne(
-                "SELECT order_number FROM customer_orders WHERE order_number LIKE ? ORDER BY order_number DESC LIMIT 1",
-                ["ORD-{$year}{$month}-%"]
-            );
-            
-            $serial = 1;
-            if ($lastOrder) {
-                $parts = explode('-', $lastOrder['order_number']);
-                $serial = intval($parts[2] ?? 0) + 1;
-            }
-            $orderNumber = sprintf("ORD-%s%s-%04d", $year, $month, $serial);
-            
-            // حساب المبالغ
-            $subtotal = 0;
-            foreach ($items as $item) {
-                $subtotal += $item['total_price'];
-            }
-            $discountAmount = floatval($_POST['discount_amount'] ?? 0);
-            $totalAmount = $subtotal - $discountAmount;
-            
-            // إنشاء الطلب
-            $db->execute(
-                "INSERT INTO customer_orders 
-                (order_number, customer_id, sales_rep_id, order_date, delivery_date, 
-                 subtotal, discount_amount, total_amount, priority, notes, created_by, status) 
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'pending')",
-                [
-                    $orderNumber,
-                    $customerId,
-                    $salesRepId ?? $currentUser['id'],
-                    $orderDate,
-                    $deliveryDate,
-                    $subtotal,
-                    $discountAmount,
-                    $totalAmount,
-                    $priority,
-                    $notes,
-                    $currentUser['id']
-                ]
-            );
-            
-            $orderId = $db->getLastInsertId();
-            
-            // إضافة العناصر
-            foreach ($items as $item) {
+            $transactionStarted = false;
+            $orderNumber = '';
+            $orderId = null;
+            $totalAmount = 0.0;
+            $newCustomerCreated = false;
+            $customerCreatorId = $salesRepId ?: ($currentUser['id'] ?? null);
+
+            try {
+                $db->beginTransaction();
+                $transactionStarted = true;
+
+                if ($createNewCustomer) {
+                    $existingCustomer = null;
+                    if ($newCustomerPhone !== '') {
+                        $existingCustomer = $db->queryOne(
+                            "SELECT id, phone, address, created_by FROM customers WHERE phone = ? LIMIT 1",
+                            [$newCustomerPhone]
+                        );
+                    }
+                    if (!$existingCustomer) {
+                        $existingCustomer = $db->queryOne(
+                            "SELECT id, phone, address, created_by FROM customers WHERE name = ? LIMIT 1",
+                            [$newCustomerName]
+                        );
+                    }
+
+                    if ($existingCustomer) {
+                        $customerId = (int)$existingCustomer['id'];
+                        $updateFields = [];
+                        $updateParams = [];
+
+                        if ($newCustomerPhone !== '' && $newCustomerPhone !== ($existingCustomer['phone'] ?? '')) {
+                            $updateFields[] = "phone = ?";
+                            $updateParams[] = $newCustomerPhone;
+                        }
+                        if ($newCustomerAddress !== '' && $newCustomerAddress !== ($existingCustomer['address'] ?? '')) {
+                            $updateFields[] = "address = ?";
+                            $updateParams[] = $newCustomerAddress;
+                        }
+                        if ($customerCreatorId && (int)($existingCustomer['created_by'] ?? 0) !== $customerCreatorId) {
+                            $updateFields[] = "created_by = ?";
+                            $updateParams[] = $customerCreatorId;
+                        }
+
+                        if (!empty($updateFields)) {
+                            $updateParams[] = $customerId;
+                            $db->execute(
+                                "UPDATE customers SET " . implode(', ', $updateFields) . " WHERE id = ?",
+                                $updateParams
+                            );
+                        }
+                    } else {
+                        $db->execute(
+                            "INSERT INTO customers (name, phone, address, balance, status, created_by) 
+                             VALUES (?, ?, ?, 0, 'active', ?)",
+                            [
+                                $newCustomerName,
+                                $newCustomerPhone !== '' ? $newCustomerPhone : null,
+                                $newCustomerAddress !== '' ? $newCustomerAddress : null,
+                                $customerCreatorId ?? $currentUser['id']
+                            ]
+                        );
+                        $customerId = (int)$db->getLastInsertId();
+                        $newCustomerCreated = true;
+                    }
+                }
+
+                if ($customerId <= 0) {
+                    throw new RuntimeException('تعذر تحديد العميل المرتبط بالطلب.');
+                }
+
+                $year = date('Y');
+                $month = date('m');
+                $lastOrder = $db->queryOne(
+                    "SELECT order_number FROM customer_orders WHERE order_number LIKE ? ORDER BY order_number DESC LIMIT 1",
+                    ["ORD-{$year}{$month}-%"]
+                );
+
+                $serial = 1;
+                if ($lastOrder) {
+                    $parts = explode('-', $lastOrder['order_number']);
+                    $serial = intval($parts[2] ?? 0) + 1;
+                }
+                $orderNumber = sprintf("ORD-%s%s-%04d", $year, $month, $serial);
+
+                $subtotal = 0;
+                foreach ($items as $item) {
+                    $subtotal += $item['total_price'];
+                }
+                $discountAmount = floatval($_POST['discount_amount'] ?? 0);
+                $totalAmount = $subtotal - $discountAmount;
+
                 $db->execute(
-                    "INSERT INTO order_items (order_id, product_id, quantity, unit_price, total_price) 
-                     VALUES (?, ?, ?, ?, ?)",
+                    "INSERT INTO customer_orders 
+                    (order_number, customer_id, sales_rep_id, order_date, delivery_date, 
+                     subtotal, discount_amount, total_amount, priority, notes, created_by, status) 
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'pending')",
                     [
-                        $orderId,
-                        $item['product_id'],
-                        $item['quantity'],
-                        $item['unit_price'],
-                        $item['total_price']
+                        $orderNumber,
+                        $customerId,
+                        $salesRepId ?? $currentUser['id'],
+                        $orderDate,
+                        $deliveryDate,
+                        $subtotal,
+                        $discountAmount,
+                        $totalAmount,
+                        $priority,
+                        $notes,
+                        $currentUser['id']
                     ]
                 );
+
+                $orderId = (int)$db->getLastInsertId();
+
+                foreach ($items as $item) {
+                    $db->execute(
+                        "INSERT INTO order_items (order_id, product_id, quantity, unit_price, total_price) 
+                         VALUES (?, ?, ?, ?, ?)",
+                        [
+                            $orderId,
+                            $item['product_id'],
+                            $item['quantity'],
+                            $item['unit_price'],
+                            $item['total_price']
+                        ]
+                    );
+                }
+
+                $db->commit();
+                $transactionStarted = false;
+
+                if ($newCustomerCreated) {
+                    logAudit($currentUser['id'], 'create_customer_from_order', 'customer', $customerId, null, [
+                        'name' => $newCustomerName,
+                        'phone' => $newCustomerPhone,
+                        'address' => $newCustomerAddress
+                    ]);
+                }
+
+                notifyManagers(
+                    'طلب عميل جديد',
+                    "تم إنشاء طلب جديد رقم {$orderNumber} للعميل",
+                    'info',
+                    "dashboard/sales.php?page=orders&id={$orderId}"
+                );
+
+                logAudit($currentUser['id'], 'create_order', 'customer_order', $orderId, null, [
+                    'order_number' => $orderNumber,
+                    'total_amount' => $totalAmount
+                ]);
+
+                $success = 'تم إنشاء الطلب بنجاح: ' . $orderNumber;
+            } catch (Throwable $createOrderError) {
+                if ($transactionStarted && $db->inTransaction()) {
+                    $db->rollback();
+                }
+                error_log('Create order error: ' . $createOrderError->getMessage());
+                $error = 'حدث خطأ أثناء إنشاء الطلب. يرجى المحاولة مرة أخرى.';
             }
-            
-            // إرسال إشعار للمديرين
-            notifyManagers(
-                'طلب عميل جديد',
-                "تم إنشاء طلب جديد رقم {$orderNumber} من العميل",
-                'info',
-                "dashboard/sales.php?page=orders&id={$orderId}"
-            );
-            
-            logAudit($currentUser['id'], 'create_order', 'customer_order', $orderId, null, [
-                'order_number' => $orderNumber,
-                'total_amount' => $totalAmount
-            ]);
-            
-            $success = 'تم إنشاء الطلب بنجاح: ' . $orderNumber;
         }
     } elseif ($action === 'send_sales_order' && $isManagerOrAccountant) {
         $customerName = trim($_POST['customer_name'] ?? '');
@@ -960,8 +1052,14 @@ if (isset($_GET['id'])) {
                 <div class="modal-body">
                     <div class="row mb-3">
                         <div class="col-md-4">
-                            <label class="form-label">العميل <span class="text-danger">*</span></label>
-                            <select class="form-select" name="customer_id" required>
+                            <div class="d-flex justify-content-between align-items-center mb-1">
+                                <label class="form-label mb-0">العميل <span class="text-danger">*</span></label>
+                                <div class="form-check form-switch">
+                                    <input class="form-check-input" type="checkbox" id="toggleNewCustomer" name="create_new_customer" value="1">
+                                    <label class="form-check-label small" for="toggleNewCustomer">عميل جديد</label>
+                                </div>
+                            </div>
+                            <select class="form-select" name="customer_id" id="existingCustomerSelect" required>
                                 <option value="">اختر العميل</option>
                                 <?php foreach ($customers as $customer): ?>
                                     <option value="<?php echo $customer['id']; ?>">
@@ -997,6 +1095,21 @@ if (isset($_GET['id'])) {
                                 <option value="high">عالية</option>
                                 <option value="urgent">عاجلة</option>
                             </select>
+                        </div>
+                    </div>
+                    
+                    <div id="newCustomerFields" class="row g-3 mb-3 d-none">
+                        <div class="col-md-4">
+                            <label class="form-label">اسم العميل الجديد <span class="text-danger">*</span></label>
+                            <input type="text" class="form-control new-customer-required" name="new_customer_name" autocomplete="off">
+                        </div>
+                        <div class="col-md-4">
+                            <label class="form-label">رقم الهاتف</label>
+                            <input type="text" class="form-control" name="new_customer_phone" autocomplete="off" placeholder="مثال: 01234567890">
+                        </div>
+                        <div class="col-md-4">
+                            <label class="form-label">عنوان العميل</label>
+                            <textarea class="form-control" name="new_customer_address" rows="2" autocomplete="off" placeholder="اكتب العنوان بالتفصيل"></textarea>
                         </div>
                     </div>
                     
@@ -1158,6 +1271,61 @@ document.addEventListener('click', function(e) {
         calculateOrderTotal();
     }
 });
+
+const newCustomerToggle = document.getElementById('toggleNewCustomer');
+const existingCustomerSelect = document.getElementById('existingCustomerSelect');
+const newCustomerFields = document.getElementById('newCustomerFields');
+const newCustomerRequiredInputs = Array.from(document.querySelectorAll('.new-customer-required'));
+
+function updateNewCustomerState() {
+    if (!newCustomerToggle || !existingCustomerSelect || !newCustomerFields) {
+        return;
+    }
+
+    if (newCustomerToggle.checked) {
+        newCustomerFields.classList.remove('d-none');
+        existingCustomerSelect.value = '';
+        existingCustomerSelect.setAttribute('disabled', 'disabled');
+        existingCustomerSelect.removeAttribute('required');
+        newCustomerRequiredInputs.forEach(function(input) {
+            input.setAttribute('required', 'required');
+        });
+    } else {
+        newCustomerFields.classList.add('d-none');
+        existingCustomerSelect.removeAttribute('disabled');
+        existingCustomerSelect.setAttribute('required', 'required');
+        newCustomerRequiredInputs.forEach(function(input) {
+            input.removeAttribute('required');
+        });
+    }
+}
+
+if (newCustomerToggle) {
+    newCustomerToggle.addEventListener('change', updateNewCustomerState);
+    updateNewCustomerState();
+}
+
+const addOrderModalElement = document.getElementById('addOrderModal');
+if (addOrderModalElement && typeof bootstrap !== 'undefined') {
+    addOrderModalElement.addEventListener('hidden.bs.modal', function() {
+        if (!newCustomerToggle) {
+            return;
+        }
+        newCustomerToggle.checked = false;
+        updateNewCustomerState();
+        newCustomerRequiredInputs.forEach(function(input) {
+            input.value = '';
+        });
+        const newCustomerPhoneInput = document.querySelector('input[name="new_customer_phone"]');
+        const newCustomerAddressInput = document.querySelector('textarea[name="new_customer_address"]');
+        if (newCustomerPhoneInput) {
+            newCustomerPhoneInput.value = '';
+        }
+        if (newCustomerAddressInput) {
+            newCustomerAddressInput.value = '';
+        }
+    });
+}
 
 // ربط أحداث العناصر
 function attachItemEvents(item) {

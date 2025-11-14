@@ -95,17 +95,10 @@ switch ($role) {
                 'badge' => null
             ],
             [
-                'title' => isset($lang['menu_returns']) ? $lang['menu_returns'] : 'المرتجعات',
-                'icon' => 'bi-arrow-return-left',
+                'title' => isset($lang['menu_returns_exchanges']) ? $lang['menu_returns_exchanges'] : 'المرتجعات والاستبدال',
+                'icon' => 'bi-arrow-left-right',
                 'url' => $baseUrl . 'manager.php?page=returns',
                 'active' => ($currentPage === 'manager.php' && $currentPageParam === 'returns'),
-                'badge' => null
-            ],
-            [
-                'title' => isset($lang['menu_exchanges']) ? $lang['menu_exchanges'] : 'الاستبدال',
-                'icon' => 'bi-arrow-repeat',
-                'url' => $baseUrl . 'manager.php?page=exchanges',
-                'active' => ($currentPage === 'manager.php' && $currentPageParam === 'exchanges'),
                 'badge' => null
             ],
             ['divider' => true, 'title' => isset($lang['listing']) ? $lang['listing'] : 'القوائم'],

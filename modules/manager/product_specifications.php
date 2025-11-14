@@ -23,6 +23,26 @@ $sessionSuccessKey = 'manager_product_specs_success';
 $error = '';
 $success = '';
 
+$formTokenKey = 'manager_product_specs_form_token';
+$lastSubmissionKey = 'manager_product_specs_last_submission';
+$generateFormToken = static function () {
+    try {
+        return bin2hex(random_bytes(32));
+    } catch (Throwable $tokenError) {
+        return hash('sha256', uniqid('', true) . microtime(true));
+    }
+};
+$refreshFormToken = static function () use ($formTokenKey, $generateFormToken) {
+    $newToken = $generateFormToken();
+    $_SESSION[$formTokenKey] = $newToken;
+    return $newToken;
+};
+
+if (empty($_SESSION[$formTokenKey]) || !is_string($_SESSION[$formTokenKey])) {
+    $_SESSION[$formTokenKey] = $generateFormToken();
+}
+$formToken = $_SESSION[$formTokenKey];
+
 if (!empty($_SESSION[$sessionErrorKey])) {
     $error = $_SESSION[$sessionErrorKey];
     unset($_SESSION[$sessionErrorKey]);
@@ -43,11 +63,51 @@ try {
 }
 
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
+    $submittedToken = isset($_POST['form_token']) ? (string) $_POST['form_token'] : '';
+    if ($submittedToken === '' || !is_string($formToken) || !hash_equals($formToken, $submittedToken)) {
+        $_SESSION[$sessionErrorKey] = 'انتهت صلاحية النموذج، يرجى إعادة المحاولة.';
+        $refreshFormToken();
+        header('Location: ' . $redirectUrl);
+        exit;
+    }
+
     $action = $_POST['action'] ?? '';
     $productName = trim($_POST['product_name'] ?? '');
     $rawMaterials = trim($_POST['raw_materials'] ?? '');
     $packaging = trim($_POST['packaging'] ?? '');
     $notes = trim($_POST['notes'] ?? '');
+
+    $formPayload = [
+        'action' => $action,
+        'product_name' => $productName,
+        'raw_materials' => $rawMaterials,
+        'packaging' => $packaging,
+        'notes' => $notes,
+    ];
+    $specId = 0;
+
+    if ($action === 'edit_specification') {
+        $specId = intval($_POST['spec_id'] ?? 0);
+        $formPayload['spec_id'] = $specId;
+    }
+
+    $submissionFingerprint = hash('sha256', json_encode($formPayload, JSON_UNESCAPED_UNICODE));
+    $duplicateWindowSeconds = 120;
+    $lastSubmission = isset($_SESSION[$lastSubmissionKey]) && is_array($_SESSION[$lastSubmissionKey])
+        ? $_SESSION[$lastSubmissionKey]
+        : null;
+
+    if (
+        $lastSubmission
+        && isset($lastSubmission['hash'], $lastSubmission['time'])
+        && hash_equals($lastSubmission['hash'], $submissionFingerprint)
+        && (int) $lastSubmission['time'] >= (time() - $duplicateWindowSeconds)
+    ) {
+        $_SESSION[$sessionSuccessKey] = 'تم التعامل مع هذا الطلب بالفعل. تم تجاهل التكرار.';
+        $refreshFormToken();
+        header('Location: ' . $redirectUrl);
+        exit;
+    }
 
     if ($action === 'add_specification') {
         if ($productName === '') {
@@ -65,21 +125,25 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     ]
                 );
                 $_SESSION[$sessionSuccessKey] = 'تم إضافة مواصفة المنتج بنجاح.';
+                $_SESSION[$lastSubmissionKey] = [
+                    'hash' => $submissionFingerprint,
+                    'time' => time(),
+                ];
             } catch (Throwable $insertError) {
                 error_log('manager product specs: add error -> ' . $insertError->getMessage());
                 $_SESSION[$sessionErrorKey] = 'تعذر إضافة المواصفة. يرجى المحاولة لاحقاً.';
             }
         }
 
+        $refreshFormToken();
         header('Location: ' . $redirectUrl);
         exit;
     }
 
     if ($action === 'edit_specification') {
-        $specId = intval($_POST['spec_id'] ?? 0);
-
         if ($specId <= 0 || $productName === '') {
             $_SESSION[$sessionErrorKey] = 'بيانات المواصفة غير مكتملة.';
+            $refreshFormToken();
             header('Location: ' . $redirectUrl);
             exit;
         }
@@ -101,20 +165,28 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     ]
                 );
                 $_SESSION[$sessionSuccessKey] = 'تم تحديث مواصفة المنتج بنجاح.';
+                $_SESSION[$lastSubmissionKey] = [
+                    'hash' => $submissionFingerprint,
+                    'time' => time(),
+                ];
             }
         } catch (Throwable $updateError) {
             error_log('manager product specs: update error -> ' . $updateError->getMessage());
             $_SESSION[$sessionErrorKey] = 'تعذر تحديث المواصفة. يرجى المحاولة لاحقاً.';
         }
 
+        $refreshFormToken();
         header('Location: ' . $redirectUrl);
         exit;
     }
 
     $_SESSION[$sessionErrorKey] = 'طلب غير معروف.';
+    $refreshFormToken();
     header('Location: ' . $redirectUrl);
     exit;
 }
+
+$formToken = $_SESSION[$formTokenKey] ?? $refreshFormToken();
 
 require_once __DIR__ . '/../../includes/table_styles.php';
 
@@ -262,6 +334,7 @@ $specificationsCount = is_countable($productSpecifications) ? count($productSpec
 <div class="modal fade" id="addSpecificationModal" tabindex="-1" aria-hidden="true">
     <div class="modal-dialog modal-lg modal-dialog-centered">
         <form class="modal-content" method="POST">
+            <input type="hidden" name="form_token" value="<?php echo htmlspecialchars($formToken); ?>">
             <input type="hidden" name="action" value="add_specification">
             <div class="modal-header bg-secondary text-white">
                 <h5 class="modal-title"><i class="bi bi-plus-circle me-2"></i>إضافة مواصفة منتج جديدة</h5>
@@ -305,6 +378,7 @@ $specificationsCount = is_countable($productSpecifications) ? count($productSpec
 <div class="modal fade" id="editSpecificationModal" tabindex="-1" aria-hidden="true">
     <div class="modal-dialog modal-lg modal-dialog-centered">
         <form class="modal-content" method="POST">
+            <input type="hidden" name="form_token" value="<?php echo htmlspecialchars($formToken); ?>">
             <input type="hidden" name="action" value="edit_specification">
             <input type="hidden" name="spec_id" id="editSpecId" value="">
             <div class="modal-header bg-secondary text-white">

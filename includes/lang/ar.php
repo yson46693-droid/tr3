@@ -80,6 +80,7 @@ $translations = [
     'dark_mode' => 'الوضع الداكن',
     'refresh' => 'تحديث الصفحة',
     'menu' => 'القائمة',
+    'menu_returns_exchanges' => 'المرتجعات والاستبدال',
     'management' => 'الإدارة',
     'sales_section' => 'المبيعات',
     'listing' => 'القوائم',
