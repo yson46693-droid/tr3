@@ -701,18 +701,17 @@ function generateMonthlySalaryReport($month, $year) {
         }
         
         // إضافة جميع المستخدمين الذين لديهم حضور (حتى لو لم يكن لديهم راتب)
-        // إذا لم يكن لديهم حضور في الشهر، لا نضيفهم
-        if ($delaySummary['attendance_days'] === 0 && !function_exists('hasAttendanceRecords')) {
-            // التحقق من وجود أي سجل حضور
-            $hasRecords = $db->queryOne(
-                "SELECT COUNT(*) as cnt FROM attendance_records 
-                 WHERE user_id = ? AND MONTH(date) = ? AND YEAR(date) = ?",
-                [$user['id'], $month, $year]
-            );
-            if (empty($hasRecords) || ($hasRecords['cnt'] ?? 0) === 0) {
-                // لا يوجد حضور، تخطي
-                continue;
-            }
+        // التحقق من وجود أي سجل حضور في الشهر
+        $hasRecords = $db->queryOne(
+            "SELECT COUNT(*) as cnt FROM attendance_records 
+             WHERE user_id = ? AND MONTH(date) = ? AND YEAR(date) = ?",
+            [$user['id'], $month, $year]
+        );
+        $hasAttendance = !empty($hasRecords) && ($hasRecords['cnt'] ?? 0) > 0;
+        
+        // إذا لم يكن لديهم حضور في الشهر، لا نضيفهم للتقرير
+        if (!$hasAttendance && $delaySummary['attendance_days'] === 0) {
+            continue;
         }
         
         $salaryData = getSalarySummary($user['id'], $month, $year);

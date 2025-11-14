@@ -784,61 +784,79 @@ if (isset($_GET['ajax']) && $_GET['ajax'] == '1' && $salaryId > 0) {
     </div>
     <div class="card-body">
         <!-- ملخص التقرير -->
-        <div class="row mb-4">
-            <div class="col-md-3 col-sm-6 mb-3">
-                <div class="card bg-primary text-white">
-                    <div class="card-body text-center">
-                        <h6 class="card-title">عدد الموظفين</h6>
-                        <h3 class="mb-0"><?php echo $monthlyReport['total_users']; ?></h3>
+        <div class="row mb-4 g-3">
+            <div class="col-lg-3 col-md-6 col-sm-6">
+                <div class="card salary-summary-card bg-primary text-white h-100 shadow-sm border-0">
+                    <div class="card-body text-center p-4">
+                        <div class="mb-2">
+                            <i class="bi bi-people fs-1 opacity-75"></i>
+                        </div>
+                        <h6 class="card-title mb-2 fw-semibold text-uppercase small">عدد الموظفين</h6>
+                        <h2 class="mb-0 fw-bold"><?php echo $monthlyReport['total_users']; ?></h2>
                     </div>
                 </div>
             </div>
-            <div class="col-md-3 col-sm-6 mb-3">
-                <div class="card bg-success text-white">
-                    <div class="card-body text-center">
-                        <h6 class="card-title">إجمالي الساعات</h6>
-                        <h3 class="mb-0"><?php echo number_format($monthlyReport['total_hours'], 2); ?></h3>
+            <div class="col-lg-3 col-md-6 col-sm-6">
+                <div class="card salary-summary-card bg-success text-white h-100 shadow-sm border-0">
+                    <div class="card-body text-center p-4">
+                        <div class="mb-2">
+                            <i class="bi bi-clock-history fs-1 opacity-75"></i>
+                        </div>
+                        <h6 class="card-title mb-2 fw-semibold text-uppercase small">إجمالي الساعات</h6>
+                        <h2 class="mb-0 fw-bold"><?php echo number_format($monthlyReport['total_hours'], 2); ?></h2>
                     </div>
                 </div>
             </div>
-            <div class="col-md-3 col-sm-6 mb-3">
-                <div class="card bg-warning text-white">
-                    <div class="card-body text-center">
-                        <h6 class="card-title">إجمالي الرواتب</h6>
-                        <h3 class="mb-0"><?php echo formatCurrency($monthlyReport['total_amount']); ?></h3>
+            <div class="col-lg-3 col-md-6 col-sm-6">
+                <div class="card salary-summary-card bg-warning text-white h-100 shadow-sm border-0">
+                    <div class="card-body text-center p-4">
+                        <div class="mb-2">
+                            <i class="bi bi-cash-stack fs-1 opacity-75"></i>
+                        </div>
+                        <h6 class="card-title mb-2 fw-semibold text-uppercase small">إجمالي الرواتب</h6>
+                        <h2 class="mb-0 fw-bold"><?php echo formatCurrency($monthlyReport['total_amount']); ?></h2>
                     </div>
                 </div>
             </div>
-            <div class="col-md-3 col-sm-6 mb-3">
-                <div class="card bg-info text-white">
-                    <div class="card-body text-center">
-                        <h6 class="card-title">متوسط الراتب</h6>
-                        <h3 class="mb-0">
+            <div class="col-lg-3 col-md-6 col-sm-6">
+                <div class="card salary-summary-card bg-info text-white h-100 shadow-sm border-0">
+                    <div class="card-body text-center p-4">
+                        <div class="mb-2">
+                            <i class="bi bi-graph-up-arrow fs-1 opacity-75"></i>
+                        </div>
+                        <h6 class="card-title mb-2 fw-semibold text-uppercase small">متوسط الراتب</h6>
+                        <h2 class="mb-0 fw-bold">
                             <?php 
                             $avgSalary = $monthlyReport['total_users'] > 0 
                                 ? $monthlyReport['total_amount'] / $monthlyReport['total_users'] 
                                 : 0;
                             echo formatCurrency($avgSalary); 
                             ?>
-                        </h3>
+                        </h2>
                     </div>
                 </div>
             </div>
         </div>
-        <div class="row mb-4">
-            <div class="col-md-6 col-sm-6 mb-3">
-                <div class="card bg-dark text-white">
-                    <div class="card-body text-center">
-                        <h6 class="card-title">إجمالي التأخيرات (دقائق)</h6>
-                        <h3 class="mb-0"><?php echo number_format($monthlyReport['total_delay_minutes'], 2); ?></h3>
+        <div class="row mb-4 g-3">
+            <div class="col-lg-6 col-md-6 col-sm-6">
+                <div class="card salary-summary-card bg-dark text-white h-100 shadow-sm border-0">
+                    <div class="card-body text-center p-4">
+                        <div class="mb-2">
+                            <i class="bi bi-exclamation-triangle fs-1 opacity-75"></i>
+                        </div>
+                        <h6 class="card-title mb-2 fw-semibold text-uppercase small">إجمالي التأخيرات (دقائق)</h6>
+                        <h2 class="mb-0 fw-bold"><?php echo number_format($monthlyReport['total_delay_minutes'], 2); ?></h2>
                     </div>
                 </div>
             </div>
-            <div class="col-md-6 col-sm-6 mb-3">
-                <div class="card bg-secondary text-white">
-                    <div class="card-body text-center">
-                        <h6 class="card-title">متوسط التأخير لكل موظف (دقيقة)</h6>
-                        <h3 class="mb-0"><?php echo number_format($monthlyReport['average_delay_minutes'], 2); ?></h3>
+            <div class="col-lg-6 col-md-6 col-sm-6">
+                <div class="card salary-summary-card bg-secondary text-white h-100 shadow-sm border-0">
+                    <div class="card-body text-center p-4">
+                        <div class="mb-2">
+                            <i class="bi bi-stopwatch fs-1 opacity-75"></i>
+                        </div>
+                        <h6 class="card-title mb-2 fw-semibold text-uppercase small">متوسط التأخير لكل موظف (دقيقة)</h6>
+                        <h2 class="mb-0 fw-bold"><?php echo number_format($monthlyReport['average_delay_minutes'], 2); ?></h2>
                     </div>
                 </div>
             </div>
@@ -846,7 +864,7 @@ if (isset($_GET['ajax']) && $_GET['ajax'] == '1' && $salaryId > 0) {
         
         <!-- جدول الرواتب -->
         <div class="table-responsive dashboard-table-wrapper">
-            <table class="table dashboard-table align-middle">
+            <table class="table table-hover dashboard-table align-middle salary-report-table">
                 <thead>
                     <tr>
                         <th>#</th>
@@ -877,7 +895,21 @@ if (isset($_GET['ajax']) && $_GET['ajax'] == '1' && $salaryId > 0) {
                                     <strong><?php echo htmlspecialchars($salary['user_name']); ?></strong>
                                 </td>
                                 <td data-label="الدور">
-                                    <span class="badge bg-secondary"><?php echo $salary['role']; ?></span>
+                                    <?php
+                                    $roleColors = [
+                                        'production' => 'bg-primary',
+                                        'accountant' => 'bg-info',
+                                        'sales' => 'bg-success'
+                                    ];
+                                    $roleLabels = [
+                                        'production' => 'إنتاج',
+                                        'accountant' => 'محاسب',
+                                        'sales' => 'مندوب'
+                                    ];
+                                    $roleColor = $roleColors[$salary['role']] ?? 'bg-secondary';
+                                    $roleLabel = $roleLabels[$salary['role']] ?? $salary['role'];
+                                    ?>
+                                    <span class="badge <?php echo $roleColor; ?> fs-6 px-3 py-2"><?php echo htmlspecialchars($roleLabel); ?></span>
                                 </td>
                                 <td data-label="سعر الساعة"><?php echo formatCurrency($salary['hourly_rate']); ?></td>
                                 <td data-label="عدد الساعات">
@@ -949,6 +981,125 @@ if (isset($_GET['ajax']) && $_GET['ajax'] == '1' && $salaryId > 0) {
         </div>
     </div>
 </div>
+
+<style>
+/* تحسين عرض بطاقات الملخص */
+.salary-summary-card {
+    border-radius: 16px;
+    transition: all 0.3s ease;
+}
+
+.salary-summary-card:hover {
+    transform: translateY(-5px);
+    box-shadow: 0 10px 30px rgba(0, 0, 0, 0.2) !important;
+}
+
+.salary-summary-card .card-body {
+    position: relative;
+}
+
+.salary-summary-card h2 {
+    font-size: 2rem;
+    font-weight: 700;
+}
+
+.salary-summary-card h6 {
+    font-size: 0.85rem;
+    letter-spacing: 0.5px;
+}
+
+/* تحسين عرض الجدول */
+.salary-report-table {
+    font-size: 0.95rem;
+}
+
+.salary-report-table thead th {
+    background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+    color: #ffffff;
+    font-weight: 600;
+    padding: 1rem 0.75rem;
+    border: none;
+    text-align: center;
+    vertical-align: middle;
+    font-size: 0.9rem;
+    white-space: nowrap;
+}
+
+.salary-report-table tbody td {
+    padding: 1rem 0.75rem;
+    vertical-align: middle;
+    text-align: center;
+    border-bottom: 1px solid rgba(0, 0, 0, 0.08);
+}
+
+.salary-report-table tbody tr:hover {
+    background-color: rgba(102, 126, 234, 0.05);
+    transition: background-color 0.2s ease;
+}
+
+.salary-report-table tbody td strong {
+    font-weight: 600;
+    color: #1f2937;
+}
+
+.salary-report-table .badge {
+    font-size: 0.85rem;
+    padding: 0.5rem 0.75rem;
+    font-weight: 500;
+}
+
+/* تحسين عرض تذييل الجدول */
+.salary-report-table tfoot {
+    background: linear-gradient(135deg, #f8fafc 0%, #e2e8f0 100%);
+}
+
+.salary-report-table tfoot td {
+    font-weight: 700;
+    font-size: 1rem;
+    padding: 1.25rem 0.75rem;
+    border-top: 2px solid #667eea;
+}
+
+/* تحسين عرض الأدوار */
+.badge.bg-primary {
+    background: linear-gradient(135deg, #3b82f6 0%, #2563eb 100%) !important;
+}
+
+.badge.bg-info {
+    background: linear-gradient(135deg, #06b6d4 0%, #0891b2 100%) !important;
+}
+
+.badge.bg-success {
+    background: linear-gradient(135deg, #10b981 0%, #059669 100%) !important;
+}
+
+/* تحسين حجم الأرقام */
+.salary-report-table .text-success {
+    font-weight: 700;
+    font-size: 1.05rem;
+}
+
+/* تحسين الاستجابة */
+@media (max-width: 768px) {
+    .salary-summary-card h2 {
+        font-size: 1.5rem;
+    }
+    
+    .salary-summary-card .card-body {
+        padding: 1rem !important;
+    }
+    
+    .salary-report-table {
+        font-size: 0.85rem;
+    }
+    
+    .salary-report-table thead th,
+    .salary-report-table tbody td {
+        padding: 0.75rem 0.5rem;
+        font-size: 0.85rem;
+    }
+}
+</style>
 <?php endif; ?>
 
 <!-- تبويب قائمة الرواتب -->
@@ -1490,5 +1641,8 @@ function rejectAdvance(advanceId) {
 function viewAdvanceDetails(advanceId) {
     alert('عرض تفاصيل السلفة #' + advanceId);
     // يمكن إضافة modal لعرض التفاصيل لاحقاً
+}
+</script>
+
 }
 </script>
