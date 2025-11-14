@@ -66,6 +66,11 @@ $pageTitle = isset($lang['manager_dashboard']) ? $lang['manager_dashboard'] : '�
                         'url' => getRelativeUrl('dashboard/manager.php?page=final_products')
                     ],
                     [
+                        'label' => 'قوالب المنتجات',
+                        'icon' => 'bi-file-earmark-text',
+                        'url' => getRelativeUrl('dashboard/manager.php?page=product_templates')
+                    ],
+                    [
                         'label' => 'مواصفات المنتجات',
                         'icon' => 'bi-journal-text',
                         'url' => getRelativeUrl('dashboard/manager.php?page=product_specifications')
@@ -751,6 +756,17 @@ $pageTitle = isset($lang['manager_dashboard']) ? $lang['manager_dashboard'] : '�
                         </div>
                     <?php endif; ?>
                 </div>
+                
+            <?php elseif ($page === 'product_templates'): ?>
+                <!-- صفحة قوالب المنتجات -->
+                <?php 
+                $modulePath = __DIR__ . '/../modules/production/product_templates.php';
+                if (file_exists($modulePath)) {
+                    include $modulePath;
+                } else {
+                    echo '<div class="alert alert-warning">صفحة قوالب المنتجات غير متاحة حالياً</div>';
+                }
+                ?>
                 
             <?php elseif ($page === 'product_specifications'): ?>
                 <?php 

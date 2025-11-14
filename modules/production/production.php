@@ -3111,6 +3111,14 @@ $lang = isset($translations) ? $translations : [];
 <?php endif; ?>
 
 <div class="production-page">
+    <?php 
+    // التحقق من وضع التقارير للمدير
+    $isReportsMode = defined('PRODUCTION_REPORTS_MODE') && PRODUCTION_REPORTS_MODE === true;
+    $reportsSection = $_GET['section'] ?? '';
+    $isReportsMode = $isReportsMode || ($reportsSection === 'reports' && ($currentUser['role'] ?? '') === 'manager');
+    ?>
+    
+    <?php if (!$isReportsMode): ?>
     <header class="production-page-header">
         <div class="production-tab-toggle" role="tablist" aria-label="التنقل بين أقسام صفحة الإنتاج">
         <button type="button"
@@ -3139,9 +3147,11 @@ $lang = isset($translations) ? $translations : [];
         </button>
         </div>
     </header>
+    <?php endif; ?>
 
-<section id="productionRecordsSection" class="production-section active">
+<section id="productionRecordsSection" class="production-section <?php echo $isReportsMode ? 'd-none' : 'active'; ?>">
 
+<?php if (!$isReportsMode): ?>
 <!-- قسم قوالب المنتجات -->
 <div class="card shadow-sm mb-4">
     <div class="card-header bg-info text-white d-flex justify-content-between align-items-center">
@@ -3404,8 +3414,10 @@ $lang = isset($translations) ? $translations : [];
         <?php endif; ?>
     </div>
 </div>
+<?php endif; // end if !$isReportsMode for templates section ?>
 </section>
 
+<?php if (!$isReportsMode): ?>
 <section id="productionSpecsSection" class="production-section d-none">
     <div class="card shadow-sm">
         <div class="card-header bg-secondary text-white d-flex justify-content-between align-items-center flex-wrap gap-2">
@@ -3518,9 +3530,10 @@ $lang = isset($translations) ? $translations : [];
         </div>
     </div>
 </section>
+<?php endif; // end if !$isReportsMode for specs section ?>
 
 
-<section id="productionReportsSection" class="production-section d-none">
+<section id="productionReportsSection" class="production-section <?php echo $isReportsMode ? 'active' : 'd-none'; ?>">
     <div class="card shadow-sm mb-4">
         <div class="card-body">
             <form method="get" class="row g-3 align-items-end" action="<?php echo htmlspecialchars(getDashboardUrl($currentUser['role'] ?? 'production')); ?>">

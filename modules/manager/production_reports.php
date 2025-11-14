@@ -8,6 +8,9 @@ require_once __DIR__ . '/../../includes/auth.php';
 
 requireRole('manager');
 
+// تعيين متغير لإخفاء قسم القوالب في صفحة التقارير للمدير
+define('PRODUCTION_REPORTS_MODE', true);
+
 $productionPagePath = __DIR__ . '/../production/production.php';
 
 if (!file_exists($productionPagePath)) {
@@ -25,6 +28,7 @@ if (!file_exists($productionPagePath)) {
 
 $previousPageParam = $_GET['page'] ?? null;
 $_GET['page'] = 'production';
+$_GET['section'] = 'reports'; // تحديد قسم التقارير
 
 include $productionPagePath;
 
