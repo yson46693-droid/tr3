@@ -2034,19 +2034,6 @@ function addRawMaterial(defaults = {}) {
     }
     rawMaterialIndex++;
 }
-        // إذا كانت المادة الافتراضية غير موجودة في القائمة، استخدم خيار "إضافة مادة جديدة"
-        if (defaultName && !commonMaterials.includes(defaultName)) {
-            if (materialSelect) {
-                materialSelect.value = '__custom__';
-                materialSelect.dispatchEvent(new Event('change'));
-                if (customMaterialInput) {
-                    customMaterialInput.value = defaultName;
-                }
-            }
-        }
-    }
-    rawMaterialIndex++;
-}
 
 function removeRawMaterial(btn) {
     btn.closest('.raw-material-item').remove();
