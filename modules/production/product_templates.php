@@ -840,29 +840,45 @@ if (!empty($packagingTableCheck)) {
 // جلب المواد الخام من مخزن الخامات مع أنواعها
 $rawMaterialsData = [];
 
-// جلب العسل وأنواعه من مخزن العسل
+// جلب العسل وأنواعه من مخزن العسل (من الموردين)
 try {
     $honeyStockExists = $db->queryOne("SHOW TABLES LIKE 'honey_stock'");
     if (!empty($honeyStockExists)) {
-        // جلب أنواع العسل الموجودة فعلياً
+        // جلب أنواع العسل الموجودة فعلياً عند الموردين في المخزن
         $honeyVarieties = $db->query("
-            SELECT DISTINCT honey_variety 
-            FROM honey_stock 
-            WHERE honey_variety IS NOT NULL 
-            AND honey_variety != '' 
-            AND (raw_honey_quantity > 0 OR filtered_honey_quantity > 0)
-            ORDER BY honey_variety
+            SELECT DISTINCT hs.honey_variety, 
+                   COUNT(DISTINCT hs.supplier_id) as suppliers_count
+            FROM honey_stock hs
+            INNER JOIN suppliers s ON hs.supplier_id = s.id
+            WHERE hs.honey_variety IS NOT NULL 
+            AND hs.honey_variety != '' 
+            AND (hs.raw_honey_quantity > 0 OR hs.filtered_honey_quantity > 0)
+            AND s.status = 'active'
+            GROUP BY hs.honey_variety
+            ORDER BY hs.honey_variety
         ");
         $honeyTypes = [];
         foreach ($honeyVarieties as $variety) {
             $varietyName = trim($variety['honey_variety']);
-            if ($varietyName !== '') {
+            if ($varietyName !== '' && !in_array($varietyName, $honeyTypes)) {
                 $honeyTypes[] = $varietyName;
             }
         }
         
-        $hasRawHoney = $db->queryOne("SELECT COUNT(*) as count FROM honey_stock WHERE raw_honey_quantity > 0");
-        $hasFilteredHoney = $db->queryOne("SELECT COUNT(*) as count FROM honey_stock WHERE filtered_honey_quantity > 0");
+        $hasRawHoney = $db->queryOne("
+            SELECT COUNT(DISTINCT supplier_id) as count 
+            FROM honey_stock hs
+            INNER JOIN suppliers s ON hs.supplier_id = s.id
+            WHERE hs.raw_honey_quantity > 0 
+            AND s.status = 'active'
+        ");
+        $hasFilteredHoney = $db->queryOne("
+            SELECT COUNT(DISTINCT supplier_id) as count 
+            FROM honey_stock hs
+            INNER JOIN suppliers s ON hs.supplier_id = s.id
+            WHERE hs.filtered_honey_quantity > 0 
+            AND s.status = 'active'
+        ");
         
         if (!empty($honeyTypes) || ($hasRawHoney && $hasRawHoney['count'] > 0) || ($hasFilteredHoney && $hasFilteredHoney['count'] > 0)) {
             $rawMaterialsData['عسل'] = [
@@ -873,25 +889,30 @@ try {
         }
     }
 } catch (Exception $e) {
-    error_log('Failed to load honey varieties: ' . $e->getMessage());
+    error_log('Failed to load honey varieties from suppliers: ' . $e->getMessage());
 }
 
-// جلب المكسرات وأنواعها من مخزن المكسرات
+// جلب المكسرات وأنواعها من مخزن المكسرات (من الموردين)
 try {
     $nutsStockExists = $db->queryOne("SHOW TABLES LIKE 'nuts_stock'");
     if (!empty($nutsStockExists)) {
+        // جلب أنواع المكسرات الموجودة فعلياً عند الموردين في المخزن
         $nutsTypes = $db->query("
-            SELECT DISTINCT nut_type 
-            FROM nuts_stock 
-            WHERE nut_type IS NOT NULL 
-            AND nut_type != '' 
-            AND quantity > 0
-            ORDER BY nut_type
+            SELECT DISTINCT ns.nut_type,
+                   COUNT(DISTINCT ns.supplier_id) as suppliers_count
+            FROM nuts_stock ns
+            INNER JOIN suppliers s ON ns.supplier_id = s.id
+            WHERE ns.nut_type IS NOT NULL 
+            AND ns.nut_type != '' 
+            AND ns.quantity > 0
+            AND s.status = 'active'
+            GROUP BY ns.nut_type
+            ORDER BY ns.nut_type
         ");
         $nutVarieties = [];
         foreach ($nutsTypes as $nut) {
             $nutName = trim($nut['nut_type']);
-            if ($nutName !== '') {
+            if ($nutName !== '' && !in_array($nutName, $nutVarieties)) {
                 $nutVarieties[] = $nutName;
             }
         }
@@ -906,7 +927,7 @@ try {
         }
     }
 } catch (Exception $e) {
-    error_log('Failed to load nuts: ' . $e->getMessage());
+    error_log('Failed to load nuts from suppliers: ' . $e->getMessage());
 }
 
 // جلب زيت الزيتون من مخزن زيت الزيتون
@@ -948,22 +969,27 @@ try {
     error_log('Failed to load beeswax: ' . $e->getMessage());
 }
 
-// جلب المشتقات وأنواعها من مخزن المشتقات
+// جلب المشتقات وأنواعها من مخزن المشتقات (من الموردين)
 try {
     $derivativesExists = $db->queryOne("SHOW TABLES LIKE 'derivatives_stock'");
     if (!empty($derivativesExists)) {
+        // جلب أنواع المشتقات الموجودة فعلياً عند الموردين في المخزن
         $derivativesTypes = $db->query("
-            SELECT DISTINCT derivative_type 
-            FROM derivatives_stock 
-            WHERE derivative_type IS NOT NULL 
-            AND derivative_type != '' 
-            AND quantity > 0
-            ORDER BY derivative_type
+            SELECT DISTINCT ds.derivative_type,
+                   COUNT(DISTINCT ds.supplier_id) as suppliers_count
+            FROM derivatives_stock ds
+            INNER JOIN suppliers s ON ds.supplier_id = s.id
+            WHERE ds.derivative_type IS NOT NULL 
+            AND ds.derivative_type != '' 
+            AND ds.quantity > 0
+            AND s.status = 'active'
+            GROUP BY ds.derivative_type
+            ORDER BY ds.derivative_type
         ");
         $derivativeVarieties = [];
         foreach ($derivativesTypes as $derivative) {
             $derivativeName = trim($derivative['derivative_type']);
-            if ($derivativeName !== '') {
+            if ($derivativeName !== '' && !in_array($derivativeName, $derivativeVarieties)) {
                 $derivativeVarieties[] = $derivativeName;
             }
         }
@@ -989,7 +1015,7 @@ try {
         }
     }
 } catch (Exception $e) {
-    error_log('Failed to load derivatives: ' . $e->getMessage());
+    error_log('Failed to load derivatives from suppliers: ' . $e->getMessage());
 }
 
 // إنشاء قائمة بأسماء المواد فقط للعرض في القائمة المنسدلة
