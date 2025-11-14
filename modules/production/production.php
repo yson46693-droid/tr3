@@ -5310,11 +5310,20 @@ function renderTemplateSuppliers(details) {
         placeholderOption.textContent = component.placeholder || 'اختر المورد';
         select.appendChild(placeholderOption);
 
-        const suppliersForComponent = getSuppliersForComponent(component);
-        // لمكوّنات العسل، استخدم موردين العسل فقط حتى لو كان عددهم 0
-        const suppliersList = isHoneyType 
-            ? suppliersForComponent 
-            : (suppliersForComponent.length ? suppliersForComponent : (window.productionSuppliers || []));
+        // لمكوّنات العسل، استخدم موردين العسل فقط
+        let suppliersForComponent = getSuppliersForComponent(component);
+        let suppliersList = [];
+        
+        if (isHoneyType) {
+            // لمكوّنات العسل، استخدم موردين العسل فقط حتى لو كان عددهم 0
+            suppliersList = suppliersForComponent;
+            // تأكد من أن الموردين المفلترين هم فقط موردين العسل
+            const allSuppliers = window.productionSuppliers || [];
+            suppliersList = allSuppliers.filter(supplier => supplier.type === 'honey');
+        } else {
+            // للمكوّنات الأخرى، استخدم الموردين المحددين أو جميع الموردين كـ fallback
+            suppliersList = suppliersForComponent.length ? suppliersForComponent : (window.productionSuppliers || []);
+        }
         let autoSelectSupplierId = null;
 
         suppliersList.forEach(function(supplier) {
