@@ -915,16 +915,11 @@ $lang = isset($translations) ? $translations : [];
                         <div class="d-flex gap-2 flex-wrap">
                             <button type="button"
                                     class="btn btn-sm btn-outline-secondary"
-                                    data-template="<?php echo $templateDetailsJson; ?>"
+                                    data-template="<?php echo $templateDetailsJsonBase64; ?>"
+                                    data-template-encoded="base64"
                                     onclick="showTemplateDetails(this)">
                                 <i class="bi bi-info-circle me-1"></i>
                                 عرض التفاصيل
-                            </button>
-                            <button type="button"
-                                    class="btn btn-sm btn-primary"
-                                    onclick="createBatch(<?php echo $template['id']; ?>, '<?php echo htmlspecialchars($template['product_name'], ENT_QUOTES, 'UTF-8'); ?>', this)">
-                                <i class="bi bi-gear-wide-connected me-1"></i>
-                                تشغيل تشغيلة
                             </button>
                         </div>
                         <div class="d-flex align-items-center text-muted small">
@@ -1477,8 +1472,8 @@ $lang = isset($translations) ? $translations : [];
     </div>
 </div>
 
-<script src="https://cdn.jsdelivr.net/npm/jsbarcode@3.11.5/dist/JsBarcode.all.min.js" integrity="sha384-TUuC0BpvyEukgqS0bkkCm1cW0XkyKADVY6jwxKF1u9IiMaivGi99ZTSdKCbFf8Os" crossorigin="anonymous"></script>
-<script src="https://cdn.jsdelivr.net/npm/jspdf@2.5.1/dist/jspdf.umd.min.js" integrity="sha384-d2N7Ez+KQEiC5EvhczHxVn9Yx8RJWb1x1o1t4bm/FYnGV8eK3opgDdGztqKqRR3v" crossorigin="anonymous"></script>
+<script src="https://cdn.jsdelivr.net/npm/jsbarcode@3.11.5/dist/JsBarcode.all.min.js" crossorigin="anonymous"></script>
+<script src="https://cdn.jsdelivr.net/npm/jspdf@2.5.1/dist/jspdf.umd.min.js" crossorigin="anonymous"></script>
 <script>
 let rawMaterialIndex = 0;
 
@@ -1635,11 +1630,28 @@ function showTemplateDetails(triggerButton) {
         return;
     }
 
+    // التحقق من نوع التشفير (base64 أو عادي)
+    const isBase64 = triggerButton.getAttribute('data-template-encoded') === 'base64';
+    
+    let jsonString = payloadRaw;
+    
+    // إذا كانت البيانات في base64، قم بفك التشفير أولاً
+    if (isBase64) {
+        try {
+            jsonString = atob(payloadRaw);
+        } catch (base64Error) {
+            console.error('Error decoding base64:', base64Error);
+            alert('تعذر قراءة بيانات القالب.');
+            return;
+        }
+    }
+
     let data;
     try {
-        data = JSON.parse(payloadRaw);
+        data = JSON.parse(jsonString);
     } catch (jsonError) {
         console.error('Template details parse error:', jsonError);
+        console.error('JSON string:', jsonString);
         alert('تعذر قراءة بيانات القالب.');
         return;
     }
@@ -1778,23 +1790,37 @@ function createBatch(templateId, templateName, triggerButton) {
         })
         .finally(() => {
             if (btn) {
-                btn.innerHTML = btn.dataset.originalText || '<i class="bi bi-gear-wide-connected me-1"></i>تشغيل تشغيلة';
+                btn.innerHTML = btn.dataset.originalText || '';
                 btn.disabled = false;
                 delete btn.dataset.originalText;
             }
         });
 }
 
-function editTemplate(templateId, templateDataJson) {
+function editTemplate(templateId, templateDataJson, isBase64 = false) {
     let templateData;
     try {
-        if (typeof templateDataJson === 'string') {
-            templateData = JSON.parse(templateDataJson);
+        let jsonString = templateDataJson;
+        
+        // إذا كانت البيانات في base64، قم بفك التشفير أولاً
+        if (isBase64) {
+            try {
+                jsonString = atob(templateDataJson);
+            } catch (base64Error) {
+                console.error('Error decoding base64:', base64Error);
+                alert('خطأ في قراءة بيانات القالب');
+                return;
+            }
+        }
+        
+        if (typeof jsonString === 'string') {
+            templateData = JSON.parse(jsonString);
         } else {
-            templateData = templateDataJson;
+            templateData = jsonString;
         }
     } catch (e) {
         console.error('Error parsing template data:', e);
+        console.error('Template data received:', templateDataJson);
         alert('خطأ في قراءة بيانات القالب');
         return;
     }
