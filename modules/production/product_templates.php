@@ -335,9 +335,29 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         $rawMaterials = [];
         if (isset($_POST['raw_materials']) && is_array($_POST['raw_materials'])) {
             foreach ($_POST['raw_materials'] as $material) {
-                if (!empty($material['name']) && isset($material['quantity']) && $material['quantity'] > 0) {
+                // الحصول على اسم المادة (من القائمة المنسدلة أو من الحقل النصي)
+                $materialName = trim($material['material_name'] ?? $material['name'] ?? '');
+                if (empty($materialName) && !empty($material['name_custom'])) {
+                    $materialName = trim($material['name_custom']);
+                }
+                
+                // الحصول على نوع المادة (من القائمة المنسدلة أو من الحقل النصي)
+                $materialType = trim($material['material_type'] ?? '');
+                if (empty($materialType) && !empty($material['type_custom'])) {
+                    $materialType = trim($material['type_custom']);
+                }
+                
+                // بناء اسم المادة الكامل (اسم المادة - نوع المادة)
+                $fullMaterialName = $materialName;
+                if ($materialType !== '') {
+                    $fullMaterialName = $materialName . ' - ' . $materialType;
+                }
+                
+                if (!empty($materialName) && isset($material['quantity']) && $material['quantity'] > 0) {
                     $rawMaterials[] = [
-                        'name' => trim($material['name']),
+                        'name' => $fullMaterialName,
+                        'material_name' => $materialName,
+                        'material_type' => $materialType,
                         'quantity' => floatval($material['quantity']),
                         'unit' => trim($material['unit'] ?? 'جرام')
                     ];
@@ -376,7 +396,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     $rawMaterialsPayload[] = [
                         'type' => 'ingredient',
                         'name' => $materialEntry['name'],
-                        'material_name' => $materialEntry['name'],
+                        'material_name' => $materialEntry['material_name'] ?? $materialEntry['name'],
+                        'material_type' => $materialEntry['material_type'] ?? '',
                         'quantity' => $materialEntry['quantity'],
                         'quantity_per_unit' => $materialEntry['quantity'],
                         'unit' => $materialEntry['unit']
@@ -519,9 +540,29 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         $rawMaterials = [];
         if (isset($_POST['raw_materials']) && is_array($_POST['raw_materials'])) {
             foreach ($_POST['raw_materials'] as $material) {
-                if (!empty($material['name']) && isset($material['quantity']) && $material['quantity'] > 0) {
+                // الحصول على اسم المادة (من القائمة المنسدلة أو من الحقل النصي)
+                $materialName = trim($material['material_name'] ?? $material['name'] ?? '');
+                if (empty($materialName) && !empty($material['name_custom'])) {
+                    $materialName = trim($material['name_custom']);
+                }
+                
+                // الحصول على نوع المادة (من القائمة المنسدلة أو من الحقل النصي)
+                $materialType = trim($material['material_type'] ?? '');
+                if (empty($materialType) && !empty($material['type_custom'])) {
+                    $materialType = trim($material['type_custom']);
+                }
+                
+                // بناء اسم المادة الكامل (اسم المادة - نوع المادة)
+                $fullMaterialName = $materialName;
+                if ($materialType !== '') {
+                    $fullMaterialName = $materialName . ' - ' . $materialType;
+                }
+                
+                if (!empty($materialName) && isset($material['quantity']) && $material['quantity'] > 0) {
                     $rawMaterials[] = [
-                        'name' => trim($material['name']),
+                        'name' => $fullMaterialName,
+                        'material_name' => $materialName,
+                        'material_type' => $materialType,
                         'quantity' => floatval($material['quantity']),
                         'unit' => trim($material['unit'] ?? 'جرام')
                     ];
@@ -572,7 +613,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     $rawMaterialsPayload[] = [
                         'type' => 'ingredient',
                         'name' => $materialEntry['name'],
-                        'material_name' => $materialEntry['name'],
+                        'material_name' => $materialEntry['material_name'] ?? $materialEntry['name'],
+                        'material_type' => $materialEntry['material_type'] ?? '',
                         'quantity' => $materialEntry['quantity'],
                         'quantity_per_unit' => $materialEntry['quantity'],
                         'unit' => $materialEntry['unit']
@@ -795,10 +837,10 @@ if (!empty($packagingTableCheck)) {
     );
 }
 
-// جلب المواد الخام من مخزن الخامات فقط
-$rawMaterialsFromWarehouse = [];
+// جلب المواد الخام من مخزن الخامات مع أنواعها
+$rawMaterialsData = [];
 
-// جلب أنواع العسل من مخزن العسل
+// جلب العسل وأنواعه من مخزن العسل
 try {
     $honeyStockExists = $db->queryOne("SHOW TABLES LIKE 'honey_stock'");
     if (!empty($honeyStockExists)) {
@@ -809,36 +851,32 @@ try {
             WHERE honey_variety IS NOT NULL 
             AND honey_variety != '' 
             AND (raw_honey_quantity > 0 OR filtered_honey_quantity > 0)
+            ORDER BY honey_variety
         ");
+        $honeyTypes = [];
         foreach ($honeyVarieties as $variety) {
             $varietyName = trim($variety['honey_variety']);
             if ($varietyName !== '') {
-                $rawMaterialsFromWarehouse[] = [
-                    'name' => 'عسل ' . $varietyName,
-                    'type' => 'honey'
-                ];
+                $honeyTypes[] = $varietyName;
             }
         }
-        // إضافة عسل خام ومصفى إذا كان هناك مخزون
+        
         $hasRawHoney = $db->queryOne("SELECT COUNT(*) as count FROM honey_stock WHERE raw_honey_quantity > 0");
         $hasFilteredHoney = $db->queryOne("SELECT COUNT(*) as count FROM honey_stock WHERE filtered_honey_quantity > 0");
         
-        if ($hasRawHoney && $hasRawHoney['count'] > 0) {
-            $rawMaterialsFromWarehouse[] = ['name' => 'عسل خام', 'type' => 'honey'];
-        }
-        if ($hasFilteredHoney && $hasFilteredHoney['count'] > 0) {
-            $rawMaterialsFromWarehouse[] = ['name' => 'عسل مصفى', 'type' => 'honey'];
-        }
-        // إضافة عسل عام إذا كان هناك أي مخزون
-        if (($hasRawHoney && $hasRawHoney['count'] > 0) || ($hasFilteredHoney && $hasFilteredHoney['count'] > 0)) {
-            $rawMaterialsFromWarehouse[] = ['name' => 'عسل', 'type' => 'honey'];
+        if (!empty($honeyTypes) || ($hasRawHoney && $hasRawHoney['count'] > 0) || ($hasFilteredHoney && $hasFilteredHoney['count'] > 0)) {
+            $rawMaterialsData['عسل'] = [
+                'material_type' => 'honey',
+                'has_types' => !empty($honeyTypes),
+                'types' => $honeyTypes
+            ];
         }
     }
 } catch (Exception $e) {
     error_log('Failed to load honey varieties: ' . $e->getMessage());
 }
 
-// جلب المكسرات من مخزن المكسرات
+// جلب المكسرات وأنواعها من مخزن المكسرات
 try {
     $nutsStockExists = $db->queryOne("SHOW TABLES LIKE 'nuts_stock'");
     if (!empty($nutsStockExists)) {
@@ -848,15 +886,23 @@ try {
             WHERE nut_type IS NOT NULL 
             AND nut_type != '' 
             AND quantity > 0
+            ORDER BY nut_type
         ");
+        $nutVarieties = [];
         foreach ($nutsTypes as $nut) {
             $nutName = trim($nut['nut_type']);
             if ($nutName !== '') {
-                $rawMaterialsFromWarehouse[] = [
-                    'name' => $nutName,
-                    'type' => 'nuts'
-                ];
+                $nutVarieties[] = $nutName;
             }
+        }
+        
+        if (!empty($nutVarieties)) {
+            // المكسرات لها أنواع (لوز، جوز، إلخ) - نضيف "مكسرات" كاسم مادة وأنواعها
+            $rawMaterialsData['مكسرات'] = [
+                'material_type' => 'nuts',
+                'has_types' => true,
+                'types' => $nutVarieties
+            ];
         }
     }
 } catch (Exception $e) {
@@ -869,7 +915,11 @@ try {
     if (!empty($oliveOilExists)) {
         $hasOliveOil = $db->queryOne("SELECT COUNT(*) as count FROM olive_oil_stock WHERE quantity > 0");
         if ($hasOliveOil && $hasOliveOil['count'] > 0) {
-            $rawMaterialsFromWarehouse[] = ['name' => 'زيت زيتون', 'type' => 'olive_oil'];
+            $rawMaterialsData['زيت زيتون'] = [
+                'material_type' => 'olive_oil',
+                'has_types' => false,
+                'types' => []
+            ];
         }
     }
 } catch (Exception $e) {
@@ -882,15 +932,23 @@ try {
     if (!empty($beeswaxExists)) {
         $hasBeeswax = $db->queryOne("SELECT COUNT(*) as count FROM beeswax_stock WHERE weight > 0");
         if ($hasBeeswax && $hasBeeswax['count'] > 0) {
-            $rawMaterialsFromWarehouse[] = ['name' => 'شمع عسل', 'type' => 'beeswax'];
-            $rawMaterialsFromWarehouse[] = ['name' => 'شمع', 'type' => 'beeswax'];
+            $rawMaterialsData['شمع عسل'] = [
+                'material_type' => 'beeswax',
+                'has_types' => false,
+                'types' => []
+            ];
+            $rawMaterialsData['شمع'] = [
+                'material_type' => 'beeswax',
+                'has_types' => false,
+                'types' => []
+            ];
         }
     }
 } catch (Exception $e) {
     error_log('Failed to load beeswax: ' . $e->getMessage());
 }
 
-// جلب المشتقات من مخزن المشتقات
+// جلب المشتقات وأنواعها من مخزن المشتقات
 try {
     $derivativesExists = $db->queryOne("SHOW TABLES LIKE 'derivatives_stock'");
     if (!empty($derivativesExists)) {
@@ -900,14 +958,33 @@ try {
             WHERE derivative_type IS NOT NULL 
             AND derivative_type != '' 
             AND quantity > 0
+            ORDER BY derivative_type
         ");
+        $derivativeVarieties = [];
         foreach ($derivativesTypes as $derivative) {
             $derivativeName = trim($derivative['derivative_type']);
             if ($derivativeName !== '') {
-                $rawMaterialsFromWarehouse[] = [
-                    'name' => $derivativeName,
-                    'type' => 'derivatives'
+                $derivativeVarieties[] = $derivativeName;
+            }
+        }
+        
+        if (!empty($derivativeVarieties)) {
+            // إذا كان هناك أنواع مختلفة من المشتقات، نضيف "مشتقات" كاسم مادة
+            if (count($derivativeVarieties) > 1) {
+                $rawMaterialsData['مشتقات'] = [
+                    'material_type' => 'derivatives',
+                    'has_types' => true,
+                    'types' => $derivativeVarieties
                 ];
+            } else {
+                // إذا كان نوع واحد فقط، نضيفه كمادة بدون أنواع
+                foreach ($derivativeVarieties as $derivativeName) {
+                    $rawMaterialsData[$derivativeName] = [
+                        'material_type' => 'derivatives',
+                        'has_types' => false,
+                        'types' => []
+                    ];
+                }
             }
         }
     }
@@ -915,29 +992,9 @@ try {
     error_log('Failed to load derivatives: ' . $e->getMessage());
 }
 
-// إزالة التكرار والفرز
-$uniqueMaterials = [];
-$seenNames = [];
-foreach ($rawMaterialsFromWarehouse as $material) {
-    $name = trim($material['name']);
-    if ($name !== '' && !in_array($name, $seenNames)) {
-        $uniqueMaterials[] = $material;
-        $seenNames[] = $name;
-    }
-}
-
-// الفرز حسب النوع والاسم
-usort($uniqueMaterials, function($a, $b) {
-    $typeOrder = ['honey' => 1, 'nuts' => 2, 'olive_oil' => 3, 'beeswax' => 4, 'derivatives' => 5, 'other' => 6];
-    $typeA = $typeOrder[$a['type']] ?? 999;
-    $typeB = $typeOrder[$b['type']] ?? 999;
-    if ($typeA !== $typeB) {
-        return $typeA <=> $typeB;
-    }
-    return strcmp($a['name'], $b['name']);
-});
-
-$rawMaterialsForTemplate = array_column($uniqueMaterials, 'name');
+// إنشاء قائمة بأسماء المواد فقط للعرض في القائمة المنسدلة
+$rawMaterialsForTemplate = array_keys($rawMaterialsData);
+sort($rawMaterialsForTemplate);
 
 require_once __DIR__ . '/../../includes/lang/' . getCurrentLanguage() . '.php';
 $lang = isset($translations) ? $translations : [];
@@ -1800,7 +1857,8 @@ document.getElementById('createTemplateModal')?.addEventListener('hidden.bs.moda
     rawMaterialIndex = 0;
 });
 
-// قائمة بالمواد الخام من مخزن الخامات
+// قائمة بالمواد الخام من مخزن الخامات مع أنواعها
+const rawMaterialsData = <?php echo json_encode($rawMaterialsData, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES); ?>;
 const commonMaterials = <?php echo json_encode($rawMaterialsForTemplate, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES); ?>;
 
 function addRawMaterial(defaults = {}) {
@@ -1818,13 +1876,27 @@ function addRawMaterial(defaults = {}) {
         return `<option value="${material}" ${selected}>${material}</option>`;
     }).join('');
     
+    // تقسيم اسم المادة الافتراضية إذا كان يحتوي على "عسل"
+    let defaultMaterialName = defaultName;
+    let defaultMaterialType = '';
+    if (defaultName && defaultName.startsWith('عسل ') && defaultName.length > 5) {
+        const parts = defaultName.split(' ', 2);
+        if (parts.length === 2) {
+            defaultMaterialName = parts[0]; // "عسل"
+            defaultMaterialType = parts[1]; // "حبة البركة" مثلاً
+        }
+    }
+    
     const materialHtml = `
         <div class="raw-material-item mb-2 border p-2 rounded bg-light">
             <div class="row g-2 align-items-end">
-                <div class="col-md-5">
+                <div class="col-md-3">
                     <label class="form-label small">اسم المادة <span class="text-danger">*</span></label>
-                    <select class="form-select form-select-sm" name="raw_materials[${rawMaterialIndex}][name]" 
-                            data-material-index="${rawMaterialIndex}" required>
+                    <select class="form-select form-select-sm material-name-select" 
+                            name="raw_materials[${rawMaterialIndex}][material_name]" 
+                            data-material-index="${rawMaterialIndex}" 
+                            data-material-name-select="${rawMaterialIndex}"
+                            required>
                         <option value="">-- اختر المادة --</option>
                         ${materialOptions}
                         <option value="__custom__">-- إضافة مادة جديدة --</option>
@@ -1835,6 +1907,19 @@ function addRawMaterial(defaults = {}) {
                            placeholder="أدخل اسم المادة الجديدة">
                 </div>
                 <div class="col-md-3">
+                    <label class="form-label small">نوع المادة</label>
+                    <select class="form-select form-select-sm material-type-select" 
+                            name="raw_materials[${rawMaterialIndex}][material_type]" 
+                            id="material_type_${rawMaterialIndex}"
+                            data-material-type-select="${rawMaterialIndex}">
+                        <option value="">-- لا يوجد نوع --</option>
+                    </select>
+                    <input type="text" class="form-control form-control-sm mt-1 d-none" 
+                           name="raw_materials[${rawMaterialIndex}][type_custom]" 
+                           id="custom_type_${rawMaterialIndex}" 
+                           placeholder="أدخل نوع المادة">
+                </div>
+                <div class="col-md-2">
                     <label class="form-label small">الكمية <span class="text-danger">*</span></label>
                     <input type="number" class="form-control form-control-sm" name="raw_materials[${rawMaterialIndex}][quantity]" 
                            step="0.001" min="0.001" placeholder="0.000" required>
@@ -1861,32 +1946,94 @@ function addRawMaterial(defaults = {}) {
     container.insertAdjacentHTML('beforeend', materialHtml);
     const newItem = container.lastElementChild;
     if (newItem) {
-        const materialSelect = newItem.querySelector(`select[name="raw_materials[${rawMaterialIndex}][name]"]`);
+        const materialSelect = newItem.querySelector(`select[data-material-name-select="${rawMaterialIndex}"]`);
+        const materialTypeSelect = newItem.querySelector(`select[data-material-type-select="${rawMaterialIndex}"]`);
         const customMaterialInput = newItem.querySelector(`#custom_material_${rawMaterialIndex}`);
+        const customTypeInput = newItem.querySelector(`#custom_type_${rawMaterialIndex}`);
         const quantityInput = newItem.querySelector(`input[name="raw_materials[${rawMaterialIndex}][quantity]"]`);
         
-        // معالجة اختيار "إضافة مادة جديدة"
+        // دالة لتحديث قائمة أنواع المادة
+        const updateMaterialTypes = function(selectedMaterialName) {
+            if (!materialTypeSelect) return;
+            
+            // مسح القائمة الحالية
+            materialTypeSelect.innerHTML = '<option value="">-- لا يوجد نوع --</option>';
+            materialTypeSelect.classList.add('d-none');
+            customTypeInput.classList.add('d-none');
+            
+            if (!selectedMaterialName || selectedMaterialName === '' || selectedMaterialName === '__custom__') {
+                return;
+            }
+            
+            const materialData = rawMaterialsData[selectedMaterialName];
+            if (materialData && materialData.has_types && materialData.types && materialData.types.length > 0) {
+                // إظهار القائمة المنسدلة للأنواع
+                materialTypeSelect.classList.remove('d-none');
+                
+                materialData.types.forEach(type => {
+                    const option = document.createElement('option');
+                    option.value = type;
+                    option.textContent = type;
+                    if (type === defaultMaterialType) {
+                        option.selected = true;
+                    }
+                    materialTypeSelect.appendChild(option);
+                });
+            }
+        };
+        
+        // معالجة اختيار اسم المادة
         if (materialSelect) {
+            if (defaultMaterialName && commonMaterials.includes(defaultMaterialName)) {
+                materialSelect.value = defaultMaterialName;
+            }
+            
             materialSelect.addEventListener('change', function() {
-                if (this.value === '__custom__') {
+                const selectedValue = this.value;
+                
+                if (selectedValue === '__custom__') {
+                    // إضافة مادة جديدة
                     customMaterialInput.classList.remove('d-none');
                     customMaterialInput.required = true;
                     this.required = false;
                     this.name = '';
-                    customMaterialInput.name = `raw_materials[${rawMaterialIndex}][name]`;
+                    customMaterialInput.name = `raw_materials[${rawMaterialIndex}][material_name]`;
+                    materialTypeSelect.classList.add('d-none');
                 } else {
+                    // مادة موجودة
                     customMaterialInput.classList.add('d-none');
                     customMaterialInput.required = false;
                     this.required = true;
                     customMaterialInput.name = `raw_materials[${rawMaterialIndex}][name_custom]`;
+                    
+                    // تحديث قائمة أنواع المادة
+                    updateMaterialTypes(selectedValue);
                 }
             });
+            
+            // تحديث قائمة الأنواع عند التحميل
+            if (defaultMaterialName && commonMaterials.includes(defaultMaterialName)) {
+                updateMaterialTypes(defaultMaterialName);
+            }
         }
         
         if (quantityInput && defaultQuantity) {
             quantityInput.value = Number(defaultQuantity).toFixed(3);
         }
         
+        // إذا كانت المادة الافتراضية غير موجودة في القائمة، استخدم خيار "إضافة مادة جديدة"
+        if (defaultName && !commonMaterials.includes(defaultMaterialName)) {
+            if (materialSelect) {
+                materialSelect.value = '__custom__';
+                materialSelect.dispatchEvent(new Event('change'));
+                if (customMaterialInput) {
+                    customMaterialInput.value = defaultName;
+                }
+            }
+        }
+    }
+    rawMaterialIndex++;
+}
         // إذا كانت المادة الافتراضية غير موجودة في القائمة، استخدم خيار "إضافة مادة جديدة"
         if (defaultName && !commonMaterials.includes(defaultName)) {
             if (materialSelect) {
@@ -2380,8 +2527,32 @@ function editTemplate(templateId, templateDataJson, isBase64 = false) {
         
         if (templateData.raw_materials && Array.isArray(templateData.raw_materials) && templateData.raw_materials.length > 0) {
             templateData.raw_materials.forEach(material => {
+                // تقسيم اسم المادة إلى اسم ونوع
+                let materialName = material.material_name || material.name || '';
+                let materialType = material.material_type || '';
+                
+                // إذا كان الاسم يحتوي على " - "، نقسمه
+                if (materialName && materialName.includes(' - ') && !materialType) {
+                    const parts = materialName.split(' - ', 2);
+                    if (parts.length === 2) {
+                        materialName = parts[0].trim();
+                        materialType = parts[1].trim();
+                    }
+                }
+                // إذا كان الاسم يبدأ بـ "عسل "، نقسمه
+                else if (materialName && materialName.startsWith('عسل ') && materialName.length > 5 && !materialType) {
+                    const parts = materialName.split(' ', 2);
+                    if (parts.length === 2) {
+                        materialName = parts[0]; // "عسل"
+                        materialType = parts[1]; // النوع
+                    }
+                }
+                
+                // بناء اسم كامل للتوافق مع الكود القديم
+                const fullName = materialType !== '' ? materialName + ' - ' + materialType : materialName;
+                
                 addEditRawMaterial({
-                    name: material.material_name || material.name || '',
+                    name: fullName,
                     quantity: material.quantity_per_unit || material.quantity || '',
                     unit: material.unit || 'جرام'
                 });
@@ -2413,13 +2584,33 @@ function addEditRawMaterial(defaults = {}) {
         return `<option value="${material}" ${selected}>${material}</option>`;
     }).join('');
     
+    // تقسيم اسم المادة الافتراضية إذا كان يحتوي على " - "
+    let defaultMaterialName = defaultName;
+    let defaultMaterialType = '';
+    if (defaultName && defaultName.includes(' - ')) {
+        const parts = defaultName.split(' - ', 2);
+        if (parts.length === 2) {
+            defaultMaterialName = parts[0].trim(); // "عسل"
+            defaultMaterialType = parts[1].trim(); // "حبة البركة" مثلاً
+        }
+    } else if (defaultName && defaultName.startsWith('عسل ') && defaultName.length > 5) {
+        const parts = defaultName.split(' ', 2);
+        if (parts.length === 2) {
+            defaultMaterialName = parts[0]; // "عسل"
+            defaultMaterialType = parts[1]; // "حبة البركة" مثلاً
+        }
+    }
+    
     const materialHtml = `
         <div class="raw-material-item mb-2 border p-2 rounded bg-light">
             <div class="row g-2 align-items-end">
-                <div class="col-md-5">
+                <div class="col-md-3">
                     <label class="form-label small">اسم المادة <span class="text-danger">*</span></label>
-                    <select class="form-select form-select-sm" name="raw_materials[${editMaterialIndex}][name]" 
-                            data-material-index="${editMaterialIndex}" required>
+                    <select class="form-select form-select-sm material-name-select" 
+                            name="raw_materials[${editMaterialIndex}][material_name]" 
+                            data-material-index="${editMaterialIndex}" 
+                            data-material-name-select="${editMaterialIndex}"
+                            required>
                         <option value="">-- اختر المادة --</option>
                         ${materialOptions}
                         <option value="__custom__">-- إضافة مادة جديدة --</option>
@@ -2430,6 +2621,19 @@ function addEditRawMaterial(defaults = {}) {
                            placeholder="أدخل اسم المادة الجديدة">
                 </div>
                 <div class="col-md-3">
+                    <label class="form-label small">نوع المادة</label>
+                    <select class="form-select form-select-sm material-type-select" 
+                            name="raw_materials[${editMaterialIndex}][material_type]" 
+                            id="edit_material_type_${editMaterialIndex}"
+                            data-material-type-select="${editMaterialIndex}">
+                        <option value="">-- لا يوجد نوع --</option>
+                    </select>
+                    <input type="text" class="form-control form-control-sm mt-1 d-none" 
+                           name="raw_materials[${editMaterialIndex}][type_custom]" 
+                           id="edit_custom_type_${editMaterialIndex}" 
+                           placeholder="أدخل نوع المادة">
+                </div>
+                <div class="col-md-2">
                     <label class="form-label small">الكمية <span class="text-danger">*</span></label>
                     <input type="number" class="form-control form-control-sm" name="raw_materials[${editMaterialIndex}][quantity]" 
                            step="0.001" min="0.001" placeholder="0.000" required>
@@ -2456,26 +2660,75 @@ function addEditRawMaterial(defaults = {}) {
     container.insertAdjacentHTML('beforeend', materialHtml);
     const newItem = container.lastElementChild;
     if (newItem) {
-        const materialSelect = newItem.querySelector(`select[name="raw_materials[${editMaterialIndex}][name]"]`);
+        const materialSelect = newItem.querySelector(`select[data-material-name-select="${editMaterialIndex}"]`);
+        const materialTypeSelect = newItem.querySelector(`select[data-material-type-select="${editMaterialIndex}"]`);
         const customMaterialInput = newItem.querySelector(`#edit_custom_material_${editMaterialIndex}`);
+        const customTypeInput = newItem.querySelector(`#edit_custom_type_${editMaterialIndex}`);
         const quantityInput = newItem.querySelector(`input[name="raw_materials[${editMaterialIndex}][quantity]"]`);
         
-        // معالجة اختيار "إضافة مادة جديدة"
+        // دالة لتحديث قائمة أنواع المادة
+        const updateMaterialTypes = function(selectedMaterialName) {
+            if (!materialTypeSelect) return;
+            
+            // مسح القائمة الحالية
+            materialTypeSelect.innerHTML = '<option value="">-- لا يوجد نوع --</option>';
+            materialTypeSelect.classList.add('d-none');
+            customTypeInput.classList.add('d-none');
+            
+            if (!selectedMaterialName || selectedMaterialName === '' || selectedMaterialName === '__custom__') {
+                return;
+            }
+            
+            const materialData = rawMaterialsData[selectedMaterialName];
+            if (materialData && materialData.has_types && materialData.types && materialData.types.length > 0) {
+                // إظهار القائمة المنسدلة للأنواع
+                materialTypeSelect.classList.remove('d-none');
+                
+                materialData.types.forEach(type => {
+                    const option = document.createElement('option');
+                    option.value = type;
+                    option.textContent = type;
+                    if (type === defaultMaterialType) {
+                        option.selected = true;
+                    }
+                    materialTypeSelect.appendChild(option);
+                });
+            }
+        };
+        
+        // معالجة اختيار اسم المادة
         if (materialSelect) {
+            if (defaultMaterialName && commonMaterials.includes(defaultMaterialName)) {
+                materialSelect.value = defaultMaterialName;
+            }
+            
             materialSelect.addEventListener('change', function() {
-                if (this.value === '__custom__') {
+                const selectedValue = this.value;
+                
+                if (selectedValue === '__custom__') {
+                    // إضافة مادة جديدة
                     customMaterialInput.classList.remove('d-none');
                     customMaterialInput.required = true;
                     this.required = false;
                     this.name = '';
-                    customMaterialInput.name = `raw_materials[${editMaterialIndex}][name]`;
+                    customMaterialInput.name = `raw_materials[${editMaterialIndex}][material_name]`;
+                    materialTypeSelect.classList.add('d-none');
                 } else {
+                    // مادة موجودة
                     customMaterialInput.classList.add('d-none');
                     customMaterialInput.required = false;
                     this.required = true;
                     customMaterialInput.name = `raw_materials[${editMaterialIndex}][name_custom]`;
+                    
+                    // تحديث قائمة أنواع المادة
+                    updateMaterialTypes(selectedValue);
                 }
             });
+            
+            // تحديث قائمة الأنواع عند التحميل
+            if (defaultMaterialName && commonMaterials.includes(defaultMaterialName)) {
+                updateMaterialTypes(defaultMaterialName);
+            }
         }
         
         if (quantityInput && defaultQuantity) {
@@ -2483,7 +2736,7 @@ function addEditRawMaterial(defaults = {}) {
         }
         
         // إذا كانت المادة الافتراضية غير موجودة في القائمة، استخدم خيار "إضافة مادة جديدة"
-        if (defaultName && !commonMaterials.includes(defaultName)) {
+        if (defaultName && !commonMaterials.includes(defaultMaterialName)) {
             if (materialSelect) {
                 materialSelect.value = '__custom__';
                 materialSelect.dispatchEvent(new Event('change'));
