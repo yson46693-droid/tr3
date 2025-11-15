@@ -149,6 +149,11 @@ function ensureWarehouseTransferBatchColumns(): void
             $db->execute("ALTER TABLE warehouse_transfer_items ADD COLUMN `batch_number` varchar(100) DEFAULT NULL AFTER `batch_id`");
             $db->execute("ALTER TABLE warehouse_transfer_items ADD KEY `batch_number` (`batch_number`)");
         }
+
+        $notesColumn = $db->queryOne("SHOW COLUMNS FROM warehouse_transfer_items LIKE 'notes'");
+        if (empty($notesColumn)) {
+            $db->execute("ALTER TABLE warehouse_transfer_items ADD COLUMN `notes` text DEFAULT NULL AFTER `quantity`");
+        }
     } catch (Exception $e) {
         error_log('ensureWarehouseTransferBatchColumns error: ' . $e->getMessage());
     }
@@ -183,15 +188,16 @@ function getFinishedProductBatchOptions($onlyAvailable = true, $fromWarehouseId 
         $sql = "
             SELECT
                 fp.id AS batch_id,
-                fp.product_id,
+                COALESCE(fp.product_id, bn.product_id) AS product_id,
                 COALESCE(p.name, fp.product_name) AS product_name,
                 fp.batch_number,
                 fp.production_date,
                 fp.quantity_produced,
                 COALESCE(p.quantity, 0) AS product_stock_quantity
             FROM finished_products fp
-            LEFT JOIN products p ON fp.product_id = p.id
-            GROUP BY fp.id, fp.product_id, fp.product_name, fp.batch_number, fp.production_date, fp.quantity_produced, p.name, p.quantity
+            LEFT JOIN batch_numbers bn ON fp.batch_number = bn.batch_number
+            LEFT JOIN products p ON COALESCE(fp.product_id, bn.product_id) = p.id
+            GROUP BY fp.id, COALESCE(fp.product_id, bn.product_id), fp.product_name, fp.batch_number, fp.production_date, fp.quantity_produced, p.name, p.quantity
             ORDER BY fp.production_date DESC, product_name ASC, fp.batch_number ASC
         ";
 
@@ -199,7 +205,8 @@ function getFinishedProductBatchOptions($onlyAvailable = true, $fromWarehouseId 
         $options = [];
 
         foreach ($rows as $row) {
-            $productId = $row['product_id'] ? (int)$row['product_id'] : null;
+            // استخدام product_id من batch_numbers إذا كان null في finished_products
+            $productId = isset($row['product_id']) && $row['product_id'] !== null ? (int)$row['product_id'] : null;
             $batchId = (int)$row['batch_id'];
             $availableQuantity = 0.0;
 
@@ -234,7 +241,32 @@ function getFinishedProductBatchOptions($onlyAvailable = true, $fromWarehouseId 
                     $availableQuantity -= (float)($pendingTransfers['pending_quantity'] ?? 0);
                 }
             } else {
-                // إذا لم يكن هناك product_id أو fromWarehouseId، نستخدم الطريقة القديمة كبديل
+                // إذا لم يكن هناك product_id أو fromWarehouseId، نستخدم الكمية الفعلية من batch_numbers
+                $actualQuantity = null;
+                $batchNumber = $row['batch_number'] ?? '';
+                
+                // محاولة الحصول على الكمية الفعلية من batch_numbers إذا كان هناك batch_number
+                if (!empty($batchNumber)) {
+                    $batchNumbersRow = $db->queryOne(
+                        "SELECT `quantity` 
+                         FROM `batch_numbers` 
+                         WHERE `batch_number` = ? 
+                         ORDER BY `batch_numbers`.`quantity` ASC 
+                         LIMIT 1",
+                        [trim($batchNumber)]
+                    );
+                    
+                    if ($batchNumbersRow && isset($batchNumbersRow['quantity'])) {
+                        $actualQuantity = floatval($batchNumbersRow['quantity']);
+                    }
+                }
+                
+                // إذا لم نجد الكمية من batch_numbers، نستخدم finished_products كبديل
+                if ($actualQuantity === null || $actualQuantity <= 0) {
+                    $actualQuantity = (float)$row['quantity_produced'];
+                }
+                
+                // حساب الكمية المنقولة بالفعل
                 $transferred = $db->queryOne(
                     "SELECT COALESCE(SUM(
                         CASE
@@ -247,7 +279,7 @@ function getFinishedProductBatchOptions($onlyAvailable = true, $fromWarehouseId 
                     WHERE wti.batch_id = ?",
                     [$batchId]
                 );
-                $availableQuantity = (float)$row['quantity_produced'] - (float)($transferred['transferred_quantity'] ?? 0);
+                $availableQuantity = $actualQuantity - (float)($transferred['transferred_quantity'] ?? 0);
             }
 
             if ($onlyAvailable && $availableQuantity <= 0) {
@@ -979,13 +1011,40 @@ function approveWarehouseTransfer($transferId, $approvedBy = null) {
                     );
                     $availableQuantity -= (float)($pendingTransfers['pending_quantity'] ?? 0);
                 } else {
-                    // إذا لم يكن هناك product_id، نستخدم الطريقة القديمة كبديل
-                    $batchRow = $db->queryOne(
-                        "SELECT quantity_produced FROM finished_products WHERE id = ?",
-                        [$batchId]
-                    );
+                    // إذا لم يكن هناك product_id، نستخدم الكمية الفعلية من batch_numbers
+                    $actualQuantity = null;
                     
-                    if ($batchRow) {
+                    // محاولة الحصول على الكمية الفعلية من batch_numbers إذا كان هناك batch_number
+                    if (!empty($batchNumber)) {
+                        $batchNumbersRow = $db->queryOne(
+                            "SELECT `quantity` 
+                             FROM `batch_numbers` 
+                             WHERE `batch_number` = ? 
+                             ORDER BY `batch_numbers`.`quantity` ASC 
+                             LIMIT 1",
+                            [trim($batchNumber)]
+                        );
+                        
+                        if ($batchNumbersRow && isset($batchNumbersRow['quantity'])) {
+                            $actualQuantity = floatval($batchNumbersRow['quantity']);
+                        }
+                    }
+                    
+                    // إذا لم نجد الكمية من batch_numbers، نستخدم finished_products كبديل
+                    if ($actualQuantity === null || $actualQuantity <= 0) {
+                        $batchRow = $db->queryOne(
+                            "SELECT quantity_produced FROM finished_products WHERE id = ?",
+                            [$batchId]
+                        );
+                        
+                        if ($batchRow) {
+                            $actualQuantity = (float)$batchRow['quantity_produced'];
+                        } else {
+                            $actualQuantity = 0.0;
+                        }
+                    }
+                    
+                    if ($actualQuantity > 0) {
                         // حساب الكمية المنقولة بالفعل (approved أو completed)
                         $transferred = $db->queryOne(
                             "SELECT COALESCE(SUM(wti.quantity), 0) AS total_transferred
@@ -1005,9 +1064,11 @@ function approveWarehouseTransfer($transferId, $approvedBy = null) {
                             [$batchId, $transfer['from_warehouse_id'], $transferId]
                         );
                         
-                        $availableQuantity = (float)$batchRow['quantity_produced'] 
+                        $availableQuantity = $actualQuantity 
                                           - (float)($transferred['total_transferred'] ?? 0)
                                           - (float)($pendingTransfers['pending_quantity'] ?? 0);
+                    } else {
+                        $availableQuantity = 0.0;
                     }
                 }
             } else if ($productId > 0) {

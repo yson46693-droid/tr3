@@ -134,7 +134,52 @@ if (!function_exists('getBatchActualQuantity')) {
     }
 }
 
+/**
+ * دالة تحديث product_id في finished_products من batch_numbers
+ * لحل مشكلة التضارب عندما يكون product_id في finished_products = null
+ * @return int عدد السجلات المحدثة
+ */
+if (!function_exists('syncFinishedProductsProductId')) {
+    function syncFinishedProductsProductId() {
+        try {
+            $db = db();
+            
+            // التحقق من وجود الجداول
+            $finishedExists = $db->queryOne("SHOW TABLES LIKE 'finished_products'");
+            $batchExists = $db->queryOne("SHOW TABLES LIKE 'batch_numbers'");
+            
+            if (empty($finishedExists) || empty($batchExists)) {
+                return 0;
+            }
+            
+            // تحديث product_id في finished_products من batch_numbers بناءً على batch_number
+            $result = $db->execute(
+                "UPDATE finished_products fp
+                 INNER JOIN batch_numbers bn ON fp.batch_number = bn.batch_number
+                 SET fp.product_id = bn.product_id
+                 WHERE fp.product_id IS NULL 
+                   AND bn.product_id IS NOT NULL 
+                   AND bn.product_id > 0"
+            );
+            
+            $updated = $result['affected_rows'] ?? 0;
+            
+            if ($updated > 0) {
+                error_log("syncFinishedProductsProductId: Updated {$updated} records in finished_products");
+            }
+            
+            return $updated;
+        } catch (Exception $e) {
+            error_log('syncFinishedProductsProductId error: ' . $e->getMessage());
+            return 0;
+        }
+    }
+}
+
 // معالجة تحديث السعر اليدوي للمنتجات النهائية
+
+// مزامنة product_id من batch_numbers إلى finished_products لحل التضارب
+syncFinishedProductsProductId();
 
 // التحقق من وجود عمود date أو production_date
 $dateColumnCheck = $db->queryOne("SHOW COLUMNS FROM production LIKE 'date'");
@@ -529,6 +574,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
                     if ($isManagerInitiator && !empty($result['transfer_id'])) {
                         try {
+                            ensureWarehouseTransferBatchColumns();
+                            
                             foreach ($transferItems as $item) {
                                 $productId = isset($item['product_id']) ? (int)$item['product_id'] : null;
                                 $quantity = (float)($item['quantity'] ?? 0);
