@@ -112,7 +112,34 @@ if (!is_array($sessionMeta) || ($sessionMeta['batch_number'] ?? '') !== $batchNu
 $batchDetails = null;
 
 if (!$sessionMeta) {
-    $batchDetails = getBatchByNumber($batchNumber);
+    try {
+        $batchDetails = getBatchByNumber($batchNumber);
+        if (!$batchDetails) {
+            // إذا فشل جلب البيانات من getBatchByNumber، حاول جلبها مباشرة من قاعدة البيانات
+            try {
+                $batchRow = $db->queryOne("SELECT id FROM batches WHERE batch_number = ? LIMIT 1", [$batchNumber]);
+                if ($batchRow) {
+                    $batchDetails = getBatchNumber((int)$batchRow['id']);
+                }
+            } catch (Throwable $dbError) {
+                error_log('send_barcode_link direct batch lookup error: ' . $dbError->getMessage());
+            }
+        }
+    } catch (Throwable $batchError) {
+        error_log('send_barcode_link getBatchByNumber error: ' . $batchError->getMessage());
+        $batchDetails = null;
+    }
+    
+    // إذا لم نتمكن من جلب البيانات، استخدم البيانات الأساسية فقط
+    if (!$batchDetails) {
+        // على الأقل تأكد من وجود رقم التشغيلة
+        $batchDetails = [
+            'batch_number' => $batchNumber,
+            'product_name' => '',
+            'quantity' => null,
+            'production_date' => null,
+        ];
+    }
 }
 
 $currentUser = getCurrentUser();
@@ -142,6 +169,28 @@ if (!$unitLabel && isset($batchDetails['unit'])) {
     $unitLabel = $batchDetails['unit'];
 }
 
+// إذا لم يكن هناك productName، حاول جلبها من قاعدة البيانات مباشرة
+if (empty($productName) && $batchDetails) {
+    try {
+        $batchId = $batchDetails['id'] ?? null;
+        if ($batchId) {
+            $productRow = $db->queryOne(
+                "SELECT COALESCE(fp.product_name, p.name) AS product_name
+                 FROM batches b
+                 LEFT JOIN finished_products fp ON fp.batch_id = b.id
+                 LEFT JOIN products p ON b.product_id = p.id
+                 WHERE b.id = ? LIMIT 1",
+                [$batchId]
+            );
+            if (!empty($productRow['product_name'])) {
+                $productName = trim((string)$productRow['product_name']);
+            }
+        }
+    } catch (Throwable $productError) {
+        error_log('send_barcode_link product name lookup error: ' . $productError->getMessage());
+    }
+}
+
 $createdByName = $sessionMeta['created_by'] ?? '';
 if ($createdByName === '' && isset($batchDetails['created_by_name'])) {
     $createdByName = $batchDetails['created_by_name'];
@@ -164,25 +213,73 @@ $packagingSupplierName = $sessionMeta['packaging_supplier_name'] ?? null;
 $extraSuppliers = $sessionMeta['extra_suppliers'] ?? [];
 
 // جلب أسماء الموردين إن لم تكن متوفرة في الجلسة
-if (!$honeySupplierName && !empty($sessionMeta['honey_supplier_id'])) {
-    try {
-        $row = $db->queryOne("SELECT name FROM suppliers WHERE id = ? LIMIT 1", [(int) $sessionMeta['honey_supplier_id']]);
-        if (!empty($row['name'])) {
-            $honeySupplierName = $row['name'];
+if (!$honeySupplierName) {
+    $honeySupplierId = $sessionMeta['honey_supplier_id'] ?? null;
+    if (!$honeySupplierId && $batchDetails) {
+        // محاولة جلب من batch_numbers
+        try {
+            $batchNumberValue = $batchDetails['batch_number'] ?? $batchNumber;
+            if ($batchNumberValue) {
+                $batchNumbersTableExists = $db->queryOne("SHOW TABLES LIKE 'batch_numbers'");
+                if (!empty($batchNumbersTableExists)) {
+                    $batchNumberRow = $db->queryOne(
+                        "SELECT honey_supplier_id FROM batch_numbers WHERE batch_number = ? LIMIT 1",
+                        [$batchNumberValue]
+                    );
+                    if (!empty($batchNumberRow['honey_supplier_id'])) {
+                        $honeySupplierId = (int)$batchNumberRow['honey_supplier_id'];
+                    }
+                }
+            }
+        } catch (Throwable $e) {
+            error_log('send_barcode_link honey supplier id lookup error: ' . $e->getMessage());
         }
-    } catch (Throwable $supplierError) {
-        error_log('send_barcode_link honey supplier lookup failed: ' . $supplierError->getMessage());
+    }
+    
+    if ($honeySupplierId && $honeySupplierId > 0) {
+        try {
+            $row = $db->queryOne("SELECT name FROM suppliers WHERE id = ? LIMIT 1", [$honeySupplierId]);
+            if (!empty($row['name'])) {
+                $honeySupplierName = trim((string)$row['name']);
+            }
+        } catch (Throwable $supplierError) {
+            error_log('send_barcode_link honey supplier lookup failed: ' . $supplierError->getMessage());
+        }
     }
 }
 
-if (!$packagingSupplierName && !empty($sessionMeta['packaging_supplier_id'])) {
-    try {
-        $row = $db->queryOne("SELECT name FROM suppliers WHERE id = ? LIMIT 1", [(int) $sessionMeta['packaging_supplier_id']]);
-        if (!empty($row['name'])) {
-            $packagingSupplierName = $row['name'];
+if (!$packagingSupplierName) {
+    $packagingSupplierId = $sessionMeta['packaging_supplier_id'] ?? null;
+    if (!$packagingSupplierId && $batchDetails) {
+        // محاولة جلب من batch_numbers
+        try {
+            $batchNumberValue = $batchDetails['batch_number'] ?? $batchNumber;
+            if ($batchNumberValue) {
+                $batchNumbersTableExists = $db->queryOne("SHOW TABLES LIKE 'batch_numbers'");
+                if (!empty($batchNumbersTableExists)) {
+                    $batchNumberRow = $db->queryOne(
+                        "SELECT packaging_supplier_id FROM batch_numbers WHERE batch_number = ? LIMIT 1",
+                        [$batchNumberValue]
+                    );
+                    if (!empty($batchNumberRow['packaging_supplier_id'])) {
+                        $packagingSupplierId = (int)$batchNumberRow['packaging_supplier_id'];
+                    }
+                }
+            }
+        } catch (Throwable $e) {
+            error_log('send_barcode_link packaging supplier id lookup error: ' . $e->getMessage());
         }
-    } catch (Throwable $supplierError) {
-        error_log('send_barcode_link packaging supplier lookup failed: ' . $supplierError->getMessage());
+    }
+    
+    if ($packagingSupplierId && $packagingSupplierId > 0) {
+        try {
+            $row = $db->queryOne("SELECT name FROM suppliers WHERE id = ? LIMIT 1", [$packagingSupplierId]);
+            if (!empty($row['name'])) {
+                $packagingSupplierName = trim((string)$row['name']);
+            }
+        } catch (Throwable $supplierError) {
+            error_log('send_barcode_link packaging supplier lookup failed: ' . $supplierError->getMessage());
+        }
     }
 }
 

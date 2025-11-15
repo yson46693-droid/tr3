@@ -480,13 +480,19 @@ function getBatchNumber($batchId) {
         // جلب معلومات مورد العسل ومورد التعبئة
         $batchNumbersTableExists = $db->queryOne("SHOW TABLES LIKE 'batch_numbers'");
         if (!empty($batchNumbersTableExists)) {
-            $batchNumberRecord = $db->queryOne(
-                "SELECT honey_supplier_id, packaging_supplier_id 
-                 FROM batch_numbers 
-                 WHERE batch_id = ? 
-                 LIMIT 1",
-                [$batchIdValue]
-            );
+            // البحث باستخدام batch_number (النص) وليس batch_id
+            $batchNumberValue = $batch['batch_number'] ?? null;
+            if ($batchNumberValue) {
+                $batchNumberRecord = $db->queryOne(
+                    "SELECT honey_supplier_id, packaging_supplier_id 
+                     FROM batch_numbers 
+                     WHERE batch_number = ? 
+                     LIMIT 1",
+                    [$batchNumberValue]
+                );
+            } else {
+                $batchNumberRecord = null;
+            }
             
             if (!empty($batchNumberRecord)) {
                 $honeySupplierId = isset($batchNumberRecord['honey_supplier_id']) ? (int)$batchNumberRecord['honey_supplier_id'] : null;

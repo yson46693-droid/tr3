@@ -6754,7 +6754,21 @@ function printBarcodes() {
         }
         fallbackTriggered = true;
 
-        const { autoOpen = true } = options;
+        const { autoOpen = true, showError = true } = options;
+        
+        if (showError && message) {
+            const fallbackMessages = document.getElementById('barcodeFallbackMessages');
+            if (fallbackMessages) {
+                fallbackMessages.classList.remove('d-none');
+                fallbackMessages.innerHTML = '<div class="alert alert-warning alert-dismissible fade show" role="alert">' +
+                    '<i class="bi bi-exclamation-triangle me-2"></i>' +
+                    '<strong>تنبيه:</strong> ' + message +
+                    '<button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close"></button>' +
+                    '</div>';
+            } else {
+                console.warn(message);
+            }
+        }
         const finalMessage = message || 'تعذر إرسال الرابط إلى تليجرام، يمكنك استخدام الرابط التالي للطباعة اليدوية.';
 
         const buildFallbackMessage = () => {
