@@ -1608,8 +1608,15 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         error_log("Duplicate form submission detected: token={$submitToken}, action={$action}");
         // إيقاف المعالجة لمنع التكرار
         $_SESSION['error_message'] = $error;
-        header('Location: ' . $_SERVER['REQUEST_URI']);
-        exit;
+        // محاولة إعادة التوجيه فقط إذا لم يتم إرسال الرؤوس بعد
+        if (!headers_sent()) {
+            header('Location: ' . $_SERVER['REQUEST_URI']);
+            exit;
+        } else {
+            // إذا تم إرسال الرؤوس بالفعل، فقط تجاهل المعالجة
+            // سيتم عرض رسالة الخطأ من $_SESSION['error_message']
+            $action = ''; // إلغاء المعالجة
+        }
     } elseif ($action === 'add_production') {
         // حفظ الرمز لمنع الإرسال المتكرر
         $_SESSION['last_submit_token'] = $submitToken;
