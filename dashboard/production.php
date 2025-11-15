@@ -1133,6 +1133,13 @@ $pageTitle = isset($lang['production_dashboard']) ? $lang['production_dashboard'
                 }
                 ?>
                 
+            <?php elseif ($page === 'batch_reader'): ?>
+                <!-- صفحة قارئ أرقام التشغيلات -->
+                <div class="container-fluid p-0" style="height: 100vh; overflow: hidden;">
+                    <iframe src="<?php echo getRelativeUrl('reader/index.php'); ?>" 
+                            style="width: 100%; height: 100%; border: none; display: block;"></iframe>
+                </div>
+                
             <?php endif; ?>
 
 <script>

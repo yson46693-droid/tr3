@@ -866,6 +866,14 @@ $pageTitle = isset($lang['manager_dashboard']) ? $lang['manager_dashboard'] : '�
                     echo '<div class="alert alert-warning">صفحة متابعة الحضور والانصراف غير متاحة حالياً</div>';
                 }
                 ?>
+                
+            <?php elseif ($page === 'batch_reader'): ?>
+                <!-- صفحة قارئ أرقام التشغيلات -->
+                <div class="container-fluid p-0" style="height: 100vh; overflow: hidden;">
+                    <iframe src="<?php echo getRelativeUrl('reader/index.php'); ?>" 
+                            style="width: 100%; height: 100%; border: none; display: block;"></iframe>
+                </div>
+                
             <?php endif; ?>
 
 <?php include __DIR__ . '/../templates/footer.php'; ?>

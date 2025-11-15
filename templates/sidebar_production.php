@@ -66,6 +66,14 @@ $baseUrl = getDashboardUrl();
                     <span><?php echo isset($lang['menu_attendance']) ? $lang['menu_attendance'] : 'الحضور'; ?></span>
                 </a>
             </li>
+            
+            <li class="nav-item">
+                <a class="nav-link <?php echo (isset($_GET['page']) && $_GET['page'] === 'batch_reader') ? 'active' : ''; ?>" 
+                   href="<?php echo $baseUrl; ?>production.php?page=batch_reader">
+                    <i class="bi bi-upc-scan"></i>
+                    <span>قارئ أرقام التشغيلات</span>
+                </a>
+            </li>
         </ul>
     </nav>
     

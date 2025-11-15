@@ -110,6 +110,14 @@ $baseUrl = getDashboardUrl();
                     </a>
                 </li>
             </div>
+            
+            <li class="nav-item">
+                <a class="nav-link <?php echo (isset($_GET['page']) && $_GET['page'] === 'batch_reader') ? 'active' : ''; ?>" 
+                   href="<?php echo $baseUrl; ?>manager.php?page=batch_reader">
+                    <i class="bi bi-upc-scan"></i>
+                    <span>قارئ أرقام التشغيلات</span>
+                </a>
+            </li>
         </ul>
     </nav>
     
