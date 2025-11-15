@@ -6147,7 +6147,25 @@ function renderTemplateSuppliers(details) {
             select.appendChild(option);
         });
 
-        if (!component.default_supplier && suppliersList.length === 1) {
+        // الاختيار التلقائي للمورد إذا كان هناك مورد واحد فقط للمواد التالية:
+        // الشمع (beeswax)، المكسرات (nuts)، المشتقات (derivatives)، زيت الزيتون (olive_oil)
+        const autoSelectTypes = ['beeswax', 'nuts', 'derivatives', 'olive_oil'];
+        // التحقق من نوع المادة من عدة مصادر: canonicalType، effectiveType، component.type
+        const materialTypeForAutoSelect = (canonicalType || effectiveType || component.type || '').toString().toLowerCase();
+        // التحقق أيضاً من اسم المادة إذا كان يحتوي على كلمات مفتاحية
+        const componentNameLower = ((component.name || component.label || '').toString().toLowerCase());
+        const isBeeswaxByName = componentNameLower.includes('شمع') || componentNameLower.includes('beeswax');
+        const isNutsByName = componentNameLower.includes('مكسرات') || componentNameLower.includes('nuts');
+        const isDerivativesByName = componentNameLower.includes('مشتق') || componentNameLower.includes('derivative');
+        const isOliveOilByName = componentNameLower.includes('زيت زيتون') || componentNameLower.includes('olive oil') || componentNameLower.includes('olive_oil');
+        
+        const shouldAutoSelect = autoSelectTypes.includes(materialTypeForAutoSelect) 
+            || isBeeswaxByName 
+            || isNutsByName 
+            || isDerivativesByName 
+            || isOliveOilByName;
+        
+        if (!component.default_supplier && suppliersList.length === 1 && shouldAutoSelect) {
             autoSelectSupplierId = suppliersList[0].id;
         }
 
