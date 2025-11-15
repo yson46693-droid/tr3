@@ -17,6 +17,7 @@ require_once __DIR__ . '/../../includes/batch_numbers.php';
 require_once __DIR__ . '/../../includes/simple_barcode.php';
 require_once __DIR__ . '/../../includes/consumption_reports.php';
 require_once __DIR__ . '/../../includes/production_helper.php';
+require_once __DIR__ . '/../../includes/honey_varieties.php';
 
 requireRole(['production', 'accountant', 'manager']);
 
@@ -769,22 +770,49 @@ function checkMaterialsAvailability($db, $templateId, $productionQuantity, array
                 $varietyCleaned = $varietyTrimmed;
             }
             
-            if ($flexibleSearch) {
-                // استخدام LIKE للبحث المرن (مطابقة جزئية) - أكثر مرونة
-                // البحث باستخدام الاسم المطهر والاسم الأصلي
-                $conditions[] = "(honey_variety = ? OR honey_variety = ? OR honey_variety LIKE ? OR honey_variety LIKE ? OR honey_variety LIKE ? OR honey_variety LIKE ? OR honey_variety LIKE ?)";
-                $params[] = $varietyTrimmed;  // البحث بالتطابق الدقيق للاسم الأصلي
-                $params[] = $varietyCleaned;  // البحث بالتطابق الدقيق للاسم المطهر
-                $params[] = '%' . $varietyTrimmed . '%';  // البحث المرن للاسم الأصلي
-                $params[] = '%' . $varietyCleaned . '%';  // البحث المرن للاسم المطهر
-                $params[] = $varietyCleaned . '%';  // يبدأ بالاسم المطهر
-                $params[] = '%' . $varietyCleaned;  // ينتهي بالاسم المطهر
-                $params[] = $varietyTrimmed . '%';  // يبدأ بالاسم الأصلي
-            } else {
-                // المطابقة الدقيقة أولاً (لكن جرب الاسم المطهر أيضاً)
-                $conditions[] = "(honey_variety = ? OR honey_variety = ?)";
-                $params[] = $varietyTrimmed;
-                $params[] = $varietyCleaned;
+            // الحصول على قائمة أنواع العسل الصحيحة من ENUM
+            // القيم الصحيحة في ENUM: 'سدر','جبلي','حبة البركة','موالح','نوارة برسيم','أخرى'
+            $validHoneyVarieties = ['سدر', 'جبلي', 'حبة البركة', 'موالح', 'نوارة برسيم', 'أخرى'];
+            
+            // محاولة مطابقة نوع العسل مع القيم الصحيحة في ENUM
+            $matchedVarieties = [];
+            
+            // 1. المطابقة الدقيقة للاسم الأصلي
+            if (in_array($varietyTrimmed, $validHoneyVarieties, true)) {
+                $matchedVarieties[] = $varietyTrimmed;
+            }
+            
+            // 2. المطابقة الدقيقة للاسم المطهر
+            if ($varietyCleaned !== $varietyTrimmed && in_array($varietyCleaned, $validHoneyVarieties, true)) {
+                $matchedVarieties[] = $varietyCleaned;
+            }
+            
+            // 3. إذا لم يتم العثور على مطابقة دقيقة، جرب البحث المرن في القائمة
+            if (empty($matchedVarieties) && $flexibleSearch) {
+                foreach ($validHoneyVarieties as $validVariety) {
+                    // البحث عن نوع العسل المستخرج داخل القيم الصحيحة
+                    if (mb_stripos($validVariety, $varietyCleaned) !== false || mb_stripos($varietyCleaned, $validVariety) !== false) {
+                        $matchedVarieties[] = $validVariety;
+                    }
+                }
+            }
+            
+            // 4. إذا لم يتم العثور على أي مطابقة، استخدم القيم الأصلية للبحث
+            if (empty($matchedVarieties)) {
+                $matchedVarieties = [$varietyTrimmed, $varietyCleaned];
+            }
+            
+            // إزالة التكرارات
+            $matchedVarieties = array_unique($matchedVarieties);
+            
+            // بناء شرط البحث - استخدام المطابقة الدقيقة (=) مع ENUM
+            if (count($matchedVarieties) === 1) {
+                $conditions[] = "honey_variety = ?";
+                $params[] = $matchedVarieties[0];
+            } elseif (count($matchedVarieties) > 1) {
+                $placeholders = implode(',', array_fill(0, count($matchedVarieties), '?'));
+                $conditions[] = "honey_variety IN ({$placeholders})";
+                $params = array_merge($params, $matchedVarieties);
             }
         }
         
@@ -847,38 +875,68 @@ function checkMaterialsAvailability($db, $templateId, $productionQuantity, array
                     // إذا لم يتم العثور على شيء بعد كل المحاولات ونوع العسل محدد، جرب بحث إضافي مباشر في قاعدة البيانات
                     if ($availableQuantity == 0 && $honeyVariety) {
                         // تنظيف نوع العسل من أي رموز أو أرقام إضافية
-                        $varietyCleaned = preg_replace('/\s*\([^)]*\)\s*/', '', trim($honeyVariety));
+                        $varietyTrimmed = trim($honeyVariety);
+                        $varietyCleaned = preg_replace('/\s*\([^)]*\)\s*/', '', $varietyTrimmed);
                         $varietyCleaned = trim(preg_replace('/[\s\-_]*[A-Z0-9]+[\s\-_]*$/', '', $varietyCleaned));
                         if (empty($varietyCleaned)) {
-                            $varietyCleaned = trim($honeyVariety);
+                            $varietyCleaned = $varietyTrimmed;
                         }
                         
-                        // البحث المباشر في قاعدة البيانات
-                        $directSearchSql = "SELECT SUM({$column}) AS total_quantity FROM honey_stock WHERE {$column} > 0 AND (";
-                        $directSearchParams = [];
-                        $directSearchConditions = [];
+                        // الحصول على قائمة أنواع العسل الصحيحة من ENUM
+                        $validHoneyVarieties = ['سدر', 'جبلي', 'حبة البركة', 'موالح', 'نوارة برسيم', 'أخرى'];
                         
-                        // بحث مرن بعدة طرق
-                        $directSearchConditions[] = "honey_variety LIKE ?";
-                        $directSearchParams[] = '%' . trim($honeyVariety) . '%';
+                        // محاولة مطابقة نوع العسل مع القيم الصحيحة في ENUM
+                        $matchedVarieties = [];
                         
-                        if ($varietyCleaned !== trim($honeyVariety)) {
-                            $directSearchConditions[] = "honey_variety LIKE ?";
-                            $directSearchParams[] = '%' . $varietyCleaned . '%';
+                        // المطابقة الدقيقة
+                        if (in_array($varietyTrimmed, $validHoneyVarieties, true)) {
+                            $matchedVarieties[] = $varietyTrimmed;
+                        }
+                        if ($varietyCleaned !== $varietyTrimmed && in_array($varietyCleaned, $validHoneyVarieties, true)) {
+                            $matchedVarieties[] = $varietyCleaned;
                         }
                         
-                        $directSearchSql .= implode(' OR ', $directSearchConditions) . ')';
-                        
-                        if ($supplierId) {
-                            $directSearchSql .= " AND supplier_id = ?";
-                            $directSearchParams[] = $supplierId;
+                        // البحث المرن في القائمة
+                        if (empty($matchedVarieties)) {
+                            foreach ($validHoneyVarieties as $validVariety) {
+                                if (mb_stripos($validVariety, $varietyCleaned) !== false || mb_stripos($varietyCleaned, $validVariety) !== false) {
+                                    $matchedVarieties[] = $validVariety;
+                                }
+                            }
                         }
                         
-                        $directStockRow = $db->queryOne($directSearchSql, $directSearchParams);
-                        $directQuantity = (float)($directStockRow['total_quantity'] ?? 0);
+                        // إذا لم يتم العثور على أي مطابقة، استخدم القيم الأصلية
+                        if (empty($matchedVarieties)) {
+                            $matchedVarieties = [$varietyTrimmed, $varietyCleaned];
+                        }
                         
-                        if ($directQuantity > 0) {
-                            $availableQuantity = $directQuantity;
+                        $matchedVarieties = array_unique($matchedVarieties);
+                        
+                        // البحث المباشر في قاعدة البيانات باستخدام المطابقة الدقيقة مع ENUM
+                        if (!empty($matchedVarieties)) {
+                            $directSearchSql = "SELECT SUM({$column}) AS total_quantity FROM honey_stock WHERE {$column} > 0";
+                            $directSearchParams = [];
+                            
+                            if (count($matchedVarieties) === 1) {
+                                $directSearchSql .= " AND honey_variety = ?";
+                                $directSearchParams[] = $matchedVarieties[0];
+                            } elseif (count($matchedVarieties) > 1) {
+                                $placeholders = implode(',', array_fill(0, count($matchedVarieties), '?'));
+                                $directSearchSql .= " AND honey_variety IN ({$placeholders})";
+                                $directSearchParams = array_merge($directSearchParams, $matchedVarieties);
+                            }
+                            
+                            if ($supplierId) {
+                                $directSearchSql .= " AND supplier_id = ?";
+                                $directSearchParams[] = $supplierId;
+                            }
+                            
+                            $directStockRow = $db->queryOne($directSearchSql, $directSearchParams);
+                            $directQuantity = (float)($directStockRow['total_quantity'] ?? 0);
+                            
+                            if ($directQuantity > 0) {
+                                $availableQuantity = $directQuantity;
+                            }
                         }
                     }
                     
