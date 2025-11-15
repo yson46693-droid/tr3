@@ -677,7 +677,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         if (!empty($transferErrors)) {
             $error = implode(' | ', array_unique($transferErrors));
         }
-    } elseif ($isManager && $postAction === 'create_external_product') {
+    }
+    
+    if ($isManager && $postAction === 'create_external_product') {
         $name = trim((string)($_POST['external_name'] ?? ''));
         $channel = $_POST['external_channel'] ?? 'company';
         $initialQuantity = max(0, floatval($_POST['external_quantity'] ?? 0));
@@ -870,67 +872,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         }
 
         productionSafeRedirect($managerInventoryUrl, $managerRedirectParams, $managerRedirectRole);
-    } elseif ($isManager && $postAction === 'update_manual_price') {
-        $finishedProductId = intval($_POST['finished_product_id'] ?? 0);
-        $manualPrice = isset($_POST['manual_price']) ? trim((string)$_POST['manual_price']) : '';
-        
-        if ($finishedProductId <= 0) {
-            $_SESSION[$sessionErrorKey] = 'يرجى اختيار منتج صالح.';
-            productionSafeRedirect($managerInventoryUrl, $managerRedirectParams, $managerRedirectRole);
-        }
-        
-        $priceValue = null;
-        if ($manualPrice !== '' && $manualPrice !== null) {
-            $priceValue = cleanFinancialValue($manualPrice);
-            // السعر اليدوي هو السعر الإجمالي للتشغيلة، لذا الحد الأقصى أكبر
-            if ($priceValue < 0 || $priceValue > 10000000) {
-                $_SESSION[$sessionErrorKey] = 'السعر المدخل غير صالح. يجب أن يكون بين 0 و 10,000,000.';
-                productionSafeRedirect($managerInventoryUrl, $managerRedirectParams, $managerRedirectRole);
-            }
-        }
-        
-        try {
-            $existing = $db->queryOne(
-                "SELECT id, product_id, batch_number, quantity_produced, manager_unit_price, template_unit_price
-                 FROM finished_products WHERE id = ? LIMIT 1",
-                [$finishedProductId]
-            );
-            
-            if (!$existing) {
-                $_SESSION[$sessionErrorKey] = 'المنتج المطلوب غير موجود.';
-                productionSafeRedirect($managerInventoryUrl, $managerRedirectParams, $managerRedirectRole);
-            }
-            
-            $db->execute(
-                "UPDATE finished_products SET manager_unit_price = ? WHERE id = ?",
-                [$priceValue, $finishedProductId]
-            );
-            
-            if (!empty($currentUser['id'])) {
-                logAudit(
-                    $currentUser['id'],
-                    'update_manual_price',
-                    'finished_product',
-                    $finishedProductId,
-                    [
-                        'old_manual_price' => $existing['manager_unit_price'] ?? null,
-                        'template_price' => $existing['template_unit_price'] ?? null,
-                    ],
-                    [
-                        'new_manual_price' => $priceValue,
-                        'batch_number' => $existing['batch_number'] ?? null,
-                        'quantity' => $existing['quantity_produced'] ?? null,
-                    ]
-                );
-            }
-            
-            $_SESSION[$sessionSuccessKey] = 'تم تحديث السعر اليدوي الإجمالي للتشغيلة بنجاح.';
-        } catch (Exception $e) {
-            error_log('update_manual_price error: ' . $e->getMessage());
-            $_SESSION[$sessionErrorKey] = 'تعذر تحديث السعر اليدوي.';
-        }
-        
-        productionSafeRedirect($managerInventoryUrl, $managerRedirectParams, $managerRedirectRole);
     }
 }
 
@@ -1072,13 +1013,34 @@ $finishedProductsRows = [];
 $finishedProductsCount = 0;
 $finishedProductsTableExists = $db->queryOne("SHOW TABLES LIKE 'finished_products'");
 if (!empty($finishedProductsTableExists)) {
+    // حذف حقل manager_unit_price إذا كان موجوداً
     try {
         $managerPriceColumn = $db->queryOne("SHOW COLUMNS FROM finished_products LIKE 'manager_unit_price'");
-        if (empty($managerPriceColumn)) {
-            $db->execute("ALTER TABLE `finished_products` ADD COLUMN `manager_unit_price` DECIMAL(12,2) NULL DEFAULT NULL AFTER `quantity_produced`");
+        if (!empty($managerPriceColumn)) {
+            $db->execute("ALTER TABLE `finished_products` DROP COLUMN `manager_unit_price`");
         }
     } catch (Exception $priceColumnError) {
-        error_log('Finished products ensure manager_unit_price column error: ' . $priceColumnError->getMessage());
+        error_log('Finished products drop manager_unit_price column error: ' . $priceColumnError->getMessage());
+    }
+    
+    // إضافة حقل unit_price (سعر الوحدة)
+    try {
+        $unitPriceColumn = $db->queryOne("SHOW COLUMNS FROM finished_products LIKE 'unit_price'");
+        if (empty($unitPriceColumn)) {
+            $db->execute("ALTER TABLE `finished_products` ADD COLUMN `unit_price` DECIMAL(12,2) NULL DEFAULT NULL COMMENT 'سعر الوحدة من القالب' AFTER `quantity_produced`");
+        }
+    } catch (Exception $e) {
+        error_log('Failed to ensure unit_price column in finished_products: ' . $e->getMessage());
+    }
+    
+    // إضافة حقل total_price (السعر الإجمالي)
+    try {
+        $totalPriceColumn = $db->queryOne("SHOW COLUMNS FROM finished_products LIKE 'total_price'");
+        if (empty($totalPriceColumn)) {
+            $db->execute("ALTER TABLE `finished_products` ADD COLUMN `total_price` DECIMAL(12,2) NULL DEFAULT NULL COMMENT 'السعر الإجمالي (unit_price × quantity_produced)' AFTER `unit_price`");
+        }
+    } catch (Exception $e) {
+        error_log('Failed to ensure total_price column in finished_products: ' . $e->getMessage());
     }
     
     // التأكد من وجود الأعمدة المطلوبة في جدول product_templates
@@ -1111,7 +1073,8 @@ if (!empty($finishedProductsTableExists)) {
                 COALESCE(pr.name, fp.product_name) AS product_name,
                 fp.production_date,
                 fp.quantity_produced,
-                fp.manager_unit_price,
+                fp.unit_price,
+                fp.total_price,
                 (SELECT pt.unit_price 
                  FROM product_templates pt 
                  WHERE pt.status = 'active' 
@@ -1153,24 +1116,7 @@ if (!empty($finishedProductsTableExists)) {
                            )
                        )
                    )
-                 ORDER BY 
-                   CASE 
-                       WHEN COALESCE(fp.product_id, bn.product_id) IS NOT NULL 
-                            AND COALESCE(fp.product_id, bn.product_id) > 0
-                            AND pt.product_id IS NOT NULL 
-                            AND pt.product_id > 0 
-                            AND pt.product_id = COALESCE(fp.product_id, bn.product_id) THEN 0 
-                       WHEN LOWER(TRIM(pt.product_name)) = LOWER(TRIM(COALESCE(pr.name, fp.product_name))) THEN 1
-                       WHEN pt.product_name IS NOT NULL 
-                            AND COALESCE(pr.name, fp.product_name) IS NOT NULL
-                            AND (
-                                LOWER(TRIM(pt.product_name)) LIKE CONCAT('%', LOWER(TRIM(COALESCE(pr.name, fp.product_name))), '%')
-                                OR LOWER(TRIM(COALESCE(pr.name, fp.product_name))) LIKE CONCAT('%', LOWER(TRIM(pt.product_name)), '%')
-                            ) THEN 2
-                       ELSE 3
-                   END,
-                   pt.unit_price ASC,
-                   pt.id DESC 
+                 ORDER BY pt.unit_price DESC
                  LIMIT 1) AS template_unit_price,
                 GROUP_CONCAT(DISTINCT u.full_name ORDER BY u.full_name SEPARATOR ', ') AS workers
             FROM finished_products fp
@@ -1182,6 +1128,55 @@ if (!empty($finishedProductsTableExists)) {
             ORDER BY fp.production_date DESC, fp.id DESC
             LIMIT 150
         ");
+        
+        // تحديث الحقول unit_price و total_price للمنتجات التي لا تحتوي عليها
+        if (is_array($finishedProductsRows)) {
+            foreach ($finishedProductsRows as $row) {
+                $fpId = (int)($row['id'] ?? 0);
+                $templatePrice = isset($row['template_unit_price']) && $row['template_unit_price'] !== null 
+                    ? (float)$row['template_unit_price'] 
+                    : null;
+                $currentUnitPrice = isset($row['unit_price']) && $row['unit_price'] !== null 
+                    ? (float)$row['unit_price'] 
+                    : null;
+                $quantity = (float)($row['quantity_produced'] ?? 0);
+                
+                // إذا كان هناك سعر قالب ولم يكن هناك unit_price محفوظ، قم بتحديثه
+                if ($templatePrice !== null && $templatePrice > 0 && $templatePrice <= 10000 && $currentUnitPrice === null) {
+                    $totalPrice = $templatePrice * $quantity;
+                    try {
+                        $db->execute(
+                            "UPDATE finished_products SET unit_price = ?, total_price = ? WHERE id = ?",
+                            [$templatePrice, $totalPrice, $fpId]
+                        );
+                        // تحديث القيم في المصفوفة للعرض
+                        $row['unit_price'] = $templatePrice;
+                        $row['total_price'] = $totalPrice;
+                    } catch (Exception $e) {
+                        error_log('Failed to update unit_price and total_price for finished_product ' . $fpId . ': ' . $e->getMessage());
+                    }
+                }
+                // إذا كان هناك unit_price ولكن لا يوجد total_price، قم بحسابه
+                elseif ($currentUnitPrice !== null && $currentUnitPrice > 0 && $quantity > 0) {
+                    $currentTotalPrice = isset($row['total_price']) && $row['total_price'] !== null 
+                        ? (float)$row['total_price'] 
+                        : null;
+                    if ($currentTotalPrice === null) {
+                        $totalPrice = $currentUnitPrice * $quantity;
+                        try {
+                            $db->execute(
+                                "UPDATE finished_products SET total_price = ? WHERE id = ?",
+                                [$totalPrice, $fpId]
+                            );
+                            $row['total_price'] = $totalPrice;
+                        } catch (Exception $e) {
+                            error_log('Failed to update total_price for finished_product ' . $fpId . ': ' . $e->getMessage());
+                        }
+                    }
+                }
+            }
+        }
+        
         $finishedProductsCount = is_array($finishedProductsRows) ? count($finishedProductsRows) : 0;
     } catch (Exception $finishedProductsError) {
         error_log('Finished products query error: ' . $finishedProductsError->getMessage());
@@ -1294,9 +1289,7 @@ if ($isManager) {
         <?php if ($isManager): ?>
         <button
             type="button"
-            class="btn btn-success"
-            data-bs-toggle="modal"
-            data-bs-target="#addExternalProductModal"
+            class="btn btn-success js-open-add-external-modal"
         >
             <i class="bi bi-plus-circle me-1"></i>
             إضافة منتج خارجي
@@ -1304,9 +1297,7 @@ if ($isManager) {
         <?php endif; ?>
         <button
             type="button"
-            class="btn btn-outline-primary"
-            data-bs-toggle="modal"
-            data-bs-target="#requestTransferModal"
+            class="btn btn-outline-primary js-open-transfer-modal"
             <?php echo $canCreateTransfers ? '' : 'disabled'; ?>
             title="<?php echo $canCreateTransfers ? '' : 'يرجى التأكد من وجود مخازن وجهة نشطة.'; ?>"
         >
@@ -1394,151 +1385,23 @@ if ($isManager) {
                                 <?php if ($isManager): ?>
                                     <td>
                                         <?php 
-                                            // حساب السعر الإجمالي للتشغيلة
-                                            // السعر اليدوي (manager_unit_price) هو السعر الإجمالي للتشغيلة مباشرة
-                                            // إذا لم يكن موجود، احسب: الكمية × سعر القالب
-                                            $totalPrice = null;
-                                            $priceSource = '';
-                                            $templateUnitPrice = null;
-                                            
+                                            $unitPrice = isset($finishedRow['unit_price']) && $finishedRow['unit_price'] !== null 
+                                                ? (float)$finishedRow['unit_price'] 
+                                                : null;
+                                            $totalPrice = isset($finishedRow['total_price']) && $finishedRow['total_price'] !== null 
+                                                ? (float)$finishedRow['total_price'] 
+                                                : null;
                                             $quantity = (float)($finishedRow['quantity_produced'] ?? 0);
-                                            
-                                            // التحقق من السعر اليدوي (السعر الإجمالي للتشغيلة)
-                                            if (isset($finishedRow['manager_unit_price']) && $finishedRow['manager_unit_price'] !== null) {
-                                                $rawPrice = (string)$finishedRow['manager_unit_price'];
-                                                $totalPrice = cleanFinancialValue($rawPrice);
-                                                if ($totalPrice > 0 && $totalPrice <= 10000000) {
-                                                    $priceSource = 'manual';
-                                                } else {
-                                                    $totalPrice = null;
-                                                }
-                                            }
-                                            
-                                            // إذا لم يكن هناك سعر يدوي، احسب من سعر القالب
-                                            if ($totalPrice === null && isset($finishedRow['template_unit_price']) && $finishedRow['template_unit_price'] !== null) {
-                                                $rawPrice = (string)$finishedRow['template_unit_price'];
-                                                $rawPrice = str_replace('262145', '', $rawPrice);
-                                                $rawPrice = preg_replace('/262145\s*/', '', $rawPrice);
-                                                $rawPrice = preg_replace('/\s*262145/', '', $rawPrice);
-                                                $templateUnitPrice = cleanFinancialValue($rawPrice);
-                                                if (abs($templateUnitPrice - 262145) < 0.01 || $templateUnitPrice > 10000 || $templateUnitPrice < 0) {
-                                                    $templateUnitPrice = null;
-                                                } else {
-                                                    $priceSource = 'template';
-                                                    if ($quantity > 0) {
-                                                        $totalPrice = $templateUnitPrice * $quantity;
-                                                    }
-                                                }
-                                            }
                                             
                                             if ($totalPrice !== null && $totalPrice > 0) {
                                                 echo '<span class="fw-bold text-success">' . htmlspecialchars(formatCurrency($totalPrice)) . '</span>';
-                                                if ($priceSource === 'template' && $templateUnitPrice !== null && $quantity > 0) {
-                                                    echo '<br><small class="text-muted">(' . htmlspecialchars(formatCurrency($templateUnitPrice)) . ' × ' . number_format($quantity, 2) . ')</small>';
-                                                } elseif ($priceSource === 'manual') {
-                                                    echo '<br><small class="text-info"><i class="bi bi-pencil"></i> سعر يدوي للتشغيلة</small>';
+                                                if ($unitPrice !== null && $unitPrice > 0 && $quantity > 0) {
+                                                    echo '<br><small class="text-muted">(' . htmlspecialchars(formatCurrency($unitPrice)) . ' × ' . number_format($quantity, 2) . ')</small>';
                                                 }
                                             } else {
                                                 echo '<span class="text-muted">—</span>';
-                                                // عرض رسالة أكثر وضوحاً بناءً على السبب
-                                                $hasTemplatePrice = isset($finishedRow['template_unit_price']) && $finishedRow['template_unit_price'] !== null;
-                                                
-                                                if ($hasTemplatePrice) {
-                                                    $rawTemplatePrice = (string)$finishedRow['template_unit_price'];
-                                                    $rawTemplatePrice = str_replace('262145', '', $rawTemplatePrice);
-                                                    $rawTemplatePrice = preg_replace('/262145\s*/', '', $rawTemplatePrice);
-                                                    $rawTemplatePrice = preg_replace('/\s*262145/', '', $rawTemplatePrice);
-                                                    $checkTemplatePrice = cleanFinancialValue($rawTemplatePrice);
-                                                    
-                                                    if (abs($checkTemplatePrice - 262145) < 0.01 || $checkTemplatePrice > 10000 || $checkTemplatePrice < 0) {
-                                                        echo '<br><small class="text-warning"><i class="bi bi-exclamation-triangle"></i> سعر القالب غير صالح</small>';
-                                                    } else {
-                                                        echo '<br><small class="text-muted">لم يتم تحديد سعر في القالب</small>';
-                                                    }
-                                                } else {
-                                                    // محاولة البحث عن قالب يدوياً للتحقق
-                                                    $productIdForCheck = $finishedRow['product_id'] ?? null;
-                                                    $productNameForCheck = $finishedRow['product_name'] ?? '';
-                                                    
-                                                    $templateCheck = null;
-                                                    
-                                                    // البحث بالـ product_id أولاً (الأكثر دقة)
-                                                    if ($productIdForCheck && $productIdForCheck > 0) {
-                                                        $templateCheck = $db->queryOne(
-                                                            "SELECT id, unit_price, product_id, product_name FROM product_templates 
-                                                             WHERE status = 'active' 
-                                                               AND product_id = ? 
-                                                               AND unit_price IS NOT NULL 
-                                                               AND unit_price > 0 
-                                                               AND unit_price <= 10000 
-                                                             ORDER BY unit_price ASC, id DESC
-                                                             LIMIT 1",
-                                                            [$productIdForCheck]
-                                                        );
-                                                    }
-                                                    
-                                                    // إذا لم يتم العثور عليه بالـ product_id، جرب البحث بالاسم
-                                                    if (!$templateCheck && !empty($productNameForCheck)) {
-                                                        $trimmedName = trim($productNameForCheck);
-                                                        $templateCheck = $db->queryOne(
-                                                            "SELECT id, unit_price, product_id, product_name FROM product_templates 
-                                                             WHERE status = 'active' 
-                                                               AND product_name IS NOT NULL 
-                                                               AND product_name != ''
-                                                               AND (
-                                                                   LOWER(TRIM(product_name)) = LOWER(?)
-                                                                   OR LOWER(TRIM(product_name)) LIKE CONCAT('%', LOWER(?), '%')
-                                                                   OR LOWER(?) LIKE CONCAT('%', LOWER(TRIM(product_name)), '%')
-                                                               )
-                                                               AND unit_price IS NOT NULL 
-                                                               AND unit_price > 0 
-                                                               AND unit_price <= 10000 
-                                                             ORDER BY 
-                                                               CASE 
-                                                                   WHEN LOWER(TRIM(product_name)) = LOWER(?) THEN 1
-                                                                   WHEN LOWER(TRIM(product_name)) LIKE CONCAT('%', LOWER(?), '%') THEN 2
-                                                                   ELSE 3
-                                                               END,
-                                                               unit_price ASC, id DESC
-                                                             LIMIT 1",
-                                                            [$trimmedName, $trimmedName, $trimmedName, $trimmedName, $trimmedName]
-                                                        );
-                                                    }
-                                                    
-                                                    // إذا لم يتم العثور عليه، جرب البحث حتى لو كان product_id في القالب null أو 0
-                                                    if (!$templateCheck && !empty($productNameForCheck)) {
-                                                        $trimmedName = trim($productNameForCheck);
-                                                        $templateCheck = $db->queryOne(
-                                                            "SELECT id, unit_price, product_id, product_name FROM product_templates 
-                                                             WHERE status = 'active' 
-                                                               AND (product_id IS NULL OR product_id = 0)
-                                                               AND product_name IS NOT NULL 
-                                                               AND product_name != ''
-                                                               AND (
-                                                                   LOWER(TRIM(product_name)) = LOWER(?)
-                                                                   OR LOWER(TRIM(product_name)) LIKE CONCAT('%', LOWER(?), '%')
-                                                                   OR LOWER(?) LIKE CONCAT('%', LOWER(TRIM(product_name)), '%')
-                                                               )
-                                                               AND unit_price IS NOT NULL 
-                                                               AND unit_price > 0 
-                                                               AND unit_price <= 10000 
-                                                             ORDER BY 
-                                                               CASE 
-                                                                   WHEN LOWER(TRIM(product_name)) = LOWER(?) THEN 1
-                                                                   WHEN LOWER(TRIM(product_name)) LIKE CONCAT('%', LOWER(?), '%') THEN 2
-                                                                   ELSE 3
-                                                               END,
-                                                               unit_price ASC, id DESC
-                                                             LIMIT 1",
-                                                            [$trimmedName, $trimmedName, $trimmedName, $trimmedName, $trimmedName]
-                                                        );
-                                                    }
-                                                    
-                                                    if ($templateCheck) {
-                                                        echo '<br><small class="text-warning"><i class="bi bi-exclamation-triangle"></i> يوجد قالب نشط لكن لم يتم ربطه بشكل صحيح في الاستعلام الرئيسي</small>';
-                                                    } else {
-                                                        echo '<br><small class="text-muted"><i class="bi bi-info-circle"></i> لا يوجد قالب نشط للمنتج</small>';
-                                                    }
+                                                if ($unitPrice === null) {
+                                                    echo '<br><small class="text-muted"><i class="bi bi-info-circle"></i> لا يوجد سعر للوحدة</small>';
                                                 }
                                             }
                                         ?>
@@ -1566,19 +1429,6 @@ if ($isManager) {
                                                 data-batch="<?php echo htmlspecialchars($batchNumber); ?>">
                                             <i class="bi bi-clipboard"></i>
                                             <span class="d-none d-sm-inline">نسخ الرقم</span>
-                                        </button>
-                                        <?php endif; ?>
-                                        <?php if ($isManager): ?>
-                                        <button type="button"
-                                                class="btn btn-outline-info js-set-manual-price"
-                                                data-product-id="<?php echo intval($finishedRow['id'] ?? 0); ?>"
-                                                data-product-name="<?php echo htmlspecialchars($finishedRow['product_name'] ?? '', ENT_QUOTES); ?>"
-                                                data-batch-number="<?php echo htmlspecialchars($batchNumber ?: '', ENT_QUOTES); ?>"
-                                                data-quantity="<?php echo htmlspecialchars($finishedRow['quantity_produced'] ?? 0); ?>"
-                                                data-current-price="<?php echo htmlspecialchars($finishedRow['manager_unit_price'] ?? ''); ?>"
-                                                data-template-price="<?php echo htmlspecialchars($finishedRow['template_unit_price'] ?? ''); ?>">
-                                            <i class="bi bi-pencil"></i>
-                                            <span class="d-none d-sm-inline">تحديد السعر</span>
                                         </button>
                                         <?php endif; ?>
                                         <?php if (!$viewUrl && !$batchNumber && !$isManager): ?>
@@ -2690,6 +2540,105 @@ if (!window.transferFormInitialized) {
     if (!clickEventAttached) {
         clickEventAttached = true;
         document.addEventListener('click', function (event) {
+            // فتح نموذج إضافة منتج خارجي
+            const addExternalBtn = event.target.closest('.js-open-add-external-modal');
+            if (addExternalBtn) {
+                event.preventDefault();
+                event.stopPropagation();
+                event.stopImmediatePropagation();
+                
+                const modal = document.getElementById('addExternalProductModal');
+                if (modal) {
+                    // منع فتح النموذج إذا كان مفتوحاً بالفعل
+                    if (modal.classList.contains('show')) {
+                        return;
+                    }
+                    
+                    // إخفاء pageLoader
+                    const pageLoader = document.getElementById('pageLoader');
+                    if (pageLoader) {
+                        pageLoader.classList.add('hidden');
+                        pageLoader.style.display = 'none';
+                        pageLoader.style.zIndex = '-1';
+                    }
+                    
+                    if (typeof bootstrap !== 'undefined' && typeof bootstrap.Modal !== 'undefined') {
+                        const modalInstance = bootstrap.Modal.getOrCreateInstance(modal, {
+                            backdrop: 'static',
+                            keyboard: false
+                        });
+                        
+                        modal.style.transition = 'none';
+                        const modalDialog = modal.querySelector('.modal-dialog');
+                        if (modalDialog) {
+                            modalDialog.style.transition = 'none';
+                            modalDialog.style.transform = 'none';
+                        }
+                        
+                        modalInstance.show();
+                        
+                        setTimeout(function() {
+                            if (modal.classList.contains('show')) {
+                                modal.style.zIndex = '10000';
+                                if (modalDialog) {
+                                    modalDialog.style.zIndex = '10001';
+                                }
+                            }
+                        }, 10);
+                    }
+                }
+                return;
+            }
+            
+            // فتح نموذج طلب النقل
+            const transferBtn = event.target.closest('.js-open-transfer-modal');
+            if (transferBtn && !transferBtn.disabled) {
+                event.preventDefault();
+                event.stopPropagation();
+                event.stopImmediatePropagation();
+                
+                const modal = document.getElementById('requestTransferModal');
+                if (modal) {
+                    // منع فتح النموذج إذا كان مفتوحاً بالفعل
+                    if (modal.classList.contains('show')) {
+                        return;
+                    }
+                    
+                    // إخفاء pageLoader
+                    const pageLoader = document.getElementById('pageLoader');
+                    if (pageLoader) {
+                        pageLoader.classList.add('hidden');
+                        pageLoader.style.display = 'none';
+                        pageLoader.style.zIndex = '-1';
+                    }
+                    
+                    if (typeof bootstrap !== 'undefined' && typeof bootstrap.Modal !== 'undefined') {
+                        const modalInstance = bootstrap.Modal.getOrCreateInstance(modal, {
+                            backdrop: 'static',
+                            keyboard: false
+                        });
+                        
+                        modal.style.transition = 'none';
+                        const modalDialog = modal.querySelector('.modal-dialog');
+                        if (modalDialog) {
+                            modalDialog.style.transition = 'none';
+                            modalDialog.style.transform = 'none';
+                        }
+                        
+                        modalInstance.show();
+                        
+                        setTimeout(function() {
+                            if (modal.classList.contains('show')) {
+                                modal.style.zIndex = '10000';
+                                if (modalDialog) {
+                                    modalDialog.style.zIndex = '10001';
+                                }
+                            }
+                        }, 10);
+                    }
+                }
+                return;
+            }
             const detailsButton = event.target.closest('.js-batch-details');
             if (detailsButton) {
                 const batchNumber = detailsButton.dataset.batch;
@@ -2957,154 +2906,6 @@ if (!window.transferFormInitialized) {
             return;
         }
 
-        const manualPriceButton = event.target.closest('.js-set-manual-price');
-        if (manualPriceButton) {
-            event.preventDefault();
-            event.stopPropagation();
-            
-            const modal = document.getElementById('setManualPriceModal');
-            if (!modal) {
-                return;
-            }
-            const form = modal.querySelector('form');
-            if (!form) {
-                return;
-            }
-
-            const productIdInput = form.querySelector('#manualPriceProductId');
-            const productNameField = modal.querySelector('#manualPriceProductName');
-            const batchNumberField = modal.querySelector('#manualPriceBatchNumber');
-            const quantityField = modal.querySelector('#manualPriceQuantity');
-            const priceInput = form.querySelector('#manualPriceInput');
-            const templatePriceField = modal.querySelector('#manualPriceTemplatePrice');
-            const calculatedPriceField = modal.querySelector('#manualPriceCalculated');
-            const currentPriceField = modal.querySelector('#manualPriceCurrentPrice');
-
-            const productId = manualPriceButton.dataset.productId || '';
-            const productName = manualPriceButton.dataset.productName || '—';
-            const batchNumber = manualPriceButton.dataset.batchNumber || '—';
-            const quantity = parseFloat(manualPriceButton.dataset.quantity || '0');
-            const currentPrice = manualPriceButton.dataset.currentPrice || '';
-            const templatePrice = manualPriceButton.dataset.templatePrice || '';
-
-            if (productIdInput) {
-                productIdInput.value = productId;
-            }
-            if (productNameField) {
-                productNameField.textContent = productName;
-            }
-            if (batchNumberField) {
-                batchNumberField.textContent = batchNumber !== '—' ? batchNumber : '—';
-            }
-            if (quantityField) {
-                quantityField.textContent = !isNaN(quantity) && quantity > 0 
-                    ? new Intl.NumberFormat('ar-EG', { minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(quantity)
-                    : '—';
-            }
-            if (priceInput) {
-                priceInput.value = currentPrice || '';
-            }
-            
-            // عرض سعر القالب (للحدة الواحدة)
-            if (templatePriceField) {
-                if (templatePrice && templatePrice !== '' && templatePrice !== 'null') {
-                    const templatePriceNum = parseFloat(templatePrice);
-                    if (!isNaN(templatePriceNum) && templatePriceNum > 0) {
-                        templatePriceField.textContent = new Intl.NumberFormat('ar-EG', {
-                            style: 'currency',
-                            currency: 'EGP'
-                        }).format(templatePriceNum);
-                    } else {
-                        templatePriceField.textContent = 'غير محدد';
-                    }
-                } else {
-                    templatePriceField.textContent = 'غير محدد';
-                }
-            }
-            
-            // حساب وعرض السعر المحسوب تلقائياً (الكمية × سعر القالب)
-            if (calculatedPriceField) {
-                const templatePriceNum = parseFloat(templatePrice);
-                if (!isNaN(templatePriceNum) && templatePriceNum > 0 && !isNaN(quantity) && quantity > 0) {
-                    const calculatedTotal = templatePriceNum * quantity;
-                    calculatedPriceField.textContent = new Intl.NumberFormat('ar-EG', {
-                        style: 'currency',
-                        currency: 'EGP'
-                    }).format(calculatedTotal);
-                } else {
-                    calculatedPriceField.textContent = 'غير محدد (يحتاج سعر قالب وكمية)';
-                }
-            }
-            
-            // عرض السعر اليدوي الحالي
-            if (currentPriceField) {
-                if (currentPrice && currentPrice !== '' && currentPrice !== 'null') {
-                    const currentPriceNum = parseFloat(currentPrice);
-                    if (!isNaN(currentPriceNum) && currentPriceNum > 0) {
-                        currentPriceField.textContent = new Intl.NumberFormat('ar-EG', {
-                            style: 'currency',
-                            currency: 'EGP'
-                        }).format(currentPriceNum);
-                    } else {
-                        currentPriceField.textContent = 'غير محدد';
-                    }
-                } else {
-                    currentPriceField.textContent = 'غير محدد';
-                }
-            }
-            
-            // فتح النموذج يدوياً
-            if (typeof bootstrap !== 'undefined' && typeof bootstrap.Modal !== 'undefined') {
-                const modalInstance = bootstrap.Modal.getOrCreateInstance(modal, {
-                    backdrop: 'static',
-                    keyboard: false
-                });
-                
-                // إزالة أي transitions قبل فتح النموذج
-                modal.style.transition = 'none';
-                const modalDialog = modal.querySelector('.modal-dialog');
-                if (modalDialog) {
-                    modalDialog.style.transition = 'none';
-                    modalDialog.style.transform = 'none';
-                }
-                
-                // إخفاء pageLoader قبل فتح النموذج
-                const pageLoader = document.getElementById('pageLoader');
-                if (pageLoader) {
-                    pageLoader.classList.add('hidden');
-                    pageLoader.style.display = 'none';
-                    pageLoader.style.zIndex = '-1';
-                    pageLoader.style.pointerEvents = 'none';
-                }
-                
-                modalInstance.show();
-                
-                // التأكد من z-index بعد فتح النموذج
-                setTimeout(function() {
-                    if (modal.classList.contains('show')) {
-                        modal.style.transition = 'none';
-                        modal.style.zIndex = '10000';
-                        
-                        if (modalDialog) {
-                            modalDialog.style.transition = 'none';
-                            modalDialog.style.transform = 'none';
-                            modalDialog.style.zIndex = '10001';
-                        }
-                        
-                        const modalContent = modal.querySelector('.modal-content');
-                        if (modalContent) {
-                            modalContent.style.zIndex = '10002';
-                        }
-                        
-                        // التأكد من إخفاء pageLoader
-                        if (pageLoader) {
-                            pageLoader.style.zIndex = '-1';
-                            pageLoader.style.display = 'none';
-                        }
-                    }
-                }, 10);
-            }
-        }
         });
     }
 
@@ -3115,7 +2916,6 @@ if (!window.transferFormInitialized) {
         'addExternalProductModal',
         'externalStockModal',
         'editExternalProductModal',
-        'setManualPriceModal',
         'requestTransferModal',
         'batchDetailsModal'
     ];
@@ -3349,6 +3149,22 @@ if (!window.transferFormInitialized) {
     (function() {
         'use strict';
         
+        // منع أي تداخل من ملفات JavaScript الأخرى
+        // تعطيل أي event listeners أخرى على modals
+        const originalAddEventListener = EventTarget.prototype.addEventListener;
+        let modalEventBlocked = false;
+        
+        EventTarget.prototype.addEventListener = function(type, listener, options) {
+            // منع إضافة event listeners على document للـ modals إذا كانت من ملفات أخرى
+            if (this === document && 
+                (type === 'show.bs.modal' || type === 'shown.bs.modal' || type === 'hide.bs.modal' || type === 'hidden.bs.modal') &&
+                modalEventBlocked &&
+                listener.toString().includes('fix-modal-interaction')) {
+                return; // تجاهل هذا الـ listener
+            }
+            return originalAddEventListener.call(this, type, listener, options);
+        };
+        
         // منع أي تحريك أو حركة للنماذج
         function stabilizeModals() {
             const modals = document.querySelectorAll('.modal');
@@ -3378,58 +3194,81 @@ if (!window.transferFormInitialized) {
             });
         }
         
-        // تطبيق الاستقرار عند فتح أي نموذج
-        document.addEventListener('shown.bs.modal', function(e) {
-            const modal = e.target;
-            
-            // إخفاء pageLoader إذا كان موجوداً
-            const pageLoader = document.getElementById('pageLoader');
-            if (pageLoader) {
-                pageLoader.classList.add('hidden');
-                pageLoader.style.display = 'none';
-                pageLoader.style.zIndex = '-1';
-                pageLoader.style.pointerEvents = 'none';
+        // دالة للانتظار حتى يتم تحميل Bootstrap
+        function waitForBootstrap(callback) {
+            if (typeof bootstrap !== 'undefined' && typeof bootstrap.Modal !== 'undefined') {
+                callback();
+            } else {
+                let attempts = 0;
+                const maxAttempts = 50;
+                const checkInterval = setInterval(function() {
+                    attempts++;
+                    if (typeof bootstrap !== 'undefined' && typeof bootstrap.Modal !== 'undefined') {
+                        clearInterval(checkInterval);
+                        callback();
+                    } else if (attempts >= maxAttempts) {
+                        clearInterval(checkInterval);
+                        console.warn('Bootstrap not loaded after waiting period');
+                    }
+                }, 100);
             }
-            
-            // التأكد من أن z-index صحيح
-            if (modal) {
-                modal.style.zIndex = '10000';
-                const modalDialog = modal.querySelector('.modal-dialog');
-                if (modalDialog) {
-                    modalDialog.style.zIndex = '10001';
-                }
-                const modalContent = modal.querySelector('.modal-content');
-                if (modalContent) {
-                    modalContent.style.zIndex = '10002';
-                }
-            }
-            
-            // التأكد من أن backdrop له z-index صحيح
-            const backdrop = document.querySelector('.modal-backdrop');
-            if (backdrop) {
-                backdrop.style.zIndex = '9999';
-            }
-            
-            stabilizeModals();
-            
-            // التأكد من أن النموذج ثابت كل 100ms
-            const stabilityCheck = setInterval(function() {
-                stabilizeModals();
+        }
+        
+        // تهيئة الكود بعد تحميل Bootstrap
+        waitForBootstrap(function() {
+            // تطبيق الاستقرار عند فتح أي نموذج
+            document.addEventListener('shown.bs.modal', function(e) {
+                const modal = e.target;
                 
-                // التأكد من z-index في كل مرة
-                if (modal && modal.classList.contains('show')) {
+                // إخفاء pageLoader إذا كان موجوداً
+                const pageLoader = document.getElementById('pageLoader');
+                if (pageLoader) {
+                    pageLoader.classList.add('hidden');
+                    pageLoader.style.display = 'none';
+                    pageLoader.style.zIndex = '-1';
+                    pageLoader.style.pointerEvents = 'none';
+                }
+                
+                // التأكد من أن z-index صحيح
+                if (modal) {
                     modal.style.zIndex = '10000';
-                    if (pageLoader) {
-                        pageLoader.style.zIndex = '-1';
-                        pageLoader.style.display = 'none';
+                    const modalDialog = modal.querySelector('.modal-dialog');
+                    if (modalDialog) {
+                        modalDialog.style.zIndex = '10001';
+                    }
+                    const modalContent = modal.querySelector('.modal-content');
+                    if (modalContent) {
+                        modalContent.style.zIndex = '10002';
                     }
                 }
-            }, 100);
-            
-            // إيقاف الفحص بعد 2 ثانية
-            setTimeout(function() {
-                clearInterval(stabilityCheck);
-            }, 2000);
+                
+                // التأكد من أن backdrop له z-index صحيح
+                const backdrop = document.querySelector('.modal-backdrop');
+                if (backdrop) {
+                    backdrop.style.zIndex = '9999';
+                }
+                
+                stabilizeModals();
+                
+                // التأكد من أن النموذج ثابت كل 100ms
+                const stabilityCheck = setInterval(function() {
+                    stabilizeModals();
+                    
+                    // التأكد من z-index في كل مرة
+                    if (modal && modal.classList.contains('show')) {
+                        modal.style.zIndex = '10000';
+                        if (pageLoader) {
+                            pageLoader.style.zIndex = '-1';
+                            pageLoader.style.display = 'none';
+                        }
+                    }
+                }, 100);
+                
+                // إيقاف الفحص بعد 2 ثانية
+                setTimeout(function() {
+                    clearInterval(stabilityCheck);
+                }, 2000);
+            });
         });
         
         // إخفاء pageLoader عند فتح أي نموذج
@@ -3444,14 +3283,38 @@ if (!window.transferFormInitialized) {
             }
         });
         
-        // تطبيق الاستقرار عند تحميل الصفحة
+        // منع فتح النماذج بشكل متكرر
+        const modalOpenTimes = {};
+        if (typeof bootstrap !== 'undefined' && typeof bootstrap.Modal !== 'undefined' && bootstrap.Modal.prototype) {
+            const originalShow = bootstrap.Modal.prototype.show;
+            if (originalShow && typeof originalShow === 'function') {
+                bootstrap.Modal.prototype.show = function() {
+                    const modalId = this._element?.id;
+                    if (modalId) {
+                        const now = Date.now();
+                        const lastOpen = modalOpenTimes[modalId] || 0;
+                        
+                        // منع فتح النموذج إذا كان قد فُتح قبل أقل من 500ms
+                        if (now - lastOpen < 500) {
+                            return;
+                        }
+                        
+                        modalOpenTimes[modalId] = now;
+                    }
+                    
+                    return originalShow.call(this);
+                };
+            }
+        }
+        
+        // تطبيق الاستقرار عند تحميل الصفحة (لا يحتاج Bootstrap)
         if (document.readyState === 'loading') {
             document.addEventListener('DOMContentLoaded', stabilizeModals);
         } else {
             stabilizeModals();
         }
         
-        // منع أي محاولة لإغلاق النماذج عند تحريك الماوس
+        // منع أي محاولة لإغلاق النماذج عند تحريك الماوس (لا يحتاج Bootstrap)
         let lastModalCheck = 0;
         document.addEventListener('mousemove', function(e) {
             // تقليل عدد الفحوصات لتحسين الأداء
@@ -3477,28 +3340,6 @@ if (!window.transferFormInitialized) {
                 stabilizeModals();
             });
         }, true);
-        
-        // منع فتح النماذج بشكل متكرر
-        const modalOpenTimes = {};
-        const originalShow = bootstrap?.Modal?.prototype?.show;
-        if (originalShow && typeof originalShow === 'function') {
-            bootstrap.Modal.prototype.show = function() {
-                const modalId = this._element?.id;
-                if (modalId) {
-                    const now = Date.now();
-                    const lastOpen = modalOpenTimes[modalId] || 0;
-                    
-                    // منع فتح النموذج إذا كان قد فُتح قبل أقل من 500ms
-                    if (now - lastOpen < 500) {
-                        return;
-                    }
-                    
-                    modalOpenTimes[modalId] = now;
-                }
-                
-                return originalShow.call(this);
-            };
-        }
     })();
 </script>
 
