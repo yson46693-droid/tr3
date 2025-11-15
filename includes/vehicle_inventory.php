@@ -189,7 +189,7 @@ function getFinishedProductBatchOptions($onlyAvailable = true, $fromWarehouseId 
             SELECT
                 fp.id AS batch_id,
                 COALESCE(fp.product_id, bn.product_id) AS product_id,
-                COALESCE(p.name, fp.product_name) AS product_name,
+                COALESCE(NULLIF(TRIM(fp.product_name), ''), p.name, 'غير محدد') AS product_name,
                 fp.batch_number,
                 fp.production_date,
                 fp.quantity_produced,
