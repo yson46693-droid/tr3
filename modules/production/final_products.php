@@ -3158,51 +3158,23 @@ if (!window.transferFormInitialized) {
 </style>
 
 <script>
-    // إصلاح نهائي لمشكلة استقرار النماذج
+    // إصلاح مبسط لمشكلة استقرار النماذج
     (function() {
         'use strict';
         
-        // منع أي تداخل من ملفات JavaScript الأخرى
-        // تعطيل أي event listeners أخرى على modals
-        const originalAddEventListener = EventTarget.prototype.addEventListener;
-        let modalEventBlocked = false;
-        
-        EventTarget.prototype.addEventListener = function(type, listener, options) {
-            // منع إضافة event listeners على document للـ modals إذا كانت من ملفات أخرى
-            if (this === document && 
-                (type === 'show.bs.modal' || type === 'shown.bs.modal' || type === 'hide.bs.modal' || type === 'hidden.bs.modal') &&
-                modalEventBlocked &&
-                listener.toString().includes('fix-modal-interaction')) {
-                return; // تجاهل هذا الـ listener
-            }
-            return originalAddEventListener.call(this, type, listener, options);
-        };
-        
         // منع أي تحريك أو حركة للنماذج
         function stabilizeModals() {
-            const modals = document.querySelectorAll('.modal');
+            const modals = document.querySelectorAll('.modal.show');
             modals.forEach(function(modal) {
-                if (modal.classList.contains('show')) {
-                    // إزالة أي transitions أو animations
-                    modal.style.transition = 'none';
-                    modal.style.animation = 'none';
-                    modal.style.transform = 'none';
-                    
-                    const modalDialog = modal.querySelector('.modal-dialog');
-                    if (modalDialog) {
-                        modalDialog.style.transition = 'none';
-                        modalDialog.style.animation = 'none';
-                        modalDialog.style.transform = 'none';
-                        modalDialog.style.position = 'relative';
-                        modalDialog.style.margin = '1.75rem auto';
-                    }
-                    
-                    const modalContent = modal.querySelector('.modal-content');
-                    if (modalContent) {
-                        modalContent.style.transition = 'none';
-                        modalContent.style.animation = 'none';
-                        modalContent.style.transform = 'none';
-                    }
+                // إزالة أي transitions أو animations
+                modal.style.transition = 'none';
+                modal.style.animation = 'none';
+                
+                const modalDialog = modal.querySelector('.modal-dialog');
+                if (modalDialog) {
+                    modalDialog.style.transition = 'none';
+                    modalDialog.style.animation = 'none';
+                    modalDialog.style.transform = 'none';
                 }
             });
         }
@@ -3240,6 +3212,7 @@ if (!window.transferFormInitialized) {
                     pageLoader.style.display = 'none';
                     pageLoader.style.zIndex = '-1';
                     pageLoader.style.pointerEvents = 'none';
+                    pageLoader.style.visibility = 'hidden';
                 }
                 
                 // التأكد من أن z-index صحيح
@@ -3249,10 +3222,6 @@ if (!window.transferFormInitialized) {
                     if (modalDialog) {
                         modalDialog.style.zIndex = '10001';
                     }
-                    const modalContent = modal.querySelector('.modal-content');
-                    if (modalContent) {
-                        modalContent.style.zIndex = '10002';
-                    }
                 }
                 
                 // التأكد من أن backdrop له z-index صحيح
@@ -3261,26 +3230,8 @@ if (!window.transferFormInitialized) {
                     backdrop.style.zIndex = '9999';
                 }
                 
+                // تطبيق الاستقرار مرة واحدة فقط
                 stabilizeModals();
-                
-                // التأكد من أن النموذج ثابت كل 100ms
-                const stabilityCheck = setInterval(function() {
-                    stabilizeModals();
-                    
-                    // التأكد من z-index في كل مرة
-                    if (modal && modal.classList.contains('show')) {
-                        modal.style.zIndex = '10000';
-                        if (pageLoader) {
-                            pageLoader.style.zIndex = '-1';
-                            pageLoader.style.display = 'none';
-                        }
-                    }
-                }, 100);
-                
-                // إيقاف الفحص بعد 2 ثانية
-                setTimeout(function() {
-                    clearInterval(stabilityCheck);
-                }, 2000);
             });
         });
         
@@ -3319,40 +3270,6 @@ if (!window.transferFormInitialized) {
                 };
             }
         }
-        
-        // تطبيق الاستقرار عند تحميل الصفحة (لا يحتاج Bootstrap)
-        if (document.readyState === 'loading') {
-            document.addEventListener('DOMContentLoaded', stabilizeModals);
-        } else {
-            stabilizeModals();
-        }
-        
-        // منع أي محاولة لإغلاق النماذج عند تحريك الماوس (لا يحتاج Bootstrap)
-        let lastModalCheck = 0;
-        document.addEventListener('mousemove', function(e) {
-            // تقليل عدد الفحوصات لتحسين الأداء
-            const now = Date.now();
-            if (now - lastModalCheck < 50) {
-                return;
-            }
-            lastModalCheck = now;
-            
-            const openModals = document.querySelectorAll('.modal.show');
-            openModals.forEach(function(modal) {
-                // التأكد من أن النموذج لا يزال مفتوحاً
-                if (!modal.classList.contains('show')) {
-                    return;
-                }
-                
-                // منع أي تغيير في حالة النموذج
-                if (e.target === modal || modal.contains(e.target)) {
-                    e.stopPropagation();
-                }
-                
-                // التأكد من أن النموذج ثابت
-                stabilizeModals();
-            });
-        }, true);
     })();
 </script>
 
