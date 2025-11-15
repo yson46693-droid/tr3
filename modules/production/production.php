@@ -866,62 +866,154 @@ function checkMaterialsAvailability($db, $templateId, $productionQuantity, array
         $materialUnit = $raw['unit'] ?? ($rawDetail['unit'] ?? 'كجم');
         $materialUnitNormalized = $normalizeUnitLabel($materialUnit);
         
-        // البحث عن المادة في جدول المنتجات
+        // تطبيع اسم المادة للبحث (إزالة المسافات الزائدة وتوحيد الشرطات)
+        $normalizeNameForSearch = static function(string $name): string {
+            $name = trim($name);
+            // استبدال أنواع مختلفة من الشرطات بشرطة واحدة
+            $name = preg_replace('/[\s\-_]+/', ' ', $name);
+            $name = preg_replace('/\s*-\s*/', ' - ', $name);
+            return trim($name);
+        };
+        
+        $normalizedMaterialName = $normalizeNameForSearch($materialName);
+        $materialNameLower = mb_strtolower($normalizedMaterialName, 'UTF-8');
+        
+        // البحث عن المادة في جدول المنتجات - محاولات متعددة
+        $product = null;
+        $availableQuantity = 0.0;
+        $foundInProducts = false;
+        
+        // 1. البحث بمطابقة دقيقة
         $product = $db->queryOne(
             "SELECT id, name, quantity FROM products WHERE name = ? AND status = 'active' LIMIT 1",
             [$materialName]
         );
         
+        if (!$product) {
+            // 2. البحث بمطابقة دقيقة بعد تطبيع الاسم
+            $product = $db->queryOne(
+                "SELECT id, name, quantity FROM products WHERE name = ? AND status = 'active' LIMIT 1",
+                [$normalizedMaterialName]
+            );
+        }
+        
+        if (!$product) {
+            // 3. البحث بمطابقة جزئية (LIKE) - البحث عن أسماء مشابهة
+            // إنشاء نمط بحث أكثر مرونة
+            $searchTerms = array_filter(array_map('trim', explode(' ', $normalizedMaterialName)));
+            if (!empty($searchTerms)) {
+                $likePatterns = [];
+                $likeParams = [];
+                
+                // البحث عن كل كلمة في الاسم
+                foreach ($searchTerms as $term) {
+                    if (mb_strlen($term) > 2) { // تجاهل الكلمات القصيرة جداً
+                        $likePatterns[] = "name LIKE ?";
+                        $likeParams[] = '%' . $term . '%';
+                    }
+                }
+                
+                if (!empty($likePatterns)) {
+                    // البحث عن منتجات تحتوي على جميع الكلمات
+                    $sql = "SELECT id, name, quantity FROM products 
+                            WHERE (" . implode(' AND ', $likePatterns) . ")
+                            AND status = 'active'
+                            ORDER BY 
+                                CASE 
+                                    WHEN name = ? THEN 1
+                                    WHEN name LIKE ? THEN 2
+                                    WHEN LOWER(name) = ? THEN 3
+                                    ELSE 4 
+                                END,
+                                quantity DESC
+                            LIMIT 5";
+                    
+                    $allParams = array_merge($likeParams, [$materialName, $materialName . '%', $materialNameLower]);
+                    $products = $db->query($sql, $allParams);
+                    
+                    if (!empty($products)) {
+                        // اختيار أفضل تطابق (الأول في القائمة)
+                        $product = $products[0];
+                    }
+                }
+            }
+        }
+        
         if ($product) {
+            $foundInProducts = true;
             $availableQuantity = floatval($product['quantity'] ?? 0);
-
-            if ($availableQuantity < $requiredQuantity) {
-                $specialStock = $resolveSpecialStock($materialTypeMeta, $materialSupplierMeta, $materialName, $honeyVarietyMeta);
-                if ($specialStock['resolved']) {
-                    $availableFromSpecial = $specialStock['quantity'];
-                    $availableFromSpecial = $convertQuantityUnit(
-                        $availableFromSpecial,
-                        $specialStock['unit'] ?? '',
-                        $materialUnitNormalized
-                    );
-                    $availableQuantity += $availableFromSpecial;
-                }
-            }
-
-            if ($availableQuantity < $requiredQuantity) {
-                $insufficientMaterials[] = [
-                    'name' => $materialName,
-                    'required' => $requiredQuantity,
-                    'available' => $availableQuantity,
-                    'type' => 'مواد خام',
-                    'unit' => $materialUnit
-                ];
-            }
-        } else {
-            $specialStock = $resolveSpecialStock($materialTypeMeta, $materialSupplierMeta, $materialName, $honeyVarietyMeta);
-            if ($specialStock['resolved']) {
-                $availableQuantity = $specialStock['quantity'];
-                $availableQuantity = $convertQuantityUnit(
-                    $availableQuantity,
-                    $specialStock['unit'] ?? '',
-                    $materialUnitNormalized
-                );
-                if ($availableQuantity < $requiredQuantity) {
-                    $insufficientMaterials[] = [
-                        'name' => $materialName,
-                        'required' => $requiredQuantity,
-                        'available' => $availableQuantity,
-                        'type' => 'مواد خام',
-                        'unit' => $materialUnit
-                    ];
-                }
+            
+            // تسجيل معلومات البحث للتحقق
+            error_log(sprintf(
+                'Material found in products: Template name="%s", Found name="%s", Available=%s, Required=%s',
+                $materialName,
+                $product['name'],
+                $availableQuantity,
+                $requiredQuantity
+            ));
+        }
+        
+        // 4. البحث في جداول المخزون الخاصة (honey_stock, etc.)
+        $specialStock = $resolveSpecialStock($materialTypeMeta, $materialSupplierMeta, $materialName, $honeyVarietyMeta);
+        if ($specialStock['resolved']) {
+            $availableFromSpecial = $specialStock['quantity'];
+            $availableFromSpecial = $convertQuantityUnit(
+                $availableFromSpecial,
+                $specialStock['unit'] ?? '',
+                $materialUnitNormalized
+            );
+            
+            if ($foundInProducts) {
+                // إضافة المخزون الخاص إلى المخزون الموجود في المنتجات
+                $availableQuantity += $availableFromSpecial;
             } else {
-                $missingMaterials[] = [
-                    'name' => $materialName,
-                    'type' => 'مواد خام',
-                    'unit' => $materialUnit
-                ];
+                // استخدام المخزون الخاص فقط
+                $availableQuantity = $availableFromSpecial;
+                error_log(sprintf(
+                    'Material found in special stock: Template name="%s", Type="%s", Available=%s, Required=%s',
+                    $materialName,
+                    $materialTypeMeta ?? 'unknown',
+                    $availableQuantity,
+                    $requiredQuantity
+                ));
             }
+        }
+        
+        // التحقق من توفر الكمية المطلوبة
+        if ($availableQuantity >= $requiredQuantity) {
+            // المادة متوفرة بكمية كافية
+            continue;
+        }
+        
+        if ($availableQuantity > 0) {
+            // المادة موجودة لكن الكمية غير كافية
+            $insufficientMaterials[] = [
+                'name' => $materialName,
+                'required' => $requiredQuantity,
+                'available' => $availableQuantity,
+                'type' => 'مواد خام',
+                'unit' => $materialUnit,
+                'found_name' => $product['name'] ?? null,
+                'found_in' => $foundInProducts ? 'products' : ($specialStock['resolved'] ? 'special_stock' : 'none')
+            ];
+        } else {
+            // المادة غير موجودة
+            $missingMaterials[] = [
+                'name' => $materialName,
+                'type' => 'مواد خام',
+                'unit' => $materialUnit,
+                'searched_name' => $normalizedMaterialName
+            ];
+            
+            // تسجيل تفصيلي للمادة غير الموجودة
+            error_log(sprintf(
+                'Material NOT found: Template name="%s", Normalized="%s", Type="%s", Supplier="%s", Variety="%s"',
+                $materialName,
+                $normalizedMaterialName,
+                $materialTypeMeta ?? 'unknown',
+                $materialSupplierMeta ?? 'none',
+                $honeyVarietyMeta ?? 'none'
+            ));
         }
     }
     
@@ -991,17 +1083,22 @@ function checkMaterialsAvailability($db, $templateId, $productionQuantity, array
     $errorMessages = [];
     
     if (!empty($missingMaterials)) {
-        $missingNames = array_map(function($m) {
-            return $m['name'] . ' (' . $m['type'] . ')';
-        }, $missingMaterials);
-        $errorMessages[] = 'مواد غير موجودة في المخزون: ' . implode(', ', $missingNames);
+        $missingDetails = [];
+        foreach ($missingMaterials as $m) {
+            $detail = $m['name'] . ' (' . $m['type'] . ')';
+            if (!empty($m['searched_name']) && $m['searched_name'] !== $m['name']) {
+                $detail .= ' [تم البحث عن: ' . $m['searched_name'] . ']';
+            }
+            $missingDetails[] = $detail;
+        }
+        $errorMessages[] = 'مواد غير موجودة في المخزون: ' . implode(', ', $missingDetails);
     }
     
     if (!empty($insufficientMaterials)) {
         $insufficientDetails = [];
         foreach ($insufficientMaterials as $mat) {
             $unit = $mat['unit'] ?? '';
-            $insufficientDetails[] = sprintf(
+            $detail = sprintf(
                 '%s (%s): مطلوب %s %s، متوفر %s %s',
                 $mat['name'],
                 $mat['type'],
@@ -1010,6 +1107,16 @@ function checkMaterialsAvailability($db, $templateId, $productionQuantity, array
                 number_format($mat['available'], 2),
                 $unit
             );
+            
+            // إضافة معلومات إضافية إذا كانت متوفرة
+            if (!empty($mat['found_name']) && $mat['found_name'] !== $mat['name']) {
+                $detail .= ' [تم العثور على: ' . $mat['found_name'] . ']';
+            }
+            if (!empty($mat['found_in']) && $mat['found_in'] !== 'products') {
+                $detail .= ' [في: ' . ($mat['found_in'] === 'special_stock' ? 'مخزون خاص' : $mat['found_in']) . ']';
+            }
+            
+            $insufficientDetails[] = $detail;
         }
         $errorMessages[] = 'مواد غير كافية: ' . implode(' | ', $insufficientDetails);
     }
