@@ -2816,15 +2816,38 @@ if (!window.transferFormInitialized) {
                     modalDialog.style.transform = 'none';
                 }
                 
+                // إخفاء pageLoader قبل فتح النموذج
+                const pageLoader = document.getElementById('pageLoader');
+                if (pageLoader) {
+                    pageLoader.classList.add('hidden');
+                    pageLoader.style.display = 'none';
+                    pageLoader.style.zIndex = '-1';
+                    pageLoader.style.pointerEvents = 'none';
+                }
+                
                 modalInstance.show();
                 
-                // التأكد من الاستقرار بعد فتح النموذج
+                // التأكد من z-index بعد فتح النموذج
                 setTimeout(function() {
                     if (modal.classList.contains('show')) {
                         modal.style.transition = 'none';
+                        modal.style.zIndex = '10000';
+                        
                         if (modalDialog) {
                             modalDialog.style.transition = 'none';
                             modalDialog.style.transform = 'none';
+                            modalDialog.style.zIndex = '10001';
+                        }
+                        
+                        const modalContent = modal.querySelector('.modal-content');
+                        if (modalContent) {
+                            modalContent.style.zIndex = '10002';
+                        }
+                        
+                        // التأكد من إخفاء pageLoader
+                        if (pageLoader) {
+                            pageLoader.style.zIndex = '-1';
+                            pageLoader.style.display = 'none';
                         }
                     }
                 }, 10);
@@ -2895,15 +2918,38 @@ if (!window.transferFormInitialized) {
                     modalDialog.style.transform = 'none';
                 }
                 
+                // إخفاء pageLoader قبل فتح النموذج
+                const pageLoader = document.getElementById('pageLoader');
+                if (pageLoader) {
+                    pageLoader.classList.add('hidden');
+                    pageLoader.style.display = 'none';
+                    pageLoader.style.zIndex = '-1';
+                    pageLoader.style.pointerEvents = 'none';
+                }
+                
                 modalInstance.show();
                 
-                // التأكد من الاستقرار بعد فتح النموذج
+                // التأكد من z-index بعد فتح النموذج
                 setTimeout(function() {
                     if (modal.classList.contains('show')) {
                         modal.style.transition = 'none';
+                        modal.style.zIndex = '10000';
+                        
                         if (modalDialog) {
                             modalDialog.style.transition = 'none';
                             modalDialog.style.transform = 'none';
+                            modalDialog.style.zIndex = '10001';
+                        }
+                        
+                        const modalContent = modal.querySelector('.modal-content');
+                        if (modalContent) {
+                            modalContent.style.zIndex = '10002';
+                        }
+                        
+                        // التأكد من إخفاء pageLoader
+                        if (pageLoader) {
+                            pageLoader.style.zIndex = '-1';
+                            pageLoader.style.display = 'none';
                         }
                     }
                 }, 10);
@@ -3022,15 +3068,38 @@ if (!window.transferFormInitialized) {
                     modalDialog.style.transform = 'none';
                 }
                 
+                // إخفاء pageLoader قبل فتح النموذج
+                const pageLoader = document.getElementById('pageLoader');
+                if (pageLoader) {
+                    pageLoader.classList.add('hidden');
+                    pageLoader.style.display = 'none';
+                    pageLoader.style.zIndex = '-1';
+                    pageLoader.style.pointerEvents = 'none';
+                }
+                
                 modalInstance.show();
                 
-                // التأكد من الاستقرار بعد فتح النموذج
+                // التأكد من z-index بعد فتح النموذج
                 setTimeout(function() {
                     if (modal.classList.contains('show')) {
                         modal.style.transition = 'none';
+                        modal.style.zIndex = '10000';
+                        
                         if (modalDialog) {
                             modalDialog.style.transition = 'none';
                             modalDialog.style.transform = 'none';
+                            modalDialog.style.zIndex = '10001';
+                        }
+                        
+                        const modalContent = modal.querySelector('.modal-content');
+                        if (modalContent) {
+                            modalContent.style.zIndex = '10002';
+                        }
+                        
+                        // التأكد من إخفاء pageLoader
+                        if (pageLoader) {
+                            pageLoader.style.zIndex = '-1';
+                            pageLoader.style.display = 'none';
                         }
                     }
                 }, 10);
@@ -3150,11 +3219,24 @@ if (!window.transferFormInitialized) {
 
 <style>
     /* إصلاح مشكلة استقرار النماذج - منع الحركة والوميض */
+    /* إصلاح ترتيب Z-Index - التأكد من أن النماذج أعلى من جميع العناصر */
+    
+    /* إخفاء pageLoader عند فتح النماذج */
+    #pageLoader {
+        z-index: 1000 !important;
+    }
+    
+    #pageLoader.hidden {
+        z-index: -1 !important;
+        display: none !important;
+    }
+    
+    /* النماذج يجب أن تكون أعلى من أي overlay */
     .modal {
         position: fixed !important;
         top: 0 !important;
         left: 0 !important;
-        z-index: 1055 !important;
+        z-index: 10000 !important;
         width: 100% !important;
         height: 100% !important;
         overflow: hidden !important;
@@ -3163,6 +3245,7 @@ if (!window.transferFormInitialized) {
     
     .modal.show {
         display: block !important;
+        z-index: 10000 !important;
     }
     
     .modal-dialog {
@@ -3173,6 +3256,7 @@ if (!window.transferFormInitialized) {
         pointer-events: auto !important;
         transform: none !important;
         transition: none !important;
+        z-index: 10001 !important;
     }
     
     .modal-dialog-centered {
@@ -3193,13 +3277,14 @@ if (!window.transferFormInitialized) {
         border-radius: 0.3rem !important;
         outline: 0 !important;
         box-shadow: 0 0.25rem 0.5rem rgba(0, 0, 0, 0.5) !important;
+        z-index: 10002 !important;
     }
     
     .modal-backdrop {
         position: fixed !important;
         top: 0 !important;
         left: 0 !important;
-        z-index: 1050 !important;
+        z-index: 9999 !important;
         width: 100vw !important;
         height: 100vh !important;
         background-color: #000 !important;
@@ -3210,6 +3295,7 @@ if (!window.transferFormInitialized) {
     
     .modal-backdrop.show {
         opacity: 0.5 !important;
+        z-index: 9999 !important;
     }
     
     .modal.fade .modal-dialog {
@@ -3243,6 +3329,18 @@ if (!window.transferFormInitialized) {
     
     .modal-backdrop * {
         pointer-events: none !important;
+    }
+    
+    /* التأكد من أن أي overlay آخر لا يغطي النماذج */
+    /* إزالة أي z-index عالي من عناصر أخرى */
+    [style*="z-index"]:not(.modal):not(.modal-backdrop):not(.modal-dialog):not(.modal-content) {
+        z-index: auto !important;
+    }
+    
+    /* التأكد من أن النماذج ثابتة */
+    .modal,
+    .modal-backdrop {
+        position: fixed !important;
     }
 </style>
 
@@ -3281,18 +3379,69 @@ if (!window.transferFormInitialized) {
         }
         
         // تطبيق الاستقرار عند فتح أي نموذج
-        document.addEventListener('shown.bs.modal', function() {
+        document.addEventListener('shown.bs.modal', function(e) {
+            const modal = e.target;
+            
+            // إخفاء pageLoader إذا كان موجوداً
+            const pageLoader = document.getElementById('pageLoader');
+            if (pageLoader) {
+                pageLoader.classList.add('hidden');
+                pageLoader.style.display = 'none';
+                pageLoader.style.zIndex = '-1';
+                pageLoader.style.pointerEvents = 'none';
+            }
+            
+            // التأكد من أن z-index صحيح
+            if (modal) {
+                modal.style.zIndex = '10000';
+                const modalDialog = modal.querySelector('.modal-dialog');
+                if (modalDialog) {
+                    modalDialog.style.zIndex = '10001';
+                }
+                const modalContent = modal.querySelector('.modal-content');
+                if (modalContent) {
+                    modalContent.style.zIndex = '10002';
+                }
+            }
+            
+            // التأكد من أن backdrop له z-index صحيح
+            const backdrop = document.querySelector('.modal-backdrop');
+            if (backdrop) {
+                backdrop.style.zIndex = '9999';
+            }
+            
             stabilizeModals();
             
             // التأكد من أن النموذج ثابت كل 100ms
             const stabilityCheck = setInterval(function() {
                 stabilizeModals();
+                
+                // التأكد من z-index في كل مرة
+                if (modal && modal.classList.contains('show')) {
+                    modal.style.zIndex = '10000';
+                    if (pageLoader) {
+                        pageLoader.style.zIndex = '-1';
+                        pageLoader.style.display = 'none';
+                    }
+                }
             }, 100);
             
             // إيقاف الفحص بعد 2 ثانية
             setTimeout(function() {
                 clearInterval(stabilityCheck);
             }, 2000);
+        });
+        
+        // إخفاء pageLoader عند فتح أي نموذج
+        document.addEventListener('show.bs.modal', function(e) {
+            const pageLoader = document.getElementById('pageLoader');
+            if (pageLoader) {
+                pageLoader.classList.add('hidden');
+                pageLoader.style.display = 'none';
+                pageLoader.style.zIndex = '-1';
+                pageLoader.style.pointerEvents = 'none';
+                pageLoader.style.visibility = 'hidden';
+            }
         });
         
         // تطبيق الاستقرار عند تحميل الصفحة

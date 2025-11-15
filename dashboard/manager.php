@@ -788,7 +788,8 @@ $pageTitle = isset($lang['manager_dashboard']) ? $lang['manager_dashboard'] : '�
                     <?php else: ?>
                         <div class="production-section">
                             <?php 
-                            $_GET['section'] = 'company';
+                            // التأكد من أن section محدد بشكل صحيح قبل تضمين الملف
+                            $_GET['section'] = $section;
                             $modulePath = __DIR__ . '/../modules/production/final_products.php';
                             if (file_exists($modulePath)) {
                                 include $modulePath;
