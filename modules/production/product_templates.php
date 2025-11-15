@@ -23,19 +23,24 @@ $success = '';
 
 // معالجة AJAX requests
 if (isset($_GET['ajax']) && $_GET['ajax'] === 'template_details' && isset($_GET['template_id'])) {
-    header('Content-Type: application/json; charset=utf-8');
-    
-    $templateId = intval($_GET['template_id'] ?? 0);
-    
-    if ($templateId <= 0) {
-        echo json_encode([
-            'success' => false,
-            'message' => 'معرف القالب غير صالح'
-        ], JSON_UNESCAPED_UNICODE);
-        exit;
+    // تنظيف أي output buffer سابق لمنع إخراج HTML قبل JSON
+    while (ob_get_level() > 0) {
+        ob_end_clean();
     }
+    ob_start();
     
     try {
+        $templateId = intval($_GET['template_id'] ?? 0);
+        
+        if ($templateId <= 0) {
+            ob_clean();
+            header('Content-Type: application/json; charset=utf-8');
+            echo json_encode([
+                'success' => false,
+                'message' => 'معرف القالب غير صالح'
+            ], JSON_UNESCAPED_UNICODE);
+            exit;
+        }
         // جلب بيانات القالب
         $template = $db->queryOne(
             "SELECT pt.*, u.full_name as creator_name
@@ -103,6 +108,9 @@ if (isset($_GET['ajax']) && $_GET['ajax'] === 'template_details' && isset($_GET[
             'raw_materials_count' => count($materialDetails)
         ];
         
+        // تنظيف output buffer قبل إرسال JSON
+        ob_clean();
+        header('Content-Type: application/json; charset=utf-8');
         echo json_encode([
             'success' => true,
             'data' => $templateData
@@ -110,6 +118,10 @@ if (isset($_GET['ajax']) && $_GET['ajax'] === 'template_details' && isset($_GET[
         exit;
         
     } catch (Exception $e) {
+        // تنظيف output buffer قبل إرسال JSON في حالة الخطأ
+        ob_clean();
+        header('Content-Type: application/json; charset=utf-8');
+        error_log("Error in AJAX template details: " . $e->getMessage());
         echo json_encode([
             'success' => false,
             'message' => 'خطأ في جلب بيانات القالب: ' . $e->getMessage()
