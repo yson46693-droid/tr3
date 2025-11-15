@@ -743,17 +743,37 @@ function checkMaterialsAvailability($db, $templateId, $productionQuantity, array
         // إذا كان الجدول هو honey_stock ونوع العسل محدد، أضفه إلى الشروط
         if ($table === 'honey_stock' && $honeyVariety !== null && $honeyVariety !== '') {
             $varietyTrimmed = trim($honeyVariety);
+            
+            // تنظيف نوع العسل من أي رموز أو أرقام إضافية للبحث
+            // إزالة الأقواس والمحتوى داخلها (مثل "سدر (KI002)" -> "سدر")
+            $varietyCleaned = preg_replace('/\s*\([^)]*\)\s*/', '', $varietyTrimmed);
+            $varietyCleaned = trim($varietyCleaned);
+            
+            // إزالة أي رموز أو أرقام في نهاية الاسم
+            $varietyCleaned = preg_replace('/[\s\-_]*[A-Z0-9]+[\s\-_]*$/', '', $varietyCleaned);
+            $varietyCleaned = trim($varietyCleaned);
+            
+            // إذا كان التنظيف أنتج اسمًا فارغًا، استخدم الاسم الأصلي
+            if (empty($varietyCleaned)) {
+                $varietyCleaned = $varietyTrimmed;
+            }
+            
             if ($flexibleSearch) {
                 // استخدام LIKE للبحث المرن (مطابقة جزئية) - أكثر مرونة
-                $conditions[] = "(honey_variety = ? OR honey_variety LIKE ? OR honey_variety LIKE ? OR honey_variety LIKE ?)";
-                $params[] = $varietyTrimmed;
-                $params[] = '%' . $varietyTrimmed . '%';
-                $params[] = $varietyTrimmed . '%';
-                $params[] = '%' . $varietyTrimmed;
+                // البحث باستخدام الاسم المطهر والاسم الأصلي
+                $conditions[] = "(honey_variety = ? OR honey_variety = ? OR honey_variety LIKE ? OR honey_variety LIKE ? OR honey_variety LIKE ? OR honey_variety LIKE ? OR honey_variety LIKE ?)";
+                $params[] = $varietyTrimmed;  // البحث بالتطابق الدقيق للاسم الأصلي
+                $params[] = $varietyCleaned;  // البحث بالتطابق الدقيق للاسم المطهر
+                $params[] = '%' . $varietyTrimmed . '%';  // البحث المرن للاسم الأصلي
+                $params[] = '%' . $varietyCleaned . '%';  // البحث المرن للاسم المطهر
+                $params[] = $varietyCleaned . '%';  // يبدأ بالاسم المطهر
+                $params[] = '%' . $varietyCleaned;  // ينتهي بالاسم المطهر
+                $params[] = $varietyTrimmed . '%';  // يبدأ بالاسم الأصلي
             } else {
-                // المطابقة الدقيقة أولاً
-                $conditions[] = "honey_variety = ?";
+                // المطابقة الدقيقة أولاً (لكن جرب الاسم المطهر أيضاً)
+                $conditions[] = "(honey_variety = ? OR honey_variety = ?)";
                 $params[] = $varietyTrimmed;
+                $params[] = $varietyCleaned;
             }
         }
         
@@ -788,9 +808,11 @@ function checkMaterialsAvailability($db, $templateId, $productionQuantity, array
                 $honeyStockExists = $db->queryOne("SHOW TABLES LIKE 'honey_stock'");
                 if (!empty($honeyStockExists)) {
                     $column = ($normalizedType === 'honey_raw') ? 'raw_honey_quantity' : 'filtered_honey_quantity';
-                    // البحث مع المورد المحدد ونوع العسل المحدد أولاً
+                    
+                    // البحث مع المورد المحدد ونوع العسل المحدد أولاً (بالبحث المرن مباشرة)
                     if ($supplierId && $honeyVariety) {
-                        $availableQuantity = $checkStock('honey_stock', $column, $supplierId, $honeyVariety);
+                        // جرب البحث المرن أولاً إذا كان نوع العسل محددًا
+                        $availableQuantity = $checkStock('honey_stock', $column, $supplierId, $honeyVariety, true);
                     }
                     // إذا لم يتم العثور على شيء، جرب البحث مع المورد فقط (جميع أنواع العسل)
                     if ($availableQuantity == 0 && $supplierId) {
@@ -798,17 +820,57 @@ function checkMaterialsAvailability($db, $templateId, $productionQuantity, array
                     }
                     // إذا لم يتم العثور على شيء، جرب البحث بنوع العسل فقط (جميع الموردين) - مع بحث مرن
                     if ($availableQuantity == 0 && $honeyVariety) {
-                        // أولاً: بحث دقيق بنوع العسل
-                        $availableQuantity = $checkStock('honey_stock', $column, null, $honeyVariety, false);
-                        // إذا لم يجد، جرب البحث المرن
+                        // استخدام البحث المرن مباشرة
+                        $availableQuantity = $checkStock('honey_stock', $column, null, $honeyVariety, true);
+                        
+                        // إذا لم يجد، جرب البحث الدقيق أيضاً
                         if ($availableQuantity == 0) {
-                            $availableQuantity = $checkStock('honey_stock', $column, null, $honeyVariety, true);
+                            $availableQuantity = $checkStock('honey_stock', $column, null, $honeyVariety, false);
                         }
                     }
                     // إذا لم يتم العثور على شيء، جرب البحث بدون أي قيود
                     if ($availableQuantity == 0) {
                         $availableQuantity = $checkStock('honey_stock', $column, null, null);
                     }
+                    
+                    // إذا لم يتم العثور على شيء بعد كل المحاولات ونوع العسل محدد، جرب بحث إضافي مباشر في قاعدة البيانات
+                    if ($availableQuantity == 0 && $honeyVariety) {
+                        // تنظيف نوع العسل من أي رموز أو أرقام إضافية
+                        $varietyCleaned = preg_replace('/\s*\([^)]*\)\s*/', '', trim($honeyVariety));
+                        $varietyCleaned = trim(preg_replace('/[\s\-_]*[A-Z0-9]+[\s\-_]*$/', '', $varietyCleaned));
+                        if (empty($varietyCleaned)) {
+                            $varietyCleaned = trim($honeyVariety);
+                        }
+                        
+                        // البحث المباشر في قاعدة البيانات
+                        $directSearchSql = "SELECT SUM({$column}) AS total_quantity FROM honey_stock WHERE {$column} > 0 AND (";
+                        $directSearchParams = [];
+                        $directSearchConditions = [];
+                        
+                        // بحث مرن بعدة طرق
+                        $directSearchConditions[] = "honey_variety LIKE ?";
+                        $directSearchParams[] = '%' . trim($honeyVariety) . '%';
+                        
+                        if ($varietyCleaned !== trim($honeyVariety)) {
+                            $directSearchConditions[] = "honey_variety LIKE ?";
+                            $directSearchParams[] = '%' . $varietyCleaned . '%';
+                        }
+                        
+                        $directSearchSql .= implode(' OR ', $directSearchConditions) . ')';
+                        
+                        if ($supplierId) {
+                            $directSearchSql .= " AND supplier_id = ?";
+                            $directSearchParams[] = $supplierId;
+                        }
+                        
+                        $directStockRow = $db->queryOne($directSearchSql, $directSearchParams);
+                        $directQuantity = (float)($directStockRow['total_quantity'] ?? 0);
+                        
+                        if ($directQuantity > 0) {
+                            $availableQuantity = $directQuantity;
+                        }
+                    }
+                    
                     $resolved = true;
                     $availableUnit = 'kg';
                 }
@@ -927,6 +989,19 @@ function checkMaterialsAvailability($db, $templateId, $productionQuantity, array
                         $honeyVarietyMeta = trim($words[0]);
                     }
                 }
+            }
+            
+            // تنظيف نوع العسل المستخرج من أي رموز أو أرقام إضافية
+            // لإزالة أي معلومات إضافية مثل "(KI002)" أو أرقام أو رموز
+            if (!empty($honeyVarietyMeta)) {
+                // إزالة الأقواس والمحتوى داخلها (مثل "سدر (KI002)" -> "سدر")
+                $honeyVarietyMeta = preg_replace('/\s*\([^)]*\)\s*/', '', $honeyVarietyMeta);
+                $honeyVarietyMeta = trim($honeyVarietyMeta);
+                
+                // إزالة أي رموز أو أرقام في نهاية الاسم إذا كانت منفصلة
+                // لكن نتركها إذا كانت جزءًا من الاسم الأساسي
+                $honeyVarietyMeta = preg_replace('/[\s\-_]+[A-Z0-9]+[\s\-_]*$/', '', $honeyVarietyMeta);
+                $honeyVarietyMeta = trim($honeyVarietyMeta);
             }
         }
         
