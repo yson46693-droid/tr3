@@ -538,45 +538,151 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 unset($transferItem);
 
                 if (empty($transferErrors)) {
-                    $productIds = array_values(array_filter(
-                        array_unique(array_column($transferItems, 'product_id')),
-                        static function ($value) {
-                            return is_numeric($value) && (int)$value > 0;
-                        }
-                    ));
-
-                    $stockMap = [];
-
-                    if (!empty($productIds)) {
-                        $placeholders = implode(',', array_fill(0, count($productIds), '?'));
-                        $stockRows = $db->query(
-                            "SELECT id, name, quantity FROM products WHERE id IN ($placeholders) AND (product_type IS NULL OR product_type = 'internal')",
-                            $productIds
-                        );
-
-                        foreach ($stockRows as $row) {
-                            $stockMap[intval($row['id'])] = [
-                                'quantity' => floatval($row['quantity'] ?? 0),
-                                'name' => $row['name'] ?? ''
-                            ];
-                        }
-                    }
-
+                    // حساب الكمية المتاحة لكل منتج/تشغيلة
+                    $availabilityMap = [];
+                    
                     foreach ($transferItems as $transferItem) {
                         $productId = isset($transferItem['product_id']) ? (int)$transferItem['product_id'] : 0;
-                        if ($productId <= 0) {
-                            continue; // تمت معالجة هذه الحالة سابقاً
+                        $batchId = isset($transferItem['batch_id']) ? (int)($transferItem['batch_id'] ?? 0) : 0;
+                        
+                        if ($productId <= 0 && $batchId <= 0) {
+                            continue;
                         }
-
-                        if (!isset($stockMap[$productId])) {
+                        
+                        $availableQuantity = 0.0;
+                        
+                        // الحصول على الكمية من products.quantity أولاً
+                        if ($productId > 0) {
+                            $productRow = $db->queryOne(
+                                "SELECT id, name, quantity FROM products WHERE id = ? AND (product_type IS NULL OR product_type = 'internal')",
+                                [$productId]
+                            );
+                            
+                            if ($productRow) {
+                                $availableQuantity = (float)($productRow['quantity'] ?? 0);
+                                
+                                // إذا كانت الكمية في products = 0 أو NULL، نستخدم quantity_produced من finished_products
+                                if ($availableQuantity <= 0 && $batchId > 0) {
+                                    $finishedRow = $db->queryOne(
+                                        "SELECT quantity_produced FROM finished_products WHERE id = ?",
+                                        [$batchId]
+                                    );
+                                    
+                                    if ($finishedRow) {
+                                        $availableQuantity = (float)($finishedRow['quantity_produced'] ?? 0);
+                                        
+                                        // خصم الكمية المنقولة بالفعل (approved أو completed)
+                                        $transferred = $db->queryOne(
+                                            "SELECT COALESCE(SUM(
+                                                CASE
+                                                    WHEN wt.status IN ('approved', 'completed') THEN wti.quantity
+                                                    ELSE 0
+                                                END
+                                            ), 0) AS transferred_quantity
+                                            FROM warehouse_transfer_items wti
+                                            LEFT JOIN warehouse_transfers wt ON wt.id = wti.transfer_id
+                                            WHERE wti.batch_id = ?",
+                                            [$batchId]
+                                        );
+                                        $availableQuantity -= (float)($transferred['transferred_quantity'] ?? 0);
+                                    }
+                                }
+                                
+                                // خصم الكمية المحجوزة في طلبات النقل المعلقة (pending) من نفس المخزن
+                                if ($batchId > 0) {
+                                    $pendingTransfers = $db->queryOne(
+                                        "SELECT COALESCE(SUM(wti.quantity), 0) AS pending_quantity
+                                         FROM warehouse_transfer_items wti
+                                         INNER JOIN warehouse_transfers wt ON wt.id = wti.transfer_id
+                                         WHERE wti.batch_id = ? AND wt.from_warehouse_id = ? AND wt.status = 'pending'",
+                                        [$batchId, $fromWarehouseId]
+                                    );
+                                    $availableQuantity -= (float)($pendingTransfers['pending_quantity'] ?? 0);
+                                }
+                                
+                                $availabilityMap[$productId . '_' . $batchId] = [
+                                    'product_id' => $productId,
+                                    'batch_id' => $batchId,
+                                    'available' => max(0, $availableQuantity),
+                                    'name' => $productRow['name'] ?? ''
+                                ];
+                            } else {
+                                // إذا لم يكن المنتج موجوداً في products، نتحقق من finished_products فقط
+                                if ($batchId > 0) {
+                                    $finishedRow = $db->queryOne(
+                                        "SELECT fp.quantity_produced, COALESCE(p.name, fp.product_name) as product_name
+                                         FROM finished_products fp
+                                         LEFT JOIN products p ON fp.product_id = p.id
+                                         WHERE fp.id = ?",
+                                        [$batchId]
+                                    );
+                                    
+                                    if ($finishedRow) {
+                                        $availableQuantity = (float)($finishedRow['quantity_produced'] ?? 0);
+                                        
+                                        // خصم الكمية المنقولة بالفعل
+                                        $transferred = $db->queryOne(
+                                            "SELECT COALESCE(SUM(
+                                                CASE
+                                                    WHEN wt.status IN ('approved', 'completed') THEN wti.quantity
+                                                    ELSE 0
+                                                END
+                                            ), 0) AS transferred_quantity
+                                            FROM warehouse_transfer_items wti
+                                            LEFT JOIN warehouse_transfers wt ON wt.id = wti.transfer_id
+                                            WHERE wti.batch_id = ?",
+                                            [$batchId]
+                                        );
+                                        $availableQuantity -= (float)($transferred['transferred_quantity'] ?? 0);
+                                        
+                                        // خصم الكمية المحجوزة في طلبات النقل المعلقة
+                                        $pendingTransfers = $db->queryOne(
+                                            "SELECT COALESCE(SUM(wti.quantity), 0) AS pending_quantity
+                                             FROM warehouse_transfer_items wti
+                                             INNER JOIN warehouse_transfers wt ON wt.id = wti.transfer_id
+                                             WHERE wti.batch_id = ? AND wt.from_warehouse_id = ? AND wt.status = 'pending'",
+                                            [$batchId, $fromWarehouseId]
+                                        );
+                                        $availableQuantity -= (float)($pendingTransfers['pending_quantity'] ?? 0);
+                                        
+                                        $availabilityMap[$productId . '_' . $batchId] = [
+                                            'product_id' => $productId,
+                                            'batch_id' => $batchId,
+                                            'available' => max(0, $availableQuantity),
+                                            'name' => $finishedRow['product_name'] ?? 'منتج غير محدد'
+                                        ];
+                                    }
+                                }
+                            }
+                        }
+                    }
+                    
+                    // التحقق من الكميات المتاحة
+                    foreach ($transferItems as $transferItem) {
+                        $productId = isset($transferItem['product_id']) ? (int)$transferItem['product_id'] : 0;
+                        $batchId = isset($transferItem['batch_id']) ? (int)($transferItem['batch_id'] ?? 0) : 0;
+                        $requestedQuantity = (float)($transferItem['quantity'] ?? 0);
+                        
+                        if ($productId <= 0 && $batchId <= 0) {
+                            $transferErrors[] = 'المنتج المحدد غير صالح للنقل.';
+                            break;
+                        }
+                        
+                        $key = $productId . '_' . $batchId;
+                        if (!isset($availabilityMap[$key])) {
                             $transferErrors[] = 'المنتج المحدد غير موجود في المخزن الرئيسي.';
                             break;
                         }
-
-                        if ($transferItem['quantity'] > $stockMap[$productId]['quantity']) {
+                        
+                        $available = $availabilityMap[$key]['available'];
+                        $productName = $availabilityMap[$key]['name'];
+                        
+                        if ($requestedQuantity > $available + 0.0001) { // إضافة هامش صغير للأخطاء العشرية
                             $transferErrors[] = sprintf(
-                                'الكمية المطلوبة للمنتج "%s" غير متاحة في المخزون الحالي.',
-                                $stockMap[$productId]['name']
+                                'الكمية المطلوبة للمنتج "%s" (%.2f) غير متاحة في المخزون الحالي. المتاح: %.2f',
+                                $productName,
+                                $requestedQuantity,
+                                $available
                             );
                             break;
                         }
