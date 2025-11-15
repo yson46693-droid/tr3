@@ -4,6 +4,56 @@
  */
 
 define('ACCESS_ALLOWED', true);
+
+// تنظيف أي output buffer سابق قبل أي شيء
+while (ob_get_level() > 0) {
+    ob_end_clean();
+}
+
+$page = $_GET['page'] ?? 'overview';
+
+// معالجة AJAX قبل أي require أو include قد يخرج محتوى HTML
+// خاصة لصفحة قوالب المنتجات
+if ($page === 'product_templates' && isset($_GET['ajax']) && $_GET['ajax'] === 'template_details' && isset($_GET['template_id'])) {
+    // تحميل الملفات الأساسية فقط
+    require_once __DIR__ . '/../includes/config.php';
+    require_once __DIR__ . '/../includes/db.php';
+    require_once __DIR__ . '/../includes/auth.php';
+    require_once __DIR__ . '/../includes/path_helper.php';
+    require_once __DIR__ . '/../includes/production_helper.php';
+    
+    requireRole(['production', 'manager']);
+    
+    // تحميل ملف product_templates.php مباشرة للتعامل مع AJAX
+    $modulePath = __DIR__ . '/../modules/production/product_templates.php';
+    if (file_exists($modulePath)) {
+        // الملف نفسه سيتعامل مع AJAX ويخرج JSON
+        include $modulePath;
+        exit; // إيقاف التنفيذ بعد معالجة AJAX
+    }
+}
+
+// معالجة AJAX قبل أي إخراج HTML - خاصة لصفحة مخزن أدوات التعبئة
+if ($page === 'packaging_warehouse' && isset($_GET['ajax']) && isset($_GET['material_id'])) {
+    // تحميل الملفات الأساسية فقط
+    require_once __DIR__ . '/../includes/config.php';
+    require_once __DIR__ . '/../includes/db.php';
+    require_once __DIR__ . '/../includes/auth.php';
+    require_once __DIR__ . '/../includes/path_helper.php';
+    require_once __DIR__ . '/../includes/production_helper.php';
+    
+    requireRole(['production', 'manager']);
+    
+    // تحميل ملف packaging_warehouse.php مباشرة للتعامل مع AJAX
+    $modulePath = __DIR__ . '/../modules/production/packaging_warehouse.php';
+    if (file_exists($modulePath)) {
+        // الملف نفسه سيتعامل مع AJAX ويخرج JSON
+        include $modulePath;
+        exit; // إيقاف التنفيذ بعد معالجة AJAX
+    }
+}
+
+// تحميل باقي الملفات المطلوبة للصفحة العادية
 require_once __DIR__ . '/../includes/config.php';
 require_once __DIR__ . '/../includes/db.php';
 require_once __DIR__ . '/../includes/auth.php';
@@ -20,29 +70,6 @@ requireRole('manager');
 
 $currentUser = getCurrentUser();
 $db = db();
-$page = $_GET['page'] ?? 'overview';
-
-// معالجة AJAX قبل أي إخراج HTML - خاصة لصفحة مخزن أدوات التعبئة
-if ($page === 'packaging_warehouse' && isset($_GET['ajax']) && isset($_GET['material_id'])) {
-    // تحميل ملف packaging_warehouse.php مباشرة للتعامل مع AJAX
-    $modulePath = __DIR__ . '/../modules/production/packaging_warehouse.php';
-    if (file_exists($modulePath)) {
-        // الملف نفسه سيتعامل مع AJAX ويخرج JSON
-        include $modulePath;
-        exit; // إيقاف التنفيذ بعد معالجة AJAX
-    }
-}
-
-// معالجة AJAX قبل أي إخراج HTML - خاصة لصفحة قوالب المنتجات
-if ($page === 'product_templates' && isset($_GET['ajax']) && $_GET['ajax'] === 'template_details' && isset($_GET['template_id'])) {
-    // تحميل ملف product_templates.php مباشرة للتعامل مع AJAX
-    $modulePath = __DIR__ . '/../modules/production/product_templates.php';
-    if (file_exists($modulePath)) {
-        // الملف نفسه سيتعامل مع AJAX ويخرج JSON
-        include $modulePath;
-        exit; // إيقاف التنفيذ بعد معالجة AJAX
-    }
-}
 
 $pageStylesheets = isset($pageStylesheets) && is_array($pageStylesheets) ? $pageStylesheets : [];
 $extraScripts = isset($extraScripts) && is_array($extraScripts) ? $extraScripts : [];
