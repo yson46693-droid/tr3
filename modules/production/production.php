@@ -744,17 +744,21 @@ function checkMaterialsAvailability($db, $templateId, $productionQuantity, array
         if ($table === 'honey_stock' && $honeyVariety !== null && $honeyVariety !== '') {
             $varietyTrimmed = trim($honeyVariety);
             if ($flexibleSearch) {
-                // استخدام LIKE للبحث المرن (مطابقة جزئية)
-                $conditions[] = "(honey_variety = ? OR honey_variety LIKE ? OR honey_variety LIKE ?)";
+                // استخدام LIKE للبحث المرن (مطابقة جزئية) - أكثر مرونة
+                $conditions[] = "(honey_variety = ? OR honey_variety LIKE ? OR honey_variety LIKE ? OR honey_variety LIKE ?)";
                 $params[] = $varietyTrimmed;
                 $params[] = '%' . $varietyTrimmed . '%';
                 $params[] = $varietyTrimmed . '%';
+                $params[] = '%' . $varietyTrimmed;
             } else {
                 // المطابقة الدقيقة أولاً
                 $conditions[] = "honey_variety = ?";
                 $params[] = $varietyTrimmed;
             }
         }
+        
+        // إضافة شرط أن الكمية أكبر من 0
+        $conditions[] = "{$column} > 0";
         
         if (!empty($conditions)) {
             $sql .= " WHERE " . implode(" AND ", $conditions);
@@ -792,9 +796,14 @@ function checkMaterialsAvailability($db, $templateId, $productionQuantity, array
                     if ($availableQuantity == 0 && $supplierId) {
                         $availableQuantity = $checkStock('honey_stock', $column, $supplierId, null);
                     }
-                    // إذا لم يتم العثور على شيء، جرب البحث بنوع العسل فقط (جميع الموردين)
+                    // إذا لم يتم العثور على شيء، جرب البحث بنوع العسل فقط (جميع الموردين) - مع بحث مرن
                     if ($availableQuantity == 0 && $honeyVariety) {
-                        $availableQuantity = $checkStock('honey_stock', $column, null, $honeyVariety);
+                        // أولاً: بحث دقيق بنوع العسل
+                        $availableQuantity = $checkStock('honey_stock', $column, null, $honeyVariety, false);
+                        // إذا لم يجد، جرب البحث المرن
+                        if ($availableQuantity == 0) {
+                            $availableQuantity = $checkStock('honey_stock', $column, null, $honeyVariety, true);
+                        }
                     }
                     // إذا لم يتم العثور على شيء، جرب البحث بدون أي قيود
                     if ($availableQuantity == 0) {
@@ -1273,9 +1282,11 @@ function checkMaterialsAvailability($db, $templateId, $productionQuantity, array
             
             // إضافة مصطلحات البحث بناءً على اسم المادة ونوع العسل
             if ($honeyVarietyMeta) {
-                $honeySearchTerms[] = "(name LIKE ? OR name LIKE ?)";
+                // البحث بنوع العسل مع "عسل" في أي ترتيب
+                $honeySearchTerms[] = "(name LIKE ? OR name LIKE ? OR name LIKE ?)";
                 $honeySearchParams[] = '%عسل%' . $honeyVarietyMeta . '%';
                 $honeySearchParams[] = '%' . $honeyVarietyMeta . '%عسل%';
+                $honeySearchParams[] = '%' . $honeyVarietyMeta . '%';
             }
             
             // إضافة البحث بالاسم الكامل
@@ -1297,6 +1308,12 @@ function checkMaterialsAvailability($db, $templateId, $productionQuantity, array
                 $honeySearchParams[] = $materialNameWithDash . '%';
             }
             
+            // إضافة بحث عام عن العسل إذا كان نوع العسل محدد
+            if ($honeyVarietyMeta) {
+                $honeySearchTerms[] = "name LIKE ?";
+                $honeySearchParams[] = '%عسل%';
+            }
+            
             if (!empty($honeySearchTerms)) {
                 $honeyProduct = $db->queryOne(
                     "SELECT id, name, quantity FROM products 
@@ -1306,14 +1323,16 @@ function checkMaterialsAvailability($db, $templateId, $productionQuantity, array
                             WHEN name = ? THEN 1
                             WHEN name LIKE ? THEN 2
                             WHEN name LIKE ? THEN 3
-                            ELSE 4 
+                            WHEN name LIKE ? THEN 4
+                            ELSE 5 
                         END,
                         quantity DESC
                      LIMIT 1",
                     array_merge($honeySearchParams, [
                         $materialName, 
                         $materialName . '%', 
-                        '%' . $materialName . '%'
+                        '%' . $materialName . '%',
+                        ($honeyVarietyMeta ? '%' . $honeyVarietyMeta . '%' : '')
                     ])
                 );
                 
