@@ -989,6 +989,27 @@ if (!empty($finishedProductsTableExists)) {
     } catch (Exception $priceColumnError) {
         error_log('Finished products ensure manager_unit_price column error: ' . $priceColumnError->getMessage());
     }
+    
+    // التأكد من وجود الأعمدة المطلوبة في جدول product_templates
+    try {
+        $productIdColumn = $db->queryOne("SHOW COLUMNS FROM product_templates LIKE 'product_id'");
+        if (empty($productIdColumn)) {
+            $db->execute("ALTER TABLE `product_templates` ADD COLUMN `product_id` int(11) NULL DEFAULT NULL AFTER `id`");
+            $db->execute("ALTER TABLE `product_templates` ADD KEY `product_id` (`product_id`)");
+        }
+    } catch (Exception $e) {
+        error_log('Failed to ensure product_id column in product_templates: ' . $e->getMessage());
+    }
+    
+    try {
+        $unitPriceColumn = $db->queryOne("SHOW COLUMNS FROM product_templates LIKE 'unit_price'");
+        if (empty($unitPriceColumn)) {
+            $db->execute("ALTER TABLE `product_templates` ADD COLUMN `unit_price` DECIMAL(12,2) NULL DEFAULT NULL COMMENT 'سعر الوحدة بالجنيه'");
+        }
+    } catch (Exception $e) {
+        error_log('Failed to ensure unit_price column in product_templates: ' . $e->getMessage());
+    }
+    
     try {
         $finishedProductsRows = $db->query("
             SELECT 
@@ -1002,11 +1023,21 @@ if (!empty($finishedProductsTableExists)) {
                 fp.manager_unit_price,
                 (SELECT pt.unit_price 
                  FROM product_templates pt 
-                 WHERE pt.product_id = fp.product_id 
-                   AND pt.status = 'active' 
+                 WHERE pt.status = 'active' 
                    AND pt.unit_price IS NOT NULL 
                    AND pt.unit_price > 0
-                 ORDER BY pt.id DESC 
+                   AND pt.unit_price <= 10000
+                   AND (
+                       (pt.product_id IS NOT NULL AND pt.product_id = fp.product_id)
+                       OR (pt.product_id IS NULL AND pt.product_name IS NOT NULL AND LOWER(TRIM(pt.product_name)) = LOWER(TRIM(COALESCE(pr.name, fp.product_name, ''))))
+                   )
+                 ORDER BY 
+                   CASE 
+                       WHEN pt.product_id IS NOT NULL AND pt.product_id = fp.product_id THEN 0 
+                       WHEN pt.product_id IS NULL AND pt.product_name IS NOT NULL AND LOWER(TRIM(pt.product_name)) = LOWER(TRIM(COALESCE(pr.name, fp.product_name, ''))) THEN 1
+                       ELSE 2 
+                   END,
+                   pt.id DESC 
                  LIMIT 1) AS template_unit_price,
                 GROUP_CONCAT(DISTINCT u.full_name ORDER BY u.full_name SEPARATOR ', ') AS workers
             FROM finished_products fp
