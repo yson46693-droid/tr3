@@ -80,6 +80,15 @@ if ($currentUser) {
         error_log('Automatic monthly production detailed report dispatch failed: ' . $productionReportAutoError->getMessage());
     }
 }
+
+// التأكد من عدم وجود محتوى قبل DOCTYPE - تنظيف أي output غير مرغوب
+if (ob_get_level() > 0) {
+    $bufferContent = ob_get_contents();
+    // إذا كان هناك محتوى في الـ buffer ولا يبدأ بـ DOCTYPE، امسحه
+    if (!empty(trim($bufferContent)) && stripos(trim($bufferContent), '<!DOCTYPE') !== 0) {
+        ob_clean();
+    }
+}
 ?>
 <!DOCTYPE html>
 <html lang="<?php echo $currentLang; ?>" dir="<?php echo $dir; ?>">

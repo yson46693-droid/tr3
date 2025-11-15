@@ -10,6 +10,11 @@ while (ob_get_level() > 0) {
     ob_end_clean();
 }
 
+// بدء output buffering لضمان عدم وجود محتوى قبل DOCTYPE
+if (!ob_get_level()) {
+    ob_start();
+}
+
 $page = $_GET['page'] ?? 'overview';
 
 // معالجة AJAX قبل أي require أو include قد يخرج محتوى HTML
