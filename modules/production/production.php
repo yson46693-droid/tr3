@@ -878,10 +878,35 @@ function checkMaterialsAvailability($db, $templateId, $productionQuantity, array
         $normalizedMaterialName = $normalizeNameForSearch($materialName);
         $materialNameLower = mb_strtolower($normalizedMaterialName, 'UTF-8');
         
+        // التحقق إذا كان الاسم الأصلي يحتوي على " - " (شرطة مع مسافات) - قد يكون مادتين منفصلتين
+        $hasDashSeparator = (mb_strpos($materialName, ' - ') !== false);
+        $materialParts = $hasDashSeparator ? array_map('trim', explode(' - ', $materialName, 2)) : [];
+        
+        // التحقق إذا كانت المادة عسل ولدينا معلومات محددة (مورد ونوع عسل)
+        // في هذه الحالة، يجب البحث فقط في honey_stock وليس في جدول products
+        $isHoneyWithSpecificDetails = false;
+        if ((mb_stripos($materialName, 'عسل') !== false || stripos($materialName, 'honey') !== false) && 
+            ($materialTypeMeta === 'honey_raw' || $materialTypeMeta === 'honey_filtered' || $materialTypeMeta === 'honey') &&
+            ($materialSupplierMeta !== null && $materialSupplierMeta > 0) &&
+            ($honeyVarietyMeta !== null && $honeyVarietyMeta !== '')) {
+            $isHoneyWithSpecificDetails = true;
+            
+            error_log(sprintf(
+                'Honey material with specific details detected: Name="%s", Type="%s", Supplier="%s", Variety="%s" - Will search only in honey_stock',
+                $materialName,
+                $materialTypeMeta,
+                $materialSupplierMeta,
+                $honeyVarietyMeta
+            ));
+        }
+        
         // البحث عن المادة في جدول المنتجات - محاولات متعددة
+        // تخطي البحث في products إذا كانت المادة عسل ولدينا معلومات محددة
         $product = null;
         $availableQuantity = 0.0;
         $foundInProducts = false;
+        
+        if (!$isHoneyWithSpecificDetails) {
         
         // 1. البحث بمطابقة دقيقة
         $product = $db->queryOne(
@@ -901,7 +926,7 @@ function checkMaterialsAvailability($db, $templateId, $productionQuantity, array
             // 3. البحث بمطابقة جزئية (LIKE) - البحث عن أسماء مشابهة
             // إنشاء نمط بحث أكثر مرونة
             $searchTerms = array_filter(array_map('trim', explode(' ', $normalizedMaterialName)));
-            if (!empty($searchTerms)) {
+            if (!empty($searchTerms) && count($searchTerms) > 1) {
                 $likePatterns = [];
                 $likeParams = [];
                 
@@ -937,6 +962,156 @@ function checkMaterialsAvailability($db, $templateId, $productionQuantity, array
                     }
                 }
             }
+            
+            // 3.4. إذا كان الاسم يحتوي على " - " وفشل البحث، جرب البحث عن كل جزء بشكل منفصل
+            if (!$product && $hasDashSeparator && count($materialParts) === 2) {
+                $part1Product = null;
+                $part2Product = null;
+                
+                // البحث عن الجزء الأول
+                $part1 = trim($materialParts[0]);
+                if (!empty($part1)) {
+                    $part1Product = $db->queryOne(
+                        "SELECT id, name, quantity FROM products 
+                         WHERE (name = ? OR name LIKE ?) AND status = 'active'
+                         ORDER BY 
+                            CASE WHEN name = ? THEN 1 ELSE 2 END,
+                            quantity DESC
+                         LIMIT 1",
+                        [$part1, '%' . $part1 . '%', $part1]
+                    );
+                }
+                
+                // البحث عن الجزء الثاني
+                $part2 = trim($materialParts[1]);
+                if (!empty($part2)) {
+                    $part2Product = $db->queryOne(
+                        "SELECT id, name, quantity FROM products 
+                         WHERE (name = ? OR name LIKE ?) AND status = 'active'
+                         ORDER BY 
+                            CASE WHEN name = ? THEN 1 ELSE 2 END,
+                            quantity DESC
+                         LIMIT 1",
+                        [$part2, '%' . $part2 . '%', $part2]
+                    );
+                }
+                
+                // إذا تم العثور على كلا الجزأين، استخدم الحد الأدنى من الكميات
+                if ($part1Product && $part2Product) {
+                    $qty1 = floatval($part1Product['quantity'] ?? 0);
+                    $qty2 = floatval($part2Product['quantity'] ?? 0);
+                    $minQty = min($qty1, $qty2);
+                    
+                    if ($minQty > 0) {
+                        $product = $part1Product; // استخدام أول منتج كمرجع
+                        $product['quantity'] = $minQty;
+                        $product['matched_names'] = [$part1Product['name'], $part2Product['name']];
+                        
+                        error_log(sprintf(
+                            'Material found by dash-separated parts: Template name="%s", Part1="%s" (qty=%s), Part2="%s" (qty=%s), Using min=%s',
+                            $materialName,
+                            $part1Product['name'],
+                            $qty1,
+                            $part2Product['name'],
+                            $qty2,
+                            $minQty
+                        ));
+                    }
+                } elseif ($part1Product || $part2Product) {
+                    // إذا تم العثور على جزء واحد فقط، استخدمه
+                    $foundPart = $part1Product ?: $part2Product;
+                    $product = $foundPart;
+                    
+                    error_log(sprintf(
+                        'Material partially found by dash-separated parts: Template name="%s", Found="%s"',
+                        $materialName,
+                        $foundPart['name']
+                    ));
+                }
+            }
+            
+            // 3.5. إذا فشل البحث المشترك وكان الاسم يحتوي على كلمات متعددة، جرب البحث عن كل كلمة بشكل منفصل
+            if (!$product && !empty($searchTerms) && count($searchTerms) > 1) {
+                $validTerms = array_filter($searchTerms, function($term) {
+                    return mb_strlen($term) > 2;
+                });
+                
+                if (count($validTerms) > 1) {
+                    // البحث عن منتجات تحتوي على أي من الكلمات (OR)
+                    $orPatterns = [];
+                    $orParams = [];
+                    
+                    foreach ($validTerms as $term) {
+                        $orPatterns[] = "name LIKE ?";
+                        $orParams[] = '%' . $term . '%';
+                    }
+                    
+                    if (!empty($orPatterns)) {
+                        $sql = "SELECT id, name, quantity FROM products 
+                                WHERE (" . implode(' OR ', $orPatterns) . ")
+                                AND status = 'active'
+                                ORDER BY 
+                                    CASE 
+                                        WHEN name = ? THEN 1
+                                        WHEN name LIKE ? THEN 2
+                                        WHEN LOWER(name) = ? THEN 3
+                                        ELSE 4 
+                                    END,
+                                    quantity DESC
+                                LIMIT 10";
+                        
+                        $allParams = array_merge($orParams, [$materialName, $materialName . '%', $materialNameLower]);
+                        $products = $db->query($sql, $allParams);
+                        
+                        if (!empty($products)) {
+                            // جمع الكميات من جميع المنتجات المطابقة
+                            $totalQuantity = 0;
+                            $matchedNames = [];
+                            foreach ($products as $p) {
+                                $qty = floatval($p['quantity'] ?? 0);
+                                if ($qty > 0) {
+                                    $totalQuantity += $qty;
+                                    $matchedNames[] = $p['name'];
+                                }
+                            }
+                            
+                            if ($totalQuantity > 0) {
+                                // استخدام أول منتج مطابق كمرجع، لكن الكمية الإجمالية من جميع المطابقات
+                                $product = $products[0];
+                                $product['quantity'] = $totalQuantity;
+                                $product['matched_names'] = $matchedNames;
+                                
+                                error_log(sprintf(
+                                    'Material found by individual word search: Template name="%s", Matched products: %s, Total quantity=%s',
+                                    $materialName,
+                                    implode(', ', $matchedNames),
+                                    $totalQuantity
+                                ));
+                            }
+                        }
+                    }
+                }
+            }
+            
+            // 3.6. إذا لم يتم العثور على شيء بعد، جرب البحث بكلمة واحدة فقط (أول كلمة مهمة)
+            if (!$product && !empty($searchTerms)) {
+                $firstTerm = trim($searchTerms[0]);
+                if (mb_strlen($firstTerm) > 2) {
+                    $product = $db->queryOne(
+                        "SELECT id, name, quantity FROM products 
+                         WHERE name LIKE ? AND status = 'active'
+                         ORDER BY 
+                            CASE 
+                                WHEN name = ? THEN 1
+                                WHEN name LIKE ? THEN 2
+                                ELSE 3 
+                            END,
+                            quantity DESC
+                         LIMIT 1",
+                        ['%' . $firstTerm . '%', $firstTerm, $firstTerm . '%']
+                    );
+                }
+            }
         }
         
         if ($product) {
@@ -953,7 +1128,10 @@ function checkMaterialsAvailability($db, $templateId, $productionQuantity, array
             ));
         }
         
+        } // نهاية if (!$isHoneyWithSpecificDetails)
+        
         // 4. البحث في جداول المخزون الخاصة (honey_stock, etc.)
+        // بالنسبة للعسل مع معلومات محددة، هذا هو المصدر الوحيد للبحث
         $specialStock = $resolveSpecialStock($materialTypeMeta, $materialSupplierMeta, $materialName, $honeyVarietyMeta);
         if ($specialStock['resolved']) {
             $availableFromSpecial = $specialStock['quantity'];
@@ -963,20 +1141,44 @@ function checkMaterialsAvailability($db, $templateId, $productionQuantity, array
                 $materialUnitNormalized
             );
             
-            if ($foundInProducts) {
-                // إضافة المخزون الخاص إلى المخزون الموجود في المنتجات
+            if ($foundInProducts && !$isHoneyWithSpecificDetails) {
+                // إضافة المخزون الخاص إلى المخزون الموجود في المنتجات (فقط إذا لم تكن عسل بمعلومات محددة)
                 $availableQuantity += $availableFromSpecial;
             } else {
                 // استخدام المخزون الخاص فقط
                 $availableQuantity = $availableFromSpecial;
-                error_log(sprintf(
-                    'Material found in special stock: Template name="%s", Type="%s", Available=%s, Required=%s',
-                    $materialName,
-                    $materialTypeMeta ?? 'unknown',
-                    $availableQuantity,
-                    $requiredQuantity
-                ));
+                
+                // تسجيل تفصيلي للعسل مع معلومات محددة
+                if ($isHoneyWithSpecificDetails) {
+                    error_log(sprintf(
+                        'Honey found in special stock (specific search): Template name="%s", Type="%s", Supplier="%s", Variety="%s", Available=%s, Required=%s',
+                        $materialName,
+                        $materialTypeMeta ?? 'unknown',
+                        $materialSupplierMeta ?? 'none',
+                        $honeyVarietyMeta ?? 'none',
+                        $availableQuantity,
+                        $requiredQuantity
+                    ));
+                } else {
+                    error_log(sprintf(
+                        'Material found in special stock: Template name="%s", Type="%s", Available=%s, Required=%s',
+                        $materialName,
+                        $materialTypeMeta ?? 'unknown',
+                        $availableQuantity,
+                        $requiredQuantity
+                    ));
+                }
             }
+        } elseif ($isHoneyWithSpecificDetails) {
+            // إذا كانت المادة عسل بمعلومات محددة ولم يتم العثور عليها في honey_stock
+            error_log(sprintf(
+                'Honey NOT found in special stock (specific search failed): Template name="%s", Type="%s", Supplier="%s", Variety="%s", Required=%s',
+                $materialName,
+                $materialTypeMeta ?? 'unknown',
+                $materialSupplierMeta ?? 'none',
+                $honeyVarietyMeta ?? 'none',
+                $requiredQuantity
+            ));
         }
         
         // التحقق من توفر الكمية المطلوبة
