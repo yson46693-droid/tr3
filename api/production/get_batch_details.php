@@ -491,14 +491,28 @@ try {
     if ($batchId > 0) {
         $suppliersHaveStoredNames = readerColumnExists($db, 'batch_suppliers', 'supplier_name');
         $selectSupplierColumns = ['bs.id', 'bs.supplier_id', 'bs.role'];
-        if ($suppliersHaveStoredNames) {
-            $selectSupplierColumns[] = 'bs.supplier_name';
+        
+        $suppliersTableExists = $db->queryOne("SHOW TABLES LIKE 'suppliers'");
+        if (!empty($suppliersTableExists)) {
+            $selectSupplierColumns[] = 'COALESCE(s.name, bs.supplier_name) as supplier_name';
+        } else {
+            if ($suppliersHaveStoredNames) {
+                $selectSupplierColumns[] = 'bs.supplier_name';
+            }
         }
+        
         try {
+            $joinClause = '';
+            if (!empty($suppliersTableExists)) {
+                $joinClause = 'LEFT JOIN suppliers s ON bs.supplier_id = s.id';
+            }
+            
             $suppliersRows = $db->query(
                 "SELECT " . implode(', ', $selectSupplierColumns) . "
                  FROM batch_suppliers bs
-                 WHERE bs.batch_id = ?",
+                 " . $joinClause . "
+                 WHERE bs.batch_id = ?
+                 ORDER BY COALESCE(s.name, bs.supplier_name) ASC",
                 [$batchId]
             );
         } catch (Throwable $supplierError) {
