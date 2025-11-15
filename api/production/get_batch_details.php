@@ -504,9 +504,28 @@ try {
                 if (!is_array($entry)) {
                     continue;
                 }
+                $supplierId = isset($entry['id']) ? (int) $entry['id'] : null;
+                $supplierName = $entry['name'] ?? null;
+                
+                // إذا لم يكن هناك اسم مورد، ابحث في جدول suppliers
+                if (empty($supplierName) && $supplierId > 0 && $db) {
+                    try {
+                        $suppliersTableExists = $db->queryOne("SHOW TABLES LIKE 'suppliers'");
+                        if (!empty($suppliersTableExists)) {
+                            $supplierRow = $db->queryOne("SELECT name FROM suppliers WHERE id = ? LIMIT 1", [$supplierId]);
+                            if (!empty($supplierRow) && !empty($supplierRow['name'])) {
+                                $supplierName = trim((string)$supplierRow['name']);
+                            }
+                        }
+                    } catch (Throwable $e) {
+                        error_log('get_batch_details supplier name lookup error: ' . $e->getMessage());
+                    }
+                }
+                
+                // لا تستخدم material كاسم المورد - فقط استخدم name من suppliers
                 $suppliersRows[] = [
-                    'supplier_id' => isset($entry['id']) ? (int) $entry['id'] : null,
-                    'supplier_name' => $entry['name'] ?? ($entry['material'] ?? null),
+                    'supplier_id' => $supplierId,
+                    'supplier_name' => $supplierName,
                     'role' => $entry['context'] ?? ($entry['role'] ?? null),
                 ];
             }
@@ -538,18 +557,65 @@ try {
         ];
     }, $suppliersRows);
 
-    $lookupSupplierName = static function (?int $supplierId) use ($supplierNameMap, $suppliersFormatted) {
+    $lookupSupplierName = static function (?int $supplierId) use ($db, $supplierNameMap, $suppliersFormatted) {
         if ($supplierId === null || $supplierId <= 0) {
             return null;
         }
+        
+        // التحقق من supplierNameMap أولاً
         if (isset($supplierNameMap[$supplierId])) {
-            return $supplierNameMap[$supplierId];
-        }
-        foreach ($suppliersFormatted as $entry) {
-            if (isset($entry['supplier_id']) && (int)$entry['supplier_id'] === $supplierId && !empty($entry['name'])) {
-                return $entry['name'];
+            $candidateName = $supplierNameMap[$supplierId];
+            // إذا كان الاسم يبدو كأنه نوع عسل (يحتوي على كلمات مثل "عسل" أو "سدر" أو "زهور" إلخ)
+            // أو إذا كان قصيراً جداً (أقل من 3 أحرف)، ابحث في قاعدة البيانات
+            $honeyTypeKeywords = ['عسل', 'سدر', 'زهور', 'برسيم', 'كينا', 'حبة', 'بركة', 'شوكة', 'قحطان', 'شوكة'];
+            $isLikelyHoneyType = false;
+            foreach ($honeyTypeKeywords as $keyword) {
+                if (stripos($candidateName, $keyword) !== false) {
+                    $isLikelyHoneyType = true;
+                    break;
+                }
+            }
+            
+            if (!$isLikelyHoneyType && strlen($candidateName) >= 3) {
+                return $candidateName;
             }
         }
+        
+        // البحث في suppliersFormatted
+        foreach ($suppliersFormatted as $entry) {
+            if (isset($entry['supplier_id']) && (int)$entry['supplier_id'] === $supplierId && !empty($entry['name'])) {
+                $candidateName = $entry['name'];
+                // نفس التحقق من نوع العسل
+                $honeyTypeKeywords = ['عسل', 'سدر', 'زهور', 'برسيم', 'كينا', 'حبة', 'بركة', 'شوكة', 'قحطان', 'شوكة'];
+                $isLikelyHoneyType = false;
+                foreach ($honeyTypeKeywords as $keyword) {
+                    if (stripos($candidateName, $keyword) !== false) {
+                        $isLikelyHoneyType = true;
+                        break;
+                    }
+                }
+                
+                if (!$isLikelyHoneyType && strlen($candidateName) >= 3) {
+                    return $candidateName;
+                }
+            }
+        }
+        
+        // إذا لم يتم العثور على اسم صحيح، ابحث في جدول suppliers
+        if ($db) {
+            try {
+                $suppliersTableExists = $db->queryOne("SHOW TABLES LIKE 'suppliers'");
+                if (!empty($suppliersTableExists)) {
+                    $supplierRow = $db->queryOne("SELECT name FROM suppliers WHERE id = ? LIMIT 1", [$supplierId]);
+                    if (!empty($supplierRow) && !empty($supplierRow['name'])) {
+                        return trim((string)$supplierRow['name']);
+                    }
+                }
+            } catch (Throwable $e) {
+                error_log('get_batch_details supplier lookup error: ' . $e->getMessage());
+            }
+        }
+        
         return 'مورد #' . $supplierId;
     };
 

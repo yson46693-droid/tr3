@@ -477,6 +477,45 @@ function getBatchNumber($batchId) {
             $batch['workers_details'] = [];
         }
 
+        // جلب معلومات مورد العسل ومورد التعبئة
+        $batchNumbersTableExists = $db->queryOne("SHOW TABLES LIKE 'batch_numbers'");
+        if (!empty($batchNumbersTableExists)) {
+            $batchNumberRecord = $db->queryOne(
+                "SELECT honey_supplier_id, packaging_supplier_id 
+                 FROM batch_numbers 
+                 WHERE batch_id = ? 
+                 LIMIT 1",
+                [$batchIdValue]
+            );
+            
+            if (!empty($batchNumberRecord)) {
+                $honeySupplierId = isset($batchNumberRecord['honey_supplier_id']) ? (int)$batchNumberRecord['honey_supplier_id'] : null;
+                $packagingSupplierId = isset($batchNumberRecord['packaging_supplier_id']) ? (int)$batchNumberRecord['packaging_supplier_id'] : null;
+                
+                // جلب اسم مورد العسل
+                if ($honeySupplierId > 0) {
+                    $suppliersTableExists = $db->queryOne("SHOW TABLES LIKE 'suppliers'");
+                    if (!empty($suppliersTableExists)) {
+                        $honeySupplier = $db->queryOne("SELECT name FROM suppliers WHERE id = ? LIMIT 1", [$honeySupplierId]);
+                        if (!empty($honeySupplier) && !empty($honeySupplier['name'])) {
+                            $batch['honey_supplier_name'] = trim((string)$honeySupplier['name']);
+                        }
+                    }
+                }
+                
+                // جلب اسم مورد التعبئة
+                if ($packagingSupplierId > 0) {
+                    $suppliersTableExists = $db->queryOne("SHOW TABLES LIKE 'suppliers'");
+                    if (!empty($suppliersTableExists)) {
+                        $packagingSupplier = $db->queryOne("SELECT name FROM suppliers WHERE id = ? LIMIT 1", [$packagingSupplierId]);
+                        if (!empty($packagingSupplier) && !empty($packagingSupplier['name'])) {
+                            $batch['packaging_supplier_name'] = trim((string)$packagingSupplier['name']);
+                        }
+                    }
+                }
+            }
+        }
+
         return $batch;
     }
     

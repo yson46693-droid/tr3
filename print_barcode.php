@@ -94,8 +94,8 @@ $encodedBatchNumber = json_encode($batchNumber, JSON_UNESCAPED_UNICODE);
             display: flex;
             flex-direction: column;
             align-items: center;
-            justify-content: center;
-            padding: 0;
+            justify-content: flex-start;
+            padding: 5mm 0 2mm 0;
             margin: 0;
         }
 
@@ -106,11 +106,11 @@ $encodedBatchNumber = json_encode($batchNumber, JSON_UNESCAPED_UNICODE);
         }
 
         .barcode-number {
-            font-size: 8pt;
-            font-weight: 600;
-            letter-spacing: 0.5px;
+            font-size: 16pt;
+            font-weight: 700;
+            letter-spacing: 1px;
             text-align: center;
-            margin-top: 2px;
+            margin-top: 4px;
             margin-bottom: 0;
             padding: 0;
             width: 100%;
