@@ -90,6 +90,38 @@ if ($currentSection !== null && $currentSection !== '') {
 }
 $managerRedirectRole = 'manager';
 
+// معالجة طلبات AJAX لتحميل المنتجات
+if (isset($_GET['ajax']) && $_GET['ajax'] === 'load_products') {
+    // تنظيف أي output buffer موجود
+    while (ob_get_level() > 0) {
+        ob_end_clean();
+    }
+    
+    header('Content-Type: application/json; charset=utf-8');
+    header('Cache-Control: no-cache, must-revalidate');
+    
+    $warehouseId = isset($_GET['warehouse_id']) ? intval($_GET['warehouse_id']) : null;
+    
+    try {
+        // التأكد من تحميل الدوال المطلوبة
+        if (!function_exists('getFinishedProductBatchOptions')) {
+            require_once __DIR__ . '/../../includes/vehicle_inventory.php';
+        }
+        
+        $products = getFinishedProductBatchOptions(true, $warehouseId);
+        echo json_encode([
+            'success' => true,
+            'products' => $products
+        ], JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
+    } catch (Exception $e) {
+        echo json_encode([
+            'success' => false,
+            'message' => $e->getMessage()
+        ], JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
+    }
+    exit;
+}
+
 /**
  * دالة البحث عن كمية تشغيلة فعلية من جدول batch_numbers
  * @param string $batchNumber رقم التشغيلة
@@ -1300,7 +1332,9 @@ if ($isManager) {
         <?php endif; ?>
         <button
             type="button"
-            class="btn btn-outline-primary js-open-transfer-modal"
+            class="btn btn-outline-primary"
+            data-bs-toggle="modal"
+            data-bs-target="#requestTransferModal"
             <?php echo $canCreateTransfers ? '' : 'disabled'; ?>
             title="<?php echo $canCreateTransfers ? '' : 'يرجى التأكد من وجود مخازن وجهة نشطة.'; ?>"
         >
@@ -1745,8 +1779,8 @@ if ($isManager) {
 <?php endif; ?>
 
 <?php if ($primaryWarehouse): ?>
-<div class="modal fade" id="requestTransferModal" tabindex="-1" aria-hidden="true" data-bs-backdrop="static" data-bs-keyboard="false">
-    <div class="modal-dialog modal-lg modal-dialog-scrollable">
+<div class="modal fade" id="requestTransferModal" tabindex="-1">
+    <div class="modal-dialog modal-lg">
         <div class="modal-content">
             <div class="modal-header">
                 <h5 class="modal-title">
@@ -1758,7 +1792,7 @@ if ($isManager) {
             <form method="POST" id="mainWarehouseTransferForm">
                 <input type="hidden" name="action" value="create_transfer">
                 <input type="hidden" name="from_warehouse_id" value="<?php echo intval($primaryWarehouse['id']); ?>">
-                <div class="modal-body scrollable-modal-body">
+                <div class="modal-body">
                     <?php if (!$canCreateTransfers): ?>
                         <div class="alert alert-warning d-flex align-items-center gap-2 mb-0">
                             <i class="bi bi-exclamation-triangle-fill fs-5"></i>
@@ -1892,235 +1926,302 @@ if (!window.transferFormInitialized) {
             return;
         }
 
-    // دالة لعرض رسائل Toast بدلاً من alert
-    function showToast(message, type = 'warning') {
-        const toastContainer = document.getElementById('toastContainer') || (function() {
-            const container = document.createElement('div');
-            container.id = 'toastContainer';
-            container.className = 'toast-container position-fixed top-0 end-0 p-3';
-            container.style.zIndex = '11000';
-            document.body.appendChild(container);
-            return container;
-        })();
-        
-        const toastId = 'toast-' + Date.now();
-        const bgClass = type === 'error' || type === 'danger' ? 'bg-danger' : 
-                       type === 'success' ? 'bg-success' : 'bg-warning';
-        
-        const toastHtml = `
-            <div id="${toastId}" class="toast ${bgClass} text-white" role="alert" aria-live="assertive" aria-atomic="true">
-                <div class="toast-header ${bgClass} text-white border-0">
-                    <strong class="me-auto">${type === 'success' ? 'نجح' : type === 'error' || type === 'danger' ? 'خطأ' : 'تحذير'}</strong>
-                    <button type="button" class="btn-close btn-close-white" data-bs-dismiss="toast" aria-label="إغلاق"></button>
-                </div>
-                <div class="toast-body">
-                    ${message}
-                </div>
-            </div>
-        `;
-        
-        toastContainer.insertAdjacentHTML('beforeend', toastHtml);
-        const toastElement = document.getElementById(toastId);
-        
-        if (typeof bootstrap !== 'undefined' && typeof bootstrap.Toast !== 'undefined') {
-            const toast = new bootstrap.Toast(toastElement, {
-                autohide: true,
-                delay: 5000
+        let transferItemIndex = 1;
+        let allFinishedProductOptions = <?php echo json_encode($finishedProductOptions ?? []); ?>;
+
+        // دالة لتحديث جميع قوائم المنتجات (مثل delegates)
+        function updateProductSelects() {
+            const selects = document.querySelectorAll('.product-select');
+            selects.forEach(select => {
+                const currentValue = select.value;
+                const currentBatchId = select.querySelector(`option[value="${currentValue}"]`)?.dataset.batchId;
+                
+                // حفظ القيمة المحددة
+                select.innerHTML = '<option value="">اختر المنتج</option>';
+                
+                allFinishedProductOptions.forEach(option => {
+                    const optionElement = document.createElement('option');
+                    optionElement.value = option.product_id || 0;
+                    optionElement.dataset.productId = option.product_id || 0;
+                    optionElement.dataset.batchId = option.batch_id;
+                    optionElement.dataset.batchNumber = option.batch_number || '';
+                    optionElement.dataset.available = option.quantity_available || 0;
+                    optionElement.textContent = `${option.product_name} - تشغيلة ${option.batch_number || 'بدون'} (متاح: ${parseFloat(option.quantity_available || 0).toFixed(2)})`;
+                    
+                    // استعادة الاختيار السابق إذا كان موجوداً
+                    if (currentBatchId && option.batch_id == currentBatchId) {
+                        optionElement.selected = true;
+                    }
+                    
+                    select.appendChild(optionElement);
+                });
+                
+                // إعادة ربط الأحداث
+                const item = select.closest('.transfer-item');
+                if (item) {
+                    attachItemEvents(item);
+                }
             });
-            toast.show();
+        }
+
+        function buildItemRow(index) {
+            const wrapper = document.createElement('div');
+            wrapper.className = 'transfer-item row g-2 align-items-end mb-2';
             
-            toastElement.addEventListener('hidden.bs.toast', function() {
-                toastElement.remove();
+            let optionsHtml = '<option value="">اختر المنتج</option>';
+            allFinishedProductOptions.forEach(function(option) {
+                const productId = parseInt(option.product_id || 0, 10);
+                const batchId = parseInt(option.batch_id || 0, 10);
+                const batchNumber = (option.batch_number || '').replace(/"/g, '&quot;');
+                const productName = (option.product_name || 'غير محدد').replace(/"/g, '&quot;');
+                const available = parseFloat(option.quantity_available || 0);
+                const availableFormatted = available.toLocaleString('ar-EG', {minimumFractionDigits: 2, maximumFractionDigits: 2});
+                
+                optionsHtml += `<option value="${productId}"
+                        data-product-id="${productId}"
+                        data-batch-id="${batchId}"
+                        data-batch-number="${batchNumber}"
+                        data-available="${available.toFixed(2)}">
+                    ${productName} - تشغيلة ${batchNumber || 'بدون'} (متاح: ${availableFormatted})
+                </option>`;
             });
-        } else {
-            // Fallback إذا لم يكن Bootstrap متاحاً
-            setTimeout(function() {
-                if (toastElement && toastElement.parentNode) {
-                    toastElement.remove();
-                }
-            }, 5000);
-        }
-    }
-
-    let transferItemIndex = 1;
-    const productOptions = <?php echo json_encode($finishedProductOptions ?? [], JSON_UNESCAPED_UNICODE | JSON_HEX_QUOT); ?>;
-
-    function buildItemRow(index) {
-        const wrapper = document.createElement('div');
-        wrapper.className = 'transfer-item row g-2 align-items-end mb-2';
-        
-        let optionsHtml = '<option value="">اختر المنتج</option>';
-        productOptions.forEach(function(option) {
-            const productId = parseInt(option.product_id || 0, 10);
-            const batchId = parseInt(option.batch_id || 0, 10);
-            const batchNumber = (option.batch_number || '').replace(/"/g, '&quot;');
-            const productName = (option.product_name || 'غير محدد').replace(/"/g, '&quot;');
-            const available = parseFloat(option.quantity_available || 0);
-            const availableFormatted = available.toLocaleString('ar-EG', {minimumFractionDigits: 2, maximumFractionDigits: 2});
             
-            optionsHtml += `<option value="${productId}"
-                    data-product-id="${productId}"
-                    data-batch-id="${batchId}"
-                    data-batch-number="${batchNumber}"
-                    data-available="${available.toFixed(2)}">
-                ${productName} - تشغيلة ${batchNumber || 'بدون'} (متاح: ${availableFormatted})
-            </option>`;
-        });
-        
-        wrapper.innerHTML = `
-            <div class="col-md-5">
-                <label class="form-label small text-muted" for="transferProduct${index}">المنتج</label>
-                <select id="transferProduct${index}" class="form-select product-select" name="items[${index}][product_select]" required>
-                    ${optionsHtml}
-                </select>
-            </div>
-            <div class="col-md-3">
-                <label class="form-label small text-muted" for="transferQuantity${index}">الكمية</label>
-                <input type="number" id="transferQuantity${index}" step="0.01" min="0.01" class="form-control quantity-input" name="items[${index}][quantity]" placeholder="الكمية" required>
-            </div>
-            <div class="col-md-3">
-                <label class="form-label small text-muted" for="transferNotes${index}">ملاحظات</label>
-                <input type="text" id="transferNotes${index}" class="form-control" name="items[${index}][notes]" placeholder="ملاحظات (اختياري)">
-            </div>
-            <div class="col-12">
-                <small class="text-muted available-hint d-block"></small>
-                <input type="hidden" id="transferProductId${index}" name="items[${index}][product_id]" class="selected-product-id">
-                <input type="hidden" id="transferBatchId${index}" name="items[${index}][batch_id]" class="selected-batch-id">
-                <input type="hidden" id="transferBatchNumber${index}" name="items[${index}][batch_number]" class="selected-batch-number">
-            </div>
-            <div class="col-auto text-end">
-                <button type="button" class="btn btn-outline-danger btn-sm remove-transfer-item" title="حذف العنصر">
-                    <i class="bi bi-trash"></i>
-                </button>
-            </div>
-        `;
-        return wrapper;
-    }
-
-    function attachItemEvents(row) {
-        const select = row.querySelector('.product-select');
-        const quantityInput = row.querySelector('.quantity-input');
-        const productIdInput = row.querySelector('.selected-product-id');
-        const batchIdInput = row.querySelector('.selected-batch-id');
-        const batchNumberInput = row.querySelector('.selected-batch-number');
-        const availableHint = row.querySelector('.available-hint');
-
-        if (!select || !quantityInput) {
-            return;
+            wrapper.innerHTML = `
+                <div class="col-md-5">
+                    <label class="form-label small text-muted" for="transferProduct${index}">المنتج</label>
+                    <select id="transferProduct${index}" class="form-select product-select" name="items[${index}][product_select]" required>
+                        ${optionsHtml}
+                    </select>
+                </div>
+                <div class="col-md-3">
+                    <label class="form-label small text-muted" for="transferQuantity${index}">الكمية</label>
+                    <input type="number" id="transferQuantity${index}" step="0.01" min="0.01" class="form-control quantity-input" name="items[${index}][quantity]" placeholder="الكمية" required>
+                </div>
+                <div class="col-md-3">
+                    <label class="form-label small text-muted" for="transferNotes${index}">ملاحظات</label>
+                    <input type="text" id="transferNotes${index}" class="form-control" name="items[${index}][notes]" placeholder="ملاحظات (اختياري)">
+                </div>
+                <div class="col-12">
+                    <small class="text-muted available-hint d-block"></small>
+                    <input type="hidden" id="transferProductId${index}" name="items[${index}][product_id]" class="selected-product-id">
+                    <input type="hidden" id="transferBatchId${index}" name="items[${index}][batch_id]" class="selected-batch-id">
+                    <input type="hidden" id="transferBatchNumber${index}" name="items[${index}][batch_number]" class="selected-batch-number">
+                </div>
+                <div class="col-auto text-end">
+                    <button type="button" class="btn btn-outline-danger btn-sm remove-transfer-item" title="حذف العنصر">
+                        <i class="bi bi-trash"></i>
+                    </button>
+                </div>
+            `;
+            return wrapper;
         }
 
-        const updateQuantityConstraints = () => {
-            const selectedOption = select.options[select.selectedIndex];
-            const available = selectedOption ? parseFloat(selectedOption.dataset.available || '0') : 0;
-            const selectedProductId = selectedOption ? parseInt(selectedOption.dataset.productId || '0', 10) : 0;
-            const selectedBatchId = selectedOption ? parseInt(selectedOption.dataset.batchId || '0', 10) : 0;
-            const selectedBatchNumber = selectedOption ? selectedOption.dataset.batchNumber || '' : '';
-
-            if (productIdInput) {
-                productIdInput.value = selectedProductId > 0 ? selectedProductId : '';
-            }
-            if (batchIdInput) {
-                batchIdInput.value = selectedBatchId > 0 ? selectedBatchId : '';
-            }
-            if (batchNumberInput) {
-                batchNumberInput.value = selectedBatchNumber;
-            }
-
-            if (availableHint) {
-                if (selectedOption && selectedOption.value) {
-                    availableHint.textContent = `الكمية المتاحة لهذه التشغيلة: ${available.toLocaleString('ar-EG')} وحدة`;
-                } else {
-                    availableHint.textContent = '';
-                }
-            }
-
-            if (available > 0) {
-                quantityInput.setAttribute('max', available);
-                if (parseFloat(quantityInput.value || '0') > available) {
-                    quantityInput.value = available;
-                }
-            } else {
-                quantityInput.removeAttribute('max');
-            }
-        };
-
-        select.addEventListener('change', updateQuantityConstraints);
-        updateQuantityConstraints();
-    }
-
-    if (addItemButton) {
-        addItemButton.addEventListener('click', () => {
-            const newRow = buildItemRow(transferItemIndex);
-            itemsContainer.appendChild(newRow);
-            attachItemEvents(newRow);
-            transferItemIndex += 1;
-        });
-    }
-
-    document.addEventListener('click', (event) => {
-        const removeButton = event.target.closest('.remove-transfer-item');
-        if (!removeButton) {
-            return;
-        }
-
-        const rows = itemsContainer.querySelectorAll('.transfer-item');
-        if (rows.length <= 1) {
-            return;
-        }
-
-        removeButton.closest('.transfer-item').remove();
-    });
-
-    itemsContainer.querySelectorAll('.transfer-item').forEach((row) => {
-        attachItemEvents(row);
-    });
-
-    transferForm.addEventListener('submit', (event) => {
-        const rows = itemsContainer.querySelectorAll('.transfer-item');
-        if (!rows.length) {
-            event.preventDefault();
-            showToast('أضف منتجاً واحداً على الأقل قبل إرسال الطلب.', 'warning');
-            return;
-        }
-
-        for (const row of rows) {
+        function attachItemEvents(row) {
             const select = row.querySelector('.product-select');
             const quantityInput = row.querySelector('.quantity-input');
+            const productIdInput = row.querySelector('.selected-product-id');
+            const batchIdInput = row.querySelector('.selected-batch-id');
+            const batchNumberInput = row.querySelector('.selected-batch-number');
+            const availableHint = row.querySelector('.available-hint');
 
             if (!select || !quantityInput) {
-                event.preventDefault();
-                showToast('يرجى التأكد من إدخال بيانات صحيحة لكل منتج.', 'warning');
                 return;
             }
 
-            if (!select.value) {
-                event.preventDefault();
-                showToast('اختر المنتج المراد نقله.', 'warning');
-                return;
-            }
+            const updateQuantityConstraints = () => {
+                const selectedOption = select.options[select.selectedIndex];
+                const available = selectedOption ? parseFloat(selectedOption.dataset.available || '0') : 0;
+                const selectedProductId = selectedOption ? parseInt(selectedOption.dataset.productId || '0', 10) : 0;
+                const selectedBatchId = selectedOption ? parseInt(selectedOption.dataset.batchId || '0', 10) : 0;
+                const selectedBatchNumber = selectedOption ? selectedOption.dataset.batchNumber || '' : '';
 
-            const max = parseFloat(quantityInput.getAttribute('max') || '0');
-            const min = parseFloat(quantityInput.getAttribute('min') || '0');
-            const value = parseFloat(quantityInput.value || '0');
+                if (productIdInput) {
+                    productIdInput.value = selectedProductId > 0 ? selectedProductId : '';
+                }
+                if (batchIdInput) {
+                    batchIdInput.value = selectedBatchId > 0 ? selectedBatchId : '';
+                }
+                if (batchNumberInput) {
+                    batchNumberInput.value = selectedBatchNumber;
+                }
 
-            if (value < min) {
-                event.preventDefault();
-                showToast('يرجى إدخال كمية أكبر من الصفر.', 'warning');
-                return;
-            }
+                if (availableHint) {
+                    if (selectedOption && selectedOption.value) {
+                        availableHint.textContent = `الكمية المتاحة لهذه التشغيلة: ${available.toLocaleString('ar-EG')} وحدة`;
+                    } else {
+                        availableHint.textContent = '';
+                    }
+                }
 
-            if (max > 0 && value > max) {
-                event.preventDefault();
-                showToast('الكمية المطلوبة تتجاوز المتاح في المخزن الرئيسي.', 'error');
-                return;
-            }
+                if (available > 0) {
+                    quantityInput.setAttribute('max', available);
+                    if (parseFloat(quantityInput.value || '0') > available) {
+                        quantityInput.value = available;
+                    }
+                } else {
+                    quantityInput.removeAttribute('max');
+                }
+            };
+
+            select.addEventListener('change', updateQuantityConstraints);
+            updateQuantityConstraints();
         }
 
-        if (destinationSelect && !destinationSelect.value) {
-            event.preventDefault();
-            showToast('يرجى اختيار المخزن الوجهة قبل إرسال الطلب.', 'warning');
+        if (addItemButton) {
+            addItemButton.addEventListener('click', () => {
+                const newRow = buildItemRow(transferItemIndex);
+                itemsContainer.appendChild(newRow);
+                attachItemEvents(newRow);
+                transferItemIndex += 1;
+            });
         }
-    });
+
+        document.addEventListener('click', (event) => {
+            const removeButton = event.target.closest('.remove-transfer-item');
+            if (!removeButton) {
+                return;
+            }
+
+            const rows = itemsContainer.querySelectorAll('.transfer-item');
+            if (rows.length <= 1) {
+                return;
+            }
+
+            removeButton.closest('.transfer-item').remove();
+        });
+
+        itemsContainer.querySelectorAll('.transfer-item').forEach((row) => {
+            attachItemEvents(row);
+        });
+
+        // تحميل المنتجات تلقائياً عند فتح النموذج (مثل delegates)
+        const requestTransferModal = document.getElementById('requestTransferModal');
+        if (requestTransferModal) {
+            requestTransferModal.addEventListener('show.bs.modal', function() {
+                // تحميل المنتجات من المخزن الرئيسي تلقائياً إذا لم تكن محملة
+                if (allFinishedProductOptions.length === 0 && <?php echo $primaryWarehouse ? 'true' : 'false'; ?>) {
+                    const currentUrl = new URL(window.location.href);
+                    currentUrl.searchParams.set('ajax', 'load_products');
+                    currentUrl.searchParams.set('warehouse_id', <?php echo $primaryWarehouse['id'] ?? 'null'; ?>);
+                    
+                    const addItemBtn = document.getElementById('addTransferItemBtn');
+                    const submitBtn = document.querySelector('#mainWarehouseTransferForm button[type="submit"]');
+                    const originalAddBtnText = addItemBtn?.innerHTML;
+                    const originalSubmitBtnText = submitBtn?.innerHTML;
+                    
+                    if (addItemBtn) {
+                        addItemBtn.disabled = true;
+                        addItemBtn.innerHTML = '<i class="bi bi-hourglass-split me-2"></i>جاري التحميل...';
+                    }
+                    if (submitBtn) {
+                        submitBtn.disabled = true;
+                        submitBtn.innerHTML = '<i class="bi bi-hourglass-split me-2"></i>جاري التحميل...';
+                    }
+                    
+                    fetch(currentUrl.toString())
+                        .then(response => {
+                            const contentType = response.headers.get('content-type');
+                            if (!contentType || !contentType.includes('application/json')) {
+                                return response.text().then(text => {
+                                    throw new Error('Expected JSON but got: ' + text.substring(0, 100));
+                                });
+                            }
+                            return response.json();
+                        })
+                        .then(data => {
+                            if (data.success && data.products) {
+                                allFinishedProductOptions = data.products;
+                                updateProductSelects();
+                                
+                                if (addItemBtn) {
+                                    addItemBtn.disabled = allFinishedProductOptions.length === 0;
+                                    addItemBtn.innerHTML = originalAddBtnText || '<i class="bi bi-plus-circle me-1"></i>إضافة منتج آخر';
+                                }
+                                if (submitBtn) {
+                                    submitBtn.disabled = allFinishedProductOptions.length === 0;
+                                    submitBtn.innerHTML = originalSubmitBtnText || 'إرسال الطلب';
+                                }
+                                
+                                if (allFinishedProductOptions.length === 0) {
+                                    const alertDiv = document.querySelector('#mainWarehouseTransferItems .alert-warning');
+                                    if (!alertDiv) {
+                                        const itemsDiv = document.getElementById('mainWarehouseTransferItems');
+                                        if (itemsDiv) {
+                                            const warning = document.createElement('div');
+                                            warning.className = 'alert alert-warning d-flex align-items-center gap-2';
+                                            warning.innerHTML = '<i class="bi bi-exclamation-triangle-fill"></i><div>لا توجد منتجات متاحة في هذا المخزن حالياً.</div>';
+                                            itemsDiv.insertBefore(warning, itemsDiv.firstChild);
+                                        }
+                                    }
+                                } else {
+                                    const alertDiv = document.querySelector('#mainWarehouseTransferItems .alert-warning');
+                                    if (alertDiv) {
+                                        alertDiv.remove();
+                                    }
+                                }
+                            }
+                        })
+                        .catch(error => {
+                            console.error('Error loading products:', error);
+                            if (addItemBtn) {
+                                addItemBtn.disabled = false;
+                                addItemBtn.innerHTML = originalAddBtnText || '<i class="bi bi-plus-circle me-1"></i>إضافة منتج آخر';
+                            }
+                            if (submitBtn) {
+                                submitBtn.disabled = false;
+                                submitBtn.innerHTML = originalSubmitBtnText || 'إرسال الطلب';
+                            }
+                        });
+                }
+            });
+        }
+
+        transferForm.addEventListener('submit', (event) => {
+            const rows = itemsContainer.querySelectorAll('.transfer-item');
+            if (!rows.length) {
+                event.preventDefault();
+                alert('أضف منتجاً واحداً على الأقل قبل إرسال الطلب.');
+                return;
+            }
+
+            for (const row of rows) {
+                const select = row.querySelector('.product-select');
+                const quantityInput = row.querySelector('.quantity-input');
+
+                if (!select || !quantityInput) {
+                    event.preventDefault();
+                    alert('يرجى التأكد من إدخال بيانات صحيحة لكل منتج.');
+                    return;
+                }
+
+                if (!select.value) {
+                    event.preventDefault();
+                    alert('اختر المنتج المراد نقله.');
+                    return;
+                }
+
+                const max = parseFloat(quantityInput.getAttribute('max') || '0');
+                const min = parseFloat(quantityInput.getAttribute('min') || '0');
+                const value = parseFloat(quantityInput.value || '0');
+
+                if (value < min) {
+                    event.preventDefault();
+                    alert('يرجى إدخال كمية أكبر من الصفر.');
+                    return;
+                }
+
+                if (max > 0 && value > max) {
+                    event.preventDefault();
+                    alert('الكمية المطلوبة تتجاوز المتاح في المخزن الرئيسي.');
+                    return;
+                }
+            }
+
+            if (destinationSelect && !destinationSelect.value) {
+                event.preventDefault();
+                alert('يرجى اختيار المخزن الوجهة قبل إرسال الطلب.');
+            }
+        });
     });
 }
 </script>
@@ -2723,55 +2824,6 @@ if (!window.transferFormInitialized) {
                 return;
             }
             
-            // فتح نموذج طلب النقل
-            const transferBtn = event.target.closest('.js-open-transfer-modal');
-            if (transferBtn && !transferBtn.disabled) {
-                event.preventDefault();
-                event.stopPropagation();
-                event.stopImmediatePropagation();
-                
-                const modal = document.getElementById('requestTransferModal');
-                if (modal) {
-                    // منع فتح النموذج إذا كان مفتوحاً بالفعل
-                    if (modal.classList.contains('show')) {
-                        return;
-                    }
-                    
-                    // إخفاء pageLoader
-                    const pageLoader = document.getElementById('pageLoader');
-                    if (pageLoader) {
-                        pageLoader.classList.add('hidden');
-                        pageLoader.style.display = 'none';
-                        pageLoader.style.zIndex = '-1';
-                    }
-                    
-                    if (typeof bootstrap !== 'undefined' && typeof bootstrap.Modal !== 'undefined') {
-                        const modalInstance = bootstrap.Modal.getOrCreateInstance(modal, {
-                            backdrop: 'static',
-                            keyboard: false
-                        });
-                        
-                        modal.style.transition = 'none';
-                        const modalDialog = modal.querySelector('.modal-dialog');
-                        if (modalDialog) {
-                            modalDialog.style.transition = 'none';
-                            modalDialog.style.transform = 'none';
-                        }
-                        
-                        modalInstance.show();
-                        
-                        setTimeout(function() {
-                            if (modal.classList.contains('show')) {
-                                modal.style.zIndex = '10000';
-                                if (modalDialog) {
-                                    modalDialog.style.zIndex = '10001';
-                                }
-                            }
-                        }, 10);
-                    }
-                }
-                return;
-            }
             const detailsButton = event.target.closest('.js-batch-details');
             if (detailsButton) {
                 const batchNumber = detailsButton.dataset.batch;
@@ -3072,63 +3124,6 @@ if (!window.transferFormInitialized) {
     }
 </script>
 
-<style>
-    /* إصلاح مشكلة استقرار النماذج - تبسيط CSS */
-    
-    /* إخفاء pageLoader عند فتح النماذج */
-    #pageLoader {
-        z-index: 1000 !important;
-    }
-    
-    #pageLoader.hidden {
-        z-index: -1 !important;
-        display: none !important;
-        visibility: hidden !important;
-        pointer-events: none !important;
-    }
-    
-    /* النماذج يجب أن تكون أعلى من أي overlay */
-    .modal {
-        z-index: 1050 !important;
-    }
-    
-    .modal.show {
-        display: block !important;
-    }
-    
-    .modal-dialog {
-        transform: none !important;
-        transition: none !important;
-    }
-    
-    .modal-content {
-        transform: none !important;
-    }
-    
-    .modal-backdrop {
-        z-index: 1040 !important;
-        pointer-events: auto !important;
-    }
-    
-    .modal-backdrop.show {
-        opacity: 0.5 !important;
-    }
-    
-    /* منع أي حركة أو تحريك للنماذج */
-    .modal.fade .modal-dialog {
-        transition: none !important;
-        transform: none !important;
-    }
-    
-    .modal.show .modal-dialog {
-        transform: none !important;
-    }
-    
-    /* التأكد من أن النماذج ثابتة */
-    body.modal-open {
-        overflow: hidden !important;
-    }
-</style>
 
 <script>
     // إصلاح مبسط لمشكلة استقرار النماذج
@@ -3178,46 +3173,9 @@ if (!window.transferFormInitialized) {
             document.addEventListener('shown.bs.modal', function(e) {
                 const modal = e.target;
                 
-                // إخفاء pageLoader إذا كان موجوداً
-                const pageLoader = document.getElementById('pageLoader');
-                if (pageLoader) {
-                    pageLoader.classList.add('hidden');
-                    pageLoader.style.display = 'none';
-                    pageLoader.style.zIndex = '-1';
-                    pageLoader.style.pointerEvents = 'none';
-                    pageLoader.style.visibility = 'hidden';
-                }
-                
-                // التأكد من أن z-index صحيح
-                if (modal) {
-                    modal.style.zIndex = '10000';
-                    const modalDialog = modal.querySelector('.modal-dialog');
-                    if (modalDialog) {
-                        modalDialog.style.zIndex = '10001';
-                    }
-                }
-                
-                // التأكد من أن backdrop له z-index صحيح
-                const backdrop = document.querySelector('.modal-backdrop');
-                if (backdrop) {
-                    backdrop.style.zIndex = '9999';
-                }
-                
                 // تطبيق الاستقرار مرة واحدة فقط
                 stabilizeModals();
             });
-        });
-        
-        // إخفاء pageLoader عند فتح أي نموذج
-        document.addEventListener('show.bs.modal', function(e) {
-            const pageLoader = document.getElementById('pageLoader');
-            if (pageLoader) {
-                pageLoader.classList.add('hidden');
-                pageLoader.style.display = 'none';
-                pageLoader.style.zIndex = '-1';
-                pageLoader.style.pointerEvents = 'none';
-                pageLoader.style.visibility = 'hidden';
-            }
         });
         
         // منع فتح النماذج بشكل متكرر
