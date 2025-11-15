@@ -927,13 +927,22 @@ function checkMaterialsAvailability($db, $templateId, $productionQuantity, array
         // تطبيع اسم المادة للبحث (إزالة المسافات الزائدة وتوحيد الشرطات)
         $normalizeNameForSearch = static function(string $name): string {
             $name = trim($name);
-            // استبدال أنواع مختلفة من الشرطات بشرطة واحدة
+            // استبدال أنواع مختلفة من الشرطات بمسافة واحدة (إزالة الشرطات)
             $name = preg_replace('/[\s\-_]+/', ' ', $name);
-            $name = preg_replace('/\s*-\s*/', ' - ', $name);
             return trim($name);
         };
         
+        // إنشاء نسخ مختلفة من الاسم للبحث
         $normalizedMaterialName = $normalizeNameForSearch($materialName);
+        // إنشاء نسخة مع شرطة (في حالة كان الاسم الأصلي يحتوي على شرطة)
+        $materialNameWithDash = null;
+        if (mb_strpos($materialName, '-') !== false || mb_strpos($materialName, ' - ') !== false) {
+            // إذا كان الاسم الأصلي يحتوي على شرطة، أنشئ نسخة مع شرطة
+            $parts = preg_split('/[\s\-_]+/', trim($materialName));
+            if (count($parts) >= 2) {
+                $materialNameWithDash = trim($parts[0]) . ' - ' . trim($parts[1]);
+            }
+        }
         $materialNameLower = mb_strtolower($normalizedMaterialName, 'UTF-8');
         
         // التحقق إذا كان الاسم الأصلي يحتوي على " - " (شرطة مع مسافات) - قد يكون مادتين منفصلتين
@@ -969,17 +978,34 @@ function checkMaterialsAvailability($db, $templateId, $productionQuantity, array
         
         if (!$isHoneyWithSpecificDetails) {
         
-        // 1. البحث بمطابقة دقيقة
+        // 1. البحث بمطابقة دقيقة بالاسم الأصلي
         $product = $db->queryOne(
             "SELECT id, name, quantity FROM products WHERE name = ? AND status = 'active' LIMIT 1",
             [$materialName]
         );
         
         if (!$product) {
-            // 2. البحث بمطابقة دقيقة بعد تطبيع الاسم
+            // 2. البحث بمطابقة دقيقة بعد تطبيع الاسم (بدون شرطة)
             $product = $db->queryOne(
                 "SELECT id, name, quantity FROM products WHERE name = ? AND status = 'active' LIMIT 1",
                 [$normalizedMaterialName]
+            );
+        }
+        
+        if (!$product && $materialNameWithDash !== null) {
+            // 2.5. البحث بالاسم مع شرطة (في حالة كان الاسم الأصلي يحتوي على شرطة)
+            $product = $db->queryOne(
+                "SELECT id, name, quantity FROM products WHERE name = ? AND status = 'active' LIMIT 1",
+                [$materialNameWithDash]
+            );
+        }
+        
+        if (!$product && $materialNameWithDash !== null) {
+            // 2.6. البحث بالاسم مع شرطة بدون مسافات حول الشرطة
+            $materialNameDashNoSpaces = str_replace(' - ', '-', $materialNameWithDash);
+            $product = $db->queryOne(
+                "SELECT id, name, quantity FROM products WHERE name = ? AND status = 'active' LIMIT 1",
+                [$materialNameDashNoSpaces]
             );
         }
         
@@ -1014,7 +1040,13 @@ function checkMaterialsAvailability($db, $templateId, $productionQuantity, array
                                 quantity DESC
                             LIMIT 5";
                     
-                    $allParams = array_merge($likeParams, [$materialName, $materialName . '%', $materialNameLower]);
+                    // إضافة البحث بالاسم مع شرطة إذا كان متوفراً
+                    $searchNames = [$materialName, $materialName . '%', $materialNameLower];
+                    if ($materialNameWithDash !== null) {
+                        $searchNames[] = $materialNameWithDash;
+                        $searchNames[] = $materialNameWithDash . '%';
+                    }
+                    $allParams = array_merge($likeParams, $searchNames);
                     $products = $db->query($sql, $allParams);
                     
                     if (!empty($products)) {
@@ -1261,6 +1293,13 @@ function checkMaterialsAvailability($db, $templateId, $productionQuantity, array
                 $honeySearchParams[] = $normalizedMaterialName . '%';
             }
             
+            // إضافة البحث بالاسم مع شرطة إذا كان متوفراً
+            if ($materialNameWithDash !== null) {
+                $honeySearchTerms[] = "(name = ? OR name LIKE ?)";
+                $honeySearchParams[] = $materialNameWithDash;
+                $honeySearchParams[] = $materialNameWithDash . '%';
+            }
+            
             if (!empty($honeySearchTerms)) {
                 $honeyProduct = $db->queryOne(
                     "SELECT id, name, quantity FROM products 
@@ -1274,7 +1313,11 @@ function checkMaterialsAvailability($db, $templateId, $productionQuantity, array
                         END,
                         quantity DESC
                      LIMIT 1",
-                    array_merge($honeySearchParams, [$materialName, $materialName . '%', '%' . $materialName . '%'])
+                    array_merge($honeySearchParams, [
+                        $materialName, 
+                        $materialName . '%', 
+                        '%' . $materialName . '%'
+                    ])
                 );
                 
                 if ($honeyProduct) {
@@ -1563,6 +1606,10 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         // تم إرسال هذا النموذج بالفعل - تجاهل التكرار
         $error = 'تم معالجة هذا الطلب من قبل. يرجى عدم إعادة تحميل الصفحة بعد الإرسال.';
         error_log("Duplicate form submission detected: token={$submitToken}, action={$action}");
+        // إيقاف المعالجة لمنع التكرار
+        $_SESSION['error_message'] = $error;
+        header('Location: ' . $_SERVER['REQUEST_URI']);
+        exit;
     } elseif ($action === 'add_production') {
         // حفظ الرمز لمنع الإرسال المتكرر
         $_SESSION['last_submit_token'] = $submitToken;
