@@ -233,20 +233,22 @@ function getFinishedProductBatchOptions($onlyAvailable = true, $fromWarehouseId 
                         if ($availableQuantity <= 0) {
                             $availableQuantity = (float)($row['quantity_produced'] ?? 0);
                             
-                            // خصم الكمية المنقولة بالفعل (approved أو completed)
-                            $transferred = $db->queryOne(
-                                "SELECT COALESCE(SUM(
-                                    CASE
-                                        WHEN wt.status IN ('approved', 'completed') THEN wti.quantity
-                                        ELSE 0
-                                    END
-                                ), 0) AS transferred_quantity
-                                FROM warehouse_transfer_items wti
-                                LEFT JOIN warehouse_transfers wt ON wt.id = wti.transfer_id
-                                WHERE wti.batch_id = ?",
-                                [$batchId]
-                            );
-                            $availableQuantity -= (float)($transferred['transferred_quantity'] ?? 0);
+                            // خصم الكمية المنقولة بالفعل (approved أو completed) فقط من quantity_produced
+                            if ($availableQuantity > 0) {
+                                $transferred = $db->queryOne(
+                                    "SELECT COALESCE(SUM(
+                                        CASE
+                                            WHEN wt.status IN ('approved', 'completed') THEN wti.quantity
+                                            ELSE 0
+                                        END
+                                    ), 0) AS transferred_quantity
+                                    FROM warehouse_transfer_items wti
+                                    LEFT JOIN warehouse_transfers wt ON wt.id = wti.transfer_id
+                                    WHERE wti.batch_id = ?",
+                                    [$batchId]
+                                );
+                                $availableQuantity -= (float)($transferred['transferred_quantity'] ?? 0);
+                            }
                         }
                     }
 
@@ -300,10 +302,29 @@ function getFinishedProductBatchOptions($onlyAvailable = true, $fromWarehouseId 
                     [$batchId]
                 );
                 $availableQuantity = $actualQuantity - (float)($transferred['transferred_quantity'] ?? 0);
+                
+                // خصم الكمية المحجوزة في طلبات النقل المعلقة (pending) من نفس المخزن إذا كان fromWarehouseId موجوداً
+                if ($fromWarehouseId) {
+                    $pendingTransfers = $db->queryOne(
+                        "SELECT COALESCE(SUM(wti.quantity), 0) AS pending_quantity
+                         FROM warehouse_transfer_items wti
+                         INNER JOIN warehouse_transfers wt ON wt.id = wti.transfer_id
+                         WHERE wti.batch_id = ? AND wt.from_warehouse_id = ? AND wt.status = 'pending'",
+                        [$batchId, $fromWarehouseId]
+                    );
+                    $availableQuantity -= (float)($pendingTransfers['pending_quantity'] ?? 0);
+                }
             }
 
-            if ($onlyAvailable && $availableQuantity <= 0) {
-                continue;
+            // إذا كان onlyAvailable = true، نعرض المنتجات التي لديها كمية متاحة > 0
+            // لكن أيضاً نعرض المنتجات التي لديها quantity_produced > 0 حتى لو كانت الكمية المتاحة = 0
+            // (لأن الكمية قد تكون = 0 بسبب خصم الكميات المنقولة، لكن المنتج موجود في المخزن)
+            if ($onlyAvailable) {
+                $quantityProduced = (float)($row['quantity_produced'] ?? 0);
+                // إذا كانت الكمية المتاحة <= 0 و quantity_produced <= 0، نتخطى هذا المنتج
+                if ($availableQuantity <= 0 && $quantityProduced <= 0) {
+                    continue;
+                }
             }
 
             $options[] = [
