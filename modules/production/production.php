@@ -1040,13 +1040,10 @@ function checkMaterialsAvailability($db, $templateId, $productionQuantity, array
                                 quantity DESC
                             LIMIT 5";
                     
-                    // إضافة البحث بالاسم مع شرطة إذا كان متوفراً
-                    $searchNames = [$materialName, $materialName . '%', $materialNameLower];
-                    if ($materialNameWithDash !== null) {
-                        $searchNames[] = $materialNameWithDash;
-                        $searchNames[] = $materialNameWithDash . '%';
-                    }
-                    $allParams = array_merge($likeParams, $searchNames);
+                    // إضافة معاملات ORDER BY (3 معاملات فقط لتطابق عدد الـ placeholders في CASE)
+                    // ORDER BY يبحث عن: exact match, LIKE match, case-insensitive match
+                    $orderByParams = [$materialName, $materialName . '%', $materialNameLower];
+                    $allParams = array_merge($likeParams, $orderByParams);
                     $products = $db->query($sql, $allParams);
                     
                     if (!empty($products)) {
@@ -6910,5 +6907,18 @@ window.addEventListener('beforeunload', function(e) {
     if (!formModified) {
         return undefined;
     }
+});
+
+// التحقق من رسالة الخطأ الخاصة بالطلب المكرر وتحديث الصفحة تلقائياً
+document.addEventListener('DOMContentLoaded', function() {
+    const errorAlerts = document.querySelectorAll('.alert-danger');
+    errorAlerts.forEach(function(alert) {
+        const alertText = alert.textContent || alert.innerText;
+        if (alertText.includes('تم معالجة هذا الطلب من قبل')) {
+            setTimeout(function() {
+                window.location.reload();
+            }, 2000);
+        }
+    });
 });
 </script>
