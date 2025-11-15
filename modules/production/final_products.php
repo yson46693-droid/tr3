@@ -1937,7 +1937,7 @@ document.addEventListener('DOMContentLoaded', function () {
 });
 </script>
 
-<div class="modal fade" id="batchDetailsModal" tabindex="-1" aria-hidden="true">
+<div class="modal fade" id="batchDetailsModal" tabindex="-1" aria-hidden="true" data-bs-backdrop="static" data-bs-keyboard="false">
     <div class="modal-dialog modal-lg modal-dialog-scrollable modal-dialog-centered">
         <div class="modal-content">
             <div class="modal-header">
@@ -2016,6 +2016,8 @@ document.addEventListener('DOMContentLoaded', function () {
             modalElement.id = 'batchDetailsModal';
             modalElement.tabIndex = -1;
             modalElement.setAttribute('aria-hidden', 'true');
+            modalElement.setAttribute('data-bs-backdrop', 'static');
+            modalElement.setAttribute('data-bs-keyboard', 'false');
             modalElement.innerHTML = `
                 <div class="modal-dialog modal-lg modal-dialog-scrollable modal-dialog-centered">
                     <div class="modal-content">
@@ -2215,7 +2217,10 @@ document.addEventListener('DOMContentLoaded', function () {
             if (typeof bootstrap !== 'undefined' && typeof bootstrap.Modal !== 'undefined') {
                 const existingModal = document.getElementById('batchDetailsModal');
                 if (existingModal) {
-                    bootstrap.Modal.getOrCreateInstance(existingModal).show();
+                    bootstrap.Modal.getOrCreateInstance(existingModal, {
+                        backdrop: 'static',
+                        keyboard: false
+                    }).show();
                 }
             }
             return;
@@ -2238,7 +2243,10 @@ document.addEventListener('DOMContentLoaded', function () {
         }
 
         const { modalElement, loader, errorAlert, contentWrapper } = structure;
-        const modalInstance = bootstrap.Modal.getOrCreateInstance(modalElement);
+        const modalInstance = bootstrap.Modal.getOrCreateInstance(modalElement, {
+            backdrop: 'static',
+            keyboard: false
+        });
         const modalTitle = modalElement.querySelector('.modal-title');
 
         if (modalTitle) {
@@ -2252,6 +2260,22 @@ document.addEventListener('DOMContentLoaded', function () {
         errorAlert.textContent = '';
         contentWrapper.classList.add('d-none');
         batchDetailsIsLoading = true;
+
+        // إضافة event listener على backdrop بعد فتح الـ modal
+        modalElement.addEventListener('shown.bs.modal', function() {
+            const backdrop = document.querySelector('.modal-backdrop');
+            if (backdrop) {
+                // منع النقر على backdrop من إغلاق الـ modal
+                backdrop.addEventListener('click', function(e) {
+                    e.preventDefault();
+                    e.stopPropagation();
+                    e.stopImmediatePropagation();
+                    return false;
+                }, true);
+                // منع أي تفاعل مع backdrop
+                backdrop.style.cursor = 'default';
+            }
+        }, { once: true });
 
         modalInstance.show();
 
@@ -2622,6 +2646,22 @@ document.addEventListener('DOMContentLoaded', function () {
                 keyboard: false
             });
             
+            // إضافة event listener على backdrop بعد فتح الـ modal
+            addExternalProductModal.addEventListener('shown.bs.modal', function() {
+                const backdrop = document.querySelector('.modal-backdrop');
+                if (backdrop) {
+                    // منع النقر على backdrop من إغلاق الـ modal
+                    backdrop.addEventListener('click', function(e) {
+                        e.preventDefault();
+                        e.stopPropagation();
+                        e.stopImmediatePropagation();
+                        return false;
+                    }, true);
+                    // منع أي تفاعل مع backdrop
+                    backdrop.style.cursor = 'default';
+                }
+            }, { once: true });
+            
             modalInstance.show();
         });
         
@@ -2632,6 +2672,15 @@ document.addEventListener('DOMContentLoaded', function () {
         document.addEventListener('mousedown', function(e) {
             if (addExternalProductModal.classList.contains('show')) {
                 clickedElement = e.target;
+            }
+        }, true);
+        
+        // منع النقر على backdrop من إغلاق الـ modal
+        addExternalProductModal.addEventListener('click', function(e) {
+            if (e.target === addExternalProductModal || e.target.classList.contains('modal-backdrop')) {
+                e.preventDefault();
+                e.stopPropagation();
+                e.stopImmediatePropagation();
             }
         }, true);
         
@@ -2655,6 +2704,74 @@ document.addEventListener('DOMContentLoaded', function () {
                 return false;
             }
         });
+        
+        // منع أي تفاعل مع backdrop
+        document.addEventListener('click', function(e) {
+            if (addExternalProductModal.classList.contains('show')) {
+                const backdrop = document.querySelector('.modal-backdrop');
+                if (backdrop && (e.target === backdrop || backdrop.contains(e.target))) {
+                    e.preventDefault();
+                    e.stopPropagation();
+                    e.stopImmediatePropagation();
+                }
+            }
+        }, true);
+    }
+
+    // إصلاح مشكلة فتح وإغلاق modal تفاصيل التشغيلة
+    const batchDetailsModal = document.getElementById('batchDetailsModal');
+    if (batchDetailsModal) {
+        // متغير لتتبع العنصر الذي تم النقر عليه
+        let batchDetailsClickedElement = null;
+        
+        // تتبع العنصر الذي تم النقر عليه
+        document.addEventListener('mousedown', function(e) {
+            if (batchDetailsModal.classList.contains('show')) {
+                batchDetailsClickedElement = e.target;
+            }
+        }, true);
+        
+        // منع النقر على backdrop من إغلاق الـ modal
+        batchDetailsModal.addEventListener('click', function(e) {
+            if (e.target === batchDetailsModal || e.target.classList.contains('modal-backdrop')) {
+                e.preventDefault();
+                e.stopPropagation();
+                e.stopImmediatePropagation();
+            }
+        }, true);
+        
+        // منع إغلاق الـ modal إلا عند النقر على زر الإغلاق أو الإلغاء
+        batchDetailsModal.addEventListener('hide.bs.modal', function(e) {
+            // التحقق من أن العنصر الذي تم النقر عليه هو زر الإغلاق
+            const isCloseButton = batchDetailsClickedElement && (
+                batchDetailsClickedElement.closest('[data-bs-dismiss="modal"]') !== null || 
+                batchDetailsClickedElement.closest('.btn-close') !== null ||
+                batchDetailsClickedElement.classList.contains('btn-close')
+            );
+            
+            // إعادة تعيين المتغير
+            batchDetailsClickedElement = null;
+            
+            // إذا لم يكن العنصر زر إغلاق، منع الإغلاق
+            if (!isCloseButton) {
+                e.preventDefault();
+                e.stopPropagation();
+                e.stopImmediatePropagation();
+                return false;
+            }
+        });
+        
+        // منع أي تفاعل مع backdrop
+        document.addEventListener('click', function(e) {
+            if (batchDetailsModal.classList.contains('show')) {
+                const backdrop = document.querySelector('.modal-backdrop');
+                if (backdrop && (e.target === backdrop || backdrop.contains(e.target))) {
+                    e.preventDefault();
+                    e.stopPropagation();
+                    e.stopImmediatePropagation();
+                }
+            }
+        }, true);
     }
 </script>
 
