@@ -57,20 +57,32 @@ if ($currentUser['role'] === 'sales') {
 
 // معالجة طلبات AJAX
 if (isset($_GET['ajax']) && $_GET['ajax'] === 'load_products') {
-    header('Content-Type: application/json');
+    // تنظيف أي output buffer موجود
+    while (ob_get_level() > 0) {
+        ob_end_clean();
+    }
+    
+    header('Content-Type: application/json; charset=utf-8');
+    header('Cache-Control: no-cache, must-revalidate');
+    
     $warehouseId = isset($_GET['warehouse_id']) ? intval($_GET['warehouse_id']) : null;
     
     try {
+        // التأكد من تحميل الدوال المطلوبة
+        if (!function_exists('getFinishedProductBatchOptions')) {
+            require_once __DIR__ . '/../../includes/vehicle_inventory.php';
+        }
+        
         $products = getFinishedProductBatchOptions(true, $warehouseId);
         echo json_encode([
             'success' => true,
             'products' => $products
-        ]);
+        ], JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
     } catch (Exception $e) {
         echo json_encode([
             'success' => false,
             'message' => $e->getMessage()
-        ]);
+        ], JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
     }
     exit;
 }
@@ -667,7 +679,16 @@ document.getElementById('fromWarehouse')?.addEventListener('change', function() 
     currentUrl.searchParams.set('warehouse_id', fromWarehouseId);
     
     fetch(currentUrl.toString())
-        .then(response => response.json())
+        .then(response => {
+            // التحقق من نوع المحتوى
+            const contentType = response.headers.get('content-type');
+            if (!contentType || !contentType.includes('application/json')) {
+                return response.text().then(text => {
+                    throw new Error('Expected JSON but got: ' + text.substring(0, 100));
+                });
+            }
+            return response.json();
+        })
         .then(data => {
             if (data.success && data.products) {
                 allFinishedProductOptions = data.products;
@@ -708,7 +729,11 @@ document.getElementById('fromWarehouse')?.addEventListener('change', function() 
         })
         .catch(error => {
             console.error('Error loading products:', error);
-            alert('حدث خطأ أثناء تحميل المنتجات. يرجى المحاولة مرة أخرى.');
+            let errorMessage = 'حدث خطأ أثناء تحميل المنتجات. يرجى المحاولة مرة أخرى.';
+            if (error.message && error.message.includes('Expected JSON')) {
+                errorMessage = 'حدث خطأ في استجابة الخادم. يرجى التأكد من الاتصال بالإنترنت والمحاولة مرة أخرى.';
+            }
+            alert(errorMessage);
             if (addItemBtn) {
                 addItemBtn.disabled = false;
                 addItemBtn.innerHTML = originalAddBtnText || '<i class="bi bi-plus-circle me-2"></i>إضافة عنصر';
