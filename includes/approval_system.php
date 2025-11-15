@@ -176,7 +176,7 @@ function approveRequest($approvalId, $approvedBy, $notes = null) {
         
         // تحديث حالة الموافقة
         $db->execute(
-            "UPDATE approvals SET status = 'approved', approved_by = ?, notes = ?, updated_at = NOW() 
+            "UPDATE approvals SET status = 'approved', approved_by = ?, notes = ? 
              WHERE id = ?",
             [$approvedBy, $notes, $approvalId]
         );
@@ -229,7 +229,7 @@ function rejectRequest($approvalId, $approvedBy, $rejectionReason) {
         
         // تحديث حالة الموافقة
         $db->execute(
-            "UPDATE approvals SET status = 'rejected', approved_by = ?, rejection_reason = ?, updated_at = NOW() 
+            "UPDATE approvals SET status = 'rejected', approved_by = ?, rejection_reason = ? 
              WHERE id = ?",
             [$approvedBy, $rejectionReason, $approvalId]
         );

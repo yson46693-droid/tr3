@@ -1247,7 +1247,7 @@ function approveWarehouseTransfer($transferId, $approvedBy = null) {
         // تحديث سجل الموافقات إن وجد
         $db->execute(
             "UPDATE approvals 
-             SET status = 'approved', approved_by = ?, updated_at = NOW() 
+             SET status = 'approved', approved_by = ? 
              WHERE type = 'warehouse_transfer' AND `{$approvalsEntityColumn}` = ? AND status = 'pending'",
             [$approvedBy, $transferId]
         );
@@ -1296,7 +1296,7 @@ function rejectWarehouseTransfer($transferId, $rejectionReason, $rejectedBy = nu
 
         $db->execute(
             "UPDATE approvals 
-             SET status = 'rejected', approved_by = ?, rejection_reason = ?, updated_at = NOW() 
+             SET status = 'rejected', approved_by = ?, rejection_reason = ? 
              WHERE type = 'warehouse_transfer' AND `{$approvalsEntityColumn}` = ? AND status = 'pending'",
             [$rejectedBy, $rejectionReason, $transferId]
         );

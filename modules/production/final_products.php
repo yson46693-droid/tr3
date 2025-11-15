@@ -37,6 +37,11 @@ if (!function_exists('productionSafeRedirect')) {
 $sessionErrorKey = 'production_inventory_error';
 $sessionSuccessKey = 'production_inventory_success';
 
+// إنشاء token لمنع duplicate submission
+if (!isset($_SESSION['transfer_submission_token'])) {
+    $_SESSION['transfer_submission_token'] = bin2hex(random_bytes(32));
+}
+
 if (!empty($_SESSION[$sessionErrorKey])) {
     $error = $_SESSION[$sessionErrorKey];
     unset($_SESSION[$sessionErrorKey]);
@@ -440,6 +445,20 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     $postAction = $_POST['action'] ?? '';
 
     if ($postAction === 'create_transfer') {
+        // التحقق من duplicate submission باستخدام session token
+        $submissionToken = $_POST['transfer_token'] ?? '';
+        $sessionTokenKey = 'transfer_submission_token';
+        $storedToken = $_SESSION[$sessionTokenKey] ?? null;
+        
+        if ($submissionToken === '' || $submissionToken !== $storedToken) {
+            // إما لم يتم إرسال token أو token غير صحيح (duplicate submission)
+            $_SESSION[$sessionErrorKey] = 'تم إرسال هذا الطلب مسبقاً. يرجى عدم إعادة تحميل الصفحة.';
+            productionSafeRedirect($productionInventoryUrl, $productionRedirectParams, $productionRedirectRole);
+            exit;
+        }
+        
+        // سيتم حذف token بعد نجاح الطلب فقط (داخل if (!empty($result['success'])))
+        
         $transferErrors = [];
 
         if (!$canCreateTransfers || !$primaryWarehouse) {
@@ -793,6 +812,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                                 'تم تنفيذ نقل المنتجات رقم %s بواسطة المدير بنجاح دون الحاجة للموافقة.',
                                 $transferNumber
                             );
+                            // حذف token بعد نجاح الطلب لمنع إعادة الإرسال
+                            unset($_SESSION[$sessionTokenKey]);
                             productionSafeRedirect($productionInventoryUrl, $productionRedirectParams, $productionRedirectRole);
                         } catch (Throwable $autoApprovalError) {
                             error_log('final_products auto-approval transfer error: ' . $autoApprovalError->getMessage());
@@ -800,6 +821,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                                 'تم حفظ طلب النقل رقم %s لكن تعذر تنفيذه تلقائياً. يرجى المراجعة اليدوية.',
                                 $transferNumber
                             );
+                            // حذف token بعد نجاح إنشاء الطلب (رغم فشل الموافقة التلقائية)
+                            unset($_SESSION[$sessionTokenKey]);
                             productionSafeRedirect($productionInventoryUrl, $productionRedirectParams, $productionRedirectRole);
                         }
                     } else {
@@ -807,11 +830,14 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                             'تم إرسال طلب النقل رقم %s إلى المدير للموافقة عليه.',
                             $transferNumber
                         );
+                        // حذف token بعد نجاح الطلب لمنع إعادة الإرسال
+                        unset($_SESSION[$sessionTokenKey]);
                         productionSafeRedirect($productionInventoryUrl, $productionRedirectParams, $productionRedirectRole);
                     }
+                } else {
+                    // إضافة رسالة الخطأ فقط عند فشل إنشاء الطلب
+                    $transferErrors[] = $result['message'] ?? 'تعذر إنشاء طلب النقل.';
                 }
-
-                $transferErrors[] = $result['message'] ?? 'تعذر إنشاء طلب النقل.';
             }
         }
 
@@ -1898,6 +1924,7 @@ if ($isManager) {
             <form method="POST" id="mainWarehouseTransferForm">
                 <input type="hidden" name="action" value="create_transfer">
                 <input type="hidden" name="from_warehouse_id" value="<?php echo intval($primaryWarehouse['id']); ?>">
+                <input type="hidden" name="transfer_token" id="transferToken" value="">
                 <div class="modal-body">
                     <?php if (!$canCreateTransfers): ?>
                         <div class="alert alert-warning d-flex align-items-center gap-2 mb-0">
@@ -2225,9 +2252,39 @@ if (!window.transferFormInitialized) {
             requestTransferModal.addEventListener('shown.bs.modal', loadProductsOnce, { once: true });
         }
 
+        // تحديث token عند فتح النموذج
+        const transferTokenInput = document.getElementById('transferToken');
+        if (requestTransferModal && transferTokenInput) {
+            requestTransferModal.addEventListener('shown.bs.modal', function() {
+                if (transferTokenInput && transferTokenInput.value === '') {
+                    // الحصول على token من server (يمكن تحسينه لاحقاً بـ AJAX)
+                    transferTokenInput.value = '<?php echo htmlspecialchars($_SESSION['transfer_submission_token'] ?? '', ENT_QUOTES); ?>';
+                }
+            });
+        }
+
+        // تعطيل زر الإرسال بعد النقر لمنع double-click
+        let isSubmitting = false;
         transferForm.addEventListener('submit', (event) => {
+            if (isSubmitting) {
+                event.preventDefault();
+                return;
+            }
+            
+            isSubmitting = true;
+            const submitButton = transferForm.querySelector('button[type="submit"]');
+            if (submitButton) {
+                submitButton.disabled = true;
+                submitButton.innerHTML = '<span class="spinner-border spinner-border-sm me-2"></span>جارٍ الإرسال...';
+            }
+
             const rows = itemsContainer.querySelectorAll('.transfer-item');
             if (!rows.length) {
+                isSubmitting = false;
+                if (submitButton) {
+                    submitButton.disabled = false;
+                    submitButton.innerHTML = submitButton.getAttribute('data-original-text') || 'إرسال الطلب';
+                }
                 event.preventDefault();
                 alert('أضف منتجاً واحداً على الأقل قبل إرسال الطلب.');
                 return;
@@ -2239,12 +2296,22 @@ if (!window.transferFormInitialized) {
 
                 if (!select || !quantityInput) {
                     event.preventDefault();
+                    isSubmitting = false;
+                    if (submitButton) {
+                        submitButton.disabled = false;
+                        submitButton.innerHTML = submitButton.getAttribute('data-original-text') || 'إرسال الطلب';
+                    }
                     alert('يرجى التأكد من إدخال بيانات صحيحة لكل منتج.');
                     return;
                 }
 
                 if (!select.value) {
                     event.preventDefault();
+                    isSubmitting = false;
+                    if (submitButton) {
+                        submitButton.disabled = false;
+                        submitButton.innerHTML = submitButton.getAttribute('data-original-text') || 'إرسال الطلب';
+                    }
                     alert('اختر المنتج المراد نقله.');
                     return;
                 }
@@ -2255,12 +2322,22 @@ if (!window.transferFormInitialized) {
 
                 if (value < min) {
                     event.preventDefault();
+                    isSubmitting = false;
+                    if (submitButton) {
+                        submitButton.disabled = false;
+                        submitButton.innerHTML = submitButton.getAttribute('data-original-text') || 'إرسال الطلب';
+                    }
                     alert('يرجى إدخال كمية أكبر من الصفر.');
                     return;
                 }
 
                 if (max > 0 && value > max) {
                     event.preventDefault();
+                    isSubmitting = false;
+                    if (submitButton) {
+                        submitButton.disabled = false;
+                        submitButton.innerHTML = submitButton.getAttribute('data-original-text') || 'إرسال الطلب';
+                    }
                     alert('الكمية المطلوبة تتجاوز المتاح في المخزن الرئيسي.');
                     return;
                 }
@@ -2269,7 +2346,13 @@ if (!window.transferFormInitialized) {
             const destinationSelect = document.getElementById('transferToWarehouse');
             if (destinationSelect && !destinationSelect.value) {
                 event.preventDefault();
+                isSubmitting = false;
+                if (submitButton) {
+                    submitButton.disabled = false;
+                    submitButton.innerHTML = submitButton.getAttribute('data-original-text') || 'إرسال الطلب';
+                }
                 alert('يرجى اختيار المخزن الوجهة قبل إرسال الطلب.');
+                return;
             }
         });
     });
