@@ -428,7 +428,7 @@ if (!function_exists('productionPageRenderDamageLogsTable')) {
 /**
  * التحقق من توفر المكونات المستخدمة في صناعة المنتج
  */
-function checkMaterialsAvailability($db, $templateId, $productionQuantity, array $materialSuppliers = []) {
+function checkMaterialsAvailability($db, $templateId, $productionQuantity, array $materialSuppliers = [], ?int $honeySupplierId = null) {
     $missingMaterials = [];
     $insufficientMaterials = [];
     
@@ -1017,6 +1017,13 @@ function checkMaterialsAvailability($db, $templateId, $productionQuantity, array
         $materialSupplierMeta = isset($rawDetail['supplier_id']) ? (int)$rawDetail['supplier_id'] : null;
         $honeyVarietyMeta = $rawDetail['honey_variety'] ?? null;
         
+        // إذا كانت المادة عسل وكان مورد العسل محدد في نموذج إنشاء التشغيلة، استخدمه
+        $isHoneyMaterialCheck = (mb_stripos($materialName, 'عسل') !== false || stripos($materialName, 'honey') !== false) ||
+                               in_array(mb_strtolower($materialTypeMeta ?? '', 'UTF-8'), ['honey_raw', 'honey_filtered', 'honey'], true);
+        if ($isHoneyMaterialCheck && $honeySupplierId !== null && $honeySupplierId > 0) {
+            $materialSupplierMeta = $honeySupplierId;
+        }
+        
         // إذا كان نوع العسل غير محدد في rawDetail، حاول استخراجه من اسم المادة
         if (empty($honeyVarietyMeta) && (mb_stripos($materialName, 'عسل') !== false || stripos($materialName, 'honey') !== false)) {
             // تطبيع الاسم للبحث عن نوع العسل
@@ -1401,7 +1408,14 @@ function checkMaterialsAvailability($db, $templateId, $productionQuantity, array
         if ($isHoneyMaterial && ($normalizedMaterialType === 'honey_raw' || $normalizedMaterialType === 'honey_filtered' || $normalizedMaterialType === 'honey')) {
             $materialTypeForSearch = $normalizedMaterialType;
         }
-        $specialStock = $resolveSpecialStock($materialTypeForSearch, $materialSupplierMeta, $materialName, $honeyVarietyMeta);
+        
+        // استخدام مورد العسل من نموذج إنشاء التشغيلة إذا كانت المادة عسل
+        $supplierForSpecialStock = $materialSupplierMeta;
+        if ($isHoneyMaterial && $honeySupplierId !== null && $honeySupplierId > 0) {
+            $supplierForSpecialStock = $honeySupplierId;
+        }
+        
+        $specialStock = $resolveSpecialStock($materialTypeForSearch, $supplierForSpecialStock, $materialName, $honeyVarietyMeta);
         if ($specialStock['resolved']) {
             $availableFromSpecial = $specialStock['quantity'];
             $availableFromSpecial = $convertQuantityUnit(
@@ -1423,7 +1437,7 @@ function checkMaterialsAvailability($db, $templateId, $productionQuantity, array
                         'Honey found in special stock (specific search): Template name="%s", Type="%s", Supplier="%s", Variety="%s", Available=%s, Required=%s',
                         $materialName,
                         $materialTypeMeta ?? 'unknown',
-                        $materialSupplierMeta ?? 'none',
+                        $supplierForSpecialStock ?? 'none',
                         $honeyVarietyMeta ?? 'none',
                         $availableQuantity,
                         $requiredQuantity
@@ -1517,7 +1531,7 @@ function checkMaterialsAvailability($db, $templateId, $productionQuantity, array
                         'Honey NOT found in special stock or products: Template name="%s", Type="%s", Supplier="%s", Variety="%s", Required=%s',
                         $materialName,
                         $materialTypeMeta ?? 'unknown',
-                        $materialSupplierMeta ?? 'none',
+                        $supplierForSpecialStock ?? 'none',
                         $honeyVarietyMeta ?? 'none',
                         $requiredQuantity
                     ));
@@ -1552,12 +1566,13 @@ function checkMaterialsAvailability($db, $templateId, $productionQuantity, array
             ];
             
             // تسجيل تفصيلي للمادة غير الموجودة
+            $supplierForLog = $isHoneyMaterial && ($honeySupplierId !== null && $honeySupplierId > 0) ? $honeySupplierId : ($materialSupplierMeta ?? 'none');
             error_log(sprintf(
                 'Material NOT found: Template name="%s", Normalized="%s", Type="%s", Supplier="%s", Variety="%s"',
                 $materialName,
                 $normalizedMaterialName,
                 $materialTypeMeta ?? 'unknown',
-                $materialSupplierMeta ?? 'none',
+                $supplierForLog,
                 $honeyVarietyMeta ?? 'none'
             ));
         }
