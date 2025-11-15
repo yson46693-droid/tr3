@@ -151,6 +151,14 @@ switch ($role) {
                 'url' => $baseUrl . 'manager.php?page=attendance_management',
                 'active' => ($currentPage === 'manager.php' && $currentPageParam === 'attendance_management'),
                 'badge' => null
+            ],
+            ['divider' => true, 'title' => 'أدوات'],
+            [
+                'title' => 'قارئ أرقام التشغيلات',
+                'icon' => 'bi-upc-scan',
+                'url' => $baseUrl . 'manager.php?page=batch_reader',
+                'active' => ($currentPage === 'manager.php' && $currentPageParam === 'batch_reader'),
+                'badge' => null
             ]
         ];
         break;
@@ -249,6 +257,14 @@ switch ($role) {
                 'url' => $baseUrl . 'accountant.php?page=attendance_management',
                 'active' => ($currentPage === 'accountant.php' && $currentPageParam === 'attendance_management'),
                 'badge' => null
+            ],
+            ['divider' => true, 'title' => 'أدوات'],
+            [
+                'title' => 'قارئ أرقام التشغيلات',
+                'icon' => 'bi-upc-scan',
+                'url' => $baseUrl . 'accountant.php?page=batch_reader',
+                'active' => ($currentPage === 'accountant.php' && $currentPageParam === 'batch_reader'),
+                'badge' => null
             ]
         ];
         break;
@@ -325,6 +341,14 @@ switch ($role) {
                 'url' => $baseUrl . 'sales.php?page=my_salary',
                 'active' => ($currentPage === 'sales.php' && $currentPageParam === 'my_salary'),
                 'badge' => null
+            ],
+            ['divider' => true, 'title' => 'أدوات'],
+            [
+                'title' => 'قارئ أرقام التشغيلات',
+                'icon' => 'bi-upc-scan',
+                'url' => $baseUrl . 'sales.php?page=batch_reader',
+                'active' => ($currentPage === 'sales.php' && $currentPageParam === 'batch_reader'),
+                'badge' => null
             ]
         ];
         break;
@@ -393,6 +417,14 @@ switch ($role) {
                 'icon' => 'bi-wallet2',
                 'url' => $baseUrl . 'production.php?page=my_salary',
                 'active' => ($currentPage === 'production.php' && $currentPageParam === 'my_salary'),
+                'badge' => null
+            ],
+            ['divider' => true, 'title' => 'أدوات'],
+            [
+                'title' => 'قارئ أرقام التشغيلات',
+                'icon' => 'bi-upc-scan',
+                'url' => $baseUrl . 'production.php?page=batch_reader',
+                'active' => ($currentPage === 'production.php' && $currentPageParam === 'batch_reader'),
                 'badge' => null
             ],
         ];
