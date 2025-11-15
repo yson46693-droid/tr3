@@ -397,7 +397,10 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 
                 // الحصول على حالة العسل (خام/مصفى) إذا كانت المادة عسل
                 $honeyState = '';
-                $isHoneyMaterial = (mb_stripos($materialName, 'عسل') !== false || stripos($materialName, 'honey') !== false);
+                // التحقق من أن المادة هي عسل (وليس شمع عسل)
+                $isHoneyMaterial = ($materialName === 'عسل' || strtolower($materialName) === 'honey') && 
+                                  mb_stripos($materialName, 'شمع') === false && 
+                                  stripos($materialName, 'beeswax') === false;
                 if ($isHoneyMaterial) {
                     $honeyState = trim($material['honey_state'] ?? '');
                 }
@@ -623,7 +626,10 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 
                 // الحصول على حالة العسل (خام/مصفى) إذا كانت المادة عسل
                 $honeyState = '';
-                $isHoneyMaterial = (mb_stripos($materialName, 'عسل') !== false || stripos($materialName, 'honey') !== false);
+                // التحقق من أن المادة هي عسل (وليس شمع عسل)
+                $isHoneyMaterial = ($materialName === 'عسل' || strtolower($materialName) === 'honey') && 
+                                  mb_stripos($materialName, 'شمع') === false && 
+                                  stripos($materialName, 'beeswax') === false;
                 if ($isHoneyMaterial) {
                     $honeyState = trim($material['honey_state'] ?? '');
                 }
@@ -1028,19 +1034,19 @@ try {
     if (!empty($mixedNutsExists)) {
         $mixedNuts = $db->query("
             SELECT DISTINCT mn.id,
-                   mn.name,
+                   mn.batch_name,
                    mn.total_quantity
             FROM mixed_nuts mn
             INNER JOIN suppliers s ON mn.supplier_id = s.id
-            WHERE mn.name IS NOT NULL 
-            AND mn.name != '' 
+            WHERE mn.batch_name IS NOT NULL 
+            AND mn.batch_name != '' 
             AND mn.total_quantity > 0
             AND s.status = 'active'
-            ORDER BY mn.name
+            ORDER BY mn.batch_name
         ");
         
         foreach ($mixedNuts as $mixed) {
-            $mixedName = trim($mixed['name']);
+            $mixedName = trim($mixed['batch_name']);
             if ($mixedName !== '' && !in_array($mixedName, $nutVarieties)) {
                 // إضافة "مكسرات مشكلة:" كبادئة للتمييز
                 $nutVarieties[] = $mixedName;
@@ -2149,8 +2155,11 @@ function addRawMaterial(defaults = {}) {
                 return;
             }
             
-            // التحقق من أن المادة هي عسل
-            const isHoneyMaterial = selectedMaterialName.includes('عسل') || selectedMaterialName.toLowerCase().includes('honey');
+            // التحقق من أن المادة هي عسل (وليس شمع عسل)
+            // يجب أن تكون المادة "عسل" فقط وليس "شمع عسل"
+            const isHoneyMaterial = (selectedMaterialName === 'عسل' || selectedMaterialName.toLowerCase() === 'honey') && 
+                                   !selectedMaterialName.includes('شمع') && 
+                                   !selectedMaterialName.toLowerCase().includes('beeswax');
             
             const materialData = rawMaterialsData[selectedMaterialName];
             
@@ -2973,8 +2982,11 @@ function addEditRawMaterial(defaults = {}) {
                 return;
             }
             
-            // التحقق من أن المادة هي عسل
-            const isHoneyMaterial = selectedMaterialName.includes('عسل') || selectedMaterialName.toLowerCase().includes('honey');
+            // التحقق من أن المادة هي عسل (وليس شمع عسل)
+            // يجب أن تكون المادة "عسل" فقط وليس "شمع عسل"
+            const isHoneyMaterial = (selectedMaterialName === 'عسل' || selectedMaterialName.toLowerCase() === 'honey') && 
+                                   !selectedMaterialName.includes('شمع') && 
+                                   !selectedMaterialName.toLowerCase().includes('beeswax');
             
             const materialData = rawMaterialsData[selectedMaterialName];
             
@@ -3054,7 +3066,10 @@ function addEditRawMaterial(defaults = {}) {
                 updateMaterialTypes(defaultMaterialName, defaultMaterialType);
                 
                 // إذا كانت المادة عسل ولدينا حالة عسل محددة، أظهر الحقل
-                const isHoneyMaterial = defaultMaterialName.includes('عسل') || defaultMaterialName.toLowerCase().includes('honey');
+                // التحقق من أن المادة هي عسل (وليس شمع عسل)
+                const isHoneyMaterial = (defaultMaterialName === 'عسل' || defaultMaterialName.toLowerCase() === 'honey') && 
+                                       !defaultMaterialName.includes('شمع') && 
+                                       !defaultMaterialName.toLowerCase().includes('beeswax');
                 if (isHoneyMaterial && defaultHoneyState) {
                     if (honeyStateSelect) {
                         honeyStateSelect.classList.remove('d-none');
@@ -3062,7 +3077,10 @@ function addEditRawMaterial(defaults = {}) {
                 }
             } else if (defaultMaterialName) {
                 // إذا كانت المادة عسل حتى لو لم تكن في القائمة، أظهر حقل حالة العسل
-                const isHoneyMaterial = defaultMaterialName.includes('عسل') || defaultMaterialName.toLowerCase().includes('honey');
+                // التحقق من أن المادة هي عسل (وليس شمع عسل)
+                const isHoneyMaterial = (defaultMaterialName === 'عسل' || defaultMaterialName.toLowerCase() === 'honey') && 
+                                       !defaultMaterialName.includes('شمع') && 
+                                       !defaultMaterialName.toLowerCase().includes('beeswax');
                 if (isHoneyMaterial && defaultHoneyState) {
                     if (honeyStateSelect) {
                         honeyStateSelect.classList.remove('d-none');
@@ -3085,7 +3103,11 @@ function addEditRawMaterial(defaults = {}) {
                 }
                 
                 // إذا كانت المادة عسل، أظهر حقل حالة العسل
-                const isHoneyMaterial = (defaultMaterialName || defaultName).includes('عسل') || (defaultMaterialName || defaultName).toLowerCase().includes('honey');
+                // التحقق من أن المادة هي عسل (وليس شمع عسل)
+                const materialNameForCheck = defaultMaterialName || defaultName;
+                const isHoneyMaterial = (materialNameForCheck === 'عسل' || materialNameForCheck.toLowerCase() === 'honey') && 
+                                       !materialNameForCheck.includes('شمع') && 
+                                       !materialNameForCheck.toLowerCase().includes('beeswax');
                 if (isHoneyMaterial && defaultHoneyState) {
                     if (honeyStateSelect) {
                         honeyStateSelect.classList.remove('d-none');
