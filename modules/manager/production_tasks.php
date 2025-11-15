@@ -629,8 +629,8 @@ try {
                             <textarea class="form-control" name="details" rows="4" placeholder="أدخل التفاصيل والتعليمات اللازمة للعمال."></textarea>
                         </div>
                         <?php if (!empty($products)): ?>
-                        <div class="col-md-6 d-none" id="productFieldWrapper">
-                            <label class="form-label">نوع المنتج (اختياري)</label>
+                        <div class="col-md-6" id="productFieldWrapper">
+                            <label class="form-label">المنتج (اختياري)</label>
                             <select class="form-select" name="product_id" id="productSelect">
                                 <option value="">اختر المنتج</option>
                                 <?php foreach ($products as $product): ?>
@@ -639,10 +639,10 @@ try {
                                     </option>
                                 <?php endforeach; ?>
                             </select>
-                            <div class="form-text">اختياري: اختر المنتج المرتبط بالمهمة الإنتاجية.</div>
+                            <div class="form-text">اختياري: اختر المنتج المرتبط بالمهمة.</div>
                         </div>
-                        <div class="col-md-6 d-none" id="quantityFieldWrapper">
-                            <label class="form-label">الكمية المطلوبة (اختياري)</label>
+                        <div class="col-md-6" id="quantityFieldWrapper">
+                            <label class="form-label">الكمية (اختياري)</label>
                             <div class="input-group">
                                 <input type="number" class="form-control" name="product_quantity" id="productQuantityInput" step="0.01" min="0" placeholder="مثال: 120">
                                 <span class="input-group-text">وحدة</span>
@@ -761,18 +761,6 @@ document.addEventListener('DOMContentLoaded', function () {
             titleInput.placeholder = isProduction
                 ? 'يمكنك ترك العنوان فارغاً وسيتم توليد عنوان افتراضي للمهمة الإنتاجية.'
                 : 'مثال: تنظيف خط الإنتاج';
-        }
-        if (productWrapper) {
-            productWrapper.classList.toggle('d-none', !isProduction);
-            if (!isProduction && productSelect) {
-                productSelect.value = '';
-            }
-        }
-        if (quantityWrapper) {
-            quantityWrapper.classList.toggle('d-none', !isProduction);
-            if (!isProduction && quantityInput) {
-                quantityInput.value = '';
-            }
         }
     }
 

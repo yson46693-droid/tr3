@@ -1,4 +1,6 @@
 <?php
+define('ACCESS_ALLOWED', true);
+
 session_start([
     'cookie_lifetime' => 0,
     'cookie_httponly' => true,
@@ -6,21 +8,13 @@ session_start([
     'use_strict_mode' => true,
 ]);
 
-$sessionTimeout = 15 * 60; // 15 minutes
-$now = time();
+require_once __DIR__ . '/../includes/config.php';
+require_once __DIR__ . '/../includes/db.php';
+require_once __DIR__ . '/../includes/auth.php';
+require_once __DIR__ . '/../includes/path_helper.php';
 
-if (isset($_SESSION['reader_last_activity']) && ($now - $_SESSION['reader_last_activity']) > $sessionTimeout) {
-    session_unset();
-    session_destroy();
-    session_start([
-        'cookie_lifetime' => 0,
-        'cookie_httponly' => true,
-        'cookie_secure' => isset($_SERVER['HTTPS']),
-        'use_strict_mode' => true,
-    ]);
-}
+requireRole(['manager', 'accountant', 'production', 'sales']);
 
-$_SESSION['reader_last_activity'] = $now;
 $_SESSION['reader_session_id'] = $_SESSION['reader_session_id'] ?? bin2hex(random_bytes(16));
 ?>
 <!DOCTYPE html>

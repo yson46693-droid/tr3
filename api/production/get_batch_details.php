@@ -272,6 +272,16 @@ if (!$allowPublicReader && !isLoggedIn()) {
     exit;
 }
 
+if (isLoggedIn() && !hasAnyRole(['manager', 'accountant', 'production', 'sales'])) {
+    http_response_code(403);
+    echo json_encode([
+        'success' => false,
+        'message' => 'ليس لديك صلاحية للوصول إلى هذه الصفحة.'
+    ], JSON_UNESCAPED_UNICODE);
+    $closeSession();
+    exit;
+}
+
 $db = db();
 
 $readerLogEnabled = false;
