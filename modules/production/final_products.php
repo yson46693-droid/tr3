@@ -1840,8 +1840,8 @@ if ($isManager) {
                                         <input type="hidden" id="transferBatchId0" name="items[0][batch_id]" class="selected-batch-id">
                                         <input type="hidden" id="transferBatchNumber0" name="items[0][batch_number]" class="selected-batch-number">
                                     </div>
-                                    <div class="col-md-1 text-end">
-                                        <button type="button" class="btn btn-outline-danger remove-transfer-item" title="حذف العنصر">
+                                    <div class="col-auto text-end">
+                                        <button type="button" class="btn btn-outline-danger btn-sm remove-transfer-item" title="حذف العنصر">
                                             <i class="bi bi-trash"></i>
                                         </button>
                                     </div>
@@ -1892,27 +1892,86 @@ if (!window.transferFormInitialized) {
             return;
         }
 
+    // دالة لعرض رسائل Toast بدلاً من alert
+    function showToast(message, type = 'warning') {
+        const toastContainer = document.getElementById('toastContainer') || (function() {
+            const container = document.createElement('div');
+            container.id = 'toastContainer';
+            container.className = 'toast-container position-fixed top-0 end-0 p-3';
+            container.style.zIndex = '11000';
+            document.body.appendChild(container);
+            return container;
+        })();
+        
+        const toastId = 'toast-' + Date.now();
+        const bgClass = type === 'error' || type === 'danger' ? 'bg-danger' : 
+                       type === 'success' ? 'bg-success' : 'bg-warning';
+        
+        const toastHtml = `
+            <div id="${toastId}" class="toast ${bgClass} text-white" role="alert" aria-live="assertive" aria-atomic="true">
+                <div class="toast-header ${bgClass} text-white border-0">
+                    <strong class="me-auto">${type === 'success' ? 'نجح' : type === 'error' || type === 'danger' ? 'خطأ' : 'تحذير'}</strong>
+                    <button type="button" class="btn-close btn-close-white" data-bs-dismiss="toast" aria-label="إغلاق"></button>
+                </div>
+                <div class="toast-body">
+                    ${message}
+                </div>
+            </div>
+        `;
+        
+        toastContainer.insertAdjacentHTML('beforeend', toastHtml);
+        const toastElement = document.getElementById(toastId);
+        
+        if (typeof bootstrap !== 'undefined' && typeof bootstrap.Toast !== 'undefined') {
+            const toast = new bootstrap.Toast(toastElement, {
+                autohide: true,
+                delay: 5000
+            });
+            toast.show();
+            
+            toastElement.addEventListener('hidden.bs.toast', function() {
+                toastElement.remove();
+            });
+        } else {
+            // Fallback إذا لم يكن Bootstrap متاحاً
+            setTimeout(function() {
+                if (toastElement && toastElement.parentNode) {
+                    toastElement.remove();
+                }
+            }, 5000);
+        }
+    }
+
     let transferItemIndex = 1;
+    const productOptions = <?php echo json_encode($finishedProductOptions ?? [], JSON_UNESCAPED_UNICODE | JSON_HEX_QUOT); ?>;
 
     function buildItemRow(index) {
         const wrapper = document.createElement('div');
         wrapper.className = 'transfer-item row g-2 align-items-end mb-2';
+        
+        let optionsHtml = '<option value="">اختر المنتج</option>';
+        productOptions.forEach(function(option) {
+            const productId = parseInt(option.product_id || 0, 10);
+            const batchId = parseInt(option.batch_id || 0, 10);
+            const batchNumber = (option.batch_number || '').replace(/"/g, '&quot;');
+            const productName = (option.product_name || 'غير محدد').replace(/"/g, '&quot;');
+            const available = parseFloat(option.quantity_available || 0);
+            const availableFormatted = available.toLocaleString('ar-EG', {minimumFractionDigits: 2, maximumFractionDigits: 2});
+            
+            optionsHtml += `<option value="${productId}"
+                    data-product-id="${productId}"
+                    data-batch-id="${batchId}"
+                    data-batch-number="${batchNumber}"
+                    data-available="${available.toFixed(2)}">
+                ${productName} - تشغيلة ${batchNumber || 'بدون'} (متاح: ${availableFormatted})
+            </option>`;
+        });
+        
         wrapper.innerHTML = `
             <div class="col-md-5">
                 <label class="form-label small text-muted" for="transferProduct${index}">المنتج</label>
                 <select id="transferProduct${index}" class="form-select product-select" name="items[${index}][product_select]" required>
-                    <option value="">اختر المنتج</option>
-                    <?php foreach ($finishedProductOptions as $option): ?>
-                        <option value="<?php echo intval($option['product_id'] ?? 0); ?>"
-                                data-product-id="<?php echo intval($option['product_id'] ?? 0); ?>"
-                                data-batch-id="<?php echo intval($option['batch_id']); ?>"
-                                data-batch-number="<?php echo htmlspecialchars($option['batch_number']); ?>"
-                                data-available="<?php echo number_format((float)$option['quantity_available'], 2, '.', ''); ?>">
-                            <?php echo htmlspecialchars($option['product_name']); ?>
-                            - تشغيلة <?php echo htmlspecialchars($option['batch_number'] ?: 'بدون'); ?>
-                            (متاح: <?php echo number_format((float)$option['quantity_available'], 2); ?>)
-                        </option>
-                    <?php endforeach; ?>
+                    ${optionsHtml}
                 </select>
             </div>
             <div class="col-md-3">
@@ -1929,8 +1988,8 @@ if (!window.transferFormInitialized) {
                 <input type="hidden" id="transferBatchId${index}" name="items[${index}][batch_id]" class="selected-batch-id">
                 <input type="hidden" id="transferBatchNumber${index}" name="items[${index}][batch_number]" class="selected-batch-number">
             </div>
-            <div class="col-md-1 text-end">
-                <button type="button" class="btn btn-outline-danger remove-transfer-item" title="حذف العنصر">
+            <div class="col-auto text-end">
+                <button type="button" class="btn btn-outline-danger btn-sm remove-transfer-item" title="حذف العنصر">
                     <i class="bi bi-trash"></i>
                 </button>
             </div>
@@ -2020,7 +2079,7 @@ if (!window.transferFormInitialized) {
         const rows = itemsContainer.querySelectorAll('.transfer-item');
         if (!rows.length) {
             event.preventDefault();
-            alert('أضف منتجاً واحداً على الأقل قبل إرسال الطلب.');
+            showToast('أضف منتجاً واحداً على الأقل قبل إرسال الطلب.', 'warning');
             return;
         }
 
@@ -2030,13 +2089,13 @@ if (!window.transferFormInitialized) {
 
             if (!select || !quantityInput) {
                 event.preventDefault();
-                alert('يرجى التأكد من إدخال بيانات صحيحة لكل منتج.');
+                showToast('يرجى التأكد من إدخال بيانات صحيحة لكل منتج.', 'warning');
                 return;
             }
 
             if (!select.value) {
                 event.preventDefault();
-                alert('اختر المنتج المراد نقله.');
+                showToast('اختر المنتج المراد نقله.', 'warning');
                 return;
             }
 
@@ -2046,20 +2105,20 @@ if (!window.transferFormInitialized) {
 
             if (value < min) {
                 event.preventDefault();
-                alert('يرجى إدخال كمية أكبر من الصفر.');
+                showToast('يرجى إدخال كمية أكبر من الصفر.', 'warning');
                 return;
             }
 
             if (max > 0 && value > max) {
                 event.preventDefault();
-                alert('الكمية المطلوبة تتجاوز المتاح في المخزن الرئيسي.');
+                showToast('الكمية المطلوبة تتجاوز المتاح في المخزن الرئيسي.', 'error');
                 return;
             }
         }
 
         if (destinationSelect && !destinationSelect.value) {
             event.preventDefault();
-            alert('يرجى اختيار المخزن الوجهة قبل إرسال الطلب.');
+            showToast('يرجى اختيار المخزن الوجهة قبل إرسال الطلب.', 'warning');
         }
     });
     });
@@ -2100,6 +2159,59 @@ if (!window.transferFormInitialized) {
         console.warn('Final products script already initialized, skipping duplicate initialization');
     } else {
         window.finalProductsInitialized = true;
+        
+    // دالة لعرض رسائل Toast (مشتركة بين جميع الأقسام)
+    function showToast(message, type = 'warning') {
+        const toastContainer = document.getElementById('toastContainer') || (function() {
+            const container = document.createElement('div');
+            container.id = 'toastContainer';
+            container.className = 'toast-container position-fixed top-0 end-0 p-3';
+            container.style.zIndex = '11000';
+            document.body.appendChild(container);
+            return container;
+        })();
+        
+        const toastId = 'toast-' + Date.now();
+        const bgClass = type === 'error' || type === 'danger' ? 'bg-danger' : 
+                       type === 'success' ? 'bg-success' : 'bg-warning';
+        
+        const toastHtml = `
+            <div id="${toastId}" class="toast ${bgClass} text-white" role="alert" aria-live="assertive" aria-atomic="true">
+                <div class="toast-header ${bgClass} text-white border-0">
+                    <strong class="me-auto">${type === 'success' ? 'نجح' : type === 'error' || type === 'danger' ? 'خطأ' : 'تحذير'}</strong>
+                    <button type="button" class="btn-close btn-close-white" data-bs-dismiss="toast" aria-label="إغلاق"></button>
+                </div>
+                <div class="toast-body">
+                    ${message}
+                </div>
+            </div>
+        `;
+        
+        toastContainer.insertAdjacentHTML('beforeend', toastHtml);
+        const toastElement = document.getElementById(toastId);
+        
+        if (typeof bootstrap !== 'undefined' && typeof bootstrap.Toast !== 'undefined') {
+            const toast = new bootstrap.Toast(toastElement, {
+                autohide: true,
+                delay: 5000
+            });
+            toast.show();
+            
+            toastElement.addEventListener('hidden.bs.toast', function() {
+                toastElement.remove();
+            });
+        } else {
+            // Fallback إذا لم يكن Bootstrap متاحاً
+            setTimeout(function() {
+                if (toastElement && toastElement.parentNode) {
+                    toastElement.remove();
+                }
+            }, 5000);
+        }
+    }
+    
+    // جعل الدالة متاحة عالمياً
+    window.showToast = showToast;
         
     const batchDetailsEndpoint = <?php echo json_encode(getRelativeUrl('api/production/get_batch_details.php')); ?>;
     const supplierRoleLabels = {
@@ -2370,13 +2482,21 @@ if (!window.transferFormInitialized) {
         }
 
         if (typeof bootstrap === 'undefined' || typeof bootstrap.Modal === 'undefined') {
-            alert('تعذر فتح تفاصيل التشغيلة حالياً. يرجى تحديث الصفحة ثم المحاولة مرة أخرى.');
+            if (typeof showToast === 'function') {
+                showToast('تعذر فتح تفاصيل التشغيلة حالياً. يرجى تحديث الصفحة ثم المحاولة مرة أخرى.', 'error');
+            } else {
+                alert('تعذر فتح تفاصيل التشغيلة حالياً. يرجى تحديث الصفحة ثم المحاولة مرة أخرى.');
+            }
             return;
         }
 
         const structure = ensureBatchDetailsModalStructure();
         if (!structure || !structure.modalElement || !structure.loader || !structure.errorAlert || !structure.contentWrapper) {
-            alert('تعذر تهيئة عرض تفاصيل التشغيلة. يرجى تحديث الصفحة والمحاولة لاحقاً.');
+            if (typeof showToast === 'function') {
+                showToast('تعذر تهيئة عرض تفاصيل التشغيلة. يرجى تحديث الصفحة والمحاولة لاحقاً.', 'error');
+            } else {
+                alert('تعذر تهيئة عرض تفاصيل التشغيلة. يرجى تحديث الصفحة والمحاولة لاحقاً.');
+            }
             return;
         }
 

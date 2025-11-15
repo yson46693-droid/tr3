@@ -55,6 +55,26 @@ if ($currentUser['role'] === 'sales') {
     }
 }
 
+// معالجة طلبات AJAX
+if (isset($_GET['ajax']) && $_GET['ajax'] === 'load_products') {
+    header('Content-Type: application/json');
+    $warehouseId = isset($_GET['warehouse_id']) ? intval($_GET['warehouse_id']) : null;
+    
+    try {
+        $products = getFinishedProductBatchOptions(true, $warehouseId);
+        echo json_encode([
+            'success' => true,
+            'products' => $products
+        ]);
+    } catch (Exception $e) {
+        echo json_encode([
+            'success' => false,
+            'message' => $e->getMessage()
+        ]);
+    }
+    exit;
+}
+
 // معالجة العمليات
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     $action = $_POST['action'] ?? '';
@@ -158,11 +178,12 @@ $vehicleWarehouses = $db->query("SELECT id, name, vehicle_id FROM warehouses WHE
 
 // الحصول على المنتجات
 $products = $db->query("SELECT id, name, quantity, unit_price FROM products WHERE status = 'active' ORDER BY name");
-$finishedProductOptions = getFinishedProductBatchOptions();
 
 // مخزن سيارة محدد
 $selectedVehicle = null;
 $vehicleInventory = [];
+$selectedWarehouseId = null;
+
 if (isset($_GET['vehicle_id']) || !empty($filters['vehicle_id'])) {
     $vehicleId = intval($_GET['vehicle_id'] ?? $filters['vehicle_id']);
     $selectedVehicle = $db->queryOne(
@@ -184,10 +205,18 @@ if (isset($_GET['vehicle_id']) || !empty($filters['vehicle_id'])) {
             }
         }
         
+        // تحديد المخزن المحدد لتحميل المنتجات منه
+        if (!empty($selectedVehicle['warehouse_id'])) {
+            $selectedWarehouseId = (int)$selectedVehicle['warehouse_id'];
+        }
+        
         // الحصول على مخزون السيارة
         $vehicleInventory = getVehicleInventory($vehicleId, $filters);
     }
 }
+
+// تحميل المنتجات من المخزن المحدد (أو المخزن الرئيسي إذا لم يكن هناك مخزن محدد)
+$finishedProductOptions = getFinishedProductBatchOptions(true, $selectedWarehouseId);
 
 // إحصائيات المخزون
 $inventoryStats = [
@@ -606,27 +635,146 @@ foreach ($vehicleInventory as $item) {
 
 <script>
 let itemIndex = 1;
+let allFinishedProductOptions = <?php echo json_encode($finishedProductOptions); ?>;
+
+// تحميل المنتجات عند تغيير المخزن المصدر
+document.getElementById('fromWarehouse')?.addEventListener('change', function() {
+    const fromWarehouseId = this.value;
+    if (!fromWarehouseId) {
+        allFinishedProductOptions = [];
+        updateProductSelects();
+        return;
+    }
+    
+    // إظهار مؤشر التحميل
+    const addItemBtn = document.getElementById('addItemBtn');
+    const submitBtn = document.querySelector('#transferForm button[type="submit"]');
+    const originalAddBtnText = addItemBtn?.innerHTML;
+    const originalSubmitBtnText = submitBtn?.innerHTML;
+    
+    if (addItemBtn) {
+        addItemBtn.disabled = true;
+        addItemBtn.innerHTML = '<i class="bi bi-hourglass-split me-2"></i>جاري التحميل...';
+    }
+    if (submitBtn) {
+        submitBtn.disabled = true;
+        submitBtn.innerHTML = '<i class="bi bi-hourglass-split me-2"></i>جاري التحميل...';
+    }
+    
+    // تحميل المنتجات من المخزن المحدد عبر AJAX
+    const currentUrl = new URL(window.location.href);
+    currentUrl.searchParams.set('ajax', 'load_products');
+    currentUrl.searchParams.set('warehouse_id', fromWarehouseId);
+    
+    fetch(currentUrl.toString())
+        .then(response => response.json())
+        .then(data => {
+            if (data.success && data.products) {
+                allFinishedProductOptions = data.products;
+                updateProductSelects();
+                
+                // تحديث حالة الأزرار
+                if (addItemBtn) {
+                    addItemBtn.disabled = allFinishedProductOptions.length === 0;
+                    addItemBtn.innerHTML = originalAddBtnText || '<i class="bi bi-plus-circle me-2"></i>إضافة عنصر';
+                }
+                if (submitBtn) {
+                    submitBtn.disabled = allFinishedProductOptions.length === 0;
+                    submitBtn.innerHTML = originalSubmitBtnText || 'إنشاء الطلب';
+                }
+                
+                // إظهار رسالة إذا لم توجد منتجات
+                if (allFinishedProductOptions.length === 0) {
+                    const alertDiv = document.querySelector('#transferItems .alert-warning');
+                    if (!alertDiv) {
+                        const itemsDiv = document.getElementById('transferItems');
+                        if (itemsDiv) {
+                            const warning = document.createElement('div');
+                            warning.className = 'alert alert-warning d-flex align-items-center gap-2';
+                            warning.innerHTML = '<i class="bi bi-exclamation-triangle-fill"></i><div>لا توجد منتجات متاحة في هذا المخزن حالياً.</div>';
+                            itemsDiv.insertBefore(warning, itemsDiv.firstChild);
+                        }
+                    }
+                } else {
+                    const alertDiv = document.querySelector('#transferItems .alert-warning');
+                    if (alertDiv) {
+                        alertDiv.remove();
+                    }
+                }
+            } else {
+                console.error('Error loading products:', data.message || 'Unknown error');
+                alert('حدث خطأ أثناء تحميل المنتجات: ' + (data.message || 'خطأ غير معروف'));
+            }
+        })
+        .catch(error => {
+            console.error('Error loading products:', error);
+            alert('حدث خطأ أثناء تحميل المنتجات. يرجى المحاولة مرة أخرى.');
+            if (addItemBtn) {
+                addItemBtn.disabled = false;
+                addItemBtn.innerHTML = originalAddBtnText || '<i class="bi bi-plus-circle me-2"></i>إضافة عنصر';
+            }
+            if (submitBtn) {
+                submitBtn.disabled = false;
+                submitBtn.innerHTML = originalSubmitBtnText || 'إنشاء الطلب';
+            }
+        });
+});
+
+// تحديث جميع قوائم المنتجات
+function updateProductSelects() {
+    const selects = document.querySelectorAll('.product-select');
+    selects.forEach(select => {
+        const currentValue = select.value;
+        const currentBatchId = select.querySelector(`option[value="${currentValue}"]`)?.dataset.batchId;
+        
+        // حفظ القيمة المحددة
+        select.innerHTML = '<option value="">اختر المنتج</option>';
+        
+        allFinishedProductOptions.forEach(option => {
+            const optionElement = document.createElement('option');
+            optionElement.value = option.product_id || 0;
+            optionElement.dataset.productId = option.product_id || 0;
+            optionElement.dataset.batchId = option.batch_id;
+            optionElement.dataset.batchNumber = option.batch_number || '';
+            optionElement.dataset.available = option.quantity_available || 0;
+            optionElement.textContent = `${option.product_name} - تشغيلة ${option.batch_number || 'بدون'} (متاح: ${parseFloat(option.quantity_available || 0).toFixed(2)})`;
+            
+            // استعادة الاختيار السابق إذا كان موجوداً
+            if (currentBatchId && option.batch_id == currentBatchId) {
+                optionElement.selected = true;
+            }
+            
+            select.appendChild(optionElement);
+        });
+        
+        // إعادة تفعيل الأحداث
+        const item = select.closest('.transfer-item');
+        if (item) {
+            attachItemEvents(item);
+        }
+    });
+}
 
 // إضافة عنصر جديد
 document.getElementById('addItemBtn')?.addEventListener('click', function() {
     const itemsDiv = document.getElementById('transferItems');
     const newItem = document.createElement('div');
     newItem.className = 'transfer-item row mb-2';
+    let optionsHtml = '<option value="">اختر المنتج</option>';
+    allFinishedProductOptions.forEach(option => {
+        optionsHtml += `<option value="${option.product_id || 0}" 
+                data-product-id="${option.product_id || 0}"
+                data-batch-id="${option.batch_id}"
+                data-batch-number="${option.batch_number || ''}"
+                data-available="${option.quantity_available || 0}">
+            ${option.product_name} - تشغيلة ${option.batch_number || 'بدون'} (متاح: ${parseFloat(option.quantity_available || 0).toFixed(2)})
+        </option>`;
+    });
+    
     newItem.innerHTML = `
         <div class="col-md-5">
             <select class="form-select product-select" required>
-                <option value="">اختر المنتج</option>
-                <?php foreach ($finishedProductOptions as $option): ?>
-                    <option value="<?php echo intval($option['product_id'] ?? 0); ?>" 
-                            data-product-id="<?php echo intval($option['product_id'] ?? 0); ?>"
-                            data-batch-id="<?php echo intval($option['batch_id']); ?>"
-                            data-batch-number="<?php echo htmlspecialchars($option['batch_number']); ?>"
-                            data-available="<?php echo number_format((float)$option['quantity_available'], 2, '.', ''); ?>">
-                        <?php echo htmlspecialchars($option['product_name']); ?>
-                        - تشغيلة <?php echo htmlspecialchars($option['batch_number'] ?: 'بدون'); ?>
-                        (متاح: <?php echo number_format((float)$option['quantity_available'], 2); ?>)
-                    </option>
-                <?php endforeach; ?>
+                ${optionsHtml}
             </select>
         </div>
         <div class="col-md-3">
@@ -717,6 +865,25 @@ function attachItemEvents(item) {
 document.querySelectorAll('.transfer-item').forEach(item => {
     attachItemEvents(item);
 });
+
+// تحميل المنتجات تلقائياً عند فتح النموذج إذا كان هناك مخزن محدد
+const createTransferModal = document.getElementById('createTransferModal');
+if (createTransferModal) {
+    createTransferModal.addEventListener('show.bs.modal', function() {
+        const fromWarehouseSelect = document.getElementById('fromWarehouse');
+        if (fromWarehouseSelect && fromWarehouseSelect.value) {
+            // تحميل المنتجات من المخزن المحدد
+            fromWarehouseSelect.dispatchEvent(new Event('change'));
+        } else if (fromWarehouseSelect && allFinishedProductOptions.length === 0) {
+            // إذا لم يكن هناك مخزن محدد ولم تكن هناك منتجات، تحميل من المخزن الرئيسي
+            const mainWarehouseOption = fromWarehouseSelect.querySelector('option[data-type="main"]');
+            if (mainWarehouseOption) {
+                fromWarehouseSelect.value = mainWarehouseOption.value;
+                fromWarehouseSelect.dispatchEvent(new Event('change'));
+            }
+        }
+    });
+}
 
 // التحقق من عدم اختيار نفس المخزن
 document.getElementById('transferForm')?.addEventListener('submit', function(e) {
