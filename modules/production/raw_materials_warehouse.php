@@ -4929,7 +4929,7 @@ function checkForDuplicateRequestError() {
         const alertText = alert.textContent || alert.innerText;
         if (alertText.includes('تم معالجة هذا الطلب من قبل')) {
             setTimeout(function() {
-                window.location.reload();
+                window.location.replace(window.location.href);
             }, 2000);
         }
     });

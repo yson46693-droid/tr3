@@ -6910,15 +6910,32 @@ window.addEventListener('beforeunload', function(e) {
 });
 
 // التحقق من رسالة الخطأ الخاصة بالطلب المكرر وتحديث الصفحة تلقائياً
-document.addEventListener('DOMContentLoaded', function() {
+function checkForDuplicateRequestError() {
     const errorAlerts = document.querySelectorAll('.alert-danger');
     errorAlerts.forEach(function(alert) {
         const alertText = alert.textContent || alert.innerText;
         if (alertText.includes('تم معالجة هذا الطلب من قبل')) {
             setTimeout(function() {
-                window.location.reload();
+                window.location.replace(window.location.href);
             }, 2000);
         }
     });
+}
+
+// التحقق فوراً إذا كان DOM جاهزاً
+if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', checkForDuplicateRequestError);
+} else {
+    checkForDuplicateRequestError();
+}
+
+// مراقبة التغييرات في DOM للتحقق من الرسائل المضافة ديناميكياً
+const observer = new MutationObserver(function(mutations) {
+    checkForDuplicateRequestError();
+});
+
+observer.observe(document.body, {
+    childList: true,
+    subtree: true
 });
 </script>
