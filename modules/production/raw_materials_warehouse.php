@@ -817,7 +817,7 @@ if ($oliveSummary) {
             [
                 'label' => 'إجمالي الزيت المتاح',
                 'value' => (float)($oliveSummary['total_quantity'] ?? 0),
-                'unit' => 'لتر',
+                'unit' => 'كجم',
                 'decimals' => 2
             ],
             [
@@ -837,7 +837,7 @@ if ($oliveSummary) {
             return [
                 'label' => trim((string)($row['supplier_name'] ?? 'مورد غير محدد')),
                 'value' => (float)($row['total_quantity'] ?? 0),
-                'unit' => 'لتر',
+                'unit' => 'كجم',
                 'decimals' => 2
             ];
         }, $topOliveSuppliers ?? [])
@@ -1087,7 +1087,7 @@ if (empty($tableCheck)) {
             CREATE TABLE IF NOT EXISTS `olive_oil_stock` (
               `id` int(11) NOT NULL AUTO_INCREMENT,
               `supplier_id` int(11) NOT NULL,
-              `quantity` decimal(10,2) NOT NULL DEFAULT 0.00 COMMENT 'الكمية (لتر)',
+              `quantity` decimal(10,2) NOT NULL DEFAULT 0.00 COMMENT 'الكمية (كجم)',
               `created_at` timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP,
               `updated_at` timestamp NULL DEFAULT NULL ON UPDATE CURRENT_TIMESTAMP,
               PRIMARY KEY (`id`),
@@ -1108,7 +1108,7 @@ if (empty($tableCheck)) {
             CREATE TABLE IF NOT EXISTS `olive_oil_product_templates` (
               `id` int(11) NOT NULL AUTO_INCREMENT,
               `product_name` varchar(255) NOT NULL,
-              `olive_oil_quantity` decimal(10,2) NOT NULL COMMENT 'كمية زيت الزيتون (لتر)',
+              `olive_oil_quantity` decimal(10,2) NOT NULL COMMENT 'كمية زيت الزيتون (كجم)',
               `created_at` timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP,
               `updated_at` timestamp NULL DEFAULT NULL ON UPDATE CURRENT_TIMESTAMP,
               PRIMARY KEY (`id`)
@@ -1735,7 +1735,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                             $logDetails['supplier_id'] = $stock['supplier_id'];
                             $logDetails['item_label'] = 'زيت زيتون';
                             $logDetails['variety'] = null;
-                            $logDetails['unit'] = 'لتر';
+                            $logDetails['unit'] = 'كجم';
                         }
                     } elseif ($materialCategory === 'beeswax') {
                         $stock = $db->queryOne("
@@ -1885,7 +1885,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                             CREATE TABLE IF NOT EXISTS `olive_oil_stock` (
                               `id` int(11) NOT NULL AUTO_INCREMENT,
                               `supplier_id` int(11) NOT NULL,
-                              `quantity` decimal(10,2) NOT NULL DEFAULT 0.00 COMMENT 'الكمية (لتر)',
+                              `quantity` decimal(10,2) NOT NULL DEFAULT 0.00 COMMENT 'الكمية (كجم)',
                               `created_at` timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP,
                               `updated_at` timestamp NULL DEFAULT NULL ON UPDATE CURRENT_TIMESTAMP,
                               PRIMARY KEY (`id`),
@@ -1921,7 +1921,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                         'supplier_id' => $supplierId,
                         'supplier_name' => $supplierName,
                         'quantity' => $quantity,
-                        'unit' => 'لتر',
+                        'unit' => 'كجم',
                         'details' => 'إضافة زيت زيتون خام إلى المخزون',
                         'recorded_by' => $currentUser['id'] ?? null,
                     ]);
@@ -3545,7 +3545,7 @@ if ($section === 'honey') {
                 <div class="d-flex justify-content-between align-items-center">
                     <div>
                         <div class="text-muted small mb-1">إجمالي زيت الزيتون</div>
-                        <div class="h4 mb-0"><?php echo number_format($oilStats['total_quantity'], 2); ?> <small>لتر</small></div>
+                        <div class="h4 mb-0"><?php echo number_format($oilStats['total_quantity'], 2); ?> <small>كجم</small></div>
                     </div>
                     <div class="stat-icon icon-olive">
                         <i class="bi bi-cup-straw"></i>
@@ -3590,7 +3590,7 @@ if ($section === 'honey') {
                                 <thead>
                                     <tr>
                                         <th>المورد</th>
-                                        <th class="text-center">الكمية (لتر)</th>
+                                        <th class="text-center">الكمية (كجم)</th>
                                         <th class="text-center">الإجراءات</th>
                                     </tr>
                                 </thead>
@@ -3644,7 +3644,7 @@ if ($section === 'honey') {
                             </select>
                         </div>
                         <div class="mb-3">
-                            <label class="form-label">الكمية (لتر)</label>
+                            <label class="form-label">الكمية (كجم)</label>
                             <input type="number" class="form-control" name="quantity" step="0.01" min="0.01" required>
                         </div>
                     </div>
@@ -3670,7 +3670,7 @@ if ($section === 'honey') {
                 <input type="hidden" name="material_category" value="olive_oil">
                 <input type="hidden" name="redirect_section" value="olive_oil">
                 <input type="hidden" name="stock_id" id="damage_oil_stock_id">
-                <input type="hidden" name="damage_unit" value="لتر">
+                <input type="hidden" name="damage_unit" value="كجم">
                 <input type="hidden" name="submit_token" value="<?php echo uniqid('tok_', true); ?>">
                 <div class="modal-body scrollable-modal-body">
                     <div class="mb-3">
@@ -3682,7 +3682,7 @@ if ($section === 'honey') {
                         <input type="text" class="form-control" id="damage_oil_available" readonly>
                     </div>
                     <div class="mb-3">
-                        <label class="form-label">الكمية التالفة (لتر)</label>
+                        <label class="form-label">الكمية التالفة (كجم)</label>
                         <input type="number" class="form-control" name="damage_quantity" id="damage_oil_quantity" step="0.01" min="0.01" required>
                     </div>
                     <div class="mb-3">
@@ -3706,7 +3706,7 @@ if ($section === 'honey') {
         const qty = parseFloat(quantity) || 0;
         document.getElementById('damage_oil_stock_id').value = id;
         document.getElementById('damage_oil_supplier').value = supplier;
-        document.getElementById('damage_oil_available').value = qty.toFixed(2) + ' لتر';
+        document.getElementById('damage_oil_available').value = qty.toFixed(2) + ' كجم';
         const qtyInput = document.getElementById('damage_oil_quantity');
         qtyInput.value = '';
         qtyInput.max = qty > 0 ? qty.toFixed(2) : null;
@@ -4444,7 +4444,6 @@ $nutsSuppliers = $db->query("SELECT id, name, phone FROM suppliers WHERE status 
                                 <option value="لوز">لوز</option>
                                 <option value="فستق">فستق</option>
                                 <option value="كاجو">كاجو</option>
-                                <option value="فول سوداني">فول سوداني</option>
                                 <option value="أخرى">أخرى (يدوياً)</option>
                             </select>
                         </div>

@@ -949,7 +949,7 @@ function checkMaterialsAvailability($db, $templateId, $productionQuantity, array
                 if (!empty($oliveTableExists)) {
                     $availableQuantity = $checkStock('olive_oil_stock', 'quantity', $supplierId);
                     $resolved = true;
-                    $availableUnit = 'l';
+                    $availableUnit = 'kg';
                 }
                 break;
             case 'beeswax':

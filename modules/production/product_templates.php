@@ -1097,12 +1097,8 @@ try {
             AND s.status = 'active'
         ");
         if ($hasBeeswax && $hasBeeswax['count'] > 0) {
+            // إضافة "شمع عسل" فقط (إزالة "شمع" لتجنب التكرار)
             $rawMaterialsData['شمع عسل'] = [
-                'material_type' => 'beeswax',
-                'has_types' => false,
-                'types' => []
-            ];
-            $rawMaterialsData['شمع'] = [
                 'material_type' => 'beeswax',
                 'has_types' => false,
                 'types' => []
@@ -1135,11 +1131,9 @@ try {
         $derivativeVarieties = [];
         foreach ($derivativesTypes as $derivative) {
             $derivativeName = trim($derivative['derivative_type']);
-            // استبعاد "غذاء الملكات" أو "غذاء ملكات النحل" من القائمة
+            // إزالة استبعاد "غذاء الملكات" - السماح بجميع أنواع المشتقات
             if ($derivativeName !== '' && 
-                !in_array($derivativeName, $derivativeVarieties) &&
-                stripos($derivativeName, 'غذاء') === false &&
-                stripos($derivativeName, 'royal') === false) {
+                !in_array($derivativeName, $derivativeVarieties)) {
                 $derivativeVarieties[] = $derivativeName;
             }
         }
@@ -1158,14 +1152,9 @@ try {
 }
 
 // إنشاء قائمة بأسماء المواد فقط للعرض في القائمة المنسدلة
-$rawMaterialsForTemplate = array_keys($rawMaterialsData);
-
-// حذف "غذاء الملكات" أو "غذاء ملكات النحل" من القائمة إذا كان موجوداً
-$rawMaterialsForTemplate = array_filter($rawMaterialsForTemplate, function($material) {
-    $materialLower = mb_strtolower($material, 'UTF-8');
-    return stripos($materialLower, 'غذاء') === false && 
-           stripos($materialLower, 'royal') === false;
-});
+// المواد الخام الأساسية الخمسة فقط: عسل، زيت زيتون، شمع عسل، مشتقات، مكسرات
+$allowedMaterials = ['عسل', 'زيت زيتون', 'شمع عسل', 'مشتقات', 'مكسرات'];
+$rawMaterialsForTemplate = array_intersect($allowedMaterials, array_keys($rawMaterialsData));
 
 sort($rawMaterialsForTemplate);
 
