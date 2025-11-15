@@ -96,7 +96,8 @@ if (!function_exists('readerTableExists')) {
         }
 
         try {
-            $result = $dbInstance->queryOne('SHOW TABLES LIKE ?', [$table]);
+            $escapedTable = $dbInstance->escape($table);
+            $result = $dbInstance->queryOne("SHOW TABLES LIKE '{$escapedTable}'", []);
             $cache[$table] = !empty($result);
         } catch (Throwable $tableError) {
             error_log('get_batch_details table check error for ' . $table . ': ' . $tableError->getMessage());
@@ -126,7 +127,9 @@ if (!function_exists('readerColumnExists')) {
         }
 
         try {
-            $result = $dbInstance->queryOne("SHOW COLUMNS FROM `{$table}` LIKE ?", [$column]);
+            $escapedTable = $dbInstance->escape($table);
+            $escapedColumn = $dbInstance->escape($column);
+            $result = $dbInstance->queryOne("SHOW COLUMNS FROM `{$escapedTable}` LIKE '{$escapedColumn}'", []);
             $cache[$cacheKey] = !empty($result);
         } catch (Throwable $columnError) {
             error_log('get_batch_details column check error for ' . $table . '.' . $column . ': ' . $columnError->getMessage());
