@@ -1501,7 +1501,7 @@ if ($isManager) {
     </div>
 </div>
 
-<div class="modal fade" id="externalStockModal" tabindex="-1" aria-hidden="true">
+<div class="modal fade" id="externalStockModal" tabindex="-1" aria-hidden="true" data-bs-backdrop="static" data-bs-keyboard="false">
     <div class="modal-dialog">
         <form class="modal-content" method="POST">
             <input type="hidden" name="action" value="adjust_external_stock">
@@ -1533,7 +1533,7 @@ if ($isManager) {
     </div>
 </div>
 
-<div class="modal fade" id="editExternalProductModal" tabindex="-1" aria-hidden="true">
+<div class="modal fade" id="editExternalProductModal" tabindex="-1" aria-hidden="true" data-bs-backdrop="static" data-bs-keyboard="false">
     <div class="modal-dialog">
         <form class="modal-content" method="POST">
             <input type="hidden" name="action" value="update_external_product">
@@ -1578,7 +1578,7 @@ if ($isManager) {
     </div>
 </div>
 
-<div class="modal fade" id="setManualPriceModal" tabindex="-1" aria-hidden="true">
+<div class="modal fade" id="setManualPriceModal" tabindex="-1" aria-hidden="true" data-bs-backdrop="static" data-bs-keyboard="false">
     <div class="modal-dialog">
         <form class="modal-content" method="POST">
             <input type="hidden" name="action" value="update_manual_price">
@@ -1637,7 +1637,7 @@ if ($isManager) {
 <?php endif; ?>
 
 <?php if ($primaryWarehouse): ?>
-<div class="modal fade" id="requestTransferModal" tabindex="-1" aria-hidden="true">
+<div class="modal fade" id="requestTransferModal" tabindex="-1" aria-hidden="true" data-bs-backdrop="static" data-bs-keyboard="false">
     <div class="modal-dialog modal-lg modal-dialog-scrollable">
         <div class="modal-content">
             <div class="modal-header">
@@ -2638,103 +2638,52 @@ document.addEventListener('DOMContentLoaded', function () {
         }
     });
 
-    // منع إغلاق modal إضافة المنتج الخارجي إلا عند النقر على زر الإغلاق
-    const addExternalProductModal = document.getElementById('addExternalProductModal');
-    if (addExternalProductModal) {
-        let lastClickedElement = null;
-        
-        // تتبع العنصر الذي تم النقر عليه داخل المودال
-        addExternalProductModal.addEventListener('click', function(e) {
-            lastClickedElement = e.target;
-        });
-        
-        // منع الإغلاق إلا عند النقر على زر الإغلاق
-        addExternalProductModal.addEventListener('hide.bs.modal', function(e) {
-            const isCloseButton = lastClickedElement && (
-                lastClickedElement.matches('[data-bs-dismiss="modal"]') ||
-                lastClickedElement.closest('[data-bs-dismiss="modal"]')
-            );
-            
-            if (!isCloseButton) {
-                e.preventDefault();
-            }
-            
-            lastClickedElement = null;
-        });
-    }
-
-    // إصلاح مشكلة فتح وإغلاق modal تفاصيل التشغيلة
+    // إصلاح مشكلة وميض النماذج - إزالة event listeners المتضاربة
+    // جميع النماذج تستخدم data-bs-backdrop="static" لمنع الإغلاق عند النقر على backdrop
+    
+    // إصلاح مشكلة فتح وإغلاق modal تفاصيل التشغيلة فقط
     const batchDetailsModal = document.getElementById('batchDetailsModal');
     if (batchDetailsModal) {
-        // متغير لتتبع العنصر الذي تم النقر عليه
-        let batchDetailsClickedElement = null;
-        
-        // تتبع العنصر الذي تم النقر عليه
-        document.addEventListener('mousedown', function(e) {
-            if (batchDetailsModal.classList.contains('show')) {
-                batchDetailsClickedElement = e.target;
-            }
-        }, true);
-        
-        // منع النقر على backdrop من إغلاق الـ modal
-        batchDetailsModal.addEventListener('click', function(e) {
-            if (e.target === batchDetailsModal || e.target.classList.contains('modal-backdrop')) {
-                e.preventDefault();
-                e.stopPropagation();
-                e.stopImmediatePropagation();
-            }
-        }, true);
-        
-        // منع إغلاق الـ modal إلا عند النقر على زر الإغلاق أو الإلغاء
+        // منع إغلاق الـ modal إلا عند النقر على زر الإغلاق
         batchDetailsModal.addEventListener('hide.bs.modal', function(e) {
-            // التحقق من أن العنصر الذي تم النقر عليه هو زر الإغلاق
-            const isCloseButton = batchDetailsClickedElement && (
-                batchDetailsClickedElement.closest('[data-bs-dismiss="modal"]') !== null || 
-                batchDetailsClickedElement.closest('.btn-close') !== null ||
-                batchDetailsClickedElement.classList.contains('btn-close')
+            const relatedTarget = e.relatedTarget || document.activeElement;
+            const isCloseButton = relatedTarget && (
+                relatedTarget.matches('[data-bs-dismiss="modal"]') ||
+                relatedTarget.closest('[data-bs-dismiss="modal"]') !== null ||
+                relatedTarget.closest('.btn-close') !== null
             );
             
-            // إعادة تعيين المتغير
-            batchDetailsClickedElement = null;
-            
-            // إذا لم يكن العنصر زر إغلاق، منع الإغلاق
             if (!isCloseButton) {
                 e.preventDefault();
                 e.stopPropagation();
-                e.stopImmediatePropagation();
                 return false;
             }
         });
-        
-        // منع أي تفاعل مع backdrop
-        document.addEventListener('click', function(e) {
-            if (batchDetailsModal.classList.contains('show')) {
-                const backdrop = document.querySelector('.modal-backdrop');
-                if (backdrop && (e.target === backdrop || backdrop.contains(e.target))) {
-                    e.preventDefault();
-                    e.stopPropagation();
-                    e.stopImmediatePropagation();
-                }
-            }
-        }, true);
     }
     
-    // إزالة أي عناصر modal-backdrop عالقة في الصفحة
+    // تنظيف أي عناصر modal-backdrop عالقة عند تحميل الصفحة
     document.addEventListener('DOMContentLoaded', function() {
-        const stuckBackdrops = document.querySelectorAll('.modal-backdrop.fade.show');
+        const stuckBackdrops = document.querySelectorAll('.modal-backdrop');
         stuckBackdrops.forEach(function(backdrop) {
             backdrop.remove();
         });
         document.body.classList.remove('modal-open');
+        document.body.style.overflow = '';
+        document.body.style.paddingRight = '';
     });
     
-    // إزالة backdrop عند إغلاق أي modal
-    document.addEventListener('hidden.bs.modal', function() {
-        const backdrops = document.querySelectorAll('.modal-backdrop');
-        backdrops.forEach(function(backdrop) {
-            backdrop.remove();
-        });
-        document.body.classList.remove('modal-open');
+    // تنظيف backdrop عند إغلاق أي modal
+    document.addEventListener('hidden.bs.modal', function(e) {
+        const modal = e.target;
+        if (modal && modal.classList.contains('modal')) {
+            const backdrops = document.querySelectorAll('.modal-backdrop');
+            backdrops.forEach(function(backdrop) {
+                backdrop.remove();
+            });
+            document.body.classList.remove('modal-open');
+            document.body.style.overflow = '';
+            document.body.style.paddingRight = '';
+        }
     });
 </script>
 
