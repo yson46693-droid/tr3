@@ -593,28 +593,39 @@ function checkMaterialsAvailability($db, $templateId, $productionQuantity, array
             $normalizedType = mb_strtolower(trim($type), 'UTF-8');
         }
 
-        if ($normalizedType === '') {
-            $nameNormalized = mb_strtolower(trim($materialName), 'UTF-8');
-
-            if ($nameNormalized !== '') {
-                if (mb_strpos($nameNormalized, 'زيت زيتون') !== false || mb_strpos($nameNormalized, 'olive oil') !== false) {
-                    return 'olive_oil';
-                }
-                if (mb_strpos($nameNormalized, 'عسل') !== false || mb_strpos($nameNormalized, 'honey') !== false) {
-                    return 'honey';
-                }
-                if (mb_strpos($nameNormalized, 'شمع') !== false || mb_strpos($nameNormalized, 'beeswax') !== false) {
-                    return 'beeswax';
-                }
-                if (mb_strpos($nameNormalized, 'مشتق') !== false || mb_strpos($nameNormalized, 'derivative') !== false) {
-                    return 'derivatives';
-                }
-                if (mb_strpos($nameNormalized, 'مكسرات') !== false || mb_strpos($nameNormalized, 'nuts') !== false) {
-                    return 'nuts';
-                }
-            }
-        } elseif (in_array($normalizedType, ['honey_raw', 'honey_filtered', 'honey', 'olive_oil', 'beeswax', 'derivatives', 'nuts'], true)) {
+        // إذا كان النوع محدد ومعروف، استخدمه مباشرة
+        if (in_array($normalizedType, ['honey_raw', 'honey_filtered', 'honey', 'olive_oil', 'beeswax', 'derivatives', 'nuts'], true)) {
             return $normalizedType;
+        }
+
+        // إذا كان النوع غير محدد أو غير معروف (مثل "ingredient", "raw_general", إلخ)،
+        // حاول اكتشاف النوع من اسم المادة
+        $nameNormalized = mb_strtolower(trim($materialName), 'UTF-8');
+
+        if ($nameNormalized !== '') {
+            if (mb_strpos($nameNormalized, 'زيت زيتون') !== false || mb_strpos($nameNormalized, 'olive oil') !== false) {
+                return 'olive_oil';
+            }
+            if (mb_strpos($nameNormalized, 'عسل') !== false || mb_strpos($nameNormalized, 'honey') !== false) {
+                // محاولة تحديد نوع العسل (خام أو مصفى) من الاسم
+                if (mb_strpos($nameNormalized, 'خام') !== false || mb_strpos($nameNormalized, 'raw') !== false) {
+                    return 'honey_raw';
+                }
+                if (mb_strpos($nameNormalized, 'مصفى') !== false || mb_strpos($nameNormalized, 'filtered') !== false) {
+                    return 'honey_filtered';
+                }
+                // افتراض أن العسل المصفى هو الافتراضي للإنتاج
+                return 'honey_filtered';
+            }
+            if (mb_strpos($nameNormalized, 'شمع') !== false || mb_strpos($nameNormalized, 'beeswax') !== false) {
+                return 'beeswax';
+            }
+            if (mb_strpos($nameNormalized, 'مشتق') !== false || mb_strpos($nameNormalized, 'derivative') !== false) {
+                return 'derivatives';
+            }
+            if (mb_strpos($nameNormalized, 'مكسرات') !== false || mb_strpos($nameNormalized, 'nuts') !== false) {
+                return 'nuts';
+            }
         }
 
         return $normalizedType !== '' ? $normalizedType : 'other';
@@ -1033,22 +1044,33 @@ function checkMaterialsAvailability($db, $templateId, $productionQuantity, array
         $hasDashSeparator = (mb_strpos($materialName, ' - ') !== false);
         $materialParts = $hasDashSeparator ? array_map('trim', explode(' - ', $materialName, 2)) : [];
         
+        // استخدام normalizeMaterialType لتحديد نوع المادة بدقة
+        // هذا مهم للتعامل مع الحالات التي يكون فيها materialTypeMeta غير معروف (مثل "ingredient")
+        $normalizedMaterialType = $normalizeMaterialType($materialTypeMeta, $materialName);
+        
+        // تحديث materialTypeMeta بالنوع المطبيع إذا تم اكتشاف نوع جديد
+        if ($normalizedMaterialType !== 'other' && 
+            !in_array($materialTypeMeta ?? '', ['honey_raw', 'honey_filtered', 'honey', 'olive_oil', 'beeswax', 'derivatives', 'nuts'], true)) {
+            $materialTypeMeta = $normalizedMaterialType;
+        }
+        
         // التحقق إذا كانت المادة عسل
         $isHoneyMaterial = (mb_stripos($materialName, 'عسل') !== false || stripos($materialName, 'honey') !== false) ||
-                          ($materialTypeMeta === 'honey_raw' || $materialTypeMeta === 'honey_filtered' || $materialTypeMeta === 'honey');
+                          ($normalizedMaterialType === 'honey_raw' || $normalizedMaterialType === 'honey_filtered' || $normalizedMaterialType === 'honey');
         
         // التحقق إذا كانت المادة عسل ولدينا معلومات محددة (مورد ونوع عسل)
         // في هذه الحالة، يجب البحث أولاً في honey_stock
         $isHoneyWithSpecificDetails = false;
         if ($isHoneyMaterial && 
-            ($materialTypeMeta === 'honey_raw' || $materialTypeMeta === 'honey_filtered' || $materialTypeMeta === 'honey') &&
+            ($normalizedMaterialType === 'honey_raw' || $normalizedMaterialType === 'honey_filtered' || $normalizedMaterialType === 'honey') &&
             ($honeyVarietyMeta !== null && $honeyVarietyMeta !== '')) {
             $isHoneyWithSpecificDetails = true;
             
             error_log(sprintf(
-                'Honey material detected: Name="%s", Type="%s", Supplier="%s", Variety="%s" - Will search in honey_stock first',
+                'Honey material detected: Name="%s", Original Type="%s", Normalized Type="%s", Supplier="%s", Variety="%s" - Will search in honey_stock first',
                 $materialName,
-                $materialTypeMeta ?? 'auto-detected',
+                $materialTypeMeta ?? 'none',
+                $normalizedMaterialType,
                 $materialSupplierMeta ?? 'any',
                 $honeyVarietyMeta
             ));
@@ -1305,14 +1327,23 @@ function checkMaterialsAvailability($db, $templateId, $productionQuantity, array
         } // نهاية if (!$isHoneyWithSpecificDetails)
         
         // 4. البحث في جداول المخزون الخاصة (honey_stock, etc.)
-        // إذا كانت المادة عسل ولكن نوع المادة غير محدد في metadata، حاول اكتشافه
-        if ($isHoneyMaterial && empty($materialTypeMeta)) {
-            // افتراض أن العسل المصفى هو الافتراضي للإنتاج
-            $materialTypeMeta = 'honey_filtered';
+        // إذا كانت المادة عسل ولكن نوع المادة غير محدد في metadata، استخدم النوع المطبيع
+        if ($isHoneyMaterial && (empty($materialTypeMeta) || $normalizedMaterialType !== 'other')) {
+            // استخدام النوع المطبيع إذا كان متاحًا، وإلا افتراض العسل المصفى
+            if ($normalizedMaterialType === 'honey_raw' || $normalizedMaterialType === 'honey_filtered' || $normalizedMaterialType === 'honey') {
+                $materialTypeMeta = $normalizedMaterialType;
+            } elseif (empty($materialTypeMeta)) {
+                // افتراض أن العسل المصفى هو الافتراضي للإنتاج
+                $materialTypeMeta = 'honey_filtered';
+            }
         }
         
-        // البحث في جداول المخزون الخاصة
-        $specialStock = $resolveSpecialStock($materialTypeMeta, $materialSupplierMeta, $materialName, $honeyVarietyMeta);
+        // البحث في جداول المخزون الخاصة - استخدام النوع المطبيع
+        $materialTypeForSearch = $materialTypeMeta;
+        if ($isHoneyMaterial && ($normalizedMaterialType === 'honey_raw' || $normalizedMaterialType === 'honey_filtered' || $normalizedMaterialType === 'honey')) {
+            $materialTypeForSearch = $normalizedMaterialType;
+        }
+        $specialStock = $resolveSpecialStock($materialTypeForSearch, $materialSupplierMeta, $materialName, $honeyVarietyMeta);
         if ($specialStock['resolved']) {
             $availableFromSpecial = $specialStock['quantity'];
             $availableFromSpecial = $convertQuantityUnit(
