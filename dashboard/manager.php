@@ -33,6 +33,17 @@ if ($page === 'packaging_warehouse' && isset($_GET['ajax']) && isset($_GET['mate
     }
 }
 
+// معالجة AJAX قبل أي إخراج HTML - خاصة لصفحة قوالب المنتجات
+if ($page === 'product_templates' && isset($_GET['ajax']) && $_GET['ajax'] === 'template_details' && isset($_GET['template_id'])) {
+    // تحميل ملف product_templates.php مباشرة للتعامل مع AJAX
+    $modulePath = __DIR__ . '/../modules/production/product_templates.php';
+    if (file_exists($modulePath)) {
+        // الملف نفسه سيتعامل مع AJAX ويخرج JSON
+        include $modulePath;
+        exit; // إيقاف التنفيذ بعد معالجة AJAX
+    }
+}
+
 $pageStylesheets = isset($pageStylesheets) && is_array($pageStylesheets) ? $pageStylesheets : [];
 $extraScripts = isset($extraScripts) && is_array($extraScripts) ? $extraScripts : [];
 if ($page === 'final_products' && !in_array('assets/css/production-page.css', $pageStylesheets, true)) {

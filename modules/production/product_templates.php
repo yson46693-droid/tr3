@@ -2459,6 +2459,16 @@ function editTemplateFromButton(buttonElement) {
         if (!response.ok) {
             throw new Error('HTTP error! status: ' + response.status);
         }
+        
+        // التحقق من نوع المحتوى قبل محاولة تحويله إلى JSON
+        const contentType = response.headers.get('content-type');
+        if (!contentType || !contentType.includes('application/json')) {
+            return response.text().then(text => {
+                console.error('Expected JSON but received:', contentType, 'Content preview:', text.substring(0, 200));
+                throw new Error('الاستجابة ليست JSON. يرجى التحقق من الاتصال بالخادم.');
+            });
+        }
+        
         return response.json();
     })
     .then(data => {
@@ -2485,7 +2495,7 @@ function editTemplateFromButton(buttonElement) {
             console.warn('Using fallback: data from attribute');
             editTemplate(templateId, templateDataJson, isBase64);
         } else {
-            alert('خطأ في جلب بيانات القالب. يرجى تحديث الصفحة والمحاولة مرة أخرى.');
+            alert('خطأ في جلب بيانات القالب: ' + error.message + '. يرجى تحديث الصفحة والمحاولة مرة أخرى.');
         }
     });
 }
