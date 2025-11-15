@@ -51,18 +51,19 @@ $encodedBatchNumber = json_encode($batchNumber, JSON_UNESCAPED_UNICODE);
         }
 
         @page {
-            size: var(--label-width) var(--label-height);
+            size: auto;
             margin: 0;
+            padding: 0;
         }
 
         body {
             font-family: var(--font-main);
             background: #ffffff;
-            width: var(--label-width);
-            height: var(--label-height);
-            margin: 0 auto;
+            margin: 0;
             padding: 0;
             color: #000;
+            width: 100%;
+            height: 100%;
         }
 
         .print-controls {
@@ -77,38 +78,41 @@ $encodedBatchNumber = json_encode($batchNumber, JSON_UNESCAPED_UNICODE);
         }
 
         .label-wrapper {
-            width: var(--label-width);
-            height: var(--label-height);
+            width: 100%;
             display: flex;
             justify-content: center;
             align-items: center;
-            padding: 2mm;
+            padding: 0;
+            margin: 0;
             background: #fff;
         }
 
         .barcode-box {
-            width: var(--barcode-width);
-            height: var(--barcode-height);
+            width: 100%;
             background: #fff;
-            border: 0.3mm solid #000;
+            border: none;
             display: flex;
             flex-direction: column;
             align-items: center;
             justify-content: center;
-            padding: 2mm var(--quiet-zone);
+            padding: 0;
+            margin: 0;
         }
 
         .barcode-svg {
-            width: calc(var(--barcode-width) - (var(--quiet-zone) * 2));
-            height: calc(var(--barcode-height) - 7mm);
+            width: 100%;
+            height: auto;
+            max-width: 100%;
         }
 
         .barcode-number {
-            font-size: 9pt;
+            font-size: 8pt;
             font-weight: 600;
-            letter-spacing: 1px;
+            letter-spacing: 0.5px;
             text-align: center;
-            margin-top: 0.8mm;
+            margin-top: 2px;
+            margin-bottom: 0;
+            padding: 0;
             width: 100%;
         }
 
@@ -163,15 +167,36 @@ $encodedBatchNumber = json_encode($batchNumber, JSON_UNESCAPED_UNICODE);
         }
 
         @media print {
-            body {
+            * {
+                margin: 0;
+                padding: 0;
+            }
+            html, body {
+                width: 100%;
+                height: 100%;
+                margin: 0;
+                padding: 0;
                 background: #fff;
+            }
+            .print-controls {
+                display: none !important;
             }
             .labels-container {
                 gap: 0;
+                margin: 0;
+                padding: 0;
             }
             .label-wrapper {
                 box-shadow: none;
                 border-radius: 0;
+                margin: 0;
+                padding: 0;
+                page-break-after: auto;
+                page-break-inside: avoid;
+            }
+            .barcode-box {
+                margin: 0;
+                padding: 0;
             }
         }
     </style>
@@ -214,9 +239,9 @@ $encodedBatchNumber = json_encode($batchNumber, JSON_UNESCAPED_UNICODE);
                     format: 'CODE128',
                     background: '#ffffff',
                     lineColor: '#000000',
-                    margin: 8,
-                    width: 1.25,
-                    height: 90,
+                    margin: 0,
+                    width: 1,
+                    height: 60,
                     displayValue: false,
                     flat: true
                 });
