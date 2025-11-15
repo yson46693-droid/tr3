@@ -117,17 +117,45 @@ function requestApproval($type, $entityId, $requestedBy, $notes = null) {
         // تحسين رسالة الإشعار لطلبات نقل المنتجات
         if ($type === 'warehouse_transfer') {
             $transferNumber = '';
+            $transferDetails = '';
             try {
-                $transfer = $db->queryOne("SELECT transfer_number FROM warehouse_transfers WHERE id = ?", [$entityId]);
-                if ($transfer && !empty($transfer['transfer_number'])) {
-                    $transferNumber = ' رقم ' . $transfer['transfer_number'];
+                $transfer = $db->queryOne("SELECT transfer_number, from_warehouse_id, to_warehouse_id, transfer_date FROM warehouse_transfers WHERE id = ?", [$entityId]);
+                if ($transfer) {
+                    if (!empty($transfer['transfer_number'])) {
+                        $transferNumber = ' رقم ' . $transfer['transfer_number'];
+                    }
+                    
+                    // الحصول على أسماء المخازن
+                    $fromWarehouse = $db->queryOne("SELECT name FROM warehouses WHERE id = ?", [$transfer['from_warehouse_id']]);
+                    $toWarehouse = $db->queryOne("SELECT name FROM warehouses WHERE id = ?", [$transfer['to_warehouse_id']]);
+                    
+                    $fromName = $fromWarehouse['name'] ?? ('#' . $transfer['from_warehouse_id']);
+                    $toName = $toWarehouse['name'] ?? ('#' . $transfer['to_warehouse_id']);
+                    
+                    // الحصول على عدد العناصر والكمية الإجمالية
+                    $itemsInfo = $db->queryOne(
+                        "SELECT COUNT(*) as count, COALESCE(SUM(quantity), 0) as total_quantity 
+                         FROM warehouse_transfer_items WHERE transfer_id = ?",
+                        [$entityId]
+                    );
+                    $itemsCountValue = $itemsInfo['count'] ?? 0;
+                    $totalQuantity = $itemsInfo['total_quantity'] ?? 0;
+                    
+                    $transferDetails = sprintf(
+                        "\n\nالتفاصيل:\nمن: %s\nإلى: %s\nالتاريخ: %s\nعدد العناصر: %d\nالكمية الإجمالية: %.2f",
+                        $fromName,
+                        $toName,
+                        $transfer['transfer_date'] ?? date('Y-m-d'),
+                        $itemsCountValue,
+                        $totalQuantity
+                    );
                 }
             } catch (Exception $e) {
-                error_log('Error getting transfer number for notification: ' . $e->getMessage());
+                error_log('Error getting transfer details for notification: ' . $e->getMessage());
             }
             
             $notificationTitle = 'طلب موافقة نقل منتجات بين المخازن';
-            $notificationMessage = "تم استلام طلب موافقة جديد لنقل منتجات بين المخازن{$transferNumber}. يرجى مراجعة الطلب والموافقة عليه.";
+            $notificationMessage = "تم استلام طلب موافقة جديد لنقل منتجات بين المخازن{$transferNumber}.{$transferDetails}\n\nيرجى مراجعة الطلب والموافقة عليه.";
         } else {
             $notificationTitle = 'طلب موافقة جديد';
             $notificationMessage = "تم طلب موافقة على {$entityName} من نوع {$type}";

@@ -457,7 +457,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             exit;
         }
         
-        // سيتم حذف token بعد نجاح الطلب فقط (داخل if (!empty($result['success'])))
+        // حذف token فوراً بعد التحقق منه لمنع الإرسال المزدوج
+        unset($_SESSION[$sessionTokenKey]);
         
         $transferErrors = [];
 
@@ -812,8 +813,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                                 'تم تنفيذ نقل المنتجات رقم %s بواسطة المدير بنجاح دون الحاجة للموافقة.',
                                 $transferNumber
                             );
-                            // حذف token بعد نجاح الطلب لمنع إعادة الإرسال
-                            unset($_SESSION[$sessionTokenKey]);
                             productionSafeRedirect($productionInventoryUrl, $productionRedirectParams, $productionRedirectRole);
                         } catch (Throwable $autoApprovalError) {
                             error_log('final_products auto-approval transfer error: ' . $autoApprovalError->getMessage());
@@ -821,8 +820,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                                 'تم حفظ طلب النقل رقم %s لكن تعذر تنفيذه تلقائياً. يرجى المراجعة اليدوية.',
                                 $transferNumber
                             );
-                            // حذف token بعد نجاح إنشاء الطلب (رغم فشل الموافقة التلقائية)
-                            unset($_SESSION[$sessionTokenKey]);
                             productionSafeRedirect($productionInventoryUrl, $productionRedirectParams, $productionRedirectRole);
                         }
                     } else {
@@ -830,8 +827,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                             'تم إرسال طلب النقل رقم %s إلى المدير للموافقة عليه.',
                             $transferNumber
                         );
-                        // حذف token بعد نجاح الطلب لمنع إعادة الإرسال
-                        unset($_SESSION[$sessionTokenKey]);
                         productionSafeRedirect($productionInventoryUrl, $productionRedirectParams, $productionRedirectRole);
                     }
                 } else {
@@ -843,6 +838,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
         if (!empty($transferErrors)) {
             $error = implode(' | ', array_unique($transferErrors));
+            // إعادة إنشاء token للسماح بإعادة المحاولة في حالة وجود أخطاء
+            $_SESSION[$sessionTokenKey] = bin2hex(random_bytes(32));
         }
     }
     

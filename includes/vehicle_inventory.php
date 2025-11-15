@@ -1203,6 +1203,21 @@ function approveWarehouseTransfer($transferId, $approvedBy = null) {
                     $message = $updateVehicleResult['message'] ?? 'تعذر تحديث مخزون السيارة المصدر.';
                     throw new Exception($message);
                 }
+            } else if ($batchId && ($fromWarehouse['warehouse_type'] ?? '') !== 'vehicle') {
+                // إذا كان المخزن المصدر رئيسي (ليس سيارة) وهناك batch_id، خصم من quantity_produced
+                $finishedProd = $db->queryOne(
+                    "SELECT quantity_produced FROM finished_products WHERE id = ?",
+                    [$batchId]
+                );
+                
+                if ($finishedProd) {
+                    $currentRemaining = (float)($finishedProd['quantity_produced'] ?? 0);
+                    $newRemaining = max(0.0, $currentRemaining - $requestedQuantity);
+                    $db->execute(
+                        "UPDATE finished_products SET quantity_produced = ?, updated_at = NOW() WHERE id = ?",
+                        [$newRemaining, $batchId]
+                    );
+                }
             }
             
             // دخول إلى المخزن الوجهة
