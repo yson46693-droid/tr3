@@ -5238,36 +5238,48 @@ function getSuppliersForComponent(component) {
     if (!component) {
         return suppliers;
     }
-    const type = (component.type || '').toString();
-    const key = (component.key || '').toString();
+    const type = (component.type || '').toString().toLowerCase();
+    const key = (component.key || '').toString().toLowerCase();
+    const name = ((component.name || component.label || '').toString().toLowerCase());
 
-    const filterByTypes = (allowedTypes) => suppliers.filter(supplier => allowedTypes.includes(supplier.type));
+    const filterByTypes = (allowedTypes) => suppliers.filter(supplier => {
+        const supplierType = (supplier.type || '').toString().toLowerCase();
+        return allowedTypes.some(allowedType => supplierType === allowedType.toLowerCase());
+    });
 
+    // للعسل
     if (isHoneyComponent(component)) {
         return filterByTypes(['honey']);
     }
 
-    if (type === 'packaging' || key.startsWith('pack_')) {
+    // لمواد التعبئة
+    if (type === 'packaging' || key.startsWith('pack_') || name.includes('تعبئة') || name.includes('packaging')) {
         return filterByTypes(['packaging']);
     }
 
-    if (type === 'olive_oil' || key.startsWith('olive')) {
+    // لزيت الزيتون
+    if (type === 'olive_oil' || key.startsWith('olive') || name.includes('زيت زيتون') || name.includes('olive oil') || name.includes('olive_oil')) {
         return filterByTypes(['olive_oil']);
     }
 
-    if (type === 'beeswax' || key.startsWith('beeswax')) {
+    // للشمع
+    if (type === 'beeswax' || key.startsWith('beeswax') || name.includes('شمع') || name.includes('beeswax')) {
         return filterByTypes(['beeswax']);
     }
 
-    if (type === 'derivatives' || key.startsWith('derivative')) {
+    // للمشتقات
+    if (type === 'derivatives' || key.startsWith('derivative') || name.includes('مشتق') || name.includes('derivative')) {
         return filterByTypes(['derivatives']);
     }
 
-    if (type === 'nuts' || key.startsWith('nuts')) {
+    // للمكسرات
+    if (type === 'nuts' || key.startsWith('nuts') || name.includes('مكسرات') || name.includes('nuts')) {
         return filterByTypes(['nuts']);
     }
 
-    return suppliers;
+    // إذا لم يتم العثور على نوع محدد، إرجاع قائمة فارغة بدلاً من جميع الموردين
+    // لتجنب عرض موردين غير مناسبين
+    return [];
 }
 
 function normalizeSupplierKey(value) {
@@ -6153,7 +6165,7 @@ function renderTemplateSuppliers(details) {
         placeholderOption.textContent = component.placeholder || 'اختر المورد';
         select.appendChild(placeholderOption);
 
-        // لمكوّنات العسل، استخدم موردين العسل فقط
+        // الحصول على الموردين المناسبين للمكون حسب نوعه
         let suppliersForComponent = getSuppliersForComponent(component);
         let suppliersList = [];
         
@@ -6164,8 +6176,23 @@ function renderTemplateSuppliers(details) {
             const allSuppliers = window.productionSuppliers || [];
             suppliersList = allSuppliers.filter(supplier => supplier.type === 'honey');
         } else {
-            // للمكوّنات الأخرى، استخدم الموردين المحددين أو جميع الموردين كـ fallback
-            suppliersList = suppliersForComponent.length ? suppliersForComponent : (window.productionSuppliers || []);
+            // للمكوّنات الأخرى، استخدم الموردين المفلترين حسب نوع المكون فقط
+            // إذا لم يتم العثور على موردين محددين، لا تستخدم fallback لجميع الموردين
+            suppliersList = suppliersForComponent.length ? suppliersForComponent : [];
+            
+            // إذا كان نوع المكون معروفاً لكن لا يوجد موردين، حاول البحث بشكل أكثر تحديداً
+            if (suppliersList.length === 0 && canonicalType) {
+                const allSuppliers = window.productionSuppliers || [];
+                // البحث عن موردين بنوع يطابق نوع المكون
+                const typeMatch = allSuppliers.filter(supplier => {
+                    const supplierType = (supplier.type || '').toString().toLowerCase();
+                    const componentType = canonicalType.toString().toLowerCase();
+                    return supplierType === componentType;
+                });
+                if (typeMatch.length > 0) {
+                    suppliersList = typeMatch;
+                }
+            }
         }
         let autoSelectSupplierId = null;
 
@@ -6179,25 +6206,9 @@ function renderTemplateSuppliers(details) {
             select.appendChild(option);
         });
 
-        // الاختيار التلقائي للمورد إذا كان هناك مورد واحد فقط للمواد التالية:
-        // الشمع (beeswax)، المكسرات (nuts)، المشتقات (derivatives)، زيت الزيتون (olive_oil)
-        const autoSelectTypes = ['beeswax', 'nuts', 'derivatives', 'olive_oil'];
-        // التحقق من نوع المادة من عدة مصادر: canonicalType، effectiveType، component.type
-        const materialTypeForAutoSelect = (canonicalType || effectiveType || component.type || '').toString().toLowerCase();
-        // التحقق أيضاً من اسم المادة إذا كان يحتوي على كلمات مفتاحية
-        const componentNameLower = ((component.name || component.label || '').toString().toLowerCase());
-        const isBeeswaxByName = componentNameLower.includes('شمع') || componentNameLower.includes('beeswax');
-        const isNutsByName = componentNameLower.includes('مكسرات') || componentNameLower.includes('nuts');
-        const isDerivativesByName = componentNameLower.includes('مشتق') || componentNameLower.includes('derivative');
-        const isOliveOilByName = componentNameLower.includes('زيت زيتون') || componentNameLower.includes('olive oil') || componentNameLower.includes('olive_oil');
-        
-        const shouldAutoSelect = autoSelectTypes.includes(materialTypeForAutoSelect) 
-            || isBeeswaxByName 
-            || isNutsByName 
-            || isDerivativesByName 
-            || isOliveOilByName;
-        
-        if (!component.default_supplier && suppliersList.length === 1 && shouldAutoSelect) {
+        // الاختيار التلقائي للمورد إذا كان هناك مورد واحد فقط
+        // ينطبق على جميع أنواع المكونات (المواد الخام، المكونات، مواد التعبئة)
+        if (!component.default_supplier && suppliersList.length === 1) {
             autoSelectSupplierId = suppliersList[0].id;
         }
 

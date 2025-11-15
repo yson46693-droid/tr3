@@ -278,6 +278,7 @@ function batchCreationDeductTypedStock(PDO $pdo, array $material, float $unitsMu
         case 'honey_filtered':
         case 'honey':
         case 'honey_main':
+        case 'honey_general':
             batchCreationConsumeHoneyStock($pdo, 'filtered_honey_quantity', $totalRequired, $supplierId, $honeyVariety, $materialName, $unit);
             break;
         case 'olive_oil':
@@ -292,6 +293,115 @@ function batchCreationDeductTypedStock(PDO $pdo, array $material, float $unitsMu
         case 'nuts':
             batchCreationConsumeSimpleStock($pdo, 'nuts_stock', 'quantity', $totalRequired, $supplierId, $materialName, $unit);
             break;
+        case 'raw_general':
+            // محاولة التعرف على نوع المادة من اسمها والبحث في الجداول الخاصة
+            $normalizedName = mb_strtolower(trim($materialName), 'UTF-8');
+            
+            // شمع -> beeswax_stock
+            if (mb_stripos($normalizedName, 'شمع') !== false || stripos($normalizedName, 'beeswax') !== false || stripos($normalizedName, 'wax') !== false) {
+                batchCreationConsumeSimpleStock($pdo, 'beeswax_stock', 'weight', $totalRequired, $supplierId, $materialName, $unit);
+                break;
+            }
+            
+            // عسل -> honey_stock
+            if (mb_stripos($normalizedName, 'عسل') !== false || stripos($normalizedName, 'honey') !== false) {
+                $hasRawKeyword = (mb_stripos($normalizedName, 'خام') !== false) || stripos($normalizedName, 'raw') !== false;
+                if ($hasRawKeyword) {
+                    batchCreationConsumeHoneyStock($pdo, 'raw_honey_quantity', $totalRequired, $supplierId, $honeyVariety, $materialName, $unit);
+                } else {
+                    batchCreationConsumeHoneyStock($pdo, 'filtered_honey_quantity', $totalRequired, $supplierId, $honeyVariety, $materialName, $unit);
+                }
+                break;
+            }
+            
+            // زيت زيتون -> olive_oil_stock
+            if (mb_stripos($normalizedName, 'زيت') !== false || stripos($normalizedName, 'olive') !== false || stripos($normalizedName, 'oil') !== false) {
+                batchCreationConsumeSimpleStock($pdo, 'olive_oil_stock', 'quantity', $totalRequired, $supplierId, $materialName, $unit);
+                break;
+            }
+            
+            // مكسرات -> nuts_stock
+            if (mb_stripos($normalizedName, 'مكسرات') !== false || mb_stripos($normalizedName, 'لوز') !== false || mb_stripos($normalizedName, 'جوز') !== false || 
+                stripos($normalizedName, 'nuts') !== false || stripos($normalizedName, 'almond') !== false || stripos($normalizedName, 'walnut') !== false) {
+                batchCreationConsumeSimpleStock($pdo, 'nuts_stock', 'quantity', $totalRequired, $supplierId, $materialName, $unit);
+                break;
+            }
+            
+            // مشتقات -> derivatives_stock
+            if (mb_stripos($normalizedName, 'مشتقات') !== false || stripos($normalizedName, 'derivatives') !== false || stripos($normalizedName, 'royal') !== false || stripos($normalizedName, 'propolis') !== false) {
+                batchCreationConsumeSimpleStock($pdo, 'derivatives_stock', 'weight', $totalRequired, $supplierId, $materialName, $unit);
+                break;
+            }
+            
+            // إذا لم يتطابق مع أي نوع، نحاول البحث في raw_materials
+            if (batchCreationTableExists($pdo, 'raw_materials')) {
+                try {
+                    $supplierColumnExists = batchCreationColumnExists($pdo, 'raw_materials', 'supplier_id');
+                    $attemptSuppliers = [];
+                    if ($supplierColumnExists && $supplierId) {
+                        $attemptSuppliers[] = $supplierId;
+                    }
+                    $attemptSuppliers[] = null;
+                    
+                    $remaining = $totalRequired;
+                    $updateStmt = $pdo->prepare("UPDATE raw_materials SET quantity = GREATEST(quantity - ?, 0) WHERE id = ?");
+                    
+                    foreach ($attemptSuppliers as $attemptSupplier) {
+                        if ($remaining <= 0) {
+                            break;
+                        }
+                        
+                        $sql = "SELECT id, quantity AS available FROM raw_materials WHERE quantity > 0";
+                        $params = [];
+                        
+                        if ($supplierColumnExists && $attemptSupplier) {
+                            $sql .= " AND supplier_id = ?";
+                            $params[] = $attemptSupplier;
+                        }
+                        
+                        // البحث بالاسم أيضاً إذا كان متوفراً
+                        if (batchCreationColumnExists($pdo, 'raw_materials', 'name')) {
+                            $sql .= " AND (name LIKE ? OR name = ?)";
+                            $searchTerm = '%' . addcslashes($materialName, '%_') . '%';
+                            $params[] = $searchTerm;
+                            $params[] = $materialName;
+                        }
+                        
+                        $sql .= " ORDER BY quantity DESC";
+                        $stmt = $pdo->prepare($sql);
+                        $stmt->execute($params);
+                        $rows = $stmt->fetchAll(PDO::FETCH_ASSOC);
+                        
+                        if (empty($rows)) {
+                            continue;
+                        }
+                        
+                        foreach ($rows as $row) {
+                            if ($remaining <= 0) {
+                                break;
+                            }
+                            
+                            $available = (float)($row['available'] ?? 0);
+                            if ($available <= 0) {
+                                continue;
+                            }
+                            
+                            $deduct = min($available, $remaining);
+                            $updateStmt->execute([$deduct, $row['id']]);
+                            $remaining -= $deduct;
+                        }
+                    }
+                    
+                    if ($remaining <= 0.0001) {
+                        // نجحنا في خصم الكمية من raw_materials
+                        break;
+                    }
+                } catch (RuntimeException $rawMaterialsError) {
+                    // إذا فشل البحث في raw_materials، نرمي الخطأ الأصلي
+                }
+            }
+            
+            throw new RuntimeException('لا يوجد إعداد مخزون مرتبط بالمادة: ' . $materialName . ' (النوع: ' . $materialType . ')');
         default:
             throw new RuntimeException('لا يوجد إعداد مخزون مرتبط بالمادة: ' . $materialName . ' (النوع: ' . $materialType . ')');
     }
