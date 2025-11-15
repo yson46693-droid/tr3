@@ -1070,7 +1070,7 @@ if (!empty($finishedProductsTableExists)) {
                 fp.batch_id,
                 fp.batch_number,
                 COALESCE(fp.product_id, bn.product_id) AS product_id,
-                COALESCE(pr.name, fp.product_name) AS product_name,
+                COALESCE(NULLIF(TRIM(fp.product_name), ''), pr.name, 'غير محدد') AS product_name,
                 fp.production_date,
                 fp.quantity_produced,
                 fp.unit_price,
@@ -1094,12 +1094,12 @@ if (!empty($finishedProductsTableExists)) {
                        OR (
                            pt.product_name IS NOT NULL 
                            AND pt.product_name != ''
-                           AND COALESCE(pr.name, fp.product_name) IS NOT NULL
-                           AND COALESCE(pr.name, fp.product_name) != ''
+                           AND COALESCE(NULLIF(TRIM(fp.product_name), ''), pr.name) IS NOT NULL
+                           AND COALESCE(NULLIF(TRIM(fp.product_name), ''), pr.name) != ''
                            AND (
-                               LOWER(TRIM(pt.product_name)) = LOWER(TRIM(COALESCE(pr.name, fp.product_name)))
-                               OR LOWER(TRIM(pt.product_name)) LIKE CONCAT('%', LOWER(TRIM(COALESCE(pr.name, fp.product_name))), '%')
-                               OR LOWER(TRIM(COALESCE(pr.name, fp.product_name))) LIKE CONCAT('%', LOWER(TRIM(pt.product_name)), '%')
+                               LOWER(TRIM(pt.product_name)) = LOWER(TRIM(COALESCE(NULLIF(TRIM(fp.product_name), ''), pr.name)))
+                               OR LOWER(TRIM(pt.product_name)) LIKE CONCAT('%', LOWER(TRIM(COALESCE(NULLIF(TRIM(fp.product_name), ''), pr.name))), '%')
+                               OR LOWER(TRIM(COALESCE(NULLIF(TRIM(fp.product_name), ''), pr.name))) LIKE CONCAT('%', LOWER(TRIM(pt.product_name)), '%')
                            )
                        )
                        -- إذا لم يكن هناك product_id في القالب، نبحث فقط بالاسم
@@ -1107,12 +1107,12 @@ if (!empty($finishedProductsTableExists)) {
                            (pt.product_id IS NULL OR pt.product_id = 0)
                            AND pt.product_name IS NOT NULL 
                            AND pt.product_name != ''
-                           AND COALESCE(pr.name, fp.product_name) IS NOT NULL
-                           AND COALESCE(pr.name, fp.product_name) != ''
+                           AND COALESCE(NULLIF(TRIM(fp.product_name), ''), pr.name) IS NOT NULL
+                           AND COALESCE(NULLIF(TRIM(fp.product_name), ''), pr.name) != ''
                            AND (
-                               LOWER(TRIM(pt.product_name)) = LOWER(TRIM(COALESCE(pr.name, fp.product_name)))
-                               OR LOWER(TRIM(pt.product_name)) LIKE CONCAT('%', LOWER(TRIM(COALESCE(pr.name, fp.product_name))), '%')
-                               OR LOWER(TRIM(COALESCE(pr.name, fp.product_name))) LIKE CONCAT('%', LOWER(TRIM(pt.product_name)), '%')
+                               LOWER(TRIM(pt.product_name)) = LOWER(TRIM(COALESCE(NULLIF(TRIM(fp.product_name), ''), pr.name)))
+                               OR LOWER(TRIM(pt.product_name)) LIKE CONCAT('%', LOWER(TRIM(COALESCE(NULLIF(TRIM(fp.product_name), ''), pr.name))), '%')
+                               OR LOWER(TRIM(COALESCE(NULLIF(TRIM(fp.product_name), ''), pr.name))) LIKE CONCAT('%', LOWER(TRIM(pt.product_name)), '%')
                            )
                        )
                    )
@@ -1385,13 +1385,23 @@ if ($isManager) {
                                 <?php if ($isManager): ?>
                                     <td>
                                         <?php 
-                                            $unitPrice = isset($finishedRow['unit_price']) && $finishedRow['unit_price'] !== null 
-                                                ? (float)$finishedRow['unit_price'] 
-                                                : null;
+                                            // استخدام template_unit_price كبديل إذا كان unit_price فارغاً
+                                            $unitPrice = null;
+                                            if (isset($finishedRow['unit_price']) && $finishedRow['unit_price'] !== null) {
+                                                $unitPrice = (float)$finishedRow['unit_price'];
+                                            } elseif (isset($finishedRow['template_unit_price']) && $finishedRow['template_unit_price'] !== null) {
+                                                $unitPrice = (float)$finishedRow['template_unit_price'];
+                                            }
+                                            
                                             $totalPrice = isset($finishedRow['total_price']) && $finishedRow['total_price'] !== null 
                                                 ? (float)$finishedRow['total_price'] 
                                                 : null;
                                             $quantity = (float)($finishedRow['quantity_produced'] ?? 0);
+                                            
+                                            // إذا كان total_price فارغاً ولكن unit_price موجود، احسبه
+                                            if ($totalPrice === null && $unitPrice !== null && $unitPrice > 0 && $quantity > 0) {
+                                                $totalPrice = $unitPrice * $quantity;
+                                            }
                                             
                                             if ($totalPrice !== null && $totalPrice > 0) {
                                                 echo '<span class="fw-bold text-success">' . htmlspecialchars(formatCurrency($totalPrice)) . '</span>';
