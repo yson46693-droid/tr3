@@ -776,11 +776,21 @@ function createWarehouseTransfer($fromWarehouseId, $toWarehouseId, $transferDate
         
         $transferNumber = generateTransferNumber();
         
+        // التحقق من دور المستخدم - إذا كان المدير، ننفذ النقل مباشرة بدون موافقة
+        require_once __DIR__ . '/auth.php';
+        $requesterUser = getUserById($requestedBy);
+        $isManager = ($requesterUser && strtolower($requesterUser['role'] ?? '') === 'manager');
+        
+        // تحديد الحالة الابتدائية للنقل
+        // إذا كان المدير، نبدأ بحالة 'approved' للتنفيذ المباشر
+        // إذا لم يكن المدير، نبدأ بحالة 'pending' للموافقة
+        $initialStatus = $isManager ? 'approved' : 'pending';
+        
         $db->execute(
             "INSERT INTO warehouse_transfers 
             (transfer_number, from_warehouse_id, to_warehouse_id, transfer_date, 
-             transfer_type, reason, status, requested_by, notes) 
-            VALUES (?, ?, ?, ?, ?, ?, 'pending', ?, ?)",
+             transfer_type, reason, status, requested_by, approved_by, approved_at, notes) 
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
             [
                 $transferNumber,
                 $fromWarehouseId,
@@ -788,7 +798,10 @@ function createWarehouseTransfer($fromWarehouseId, $toWarehouseId, $transferDate
                 $transferDate,
                 $transferType,
                 $reason,
+                $initialStatus,
                 $requestedBy,
+                $isManager ? $requestedBy : null, // إذا كان المدير، يكون هو الموافق أيضاً
+                $isManager ? date('Y-m-d H:i:s') : null, // تاريخ الموافقة إذا كان المدير
                 $notes
             ]
         );
@@ -971,25 +984,21 @@ function createWarehouseTransfer($fromWarehouseId, $toWarehouseId, $transferDate
         
         // النقل تم إنشاؤه بنجاح، الآن نقوم بعمليات إضافية (لا يجب أن تؤثر على نجاح العملية)
         
-        // التحقق من دور المستخدم - إذا كان المدير، الموافقة على النقل مباشرة
-        require_once __DIR__ . '/auth.php';
-        $requesterUser = getUserById($requestedBy);
-        $isManager = ($requesterUser && strtolower($requesterUser['role'] ?? '') === 'manager');
-        
+        // إذا كان المدير، تنفيذ النقل مباشرة بدون المرور بنظام الموافقات
         if ($isManager) {
-            // إذا كان المدير هو من أنشأ الطلب، الموافقة عليه وتنفيذه مباشرة
+            // تنفيذ النقل مباشرة للمدير
             try {
-                $approvalResult = approveWarehouseTransfer($transferId, $requestedBy);
-                if (!($approvalResult['success'] ?? false)) {
-                    error_log('Manager warehouse transfer auto-approval warning: ' . ($approvalResult['message'] ?? 'Unknown error'));
-                    // حتى لو فشلت الموافقة، النقل تم إنشاؤه بنجاح
+                $transferResult = executeWarehouseTransferDirectly($transferId, $requestedBy);
+                if (!($transferResult['success'] ?? false)) {
+                    error_log('Manager warehouse transfer direct execution warning: ' . ($transferResult['message'] ?? 'Unknown error'));
+                    // حتى لو فشل التنفيذ، النقل تم إنشاؤه بنجاح
                 }
-            } catch (Exception $approvalException) {
-                // لا نسمح لفشل الموافقة بإلغاء نجاح إنشاء النقل
-                error_log('Manager warehouse transfer auto-approval exception: ' . $approvalException->getMessage());
+            } catch (Exception $executionException) {
+                // لا نسمح لفشل التنفيذ بإلغاء نجاح إنشاء النقل
+                error_log('Manager warehouse transfer direct execution exception: ' . $executionException->getMessage());
             }
         } else {
-            // إذا لم يكن المدير، إرسال إشعار للمديرين للموافقة
+            // إذا لم يكن المدير، إرسال إشعار للمديرين للموافقة (دون حفظ في approvals إذا كان موجوداً)
             try {
                 require_once __DIR__ . '/approval_system.php';
                 $approvalNotes = sprintf(
@@ -1072,6 +1081,379 @@ function createWarehouseTransfer($fromWarehouseId, $toWarehouseId, $transferDate
         
         // الطلب لم يتم إنشاؤه - خطأ حقيقي
         return ['success' => false, 'message' => 'حدث خطأ في إنشاء طلب النقل: ' . $e->getMessage()];
+    }
+}
+
+/**
+ * تنفيذ النقل مباشرة (للمدير بدون المرور بنظام الموافقات)
+ */
+function executeWarehouseTransferDirectly($transferId, $executedBy = null) {
+    try {
+        $db = db();
+        
+        if ($executedBy === null) {
+            require_once __DIR__ . '/auth.php';
+            $currentUser = getCurrentUser();
+            $executedBy = $currentUser['id'] ?? null;
+        }
+        
+        $transfer = $db->queryOne("SELECT * FROM warehouse_transfers WHERE id = ?", [$transferId]);
+        
+        if (!$transfer) {
+            return ['success' => false, 'message' => 'طلب النقل غير موجود'];
+        }
+        
+        // التحقق من أن الحالة هي 'approved' (التي تم تعيينها مسبقاً للمدير)
+        if ($transfer['status'] !== 'approved') {
+            // إذا لم تكن 'approved'، نحاول الموافقة عليها أولاً
+            if ($transfer['status'] === 'pending') {
+                // استدعاء approveWarehouseTransfer للتعامل مع الحالة
+                return approveWarehouseTransfer($transferId, $executedBy);
+            } else {
+                return ['success' => false, 'message' => 'تم معالجة هذا الطلب بالفعل'];
+            }
+        }
+        
+        $db->getConnection()->begin_transaction();
+        
+        // الحصول على العناصر
+        $items = $db->query(
+            "SELECT * FROM warehouse_transfer_items WHERE transfer_id = ?",
+            [$transferId]
+        );
+        
+        if (empty($items)) {
+            throw new Exception('لا توجد عناصر في طلب النقل هذا.');
+        }
+        
+        error_log("Executing warehouse transfer directly (Manager) ID: $transferId with " . count($items) . " items");
+        
+        // معلومات المخازن
+        $fromWarehouse = $db->queryOne(
+            "SELECT id, warehouse_type, vehicle_id FROM warehouses WHERE id = ?",
+            [$transfer['from_warehouse_id']]
+        );
+
+        if (!$fromWarehouse) {
+            throw new Exception('المخزن المصدر غير موجود');
+        }
+
+        $toWarehouse = $db->queryOne(
+            "SELECT id, warehouse_type, vehicle_id FROM warehouses WHERE id = ?",
+            [$transfer['to_warehouse_id']]
+        );
+
+        if (!$toWarehouse) {
+            throw new Exception('المخزن الوجهة غير موجود');
+        }
+
+        // تنفيذ النقل (نفس منطق approveWarehouseTransfer)
+        foreach ($items as $item) {
+            $batchId = isset($item['batch_id']) ? (int)$item['batch_id'] : null;
+            $batchNumber = $item['batch_number'] ?? null;
+            $batchNote = $batchNumber ? " - تشغيلة {$batchNumber}" : '';
+            $finishedMetadata = [];
+            
+            // جلب finishedMetadata من finished_products إذا كان هناك batch_id
+            if ($batchId) {
+                $finishedProd = $db->queryOne(
+                    "SELECT fp.*, p.unit_price, p.name as product_name
+                     FROM finished_products fp
+                     LEFT JOIN products p ON fp.product_id = p.id
+                     WHERE fp.id = ?",
+                    [$batchId]
+                );
+                if ($finishedProd) {
+                    $finishedMetadata = [
+                        'finished_batch_id' => $batchId,
+                        'finished_batch_number' => $batchNumber ?? $finishedProd['batch_number'] ?? null,
+                        'finished_production_date' => $finishedProd['production_date'] ?? null,
+                        'finished_quantity_produced' => $finishedProd['quantity_produced'] ?? null,
+                        'finished_workers' => $finishedProd['workers'] ?? null,
+                        'manager_unit_price' => $finishedProd['unit_price'] ?? null,
+                        'product_name' => $finishedProd['product_name'] ?? null
+                    ];
+                }
+            }
+
+            // التحقق من توفر الكمية في المخزن المصدر
+            $requestedQuantity = (float) $item['quantity'];
+            $availableQuantity = 0.0;
+            $productId = isset($item['product_id']) ? (int)$item['product_id'] : 0;
+
+            // حساب الكمية المتاحة الفعلية من المخزن المصدر
+            if ($batchId) {
+                if ($productId <= 0) {
+                    $batchInfo = $db->queryOne(
+                        "SELECT product_id FROM finished_products WHERE id = ?",
+                        [$batchId]
+                    );
+                    if ($batchInfo && !empty($batchInfo['product_id'])) {
+                        $productId = (int)$batchInfo['product_id'];
+                    }
+                }
+                
+                if (($fromWarehouse['warehouse_type'] ?? '') === 'vehicle' && !empty($fromWarehouse['vehicle_id'])) {
+                    $vehicleStock = $db->queryOne(
+                        "SELECT quantity FROM vehicle_inventory WHERE vehicle_id = ? AND product_id = ?",
+                        [$fromWarehouse['vehicle_id'], $productId]
+                    );
+                    $availableQuantity = (float)($vehicleStock['quantity'] ?? 0);
+                    
+                    $pendingTransfers = $db->queryOne(
+                        "SELECT COALESCE(SUM(wti.quantity), 0) AS pending_quantity
+                         FROM warehouse_transfer_items wti
+                         INNER JOIN warehouse_transfers wt ON wt.id = wti.transfer_id
+                         WHERE wti.batch_id = ? AND wt.from_warehouse_id = ? AND wt.status IN ('pending', 'approved') AND wt.id != ?",
+                        [$batchId, $transfer['from_warehouse_id'], $transferId]
+                    );
+                    $availableQuantity -= (float)($pendingTransfers['pending_quantity'] ?? 0);
+                } else {
+                    $batchRow = $db->queryOne(
+                        "SELECT quantity_produced FROM finished_products WHERE id = ?",
+                        [$batchId]
+                    );
+                    
+                    if ($batchRow) {
+                        $quantityProduced = (float)($batchRow['quantity_produced'] ?? 0);
+                        $availableQuantity = $quantityProduced;
+                        
+                        $pendingTransfers = $db->queryOne(
+                            "SELECT COALESCE(SUM(wti.quantity), 0) AS pending_quantity
+                             FROM warehouse_transfer_items wti
+                             INNER JOIN warehouse_transfers wt ON wt.id = wti.transfer_id
+                             WHERE wti.batch_id = ? AND wt.from_warehouse_id = ? AND wt.status IN ('pending', 'approved') AND wt.id != ?",
+                            [$batchId, $transfer['from_warehouse_id'], $transferId]
+                        );
+                        $pendingQuantity = (float)($pendingTransfers['pending_quantity'] ?? 0);
+                        $availableQuantity -= $pendingQuantity;
+                    }
+                }
+            } else if ($productId > 0) {
+                if (($fromWarehouse['warehouse_type'] ?? '') === 'vehicle' && !empty($fromWarehouse['vehicle_id'])) {
+                    $fromVehicleStockRow = $db->queryOne(
+                        "SELECT quantity FROM vehicle_inventory WHERE vehicle_id = ? AND product_id = ?",
+                        [$fromWarehouse['vehicle_id'], $productId]
+                    );
+                    $availableQuantity = (float)($fromVehicleStockRow['quantity'] ?? 0);
+                } else {
+                    $productStock = $db->queryOne(
+                        "SELECT quantity FROM products WHERE id = ?",
+                        [$productId]
+                    );
+                    $availableQuantity = (float)($productStock['quantity'] ?? 0);
+                }
+                
+                $pendingTransfers = $db->queryOne(
+                    "SELECT COALESCE(SUM(wti.quantity), 0) AS pending_quantity
+                     FROM warehouse_transfer_items wti
+                     INNER JOIN warehouse_transfers wt ON wt.id = wti.transfer_id
+                     WHERE wti.product_id = ? AND wt.from_warehouse_id = ? AND wt.status IN ('pending', 'approved') AND wt.id != ?",
+                    [$productId, $transfer['from_warehouse_id'], $transferId]
+                );
+                $availableQuantity -= (float)($pendingTransfers['pending_quantity'] ?? 0);
+            }
+
+            if ($availableQuantity < $requestedQuantity - 1e-6) {
+                throw new Exception(sprintf(
+                    "الكمية غير متوفرة في المخزن المصدر. المتاح: %.2f، المطلوب: %.2f",
+                    max(0, $availableQuantity),
+                    $requestedQuantity
+                ));
+            }
+            
+            // تسجيل حركة خروج
+            $movementOut = recordInventoryMovement(
+                $item['product_id'],
+                $transfer['from_warehouse_id'],
+                'out',
+                $requestedQuantity,
+                'warehouse_transfer',
+                $transferId,
+                "نقل إلى مخزن آخر{$batchNote}",
+                $executedBy,
+                $batchId
+            );
+
+            if (empty($movementOut['success'])) {
+                $message = $movementOut['message'] ?? 'تعذر تسجيل حركة الخروج من المخزن المصدر.';
+                throw new Exception($message);
+            }
+
+            // تحديث مخزون السيارة المصدر إن وجد
+            if (($fromWarehouse['warehouse_type'] ?? '') === 'vehicle' && !empty($fromWarehouse['vehicle_id'])) {
+                $remainingQuantity = max(0.0, $availableQuantity - $requestedQuantity);
+                $updateVehicleResult = updateVehicleInventory($fromWarehouse['vehicle_id'], $item['product_id'], $remainingQuantity, $executedBy);
+                if (empty($updateVehicleResult['success'])) {
+                    $message = $updateVehicleResult['message'] ?? 'تعذر تحديث مخزون السيارة المصدر.';
+                    throw new Exception($message);
+                }
+            } else if ($batchId && ($fromWarehouse['warehouse_type'] ?? '') !== 'vehicle') {
+                $finishedProd = $db->queryOne(
+                    "SELECT quantity_produced FROM finished_products WHERE id = ?",
+                    [$batchId]
+                );
+                
+                if ($finishedProd) {
+                    $currentRemaining = (float)($finishedProd['quantity_produced'] ?? 0);
+                    $newRemaining = max(0.0, $currentRemaining - $requestedQuantity);
+                    $db->execute(
+                        "UPDATE finished_products SET quantity_produced = ? WHERE id = ?",
+                        [$newRemaining, $batchId]
+                    );
+                }
+            }
+            
+            // دخول إلى المخزن الوجهة
+            if ($toWarehouse && $toWarehouse['vehicle_id']) {
+                $unitPriceOverride = null;
+                if (!empty($finishedMetadata) && isset($finishedMetadata['manager_unit_price']) && $finishedMetadata['manager_unit_price'] !== null) {
+                    $unitPriceOverride = (float)$finishedMetadata['manager_unit_price'];
+                }
+                if ($unitPriceOverride === null) {
+                    $productPriceRow = $db->queryOne(
+                        "SELECT unit_price FROM products WHERE id = ?",
+                        [$item['product_id']]
+                    );
+                    if ($productPriceRow && $productPriceRow['unit_price'] !== null) {
+                        $unitPriceOverride = (float)$productPriceRow['unit_price'];
+                    }
+                }
+
+                $currentInventory = $db->queryOne(
+                    "SELECT quantity FROM vehicle_inventory 
+                     WHERE vehicle_id = ? AND product_id = ?",
+                    [$toWarehouse['vehicle_id'], $item['product_id']]
+                );
+                
+                $newQuantity = ($currentInventory['quantity'] ?? 0) + $item['quantity'];
+                $updateVehicleResult = updateVehicleInventory(
+                    $toWarehouse['vehicle_id'],
+                    $item['product_id'],
+                    $newQuantity,
+                    $executedBy,
+                    $unitPriceOverride,
+                    $finishedMetadata
+                );
+                if (empty($updateVehicleResult['success'])) {
+                    $message = $updateVehicleResult['message'] ?? 'تعذر تحديث مخزون السيارة الوجهة.';
+                    throw new Exception($message);
+                }
+            } else {
+                $currentProduct = $db->queryOne(
+                    "SELECT quantity, warehouse_id FROM products WHERE id = ?",
+                    [$item['product_id']]
+                );
+                
+                if ($currentProduct) {
+                    $db->execute(
+                        "UPDATE products SET quantity = quantity + ?, warehouse_id = ? WHERE id = ?",
+                        [$requestedQuantity, $transfer['to_warehouse_id'], $item['product_id']]
+                    );
+                }
+            }
+            
+            // تسجيل حركة دخول
+            if (!($toWarehouse && $toWarehouse['vehicle_id'])) {
+                $movementIn = recordInventoryMovement(
+                    $item['product_id'],
+                    $transfer['to_warehouse_id'],
+                    'in',
+                    $requestedQuantity,
+                    'warehouse_transfer',
+                    $transferId,
+                    "نقل من مخزن آخر{$batchNote}",
+                    $executedBy
+                );
+
+                if (empty($movementIn['success'])) {
+                    $message = $movementIn['message'] ?? 'تعذر تسجيل حركة الدخول إلى المخزن الوجهة.';
+                    throw new Exception($message);
+                }
+            } else {
+                try {
+                    $product = $db->queryOne(
+                        "SELECT quantity, warehouse_id FROM products WHERE id = ?",
+                        [$item['product_id']]
+                    );
+                    
+                    if ($product) {
+                        $db->execute(
+                            "INSERT INTO inventory_movements 
+                             (product_id, warehouse_id, type, quantity, quantity_before, quantity_after, 
+                              reference_type, reference_id, notes, created_by) 
+                             VALUES (?, ?, 'in', ?, ?, ?, 'warehouse_transfer', ?, ?, ?)",
+                            [
+                                $item['product_id'],
+                                $transfer['to_warehouse_id'],
+                                $requestedQuantity,
+                                $product['quantity'],
+                                $product['quantity'],
+                                $transferId,
+                                "نقل إلى مخزن سيارة{$batchNote}",
+                                $executedBy
+                            ]
+                        );
+                    }
+                } catch (Exception $e) {
+                    error_log("Failed to record inventory movement for vehicle transfer: " . $e->getMessage());
+                }
+            }
+        }
+        
+        error_log("Successfully processed " . count($items) . " items for direct transfer ID: $transferId");
+        
+        // تحديث حالة الطلب إلى مكتمل
+        $db->execute(
+            "UPDATE warehouse_transfers SET status = 'completed' WHERE id = ?",
+            [$transferId]
+        );
+        
+        $db->getConnection()->commit();
+        
+        // جمع معلومات المنتجات المنقولة
+        $transferredProducts = [];
+        foreach ($items as $item) {
+            $productId = isset($item['product_id']) ? (int)$item['product_id'] : 0;
+            $quantity = (float)($item['quantity'] ?? 0);
+            $batchNumber = $item['batch_number'] ?? null;
+            
+            if ($productId > 0) {
+                $productInfo = $db->queryOne(
+                    "SELECT name FROM products WHERE id = ?",
+                    [$productId]
+                );
+                $productName = $productInfo['name'] ?? 'منتج غير معروف';
+                
+                $transferredProducts[] = [
+                    'name' => $productName,
+                    'quantity' => $quantity,
+                    'batch_number' => $batchNumber
+                ];
+            }
+        }
+        
+        logAudit($executedBy, 'execute_transfer_directly', 'warehouse_transfer', $transferId, 
+                 ['old_status' => $transfer['status']], 
+                 ['new_status' => 'completed']);
+        
+        // إرسال فاتورة النقل إلى تليجرام
+        try {
+            sendTransferInvoiceToTelegram($transferId, $transfer, null, $transferredProducts);
+        } catch (Exception $telegramException) {
+            error_log('Failed to send transfer invoice to Telegram: ' . $telegramException->getMessage());
+        }
+        
+        return [
+            'success' => true, 
+            'message' => 'تم تنفيذ النقل بنجاح مباشرة',
+            'transferred_products' => $transferredProducts
+        ];
+        
+    } catch (Exception $e) {
+        $db->getConnection()->rollback();
+        error_log("Direct Transfer Execution Error: " . $e->getMessage());
+        return ['success' => false, 'message' => 'حدث خطأ: ' . $e->getMessage()];
     }
 }
 
