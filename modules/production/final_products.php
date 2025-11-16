@@ -733,6 +733,114 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 $transferId = $result['transfer_id'] ?? null;
                 $transferNumber = $result['transfer_number'] ?? null;
                 
+                // التحقق من إدراج العناصر بشكل صحيح
+                if (!empty($transferId)) {
+                    $insertedItemsCheck = $db->queryOne(
+                        "SELECT COUNT(*) as count FROM warehouse_transfer_items WHERE transfer_id = ?",
+                        [$transferId]
+                    );
+                    $insertedCount = (int)($insertedItemsCheck['count'] ?? 0);
+                    $expectedCount = count($transferItems);
+                    
+                    error_log("Transfer created - ID: $transferId, Items inserted: $insertedCount out of $expectedCount");
+                    
+                    // إذا لم يتم إدراج العناصر، نحاول إدراجها يدوياً
+                    if ($insertedCount === 0 && !empty($transferItems)) {
+                        error_log("WARNING: No items were inserted for transfer ID $transferId! Attempting manual insertion...");
+                        
+                        foreach ($transferItems as $item) {
+                            $productId = isset($item['product_id']) ? (int)$item['product_id'] : null;
+                            $batchId = isset($item['batch_id']) ? (int)$item['batch_id'] : null;
+                            $quantity = (float)($item['quantity'] ?? 0);
+                            $batchNumber = isset($item['batch_number']) ? trim((string)$item['batch_number']) : null;
+                            $itemNotes = isset($item['notes']) ? trim((string)$item['notes']) : null;
+                            
+                            if ($quantity <= 0) {
+                                continue;
+                            }
+                            
+                            // إذا لم يكن هناك product_id، نحاول الحصول عليه من batch_id
+                            if ($productId <= 0 && $batchId > 0) {
+                                $batchRow = $db->queryOne("SELECT product_id FROM finished_products WHERE id = ?", [$batchId]);
+                                if ($batchRow && !empty($batchRow['product_id'])) {
+                                    $productId = (int)$batchRow['product_id'];
+                                }
+                            }
+                            
+                            // إذا لم يكن هناك product_id، نحاول إنشاؤه من batch
+                            if ($productId <= 0 && $batchId > 0) {
+                                $batchRow = $db->queryOne(
+                                    "SELECT product_name FROM finished_products WHERE id = ?",
+                                    [$batchId]
+                                );
+                                if ($batchRow && !empty($batchRow['product_name'])) {
+                                    $batchProductName = trim($batchRow['product_name']);
+                                    $existingProduct = $db->queryOne(
+                                        "SELECT id FROM products WHERE name = ? LIMIT 1",
+                                        [$batchProductName]
+                                    );
+                                    if ($existingProduct && !empty($existingProduct['id'])) {
+                                        $productId = (int)$existingProduct['id'];
+                                    } else {
+                                        // إنشاء منتج جديد
+                                        $productTypeColumnExists = $db->queryOne("SHOW COLUMNS FROM products LIKE 'product_type'");
+                                        $productTypeColumnExists = !empty($productTypeColumnExists);
+                                        
+                                        $columns = ['name', 'category', 'quantity', 'unit', 'description', 'status'];
+                                        $placeholders = ['?', "'منتجات نهائية'", '0', "'قطعة'", "'تم إنشاؤه تلقائياً من تشغيلات الإنتاج'", "'active'"];
+                                        $values = [$batchProductName];
+                                        
+                                        if ($productTypeColumnExists) {
+                                            $columns[] = 'product_type';
+                                            $placeholders[] = '?';
+                                            $values[] = 'internal';
+                                        }
+                                        
+                                        $insertSql = sprintf(
+                                            "INSERT INTO products (%s) VALUES (%s)",
+                                            implode(', ', $columns),
+                                            implode(', ', $placeholders)
+                                        );
+                                        $insertResult = $db->execute($insertSql, $values);
+                                        $productId = (int)($insertResult['insert_id'] ?? 0);
+                                    }
+                                }
+                            }
+                            
+                            // إذا كان هناك product_id الآن، نقوم بإدراج العنصر
+                            if ($productId > 0) {
+                                try {
+                                    $db->execute(
+                                        "INSERT INTO warehouse_transfer_items (transfer_id, product_id, batch_id, batch_number, quantity, notes)
+                                         VALUES (?, ?, ?, ?, ?, ?)",
+                                        [
+                                            $transferId,
+                                            $productId,
+                                            $batchId ?: null,
+                                            $batchNumber ?: null,
+                                            $quantity,
+                                            $itemNotes ?: null
+                                        ]
+                                    );
+                                    error_log("Manually inserted item for transfer ID $transferId: product_id=$productId, batch_id=" . ($batchId ?? 'NULL') . ", quantity=$quantity");
+                                } catch (Exception $insertError) {
+                                    error_log("Error manually inserting item for transfer ID $transferId: " . $insertError->getMessage());
+                                }
+                            } else {
+                                error_log("WARNING: Could not determine product_id for item in transfer ID $transferId. Batch ID: " . ($batchId ?? 'NULL'));
+                            }
+                        }
+                        
+                        // التحقق مرة أخرى بعد الإدراج اليدوي
+                        $finalItemsCheck = $db->queryOne(
+                            "SELECT COUNT(*) as count FROM warehouse_transfer_items WHERE transfer_id = ?",
+                            [$transferId]
+                        );
+                        $finalCount = (int)($finalItemsCheck['count'] ?? 0);
+                        error_log("After manual insertion - Transfer ID $transferId has $finalCount items");
+                    }
+                }
+                
                 // التحقق من قاعدة البيانات للتأكد من وجود الطلب فعلياً
                 // حتى لو كان success => false، نتحقق من قاعدة البيانات
                 $verifyTransfer = null;

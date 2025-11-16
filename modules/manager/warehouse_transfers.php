@@ -217,6 +217,9 @@ if (isset($_GET['id'])) {
     );
     
     if ($selectedTransfer) {
+        // التأكد من أن transfer_id هو رقم صحيح
+        $transferId = (int)$selectedTransfer['id'];
+        
         // أولاً: جلب العناصر الأساسية بدون JOIN للتأكد من الحصول على جميع العناصر
         $basicItems = $db->query(
             "SELECT 
