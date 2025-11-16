@@ -217,8 +217,8 @@ if (isset($_GET['id'])) {
     );
     
     if ($selectedTransfer) {
-        // جلب العناصر مع جميع التفاصيل المطلوبة
-        $selectedTransfer['items'] = $db->query(
+        // أولاً: جلب العناصر الأساسية بدون JOIN للتأكد من الحصول على جميع العناصر
+        $basicItems = $db->query(
             "SELECT 
                 wti.id as item_id,
                 wti.transfer_id,
@@ -226,39 +226,85 @@ if (isset($_GET['id'])) {
                 wti.batch_id,
                 wti.batch_number,
                 wti.quantity,
-                wti.notes,
-                COALESCE(p.name, 'منتج غير معروف') as product_name,
-                COALESCE(fp.batch_number, wti.batch_number) as finished_batch_number,
-                fp.quantity_produced as batch_quantity_produced,
-                CASE 
-                    WHEN wti.batch_id IS NOT NULL THEN
-                        COALESCE(fp.quantity_produced, 0) - COALESCE((
-                            SELECT SUM(wti2.quantity)
-                            FROM warehouse_transfer_items wti2
-                            INNER JOIN warehouse_transfers wt2 ON wt2.id = wti2.transfer_id
-                            WHERE wti2.batch_id = wti.batch_id
-                              AND wt2.status IN ('approved', 'completed')
-                              AND wti2.id != wti.id
-                        ), 0)
-                    ELSE NULL
-                END AS batch_quantity_available
+                wti.notes
              FROM warehouse_transfer_items wti
-             LEFT JOIN products p ON wti.product_id = p.id
-             LEFT JOIN finished_products fp ON wti.batch_id = fp.id
              WHERE wti.transfer_id = ?
              ORDER BY wti.id",
             [$transferId]
         );
         
-        // للتحقق من وجود العناصر
-        if (empty($selectedTransfer['items'])) {
-            // محاولة جلب بدون JOIN للتحقق من وجود البيانات
+        // إذا كانت هناك عناصر، نضيف التفاصيل من JOIN
+        if (!empty($basicItems)) {
+            $selectedTransfer['items'] = [];
+            foreach ($basicItems as $basicItem) {
+                $productId = $basicItem['product_id'] ?? null;
+                $batchId = $basicItem['batch_id'] ?? null;
+                
+                // جلب اسم المنتج
+                $productName = 'منتج غير معروف';
+                if ($productId) {
+                    $product = $db->queryOne("SELECT name FROM products WHERE id = ?", [$productId]);
+                    if ($product && !empty($product['name'])) {
+                        $productName = $product['name'];
+                    }
+                } elseif ($batchId) {
+                    // محاولة الحصول على اسم المنتج من finished_products
+                    $batch = $db->queryOne("SELECT product_name FROM finished_products WHERE id = ?", [$batchId]);
+                    if ($batch && !empty($batch['product_name'])) {
+                        $productName = $batch['product_name'];
+                    }
+                }
+                
+                // جلب بيانات التشغيلة
+                $finishedBatchNumber = $basicItem['batch_number'];
+                $batchQuantityProduced = null;
+                $batchQuantityAvailable = null;
+                
+                if ($batchId) {
+                    $batch = $db->queryOne(
+                        "SELECT batch_number, quantity_produced FROM finished_products WHERE id = ?",
+                        [$batchId]
+                    );
+                    if ($batch) {
+                        $finishedBatchNumber = $batch['batch_number'] ?? $basicItem['batch_number'];
+                        $batchQuantityProduced = $batch['quantity_produced'] ?? null;
+                        
+                        // حساب الكمية المتاحة
+                        $transferred = $db->queryOne(
+                            "SELECT COALESCE(SUM(wti2.quantity), 0) as total_transferred
+                             FROM warehouse_transfer_items wti2
+                             INNER JOIN warehouse_transfers wt2 ON wt2.id = wti2.transfer_id
+                             WHERE wti2.batch_id = ? AND wt2.status IN ('approved', 'completed') AND wti2.id != ?",
+                            [$batchId, $basicItem['item_id']]
+                        );
+                        $batchQuantityAvailable = ($batchQuantityProduced ?? 0) - (float)($transferred['total_transferred'] ?? 0);
+                    }
+                }
+                
+                $selectedTransfer['items'][] = [
+                    'item_id' => $basicItem['item_id'],
+                    'transfer_id' => $basicItem['transfer_id'],
+                    'product_id' => $basicItem['product_id'],
+                    'batch_id' => $basicItem['batch_id'],
+                    'batch_number' => $basicItem['batch_number'],
+                    'quantity' => $basicItem['quantity'],
+                    'notes' => $basicItem['notes'],
+                    'product_name' => $productName,
+                    'finished_batch_number' => $finishedBatchNumber,
+                    'batch_quantity_produced' => $batchQuantityProduced,
+                    'batch_quantity_available' => $batchQuantityAvailable
+                ];
+            }
+        } else {
+            $selectedTransfer['items'] = [];
+            
+            // التحقق مرة أخرى من وجود العناصر
             $itemsCheck = $db->query(
-                "SELECT * FROM warehouse_transfer_items WHERE transfer_id = ?",
+                "SELECT COUNT(*) as count FROM warehouse_transfer_items WHERE transfer_id = ?",
                 [$transferId]
             );
-            if (!empty($itemsCheck)) {
-                error_log("Warning: Items exist for transfer ID $transferId but JOIN query returned empty. Items: " . json_encode($itemsCheck));
+            if (!empty($itemsCheck) && ($itemsCheck[0]['count'] ?? 0) > 0) {
+                error_log("Warning: Items exist in database for transfer ID $transferId but query returned empty.");
             }
         }
     }
