@@ -2966,9 +2966,13 @@ if (!window.transferFormInitialized) {
 
 
     // ========== ربط الأحداث للأزرار ==========
-    let clickEventAttached = false;
-    if (!clickEventAttached) {
-        clickEventAttached = true;
+    function attachClickEvents() {
+        // منع التهيئة المتعددة
+        if (window.finalProductsClickEventsAttached) {
+            return;
+        }
+        window.finalProductsClickEventsAttached = true;
+        
         document.addEventListener('click', function(event) {
             // زر تفاصيل التشغيلة
             const detailsButton = event.target.closest('.js-batch-details');
@@ -2989,9 +2993,21 @@ if (!window.transferFormInitialized) {
                 event.preventDefault();
                 event.stopPropagation();
                 const modal = document.getElementById('addExternalProductModal');
-                if (modal && typeof bootstrap !== 'undefined' && bootstrap.Modal) {
-                    const modalInstance = bootstrap.Modal.getOrCreateInstance(modal);
-                    modalInstance.show();
+                if (modal) {
+                    if (typeof bootstrap !== 'undefined' && bootstrap.Modal) {
+                        const modalInstance = bootstrap.Modal.getOrCreateInstance(modal);
+                        modalInstance.show();
+                    } else {
+                        // Fallback إذا لم يكن Bootstrap متاحاً
+                        modal.style.display = 'block';
+                        modal.classList.add('show');
+                        document.body.classList.add('modal-open');
+                        const backdrop = document.createElement('div');
+                        backdrop.className = 'modal-backdrop fade show';
+                        document.body.appendChild(backdrop);
+                    }
+                } else {
+                    console.error('Modal addExternalProductModal not found');
                 }
                 return;
             }
@@ -3118,6 +3134,15 @@ if (!window.transferFormInitialized) {
     
     // جعل الدالة متاحة عالمياً
     window.showBatchDetailsModal = showBatchDetailsModal;
+    
+    // تهيئة الأحداث عند تحميل الصفحة
+    if (document.readyState === 'loading') {
+        document.addEventListener('DOMContentLoaded', attachClickEvents);
+    } else {
+        attachClickEvents();
+    }
+    }
+}
 </script>
 
 

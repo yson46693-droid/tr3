@@ -267,40 +267,66 @@ if (isset($_GET['id'])) {
                 $productId = $basicItem['product_id'] ?? null;
                 $batchId = $basicItem['batch_id'] ?? null;
                 
-                // جلب اسم المنتج
+                // جلب اسم المنتج - أولوية للحصول على الاسم الصحيح من products
                 $productName = 'منتج غير معروف';
                 
-                // إذا كان هناك product_id مباشر، استخدمه
+                // محاولة الحصول على product_id من finished_products إذا لم يكن موجوداً في warehouse_transfer_items
+                if (!$productId && $batchId) {
+                    $batchProductId = $db->queryOne(
+                        "SELECT product_id FROM finished_products WHERE id = ?",
+                        [$batchId]
+                    );
+                    if ($batchProductId && !empty($batchProductId['product_id'])) {
+                        $productId = (int)$batchProductId['product_id'];
+                    }
+                }
+                
+                // جلب اسم المنتج - أولوية للحصول على الاسم الصحيح من products
+                // إذا كان هناك product_id، احصل على الاسم من products أولاً
                 if ($productId) {
                     $product = $db->queryOne("SELECT name FROM products WHERE id = ?", [$productId]);
                     if ($product && !empty($product['name'])) {
-                        $productName = $product['name'];
+                        $trimmedName = trim($product['name']);
+                        // إذا كان الاسم ليس "منتج رقم X"، استخدمه مباشرة
+                        if ($trimmedName !== '' && !preg_match('/^منتج رقم \d+$/', $trimmedName)) {
+                            $productName = $trimmedName;
+                        }
                     }
-                } elseif ($batchId) {
-                    // إذا كان هناك batch_id، احصل على product_id من finished_products أولاً
-                    // ثم احصل على اسم المنتج من products (الاسم الصحيح)، وإلا استخدم finished_products.product_name
+                }
+                
+                // إذا كان الاسم لا يزال "منتج غير معروف" أو "منتج رقم X"، جرب finished_products
+                if (($productName === 'منتج غير معروف' || preg_match('/^منتج رقم \d+$/', $productName)) && $batchId) {
                     $batch = $db->queryOne(
                         "SELECT 
                             fp.product_id,
-                            fp.product_name as finished_product_name
+                            fp.product_name as finished_product_name,
+                            COALESCE(NULLIF(TRIM(p.name), ''), NULLIF(TRIM(fp.product_name), ''), '') as best_name
                          FROM finished_products fp
+                         LEFT JOIN products p ON fp.product_id = p.id
                          WHERE fp.id = ?",
                         [$batchId]
                     );
                     
                     if ($batch) {
-                        // إذا كان هناك product_id في finished_products، احصل على الاسم من products أولاً
-                        if (!empty($batch['product_id'])) {
-                            $product = $db->queryOne("SELECT name FROM products WHERE id = ?", [$batch['product_id']]);
-                            if ($product && !empty($product['name']) && trim($product['name']) !== '') {
-                                $productName = trim($product['name']);
-                            } elseif (!empty($batch['finished_product_name']) && trim($batch['finished_product_name']) !== '') {
-                                // إذا لم يكن هناك اسم في products، استخدم finished_products.product_name
-                                $productName = trim($batch['finished_product_name']);
+                        // استخدام أفضل اسم متاح: products.name أولاً، ثم finished_products.product_name
+                        if (!empty($batch['best_name']) && trim($batch['best_name']) !== '') {
+                            $bestName = trim($batch['best_name']);
+                            // تجنب استخدام "منتج رقم X" إذا كان هناك بديل
+                            if (!preg_match('/^منتج رقم \d+$/', $bestName)) {
+                                $productName = $bestName;
+                            } elseif ($productName === 'منتج غير معروف') {
+                                // إذا لم يكن هناك بديل، استخدم "منتج رقم X" كحل أخير
+                                $productName = $bestName;
                             }
                         } elseif (!empty($batch['finished_product_name']) && trim($batch['finished_product_name']) !== '') {
-                            // إذا لم يكن هناك product_id، استخدم finished_products.product_name
-                            $productName = trim($batch['finished_product_name']);
+                            $finishedName = trim($batch['finished_product_name']);
+                            // تجنب استخدام "منتج رقم X" إذا كان هناك بديل
+                            if (!preg_match('/^منتج رقم \d+$/', $finishedName)) {
+                                $productName = $finishedName;
+                            } elseif ($productName === 'منتج غير معروف') {
+                                // إذا لم يكن هناك بديل، استخدم "منتج رقم X" كحل أخير
+                                $productName = $finishedName;
+                            }
                         }
                     }
                 }
