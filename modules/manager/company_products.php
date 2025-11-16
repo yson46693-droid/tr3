@@ -116,42 +116,91 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     }
 }
 
-// الحصول على منتجات المصنع (من جدول products مع عمال الإنتاج)
+// الحصول على منتجات المصنع (من جدول finished_products مع عمال الإنتاج)
 $factoryProducts = [];
 try {
-    // التحقق من وجود عمود user_id أو worker_id في جدول production
-    $userIdColumn = null;
-    $columns = $db->query("SHOW COLUMNS FROM production");
-    foreach ($columns as $col) {
-        if (in_array(strtolower($col['Field']), ['user_id', 'worker_id', 'employee_id'], true)) {
-            $userIdColumn = $col['Field'];
-            break;
-        }
-    }
+    // التحقق من وجود جدول finished_products
+    $finishedProductsTableExists = $db->queryOne("SHOW TABLES LIKE 'finished_products'");
     
-    $factoryProducts = $db->query("
-        SELECT 
-            p.id,
-            p.name as product_name,
-            p.category,
-            p.quantity,
-            COALESCE(p.unit, 'قطعة') as unit,
-            p.unit_price,
-            " . ($userIdColumn ? "
-            GROUP_CONCAT(DISTINCT u.full_name ORDER BY u.full_name SEPARATOR ', ') AS workers
-            " : "'غير محدد' AS workers") . ",
-            COUNT(DISTINCT pr.id) as production_count,
-            COALESCE(SUM(pr.quantity), 0) as total_produced
-        FROM products p
-        LEFT JOIN production pr ON p.id = pr.product_id
-        " . ($userIdColumn ? "LEFT JOIN users u ON pr.$userIdColumn = u.id" : "") . "
-        WHERE (p.product_type = 'internal' OR p.product_type IS NULL OR p.product_type = '')
-          AND p.status = 'active'
-        GROUP BY p.id
-        ORDER BY p.name ASC
-    ");
+    if (!empty($finishedProductsTableExists)) {
+        $factoryProducts = $db->query("
+            SELECT 
+                fp.id,
+                fp.batch_id,
+                fp.batch_number,
+                COALESCE(fp.product_id, bn.product_id) AS product_id,
+                COALESCE(NULLIF(TRIM(fp.product_name), ''), pr.name, 'غير محدد') AS product_name,
+                pr.category as product_category,
+                fp.production_date,
+                fp.quantity_produced,
+                fp.unit_price,
+                fp.total_price,
+                GROUP_CONCAT(DISTINCT u.full_name ORDER BY u.full_name SEPARATOR ', ') AS workers,
+                COUNT(DISTINCT fp.batch_id) as batch_count
+            FROM finished_products fp
+            LEFT JOIN batch_numbers bn ON fp.batch_number = bn.batch_number
+            LEFT JOIN products pr ON COALESCE(fp.product_id, bn.product_id) = pr.id
+            LEFT JOIN batch_workers bw ON fp.batch_id = bw.batch_id
+            LEFT JOIN users u ON bw.employee_id = u.id
+            WHERE (fp.quantity_produced IS NULL OR fp.quantity_produced > 0)
+            GROUP BY fp.id
+            ORDER BY fp.production_date DESC, fp.id DESC
+        ");
+        
+        // تجميع البيانات حسب المنتج لإظهار إجمالي الكميات
+        $groupedProducts = [];
+        foreach ($factoryProducts as $product) {
+            $productName = $product['product_name'] ?? 'غير محدد';
+            $productId = $product['product_id'] ?? 0;
+            
+            if (!isset($groupedProducts[$productName])) {
+                $groupedProducts[$productName] = [
+                    'product_name' => $productName,
+                    'product_id' => $productId,
+                    'product_category' => $product['product_category'] ?? null,
+                    'total_quantity' => 0,
+                    'total_value' => 0,
+                    'batch_count' => 0,
+                    'unit_price' => $product['unit_price'] ?? 0,
+                    'workers' => [],
+                    'production_date' => $product['production_date'] ?? null
+                ];
+            }
+            
+            $quantity = floatval($product['quantity_produced'] ?? 0);
+            $unitPrice = floatval($product['unit_price'] ?? 0);
+            $totalPrice = floatval($product['total_price'] ?? ($quantity * $unitPrice));
+            
+            $groupedProducts[$productName]['total_quantity'] += $quantity;
+            $groupedProducts[$productName]['total_value'] += $totalPrice;
+            $groupedProducts[$productName]['batch_count'] += intval($product['batch_count'] ?? 1);
+            
+            // جمع العمال
+            if (!empty($product['workers'])) {
+                $workersList = array_map('trim', explode(',', $product['workers']));
+                foreach ($workersList as $worker) {
+                    if (!empty($worker) && !in_array($worker, $groupedProducts[$productName]['workers'])) {
+                        $groupedProducts[$productName]['workers'][] = $worker;
+                    }
+                }
+            }
+            
+            // تحديث سعر الوحدة إذا كان أكبر
+            if ($unitPrice > 0 && ($groupedProducts[$productName]['unit_price'] == 0 || $unitPrice > $groupedProducts[$productName]['unit_price'])) {
+                $groupedProducts[$productName]['unit_price'] = $unitPrice;
+            }
+        }
+        
+        // تحويل المصفوفة المجمعة إلى مصفوفة عادية
+        $factoryProducts = array_values($groupedProducts);
+        
+        // ترتيب حسب اسم المنتج
+        usort($factoryProducts, function($a, $b) {
+            return strcmp($a['product_name'], $b['product_name']);
+        });
+    }
 } catch (Exception $e) {
-    error_log('Error fetching factory products: ' . $e->getMessage());
+    error_log('Error fetching factory products from finished_products: ' . $e->getMessage());
 }
 
 // الحصول على المنتجات الخارجية
@@ -193,11 +242,12 @@ foreach ($externalProducts as $ext) {
 .section-header {
     background: linear-gradient(135deg, #1d4ed8 0%, #2563eb 100%);
     color: white;
-    padding: 1.25rem 1.5rem;
-    border-radius: 12px 12px 0 0;
+    padding: 1.5rem 1.75rem;
+    border-radius: 16px 16px 0 0;
     display: flex;
     justify-content: space-between;
     align-items: center;
+    box-shadow: 0 4px 12px rgba(29, 78, 216, 0.15);
 }
 
 .section-header h5 {
@@ -205,43 +255,167 @@ foreach ($externalProducts as $ext) {
     font-weight: 600;
     display: flex;
     align-items: center;
-    gap: 0.5rem;
+    gap: 0.75rem;
+    font-size: 1.15rem;
+}
+
+.section-header h5 i {
+    font-size: 1.4rem;
+    opacity: 0.95;
 }
 
 .section-header .badge {
-    background: rgba(255, 255, 255, 0.2);
+    background: rgba(255, 255, 255, 0.25);
     color: white;
-    padding: 0.35rem 0.75rem;
-    border-radius: 20px;
+    padding: 0.45rem 0.9rem;
+    border-radius: 25px;
     font-size: 0.875rem;
+    font-weight: 600;
+    backdrop-filter: blur(10px);
+    border: 1px solid rgba(255, 255, 255, 0.2);
 }
 
 .company-card {
     border: none;
-    border-radius: 12px;
-    box-shadow: 0 4px 6px rgba(0, 0, 0, 0.07);
-    margin-bottom: 2rem;
+    border-radius: 16px;
+    box-shadow: 0 8px 24px rgba(0, 0, 0, 0.08);
+    margin-bottom: 2.5rem;
     overflow: hidden;
+    background: #ffffff;
+    transition: all 0.3s ease;
+}
+
+.company-card:hover {
+    box-shadow: 0 12px 32px rgba(0, 0, 0, 0.12);
+    transform: translateY(-2px);
 }
 
 .company-card .card-body {
-    padding: 1.5rem;
+    padding: 2rem;
+}
+
+/* تحسين تصميم الجداول */
+.company-card .dashboard-table-wrapper {
+    border-radius: 12px;
+    border: 1px solid rgba(226, 232, 240, 0.8);
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.04);
+    overflow: hidden;
+    background: #ffffff;
+}
+
+.company-card .dashboard-table thead th {
+    background: linear-gradient(135deg, #1d4ed8 0%, #2563eb 100%);
+    color: #ffffff;
+    font-weight: 600;
+    letter-spacing: 0.03em;
+    text-transform: uppercase;
+    font-size: 0.8rem;
+    padding: 1rem 1.25rem;
+    border-right: 1px solid rgba(255, 255, 255, 0.15);
+    white-space: nowrap;
+    position: relative;
+}
+
+.company-card .dashboard-table thead th:first-child {
+    padding-left: 1.5rem;
+}
+
+.company-card .dashboard-table thead th:last-child {
+    border-right: none;
+    padding-right: 1.5rem;
+}
+
+.company-card .dashboard-table tbody tr {
+    transition: all 0.2s ease;
+    border-bottom: 1px solid rgba(226, 232, 240, 0.5);
+}
+
+.company-card .dashboard-table tbody tr:hover {
+    background: linear-gradient(90deg, rgba(29, 78, 216, 0.05) 0%, rgba(37, 99, 235, 0.08) 100%) !important;
+    transform: scale(1.01);
+    box-shadow: 0 2px 8px rgba(29, 78, 216, 0.1);
+}
+
+.company-card .dashboard-table tbody tr:nth-child(even) {
+    background: rgba(248, 250, 252, 0.6);
+}
+
+.company-card .dashboard-table tbody tr:nth-child(even):hover {
+    background: linear-gradient(90deg, rgba(29, 78, 216, 0.08) 0%, rgba(37, 99, 235, 0.12) 100%) !important;
+}
+
+.company-card .dashboard-table tbody td {
+    padding: 1rem 1.25rem;
+    vertical-align: middle;
+    font-size: 0.9rem;
+    color: #1e293b;
+    border: none;
+}
+
+.company-card .dashboard-table tbody td:first-child {
+    padding-left: 1.5rem;
+    font-weight: 600;
+    color: #0f172a;
+}
+
+.company-card .dashboard-table tbody td:last-child {
+    padding-right: 1.5rem;
+}
+
+.company-card .dashboard-table tbody td strong {
+    font-weight: 600;
+    color: #0f172a;
+}
+
+/* تحسين الألوان للقيم */
+.company-card .dashboard-table tbody td .text-success {
+    color: #059669 !important;
+    font-weight: 600;
+    font-size: 1rem;
+}
+
+.company-card .dashboard-table tbody td .text-primary {
+    color: #1d4ed8 !important;
+    font-weight: 600;
+    font-size: 1rem;
+}
+
+/* إحصائيات المنتجات الخارجية */
+.total-value-box {
+    background: linear-gradient(135deg, rgba(5, 150, 105, 0.1) 0%, rgba(16, 185, 129, 0.15) 100%);
+    border: 1px solid rgba(5, 150, 105, 0.2);
+    border-radius: 12px;
+    padding: 1.25rem 1.5rem;
+    margin-bottom: 1.5rem;
+}
+
+.total-value-box .fw-bold {
+    color: #0f766e;
+    font-size: 1rem;
+}
+
+.total-value-box .text-success {
+    color: #059669 !important;
+    font-size: 1.5rem;
+    font-weight: 700;
+    text-shadow: 0 1px 2px rgba(0, 0, 0, 0.05);
 }
 
 .btn-primary-custom {
     background: linear-gradient(135deg, #1d4ed8 0%, #2563eb 100%);
     border: none;
     color: white;
-    padding: 0.6rem 1.25rem;
-    border-radius: 8px;
-    font-weight: 500;
+    padding: 0.65rem 1.4rem;
+    border-radius: 10px;
+    font-weight: 600;
     transition: all 0.3s ease;
+    box-shadow: 0 4px 12px rgba(29, 78, 216, 0.25);
 }
 
 .btn-primary-custom:hover {
     background: linear-gradient(135deg, #1e40af 0%, #1d4ed8 100%);
     transform: translateY(-2px);
-    box-shadow: 0 4px 12px rgba(29, 78, 216, 0.3);
+    box-shadow: 0 6px 16px rgba(29, 78, 216, 0.35);
     color: white;
 }
 
@@ -249,17 +423,65 @@ foreach ($externalProducts as $ext) {
     background: linear-gradient(135deg, #059669 0%, #10b981 100%);
     border: none;
     color: white;
-    padding: 0.6rem 1.25rem;
-    border-radius: 8px;
-    font-weight: 500;
+    padding: 0.65rem 1.4rem;
+    border-radius: 10px;
+    font-weight: 600;
     transition: all 0.3s ease;
+    box-shadow: 0 4px 12px rgba(5, 150, 105, 0.25);
 }
 
 .btn-success-custom:hover {
     background: linear-gradient(135deg, #047857 0%, #059669 100%);
     transform: translateY(-2px);
-    box-shadow: 0 4px 12px rgba(5, 150, 105, 0.3);
+    box-shadow: 0 6px 16px rgba(5, 150, 105, 0.35);
     color: white;
+}
+
+.btn-success-custom.btn-sm {
+    padding: 0.5rem 1rem;
+    font-size: 0.875rem;
+}
+
+/* تحسين الأزرار في الجداول */
+.company-card .btn-group-sm .btn {
+    border-radius: 8px;
+    font-weight: 500;
+    padding: 0.4rem 0.8rem;
+    font-size: 0.8rem;
+    transition: all 0.2s ease;
+}
+
+.company-card .btn-outline-primary {
+    border-color: #1d4ed8;
+    color: #1d4ed8;
+}
+
+.company-card .btn-outline-primary:hover {
+    background: linear-gradient(135deg, #1d4ed8 0%, #2563eb 100%);
+    border-color: #1d4ed8;
+    color: white;
+    transform: translateY(-1px);
+    box-shadow: 0 4px 8px rgba(29, 78, 216, 0.2);
+}
+
+.company-card .btn-outline-danger {
+    border-color: #dc2626;
+    color: #dc2626;
+}
+
+.company-card .btn-outline-danger:hover {
+    background: linear-gradient(135deg, #dc2626 0%, #ef4444 100%);
+    border-color: #dc2626;
+    color: white;
+    transform: translateY(-1px);
+    box-shadow: 0 4px 8px rgba(220, 38, 38, 0.2);
+}
+
+/* حالة فارغة */
+.company-card .dashboard-table tbody tr td.text-center {
+    padding: 3rem 1.5rem;
+    color: #94a3b8;
+    font-style: italic;
 }
 
 @media (max-width: 768px) {
@@ -267,10 +489,41 @@ foreach ($externalProducts as $ext) {
         flex-direction: column;
         align-items: flex-start;
         gap: 1rem;
+        padding: 1.25rem 1.5rem;
+    }
+    
+    .company-card .card-body {
+        padding: 1.25rem;
+    }
+    
+    .company-card .dashboard-table thead th,
+    .company-card .dashboard-table tbody td {
+        padding: 0.75rem 0.85rem;
+        font-size: 0.85rem;
+    }
+    
+    .company-card .dashboard-table thead th:first-child {
+        padding-left: 1rem;
+    }
+    
+    .company-card .dashboard-table tbody td:first-child {
+        padding-left: 1rem;
+    }
+}
+
+@media (max-width: 576px) {
+    .section-header h5 {
+        font-size: 1rem;
     }
     
     .company-card .card-body {
         padding: 1rem;
+    }
+    
+    .company-card .dashboard-table thead th,
+    .company-card .dashboard-table tbody td {
+        padding: 0.6rem 0.7rem;
+        font-size: 0.8rem;
     }
 }
 </style>
@@ -312,30 +565,28 @@ foreach ($externalProducts as $ext) {
                         <tr>
                             <th>اسم المنتج</th>
                             <th>الفئة</th>
-                            <th>الكمية المتاحة</th>
+                            <th>الكمية المنتجة</th>
                             <th>سعر الوحدة</th>
                             <th>إجمالي القيمة</th>
-                            <th>عدد عمليات الإنتاج</th>
-                            <th>إجمالي المنتج</th>
+                            <th>عدد التشغيلات</th>
                             <th>العمال المشاركون</th>
                         </tr>
                     </thead>
                     <tbody>
                         <?php if (empty($factoryProducts)): ?>
                             <tr>
-                                <td colspan="8" class="text-center text-muted py-4">لا توجد منتجات مصنع حالياً</td>
+                                <td colspan="7" class="text-center text-muted py-4">لا توجد منتجات مصنع حالياً</td>
                             </tr>
                         <?php else: ?>
                             <?php foreach ($factoryProducts as $product): ?>
                                 <tr>
                                     <td><strong><?php echo htmlspecialchars($product['product_name']); ?></strong></td>
-                                    <td><?php echo htmlspecialchars($product['category'] ?? '—'); ?></td>
-                                    <td><?php echo number_format((float)$product['quantity'], 2); ?> <?php echo htmlspecialchars($product['unit'] ?? 'قطعة'); ?></td>
+                                    <td><?php echo htmlspecialchars($product['product_category'] ?? '—'); ?></td>
+                                    <td><?php echo number_format((float)$product['total_quantity'], 2); ?></td>
                                     <td><?php echo formatCurrency((float)$product['unit_price']); ?></td>
-                                    <td><strong class="text-success"><?php echo formatCurrency((float)$product['quantity'] * (float)$product['unit_price']); ?></strong></td>
-                                    <td><?php echo number_format((int)$product['production_count']); ?></td>
-                                    <td><?php echo number_format((float)($product['total_produced'] ?? 0), 2); ?></td>
-                                    <td><?php echo htmlspecialchars($product['workers'] ?? 'غير محدد'); ?></td>
+                                    <td><strong class="text-success"><?php echo formatCurrency((float)$product['total_value']); ?></strong></td>
+                                    <td><?php echo number_format((int)$product['batch_count']); ?></td>
+                                    <td><?php echo !empty($product['workers']) ? htmlspecialchars(implode(', ', $product['workers'])) : 'غير محدد'; ?></td>
                                 </tr>
                             <?php endforeach; ?>
                         <?php endif; ?>
@@ -361,10 +612,10 @@ foreach ($externalProducts as $ext) {
         </div>
         <div class="card-body">
             <?php if (!empty($externalProducts)): ?>
-                <div class="mb-3 p-3 bg-light rounded">
+                <div class="total-value-box">
                     <div class="d-flex justify-content-between align-items-center">
                         <span class="fw-bold">القيمة الإجمالية للمنتجات الخارجية:</span>
-                        <span class="text-success fw-bold fs-5"><?php echo formatCurrency($totalExternalValue); ?></span>
+                        <span class="text-success fw-bold"><?php echo formatCurrency($totalExternalValue); ?></span>
                     </div>
                 </div>
             <?php endif; ?>
