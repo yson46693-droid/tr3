@@ -948,32 +948,128 @@ if (!$error) {
                 grid-template-columns: 1fr;
             }
         }
-        @media (max-width: 576px) {
+        @media (max-width: 768px) {
             .pos-summary-card {
-                padding: 1.15rem;
+                padding: 1rem;
+            }
+            .pos-summary-card .label {
+                font-size: 0.8rem;
+            }
+            .pos-summary-card .value {
+                font-size: 1.5rem;
             }
             .pos-panel {
-                padding: 1.25rem;
+                padding: 1rem;
+            }
+            .pos-checkout-panel {
+                gap: 1rem;
+            }
+            .pos-cart-table {
+                font-size: 0.9rem;
+            }
+            .pos-cart-table th {
+                font-size: 0.85rem;
+                padding: 0.6rem 0.5rem;
+            }
+            .pos-cart-table td {
+                padding: 0.65rem 0.5rem;
+            }
+            .pos-qty-control {
+                gap: 0.35rem;
+            }
+            .pos-qty-control .btn {
+                width: 32px;
+                height: 32px;
+                font-size: 0.9rem;
+            }
+            .pos-qty-control input {
+                width: 70px;
+                font-size: 0.9rem;
+            }
+            .pos-payment-option {
+                padding: 0.9rem;
+            }
+            .pos-payment-option-icon {
+                width: 38px;
+                height: 38px;
+                font-size: 1.1rem;
+            }
+            .pos-payment-option-title {
+                font-size: 0.95rem;
+            }
+            .pos-payment-option-desc {
+                font-size: 0.8rem;
+            }
+        }
+        
+        @media (max-width: 576px) {
+            .pos-summary-card {
+                padding: 0.9rem;
+            }
+            .pos-summary-card .label {
+                font-size: 0.75rem;
+            }
+            .pos-summary-card .value {
+                font-size: 1.35rem;
+            }
+            .pos-summary-card .meta {
+                font-size: 0.75rem;
+            }
+            .pos-panel {
+                padding: 0.9rem;
+            }
+            .pos-panel-header h4,
+            .pos-panel-header h5 {
+                font-size: 1.1rem;
+            }
+            .pos-panel-header p {
+                font-size: 0.85rem;
             }
             .pos-product-grid {
-                grid-template-columns: repeat(auto-fill, minmax(180px, 1fr));
+                grid-template-columns: repeat(auto-fill, minmax(160px, 1fr));
+                gap: 0.75rem;
+            }
+            .pos-product-card {
+                padding: 0.85rem;
+            }
+            .pos-product-name {
+                font-size: 0.95rem;
+            }
+            .pos-product-meta {
+                font-size: 0.85rem;
+            }
+            .pos-select-btn {
+                font-size: 0.85rem;
+                padding: 0.5rem 0.75rem;
+            }
+            .pos-cart-empty {
+                padding: 1.5rem 1rem;
+            }
+            .pos-cart-empty i {
+                font-size: 2rem;
+            }
+            .pos-cart-empty p {
+                font-size: 0.9rem;
             }
             .pos-cart-table {
                 width: 100%;
                 min-width: 100%;
+                font-size: 0.85rem;
             }
             .pos-cart-table thead {
                 display: none;
             }
             .pos-cart-table tbody tr {
-                display: block;
+                display: flex;
+                flex-direction: column;
                 width: 100%;
                 margin-bottom: 1rem;
                 border: 1px solid rgba(148, 163, 184, 0.35);
-                border-radius: 14px;
-                padding: 0.85rem 0.95rem;
+                border-radius: 12px;
+                padding: 1rem;
                 background: #ffffff;
-                box-shadow: 0 12px 20px rgba(15, 23, 42, 0.08);
+                box-shadow: 0 4px 12px rgba(15, 23, 42, 0.08);
+                gap: 0.75rem;
             }
             .pos-cart-table tbody tr:last-child {
                 margin-bottom: 0;
@@ -982,40 +1078,237 @@ if (!$error) {
                 display: flex;
                 flex-direction: column;
                 align-items: stretch;
-                gap: 0.45rem;
+                gap: 0.5rem;
                 width: 100%;
-                padding: 0.35rem 0;
+                padding: 0;
                 border: none;
             }
             .pos-cart-table td::before {
                 content: attr(data-label);
                 font-weight: 600;
                 color: #1f2937;
-                font-size: 0.95rem;
+                font-size: 0.9rem;
+                margin-bottom: 0.25rem;
+            }
+            .pos-cart-table td[data-label="المنتج"] .fw-semibold {
+                font-size: 1rem;
+                margin-bottom: 0.25rem;
+            }
+            .pos-cart-table td[data-label="المنتج"] .text-muted {
+                font-size: 0.8rem;
             }
             .pos-cart-table td[data-label="إجمالي"],
             .pos-cart-table td[data-label="الإجمالي"] {
-                font-size: 1.05rem;
+                font-size: 1.1rem;
+                font-weight: 700;
+                color: #059669;
             }
             .pos-cart-table td[data-label="إجراءات"] {
                 align-items: flex-end;
+                margin-top: 0.25rem;
             }
             .pos-cart-table td .form-control {
                 width: 100%;
+                font-size: 0.9rem;
+                padding: 0.5rem;
             }
             .pos-cart-table td .pos-qty-control {
                 width: 100%;
                 justify-content: space-between;
+                gap: 0.5rem;
             }
             .pos-cart-table td .pos-qty-control input {
                 flex: 1;
+                min-width: 60px;
+                text-align: center;
+                font-size: 0.95rem;
+                font-weight: 600;
             }
             .pos-cart-table td .btn[data-action="decrease"],
             .pos-cart-table td .btn[data-action="increase"] {
-                flex: 0 0 38px;
+                flex: 0 0 42px;
+                width: 42px;
+                height: 42px;
+                padding: 0;
+                font-size: 1.1rem;
+                border-radius: 8px;
+            }
+            .pos-cart-table td .btn[data-action="remove"] {
+                font-size: 1.3rem;
+                padding: 0.5rem;
+                width: auto;
+                min-width: 44px;
+                height: 44px;
             }
             #posCartTableWrapper {
                 overflow-x: visible;
+                margin: 0 -0.9rem;
+            }
+            .pos-selected-product {
+                padding: 0.75rem;
+            }
+            .pos-selected-product h5 {
+                font-size: 1rem;
+                margin-bottom: 0.75rem;
+            }
+            .meta-row {
+                gap: 0.75rem;
+            }
+            .meta-block span {
+                font-size: 0.8rem;
+            }
+            .meta-block .fw-semibold {
+                font-size: 0.95rem;
+            }
+            .form-label {
+                font-size: 0.875rem;
+            }
+            .form-control,
+            .form-select {
+                font-size: 0.9rem;
+                padding: 0.5rem 0.75rem;
+            }
+            .pos-summary-card-neutral {
+                padding: 1rem;
+            }
+            .pos-summary-card-neutral .small {
+                font-size: 0.75rem;
+            }
+            .pos-summary-card-neutral .total {
+                font-size: 1.5rem;
+            }
+            .pos-payment-option {
+                padding: 0.75rem;
+                gap: 0.75rem;
+            }
+            .pos-payment-option-icon {
+                width: 36px;
+                height: 36px;
+                font-size: 1rem;
+            }
+            .pos-payment-option-title {
+                font-size: 0.9rem;
+            }
+            .pos-payment-option-desc {
+                font-size: 0.75rem;
+                margin-top: 0.1rem;
+            }
+            .pos-inline-note {
+                font-size: 0.75rem;
+            }
+            .btn {
+                font-size: 0.875rem;
+                padding: 0.5rem 1rem;
+            }
+            .btn-sm {
+                font-size: 0.8rem;
+                padding: 0.4rem 0.75rem;
+            }
+            .row.g-3 {
+                --bs-gutter-y: 0.75rem;
+                --bs-gutter-x: 0.75rem;
+            }
+            .col-sm-6 {
+                margin-bottom: 0.75rem;
+            }
+            .pos-vehicle-summary {
+                grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+                gap: 0.75rem;
+            }
+            .pos-summary-card {
+                min-height: auto;
+            }
+            .d-flex.justify-content-between.gap-2 {
+                gap: 0.5rem !important;
+            }
+            .d-flex.flex-wrap.gap-2 {
+                gap: 0.5rem !important;
+            }
+            .btn.flex-fill {
+                min-width: 120px;
+            }
+            .pos-cart-table tbody tr {
+                max-width: 100%;
+            }
+            textarea.form-control {
+                font-size: 0.9rem;
+                padding: 0.5rem 0.75rem;
+                resize: vertical;
+            }
+            .pos-search input {
+                font-size: 0.9rem;
+                padding: 0.5rem 0.75rem 0.5rem 2.5rem;
+            }
+            .pos-search i {
+                font-size: 1rem;
+                inset-inline-start: 0.75rem;
+            }
+            .pos-panel-header h4 {
+                font-size: 1.1rem;
+                margin-bottom: 0.25rem;
+            }
+            .pos-panel-header p {
+                font-size: 0.85rem;
+                margin-bottom: 0;
+            }
+            .mb-3 h5 {
+                font-size: 1.1rem;
+            }
+            .mb-3 .d-flex.justify-content-between h5 {
+                font-size: 1rem;
+            }
+        }
+        
+        @media (max-width: 480px) {
+            .pos-product-grid {
+                grid-template-columns: repeat(auto-fill, minmax(140px, 1fr));
+                gap: 0.6rem;
+            }
+            .pos-product-card {
+                padding: 0.75rem;
+                border-radius: 12px;
+            }
+            .pos-product-name {
+                font-size: 0.9rem;
+            }
+            .pos-product-meta {
+                font-size: 0.8rem;
+                gap: 0.3rem;
+            }
+            .pos-select-btn {
+                font-size: 0.8rem;
+                padding: 0.45rem 0.65rem;
+            }
+            .pos-cart-table {
+                font-size: 0.8rem;
+            }
+            .pos-cart-table td::before {
+                font-size: 0.85rem;
+            }
+            .pos-cart-table td[data-label="المنتج"] .fw-semibold {
+                font-size: 0.95rem;
+            }
+            .pos-cart-table td[data-label="إجمالي"],
+            .pos-cart-table td[data-label="الإجمالي"] {
+                font-size: 1rem;
+            }
+            .pos-qty-control .btn {
+                width: 38px;
+                height: 38px;
+                font-size: 1rem;
+            }
+            .pos-qty-control input {
+                font-size: 0.9rem;
+                min-width: 55px;
+            }
+            .pos-summary-card-neutral {
+                padding: 0.85rem;
+            }
+            .pos-summary-card-neutral .total {
+                font-size: 1.35rem;
+            }
+            .pos-summary-card-neutral .fw-semibold {
+                font-size: 1.15rem;
             }
         }
     </style>
@@ -1181,9 +1474,9 @@ if (!$error) {
                             <div class="mb-3">
                                 <div class="d-flex justify-content-between align-items-center mb-2 flex-wrap gap-2">
                                     <h5 class="mb-0">سلة البيع</h5>
-                                    <button type="button" class="btn btn-outline-danger btn-sm d-flex align-items-center gap-2" id="posClearCartBtn">
+                                    <button type="button" class="btn btn-outline-danger btn-sm d-flex align-items-center gap-1 gap-md-2" id="posClearCartBtn">
                                         <i class="bi bi-trash"></i>
-                                        <span>تفريغ السلة</span>
+                                        <span class="d-none d-sm-inline">تفريغ السلة</span>
                                     </button>
                                 </div>
                                 <div class="pos-cart-empty" id="posCartEmpty">
@@ -1206,17 +1499,17 @@ if (!$error) {
                                 </div>
                             </div>
 
-                            <div class="row g-3 align-items-start mb-3">
-                                <div class="col-sm-6">
+                            <div class="row g-2 g-md-3 align-items-start mb-3">
+                                <div class="col-12 col-sm-6">
                                     <label class="form-label">مدفوع مسبقاً (اختياري)</label>
-                                    <input type="number" step="0.01" min="0" value="0" class="form-control" id="posPrepaidInput" name="prepaid_amount">
+                                    <input type="number" step="0.01" min="0" value="0" class="form-control form-control-sm" id="posPrepaidInput" name="prepaid_amount">
                                     <div class="pos-inline-note">سيتم خصم المبلغ من إجمالي السلة.</div>
                                 </div>
-                                <div class="col-sm-6">
+                                <div class="col-12 col-sm-6">
                                     <div class="pos-summary-card-neutral">
                                         <span class="small text-uppercase opacity-75">الإجمالي بعد الخصم</span>
                                         <span class="total" id="posNetTotal">0</span>
-                                        <span class="small text-uppercase opacity-75">المتبقي على العميل</span>
+                                        <span class="small text-uppercase opacity-75 mt-2">المتبقي على العميل</span>
                                         <span class="fw-semibold" id="posDueAmount">0</span>
                                     </div>
                                 </div>
@@ -1264,15 +1557,15 @@ if (!$error) {
 
                             <div class="mb-3">
                                 <label class="form-label">ملاحظات إضافية <span class="text-muted">(اختياري)</span></label>
-                                <textarea class="form-control" name="notes" rows="3" placeholder="مثال: تعليمات التسليم، شروط خاصة..."></textarea>
+                                <textarea class="form-control form-control-sm" name="notes" rows="3" placeholder="مثال: تعليمات التسليم، شروط خاصة..."></textarea>
                             </div>
 
                             <div class="d-flex flex-wrap gap-2 justify-content-between">
-                                <button type="button" class="btn btn-outline-secondary" id="posResetFormBtn">
-                                    <i class="bi bi-arrow-repeat me-1"></i>إعادة تعيين
+                                <button type="button" class="btn btn-outline-secondary btn-sm flex-fill flex-md-none" id="posResetFormBtn">
+                                    <i class="bi bi-arrow-repeat me-1 me-md-2"></i><span class="d-none d-sm-inline">إعادة تعيين</span>
                                 </button>
-                                <button type="submit" class="btn btn-success" id="posSubmitBtn" disabled>
-                                    <i class="bi bi-check-circle me-2"></i>إتمام عملية البيع
+                                <button type="submit" class="btn btn-success flex-fill flex-md-auto" id="posSubmitBtn" disabled>
+                                    <i class="bi bi-check-circle me-1 me-md-2"></i>إتمام عملية البيع
                                 </button>
                             </div>
                         </form>
@@ -1562,21 +1855,21 @@ if (!$error) {
                 <tr data-cart-row data-product-id="${item.product_id}">
                     <td data-label="المنتج">
                         <div class="fw-semibold">${escapeHtml(item.name)}</div>
-                        <div class="text-muted small">التصنيف: ${escapeHtml(item.category || 'غير مصنف')} • متاح: ${sanitizedAvailable.toFixed(2)}</div>
+                        <div class="text-muted small">${escapeHtml(item.category || 'غير مصنف')} • متاح: ${sanitizedAvailable.toFixed(2)}</div>
                     </td>
                     <td data-label="الكمية">
                         <div class="pos-qty-control">
-                            <button type="button" class="btn btn-light border" data-action="decrease" data-product-id="${item.product_id}"><i class="bi bi-dash"></i></button>
-                            <input type="number" step="0.01" min="0" class="form-control" data-cart-qty data-product-id="${item.product_id}" value="${sanitizedQty.toFixed(2)}">
-                            <button type="button" class="btn btn-light border" data-action="increase" data-product-id="${item.product_id}"><i class="bi bi-plus"></i></button>
+                            <button type="button" class="btn btn-light border" data-action="decrease" data-product-id="${item.product_id}" aria-label="تقليل الكمية"><i class="bi bi-dash"></i></button>
+                            <input type="number" step="0.01" min="0" max="${sanitizedAvailable.toFixed(2)}" class="form-control" data-cart-qty data-product-id="${item.product_id}" value="${sanitizedQty.toFixed(2)}" aria-label="الكمية">
+                            <button type="button" class="btn btn-light border" data-action="increase" data-product-id="${item.product_id}" aria-label="زيادة الكمية"><i class="bi bi-plus"></i></button>
                         </div>
                     </td>
                     <td data-label="سعر الوحدة">
-                        <input type="number" step="0.01" min="0" class="form-control" data-cart-price data-product-id="${item.product_id}" value="${sanitizedPrice.toFixed(2)}">
+                        <input type="number" step="0.01" min="0" class="form-control" data-cart-price data-product-id="${item.product_id}" value="${sanitizedPrice.toFixed(2)}" aria-label="سعر الوحدة">
                     </td>
                     <td data-label="الإجمالي" class="fw-semibold">${formatCurrency(sanitizedQty * sanitizedPrice)}</td>
                     <td data-label="إجراءات" class="text-end">
-                        <button type="button" class="btn btn-link text-danger" data-action="remove" data-product-id="${item.product_id}"><i class="bi bi-x-circle"></i></button>
+                        <button type="button" class="btn btn-link text-danger p-0" data-action="remove" data-product-id="${item.product_id}" aria-label="حذف المنتج"><i class="bi bi-x-circle"></i></button>
                     </td>
                 </tr>`;
         }).join('');

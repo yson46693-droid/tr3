@@ -286,7 +286,7 @@ foreach ($vehicleInventory as $item) {
         </div>
         <div class="card-body">
             <div class="row mb-3">
-                <div class="col-md-6">
+                <div class="col-12 col-md-6 mb-3 mb-md-0">
                     <table class="table table-no-hover dashboard-table-details">
                         <tr>
                             <th width="40%">رقم السيارة:</th>
@@ -320,10 +320,10 @@ foreach ($vehicleInventory as $item) {
                         </tr>
                     </table>
                 </div>
-                <div class="col-md-6">
-                    <div class="card bg-light">
+                <div class="col-12 col-md-6">
+                    <div class="card bg-light h-100">
                         <div class="card-body">
-                            <h6>إحصائيات المخزون</h6>
+                            <h6 class="mb-3">إحصائيات المخزون</h6>
                             <div class="d-flex justify-content-between mb-2">
                                 <span>عدد المنتجات:</span>
                                 <strong><?php echo $inventoryStats['total_products']; ?></strong>
@@ -334,7 +334,7 @@ foreach ($vehicleInventory as $item) {
                             </div>
                             <div class="d-flex justify-content-between">
                                 <span>القيمة الإجمالية:</span>
-                                <strong><?php echo formatCurrency($inventoryStats['total_value']); ?></strong>
+                                <strong class="text-success"><?php echo formatCurrency($inventoryStats['total_value']); ?></strong>
                             </div>
                         </div>
                     </div>
@@ -344,28 +344,28 @@ foreach ($vehicleInventory as $item) {
             <!-- البحث في مخزون السيارة -->
             <div class="card shadow-sm mb-3">
                 <div class="card-body">
-                    <form method="GET" class="row g-3">
+                    <form method="GET" class="row g-2 g-md-3">
                         <input type="hidden" name="page" value="<?php echo htmlspecialchars($currentPageSlug); ?>">
                         <?php if ($currentSection !== null && $currentSection !== ''): ?>
                             <input type="hidden" name="section" value="<?php echo htmlspecialchars($currentSection); ?>">
                         <?php endif; ?>
                         <input type="hidden" name="vehicle_id" value="<?php echo $selectedVehicle['id']; ?>">
-                        <div class="col-md-4">
+                        <div class="col-12 col-md-4">
                             <label class="form-label">اسم المنتج</label>
-                            <input type="text" class="form-control" name="product_name" 
+                            <input type="text" class="form-control form-control-sm" name="product_name" 
                                    value="<?php echo htmlspecialchars($filters['product_name'] ?? ''); ?>" 
                                    placeholder="بحث...">
                         </div>
-                        <div class="col-md-4">
-                            <label class="form-label">&nbsp;</label>
-                            <button type="submit" class="btn btn-primary w-100">
-                                <i class="bi bi-search me-2"></i>بحث
+                        <div class="col-6 col-md-4">
+                            <label class="form-label d-none d-md-block">&nbsp;</label>
+                            <button type="submit" class="btn btn-primary btn-sm w-100">
+                                <i class="bi bi-search me-1 me-md-2"></i><span class="d-none d-sm-inline">بحث</span>
                             </button>
                         </div>
-                        <div class="col-md-4">
-                            <label class="form-label">&nbsp;</label>
-                            <a href="<?php echo $baseQueryString; ?>&vehicle_id=<?php echo $selectedVehicle['id']; ?>" class="btn btn-secondary w-100">
-                                <i class="bi bi-arrow-clockwise me-2"></i>إعادة تعيين
+                        <div class="col-6 col-md-4">
+                            <label class="form-label d-none d-md-block">&nbsp;</label>
+                            <a href="<?php echo $baseQueryString; ?>&vehicle_id=<?php echo $selectedVehicle['id']; ?>" class="btn btn-secondary btn-sm w-100">
+                                <i class="bi bi-arrow-clockwise me-1 me-md-2"></i><span class="d-none d-sm-inline">إعادة تعيين</span>
                             </a>
                         </div>
                     </form>
@@ -373,16 +373,16 @@ foreach ($vehicleInventory as $item) {
             </div>
             
             <!-- قائمة مخزون السيارة -->
-            <div class="table-responsive dashboard-table-wrapper">
-                <table class="table table-no-hover dashboard-table align-middle">
+            <div class="table-responsive dashboard-table-wrapper" style="overflow-x: auto; -webkit-overflow-scrolling: touch;">
+                <table class="table table-no-hover dashboard-table align-middle" style="min-width: 700px; font-size: 0.9rem;">
                     <thead>
                         <tr>
-                            <th>المنتج</th>
-                            <th>رقم التشغيلة</th>
-                            <th>تاريخ الإنتاج</th>
-                            <th>الكمية</th>
-                            <th>سعر الوحدة</th>
-                            <th>القيمة الإجمالية</th>
+                            <th style="min-width: 150px; white-space: nowrap;">المنتج</th>
+                            <th style="min-width: 120px; white-space: nowrap;">رقم التشغيلة</th>
+                            <th style="min-width: 110px; white-space: nowrap;">تاريخ الإنتاج</th>
+                            <th style="min-width: 80px; white-space: nowrap; text-align: center;">الكمية</th>
+                            <th style="min-width: 100px; white-space: nowrap; text-align: center;">سعر الوحدة</th>
+                            <th style="min-width: 120px; white-space: nowrap; text-align: center;">القيمة الإجمالية</th>
                         </tr>
                     </thead>
                     <tbody>
@@ -393,20 +393,174 @@ foreach ($vehicleInventory as $item) {
                         <?php else: ?>
                             <?php foreach ($vehicleInventory as $item): ?>
                                 <tr>
-                                    <td>
-                                        <strong><?php echo htmlspecialchars($item['product_name'] ?? '-'); ?></strong>
+                                    <td style="min-width: 150px;">
+                                        <strong style="word-wrap: break-word; word-break: break-word;"><?php echo htmlspecialchars($item['product_name'] ?? '-'); ?></strong>
                                     </td>
-                                    <td><?php echo htmlspecialchars($item['finished_batch_number'] ?? '—'); ?></td>
-                                    <td><?php echo !empty($item['finished_production_date']) ? htmlspecialchars(formatDate($item['finished_production_date'])) : '—'; ?></td>
-                                    <td><strong><?php echo number_format($item['quantity'], 2); ?></strong></td>
-                                    <td><?php echo formatCurrency($item['manager_unit_price'] ?? $item['unit_price'] ?? 0); ?></td>
-                                    <td><?php echo formatCurrency($item['total_value'] ?? 0); ?></td>
+                                    <td style="min-width: 120px; white-space: nowrap;"><?php echo htmlspecialchars($item['finished_batch_number'] ?? '—'); ?></td>
+                                    <td style="min-width: 110px; white-space: nowrap;"><?php echo !empty($item['finished_production_date']) ? htmlspecialchars(formatDate($item['finished_production_date'])) : '—'; ?></td>
+                                    <td style="min-width: 80px; white-space: nowrap; text-align: center;"><strong><?php echo number_format($item['quantity'], 2); ?></strong></td>
+                                    <td style="min-width: 100px; white-space: nowrap; text-align: center;"><?php echo formatCurrency($item['manager_unit_price'] ?? $item['unit_price'] ?? 0); ?></td>
+                                    <td style="min-width: 120px; white-space: nowrap; text-align: center;"><strong><?php echo formatCurrency($item['total_value'] ?? 0); ?></strong></td>
                                 </tr>
                             <?php endforeach; ?>
                         <?php endif; ?>
                     </tbody>
                 </table>
             </div>
+            
+            <style>
+                @media (max-width: 768px) {
+                    .dashboard-table-wrapper {
+                        -webkit-overflow-scrolling: touch;
+                        overflow-x: auto;
+                        overflow-y: hidden;
+                        border: 1px solid #dee2e6;
+                        border-radius: 0.25rem;
+                        margin: 0 -0.75rem;
+                        padding: 0.5rem 0.25rem;
+                    }
+                    
+                    .dashboard-table {
+                        font-size: 0.85rem;
+                        margin-bottom: 0;
+                        width: 100%;
+                    }
+                    
+                    .dashboard-table th,
+                    .dashboard-table td {
+                        padding: 0.5rem 0.4rem;
+                        vertical-align: middle;
+                    }
+                    
+                    .dashboard-table th {
+                        font-size: 0.8rem;
+                        font-weight: 600;
+                        background-color: #f8f9fa;
+                        position: sticky;
+                        top: 0;
+                        z-index: 10;
+                    }
+                    
+                    .dashboard-table td strong {
+                        font-size: 0.9rem;
+                    }
+                    
+                    .card-body {
+                        padding: 1rem;
+                    }
+                    
+                    .dashboard-table-details {
+                        font-size: 0.9rem;
+                    }
+                    
+                    .dashboard-table-details th {
+                        width: auto;
+                        min-width: 100px;
+                        font-size: 0.85rem;
+                    }
+                    
+                    .dashboard-table-details td {
+                        font-size: 0.9rem;
+                    }
+                    
+                    .card-header h5 {
+                        font-size: 1rem;
+                    }
+                    
+                    .card-header .btn {
+                        padding: 0.25rem 0.5rem;
+                        font-size: 0.875rem;
+                    }
+                    
+                    .card.bg-light .card-body h6 {
+                        font-size: 0.95rem;
+                        margin-bottom: 0.75rem;
+                    }
+                    
+                    .card.bg-light .card-body span,
+                    .card.bg-light .card-body strong {
+                        font-size: 0.9rem;
+                    }
+                }
+                
+                @media (max-width: 576px) {
+                    .dashboard-table-wrapper {
+                        margin: 0 -0.5rem;
+                        padding: 0.25rem 0.15rem;
+                    }
+                    
+                    .dashboard-table {
+                        font-size: 0.75rem;
+                        min-width: 650px;
+                    }
+                    
+                    .dashboard-table th,
+                    .dashboard-table td {
+                        padding: 0.4rem 0.3rem;
+                    }
+                    
+                    .dashboard-table th {
+                        font-size: 0.75rem;
+                    }
+                    
+                    .dashboard-table td strong {
+                        font-size: 0.85rem;
+                    }
+                    
+                    .card-body {
+                        padding: 0.75rem;
+                    }
+                    
+                    .dashboard-table-details {
+                        font-size: 0.85rem;
+                    }
+                    
+                    .dashboard-table-details th {
+                        font-size: 0.8rem;
+                        min-width: 90px;
+                    }
+                    
+                    .dashboard-table-details td {
+                        font-size: 0.85rem;
+                    }
+                    
+                    .card.bg-light .card-body {
+                        padding: 0.75rem;
+                    }
+                    
+                    .card.bg-light .card-body h6 {
+                        font-size: 0.9rem;
+                        margin-bottom: 0.5rem;
+                    }
+                    
+                    .card.bg-light .card-body span,
+                    .card.bg-light .card-body strong {
+                        font-size: 0.85rem;
+                    }
+                    
+                    .row.mb-3 {
+                        margin-bottom: 1rem !important;
+                    }
+                    
+                    .col-md-6 {
+                        margin-bottom: 1rem;
+                    }
+                    
+                    .form-label {
+                        font-size: 0.875rem;
+                    }
+                    
+                    .form-control-sm {
+                        font-size: 0.875rem;
+                        padding: 0.375rem 0.5rem;
+                    }
+                    
+                    .btn-sm {
+                        font-size: 0.8rem;
+                        padding: 0.375rem 0.75rem;
+                    }
+                }
+            </style>
         </div>
     </div>
 <?php endif; ?>

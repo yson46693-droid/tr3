@@ -3012,49 +3012,49 @@ if (!window.transferFormInitialized) {
                 return;
             }
 
-        const copyButton = event.target.closest('.js-copy-batch');
-        if (copyButton) {
-            const batchNumber = copyButton.dataset.batch;
-            if (!batchNumber) {
+            const copyButton = event.target.closest('.js-copy-batch');
+            if (copyButton) {
+                const batchNumber = copyButton.dataset.batch;
+                if (!batchNumber) {
+                    return;
+                }
+
+                const originalHtml = copyButton.innerHTML;
+                const originalClasses = copyButton.className;
+
+                function showCopiedFeedback(success) {
+                    copyButton.className = success ? 'btn btn-success btn-sm' : 'btn btn-warning btn-sm';
+                    copyButton.innerHTML = success
+                        ? '<i class="bi bi-check-circle"></i> تم النسخ'
+                        : '<i class="bi bi-exclamation-triangle"></i> تعذر النسخ';
+
+                    setTimeout(() => {
+                        copyButton.className = originalClasses;
+                        copyButton.innerHTML = originalHtml;
+                    }, 2000);
+                }
+
+                if (navigator.clipboard && navigator.clipboard.writeText) {
+                    navigator.clipboard.writeText(batchNumber)
+                        .then(() => showCopiedFeedback(true))
+                        .catch(() => showCopiedFeedback(false));
+                } else {
+                    const tempInput = document.createElement('input');
+                    tempInput.style.position = 'fixed';
+                    tempInput.style.opacity = '0';
+                    tempInput.value = batchNumber;
+                    document.body.appendChild(tempInput);
+                    tempInput.select();
+                    try {
+                        const successful = document.execCommand('copy');
+                        showCopiedFeedback(successful);
+                    } catch (err) {
+                        showCopiedFeedback(false);
+                    }
+                    document.body.removeChild(tempInput);
+                }
                 return;
             }
-
-            const originalHtml = copyButton.innerHTML;
-            const originalClasses = copyButton.className;
-
-            function showCopiedFeedback(success) {
-                copyButton.className = success ? 'btn btn-success btn-sm' : 'btn btn-warning btn-sm';
-                copyButton.innerHTML = success
-                    ? '<i class="bi bi-check-circle"></i> تم النسخ'
-                    : '<i class="bi bi-exclamation-triangle"></i> تعذر النسخ';
-
-                setTimeout(() => {
-                    copyButton.className = originalClasses;
-                    copyButton.innerHTML = originalHtml;
-                }, 2000);
-            }
-
-            if (navigator.clipboard && navigator.clipboard.writeText) {
-                navigator.clipboard.writeText(batchNumber)
-                    .then(() => showCopiedFeedback(true))
-                    .catch(() => showCopiedFeedback(false));
-            } else {
-                const tempInput = document.createElement('input');
-                tempInput.style.position = 'fixed';
-                tempInput.style.opacity = '0';
-                tempInput.value = batchNumber;
-                document.body.appendChild(tempInput);
-                tempInput.select();
-                try {
-                    const successful = document.execCommand('copy');
-                    showCopiedFeedback(successful);
-                } catch (err) {
-                    showCopiedFeedback(false);
-                }
-                document.body.removeChild(tempInput);
-            }
-            return;
-        }
 
             // زر تعديل كمية المنتج الخارجي
             const adjustButton = event.target.closest('.js-external-adjust');
@@ -3140,7 +3140,6 @@ if (!window.transferFormInitialized) {
         document.addEventListener('DOMContentLoaded', attachClickEvents);
     } else {
         attachClickEvents();
-    }
     }
 }
 </script>
