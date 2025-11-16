@@ -520,7 +520,7 @@ function updateVehicleInventory($vehicleId, $productId, $quantity, $userId = nul
             [$vehicleId, $productId]
         );
 
-        $productName = null;
+        $productName = $finishedProductData['product_name'] ?? null; // استخدام product_name من finishedMetadata إذا كان متوفراً
         $productCategory = null;
         $productUnit = null;
         $productUnitPrice = null;
@@ -544,10 +544,14 @@ function updateVehicleInventory($vehicleId, $productId, $quantity, $userId = nul
             }
 
             if ($productRecord) {
-                $productName = $productRecord['name'] ?? null;
+                // استخدام product_name من finishedMetadata أولاً، ثم من products
+                if (!$productName) {
+                    $productName = $productRecord['name'] ?? null;
+                }
                 $productCategory = $productRecord['category'] ?? null;
                 $productUnit = $productRecord['unit'] ?? null;
                 $productSnapshot = json_encode($productRecord, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
+                // استخدام manager_unit_price من finishedMetadata أولاً، ثم من products
                 if ($managerUnitPriceValue === null && array_key_exists('unit_price', $productRecord) && $productRecord['unit_price'] !== null) {
                     $managerUnitPriceValue = (float)$productRecord['unit_price'];
                 }
