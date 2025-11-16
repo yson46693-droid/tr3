@@ -132,14 +132,38 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 if ($result['success']) {
                     $_SESSION['warehouse_transfer_success'] = 'تم رفض طلب النقل.';
                 } else {
-                    $_SESSION['warehouse_transfer_error'] = $result['message'] ?? 'تعذر رفض طلب النقل.';
+                    // التحقق من قاعدة البيانات للتأكد من أن الطلب لم يتم رفضه بالفعل
+                    $verifyTransfer = $db->queryOne(
+                        "SELECT status FROM warehouse_transfers WHERE id = ?",
+                        [$transferId]
+                    );
+                    
+                    if ($verifyTransfer && $verifyTransfer['status'] === 'rejected') {
+                        // الطلب تم رفضه بالفعل!
+                        error_log("Warning: Transfer was rejected (ID: $transferId) but rejectRequest returned error. Details: " . json_encode($result));
+                        $_SESSION['warehouse_transfer_success'] = 'تم رفض طلب النقل.';
+                    } else {
+                        $_SESSION['warehouse_transfer_error'] = $result['message'] ?? 'تعذر رفض طلب النقل.';
+                    }
                 }
             } else {
                 $result = rejectWarehouseTransfer($transferId, $rejectionReason, $currentUser['id']);
                 if ($result['success']) {
                     $_SESSION['warehouse_transfer_success'] = $result['message'];
                 } else {
-                    $_SESSION['warehouse_transfer_error'] = $result['message'];
+                    // التحقق من قاعدة البيانات للتأكد من أن الطلب لم يتم رفضه بالفعل
+                    $verifyTransfer = $db->queryOne(
+                        "SELECT status FROM warehouse_transfers WHERE id = ?",
+                        [$transferId]
+                    );
+                    
+                    if ($verifyTransfer && $verifyTransfer['status'] === 'rejected') {
+                        // الطلب تم رفضه بالفعل!
+                        error_log("Warning: Transfer was rejected (ID: $transferId) but rejectWarehouseTransfer returned error. Details: " . json_encode($result));
+                        $_SESSION['warehouse_transfer_success'] = 'تم رفض طلب النقل.';
+                    } else {
+                        $_SESSION['warehouse_transfer_error'] = $result['message'];
+                    }
                 }
             }
         } else {

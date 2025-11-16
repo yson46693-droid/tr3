@@ -281,19 +281,55 @@ function rejectRequest($approvalId, $approvedBy, $rejectionReason) {
         );
         
         // تحديث حالة الكيان
-        updateEntityStatus($approval['type'], $entityIdentifier, 'rejected', $approvedBy);
+        try {
+            updateEntityStatus($approval['type'], $entityIdentifier, 'rejected', $approvedBy);
+        } catch (Exception $e) {
+            // إرجاع حالة الرفض إلى pending عند الفشل
+            $db->execute(
+                "UPDATE approvals SET status = 'pending', approved_by = NULL, rejection_reason = NULL WHERE id = ?",
+                [$approvalId]
+            );
+            error_log("Failed to update entity status during rejection: " . $e->getMessage());
+            
+            // التحقق من قاعدة البيانات للتأكد من أن الكيان لم يتم رفضه بالفعل
+            if ($approval['type'] === 'warehouse_transfer') {
+                $verifyTransfer = $db->queryOne(
+                    "SELECT status FROM warehouse_transfers WHERE id = ?",
+                    [$entityIdentifier]
+                );
+                if ($verifyTransfer && $verifyTransfer['status'] === 'rejected') {
+                    // الطلب تم رفضه بالفعل - نجاح
+                    error_log("Warning: Transfer was rejected (ID: $entityIdentifier) but updateEntityStatus failed. Details: " . $e->getMessage());
+                } else {
+                    return ['success' => false, 'message' => 'حدث خطأ أثناء رفض الطلب: ' . $e->getMessage()];
+                }
+            } else {
+                return ['success' => false, 'message' => 'حدث خطأ أثناء رفض الطلب: ' . $e->getMessage()];
+            }
+        }
         
         // إرسال إشعار للمستخدم الذي طلب الموافقة
-        createNotification(
-            $approval['requested_by'],
-            'تم رفض الطلب',
-            "تم رفض طلبك من نوع {$approval['type']}. السبب: {$rejectionReason}",
-            'error',
-            getEntityLink($approval['type'], $entityIdentifier)
-        );
+        try {
+            require_once __DIR__ . '/notifications.php';
+            createNotification(
+                $approval['requested_by'],
+                'تم رفض الطلب',
+                "تم رفض طلبك من نوع {$approval['type']}. السبب: {$rejectionReason}",
+                'error',
+                getEntityLink($approval['type'], $entityIdentifier)
+            );
+        } catch (Exception $notifException) {
+            // لا نسمح لفشل الإشعار بإلغاء نجاح الرفض
+            error_log('Notification creation exception during rejection: ' . $notifException->getMessage());
+        }
         
         // تسجيل سجل التدقيق
-        logAudit($approvedBy, 'reject', 'approval', $approvalId, 'pending', 'rejected');
+        try {
+            logAudit($approvedBy, 'reject', 'approval', $approvalId, 'pending', 'rejected');
+        } catch (Exception $auditException) {
+            // لا نسمح لفشل التدقيق بإلغاء نجاح الرفض
+            error_log('Audit log exception during rejection: ' . $auditException->getMessage());
+        }
         
         return ['success' => true];
         

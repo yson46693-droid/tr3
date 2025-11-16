@@ -1478,6 +1478,10 @@ function rejectWarehouseTransfer($transferId, $rejectionReason, $rejectedBy = nu
             return ['success' => false, 'message' => 'طلب النقل غير موجود'];
         }
         
+        // حفظ الحالة القديمة قبل التحديث
+        $oldStatus = $transfer['status'];
+        
+        // تحديث حالة الطلب
         $db->execute(
             "UPDATE warehouse_transfers 
              SET status = 'rejected', approved_by = ?, rejection_reason = ?, approved_at = NOW() 
@@ -1485,6 +1489,7 @@ function rejectWarehouseTransfer($transferId, $rejectionReason, $rejectedBy = nu
             [$rejectedBy, $rejectionReason, $transferId]
         );
 
+        // تحديث حالة الموافقة
         $db->execute(
             "UPDATE approvals 
              SET status = 'rejected', approved_by = ?, rejection_reason = ? 
@@ -1492,15 +1497,58 @@ function rejectWarehouseTransfer($transferId, $rejectionReason, $rejectedBy = nu
             [$rejectedBy, $rejectionReason, $transferId]
         );
         
-        logAudit($rejectedBy, 'reject_transfer', 'warehouse_transfer', $transferId, 
-                 ['old_status' => $transfer['status']], 
-                 ['new_status' => 'rejected']);
+        // تسجيل التدقيق (مع حماية من الأخطاء)
+        try {
+            logAudit($rejectedBy, 'reject_transfer', 'warehouse_transfer', $transferId, 
+                     ['old_status' => $oldStatus], 
+                     ['new_status' => 'rejected']);
+        } catch (Exception $auditException) {
+            // لا نسمح لفشل تسجيل التدقيق بإلغاء نجاح الرفض
+            error_log('Transfer rejection audit log exception: ' . $auditException->getMessage());
+        }
         
-        return ['success' => true, 'message' => 'تم رفض طلب النقل'];
+        // التحقق النهائي من أن الطلب تم رفضه فعلياً في قاعدة البيانات
+        $verifyTransfer = $db->queryOne(
+            "SELECT status, rejection_reason FROM warehouse_transfers WHERE id = ?",
+            [$transferId]
+        );
+        
+        if ($verifyTransfer && $verifyTransfer['status'] === 'rejected') {
+            // الطلب تم رفضه بنجاح
+            return ['success' => true, 'message' => 'تم رفض طلب النقل'];
+        } else {
+            // الطلب لم يتم رفضه - هناك مشكلة
+            error_log("Warning: Transfer rejection failed - Transfer ID: $transferId, Expected status: rejected, Actual status: " . ($verifyTransfer['status'] ?? 'null'));
+            return ['success' => false, 'message' => 'تعذر رفض طلب النقل. يرجى المحاولة مرة أخرى.'];
+        }
         
     } catch (Exception $e) {
         error_log("Transfer Rejection Error: " . $e->getMessage());
-        return ['success' => false, 'message' => 'حدث خطأ في رفض الطلب'];
+        error_log("Transfer Rejection Error Stack: " . $e->getTraceAsString());
+        
+        // التحقق من قاعدة البيانات إذا كان الطلب تم رفضه بالفعل
+        try {
+            $db = db();
+            $verifyTransfer = $db->queryOne(
+                "SELECT status, rejection_reason FROM warehouse_transfers WHERE id = ?",
+                [$transferId]
+            );
+            
+            if ($verifyTransfer && $verifyTransfer['status'] === 'rejected') {
+                // الطلب تم رفضه بالفعل في قاعدة البيانات!
+                error_log("Warning: Transfer was rejected (ID: $transferId) but exception occurred: " . $e->getMessage());
+                // نعيد نجاح لأن الطلب تم رفضه فعلياً
+                return [
+                    'success' => true,
+                    'message' => 'تم رفض طلب النقل'
+                ];
+            }
+        } catch (Exception $dbException) {
+            error_log("Error checking database in catch block: " . $dbException->getMessage());
+        }
+        
+        // الطلب لم يتم رفضه - خطأ حقيقي
+        return ['success' => false, 'message' => 'حدث خطأ في رفض الطلب: ' . $e->getMessage()];
     }
 }
 
