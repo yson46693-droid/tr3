@@ -259,38 +259,84 @@ if (ob_get_level() > 0) {
             pointer-events: all;
         }
         
+        /* إصلاح Modal - قيم z-index صحيحة */
         .modal {
-            z-index: 400 !important;
-        }
-        
-        .modal-backdrop {
-            z-index: 40 !important;
-            opacity: 0.5 !important;
-            background-color: rgba(0, 0, 0, 0.5) !important;
+            position: fixed !important;
+            top: 0 !important;
+            left: 0 !important;
+            z-index: 1055 !important;
+            width: 100% !important;
+            height: 100% !important;
+            overflow-x: hidden !important;
+            overflow-y: auto !important;
+            outline: 0 !important;
         }
         
         .modal.show {
             display: block !important;
         }
         
-        .modal .modal-content {
-            position: relative;
-            z-index: 1060;
-        }
-        
-        .modal-dialog {
-            position: relative !important;
-            z-index: 1055 !important;
-        }
-        
-        /* منع ظهور modal في أماكن متعددة */
         .modal:not(.show) {
             display: none !important;
+        }
+        
+        .modal-backdrop {
+            position: fixed !important;
+            top: 0 !important;
+            left: 0 !important;
+            z-index: 1050 !important;
+            width: 100vw !important;
+            height: 100vh !important;
+            background-color: rgba(0, 0, 0, 0.5) !important;
+            opacity: 1 !important;
+        }
+        
+        .modal-backdrop.show {
+            opacity: 0.5 !important;
         }
         
         /* التأكد من وجود backdrop واحد فقط */
         .modal-backdrop ~ .modal-backdrop {
             display: none !important;
+        }
+        
+        .modal-dialog {
+            position: relative !important;
+            width: auto !important;
+            margin: 1.75rem auto !important;
+            pointer-events: none !important;
+            z-index: auto !important;
+        }
+        
+        .modal.show .modal-dialog {
+            pointer-events: auto !important;
+        }
+        
+        .modal-content {
+            position: relative !important;
+            display: flex !important;
+            flex-direction: column !important;
+            width: 100% !important;
+            pointer-events: auto !important;
+            background-color: #fff !important;
+            background-clip: padding-box !important;
+            border: 1px solid rgba(0, 0, 0, 0.2) !important;
+            border-radius: 0.3rem !important;
+            outline: 0 !important;
+            z-index: auto !important;
+        }
+        
+        /* منع تداخل الجداول مع الـ modal */
+        .dashboard-table-wrapper,
+        .table-responsive,
+        .table {
+            position: relative !important;
+            z-index: 1 !important;
+        }
+        
+        .dashboard-table thead th {
+            position: sticky !important;
+            z-index: 10 !important;
         }
         
         /* الشعار أو الأيقونة */

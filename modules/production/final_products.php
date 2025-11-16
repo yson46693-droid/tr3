@@ -2478,6 +2478,56 @@ if (!window.transferFormInitialized) {
                     }
                 });
             }
+            
+            // إصلاح تموضع الـ modal عند فتحه
+            requestTransferModal.addEventListener('shown.bs.modal', function() {
+                // التأكد من وجود backdrop واحد فقط
+                const backdrops = document.querySelectorAll('.modal-backdrop');
+                if (backdrops.length > 1) {
+                    for (let i = 1; i < backdrops.length; i++) {
+                        backdrops[i].remove();
+                    }
+                }
+                
+                // إصلاح تموضع الـ modal
+                requestTransferModal.style.position = 'fixed';
+                requestTransferModal.style.top = '0';
+                requestTransferModal.style.left = '0';
+                requestTransferModal.style.zIndex = '1055';
+                requestTransferModal.style.width = '100%';
+                requestTransferModal.style.height = '100%';
+                requestTransferModal.style.display = 'block';
+                
+                // التأكد من أن الـ modal-dialog في الموضع الصحيح
+                const modalDialog = requestTransferModal.querySelector('.modal-dialog');
+                if (modalDialog) {
+                    modalDialog.style.position = 'relative';
+                    modalDialog.style.zIndex = 'auto';
+                    modalDialog.style.margin = '1.75rem auto';
+                }
+                
+                // التأكد من أن الـ modal-content في الموضع الصحيح
+                const modalContent = requestTransferModal.querySelector('.modal-content');
+                if (modalContent) {
+                    modalContent.style.position = 'relative';
+                    modalContent.style.zIndex = 'auto';
+                }
+            });
+            
+            // تنظيف عند إغلاق النموذج
+            requestTransferModal.addEventListener('hidden.bs.modal', function() {
+                // إزالة أي backdrops متبقية
+                const backdrops = document.querySelectorAll('.modal-backdrop');
+                backdrops.forEach(backdrop => backdrop.remove());
+                
+                // إزالة class modal-open من body إذا لم تكن هناك modals أخرى
+                const otherModals = document.querySelectorAll('.modal.show');
+                if (otherModals.length === 0) {
+                    document.body.classList.remove('modal-open');
+                    document.body.style.overflow = '';
+                    document.body.style.paddingRight = '';
+                }
+            });
         }
 
         // تعطيل زر الإرسال بعد النقر لمنع double-click
