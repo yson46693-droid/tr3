@@ -14,7 +14,7 @@ require_once __DIR__ . '/audit_log.php';
 /**
  * تسجيل حركة مخزون
  */
-function recordInventoryMovement($productId, $warehouseId, $type, $quantity, $referenceType = null, $referenceId = null, $notes = null, $createdBy = null) {
+function recordInventoryMovement($productId, $warehouseId, $type, $quantity, $referenceType = null, $referenceId = null, $notes = null, $createdBy = null, $batchId = null) {
     try {
         $db = db();
         
@@ -28,6 +28,19 @@ function recordInventoryMovement($productId, $warehouseId, $type, $quantity, $re
             return ['success' => false, 'message' => 'يجب تسجيل الدخول'];
         }
         
+        // إذا كان هناك batch_id و referenceType = warehouse_transfer، نحاول الحصول على batch_id من warehouse_transfer_items
+        if (!$batchId && $referenceType === 'warehouse_transfer' && $referenceId) {
+            $transferItem = $db->queryOne(
+                "SELECT batch_id FROM warehouse_transfer_items 
+                 WHERE transfer_id = ? AND product_id = ? 
+                 LIMIT 1",
+                [$referenceId, $productId]
+            );
+            if ($transferItem && !empty($transferItem['batch_id'])) {
+                $batchId = (int)$transferItem['batch_id'];
+            }
+        }
+        
         // الحصول على الكمية الحالية
         $product = $db->queryOne(
             "SELECT quantity, warehouse_id FROM products WHERE id = ?",
@@ -38,7 +51,41 @@ function recordInventoryMovement($productId, $warehouseId, $type, $quantity, $re
             return ['success' => false, 'message' => 'المنتج غير موجود'];
         }
         
+        // إذا كان هناك batch_id ونوع الحركة هو 'out' أو 'transfer'، نستخدم quantity_produced من finished_products
         $quantityBefore = $product['quantity'];
+        $usingFinishedProductQuantity = false;
+        
+        if ($batchId && ($type === 'out' || $type === 'transfer')) {
+            $finishedProduct = $db->queryOne(
+                "SELECT quantity_produced FROM finished_products WHERE id = ?",
+                [$batchId]
+            );
+            
+            if ($finishedProduct && isset($finishedProduct['quantity_produced'])) {
+                $quantityProducedRaw = (float)($finishedProduct['quantity_produced'] ?? 0);
+                $usingFinishedProductQuantity = true;
+                
+                // إذا كان referenceType = 'warehouse_transfer'، نخصم الكميات المحجوزة في pending transfers الأخرى
+                // لأن quantity_produced نفسه هو الكمية المتبقية بعد خصم approved/completed transfers
+                // لكن يجب خصم pending transfers الأخرى أيضاً (غير النقل الحالي)
+                if ($referenceType === 'warehouse_transfer' && $referenceId && $warehouseId) {
+                    $pendingTransfers = $db->queryOne(
+                        "SELECT COALESCE(SUM(wti.quantity), 0) AS pending_quantity
+                         FROM warehouse_transfer_items wti
+                         INNER JOIN warehouse_transfers wt ON wt.id = wti.transfer_id
+                         WHERE wti.batch_id = ? AND wt.from_warehouse_id = ? AND wt.status = 'pending' AND wt.id != ?",
+                        [$batchId, $warehouseId, $referenceId]
+                    );
+                    $pendingQuantity = (float)($pendingTransfers['pending_quantity'] ?? 0);
+                    $quantityBefore = $quantityProducedRaw - $pendingQuantity;
+                    error_log("recordInventoryMovement: Using finished_products.quantity_produced = $quantityProducedRaw, pending (excluding current): $pendingQuantity, available: $quantityBefore for batch_id: $batchId, product_id: $productId, transfer_id: $referenceId");
+                } else {
+                    // إذا لم يكن warehouse_transfer، نستخدم quantity_produced مباشرة
+                    $quantityBefore = $quantityProducedRaw;
+                    error_log("recordInventoryMovement: Using finished_products.quantity_produced = $quantityBefore for batch_id: $batchId, product_id: $productId");
+                }
+            }
+        }
         
         // حساب الكمية الجديدة
         $quantityAfter = $quantityBefore;
@@ -49,7 +96,18 @@ function recordInventoryMovement($productId, $warehouseId, $type, $quantity, $re
             case 'out':
                 $quantityAfter = $quantityBefore - $quantity;
                 if ($quantityAfter < 0) {
-                    return ['success' => false, 'message' => 'الكمية غير كافية في المخزون'];
+                    // إذا كنا نستخدم finished_products، لا نفحص products.quantity
+                    if ($usingFinishedProductQuantity) {
+                        // التحقق من quantity_produced فقط
+                        if ($quantityAfter < 0) {
+                            error_log("recordInventoryMovement: Insufficient quantity in finished_products. batch_id: $batchId, quantity_produced: $quantityBefore, requested: $quantity");
+                            return ['success' => false, 'message' => 'الكمية غير كافية في المخزون'];
+                        }
+                    } else {
+                        if ($quantityAfter < 0) {
+                            return ['success' => false, 'message' => 'الكمية غير كافية في المخزون'];
+                        }
+                    }
                 }
                 break;
             case 'adjustment':
@@ -59,16 +117,36 @@ function recordInventoryMovement($productId, $warehouseId, $type, $quantity, $re
                 // للتحويل، نحتاج معالجة خاصة
                 $quantityAfter = $quantityBefore - $quantity;
                 if ($quantityAfter < 0) {
-                    return ['success' => false, 'message' => 'الكمية غير كافية في المخزون'];
+                    // إذا كنا نستخدم finished_products، لا نفحص products.quantity
+                    if ($usingFinishedProductQuantity) {
+                        // التحقق من quantity_produced فقط
+                        if ($quantityAfter < 0) {
+                            error_log("recordInventoryMovement: Insufficient quantity in finished_products for transfer. batch_id: $batchId, quantity_produced: $quantityBefore, requested: $quantity");
+                            return ['success' => false, 'message' => 'الكمية غير كافية في المخزون'];
+                        }
+                    } else {
+                        if ($quantityAfter < 0) {
+                            return ['success' => false, 'message' => 'الكمية غير كافية في المخزون'];
+                        }
+                    }
                 }
                 break;
         }
         
         // تحديث كمية المنتج
-        $updateSql = "UPDATE products SET quantity = ?, warehouse_id = ? WHERE id = ?";
-        $db->execute($updateSql, [$quantityAfter, $warehouseId ?? $product['warehouse_id'], $productId]);
+        // إذا كنا نستخدم finished_products.quantity_produced، لا نحدث products.quantity
+        // لأن الكمية الفعلية موجودة في finished_products وليس في products
+        if (!$usingFinishedProductQuantity) {
+            $updateSql = "UPDATE products SET quantity = ?, warehouse_id = ? WHERE id = ?";
+            $db->execute($updateSql, [$quantityAfter, $warehouseId ?? $product['warehouse_id'], $productId]);
+        } else {
+            // إذا كنا نستخدم finished_products، نحافظ على products.quantity كما هو
+            // لأن quantity_produced يتم تحديثه في approveWarehouseTransfer
+            error_log("recordInventoryMovement: Skipping products.quantity update for batch_id: $batchId, using finished_products.quantity_produced instead");
+        }
         
         // تسجيل الحركة
+        // إذا كنا نستخدم finished_products، نسجل quantity_produced في quantity_before/quantity_after
         $sql = "INSERT INTO inventory_movements 
                 (product_id, warehouse_id, type, quantity, quantity_before, quantity_after, reference_type, reference_id, notes, created_by) 
                 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)";
@@ -78,8 +156,8 @@ function recordInventoryMovement($productId, $warehouseId, $type, $quantity, $re
             $warehouseId ?? $product['warehouse_id'],
             $type,
             $quantity,
-            $quantityBefore,
-            $quantityAfter,
+            $quantityBefore, // هذا سيكون quantity_produced إذا كان usingFinishedProductQuantity
+            $quantityAfter,  // هذا سيكون quantity_produced - quantity إذا كان usingFinishedProductQuantity
             $referenceType,
             $referenceId,
             $notes,

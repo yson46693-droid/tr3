@@ -266,19 +266,39 @@ if (ob_get_level() > 0) {
         
         .modal-backdrop {
             z-index: 1040 !important;
-            pointer-events: none !important;
-            opacity: 1 !important;
-            background-color: transparent !important;
+            pointer-events: auto !important;
+            opacity: 0.5 !important;
+            background-color: rgba(0, 0, 0, 0.5) !important;
+        }
+        
+        .modal.show {
+            display: block !important;
+        }
+        
+        .modal.show ~ .modal-backdrop {
+            z-index: 1040 !important;
         }
         
         .modal .modal-content {
             position: relative;
             z-index: 1060;
+            pointer-events: auto !important;
         }
         
         .modal-dialog {
-            pointer-events: all !important;
-            margin-top: 60px !important;
+            pointer-events: auto !important;
+            position: relative !important;
+            z-index: 1055 !important;
+        }
+        
+        /* منع ظهور modal في أماكن متعددة */
+        .modal:not(.show) {
+            display: none !important;
+        }
+        
+        /* التأكد من وجود backdrop واحد فقط */
+        .modal-backdrop ~ .modal-backdrop {
+            display: none !important;
         }
         
         /* الشعار أو الأيقونة */

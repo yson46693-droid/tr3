@@ -1219,6 +1219,7 @@ function approveWarehouseTransfer($transferId, $approvedBy = null) {
             }
             
             // تسجيل حركة خروج
+            // تمرير batch_id إذا كان موجوداً للتحقق من finished_products.quantity_produced
             $movementOut = recordInventoryMovement(
                 $item['product_id'],
                 $transfer['from_warehouse_id'],
@@ -1227,7 +1228,8 @@ function approveWarehouseTransfer($transferId, $approvedBy = null) {
                 'warehouse_transfer',
                 $transferId,
                 "نقل إلى مخزن آخر{$batchNote}",
-                $approvedBy
+                $approvedBy,
+                $batchId // تمرير batch_id للتحقق من finished_products
             );
 
             if (empty($movementOut['success'])) {

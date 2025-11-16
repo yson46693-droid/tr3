@@ -2124,8 +2124,8 @@ if ($isManager) {
 <?php endif; ?>
 
 <?php if ($primaryWarehouse): ?>
-<div class="modal fade" id="requestTransferModal" tabindex="-1">
-    <div class="modal-dialog modal-lg">
+<div class="modal fade" id="requestTransferModal" tabindex="-1" aria-labelledby="requestTransferModalLabel" aria-hidden="true">
+    <div class="modal-dialog modal-lg modal-dialog-centered">
         <div class="modal-content">
             <div class="modal-header">
                 <h5 class="modal-title">
@@ -2417,10 +2417,22 @@ if (!window.transferFormInitialized) {
         
         // التأكد من وجود النموذج في الصفحة قبل إضافة event listeners
         if (requestTransferModal && requestTransferBtn) {
+            // منع إضافة event listener أكثر من مرة
+            if (requestTransferBtn.dataset.listenerAttached === 'true') {
+                return;
+            }
+            requestTransferBtn.dataset.listenerAttached = 'true';
+            
+            // إزالة أي event listeners موجودة مسبقاً من Bootstrap
+            const newBtn = requestTransferBtn.cloneNode(true);
+            requestTransferBtn.parentNode.replaceChild(newBtn, requestTransferBtn);
+            const cleanBtn = document.querySelector('[data-bs-target="#requestTransferModal"]');
+            
             // إضافة event listener يدوي لمنع فتح النموذج في أماكن أخرى
-            requestTransferBtn.addEventListener('click', function(e) {
+            cleanBtn.addEventListener('click', function(e) {
                 e.preventDefault();
                 e.stopPropagation();
+                e.stopImmediatePropagation();
                 
                 // التأكد من وجود Bootstrap
                 if (typeof bootstrap === 'undefined' || typeof bootstrap.Modal === 'undefined') {
@@ -2428,12 +2440,20 @@ if (!window.transferFormInitialized) {
                     return false;
                 }
                 
-                // التحقق من أن النموذج موجود في نفس الصفحة (ليس في iframe أو مكان آخر)
+                // التحقق من أن النموذج موجود في نفس الصفحة
                 const modal = document.getElementById('requestTransferModal');
-                if (!modal || modal.offsetParent === null) {
-                    console.error('requestTransferModal not found or hidden in current page');
+                if (!modal) {
+                    console.error('requestTransferModal not found');
                     return false;
                 }
+                
+                // إزالة أي backdrops متعددة
+                const backdrops = document.querySelectorAll('.modal-backdrop');
+                backdrops.forEach(backdrop => {
+                    if (backdrop !== backdrops[0]) {
+                        backdrop.remove();
+                    }
+                });
                 
                 // التأكد من أن النموذج ليس مفتوحاً بالفعل
                 const existingInstance = bootstrap.Modal.getInstance(modal);
@@ -2441,8 +2461,23 @@ if (!window.transferFormInitialized) {
                     return false; // النموذج مفتوح بالفعل
                 }
                 
+                // إغلاق أي modals أخرى مفتوحة
+                const allModals = document.querySelectorAll('.modal.show');
+                allModals.forEach(otherModal => {
+                    if (otherModal !== modal) {
+                        const otherInstance = bootstrap.Modal.getInstance(otherModal);
+                        if (otherInstance) {
+                            otherInstance.hide();
+                        }
+                    }
+                });
+                
                 // فتح النموذج
-                const modalInstance = bootstrap.Modal.getOrCreateInstance(modal);
+                const modalInstance = bootstrap.Modal.getOrCreateInstance(modal, {
+                    backdrop: true,
+                    keyboard: true,
+                    focus: true
+                });
                 modalInstance.show();
                 
                 return false;
@@ -2510,8 +2545,38 @@ if (!window.transferFormInitialized) {
                     if (transferTokenInput.value === '') {
                         transferTokenInput.value = '<?php echo htmlspecialchars($_SESSION['transfer_submission_token'] ?? '', ENT_QUOTES); ?>';
                     }
+                    
+                    // التأكد من وجود backdrop واحد فقط
+                    const backdrops = document.querySelectorAll('.modal-backdrop');
+                    if (backdrops.length > 1) {
+                        for (let i = 1; i < backdrops.length; i++) {
+                            backdrops[i].remove();
+                        }
+                    }
+                    
+                    // التأكد من أن الـ modal في الموضع الصحيح
+                    const modalDialog = requestTransferModal.querySelector('.modal-dialog');
+                    if (modalDialog) {
+                        modalDialog.style.position = 'relative';
+                        modalDialog.style.zIndex = '1055';
+                    }
                 });
             }
+            
+            // تنظيف عند إغلاق النموذج
+            requestTransferModal.addEventListener('hidden.bs.modal', function() {
+                // إزالة أي backdrops متبقية
+                const backdrops = document.querySelectorAll('.modal-backdrop');
+                backdrops.forEach(backdrop => backdrop.remove());
+                
+                // إزالة class modal-open من body إذا لم تكن هناك modals أخرى
+                const otherModals = document.querySelectorAll('.modal.show');
+                if (otherModals.length === 0) {
+                    document.body.classList.remove('modal-open');
+                    document.body.style.overflow = '';
+                    document.body.style.paddingRight = '';
+                }
+            });
         }
 
         // تعطيل زر الإرسال بعد النقر لمنع double-click
