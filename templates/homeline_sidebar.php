@@ -74,13 +74,6 @@ switch ($role) {
                 'badge' => null
             ],
             [
-                'title' => 'مخزن المنتجات',
-                'icon' => 'bi-boxes',
-                'url' => $baseUrl . 'manager.php?page=final_products',
-                'active' => ($currentPage === 'manager.php' && $currentPageParam === 'final_products'),
-                'badge' => null
-            ],
-            [
                 'title' => 'قوالب المنتجات',
                 'icon' => 'bi-file-earmark-text',
                 'url' => $baseUrl . 'manager.php?page=product_templates',

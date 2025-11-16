@@ -916,7 +916,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                                     if ($currentRemaining !== null) {
                                         $newRemaining = max($currentRemaining - $quantity, 0);
                                         $db->execute(
-                                            "UPDATE finished_products SET quantity_produced = ?, updated_at = NOW() WHERE id = ?",
+                                            "UPDATE finished_products SET quantity_produced = ? WHERE id = ?",
                                             [$newRemaining, $batchIdValue]
                                         );
                                     }

@@ -58,42 +58,6 @@ if ($page === 'packaging_warehouse' && isset($_GET['ajax']) && isset($_GET['mate
     }
 }
 
-// معالجة AJAX قبل أي إخراج HTML - خاصة لصفحة مخازن المناديب (نقل المنتجات)
-if ($page === 'final_products' && isset($_GET['section']) && $_GET['section'] === 'delegates' && isset($_GET['ajax']) && $_GET['ajax'] === 'load_products') {
-    // تنظيف أي output buffer سابق
-    while (ob_get_level() > 0) {
-        ob_end_clean();
-    }
-    
-    // تحميل الملفات الأساسية فقط
-    require_once __DIR__ . '/../includes/config.php';
-    require_once __DIR__ . '/../includes/db.php';
-    require_once __DIR__ . '/../includes/auth.php';
-    require_once __DIR__ . '/../includes/vehicle_inventory.php';
-    
-    requireRole(['sales', 'accountant', 'production', 'manager']);
-    
-    // إرسال headers JSON
-    header('Content-Type: application/json; charset=utf-8');
-    header('Cache-Control: no-cache, must-revalidate');
-    
-    $warehouseId = isset($_GET['warehouse_id']) ? intval($_GET['warehouse_id']) : null;
-    
-    try {
-        $products = getFinishedProductBatchOptions(true, $warehouseId);
-        echo json_encode([
-            'success' => true,
-            'products' => $products
-        ], JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
-    } catch (Exception $e) {
-        echo json_encode([
-            'success' => false,
-            'message' => $e->getMessage()
-        ], JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
-    }
-    exit; // إيقاف التنفيذ بعد معالجة AJAX
-}
-
 // تحميل باقي الملفات المطلوبة للصفحة العادية
 require_once __DIR__ . '/../includes/config.php';
 require_once __DIR__ . '/../includes/db.php';
@@ -114,9 +78,6 @@ $db = db();
 
 $pageStylesheets = isset($pageStylesheets) && is_array($pageStylesheets) ? $pageStylesheets : [];
 $extraScripts = isset($extraScripts) && is_array($extraScripts) ? $extraScripts : [];
-if ($page === 'final_products' && !in_array('assets/css/production-page.css', $pageStylesheets, true)) {
-    $pageStylesheets[] = 'assets/css/production-page.css';
-}
 if ($page === 'reports' && !in_array('assets/css/production-page.css', $pageStylesheets, true)) {
     $pageStylesheets[] = 'assets/css/production-page.css';
 }
@@ -138,11 +99,6 @@ $pageTitle = isset($lang['manager_dashboard']) ? $lang['manager_dashboard'] : '�
                         'label' => 'مهام الإنتاج',
                         'icon' => 'bi-list-task',
                         'url' => getRelativeUrl('dashboard/manager.php?page=production_tasks')
-                    ],
-                    [
-                        'label' => 'مخزن المنتجات',
-                        'icon' => 'bi-boxes',
-                        'url' => getRelativeUrl('dashboard/manager.php?page=final_products')
                     ],
                     [
                         'label' => 'قوالب المنتجات',
@@ -822,55 +778,6 @@ $pageTitle = isset($lang['manager_dashboard']) ? $lang['manager_dashboard'] : '�
                     echo '<div class="alert alert-warning">صفحة مخزن أدوات التعبئة غير متاحة حالياً</div>';
                 }
                 ?>
-                
-            <?php elseif ($page === 'final_products'): ?>
-                <?php 
-                $section = $_GET['section'] ?? 'company';
-                $allowedSections = ['company', 'delegates'];
-                if (!in_array($section, $allowedSections, true)) {
-                    $section = 'company';
-                }
-                ?>
-                <div class="page-header mb-4 d-flex flex-wrap justify-content-between align-items-center">
-                    <h2 class="mb-2 mb-md-0"><i class="bi bi-boxes me-2"></i>مخازن المنتجات</h2>
-                </div>
-                <ul class="nav nav-pills gap-2 production-tab-toggle">
-                    <li class="nav-item">
-                        <a class="nav-link production-tab-btn <?php echo $section === 'company' ? 'active' : ''; ?>" href="manager.php?page=final_products&section=company">
-                            <i class="bi bi-building me-2"></i>مخزن منتجات الشركة
-                        </a>
-                    </li>
-                    <li class="nav-item">
-                        <a class="nav-link production-tab-btn <?php echo $section === 'delegates' ? 'active' : ''; ?>" href="manager.php?page=final_products&section=delegates">
-                            <i class="bi bi-truck me-2"></i>مخازن المناديب
-                        </a>
-                    </li>
-                </ul>
-                <div class="mt-4 <?php echo $section === 'company' ? 'production-page manager-final-products-page' : ''; ?>">
-                    <?php if ($section === 'delegates'): ?>
-                        <?php 
-                        $delegatesModule = __DIR__ . '/../modules/sales/vehicle_inventory.php';
-                        if (file_exists($delegatesModule)) {
-                            include $delegatesModule;
-                        } else {
-                            echo '<div class="alert alert-warning">صفحة مخازن المناديب غير متاحة حالياً</div>';
-                        }
-                        ?>
-                    <?php else: ?>
-                        <div class="production-section">
-                            <?php 
-                            // التأكد من أن section محدد بشكل صحيح قبل تضمين الملف
-                            $_GET['section'] = $section;
-                            $modulePath = __DIR__ . '/../modules/production/final_products.php';
-                            if (file_exists($modulePath)) {
-                                include $modulePath;
-                            } else {
-                                echo '<div class="alert alert-warning">صفحة مخزن المنتجات غير متاحة حالياً</div>';
-                            }
-                            ?>
-                        </div>
-                    <?php endif; ?>
-                </div>
                 
             <?php elseif ($page === 'product_templates'): ?>
                 <!-- صفحة قوالب المنتجات -->

@@ -1256,7 +1256,7 @@ function approveWarehouseTransfer($transferId, $approvedBy = null) {
                     $currentRemaining = (float)($finishedProd['quantity_produced'] ?? 0);
                     $newRemaining = max(0.0, $currentRemaining - $requestedQuantity);
                     $db->execute(
-                        "UPDATE finished_products SET quantity_produced = ?, updated_at = NOW() WHERE id = ?",
+                        "UPDATE finished_products SET quantity_produced = ? WHERE id = ?",
                         [$newRemaining, $batchId]
                     );
                 }

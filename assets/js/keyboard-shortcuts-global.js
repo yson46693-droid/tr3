@@ -62,7 +62,6 @@
             links.security = 'manager.php?page=security';
             links.warehouse_transfers = 'manager.php?page=warehouse_transfers';
             links.production_tasks = 'manager.php?page=production_tasks';
-            links.final_products = 'manager.php?page=final_products';
             links.packaging_warehouse = 'manager.php?page=packaging_warehouse';
             links.raw_materials_warehouse = 'manager.php?page=raw_materials_warehouse';
             links.suppliers = 'manager.php?page=suppliers';
