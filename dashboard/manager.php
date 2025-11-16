@@ -801,7 +801,7 @@ $pageTitle = isset($lang['manager_dashboard']) ? $lang['manager_dashboard'] : '�
             <?php elseif ($page === 'final_products'): ?>
                 <!-- صفحة مخزن المنتجات - المدير -->
                 <?php 
-                $modulePath = __DIR__ . '/../modules/manager/final_products.php';
+                $modulePath = __DIR__ . '/../modules/production/final_products.php';
                 if (file_exists($modulePath)) {
                     include $modulePath;
                 } else {
