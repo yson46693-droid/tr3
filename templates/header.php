@@ -265,7 +265,7 @@ if (ob_get_level() > 0) {
         }
         
         .modal-backdrop {
-            z-index: 1040 !important;
+            z-index: 40 !important;
             pointer-events: auto !important;
             opacity: 0.5 !important;
             background-color: rgba(0, 0, 0, 0.5) !important;
