@@ -45,6 +45,14 @@ $baseUrl = getDashboardUrl();
             </li>
             
             <li class="nav-item">
+                <a class="nav-link <?php echo (isset($_GET['page']) && $_GET['page'] === 'company_products') ? 'active' : ''; ?>"
+                   href="<?php echo $baseUrl; ?>manager.php?page=company_products">
+                    <i class="bi bi-box-seam"></i>
+                    <span>منتجات الشركة</span>
+                </a>
+            </li>
+            
+            <li class="nav-item">
                 <a class="nav-link" href="<?php echo $baseUrl; ?>manager.php?page=approvals">
                     <i class="bi bi-check-circle"></i>
                     <span><?php echo isset($lang['menu_approvals']) ? $lang['menu_approvals'] : 'الموافقات'; ?></span>
