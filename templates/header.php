@@ -259,14 +259,12 @@ if (ob_get_level() > 0) {
             pointer-events: all;
         }
         
-        /* التأكد من أن الـ Modal قابل للنقر */
         .modal {
             z-index: 400 !important;
         }
         
         .modal-backdrop {
             z-index: 40 !important;
-            pointer-events: auto !important;
             opacity: 0.5 !important;
             background-color: rgba(0, 0, 0, 0.5) !important;
         }
@@ -278,11 +276,9 @@ if (ob_get_level() > 0) {
         .modal .modal-content {
             position: relative;
             z-index: 1060;
-            pointer-events: auto !important;
         }
         
         .modal-dialog {
-            pointer-events: auto !important;
             position: relative !important;
             z-index: 1055 !important;
         }
