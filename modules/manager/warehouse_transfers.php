@@ -63,6 +63,94 @@ $filters = array_filter($filters, function($value) {
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     $action = $_POST['action'] ?? '';
     
+    if ($action === 'create_transfer_from_company') {
+        // الحصول على المخزن الرئيسي (منتج الشركة)
+        $companyWarehouse = $db->queryOne(
+            "SELECT id FROM warehouses WHERE warehouse_type = 'main' AND status = 'active' LIMIT 1"
+        );
+        
+        if (!$companyWarehouse) {
+            // إنشاء المخزن الرئيسي إذا لم يكن موجوداً
+            $db->execute(
+                "INSERT INTO warehouses (name, warehouse_type, status, location, description) 
+                 VALUES (?, 'main', 'active', ?, ?)",
+                ['مخزن الشركة الرئيسي', 'الموقع الرئيسي للشركة', 'تم إنشاء هذا المخزن تلقائياً']
+            );
+            $companyWarehouseId = $db->getLastInsertId();
+        } else {
+            $companyWarehouseId = $companyWarehouse['id'];
+        }
+        
+        $toWarehouseId = intval($_POST['to_warehouse_id'] ?? 0);
+        $transferDate = $_POST['transfer_date'] ?? date('Y-m-d');
+        $reason = trim($_POST['reason'] ?? '');
+        $notes = trim($_POST['notes'] ?? '');
+        
+        // معالجة العناصر
+        $items = [];
+        if (isset($_POST['items']) && is_array($_POST['items'])) {
+            foreach ($_POST['items'] as $item) {
+                $productId = !empty($item['product_id']) ? intval($item['product_id']) : 0;
+                $batchId = !empty($item['batch_id']) ? intval($item['batch_id']) : 0;
+                $quantity = isset($item['quantity']) ? floatval($item['quantity']) : 0;
+                $itemNotes = trim($item['notes'] ?? '');
+                
+                if (($productId > 0 || $batchId > 0) && $quantity > 0) {
+                    $items[] = [
+                        'product_id' => $productId > 0 ? $productId : null,
+                        'batch_id' => $batchId > 0 ? $batchId : null,
+                        'batch_number' => !empty($item['batch_number']) ? trim($item['batch_number']) : null,
+                        'quantity' => $quantity,
+                        'notes' => $itemNotes ?: null
+                    ];
+                }
+            }
+        }
+        
+        if ($toWarehouseId <= 0 || empty($items)) {
+            $_SESSION['warehouse_transfer_error'] = 'يجب تحديد المخزن الهدف وإضافة منتج واحد على الأقل.';
+        } else {
+            // التحقق من أن المخزن الهدف هو مخزن سيارة
+            $toWarehouse = $db->queryOne(
+                "SELECT id, name, warehouse_type FROM warehouses WHERE id = ? AND status = 'active'",
+                [$toWarehouseId]
+            );
+            
+            if (!$toWarehouse || $toWarehouse['warehouse_type'] !== 'vehicle') {
+                $_SESSION['warehouse_transfer_error'] = 'يجب تحديد مخزن سيارة كهدف للنقل.';
+            } else {
+                try {
+                    $result = createWarehouseTransfer(
+                        $companyWarehouseId,
+                        $toWarehouseId,
+                        $transferDate,
+                        $items,
+                        $reason ?: 'نقل منتجات من مخزن الشركة إلى مخزن السيارة',
+                        $notes,
+                        $currentUser['id']
+                    );
+                    
+                    if ($result['success']) {
+                        $_SESSION['warehouse_transfer_success'] = 'تم إنشاء طلب النقل بنجاح. سيتم مراجعته و الموافقة عليه.';
+                    } else {
+                        $_SESSION['warehouse_transfer_error'] = $result['message'] ?? 'حدث خطأ أثناء إنشاء طلب النقل.';
+                    }
+                } catch (Exception $e) {
+                    error_log('Error creating transfer from company: ' . $e->getMessage());
+                    $_SESSION['warehouse_transfer_error'] = 'حدث خطأ أثناء إنشاء طلب النقل: ' . $e->getMessage();
+                }
+            }
+        }
+        
+        // إعادة التوجيه
+        require_once __DIR__ . '/../../includes/path_helper.php';
+        $redirectFilters = $filters;
+        if (!empty($warehouseTransfersSectionParam)) {
+            $redirectFilters['section'] = $warehouseTransfersSectionParam;
+        }
+        redirectAfterPost($warehouseTransfersParentPage, $redirectFilters, ['id'], 'manager', $pageNum);
+    }
+    
     if ($action === 'approve_transfer') {
         $transferId = intval($_POST['transfer_id'] ?? 0);
         
@@ -221,6 +309,63 @@ $totalPages = ceil($totalTransfers / $perPage);
 $transfers = getWarehouseTransfers($filters, $perPage, $offset);
 
 $warehouses = $db->query("SELECT id, name, warehouse_type FROM warehouses WHERE status = 'active' ORDER BY name");
+
+// الحصول على مخازن السيارات فقط
+$vehicleWarehouses = $db->query(
+    "SELECT w.id, w.name, v.vehicle_number, u.full_name as driver_name
+     FROM warehouses w
+     LEFT JOIN vehicles v ON w.vehicle_id = v.id
+     LEFT JOIN users u ON v.driver_id = u.id
+     WHERE w.warehouse_type = 'vehicle' AND w.status = 'active'
+     ORDER BY w.name"
+);
+
+// الحصول على منتجات الشركة (منتجات المصنع - finished_products)
+$companyFactoryProducts = [];
+try {
+    $finishedProductsTableExists = $db->queryOne("SHOW TABLES LIKE 'finished_products'");
+    if (!empty($finishedProductsTableExists)) {
+        $companyFactoryProducts = $db->query("
+            SELECT 
+                fp.id as batch_id,
+                fp.batch_number,
+                COALESCE(fp.product_id, bn.product_id) AS product_id,
+                COALESCE(NULLIF(TRIM(fp.product_name), ''), pr.name, 'غير محدد') AS product_name,
+                fp.quantity_produced,
+                fp.production_date,
+                pr.unit,
+                pr.unit_price
+            FROM finished_products fp
+            LEFT JOIN batch_numbers bn ON fp.batch_number = bn.batch_number
+            LEFT JOIN products pr ON COALESCE(fp.product_id, bn.product_id) = pr.id
+            WHERE (fp.quantity_produced IS NULL OR fp.quantity_produced > 0)
+            ORDER BY fp.production_date DESC, fp.id DESC
+            LIMIT 100
+        ");
+    }
+} catch (Exception $e) {
+    error_log('Error fetching factory products: ' . $e->getMessage());
+}
+
+// الحصول على المنتجات الخارجية
+$companyExternalProducts = [];
+try {
+    $companyExternalProducts = $db->query("
+        SELECT 
+            id,
+            name,
+            quantity,
+            COALESCE(unit, 'قطعة') as unit,
+            unit_price
+        FROM products
+        WHERE product_type = 'external'
+          AND status = 'active'
+          AND quantity > 0
+        ORDER BY name ASC
+    ");
+} catch (Exception $e) {
+    error_log('Error fetching external products: ' . $e->getMessage());
+}
 
 // طلب نقل محدد للعرض
 $selectedTransfer = null;
@@ -389,6 +534,9 @@ if (isset($_GET['id'])) {
 <?php if ($warehouseTransfersShowHeading): ?>
 <div class="d-flex justify-content-between align-items-center mb-4">
     <h2><i class="bi bi-arrow-left-right me-2"></i>طلبات النقل بين المخازن</h2>
+    <button type="button" class="btn btn-primary" data-bs-toggle="modal" data-bs-target="#transferFromCompanyModal">
+        <i class="bi bi-box-arrow-right me-2"></i>نقل من منتجات الشركة
+    </button>
 </div>
 <?php endif; ?>
 

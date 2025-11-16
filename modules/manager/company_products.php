@@ -116,7 +116,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     }
 }
 
-// الحصول على منتجات المصنع (من جدول finished_products مع عمال الإنتاج)
+// الحصول على منتجات المصنع (من جدول finished_products - كل تشغيلة منفصلة)
 $factoryProducts = [];
 try {
     // التحقق من وجود جدول finished_products
@@ -135,8 +135,13 @@ try {
                 fp.quantity_produced,
                 fp.unit_price,
                 fp.total_price,
-                GROUP_CONCAT(DISTINCT u.full_name ORDER BY u.full_name SEPARATOR ', ') AS workers,
-                COUNT(DISTINCT fp.batch_id) as batch_count
+                CASE 
+                    WHEN fp.total_price IS NOT NULL AND fp.total_price > 0 THEN fp.total_price
+                    WHEN fp.unit_price IS NOT NULL AND fp.unit_price > 0 AND fp.quantity_produced > 0 
+                        THEN (fp.unit_price * fp.quantity_produced)
+                    ELSE 0
+                END AS calculated_total_price,
+                GROUP_CONCAT(DISTINCT u.full_name ORDER BY u.full_name SEPARATOR ', ') AS workers
             FROM finished_products fp
             LEFT JOIN batch_numbers bn ON fp.batch_number = bn.batch_number
             LEFT JOIN products pr ON COALESCE(fp.product_id, bn.product_id) = pr.id
@@ -146,58 +151,6 @@ try {
             GROUP BY fp.id
             ORDER BY fp.production_date DESC, fp.id DESC
         ");
-        
-        // تجميع البيانات حسب المنتج لإظهار إجمالي الكميات
-        $groupedProducts = [];
-        foreach ($factoryProducts as $product) {
-            $productName = $product['product_name'] ?? 'غير محدد';
-            $productId = $product['product_id'] ?? 0;
-            
-            if (!isset($groupedProducts[$productName])) {
-                $groupedProducts[$productName] = [
-                    'product_name' => $productName,
-                    'product_id' => $productId,
-                    'product_category' => $product['product_category'] ?? null,
-                    'total_quantity' => 0,
-                    'total_value' => 0,
-                    'batch_count' => 0,
-                    'unit_price' => $product['unit_price'] ?? 0,
-                    'workers' => [],
-                    'production_date' => $product['production_date'] ?? null
-                ];
-            }
-            
-            $quantity = floatval($product['quantity_produced'] ?? 0);
-            $unitPrice = floatval($product['unit_price'] ?? 0);
-            $totalPrice = floatval($product['total_price'] ?? ($quantity * $unitPrice));
-            
-            $groupedProducts[$productName]['total_quantity'] += $quantity;
-            $groupedProducts[$productName]['total_value'] += $totalPrice;
-            $groupedProducts[$productName]['batch_count'] += intval($product['batch_count'] ?? 1);
-            
-            // جمع العمال
-            if (!empty($product['workers'])) {
-                $workersList = array_map('trim', explode(',', $product['workers']));
-                foreach ($workersList as $worker) {
-                    if (!empty($worker) && !in_array($worker, $groupedProducts[$productName]['workers'])) {
-                        $groupedProducts[$productName]['workers'][] = $worker;
-                    }
-                }
-            }
-            
-            // تحديث سعر الوحدة إذا كان أكبر
-            if ($unitPrice > 0 && ($groupedProducts[$productName]['unit_price'] == 0 || $unitPrice > $groupedProducts[$productName]['unit_price'])) {
-                $groupedProducts[$productName]['unit_price'] = $unitPrice;
-            }
-        }
-        
-        // تحويل المصفوفة المجمعة إلى مصفوفة عادية
-        $factoryProducts = array_values($groupedProducts);
-        
-        // ترتيب حسب اسم المنتج
-        usort($factoryProducts, function($a, $b) {
-            return strcmp($a['product_name'], $b['product_name']);
-        });
     }
 } catch (Exception $e) {
     error_log('Error fetching factory products from finished_products: ' . $e->getMessage());
@@ -563,30 +516,41 @@ foreach ($externalProducts as $ext) {
                 <table class="table dashboard-table align-middle mb-0">
                     <thead class="table-light">
                         <tr>
+                            <th>رقم التشغيلة</th>
                             <th>اسم المنتج</th>
                             <th>الفئة</th>
+                            <th>تاريخ الإنتاج</th>
                             <th>الكمية المنتجة</th>
                             <th>سعر الوحدة</th>
                             <th>إجمالي القيمة</th>
-                            <th>عدد التشغيلات</th>
-                            <th>العمال المشاركون</th>
                         </tr>
                     </thead>
                     <tbody>
                         <?php if (empty($factoryProducts)): ?>
                             <tr>
-                                <td colspan="7" class="text-center text-muted py-4">لا توجد منتجات مصنع حالياً</td>
+                                <td colspan="8" class="text-center text-muted py-4">لا توجد منتجات مصنع حالياً</td>
                             </tr>
                         <?php else: ?>
                             <?php foreach ($factoryProducts as $product): ?>
+                                <?php
+                                    $batchNumber = $product['batch_number'] ?? '—';
+                                    $quantity = floatval($product['quantity_produced'] ?? 0);
+                                    $unitPrice = floatval($product['unit_price'] ?? 0);
+                                    $totalPrice = floatval($product['calculated_total_price'] ?? 0);
+                                    if ($totalPrice == 0 && $unitPrice > 0 && $quantity > 0) {
+                                        $totalPrice = $unitPrice * $quantity;
+                                    }
+                                    $workers = !empty($product['workers']) ? htmlspecialchars($product['workers']) : 'غير محدد';
+                                ?>
                                 <tr>
+                                    <td><strong class="text-primary"><?php echo htmlspecialchars($batchNumber); ?></strong></td>
                                     <td><strong><?php echo htmlspecialchars($product['product_name']); ?></strong></td>
                                     <td><?php echo htmlspecialchars($product['product_category'] ?? '—'); ?></td>
-                                    <td><?php echo number_format((float)$product['total_quantity'], 2); ?></td>
-                                    <td><?php echo formatCurrency((float)$product['unit_price']); ?></td>
-                                    <td><strong class="text-success"><?php echo formatCurrency((float)$product['total_value']); ?></strong></td>
-                                    <td><?php echo number_format((int)$product['batch_count']); ?></td>
-                                    <td><?php echo !empty($product['workers']) ? htmlspecialchars(implode(', ', $product['workers'])) : 'غير محدد'; ?></td>
+                                    <td><?php echo !empty($product['production_date']) ? htmlspecialchars(formatDate($product['production_date'])) : '—'; ?></td>
+                                    <td><?php echo number_format($quantity, 2); ?></td>
+                                    <td><?php echo formatCurrency($unitPrice); ?></td>
+                                    <td><strong class="text-success"><?php echo formatCurrency($totalPrice); ?></strong></td>
+                                    <td><?php echo $workers; ?></td>
                                 </tr>
                             <?php endforeach; ?>
                         <?php endif; ?>
