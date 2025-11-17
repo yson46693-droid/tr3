@@ -13,6 +13,7 @@ require_once __DIR__ . '/../../includes/auth.php';
 require_once __DIR__ . '/../../includes/audit_log.php';
 require_once __DIR__ . '/../../includes/notifications.php';
 require_once __DIR__ . '/../../includes/path_helper.php';
+require_once __DIR__ . '/../../includes/invoices.php';
 
 require_once __DIR__ . '/table_styles.php';
 
@@ -105,7 +106,43 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 'amount' => $amount
             ]);
             
-            $success = 'تم إضافة التحصيل بنجاح: ' . $collectionNumber;
+            // توزيع التحصيل على فواتير العميل وتحديثها
+            $distributionResult = distributeCollectionToInvoices($customerId, $amount, $currentUser['id']);
+            
+            if ($distributionResult['success']) {
+                $updatedCount = count($distributionResult['updated_invoices'] ?? []);
+                if ($updatedCount > 0) {
+                    $success = 'تم إضافة التحصيل بنجاح: ' . $collectionNumber . ' وتم تحديث ' . $updatedCount . ' فاتورة';
+                } else {
+                    $success = 'تم إضافة التحصيل بنجاح: ' . $collectionNumber;
+                }
+            } else {
+                $success = 'تم إضافة التحصيل بنجاح: ' . $collectionNumber . ' (ملاحظة: ' . ($distributionResult['message'] ?? 'لم يتم تحديث الفواتير') . ')';
+            }
+        }
+    } elseif ($action === 'delete_collection') {
+        $collectionId = intval($_POST['collection_id'] ?? 0);
+        
+        if ($collectionId <= 0) {
+            $error = 'معرّف التحصيل غير صحيح';
+        } else {
+            // التحقق من أن التحصيل يخص المستخدم الحالي (للمندوبين)
+            if ($currentUser['role'] === 'sales') {
+                $collection = $db->queryOne("SELECT * FROM collections WHERE id = ? AND collected_by = ?", [$collectionId, $currentUser['id']]);
+            } else {
+                $collection = $db->queryOne("SELECT * FROM collections WHERE id = ?", [$collectionId]);
+            }
+            
+            if ($collection) {
+                $db->execute("DELETE FROM collections WHERE id = ?", [$collectionId]);
+                
+                logAudit($currentUser['id'], 'delete_collection', 'collection', $collectionId, 
+                         json_encode($collection), null);
+                
+                $success = 'تم حذف التحصيل بنجاح';
+            } else {
+                $error = 'التحصيل غير موجود أو ليس لديك صلاحية لحذفه';
+            }
         }
     }
 }
@@ -222,11 +259,30 @@ $customers = $db->query("SELECT id, name FROM customers WHERE status = 'active' 
 <?php endif; ?>
 
 <?php if ($success): ?>
-    <div class="alert alert-success alert-dismissible fade show">
+    <div class="alert alert-success alert-dismissible fade show" id="success-alert">
         <i class="bi bi-check-circle-fill me-2"></i>
         <?php echo htmlspecialchars($success); ?>
         <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
     </div>
+    <script>
+    document.addEventListener('DOMContentLoaded', function() {
+        // بعد ثانية واحدة، عمل refresh للصفحة الحالية بدون أي معاملات GET لمنع تكرار الطلب
+        setTimeout(function() {
+            // الحصول على URL الحالي
+            const url = new URL(window.location.href);
+            // الاحتفاظ فقط بمعامل page الأساسي (إن وجد) وإزالة باقي المعاملات المؤقتة
+            const pageParam = url.searchParams.get('page');
+            // بناء URL جديد بدون المعاملات المؤقتة
+            const basePath = url.pathname;
+            let redirectUrl = basePath;
+            if (pageParam) {
+                redirectUrl += '?page=' + encodeURIComponent(pageParam);
+            }
+            // إعادة التوجيه للصفحة بدون المعاملات المؤقتة لمنع تكرار الطلب
+            window.location.replace(redirectUrl);
+        }, 1000);
+    });
+    </script>
 <?php endif; ?>
 
 <!-- الفلاتر -->
@@ -352,9 +408,20 @@ $customers = $db->query("SELECT id, name FROM customers WHERE status = 'active' 
                                 <?php endif; ?>
                                 <td><?php echo htmlspecialchars($collection['collected_by_name'] ?? '-'); ?></td>
                                 <td>
-                                    <a href="?page=sales_collections&id=<?php echo $collection['id']; ?>" class="btn btn-sm btn-info">
-                                        <i class="bi bi-eye"></i>
-                                    </a>
+                                    <div class="btn-group" role="group">
+                                        <a href="?page=sales_collections&id=<?php echo $collection['id']; ?>" class="btn btn-sm btn-info" title="عرض">
+                                            <i class="bi bi-eye"></i>
+                                        </a>
+                                        <?php if ($currentUser['role'] === 'sales' && $collection['collected_by'] == $currentUser['id']): ?>
+                                        <button class="btn btn-sm btn-danger" onclick="deleteCollection(<?php echo $collection['id']; ?>)" title="حذف">
+                                            <i class="bi bi-trash"></i>
+                                        </button>
+                                        <?php elseif ($currentUser['role'] !== 'sales'): ?>
+                                        <button class="btn btn-sm btn-danger" onclick="deleteCollection(<?php echo $collection['id']; ?>)" title="حذف">
+                                            <i class="bi bi-trash"></i>
+                                        </button>
+                                        <?php endif; ?>
+                                    </div>
                                 </td>
                             </tr>
                         <?php endforeach; ?>
@@ -461,4 +528,22 @@ $customers = $db->query("SELECT id, name FROM customers WHERE status = 'active' 
     </div>
 </div>
 <?php endif; ?>
+
+<script>
+// حذف التحصيل
+function deleteCollection(id) {
+    if (!confirm('هل أنت متأكد من حذف هذا التحصيل؟ هذا الإجراء لا يمكن التراجع عنه.')) {
+        return;
+    }
+    
+    const form = document.createElement('form');
+    form.method = 'POST';
+    form.innerHTML = `
+        <input type="hidden" name="action" value="delete_collection">
+        <input type="hidden" name="collection_id" value="${id}">
+    `;
+    document.body.appendChild(form);
+    form.submit();
+}
+</script>
 

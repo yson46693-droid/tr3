@@ -129,11 +129,30 @@ $customers = $db->query("SELECT id, name FROM customers WHERE status = 'active' 
 <?php endif; ?>
 
 <?php if ($success): ?>
-    <div class="alert alert-success alert-dismissible fade show">
+    <div class="alert alert-success alert-dismissible fade show" id="success-alert">
         <i class="bi bi-check-circle-fill me-2"></i>
         <?php echo htmlspecialchars($success); ?>
         <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
     </div>
+    <script>
+    document.addEventListener('DOMContentLoaded', function() {
+        // بعد ثانية واحدة، عمل refresh للصفحة الحالية بدون أي معاملات GET لمنع تكرار الطلب
+        setTimeout(function() {
+            // الحصول على URL الحالي
+            const url = new URL(window.location.href);
+            // الاحتفاظ فقط بمعامل page الأساسي (إن وجد) وإزالة باقي المعاملات المؤقتة
+            const pageParam = url.searchParams.get('page');
+            // بناء URL جديد بدون المعاملات المؤقتة
+            const basePath = url.pathname;
+            let redirectUrl = basePath;
+            if (pageParam) {
+                redirectUrl += '?page=' + encodeURIComponent(pageParam);
+            }
+            // إعادة التوجيه للصفحة بدون المعاملات المؤقتة لمنع تكرار الطلب
+            window.location.replace(redirectUrl);
+        }, 1000);
+    });
+    </script>
 <?php endif; ?>
 
 <!-- الفلاتر -->

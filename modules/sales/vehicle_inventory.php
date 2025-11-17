@@ -48,10 +48,30 @@ $filters = array_filter($filters, function($value) {
 });
 
 // إذا كان المستخدم مندوب مبيعات، عرض فقط سيارته
+$defaultFromWarehouseId = null; // مخزن افتراضي للمخزن المصدر في نموذج النقل
 if ($currentUser['role'] === 'sales') {
     $userVehicle = $db->queryOne("SELECT id FROM vehicles WHERE driver_id = ?", [$currentUser['id']]);
     if ($userVehicle) {
         $filters['vehicle_id'] = $userVehicle['id'];
+        
+        // الحصول على مخزن سيارة المندوب لاستخدامه كقيمة افتراضية في نموذج النقل
+        $userVehicleWarehouse = $db->queryOne(
+            "SELECT w.id, w.name 
+             FROM warehouses w 
+             WHERE w.vehicle_id = ? AND w.warehouse_type = 'vehicle' AND w.status = 'active' 
+             LIMIT 1",
+            [$userVehicle['id']]
+        );
+        
+        if ($userVehicleWarehouse) {
+            $defaultFromWarehouseId = (int)$userVehicleWarehouse['id'];
+        } else {
+            // إنشاء مخزن السيارة إذا لم يكن موجوداً
+            $result = createVehicleWarehouse($userVehicle['id']);
+            if ($result['success']) {
+                $defaultFromWarehouseId = (int)$result['warehouse_id'];
+            }
+        }
     }
 }
 

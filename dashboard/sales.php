@@ -44,6 +44,15 @@ $pageTitle = isset($lang['sales_dashboard']) ? $lang['sales_dashboard'] : 'لو�
 if ($page === 'sales_collections') {
     $pageTitle = isset($lang['sales_and_collections']) ? $lang['sales_and_collections'] : 'مبيعات و تحصيلات';
 }
+
+// معالجة طلبات AJAX قبل إرسال أي HTML
+if (isset($_GET['ajax']) && $_GET['ajax'] === 'load_products' && $page === 'vehicle_inventory') {
+    $modulePath = __DIR__ . '/../modules/sales/vehicle_inventory.php';
+    if (file_exists($modulePath)) {
+        include $modulePath;
+        exit; // الخروج بعد معالجة AJAX
+    }
+}
 ?>
 <?php include __DIR__ . '/../templates/header.php'; ?>
 

@@ -256,6 +256,93 @@ function recordInvoicePayment($invoiceId, $amount, $notes = null, $createdBy = n
 }
 
 /**
+ * توزيع التحصيل على فواتير العميل وتحديثها
+ * يتم توزيع المبلغ على الفواتير من الأقدم للأحدث
+ */
+function distributeCollectionToInvoices($customerId, $amount, $createdBy = null) {
+    try {
+        $db = db();
+        
+        if ($createdBy === null) {
+            require_once __DIR__ . '/auth.php';
+            $currentUser = getCurrentUser();
+            $createdBy = $currentUser['id'] ?? null;
+        }
+        
+        // الحصول على فواتير العميل التي لم يتم دفعها بالكامل، مرتبة من الأقدم للأحدث
+        $invoices = $db->query(
+            "SELECT id, invoice_number, total_amount, paid_amount, status 
+             FROM invoices 
+             WHERE customer_id = ? 
+             AND status NOT IN ('paid', 'cancelled')
+             AND (total_amount - paid_amount) > 0
+             ORDER BY date ASC, created_at ASC",
+            [$customerId]
+        );
+        
+        if (empty($invoices)) {
+            return ['success' => true, 'message' => 'لا توجد فواتير معلقة للعميل'];
+        }
+        
+        $remainingAmount = $amount;
+        $updatedInvoices = [];
+        
+        foreach ($invoices as $invoice) {
+            if ($remainingAmount <= 0) {
+                break;
+            }
+            
+            $invoiceRemaining = $invoice['total_amount'] - $invoice['paid_amount'];
+            $paymentAmount = min($remainingAmount, $invoiceRemaining);
+            
+            // تحديث الفاتورة
+            $newPaidAmount = $invoice['paid_amount'] + $paymentAmount;
+            $newRemaining = $invoice['total_amount'] - $newPaidAmount;
+            
+            // تحديد الحالة الجديدة
+            $newStatus = $invoice['status'];
+            if ($newRemaining <= 0.0001) {
+                $newStatus = 'paid';
+            } elseif ($newPaidAmount > 0 && $invoice['status'] === 'draft') {
+                $newStatus = 'sent';
+            } elseif ($newPaidAmount > 0 && $invoice['status'] === 'sent') {
+                $newStatus = 'partial';
+            }
+            
+            // تحديث الفاتورة
+            $db->execute(
+                "UPDATE invoices SET paid_amount = ?, remaining_amount = ?, status = ?, updated_at = NOW() WHERE id = ?",
+                [$newPaidAmount, $newRemaining, $newStatus, $invoice['id']]
+            );
+            
+            // تسجيل سجل التدقيق
+            logAudit($createdBy, 'invoice_payment_from_collection', 'invoice', $invoice['id'], 
+                     ['old_paid' => $invoice['paid_amount'], 'old_status' => $invoice['status']], 
+                     ['new_paid' => $newPaidAmount, 'new_status' => $newStatus, 'payment' => $paymentAmount]);
+            
+            $updatedInvoices[] = [
+                'invoice_id' => $invoice['id'],
+                'invoice_number' => $invoice['invoice_number'],
+                'payment_amount' => $paymentAmount,
+                'new_status' => $newStatus
+            ];
+            
+            $remainingAmount -= $paymentAmount;
+        }
+        
+        return [
+            'success' => true,
+            'updated_invoices' => $updatedInvoices,
+            'remaining_amount' => $remainingAmount
+        ];
+        
+    } catch (Exception $e) {
+        error_log("Distribute Collection Error: " . $e->getMessage());
+        return ['success' => false, 'message' => 'حدث خطأ في توزيع التحصيل على الفواتير'];
+    }
+}
+
+/**
  * الحصول على قائمة الفواتير
  */
 function getInvoices($filters = [], $limit = 50, $offset = 0) {
