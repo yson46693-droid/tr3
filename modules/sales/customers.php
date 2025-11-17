@@ -2461,4 +2461,4 @@ document.addEventListener('DOMContentLoaded', function () {
     </div>
 </div>
 
-<?php endif; ?>
+<?php endif; // end if ($section === 'company') ?>

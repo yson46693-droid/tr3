@@ -84,6 +84,14 @@ $baseUrl = getDashboardUrl();
             </li>
             
             <li class="nav-item">
+                <a class="nav-link <?php echo (isset($_GET['page']) && $_GET['page'] === 'cash_register') ? 'active' : ''; ?>"
+                   href="<?php echo $baseUrl; ?>sales.php?page=cash_register">
+                    <i class="bi bi-cash-stack"></i>
+                    <span>خزنة المندوب</span>
+                </a>
+            </li>
+            
+            <li class="nav-item">
                 <a class="nav-link" href="<?php echo $baseUrl; ?>sales.php?page=returns">
                     <i class="bi bi-arrow-return-left"></i>
                     <span>المرتجعات</span>
