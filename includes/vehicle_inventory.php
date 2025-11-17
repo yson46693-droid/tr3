@@ -2112,11 +2112,56 @@ function sendTransferInvoiceToTelegram($transferId, $transfer = null, $transferI
     $transferDate = formatDate($transfer['transfer_date']);
     $transferTime = formatDateTime($transfer['approved_at'] ?? $transfer['created_at']);
     
-    // بناء رسالة الفاتورة - نص بسيط فقط
-    $message = "📦 فاتورة نقل المنتجات";
+    // بناء رسالة الفاتورة مع التفاصيل
+    $message = "📦 <b>فاتورة نقل المنتجات</b>\n\n";
+    $message .= "🔢 <b>رقم الفاتورة:</b> " . htmlspecialchars($transfer['transfer_number'] ?? '#' . $transferId) . "\n";
+    $message .= "📅 <b>تاريخ النقل:</b> " . htmlspecialchars($transferDate) . "\n";
+    $message .= "📍 <b>من المخزن:</b> " . htmlspecialchars($transfer['from_warehouse_name'] ?? '-') . "\n";
+    $message .= "📍 <b>إلى المخزن:</b> " . htmlspecialchars($transfer['to_warehouse_name'] ?? '-') . "\n";
+    $message .= "🔄 <b>نوع النقل:</b> " . htmlspecialchars($transferType) . "\n";
+    $message .= "✅ <b>الحالة:</b> " . htmlspecialchars($status) . "\n";
     
-    // إرسال الرسالة
-    $result = sendTelegramMessage($message);
+    if (!empty($transfer['requested_by_name'])) {
+        $message .= "👤 <b>طلب بواسطة:</b> " . htmlspecialchars($transfer['requested_by_name']) . "\n";
+    }
+    
+    if (!empty($transfer['approved_by_name'])) {
+        $message .= "✅ <b>تمت الموافقة بواسطة:</b> " . htmlspecialchars($transfer['approved_by_name']) . "\n";
+        $message .= "⏰ <b>وقت الموافقة:</b> " . htmlspecialchars($transferTime) . "\n";
+    }
+    
+    // إضافة تفاصيل المنتجات
+    if (!empty($transferredProducts) && is_array($transferredProducts)) {
+        $message .= "\n📋 <b>المنتجات المنقولة:</b>\n";
+        $totalQuantity = 0;
+        $itemsCount = 0;
+        foreach ($transferredProducts as $product) {
+            $itemsCount++;
+            $quantity = floatval($product['quantity'] ?? 0);
+            $totalQuantity += $quantity;
+            $productName = htmlspecialchars($product['name'] ?? 'منتج غير معروف');
+            $unit = htmlspecialchars($product['unit'] ?? 'قطعة');
+            $batchInfo = !empty($product['batch_number']) ? " (تشغيلة: " . htmlspecialchars($product['batch_number']) . ")" : "";
+            $message .= "• {$productName}{$batchInfo}: " . number_format($quantity, 2) . " {$unit}\n";
+        }
+        $message .= "\n📊 <b>الإجمالي:</b> " . number_format($totalQuantity, 2) . " ({$itemsCount} منتج)\n";
+    }
+    
+    $message .= "\n✅ الفاتورة جاهزة للعرض والطباعة.";
+    
+    // بناء رابط العرض (بدون print=1)
+    $viewUrl = $baseUrl . '/print_transfer_invoice.php?id=' . $transferId;
+    
+    // بناء الأزرار
+    $buttons = [
+        [
+            ['text' => '📄 عرض الفاتورة', 'url' => $viewUrl],
+            ['text' => '🖨️ طباعة / حفظ PDF', 'url' => $printUrl]
+        ]
+    ];
+    
+    // إرسال الرسالة مع الأزرار
+    $result = sendTelegramMessageWithButtons($message, $buttons);
     
     if ($result && ($result['success'] ?? false)) {
         error_log("Transfer invoice sent to Telegram successfully for transfer ID: $transferId");
