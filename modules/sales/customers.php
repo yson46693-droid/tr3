@@ -67,7 +67,14 @@ if (
     $_GET['ajax'] === 'purchase_history' &&
     $_GET['action'] === 'purchase_history'
 ) {
+    // تنظيف أي output قبل إرسال JSON
+    while (ob_get_level() > 0) {
+        ob_end_clean();
+    }
+    
     header('Content-Type: application/json; charset=utf-8');
+    header('Cache-Control: no-cache, must-revalidate');
+    header('Expires: Mon, 26 Jul 1997 05:00:00 GMT');
 
     $customerId = isset($_GET['customer_id']) ? (int)$_GET['customer_id'] : 0;
     if ($customerId <= 0) {
@@ -101,12 +108,23 @@ if (
         }
         
         $historyPayload = customerHistoryGetHistory($customerId);
+        
+        // التأكد من أن النتيجة في التنسيق الصحيح
+        if (!isset($historyPayload['success'])) {
+            $historyPayload = [
+                'success' => true,
+                'customer' => $historyPayload['customer'] ?? null,
+                'history' => $historyPayload['history'] ?? $historyPayload
+            ];
+        }
+        
         echo json_encode($historyPayload, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
     } catch (Throwable $historyError) {
         error_log('customers purchase history ajax error: ' . $historyError->getMessage());
+        error_log('customers purchase history ajax error trace: ' . $historyError->getTraceAsString());
         echo json_encode([
             'success' => false,
-            'message' => 'تعذر تحميل سجل مشتريات العميل.'
+            'message' => 'تعذر تحميل سجل مشتريات العميل: ' . $historyError->getMessage()
         ], JSON_UNESCAPED_UNICODE);
     }
     exit;
@@ -1137,8 +1155,6 @@ document.addEventListener('DOMContentLoaded', function () {
     historyModal.addEventListener('hidden.bs.modal', resetModalState);
 });
 </script>
-<?php endif; ?>
-
 <?php endif; ?>
 
 <?php if ($section === 'delegates' && !$isSalesUser): ?>

@@ -237,6 +237,13 @@ switch ($role) {
                 'badge' => null
             ],
             [
+                'title' => isset($lang['customers']) ? $lang['customers'] : 'العملاء',
+                'icon' => 'bi-people',
+                'url' => $baseUrl . 'accountant.php?page=customers',
+                'active' => ($currentPage === 'accountant.php' && $currentPageParam === 'customers'),
+                'badge' => null
+            ],
+            [
                 'title' => 'طلبات العملاء',
                 'icon' => 'bi-bag-check',
                 'url' => $baseUrl . 'accountant.php?page=orders',
