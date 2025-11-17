@@ -49,11 +49,11 @@ if (isset($_GET['ajax']) && $_GET['ajax'] === 'load_products') {
     
     try {
         // التأكد من تحميل الدوال المطلوبة
-        if (!function_exists('getFinishedProductBatchOptions')) {
+        if (!function_exists('getAvailableProductsFromWarehouse')) {
             require_once __DIR__ . '/../../includes/vehicle_inventory.php';
         }
         
-        $products = getFinishedProductBatchOptions(true, $warehouseId);
+        $products = getAvailableProductsFromWarehouse($warehouseId);
         echo json_encode([
             'success' => true,
             'products' => $products
@@ -166,10 +166,13 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             // تسجيل تفاصيل العناصر للمساعدة في التصحيح
             if (empty($items)) {
                 error_log('No items found in POST data from sales. POST items: ' . json_encode($_POST['items'] ?? []));
+                error_log('POST data keys: ' . json_encode(array_keys($_POST)));
                 $error = 'يجب إضافة منتج واحد على الأقل مع تحديد الكمية.';
             } elseif ($fromWarehouseId <= 0 || $toWarehouseId <= 0) {
                 $error = 'يجب تحديد المخزن المصدر والمخزن الهدف';
             } else {
+                // تسجيل العناصر قبل الإرسال للمساعدة في التصحيح
+                error_log('Transfer items from sales: ' . json_encode($items));
             $result = createWarehouseTransfer($fromWarehouseId, $toWarehouseId, $transferDate, $items, $reason, $notes);
             if ($result['success']) {
                 $success = 'تم إنشاء طلب النقل بنجاح: ' . $result['transfer_number'];
@@ -276,8 +279,8 @@ if (isset($_GET['vehicle_id']) || !empty($filters['vehicle_id'])) {
     }
 }
 
-// تحميل المنتجات من المخزن المحدد (أو المخزن الرئيسي إذا لم يكن هناك مخزن محدد)
-$finishedProductOptions = getFinishedProductBatchOptions(true, $selectedWarehouseId);
+// تحميل المنتجات من المخزن المحدد (سيتم تحديثها عند اختيار المخزن المصدر)
+$finishedProductOptions = [];
 
 // إحصائيات المخزون
 $inventoryStats = [
@@ -800,32 +803,15 @@ foreach ($vehicleInventory as $item) {
                     
                     <div class="mb-3">
                         <label class="form-label">عناصر النقل</label>
-                        <?php if (empty($finishedProductOptions)): ?>
-                            <div class="alert alert-warning d-flex align-items-center gap-2">
-                                <i class="bi bi-exclamation-triangle-fill"></i>
-                                <div>لا توجد تشغيلات جاهزة للنقل من المخزن الرئيسي حالياً.</div>
-                            </div>
-                        <?php endif; ?>
+                        <div class="alert alert-info d-flex align-items-center gap-2 mb-2">
+                            <i class="bi bi-info-circle"></i>
+                            <div>يرجى اختيار المخزن المصدر أولاً لعرض المنتجات المتاحة.</div>
+                        </div>
                         <div id="transferItems">
                             <div class="transfer-item row mb-2">
                                 <div class="col-md-5">
                                     <select class="form-select product-select" required>
                                         <option value="">اختر المنتج</option>
-                                        <?php foreach ($finishedProductOptions as $option): ?>
-                                            <?php 
-                                            // استخدام batch_id كقيمة للخيار لأنه المطلوب للنقل
-                                            $optionValue = !empty($option['batch_id']) ? intval($option['batch_id']) : intval($option['product_id'] ?? 0);
-                                            ?>
-                                            <option value="<?php echo $optionValue; ?>" 
-                                                    data-product-id="<?php echo intval($option['product_id'] ?? 0); ?>"
-                                                    data-batch-id="<?php echo intval($option['batch_id'] ?? 0); ?>"
-                                                    data-batch-number="<?php echo htmlspecialchars($option['batch_number'] ?? ''); ?>"
-                                                    data-available="<?php echo number_format((float)($option['quantity_available'] ?? 0), 2, '.', ''); ?>">
-                                                <?php echo htmlspecialchars($option['product_name'] ?? 'غير محدد'); ?>
-                                                - تشغيلة <?php echo htmlspecialchars($option['batch_number'] ?? 'بدون'); ?>
-                                                (متاح: <?php echo number_format((float)($option['quantity_available'] ?? 0), 2); ?>)
-                                            </option>
-                                        <?php endforeach; ?>
                                     </select>
                                 </div>
                                 <div class="col-md-3">
@@ -933,21 +919,16 @@ document.getElementById('fromWarehouse')?.addEventListener('change', function() 
                 }
                 
                 // إظهار رسالة إذا لم توجد منتجات
+                const infoAlert = document.querySelector('#transferItems').previousElementSibling;
                 if (allFinishedProductOptions.length === 0) {
-                    const alertDiv = document.querySelector('#transferItems .alert-warning');
-                    if (!alertDiv) {
-                        const itemsDiv = document.getElementById('transferItems');
-                        if (itemsDiv) {
-                            const warning = document.createElement('div');
-                            warning.className = 'alert alert-warning d-flex align-items-center gap-2';
-                            warning.innerHTML = '<i class="bi bi-exclamation-triangle-fill"></i><div>لا توجد منتجات متاحة في هذا المخزن حالياً.</div>';
-                            itemsDiv.insertBefore(warning, itemsDiv.firstChild);
-                        }
+                    if (infoAlert && infoAlert.classList.contains('alert-info')) {
+                        infoAlert.className = 'alert alert-warning d-flex align-items-center gap-2 mb-2';
+                        infoAlert.innerHTML = '<i class="bi bi-exclamation-triangle-fill"></i><div>لا توجد منتجات متاحة في هذا المخزن حالياً.</div>';
                     }
                 } else {
-                    const alertDiv = document.querySelector('#transferItems .alert-warning');
-                    if (alertDiv) {
-                        alertDiv.remove();
+                    if (infoAlert && infoAlert.classList.contains('alert-warning')) {
+                        infoAlert.className = 'alert alert-info d-flex align-items-center gap-2 mb-2';
+                        infoAlert.innerHTML = '<i class="bi bi-info-circle"></i><div>تم تحميل المنتجات المتاحة من المخزن المحدد.</div>';
                     }
                 }
             } else {
@@ -978,24 +959,31 @@ function updateProductSelects() {
     const selects = document.querySelectorAll('.product-select');
     selects.forEach(select => {
         const currentValue = select.value;
-        const currentBatchId = select.querySelector(`option[value="${currentValue}"]`)?.dataset.batchId;
+        const currentProductId = parseInt(currentValue || '0', 10);
         
         // حفظ القيمة المحددة
         select.innerHTML = '<option value="">اختر المنتج</option>';
         
         allFinishedProductOptions.forEach(option => {
             const optionElement = document.createElement('option');
-            // استخدام batch_id كقيمة للخيار لأنه المطلوب للنقل
-            const optionValue = option.batch_id && option.batch_id > 0 ? option.batch_id : (option.product_id || 0);
+            // استخدام product_id كقيمة للخيار (مثل صفحة عمال الإنتاج)
+            const optionValue = parseInt(option.product_id || 0, 10);
             optionElement.value = optionValue;
             optionElement.dataset.productId = option.product_id || 0;
             optionElement.dataset.batchId = option.batch_id || 0;
             optionElement.dataset.batchNumber = option.batch_number || '';
             optionElement.dataset.available = option.quantity_available || 0;
-            optionElement.textContent = `${option.product_name || 'غير محدد'} - تشغيلة ${option.batch_number || 'بدون'} (متاح: ${parseFloat(option.quantity_available || 0).toFixed(2)})`;
+            
+            // بناء نص الخيار
+            let optionText = option.product_name || 'غير محدد';
+            if (option.batch_number) {
+                optionText += ` - تشغيلة ${option.batch_number}`;
+            }
+            optionText += ` (متاح: ${parseFloat(option.quantity_available || 0).toFixed(2)})`;
+            optionElement.textContent = optionText;
             
             // استعادة الاختيار السابق إذا كان موجوداً
-            if (currentBatchId && option.batch_id == currentBatchId) {
+            if (currentProductId > 0 && option.product_id == currentProductId) {
                 optionElement.selected = true;
             }
             
@@ -1017,14 +1005,19 @@ document.getElementById('addItemBtn')?.addEventListener('click', function() {
     newItem.className = 'transfer-item row mb-2';
     let optionsHtml = '<option value="">اختر المنتج</option>';
     allFinishedProductOptions.forEach(option => {
-        // استخدام batch_id كقيمة للخيار لأنه المطلوب للنقل
-        const optionValue = option.batch_id && option.batch_id > 0 ? option.batch_id : (option.product_id || 0);
+        // استخدام product_id كقيمة للخيار (مثل صفحة عمال الإنتاج)
+        const optionValue = parseInt(option.product_id || 0, 10);
+        let optionText = option.product_name || 'غير محدد';
+        if (option.batch_number) {
+            optionText += ` - تشغيلة ${option.batch_number}`;
+        }
+        optionText += ` (متاح: ${parseFloat(option.quantity_available || 0).toFixed(2)})`;
         optionsHtml += `<option value="${optionValue}" 
                 data-product-id="${option.product_id || 0}"
                 data-batch-id="${option.batch_id || 0}"
                 data-batch-number="${option.batch_number || ''}"
                 data-available="${option.quantity_available || 0}">
-            ${option.product_name || 'غير محدد'} - تشغيلة ${option.batch_number || 'بدون'} (متاح: ${parseFloat(option.quantity_available || 0).toFixed(2)})
+            ${optionText}
         </option>`;
     });
     
@@ -1066,7 +1059,91 @@ document.addEventListener('click', function(e) {
     }
 });
 
-// ربط أحداث العناصر
+// ربط أحداث العناصر - استخدام event delegation مثل صفحة عمال الإنتاج
+const transferItemsContainer = document.getElementById('transferItems');
+if (transferItemsContainer) {
+    // استخدام event delegation لتحديث الحقول المخفية عند تغيير المنتج
+    transferItemsContainer.addEventListener('change', function(e) {
+        if (e.target.classList.contains('product-select')) {
+            const select = e.target;
+            const row = select.closest('.transfer-item');
+            if (!row) {
+                console.warn('Transfer item row not found');
+                return;
+            }
+            
+            const selectedOption = select.options[select.selectedIndex];
+            if (!selectedOption || !selectedOption.value) {
+                // لا يوجد خيار محدد - مسح الحقول
+                const productIdInput = row.querySelector('.selected-product-id');
+                const batchIdInput = row.querySelector('.selected-batch-id');
+                const batchNumberInput = row.querySelector('.selected-batch-number');
+                const availableHint = row.querySelector('.available-hint');
+                const quantityInput = row.querySelector('.quantity');
+                
+                if (productIdInput) productIdInput.value = '';
+                if (batchIdInput) batchIdInput.value = '';
+                if (batchNumberInput) batchNumberInput.value = '';
+                if (availableHint) availableHint.textContent = '';
+                if (quantityInput) quantityInput.removeAttribute('max');
+                return;
+            }
+            
+            const available = parseFloat(selectedOption.dataset.available || '0');
+            const productId = parseInt(selectedOption.dataset.productId || '0', 10);
+            const batchId = parseInt(selectedOption.dataset.batchId || '0', 10);
+            const batchNumber = selectedOption.dataset.batchNumber || '';
+            
+            const productIdInput = row.querySelector('.selected-product-id');
+            const batchIdInput = row.querySelector('.selected-batch-id');
+            const batchNumberInput = row.querySelector('.selected-batch-number');
+            const availableHint = row.querySelector('.available-hint');
+            const quantityInput = row.querySelector('.quantity');
+            
+            // تحديث الحقول المخفية
+            if (productIdInput) {
+                productIdInput.value = productId > 0 ? productId : '';
+            }
+            if (batchIdInput) {
+                batchIdInput.value = batchId > 0 ? batchId : '';
+            }
+            if (batchNumberInput) {
+                batchNumberInput.value = batchNumber;
+            }
+            
+            // تسجيل للمساعدة في التصحيح
+            console.log('Product selected:', {
+                productId: productId,
+                batchId: batchId,
+                batchNumber: batchNumber,
+                available: available,
+                productIdInputValue: productIdInput?.value,
+                batchIdInputValue: batchIdInput?.value
+            });
+            
+            if (availableHint) {
+                if (selectedOption && selectedOption.value) {
+                    availableHint.textContent = `الكمية المتاحة: ${available.toLocaleString('ar-EG')} وحدة`;
+                } else {
+                    availableHint.textContent = '';
+                }
+            }
+            
+            if (quantityInput) {
+                if (available > 0) {
+                    quantityInput.setAttribute('max', available);
+                    if (parseFloat(quantityInput.value || '0') > available) {
+                        quantityInput.value = available;
+                    }
+                } else {
+                    quantityInput.removeAttribute('max');
+                }
+            }
+        }
+    });
+}
+
+// ربط أحداث العناصر (للتوافق مع الكود القديم)
 function attachItemEvents(item) {
     const productSelect = item.querySelector('.product-select');
     const quantityInput = item.querySelector('.quantity');
@@ -1098,29 +1175,20 @@ function attachItemEvents(item) {
         const selectedBatchId = parseInt(option.dataset.batchId || '0', 10);
         const selectedBatchNumber = option.dataset.batchNumber || '';
 
-        // تحديث الحقول المخفية - batch_id مطلوب دائماً للمنتجات من finished_products
+        // تحديث الحقول المخفية
         if (productIdInput) {
             productIdInput.value = selectedProductId > 0 ? selectedProductId : '';
         }
         if (batchIdInput) {
-            // batch_id مطلوب دائماً - يجب أن يكون موجوداً
             batchIdInput.value = selectedBatchId > 0 ? selectedBatchId : '';
         }
         if (batchNumberInput) {
             batchNumberInput.value = selectedBatchNumber;
         }
-        
-        // التحقق من أن batch_id موجود (مطلوب للنقل)
-        if (selectedBatchId <= 0 && selectedProductId <= 0) {
-            console.error('Warning: No batch_id or product_id found for selected option');
-            if (productIdInput) productIdInput.value = '';
-            if (batchIdInput) batchIdInput.value = '';
-            if (batchNumberInput) batchNumberInput.value = '';
-        }
 
         if (availableHint) {
             if (option && option.value) {
-                availableHint.textContent = `الكمية المتاحة لهذه التشغيلة: ${available.toLocaleString('ar-EG')} وحدة`;
+                availableHint.textContent = `الكمية المتاحة: ${available.toLocaleString('ar-EG')} وحدة`;
             } else {
                 availableHint.textContent = '';
             }
@@ -1202,6 +1270,14 @@ document.getElementById('transferForm')?.addEventListener('submit', function(e) 
         // التحقق من أن batch_id أو product_id موجود
         if (productId <= 0 && batchId <= 0) {
             e.preventDefault();
+            console.error('Validation failed:', {
+                selectValue: select.value,
+                productId: productId,
+                batchId: batchId,
+                productIdInputValue: productIdInput?.value,
+                batchIdInputValue: batchIdInput?.value,
+                selectedOption: select.options[select.selectedIndex]?.dataset
+            });
             alert('خطأ: لم يتم تحديد المنتج بشكل صحيح. يرجى إعادة اختيار المنتج.');
             // إعادة تحديث الحقول
             if (select) {
