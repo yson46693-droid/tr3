@@ -13,6 +13,7 @@ require_once __DIR__ . '/../../includes/auth.php';
 require_once __DIR__ . '/../../includes/invoices.php';
 require_once __DIR__ . '/../../includes/audit_log.php';
 require_once __DIR__ . '/../../includes/table_styles.php';
+require_once __DIR__ . '/../../includes/path_helper.php';
 
 requireRole(['accountant', 'sales', 'manager']);
 
@@ -183,7 +184,7 @@ if (isset($_GET['id'])) {
         <div class="card-header bg-primary text-white d-flex justify-content-between align-items-center">
             <h5 class="mb-0">فاتورة رقم: <?php echo htmlspecialchars($selectedInvoice['invoice_number']); ?></h5>
             <div>
-                <a href="print_invoice.php?id=<?php echo $selectedInvoice['id']; ?>&print=1" 
+                <a href="<?php echo getRelativeUrl('print_invoice.php?id=' . $selectedInvoice['id'] . '&print=1'); ?>" 
                    class="btn btn-light btn-sm" target="_blank">
                     <i class="bi bi-printer me-2"></i>طباعة
                 </a>
@@ -329,7 +330,7 @@ if (isset($_GET['id'])) {
                                            class="btn btn-info" title="عرض">
                                             <i class="bi bi-eye"></i>
                                         </a>
-                                        <a href="print_invoice.php?id=<?php echo $invoice['id']; ?>&print=1" 
+                                        <a href="<?php echo getRelativeUrl('print_invoice.php?id=' . $invoice['id'] . '&print=1'); ?>" 
                                            class="btn btn-secondary" target="_blank" title="طباعة">
                                             <i class="bi bi-printer"></i>
                                         </a>

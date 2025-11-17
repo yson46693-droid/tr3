@@ -61,6 +61,7 @@ $customersPageBase = $customersBaseScript . '?page=customers';
 $customersPageBaseWithSection = $customersPageBase . '&section=' . urlencode($section);
 
 // معالجة طلبات سجل مشتريات العميل (للمدير والمندوب)
+// ملاحظة: يجب أن يكون هذا قبل أي output HTML
 if (
     in_array($currentRole, ['manager', 'sales'], true) &&
     isset($_GET['ajax'], $_GET['action']) &&
@@ -202,6 +203,7 @@ if ($section === 'delegates' && !$isSalesUser) {
     }
 
     try {
+        // بناء الاستعلام بشكل آمن
         $delegatesQuery = "
             SELECT 
                 u.id,
@@ -211,10 +213,10 @@ if ($section === 'delegates' && !$isSalesUser) {
                 u.phone,
                 u.status,
                 u.last_login_at,
-                COALESCE(COUNT(c.id), 0) AS customer_count,
+                COALESCE(COUNT(DISTINCT c.id), 0) AS customer_count,
                 COALESCE(SUM(CASE WHEN c.balance > 0 THEN 1 ELSE 0 END), 0) AS debtor_count,
                 COALESCE(SUM(CASE WHEN c.balance > 0 THEN c.balance ELSE 0 END), 0) AS total_debt,
-                COALESCE(MAX(c.updated_at), MAX(c.created_at)) AS last_activity_at
+                COALESCE(GREATEST(MAX(c.updated_at), MAX(c.created_at)), NULL) AS last_activity_at
             FROM users u
             LEFT JOIN customers c ON c.created_by = u.id
             WHERE u.role = 'sales'
@@ -223,7 +225,15 @@ if ($section === 'delegates' && !$isSalesUser) {
             ORDER BY customer_count DESC, u.full_name ASC
         ";
 
-        $delegates = $db->query($delegatesQuery, $searchParams);
+        // تنفيذ الاستعلام مع معالجة الأخطاء
+        try {
+            $delegates = $db->query($delegatesQuery, $searchParams);
+        } catch (Throwable $queryError) {
+            error_log('Delegates query error: ' . $queryError->getMessage());
+            error_log('Delegates query SQL: ' . $delegatesQuery);
+            error_log('Delegates query params: ' . json_encode($searchParams));
+            throw $queryError;
+        }
 
         if (!empty($delegates)) {
             $delegateIds = array_map(static function ($delegate) {
@@ -295,6 +305,7 @@ if ($section === 'delegates' && !$isSalesUser) {
         }
     } catch (Throwable $delegatesError) {
         error_log('Delegates customers section error: ' . $delegatesError->getMessage());
+        error_log('Delegates customers section error trace: ' . $delegatesError->getTraceAsString());
         $delegates = [];
         $delegateCustomersMap = [];
         $delegateSummary = [
@@ -306,6 +317,20 @@ if ($section === 'delegates' && !$isSalesUser) {
             'inactive_delegates'   => 0,
         ];
         $error = $error ?: 'تعذر تحميل بيانات مناديب المبيعات في الوقت الحالي. يرجى المحاولة لاحقاً.';
+    }
+} else {
+    // إذا لم يكن القسم 'delegates' أو كان المستخدم مندوب، تأكد من تهيئة المتغيرات
+    if ($section !== 'delegates' || $isSalesUser) {
+        $delegates = [];
+        $delegateCustomersMap = [];
+        $delegateSummary = [
+            'total_delegates'      => 0,
+            'total_customers'      => 0,
+            'debtor_customers'     => 0,
+            'total_debt'           => 0.0,
+            'active_delegates'     => 0,
+            'inactive_delegates'   => 0,
+        ];
     }
 }
 
