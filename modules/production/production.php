@@ -2445,7 +2445,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     } else {
                         $insertProductName = trim((string)$template['product_name']);
                         if ($insertProductName === '') {
-                            $insertProductName = 'منتج رقم ' . ($template['id'] ?? '?');
+                            throw new Exception('يجب تحديد اسم المنتج الحقيقي في قالب الإنتاج قبل إنشاء المنتج.');
                         }
                         // إنشاء منتج جديد
                         $result = $db->execute(

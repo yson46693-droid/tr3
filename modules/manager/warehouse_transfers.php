@@ -14,6 +14,7 @@ require_once __DIR__ . '/../../includes/vehicle_inventory.php';
 require_once __DIR__ . '/../../includes/approval_system.php';
 require_once __DIR__ . '/../../includes/audit_log.php';
 require_once __DIR__ . '/../../includes/table_styles.php';
+require_once __DIR__ . '/../../includes/product_name_helper.php';
 
 $warehouseTransfersParentPage = $warehouseTransfersParentPage ?? 'warehouse_transfers';
 $warehouseTransfersSectionParam = $warehouseTransfersSectionParam ?? null;
@@ -643,11 +644,14 @@ if (isset($_GET['id'])) {
                 foreach ($basicItems as $basicItem) {
                 $productId = $basicItem['product_id'] ?? null;
                 $batchId = $basicItem['batch_id'] ?? null;
+                $nameCandidates = [];
+                $hasResolvedName = false;
+
+                if (!empty($basicItem['product_name'])) {
+                    $nameCandidates[] = $basicItem['product_name'];
+                    $hasResolvedName = !isPlaceholderProductName($basicItem['product_name']);
+                }
                 
-                // جلب اسم المنتج - أولوية للحصول على الاسم الصحيح من products
-                $productName = 'منتج غير معروف';
-                
-                // محاولة الحصول على product_id من finished_products إذا لم يكن موجوداً في warehouse_transfer_items
                 if (!$productId && $batchId) {
                     $batchProductId = $db->queryOne(
                         "SELECT product_id FROM finished_products WHERE id = ?",
@@ -658,21 +662,17 @@ if (isset($_GET['id'])) {
                     }
                 }
                 
-                // جلب اسم المنتج - أولوية للحصول على الاسم الصحيح من products
-                // إذا كان هناك product_id، احصل على الاسم من products أولاً
                 if ($productId) {
                     $product = $db->queryOne("SELECT name FROM products WHERE id = ?", [$productId]);
-                    if ($product && !empty($product['name'])) {
-                        $trimmedName = trim($product['name']);
-                        // إذا كان الاسم ليس "منتج رقم X" وليس فارغاً، استخدمه مباشرة
-                        if ($trimmedName !== '' && !preg_match('/^منتج رقم \d+$/', $trimmedName)) {
-                            $productName = $trimmedName;
+                    if ($product && isset($product['name'])) {
+                        $productNameFromDb = trim($product['name']);
+                        if ($productNameFromDb !== '') {
+                            $nameCandidates[] = $productNameFromDb;
+                            $hasResolvedName = $hasResolvedName || !isPlaceholderProductName($productNameFromDb);
                         }
                     }
                     
-                    // إذا لم نجد اسم صحيح من products، جرب vehicle_inventory
-                    if (($productName === 'منتج غير معروف' || preg_match('/^منتج رقم \d+$/', $productName))) {
-                        // محاولة الحصول على اسم المنتج من vehicle_inventory إذا كان النقل من مخزن سيارة
+                    if (!$hasResolvedName) {
                         $transferInfo = $db->queryOne(
                             "SELECT from_warehouse_id FROM warehouse_transfers WHERE id = ?",
                             [$basicItem['transfer_id']]
@@ -689,8 +689,9 @@ if (isset($_GET['id'])) {
                                 );
                                 if ($vehicleProduct && !empty($vehicleProduct['product_name'])) {
                                     $vehicleName = trim($vehicleProduct['product_name']);
-                                    if ($vehicleName !== '' && !preg_match('/^منتج رقم \d+$/', $vehicleName)) {
-                                        $productName = $vehicleName;
+                                    if ($vehicleName !== '') {
+                                        $nameCandidates[] = $vehicleName;
+                                        $hasResolvedName = !isPlaceholderProductName($vehicleName);
                                     }
                                 }
                             }
@@ -698,8 +699,7 @@ if (isset($_GET['id'])) {
                     }
                 }
                 
-                // إذا كان الاسم لا يزال "منتج غير معروف" أو "منتج رقم X"، جرب finished_products
-                if (($productName === 'منتج غير معروف' || preg_match('/^منتج رقم \d+$/', $productName)) && $batchId) {
+                if (!$hasResolvedName && $batchId) {
                     $batch = $db->queryOne(
                         "SELECT 
                             fp.product_id,
@@ -712,28 +712,24 @@ if (isset($_GET['id'])) {
                     );
                     
                     if ($batch) {
-                        // استخدام أفضل اسم متاح: products.name أولاً، ثم finished_products.product_name
-                        if (!empty($batch['best_name']) && trim($batch['best_name']) !== '') {
+                        if (!empty($batch['best_name'])) {
                             $bestName = trim($batch['best_name']);
-                            // تجنب استخدام "منتج رقم X" إذا كان هناك بديل
-                            if (!preg_match('/^منتج رقم \d+$/', $bestName)) {
-                                $productName = $bestName;
-                            } elseif ($productName === 'منتج غير معروف') {
-                                // إذا لم يكن هناك بديل، استخدم "منتج رقم X" كحل أخير
-                                $productName = $bestName;
+                            if ($bestName !== '') {
+                                $nameCandidates[] = $bestName;
+                                $hasResolvedName = !isPlaceholderProductName($bestName);
                             }
-                        } elseif (!empty($batch['finished_product_name']) && trim($batch['finished_product_name']) !== '') {
+                        }
+                        if (!$hasResolvedName && !empty($batch['finished_product_name'])) {
                             $finishedName = trim($batch['finished_product_name']);
-                            // تجنب استخدام "منتج رقم X" إذا كان هناك بديل
-                            if (!preg_match('/^منتج رقم \d+$/', $finishedName)) {
-                                $productName = $finishedName;
-                            } elseif ($productName === 'منتج غير معروف') {
-                                // إذا لم يكن هناك بديل، استخدم "منتج رقم X" كحل أخير
-                                $productName = $finishedName;
+                            if ($finishedName !== '') {
+                                $nameCandidates[] = $finishedName;
+                                $hasResolvedName = !isPlaceholderProductName($finishedName);
                             }
                         }
                     }
                 }
+
+                $productName = resolveProductName($nameCandidates);
                 
                 // جلب بيانات التشغيلة
                 $finishedBatchNumber = $basicItem['batch_number'];
@@ -976,27 +972,19 @@ if (isset($_GET['id'])) {
                                     $displayBatchNumber = $item['batch_number'] ?? $item['finished_batch_number'] ?? '-';
                                     
                                     // تحديد اسم المنتج للعرض
-                                    $displayProductName = $item['product_name'] ?? 'منتج غير معروف';
+                                    $displayProductName = $item['product_name'] ?? null;
                                 ?>
                                 <tr class="<?php echo $badgeClass; ?>">
                                     <td>
                                         <?php 
-                                        // عرض اسم المنتج الفعلي فقط (بدون معرف المنتج)
-                                        // إزالة أي نص يحتوي على "منتج رقم" أو معرف المنتج
-                                        $cleanProductName = $displayProductName;
-                                        if (preg_match('/^منتج رقم \d+$/', $cleanProductName)) {
-                                            // إذا كان الاسم "منتج رقم X"، نحاول الحصول على اسم أفضل
-                                            if (!empty($item['product_id'])) {
-                                                $product = $db->queryOne("SELECT name FROM products WHERE id = ?", [$item['product_id']]);
-                                                if ($product && !empty($product['name']) && trim($product['name']) !== '' && !preg_match('/^منتج رقم \d+$/', trim($product['name']))) {
-                                                    $cleanProductName = trim($product['name']);
-                                                }
-                                            }
-                                            // إذا لم نجد اسم أفضل، نعرض "منتج" فقط
-                                            if ($cleanProductName === $displayProductName && preg_match('/^منتج رقم \d+$/', $cleanProductName)) {
-                                                $cleanProductName = 'منتج';
+                                        if (isPlaceholderProductName($displayProductName) && !empty($item['product_id'])) {
+                                            $product = $db->queryOne("SELECT name FROM products WHERE id = ?", [$item['product_id']]);
+                                            if ($product && isset($product['name'])) {
+                                                $displayProductName = $product['name'];
                                             }
                                         }
+                                        
+                                        $cleanProductName = resolveProductName([$displayProductName]);
                                         echo htmlspecialchars($cleanProductName); 
                                         ?>
                                     </td>

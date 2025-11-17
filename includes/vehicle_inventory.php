@@ -12,6 +12,7 @@ require_once __DIR__ . '/db.php';
 require_once __DIR__ . '/audit_log.php';
 require_once __DIR__ . '/notifications.php';
 require_once __DIR__ . '/inventory_movements.php';
+require_once __DIR__ . '/product_name_helper.php';
 
 if (!function_exists('ensureVehicleInventoryProductColumns')) {
     /**
@@ -425,40 +426,18 @@ function getFinishedProductBatchOptions($onlyAvailable = true, $fromWarehouseId 
                 }
             }
 
-            // تنظيف اسم المنتج - تجنب استخدام "منتج رقم X" أو "غير محدد" إلا كحل أخير
-            $productName = 'منتج غير محدد';
-            
-            // محاولة الحصول على الاسم الصحيح من products.name أولاً
+            $candidateNames = [];
             if ($productId > 0) {
                 $product = $db->queryOne("SELECT name FROM products WHERE id = ?", [$productId]);
-                if ($product && !empty($product['name']) && trim($product['name']) !== '') {
-                    $prodName = trim($product['name']);
-                    if (!preg_match('/^منتج رقم \d+$/', $prodName)) {
-                        $productName = $prodName;
-                    }
+                if ($product && isset($product['name'])) {
+                    $candidateNames[] = $product['name'];
                 }
             }
-            
-            // إذا لم نجد اسم صحيح من products، جرب finished_products.product_name
-            if ($productName === 'منتج غير محدد' && !empty($row['product_name']) && trim($row['product_name']) !== '') {
-                $fpName = trim($row['product_name']);
-                if (!preg_match('/^منتج رقم \d+$/', $fpName) && $fpName !== 'غير محدد') {
-                    $productName = $fpName;
-                }
+            if (!empty($row['product_name'])) {
+                $candidateNames[] = $row['product_name'];
             }
-            
-            // إذا كان الاسم لا يزال "منتج غير محدد"، استخدم أي اسم متاح
-            if ($productName === 'منتج غير محدد') {
-                if ($productId > 0) {
-                    $product = $db->queryOne("SELECT name FROM products WHERE id = ?", [$productId]);
-                    if ($product && !empty($product['name']) && trim($product['name']) !== '') {
-                        $productName = trim($product['name']);
-                    }
-                }
-                if ($productName === 'منتج غير محدد' && !empty($row['product_name']) && trim($row['product_name']) !== '' && trim($row['product_name']) !== 'غير محدد') {
-                    $productName = trim($row['product_name']);
-                }
-            }
+
+            $productName = resolveProductName($candidateNames);
             
             $options[] = [
                 'batch_id' => $batchId,
@@ -526,35 +505,10 @@ function getAvailableProductsFromWarehouse($warehouseId): array
             ) ?? [];
 
             foreach ($vehicleProducts as $row) {
-                // أولوية لاستخدام الاسم من vehicle_inventory.product_name
-                // ثم من products.name
-                // تجنب استخدام "منتج رقم X" إلا كحل أخير
-                $productName = 'منتج غير محدد';
-                
-                // أولوية قصوى لاستخدام الاسم من vehicle_inventory.product_name
-                // لأنه الاسم الذي أدخله المستخدم عند إضافة المنتج إلى السيارة
-                if (!empty($row['vehicle_product_name']) && trim($row['vehicle_product_name']) !== '') {
-                    $vehicleName = trim($row['vehicle_product_name']);
-                    // استخدام الاسم من vehicle_inventory إذا لم يكن "منتج رقم X"
-                    if (!preg_match('/^منتج رقم \d+$/', $vehicleName)) {
-                        $productName = $vehicleName;
-                    } elseif (!empty($row['product_name']) && trim($row['product_name']) !== '') {
-                        // إذا كان vehicle_inventory.product_name هو "منتج رقم X"، جرب products.name
-                        $prodName = trim($row['product_name']);
-                        if (!preg_match('/^منتج رقم \d+$/', $prodName)) {
-                            $productName = $prodName;
-                        } else {
-                            // إذا كان كلاهما "منتج رقم X"، استخدم vehicle_inventory.product_name
-                            $productName = $vehicleName;
-                        }
-                    } else {
-                        // إذا لم يكن هناك products.name، استخدم vehicle_inventory.product_name
-                        $productName = $vehicleName;
-                    }
-                } elseif (!empty($row['product_name']) && trim($row['product_name']) !== '') {
-                    // إذا لم يكن هناك vehicle_inventory.product_name، استخدم products.name
-                    $productName = trim($row['product_name']);
-                }
+                $productName = resolveProductName([
+                    $row['vehicle_product_name'] ?? null,
+                    $row['product_name'] ?? null
+                ]);
                 
                 $options[] = [
                     'product_id' => (int)$row['product_id'],
@@ -588,24 +542,10 @@ function getAvailableProductsFromWarehouse($warehouseId): array
             ) ?? [];
 
             foreach ($products as $row) {
-                // استخدام الاسم الحقيقي من جدول products
-                // تجنب استخدام "منتج رقم X" إلا كحل أخير
-                $productName = 'منتج غير محدد';
-                
-                // محاولة استخدام الاسم من products.name
-                if (!empty($row['original_name']) && trim($row['original_name']) !== '') {
-                    $originalName = trim($row['original_name']);
-                    if (!preg_match('/^منتج رقم \d+$/', $originalName)) {
-                        $productName = $originalName;
-                    }
-                }
-                
-                // إذا لم نجد اسم صحيح، استخدم أي اسم متاح
-                if ($productName === 'منتج غير محدد' && !empty($row['original_name']) && trim($row['original_name']) !== '') {
-                    $productName = trim($row['original_name']);
-                } elseif ($productName === 'منتج غير محدد' && !empty($row['product_name']) && trim($row['product_name']) !== '') {
-                    $productName = trim($row['product_name']);
-                }
+                $productName = resolveProductName([
+                    $row['original_name'] ?? null,
+                    $row['product_name'] ?? null
+                ]);
                 
                 // حساب الكمية المتاحة بعد خصم الكميات المحجوزة في طلبات النقل المعلقة
                 $availableQuantity = (float)$row['quantity_available'];
@@ -664,35 +604,10 @@ function getAvailableProductsFromWarehouse($warehouseId): array
                     $batchId = (int)$fpRow['batch_id'];
                     
                     if ($productId > 0) {
-                        // أولوية لاستخدام الاسم الحقيقي من جدول products
-                        // ثم من finished_products.product_name
-                        // تجنب استخدام "منتج رقم X" إلا كحل أخير
-                        $productName = 'منتج غير محدد';
-                        
-                        // محاولة 1: استخدام الاسم من products.name
-                        if (!empty($fpRow['original_product_name']) && trim($fpRow['original_product_name']) !== '') {
-                            $originalName = trim($fpRow['original_product_name']);
-                            if (!preg_match('/^منتج رقم \d+$/', $originalName)) {
-                                $productName = $originalName;
-                            }
-                        }
-                        
-                        // محاولة 2: إذا لم نجد اسم صحيح من products، استخدم finished_products.product_name
-                        if ($productName === 'منتج غير محدد' && !empty($fpRow['product_name']) && trim($fpRow['product_name']) !== '') {
-                            $fpName = trim($fpRow['product_name']);
-                            if (!preg_match('/^منتج رقم \d+$/', $fpName) && $fpName !== 'غير محدد') {
-                                $productName = $fpName;
-                            }
-                        }
-                        
-                        // محاولة 3: إذا كان الاسم لا يزال "منتج غير محدد"، استخدم أي اسم متاح
-                        if ($productName === 'منتج غير محدد') {
-                            if (!empty($fpRow['original_product_name']) && trim($fpRow['original_product_name']) !== '') {
-                                $productName = trim($fpRow['original_product_name']);
-                            } elseif (!empty($fpRow['product_name']) && trim($fpRow['product_name']) !== '' && trim($fpRow['product_name']) !== 'غير محدد') {
-                                $productName = trim($fpRow['product_name']);
-                            }
-                        }
+                        $productName = resolveProductName([
+                            $fpRow['original_product_name'] ?? null,
+                            $fpRow['product_name'] ?? null
+                        ]);
                         
                         // حساب الكمية المتاحة من finished_products
                         $productInfo = $db->queryOne(
@@ -1709,7 +1624,8 @@ function executeWarehouseTransferDirectly($transferId, $executedBy = null) {
                     [$toWarehouse['vehicle_id'], $item['product_id']]
                 );
                 
-                $newQuantity = ($currentInventory['quantity'] ?? 0) + $item['quantity'];
+                // استخدام $requestedQuantity بدلاً من $item['quantity'] لتجنب أي مشاكل
+                $newQuantity = ($currentInventory['quantity'] ?? 0) + $requestedQuantity;
                 $updateVehicleResult = updateVehicleInventory(
                     $toWarehouse['vehicle_id'],
                     $item['product_id'],
@@ -2149,7 +2065,8 @@ function approveWarehouseTransfer($transferId, $approvedBy = null) {
                     [$toWarehouse['vehicle_id'], $item['product_id']]
                 );
                 
-                $newQuantity = ($currentInventory['quantity'] ?? 0) + $item['quantity'];
+                // استخدام $requestedQuantity بدلاً من $item['quantity'] لتجنب أي مشاكل
+                $newQuantity = ($currentInventory['quantity'] ?? 0) + $requestedQuantity;
                 $updateVehicleResult = updateVehicleInventory(
                     $toWarehouse['vehicle_id'],
                     $item['product_id'],
