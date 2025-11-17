@@ -41,21 +41,78 @@ function recordInventoryMovement($productId, $warehouseId, $type, $quantity, $re
             }
         }
         
-        // الحصول على الكمية الحالية
-        $product = $db->queryOne(
-            "SELECT quantity, warehouse_id FROM products WHERE id = ?",
-            [$productId]
-        );
+        // التحقق من نوع المخزن - إذا كان مخزن سيارة، نستخدم vehicle_inventory
+        $warehouse = $db->queryOne("SELECT id, type FROM warehouses WHERE id = ?", [$warehouseId]);
+        $isVehicleWarehouse = false;
+        $vehicleId = null;
+        $usingVehicleInventory = false;
         
-        if (!$product) {
-            return ['success' => false, 'message' => 'المنتج غير موجود'];
+        if ($warehouse && ($warehouse['type'] ?? '') === 'vehicle') {
+            $isVehicleWarehouse = true;
+            // البحث عن vehicle_id المرتبط بهذا المخزن
+            $vehicle = $db->queryOne("SELECT id FROM vehicles WHERE warehouse_id = ?", [$warehouseId]);
+            if ($vehicle) {
+                $vehicleId = (int)$vehicle['id'];
+                $usingVehicleInventory = true;
+            }
+        }
+        
+        // إذا كان مخزن سيارة ونوع الحركة 'out' (بيع)، نستخدم vehicle_inventory
+        if ($usingVehicleInventory && $type === 'out' && ($referenceType === 'sales' || $referenceType === 'invoice')) {
+            // الحصول على الكمية من vehicle_inventory
+            $vehicleInventory = $db->queryOne(
+                "SELECT quantity, finished_batch_id FROM vehicle_inventory WHERE vehicle_id = ? AND product_id = ?",
+                [$vehicleId, $productId]
+            );
+            
+            if (!$vehicleInventory) {
+                return ['success' => false, 'message' => 'المنتج غير موجود في مخزون السيارة'];
+            }
+            
+            $quantityBefore = (float)($vehicleInventory['quantity'] ?? 0);
+            
+            // إذا كان هناك finished_batch_id، نستخدمه
+            if (!empty($vehicleInventory['finished_batch_id']) && !$batchId) {
+                $batchId = (int)$vehicleInventory['finished_batch_id'];
+            }
+            
+            // إذا كان هناك batch_id، نتحقق من finished_products.quantity_produced أيضاً
+            if ($batchId) {
+                $finishedProduct = $db->queryOne(
+                    "SELECT quantity_produced FROM finished_products WHERE id = ?",
+                    [$batchId]
+                );
+                
+                if ($finishedProduct && isset($finishedProduct['quantity_produced'])) {
+                    // نستخدم الكمية الأقل بين vehicle_inventory و finished_products
+                    $quantityProduced = (float)($finishedProduct['quantity_produced'] ?? 0);
+                    $quantityBefore = min($quantityBefore, $quantityProduced);
+                }
+            }
+            
+            // إنشاء كائن product وهمي للتوافق مع باقي الكود
+            $product = ['quantity' => $quantityBefore, 'warehouse_id' => $warehouseId];
+        } else {
+            // الحصول على الكمية الحالية من products
+            $product = $db->queryOne(
+                "SELECT quantity, warehouse_id FROM products WHERE id = ?",
+                [$productId]
+            );
+            
+            if (!$product) {
+                return ['success' => false, 'message' => 'المنتج غير موجود'];
+            }
         }
         
         // إذا كان هناك batch_id ونوع الحركة هو 'out' أو 'transfer'، نستخدم quantity_produced من finished_products
-        $quantityBefore = $product['quantity'];
+        if (!$usingVehicleInventory) {
+            $quantityBefore = (float)($product['quantity'] ?? 0);
+        }
         $usingFinishedProductQuantity = false;
         
-        if ($batchId && ($type === 'out' || $type === 'transfer')) {
+        // إذا كان هناك batch_id ونوع الحركة هو 'out' أو 'transfer'، نستخدم quantity_produced من finished_products
+        // لكن فقط إذا لم نكن نستخدم vehicle_inventory (لأننا استخدمناها بالفعل)
+        if ($batchId && ($type === 'out' || $type === 'transfer') && !$usingVehicleInventory) {
             $finishedProduct = $db->queryOne(
                 "SELECT quantity_produced FROM finished_products WHERE id = ?",
                 [$batchId]
@@ -134,9 +191,14 @@ function recordInventoryMovement($productId, $warehouseId, $type, $quantity, $re
         }
         
         // تحديث كمية المنتج
+        // إذا كنا نستخدم vehicle_inventory، لا نحدث products.quantity لأن الكمية الفعلية في vehicle_inventory
         // إذا كنا نستخدم finished_products.quantity_produced، لا نحدث products.quantity
         // لأن الكمية الفعلية موجودة في finished_products وليس في products
-        if (!$usingFinishedProductQuantity) {
+        if ($usingVehicleInventory) {
+            // لا نحدث products.quantity لأن الكمية الفعلية في vehicle_inventory
+            // vehicle_inventory يتم تحديثه في updateVehicleInventory قبل استدعاء recordInventoryMovement
+            error_log("recordInventoryMovement: Skipping products.quantity update for vehicle warehouse, using vehicle_inventory instead");
+        } elseif (!$usingFinishedProductQuantity) {
             $updateSql = "UPDATE products SET quantity = ?, warehouse_id = ? WHERE id = ?";
             $db->execute($updateSql, [$quantityAfter, $warehouseId ?? $product['warehouse_id'], $productId]);
         } else {

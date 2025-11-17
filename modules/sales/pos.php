@@ -445,11 +445,20 @@ if (!$error && $_SERVER['REQUEST_METHOD'] === 'POST') {
                     $unitPrice = $item['unit_price'];
                     $lineTotal = $item['line_total'];
 
-                    $product = $inventoryByProduct[$productId] ?? null;
-                    $available = $product ? (float) ($product['quantity'] ?? 0) : 0;
+                    // التحقق من الكمية مرة أخرى باستخدام FOR UPDATE لتجنب race conditions
+                    $vehicleInventoryItem = $db->queryOne(
+                        "SELECT quantity, finished_batch_id FROM vehicle_inventory WHERE vehicle_id = ? AND product_id = ? FOR UPDATE",
+                        [$vehicle['id'], $productId]
+                    );
 
-                    if ($product === null || $quantity > $available) {
-                        throw new RuntimeException('الكمية المتاحة للمنتج ' . $item['name'] . ' تغيرت أثناء المعالجة.');
+                    if (!$vehicleInventoryItem) {
+                        throw new RuntimeException('المنتج ' . $item['name'] . ' غير موجود في مخزون السيارة.');
+                    }
+
+                    $available = (float)($vehicleInventoryItem['quantity'] ?? 0);
+
+                    if ($quantity > $available) {
+                        throw new RuntimeException('الكمية المتاحة للمنتج ' . $item['name'] . ' غير كافية. المتاح: ' . $available . '، المطلوب: ' . $quantity);
                     }
 
                     $newQuantity = max(0, $available - $quantity);
@@ -457,6 +466,9 @@ if (!$error && $_SERVER['REQUEST_METHOD'] === 'POST') {
                     if (empty($updateResult['success'])) {
                         throw new RuntimeException($updateResult['message'] ?? 'تعذر تحديث مخزون السيارة.');
                     }
+
+                    // الحصول على batch_id من vehicle_inventory إذا كان متوفراً
+                    $batchId = !empty($vehicleInventoryItem['finished_batch_id']) ? (int)$vehicleInventoryItem['finished_batch_id'] : null;
 
                     $movementResult = recordInventoryMovement(
                         $productId,
@@ -466,7 +478,8 @@ if (!$error && $_SERVER['REQUEST_METHOD'] === 'POST') {
                         'sales',
                         $invoiceId,
                         'بيع من نقطة بيع المندوب - فاتورة ' . $invoiceNumber,
-                        $currentUser['id']
+                        $currentUser['id'],
+                        $batchId  // تمرير batchId إذا كان متوفراً
                     );
 
                     if (empty($movementResult['success'])) {
