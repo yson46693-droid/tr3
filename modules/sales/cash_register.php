@@ -74,10 +74,11 @@ if (!empty($collectionsTableExists)) {
     $hasStatusColumn = !empty($statusColumnCheck);
     
     if ($hasStatusColumn) {
+        // حساب جميع التحصيلات (pending و approved) لأن المندوب قام بتحصيلها بالفعل
         $collectionsResult = $db->queryOne(
             "SELECT COALESCE(SUM(amount), 0) as total_collections
              FROM collections
-             WHERE collected_by = ? AND status = 'approved'",
+             WHERE collected_by = ? AND status IN ('pending', 'approved')",
             [$salesRepId]
         );
     } else {
@@ -143,7 +144,8 @@ if (!empty($collectionsTableExists)) {
     $statusColumnCheck = $db->queryOne("SHOW COLUMNS FROM collections LIKE 'status'");
     $hasStatusColumn = !empty($statusColumnCheck);
     
-    $statusFilter = $hasStatusColumn ? "AND status = 'approved'" : "";
+    // حساب جميع التحصيلات (pending و approved) لأن المندوب قام بتحصيلها بالفعل
+    $statusFilter = $hasStatusColumn ? "AND status IN ('pending', 'approved')" : "";
     
     $todayCollectionsResult = $db->queryOne(
         "SELECT COALESCE(SUM(amount), 0) as total
