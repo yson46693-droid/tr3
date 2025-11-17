@@ -1368,6 +1368,27 @@ handlePaymentChange();
     .pos-cart-table thead {
         display: none;
     }
+    .pos-cart-table tbody tr {
+        display: grid;
+        gap: 0.75rem;
+        padding: 0.75rem;
+        border-bottom: 1px solid rgba(148, 163, 184, 0.25);
+    }
+    .pos-cart-table td {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        font-size: 0.85rem;
+        border: none !important;
+    }
+    .pos-cart-table td::before {
+        content: attr(data-label);
+        font-weight: 600;
+        color: #64748b;
+    }
+}
+</style>
+
 <!-- إعادة تحميل الصفحة تلقائياً بعد أي رسالة (نجاح أو خطأ) لمنع تكرار الطلبات -->
 <script>
 // إعادة تحميل الصفحة تلقائياً بعد أي رسالة (نجاح أو خطأ) لمنع تكرار الطلبات
@@ -1392,25 +1413,4 @@ handlePaymentChange();
     }
 })();
 </script>
-
-    .pos-cart-table tbody tr {
-        display: grid;
-        gap: 0.75rem;
-        padding: 0.75rem;
-        border-bottom: 1px solid rgba(148, 163, 184, 0.25);
-    }
-    .pos-cart-table td {
-        display: flex;
-        justify-content: space-between;
-        align-items: center;
-        font-size: 0.85rem;
-        border: none !important;
-    }
-    .pos-cart-table td::before {
-        content: attr(data-label);
-        font-weight: 600;
-        color: #64748b;
-    }
-}
-</style>
 

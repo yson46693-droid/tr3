@@ -69,45 +69,129 @@ function calculateMonthlyHours($userId, $month, $year) {
 }
 
 /**
- * حساب مجموع التحصيلات للمندوب خلال الشهر
+ * حساب مجموع المبالغ المستحقة للمكافأة 2% للمندوب خلال الشهر
+ * الحالات:
+ * 1. المبيعات بكامل: 2% على إجمالي الفاتورة
+ * 2. التحصيلات الجزئية: 2% على المبلغ المحصل
+ * 3. التحصيلات من عملاء المندوب: 2% على المبلغ المحصل
  */
 function calculateSalesCollections($userId, $month, $year) {
     $db = db();
     
-    // التحقق من وجود جدول collections
-    $tableCheck = $db->queryOne("SHOW TABLES LIKE 'collections'");
-    if (empty($tableCheck)) {
-        return 0;
-    }
+    $totalCommissionBase = 0;
     
-    // التحقق من وجود عمود status
-    $columnCheck = $db->queryOne("SHOW COLUMNS FROM collections LIKE 'status'");
-    $hasStatus = !empty($columnCheck);
-    
-    if ($hasStatus) {
-        // حساب مجموع التحصيلات المعتمدة فقط (approved)
-        $result = $db->queryOne(
-            "SELECT COALESCE(SUM(amount), 0) as total_collections 
-             FROM collections 
-             WHERE collected_by = ? 
+    // الحالة 1: المبيعات بكامل - حساب 2% على إجمالي الفاتورة
+    // الفواتير المدفوعة بالكامل (status='paid' و paid_amount = total_amount)
+    $invoicesTableCheck = $db->queryOne("SHOW TABLES LIKE 'invoices'");
+    if (!empty($invoicesTableCheck)) {
+        $fullPaymentSales = $db->queryOne(
+            "SELECT COALESCE(SUM(total_amount), 0) as total 
+             FROM invoices 
+             WHERE sales_rep_id = ? 
              AND MONTH(date) = ? 
              AND YEAR(date) = ?
-             AND status = 'approved'",
+             AND status = 'paid'
+             AND ABS(paid_amount - total_amount) < 0.01",
             [$userId, $month, $year]
         );
-    } else {
-        // إذا لم يكن status موجوداً، احسب جميع التحصيلات
-        $result = $db->queryOne(
-            "SELECT COALESCE(SUM(amount), 0) as total_collections 
-             FROM collections 
-             WHERE collected_by = ? 
-             AND MONTH(date) = ? 
-             AND YEAR(date) = ?",
-            [$userId, $month, $year]
-        );
+        $totalCommissionBase += floatval($fullPaymentSales['total'] ?? 0);
     }
     
-    return round($result['total_collections'] ?? 0, 2);
+    // الحالة 2 و 3: التحصيلات الجزئية والتحصيلات من عملاء المندوب
+    // حساب 2% على المبلغ المحصل
+    $collectionsTableCheck = $db->queryOne("SHOW TABLES LIKE 'collections'");
+    if (!empty($collectionsTableCheck)) {
+        // التحقق من وجود عمود status في collections
+        $statusColumnCheck = $db->queryOne("SHOW COLUMNS FROM collections LIKE 'status'");
+        $hasStatus = !empty($statusColumnCheck);
+        
+        // التحقق من وجود جدول customers
+        $customersTableCheck = $db->queryOne("SHOW TABLES LIKE 'customers'");
+        $hasCustomers = !empty($customersTableCheck);
+        
+        if ($hasCustomers && !empty($invoicesTableCheck)) {
+            // الحالة 2: التحصيلات من الفواتير الجزئية
+            // التحصيلات التي تمت على فواتير بحالة partial للمندوب
+            // نستخدم subquery لتجنب العد المزدوج إذا كان هناك أكثر من فاتورة جزئية للعميل نفسه
+            $partialCollections = $db->queryOne(
+                "SELECT COALESCE(SUM(c.amount), 0) as total 
+                 FROM collections c
+                 WHERE c.customer_id IN (
+                     SELECT DISTINCT inv.customer_id 
+                     FROM invoices inv
+                     WHERE inv.sales_rep_id = ?
+                     AND inv.status = 'partial'
+                 )
+                 AND MONTH(c.date) = ?
+                 AND YEAR(c.date) = ?" . 
+                 ($hasStatus ? " AND c.status = 'approved'" : ""),
+                [$userId, $month, $year]
+            );
+            $partialAmount = floatval($partialCollections['total'] ?? 0);
+            
+            // الحالة 3: التحصيلات من عملاء المندوب (الذين أنشأهم المندوب)
+            // نحسب جميع التحصيلات من عملاء المندوب
+            // إذا كان التحصيل مؤهلاً للحالتين 2 و 3، سيتم احتسابه مرة واحدة فقط (في الحالة 2)
+            // لذلك نستثني التحصيلات التي تم احتسابها في الحالة 2 (من عملاء لديهم فواتير جزئية)
+            $customerCollections = $db->queryOne(
+                "SELECT COALESCE(SUM(c.amount), 0) as total 
+                 FROM collections c
+                 INNER JOIN customers cust ON c.customer_id = cust.id
+                 WHERE cust.created_by = ?
+                 AND MONTH(c.date) = ?
+                 AND YEAR(c.date) = ?
+                 AND c.customer_id NOT IN (
+                     SELECT DISTINCT inv.customer_id 
+                     FROM invoices inv
+                     WHERE inv.sales_rep_id = ?
+                     AND inv.status = 'partial'
+                 )" . 
+                 ($hasStatus ? " AND c.status = 'approved'" : ""),
+                [$userId, $month, $year, $userId]
+            );
+            $customerAmount = floatval($customerCollections['total'] ?? 0);
+            
+            $totalCommissionBase += $partialAmount + $customerAmount;
+        } elseif ($hasCustomers) {
+            // إذا لم يكن جدول invoices موجوداً، نحسب فقط التحصيلات من عملاء المندوب
+            $customerCollections = $db->queryOne(
+                "SELECT COALESCE(SUM(c.amount), 0) as total 
+                 FROM collections c
+                 INNER JOIN customers cust ON c.customer_id = cust.id
+                 WHERE cust.created_by = ?
+                 AND MONTH(c.date) = ?
+                 AND YEAR(c.date) = ?" . 
+                 ($hasStatus ? " AND c.status = 'approved'" : ""),
+                [$userId, $month, $year]
+            );
+            $totalCommissionBase += floatval($customerCollections['total'] ?? 0);
+        } else {
+            // إذا لم يكن جدول customers موجوداً، نستخدم الطريقة القديمة
+            if ($hasStatus) {
+                $result = $db->queryOne(
+                    "SELECT COALESCE(SUM(amount), 0) as total_collections 
+                     FROM collections 
+                     WHERE collected_by = ? 
+                     AND MONTH(date) = ? 
+                     AND YEAR(date) = ?
+                     AND status = 'approved'",
+                    [$userId, $month, $year]
+                );
+            } else {
+                $result = $db->queryOne(
+                    "SELECT COALESCE(SUM(amount), 0) as total_collections 
+                     FROM collections 
+                     WHERE collected_by = ? 
+                     AND MONTH(date) = ? 
+                     AND YEAR(date) = ?",
+                    [$userId, $month, $year]
+                );
+            }
+            $totalCommissionBase += floatval($result['total_collections'] ?? 0);
+        }
+    }
+    
+    return round($totalCommissionBase, 2);
 }
 
 /**
