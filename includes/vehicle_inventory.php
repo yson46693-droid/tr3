@@ -478,10 +478,11 @@ function getAvailableProductsFromWarehouse($warehouseId): array
             $vehicleProducts = $db->query(
                 "SELECT 
                     vi.product_id,
-                    p.name AS product_name,
+                    COALESCE(NULLIF(TRIM(p.name), ''), CONCAT('منتج رقم ', p.id)) AS product_name,
                     vi.quantity AS quantity_available,
                     p.unit,
-                    p.unit_price
+                    p.unit_price,
+                    p.name AS original_name
                 FROM vehicle_inventory vi
                 INNER JOIN products p ON vi.product_id = p.id
                 WHERE vi.vehicle_id = ? AND vi.quantity > 0 AND p.status = 'active'
@@ -490,10 +491,15 @@ function getAvailableProductsFromWarehouse($warehouseId): array
             ) ?? [];
 
             foreach ($vehicleProducts as $row) {
+                // استخدام الاسم الحقيقي من جدول products
+                $productName = !empty($row['original_name']) && trim($row['original_name']) !== '' 
+                    ? trim($row['original_name']) 
+                    : ($row['product_name'] ?? 'منتج غير محدد');
+                
                 $options[] = [
                     'product_id' => (int)$row['product_id'],
                     'batch_id' => null,
-                    'product_name' => $row['product_name'] ?? 'منتج غير محدد',
+                    'product_name' => $productName,
                     'batch_number' => null,
                     'production_date' => null,
                     'quantity_produced' => 0,
@@ -508,7 +514,8 @@ function getAvailableProductsFromWarehouse($warehouseId): array
             $products = $db->query(
                 "SELECT 
                     id AS product_id,
-                    name AS product_name,
+                    COALESCE(NULLIF(TRIM(name), ''), CONCAT('منتج رقم ', id)) AS product_name,
+                    name AS original_name,
                     quantity AS quantity_available,
                     unit,
                     unit_price,
@@ -522,6 +529,11 @@ function getAvailableProductsFromWarehouse($warehouseId): array
             ) ?? [];
 
             foreach ($products as $row) {
+                // استخدام الاسم الحقيقي من جدول products
+                $productName = !empty($row['original_name']) && trim($row['original_name']) !== '' 
+                    ? trim($row['original_name']) 
+                    : ($row['product_name'] ?? 'منتج غير محدد');
+                
                 // حساب الكمية المتاحة بعد خصم الكميات المحجوزة في طلبات النقل المعلقة
                 $availableQuantity = (float)$row['quantity_available'];
                 
@@ -540,7 +552,7 @@ function getAvailableProductsFromWarehouse($warehouseId): array
                     $options[] = [
                         'product_id' => (int)$row['product_id'],
                         'batch_id' => null,
-                        'product_name' => $row['product_name'] ?? 'منتج غير محدد',
+                        'product_name' => $productName,
                         'batch_number' => null,
                         'production_date' => null,
                         'quantity_produced' => 0,
@@ -563,7 +575,8 @@ function getAvailableProductsFromWarehouse($warehouseId): array
                         fp.batch_number,
                         fp.production_date,
                         fp.quantity_produced,
-                        p.warehouse_id
+                        p.warehouse_id,
+                        p.name AS original_product_name
                     FROM finished_products fp
                     LEFT JOIN batch_numbers bn ON fp.batch_number = bn.batch_number
                     LEFT JOIN products p ON COALESCE(fp.product_id, bn.product_id) = p.id
@@ -578,6 +591,13 @@ function getAvailableProductsFromWarehouse($warehouseId): array
                     $batchId = (int)$fpRow['batch_id'];
                     
                     if ($productId > 0) {
+                        // استخدام الاسم الحقيقي من جدول products أولاً، ثم من finished_products
+                        $productName = !empty($fpRow['original_product_name']) && trim($fpRow['original_product_name']) !== '' 
+                            ? trim($fpRow['original_product_name']) 
+                            : (!empty($fpRow['product_name']) && trim($fpRow['product_name']) !== '' 
+                                ? trim($fpRow['product_name']) 
+                                : 'منتج غير محدد');
+                        
                         // حساب الكمية المتاحة من finished_products
                         $productInfo = $db->queryOne(
                             "SELECT quantity FROM products WHERE id = ?",
@@ -634,7 +654,7 @@ function getAvailableProductsFromWarehouse($warehouseId): array
                                 $options[] = [
                                     'product_id' => $productId,
                                     'batch_id' => $batchId,
-                                    'product_name' => $fpRow['product_name'] ?? 'منتج غير محدد',
+                                    'product_name' => $productName,
                                     'batch_number' => $fpRow['batch_number'] ?? '',
                                     'production_date' => $fpRow['production_date'] ?? null,
                                     'quantity_produced' => (float)$fpRow['quantity_produced'],
@@ -1899,7 +1919,36 @@ function approveWarehouseTransfer($transferId, $approvedBy = null) {
                         "SELECT quantity FROM vehicle_inventory WHERE vehicle_id = ? AND product_id = ?",
                         [$fromWarehouse['vehicle_id'], $productId]
                     );
-                    $availableQuantity = (float)($fromVehicleStockRow['quantity'] ?? 0);
+                    
+                    if (!$fromVehicleStockRow) {
+                        error_log("Product not found in vehicle inventory - Vehicle ID: {$fromWarehouse['vehicle_id']}, Product ID: $productId");
+                        $availableQuantity = 0.0;
+                    } else {
+                        $availableQuantity = (float)($fromVehicleStockRow['quantity'] ?? 0);
+                        error_log("Vehicle inventory check - Vehicle ID: {$fromWarehouse['vehicle_id']}, Product ID: $productId, Available: $availableQuantity");
+                    }
+                    
+                    // خصم الكمية المحجوزة في طلبات النقل المعلقة (pending) من نفس المخزن
+                    // نستبعد النقل الحالي من الحساب
+                    // للمنتجات الخارجية (بدون batch_id)، نتحقق فقط من العناصر التي ليس لها batch_id
+                    $pendingTransfers = $db->queryOne(
+                        "SELECT COALESCE(SUM(wti.quantity), 0) AS pending_quantity
+                         FROM warehouse_transfer_items wti
+                         INNER JOIN warehouse_transfers wt ON wt.id = wti.transfer_id
+                         WHERE wti.product_id = ? 
+                           AND (wti.batch_id IS NULL OR wti.batch_id = 0)
+                           AND wt.from_warehouse_id = ? 
+                           AND wt.status = 'pending' 
+                           AND wt.id != ?",
+                        [$productId, $transfer['from_warehouse_id'], $transferId]
+                    );
+                    $pendingQuantity = (float)($pendingTransfers['pending_quantity'] ?? 0);
+                    $availableQuantity -= $pendingQuantity;
+                    
+                    error_log("After pending deduction - Pending: $pendingQuantity, Available: $availableQuantity, Requested: $requestedQuantity");
+                    
+                    // التأكد من أن الكمية المتاحة ليست سالبة
+                    $availableQuantity = max(0.0, $availableQuantity);
                 } else {
                     // إذا كان المخزن المصدر رئيسي، نفحص مخزون المنتج
                     $productStock = $db->queryOne(
@@ -1907,18 +1956,26 @@ function approveWarehouseTransfer($transferId, $approvedBy = null) {
                         [$productId]
                     );
                     $availableQuantity = (float)($productStock['quantity'] ?? 0);
+                    
+                    // خصم الكمية المحجوزة في طلبات النقل المعلقة (pending) من نفس المخزن
+                    // نستبعد النقل الحالي من الحساب
+                    // للمنتجات الخارجية (بدون batch_id)، نتحقق فقط من العناصر التي ليس لها batch_id
+                    $pendingTransfers = $db->queryOne(
+                        "SELECT COALESCE(SUM(wti.quantity), 0) AS pending_quantity
+                         FROM warehouse_transfer_items wti
+                         INNER JOIN warehouse_transfers wt ON wt.id = wti.transfer_id
+                         WHERE wti.product_id = ? 
+                           AND (wti.batch_id IS NULL OR wti.batch_id = 0)
+                           AND wt.from_warehouse_id = ? 
+                           AND wt.status = 'pending' 
+                           AND wt.id != ?",
+                        [$productId, $transfer['from_warehouse_id'], $transferId]
+                    );
+                    $availableQuantity -= (float)($pendingTransfers['pending_quantity'] ?? 0);
+                    
+                    // التأكد من أن الكمية المتاحة ليست سالبة
+                    $availableQuantity = max(0.0, $availableQuantity);
                 }
-                
-                // خصم الكمية المحجوزة في طلبات النقل المعلقة (pending) من نفس المخزن
-                // نستبعد النقل الحالي من الحساب
-                $pendingTransfers = $db->queryOne(
-                    "SELECT COALESCE(SUM(wti.quantity), 0) AS pending_quantity
-                     FROM warehouse_transfer_items wti
-                     INNER JOIN warehouse_transfers wt ON wt.id = wti.transfer_id
-                     WHERE wti.product_id = ? AND wt.from_warehouse_id = ? AND wt.status = 'pending' AND wt.id != ?",
-                    [$productId, $transfer['from_warehouse_id'], $transferId]
-                );
-                $availableQuantity -= (float)($pendingTransfers['pending_quantity'] ?? 0);
             }
 
             if ($availableQuantity < $requestedQuantity - 1e-6) {
