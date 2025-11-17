@@ -48,15 +48,15 @@ function recordInventoryMovement($productId, $warehouseId, $type, $quantity, $re
         $usingVehicleInventory = false;
         
         if ($warehouseId) {
-            $warehouse = $db->queryOne("SELECT id, warehouse_type FROM warehouses WHERE id = ?", [$warehouseId]);
+            // جلب warehouse_type و vehicle_id في استعلام واحد
+            $warehouse = $db->queryOne("SELECT id, warehouse_type, vehicle_id FROM warehouses WHERE id = ?", [$warehouseId]);
         }
         
         if ($warehouse && ($warehouse['warehouse_type'] ?? '') === 'vehicle') {
             $isVehicleWarehouse = true;
             // الحصول على vehicle_id مباشرة من warehouses (لأن warehouses.vehicle_id يشير إلى vehicles.id)
-            $warehouseWithVehicle = $db->queryOne("SELECT vehicle_id FROM warehouses WHERE id = ?", [$warehouseId]);
-            if ($warehouseWithVehicle && !empty($warehouseWithVehicle['vehicle_id'])) {
-                $vehicleId = (int)$warehouseWithVehicle['vehicle_id'];
+            if (!empty($warehouse['vehicle_id'])) {
+                $vehicleId = (int)$warehouse['vehicle_id'];
                 $usingVehicleInventory = true;
             }
         }
