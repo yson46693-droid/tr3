@@ -629,6 +629,120 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 }
             }
         }
+    } elseif ($action === 'settle_salary') {
+        // معالجة تسوية مستحقات الموظف
+        $salaryId = intval($_POST['salary_id'] ?? 0);
+        $settlementAmount = floatval($_POST['settlement_amount'] ?? 0);
+        $settlementDate = trim($_POST['settlement_date'] ?? date('Y-m-d'));
+        $notes = trim($_POST['notes'] ?? '');
+        
+        if ($salaryId <= 0) {
+            $error = 'معرف الراتب غير صحيح';
+        } elseif ($settlementAmount <= 0) {
+            $error = 'يجب إدخال مبلغ تسوية صحيح';
+        } else {
+            // الحصول على بيانات الراتب
+            $salary = $db->queryOne(
+                "SELECT s.*, u.full_name, u.username, u.role 
+                 FROM salaries s 
+                 LEFT JOIN users u ON s.user_id = u.id 
+                 WHERE s.id = ?",
+                [$salaryId]
+            );
+            
+            if (!$salary) {
+                $error = 'الراتب غير موجود';
+            } else {
+                // الحصول على المبلغ التراكمي الحالي
+                $currentAccumulated = floatval($salary['accumulated_amount'] ?? $salary['total_amount'] ?? 0);
+                
+                if ($settlementAmount > $currentAccumulated) {
+                    $error = 'مبلغ التسوية يتجاوز المبلغ التراكمي المتاح (' . formatCurrency($currentAccumulated) . ')';
+                } else {
+                    try {
+                        $db->getConnection()->beginTransaction();
+                        
+                        // حساب المتبقي بعد التسوية
+                        $remainingAfter = $currentAccumulated - $settlementAmount;
+                        $settlementType = ($remainingAfter <= 0.01) ? 'full' : 'partial';
+                        
+                        // تحديث الراتب: خصم من accumulated_amount وإضافة لـ paid_amount
+                        $newPaidAmount = floatval($salary['paid_amount'] ?? 0) + $settlementAmount;
+                        $newAccumulated = max(0, $remainingAfter);
+                        
+                        $db->execute(
+                            "UPDATE salaries SET 
+                                accumulated_amount = ?,
+                                paid_amount = ?
+                             WHERE id = ?",
+                            [$newAccumulated, $newPaidAmount, $salaryId]
+                        );
+                        
+                        // إنشاء سجل التسوية
+                        $db->execute(
+                            "INSERT INTO salary_settlements 
+                                (salary_id, user_id, settlement_amount, previous_accumulated, 
+                                 remaining_after_settlement, settlement_type, settlement_date, 
+                                 notes, created_by)
+                             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                            [
+                                $salaryId,
+                                $salary['user_id'],
+                                $settlementAmount,
+                                $currentAccumulated,
+                                $remainingAfter,
+                                $settlementType,
+                                $settlementDate,
+                                $notes,
+                                $currentUser['id']
+                            ]
+                        );
+                        
+                        $settlementId = $db->getLastInsertId();
+                        
+                        // إنشاء فاتورة PDF
+                        require_once __DIR__ . '/../../includes/invoices.php';
+                        $invoicePath = generateSalarySettlementInvoice($settlementId, $salary, $settlementAmount, $currentAccumulated, $remainingAfter, $settlementDate, $notes);
+                        
+                        // تحديث مسار الفاتورة
+                        if ($invoicePath) {
+                            $db->execute(
+                                "UPDATE salary_settlements SET invoice_path = ? WHERE id = ?",
+                                [$invoicePath, $settlementId]
+                            );
+                        }
+                        
+                        // إرسال الفاتورة إلى تليجرام
+                        require_once __DIR__ . '/../../includes/simple_telegram.php';
+                        $telegramSent = sendSalarySettlementToTelegram($settlementId, $salary, $settlementAmount, $currentAccumulated, $remainingAfter, $settlementType, $settlementDate, $invoicePath);
+                        
+                        if ($telegramSent) {
+                            $db->execute(
+                                "UPDATE salary_settlements SET telegram_sent = 1 WHERE id = ?",
+                                [$settlementId]
+                            );
+                        }
+                        
+                        $db->getConnection()->commit();
+                        
+                        logAudit($currentUser['id'], 'settle_salary', 'salary', $salaryId, null, [
+                            'settlement_amount' => $settlementAmount,
+                            'previous_accumulated' => $currentAccumulated,
+                            'remaining' => $remainingAfter,
+                            'settlement_type' => $settlementType
+                        ]);
+                        
+                        $success = 'تم تسوية مستحقات الموظف بنجاح. المبلغ المسدد: ' . formatCurrency($settlementAmount) . 
+                                   ($remainingAfter > 0 ? ' | المتبقي: ' . formatCurrency($remainingAfter) : '');
+                        
+                    } catch (Exception $e) {
+                        $db->getConnection()->rollBack();
+                        error_log('Error settling salary: ' . $e->getMessage());
+                        $error = 'حدث خطأ أثناء تسوية المستحقات: ' . $e->getMessage();
+                    }
+                }
+            }
+        }
     }
 }
 
@@ -1425,6 +1539,9 @@ if (isset($_GET['ajax']) && $_GET['ajax'] == '1' && $salaryId > 0) {
                             <th>مكافأة</th>
                             <th>خصومات</th>
                             <th>الإجمالي</th>
+                            <th>المبلغ التراكمي</th>
+                            <th>المبلغ المدفوع</th>
+                            <th>المتبقي</th>
                             <th>الحالة</th>
                             <th>الإجراءات</th>
                         </tr>
@@ -1432,7 +1549,7 @@ if (isset($_GET['ajax']) && $_GET['ajax'] == '1' && $salaryId > 0) {
                     <tbody>
                         <?php if (empty($salaries)): ?>
                             <tr>
-                                <td colspan="9" class="text-center text-muted">لا توجد رواتب مسجلة</td>
+                                <td colspan="12" class="text-center text-muted">لا توجد رواتب مسجلة</td>
                             </tr>
                         <?php else: ?>
                             <?php foreach ($salaries as $salary): ?>
@@ -1466,6 +1583,22 @@ if (isset($_GET['ajax']) && $_GET['ajax'] == '1' && $salaryId > 0) {
                                     </td>
                                     <td data-label="خصومات"><?php echo formatCurrency($salary['deductions'] ?? 0); ?></td>
                                     <td data-label="الإجمالي"><strong><?php echo formatCurrency($salary['total_amount'] ?? 0); ?></strong></td>
+                                    <td data-label="المبلغ التراكمي">
+                                        <strong class="text-primary"><?php echo formatCurrency($salary['accumulated_amount'] ?? $salary['total_amount'] ?? 0); ?></strong>
+                                    </td>
+                                    <td data-label="المبلغ المدفوع">
+                                        <strong class="text-success"><?php echo formatCurrency($salary['paid_amount'] ?? 0); ?></strong>
+                                    </td>
+                                    <td data-label="المتبقي">
+                                        <?php 
+                                        $accumulated = floatval($salary['accumulated_amount'] ?? $salary['total_amount'] ?? 0);
+                                        $paid = floatval($salary['paid_amount'] ?? 0);
+                                        $remaining = max(0, $accumulated - $paid);
+                                        ?>
+                                        <strong class="<?php echo $remaining > 0 ? 'text-warning' : 'text-success'; ?>">
+                                            <?php echo formatCurrency($remaining); ?>
+                                        </strong>
+                                    </td>
                                     <td data-label="الحالة">
                                         <span class="badge bg-<?php 
                                             $status = $salary['status'] ?? 'not_calculated';
@@ -1504,6 +1637,20 @@ if (isset($_GET['ajax']) && $_GET['ajax'] == '1' && $salaryId > 0) {
                                                     title="تعديل">
                                                 <i class="bi bi-pencil"></i>
                                             </button>
+                                            <?php 
+                                            $accumulated = floatval($salary['accumulated_amount'] ?? $salary['total_amount'] ?? 0);
+                                            $paid = floatval($salary['paid_amount'] ?? 0);
+                                            $remaining = max(0, $accumulated - $paid);
+                                            if ($remaining > 0):
+                                            ?>
+                                            <button class="btn btn-success" 
+                                                    onclick="openSettleModal(<?php echo $salary['id']; ?>, <?php echo htmlspecialchars(json_encode($salary), ENT_QUOTES); ?>, <?php echo $remaining; ?>)" 
+                                                    data-bs-toggle="modal" 
+                                                    data-bs-target="#settleSalaryModal"
+                                                    title="تسوية مستحقات">
+                                                <i class="bi bi-cash-coin"></i>
+                                            </button>
+                                            <?php endif; ?>
                                         </div>
                                         <?php else: ?>
                                         <span class="text-muted small">غير متاح</span>
@@ -1898,4 +2045,110 @@ function viewAdvanceDetails(advanceId) {
     alert('عرض تفاصيل السلفة #' + advanceId);
     // يمكن إضافة modal لعرض التفاصيل لاحقاً
 }
+
+function openSettleModal(salaryId, salaryData, remainingAmount) {
+    document.getElementById('settleSalaryId').value = salaryId;
+    document.getElementById('settleUserName').textContent = salaryData.full_name || salaryData.username;
+    document.getElementById('settleAccumulatedAmount').textContent = formatCurrency(salaryData.accumulated_amount || salaryData.total_amount || 0);
+    document.getElementById('settlePaidAmount').textContent = formatCurrency(salaryData.paid_amount || 0);
+    document.getElementById('settleRemainingAmount').textContent = formatCurrency(remainingAmount);
+    document.getElementById('settleAmount').value = '';
+    document.getElementById('settleAmount').max = remainingAmount;
+    document.getElementById('settleDate').value = new Date().toISOString().split('T')[0];
+    document.getElementById('settleNotes').value = '';
+    updateSettleRemaining();
+}
+
+function updateSettleRemaining() {
+    const remaining = parseFloat(document.getElementById('settleRemainingAmount').textContent.replace(/[^\d.]/g, '')) || 0;
+    const settleAmount = parseFloat(document.getElementById('settleAmount').value) || 0;
+    const newRemaining = Math.max(0, remaining - settleAmount);
+    document.getElementById('settleNewRemaining').textContent = formatCurrency(newRemaining);
+    
+    const submitBtn = document.getElementById('settleSubmitBtn');
+    if (submitBtn) {
+        submitBtn.disabled = settleAmount <= 0 || settleAmount > remaining;
+    }
+}
+</script>
+
+<!-- Modal تسوية مستحقات الموظف -->
+<div class="modal fade" id="settleSalaryModal" tabindex="-1">
+    <div class="modal-dialog modal-lg">
+        <div class="modal-content">
+            <div class="modal-header bg-success text-white">
+                <h5 class="modal-title"><i class="bi bi-cash-coin me-2"></i>تسوية مستحقات موظف</h5>
+                <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+            </div>
+            <form method="POST" id="settleSalaryForm">
+                <input type="hidden" name="action" value="settle_salary">
+                <input type="hidden" name="salary_id" id="settleSalaryId">
+                <div class="modal-body">
+                    <div class="alert alert-info">
+                        <i class="bi bi-info-circle me-2"></i>
+                        <strong>الموظف:</strong> <span id="settleUserName"></span>
+                    </div>
+                    
+                    <div class="row mb-3">
+                        <div class="col-md-4">
+                            <label class="form-label">المبلغ التراكمي</label>
+                            <div class="form-control-plaintext fw-bold text-primary" id="settleAccumulatedAmount">0.00</div>
+                        </div>
+                        <div class="col-md-4">
+                            <label class="form-label">المبلغ المدفوع</label>
+                            <div class="form-control-plaintext fw-bold text-success" id="settlePaidAmount">0.00</div>
+                        </div>
+                        <div class="col-md-4">
+                            <label class="form-label">المتبقي</label>
+                            <div class="form-control-plaintext fw-bold text-warning" id="settleRemainingAmount">0.00</div>
+                        </div>
+                    </div>
+                    
+                    <hr>
+                    
+                    <div class="mb-3">
+                        <label class="form-label">مبلغ التسوية <span class="text-danger">*</span></label>
+                        <input type="number" step="0.01" min="0" class="form-control" name="settlement_amount" id="settleAmount" required oninput="updateSettleRemaining()">
+                        <small class="text-muted">أقصى مبلغ متاح: <span id="settleRemainingAmount2"></span></small>
+                    </div>
+                    
+                    <div class="mb-3">
+                        <label class="form-label">تاريخ التسوية <span class="text-danger">*</span></label>
+                        <input type="date" class="form-control" name="settlement_date" id="settleDate" required>
+                    </div>
+                    
+                    <div class="mb-3">
+                        <label class="form-label">ملاحظات</label>
+                        <textarea class="form-control" name="notes" id="settleNotes" rows="3" placeholder="ملاحظات إضافية (اختياري)"></textarea>
+                    </div>
+                    
+                    <div class="alert alert-warning">
+                        <i class="bi bi-exclamation-triangle me-2"></i>
+                        <strong>المتبقي بعد التسوية:</strong> <span id="settleNewRemaining" class="fw-bold">0.00</span>
+                    </div>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">إلغاء</button>
+                    <button type="submit" class="btn btn-success" id="settleSubmitBtn" disabled>
+                        <i class="bi bi-check-circle me-2"></i>تأكيد التسوية
+                    </button>
+                </div>
+            </form>
+        </div>
+    </div>
+</div>
+
+<script>
+// تحديث المتبقي عند فتح modal
+document.getElementById('settleAmount')?.addEventListener('input', function() {
+    updateSettleRemaining();
+    const remaining = parseFloat(document.getElementById('settleRemainingAmount').textContent.replace(/[^\d.]/g, '')) || 0;
+    document.getElementById('settleRemainingAmount2').textContent = formatCurrency(remaining);
+});
+
+// تحديث المتبقي عند فتح modal
+document.getElementById('settleSalaryModal')?.addEventListener('shown.bs.modal', function() {
+    const remaining = parseFloat(document.getElementById('settleRemainingAmount').textContent.replace(/[^\d.]/g, '')) || 0;
+    document.getElementById('settleRemainingAmount2').textContent = formatCurrency(remaining);
+});
 </script>

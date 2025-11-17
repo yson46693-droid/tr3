@@ -317,32 +317,77 @@ function createOrUpdateSalary($userId, $month, $year, $bonus = 0, $deductions = 
         }
     }
     
+    // التحقق من وجود عمود accumulated_amount
+    $accumulatedColumnCheck = $db->queryOne("SHOW COLUMNS FROM salaries LIKE 'accumulated_amount'");
+    $hasAccumulatedColumn = !empty($accumulatedColumnCheck);
+    
     if ($existingSalary) {
         // تحديث الراتب الموجود
+        // الحصول على المبلغ التراكمي الحالي
+        $currentAccumulated = 0.00;
+        if ($hasAccumulatedColumn) {
+            $currentSalary = $db->queryOne("SELECT accumulated_amount, total_amount FROM salaries WHERE id = ?", [$existingSalary['id']]);
+            $currentAccumulated = floatval($currentSalary['accumulated_amount'] ?? 0);
+            // إضافة المبلغ الجديد للتراكمي (إذا تغير total_amount)
+            $oldTotalAmount = floatval($currentSalary['total_amount'] ?? 0);
+            $newTotalAmount = $calculation['total_amount'];
+            if ($newTotalAmount != $oldTotalAmount) {
+                // إضافة الفرق للتراكمي
+                $currentAccumulated += ($newTotalAmount - $oldTotalAmount);
+            }
+        }
+        
         if ($hasBonusColumn) {
             if ($hasNotesColumn) {
-                $db->execute(
-                    "UPDATE salaries SET 
-                        hourly_rate = ?, 
-                        total_hours = ?, 
-                        base_amount = ?, 
-                        bonus = ?, 
-                        deductions = ?, 
-                        total_amount = ?,
-                        notes = ?,
-                        updated_at = NOW()
-                     WHERE id = ?",
-                    [
-                        $calculation['hourly_rate'],
-                        $calculation['total_hours'],
-                        $calculation['base_amount'],
-                        $calculation['total_bonus'], // إجمالي المكافأة (بما في ذلك نسبة التحصيلات)
-                        $calculation['deductions'],
-                        $calculation['total_amount'],
-                        $notes,
-                        $existingSalary['id']
-                    ]
-                );
+                if ($hasAccumulatedColumn) {
+                    $db->execute(
+                        "UPDATE salaries SET 
+                            hourly_rate = ?, 
+                            total_hours = ?, 
+                            base_amount = ?, 
+                            bonus = ?, 
+                            deductions = ?, 
+                            total_amount = ?,
+                            accumulated_amount = ?,
+                            notes = ?,
+                            updated_at = NOW()
+                         WHERE id = ?",
+                        [
+                            $calculation['hourly_rate'],
+                            $calculation['total_hours'],
+                            $calculation['base_amount'],
+                            $calculation['total_bonus'], // إجمالي المكافأة (بما في ذلك نسبة التحصيلات)
+                            $calculation['deductions'],
+                            $calculation['total_amount'],
+                            $currentAccumulated,
+                            $notes,
+                            $existingSalary['id']
+                        ]
+                    );
+                } else {
+                    $db->execute(
+                        "UPDATE salaries SET 
+                            hourly_rate = ?, 
+                            total_hours = ?, 
+                            base_amount = ?, 
+                            bonus = ?, 
+                            deductions = ?, 
+                            total_amount = ?,
+                            notes = ?,
+                            updated_at = NOW()
+                         WHERE id = ?",
+                        [
+                            $calculation['hourly_rate'],
+                            $calculation['total_hours'],
+                            $calculation['base_amount'],
+                            $calculation['total_bonus'], // إجمالي المكافأة (بما في ذلك نسبة التحصيلات)
+                            $calculation['deductions'],
+                            $calculation['total_amount'],
+                            $notes,
+                            $existingSalary['id']
+                        ]
+                    );
+                }
             } else {
                 $db->execute(
                     "UPDATE salaries SET 
@@ -417,6 +462,8 @@ function createOrUpdateSalary($userId, $month, $year, $bonus = 0, $deductions = 
         ];
     } else {
         // إنشاء راتب جديد
+        // عند إنشاء راتب جديد، نضيف total_amount للتراكمي
+        $newAccumulatedAmount = $calculation['total_amount'];
         if ($hasYearColumn) {
             // إذا كان عمود year موجوداً
             if ($hasBonusColumn) {
