@@ -41,11 +41,22 @@ if (!$transfer) {
 
 // جلب عناصر النقل
 $transferItems = $db->query(
-    "SELECT wti.*, p.name as product_name, p.unit, p.unit_price,
-            fp.batch_number as finished_batch_number, fp.production_date
+    "SELECT 
+        wti.*, 
+        COALESCE(
+            NULLIF(TRIM(fp.product_name), ''),
+            NULLIF(TRIM(p_fp.name), ''),
+            NULLIF(TRIM(p.name), ''),
+            'منتج غير معروف'
+        ) AS product_name,
+        COALESCE(p.unit, p_fp.unit, 'قطعة') AS unit,
+        p.unit_price,
+        fp.batch_number as finished_batch_number, 
+        fp.production_date
      FROM warehouse_transfer_items wti
      LEFT JOIN products p ON wti.product_id = p.id
      LEFT JOIN finished_products fp ON wti.batch_id = fp.id
+     LEFT JOIN products p_fp ON fp.product_id = p_fp.id
      WHERE wti.transfer_id = ?
      ORDER BY wti.id",
     [$transferId]

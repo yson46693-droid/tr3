@@ -2112,85 +2112,11 @@ function sendTransferInvoiceToTelegram($transferId, $transfer = null, $transferI
     $transferDate = formatDate($transfer['transfer_date']);
     $transferTime = formatDateTime($transfer['approved_at'] ?? $transfer['created_at']);
     
-    // بناء رسالة الفاتورة بتنسيق HTML جميل
-    $message = "📦 <b>فاتورة نقل المنتجات</b>\n\n";
-    $message .= "━━━━━━━━━━━━━━━━━━━━\n\n";
-    $message .= "🏢 <b>الشركة:</b> {$companyName}\n";
-    $message .= "📋 <b>رقم الفاتورة:</b> {$transfer['transfer_number']}\n";
-    $message .= "📅 <b>تاريخ النقل:</b> {$transferDate}\n";
-    $message .= "⏰ <b>وقت المعالجة:</b> {$transferTime}\n";
-    $message .= "📊 <b>الحالة:</b> {$status}\n";
-    $message .= "🔄 <b>نوع النقل:</b> {$transferType}\n\n";
-    $message .= "━━━━━━━━━━━━━━━━━━━━\n\n";
+    // بناء رسالة الفاتورة - نص بسيط فقط
+    $message = "📦 فاتورة نقل المنتجات";
     
-    $message .= "📤 <b>من المخزن:</b>\n";
-    $fromType = $transfer['from_warehouse_type'] === 'main' ? '🏛️ مخزن رئيسي' : '🚗 مخزن سيارة';
-    $message .= "   {$fromType}\n";
-    $message .= "   {$transfer['from_warehouse_name']}\n\n";
-    
-    $message .= "📥 <b>إلى المخزن:</b>\n";
-    $toType = $transfer['to_warehouse_type'] === 'main' ? '🏛️ مخزن رئيسي' : '🚗 مخزن سيارة';
-    $message .= "   {$toType}\n";
-    $message .= "   {$transfer['to_warehouse_name']}\n\n";
-    
-    $message .= "👤 <b>طلب بواسطة:</b> {$transfer['requested_by_name']}\n";
-    if (!empty($transfer['approved_by_name'])) {
-        $message .= "✅ <b>تمت الموافقة بواسطة:</b> {$transfer['approved_by_name']}\n";
-    }
-    $message .= "\n━━━━━━━━━━━━━━━━━━━━\n\n";
-    
-    $message .= "📦 <b>المنتجات المنقولة:</b>\n\n";
-    
-    if (!empty($transferredProducts)) {
-        $totalQuantity = 0;
-        $index = 1;
-        
-        foreach ($transferredProducts as $product) {
-            $productName = htmlspecialchars($product['name'] ?? 'منتج غير معروف');
-            $quantity = floatval($product['quantity'] ?? 0);
-            $unit = htmlspecialchars($product['unit'] ?? 'قطعة');
-            $batchNumber = $product['batch_number'] ?? null;
-            $totalQuantity += $quantity;
-            
-            $message .= "{$index}. <b>{$productName}</b>\n";
-            $message .= "   الكمية: <b>{$quantity}</b> {$unit}\n";
-            
-            if ($batchNumber) {
-                $message .= "   📌 تشغيلة: <code>{$batchNumber}</code>\n";
-            }
-            $message .= "\n";
-            $index++;
-        }
-        
-        $message .= "━━━━━━━━━━━━━━━━━━━━\n\n";
-        $message .= "📊 <b>إجمالي الكمية:</b> <b>{$totalQuantity}</b>\n";
-        $message .= "📦 <b>عدد المنتجات:</b> " . count($transferredProducts) . "\n";
-    } else {
-        $message .= "⚠️ لا توجد منتجات\n";
-    }
-    
-    if (!empty($transfer['reason'])) {
-        $message .= "\n━━━━━━━━━━━━━━━━━━━━\n\n";
-        $message .= "📝 <b>السبب / الملاحظات:</b>\n";
-        $message .= htmlspecialchars($transfer['reason']) . "\n";
-    }
-    
-    $message .= "\n━━━━━━━━━━━━━━━━━━━━\n\n";
-    $message .= "✅ تم إتمام عملية النقل بنجاح\n";
-    $message .= "📄 يمكنك طباعة الفاتورة من الرابط أدناه\n";
-    
-    // إنشاء أزرار Markdown
-    $buttons = [
-        [
-            [
-                'text' => '🖨️ طباعة الفاتورة',
-                'url' => $printUrl
-            ]
-        ]
-    ];
-    
-    // إرسال الرسالة مع الأزرار
-    $result = sendTelegramMessageWithButtons($message, $buttons);
+    // إرسال الرسالة
+    $result = sendTelegramMessage($message);
     
     if ($result && ($result['success'] ?? false)) {
         error_log("Transfer invoice sent to Telegram successfully for transfer ID: $transferId");

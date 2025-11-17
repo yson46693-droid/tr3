@@ -830,47 +830,47 @@ if (isset($_GET['ajax']) && $_GET['ajax'] == '1' && $salaryId > 0) {
     </div>
     <div class="card-body">
         <!-- ملخص التقرير -->
-        <div class="row mb-4 g-3">
+        <div class="row mb-3 g-2">
             <div class="col-lg-3 col-md-6 col-sm-6">
                 <div class="card salary-summary-card salary-card-blue text-white h-100 shadow-lg border-0">
-                    <div class="card-body text-center p-4">
-                        <div class="mb-2">
-                            <i class="bi bi-people fs-1"></i>
+                    <div class="card-body text-center">
+                        <div class="mb-1">
+                            <i class="bi bi-people"></i>
                         </div>
-                        <h6 class="card-title mb-2 fw-bold text-uppercase small">عدد الموظفين</h6>
+                        <h6 class="card-title mb-1 fw-bold text-uppercase small">عدد الموظفين</h6>
                         <h2 class="mb-0 fw-bold"><?php echo $monthlyReport['total_users']; ?></h2>
                     </div>
                 </div>
             </div>
             <div class="col-lg-3 col-md-6 col-sm-6">
                 <div class="card salary-summary-card salary-card-green text-white h-100 shadow-lg border-0">
-                    <div class="card-body text-center p-4">
-                        <div class="mb-2">
-                            <i class="bi bi-clock-history fs-1"></i>
+                    <div class="card-body text-center">
+                        <div class="mb-1">
+                            <i class="bi bi-clock-history"></i>
                         </div>
-                        <h6 class="card-title mb-2 fw-bold text-uppercase small">إجمالي الساعات</h6>
+                        <h6 class="card-title mb-1 fw-bold text-uppercase small">إجمالي الساعات</h6>
                         <h2 class="mb-0 fw-bold"><?php echo number_format($monthlyReport['total_hours'], 2); ?></h2>
                     </div>
                 </div>
             </div>
             <div class="col-lg-3 col-md-6 col-sm-6">
                 <div class="card salary-summary-card salary-card-yellow text-white h-100 shadow-lg border-0">
-                    <div class="card-body text-center p-4">
-                        <div class="mb-2">
-                            <i class="bi bi-cash-stack fs-1"></i>
+                    <div class="card-body text-center">
+                        <div class="mb-1">
+                            <i class="bi bi-cash-stack"></i>
                         </div>
-                        <h6 class="card-title mb-2 fw-bold text-uppercase small">إجمالي الرواتب</h6>
+                        <h6 class="card-title mb-1 fw-bold text-uppercase small">إجمالي الرواتب</h6>
                         <h2 class="mb-0 fw-bold"><?php echo formatCurrency($monthlyReport['total_amount']); ?></h2>
                     </div>
                 </div>
             </div>
             <div class="col-lg-3 col-md-6 col-sm-6">
                 <div class="card salary-summary-card salary-card-red text-white h-100 shadow-lg border-0">
-                    <div class="card-body text-center p-4">
-                        <div class="mb-2">
-                            <i class="bi bi-graph-up-arrow fs-1"></i>
+                    <div class="card-body text-center">
+                        <div class="mb-1">
+                            <i class="bi bi-graph-up-arrow"></i>
                         </div>
-                        <h6 class="card-title mb-2 fw-bold text-uppercase small">متوسط الراتب</h6>
+                        <h6 class="card-title mb-1 fw-bold text-uppercase small">متوسط الراتب</h6>
                         <h2 class="mb-0 fw-bold">
                             <?php 
                             $avgSalary = $monthlyReport['total_users'] > 0 
@@ -883,25 +883,25 @@ if (isset($_GET['ajax']) && $_GET['ajax'] == '1' && $salaryId > 0) {
                 </div>
             </div>
         </div>
-        <div class="row mb-4 g-3">
+        <div class="row mb-3 g-2">
             <div class="col-lg-6 col-md-6 col-sm-6">
                 <div class="card salary-summary-card salary-card-red text-white h-100 shadow-lg border-0">
-                    <div class="card-body text-center p-4">
-                        <div class="mb-2">
-                            <i class="bi bi-exclamation-triangle fs-1"></i>
+                    <div class="card-body text-center">
+                        <div class="mb-1">
+                            <i class="bi bi-exclamation-triangle"></i>
                         </div>
-                        <h6 class="card-title mb-2 fw-bold text-uppercase small">إجمالي التأخيرات (دقائق)</h6>
+                        <h6 class="card-title mb-1 fw-bold text-uppercase small">إجمالي التأخيرات (دقائق)</h6>
                         <h2 class="mb-0 fw-bold"><?php echo number_format($monthlyReport['total_delay_minutes'], 2); ?></h2>
                     </div>
                 </div>
             </div>
             <div class="col-lg-6 col-md-6 col-sm-6">
                 <div class="card salary-summary-card salary-card-yellow text-white h-100 shadow-lg border-0">
-                    <div class="card-body text-center p-4">
-                        <div class="mb-2">
-                            <i class="bi bi-stopwatch fs-1"></i>
+                    <div class="card-body text-center">
+                        <div class="mb-1">
+                            <i class="bi bi-stopwatch"></i>
                         </div>
-                        <h6 class="card-title mb-2 fw-bold text-uppercase small">متوسط التأخير لكل موظف (دقيقة)</h6>
+                        <h6 class="card-title mb-1 fw-bold text-uppercase small">متوسط التأخير لكل موظف (دقيقة)</h6>
                         <h2 class="mb-0 fw-bold"><?php echo number_format($monthlyReport['average_delay_minutes'], 2); ?></h2>
                     </div>
                 </div>
@@ -1059,22 +1059,26 @@ if (isset($_GET['ajax']) && $_GET['ajax'] == '1' && $salaryId > 0) {
 
 .salary-summary-card .card-body {
     position: relative;
+    padding: 1rem !important;
 }
 
 .salary-summary-card i {
     filter: drop-shadow(0 2px 4px rgba(0, 0, 0, 0.2));
+    font-size: 2rem !important;
 }
 
 .salary-summary-card h2 {
-    font-size: 2.5rem;
+    font-size: 1.5rem;
     font-weight: 800;
     text-shadow: 0 2px 4px rgba(0, 0, 0, 0.2);
+    margin-bottom: 0.25rem !important;
 }
 
 .salary-summary-card h6 {
-    font-size: 0.9rem;
+    font-size: 0.75rem;
     letter-spacing: 0.5px;
     text-shadow: 0 1px 2px rgba(0, 0, 0, 0.1);
+    margin-bottom: 0.5rem !important;
 }
 
 /* تحسين رأس التقرير - تدرج الأزرق والأبيض */
@@ -1086,20 +1090,22 @@ if (isset($_GET['ajax']) && $_GET['ajax'] == '1' && $salaryId > 0) {
 
 /* تحسين عرض الجدول - تدرج الأزرق والأبيض */
 .salary-report-table {
-    font-size: 0.95rem;
+    font-size: 0.8rem;
     border-collapse: separate;
     border-spacing: 0;
+    width: 100%;
+    table-layout: auto;
 }
 
 .salary-report-table thead th {
     background: linear-gradient(135deg, #1e3a8a 0%, #2563eb 30%, #3b82f6 60%, #60a5fa 100%);
     color: #ffffff;
     font-weight: 700;
-    padding: 1.25rem 0.75rem;
+    padding: 0.6rem 0.4rem;
     border: none;
     text-align: center;
     vertical-align: middle;
-    font-size: 0.95rem;
+    font-size: 0.75rem;
     white-space: nowrap;
     text-shadow: 0 1px 2px rgba(0, 0, 0, 0.2);
     border-bottom: 3px solid #1e3a8a;
@@ -1114,12 +1120,19 @@ if (isset($_GET['ajax']) && $_GET['ajax'] == '1' && $salaryId > 0) {
 }
 
 .salary-report-table tbody td {
-    padding: 1rem 0.75rem;
+    padding: 0.5rem 0.4rem;
     vertical-align: middle;
     text-align: center;
     border-bottom: 1px solid #e5e7eb;
     background-color: #ffffff;
     transition: all 0.2s ease;
+    font-size: 0.8rem;
+}
+
+.salary-report-table tbody td .small,
+.salary-report-table tbody td small {
+    font-size: 0.65rem;
+    line-height: 1.2;
 }
 
 .salary-report-table tbody tr {
@@ -1145,8 +1158,8 @@ if (isset($_GET['ajax']) && $_GET['ajax'] == '1' && $salaryId > 0) {
 }
 
 .salary-report-table .badge {
-    font-size: 0.85rem;
-    padding: 0.5rem 0.75rem;
+    font-size: 0.7rem;
+    padding: 0.25rem 0.5rem;
     font-weight: 600;
     box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
 }
@@ -1158,8 +1171,8 @@ if (isset($_GET['ajax']) && $_GET['ajax'] == '1' && $salaryId > 0) {
 
 .salary-report-table tfoot td {
     font-weight: 800;
-    font-size: 1.1rem;
-    padding: 1.5rem 0.75rem;
+    font-size: 0.9rem;
+    padding: 0.75rem 0.4rem;
     border-top: 3px solid #3b82f6;
     color: #1e3a8a;
 }
@@ -1191,28 +1204,32 @@ if (isset($_GET['ajax']) && $_GET['ajax'] == '1' && $salaryId > 0) {
 /* تحسين حجم الأرقام */
 .salary-report-table .text-success {
     font-weight: 800;
-    font-size: 1.1rem;
+    font-size: 0.9rem;
     color: #059669 !important;
 }
 
 /* تحسين الاستجابة */
 @media (max-width: 768px) {
     .salary-summary-card h2 {
-        font-size: 1.75rem;
+        font-size: 1.25rem;
     }
     
     .salary-summary-card .card-body {
-        padding: 1.25rem !important;
+        padding: 0.75rem !important;
+    }
+    
+    .salary-summary-card i {
+        font-size: 1.5rem !important;
     }
     
     .salary-report-table {
-        font-size: 0.85rem;
+        font-size: 0.7rem;
     }
     
     .salary-report-table thead th,
     .salary-report-table tbody td {
-        padding: 0.75rem 0.5rem;
-        font-size: 0.85rem;
+        padding: 0.4rem 0.3rem;
+        font-size: 0.7rem;
     }
 }
 </style>
