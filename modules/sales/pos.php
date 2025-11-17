@@ -119,6 +119,103 @@ $error = '';
 $success = '';
 $validationErrors = [];
 
+// التحقق من تسجيل الحضور للمندوب (sales فقط)
+if (($currentUser['role'] ?? '') === 'sales') {
+    require_once __DIR__ . '/../../includes/attendance.php';
+    $today = date('Y-m-d');
+    $todayAttendanceRecords = getTodayAttendanceRecords($currentUser['id'], $today);
+    $hasCheckedIn = !empty($todayAttendanceRecords);
+    
+    if (!$hasCheckedIn) {
+        // إذا لم يسجل الحضور، عرض رسالة وتحويله إلى صفحة الحضور
+        $attendanceUrl = getRelativeUrl('dashboard/sales.php?page=attendance');
+        ?>
+        <!DOCTYPE html>
+        <html lang="ar" dir="rtl">
+        <head>
+            <meta charset="UTF-8">
+            <meta name="viewport" content="width=device-width, initial-scale=1.0">
+            <title>تسجيل الحضور مطلوب</title>
+            <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+            <link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.0/font/bootstrap-icons.css" rel="stylesheet">
+            <style>
+                body {
+                    background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+                    min-height: 100vh;
+                    display: flex;
+                    align-items: center;
+                    justify-content: center;
+                    font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+                }
+                .attendance-alert {
+                    background: white;
+                    border-radius: 15px;
+                    box-shadow: 0 10px 40px rgba(0,0,0,0.2);
+                    padding: 3rem;
+                    max-width: 500px;
+                    text-align: center;
+                }
+                .attendance-icon {
+                    font-size: 5rem;
+                    color: #ffc107;
+                    margin-bottom: 1.5rem;
+                }
+                .attendance-title {
+                    font-size: 1.5rem;
+                    font-weight: bold;
+                    color: #333;
+                    margin-bottom: 1rem;
+                }
+                .attendance-message {
+                    color: #666;
+                    margin-bottom: 2rem;
+                    line-height: 1.6;
+                }
+                .btn-attendance {
+                    padding: 12px 30px;
+                    font-size: 1.1rem;
+                    border-radius: 8px;
+                }
+            </style>
+        </head>
+        <body>
+            <div class="attendance-alert">
+                <div class="attendance-icon">
+                    <i class="bi bi-exclamation-triangle-fill"></i>
+                </div>
+                <div class="attendance-title">تسجيل الحضور مطلوب</div>
+                <div class="attendance-message">
+                    يجب تسجيل الحضور أولاً لتتمكن من استخدام النظام وإجراء عمليات البيع.
+                    <br><br>
+                    سيتم تحويلك تلقائياً إلى صفحة تسجيل الحضور خلال <span id="countdown">5</span> ثوانٍ.
+                </div>
+                <a href="<?php echo htmlspecialchars($attendanceUrl); ?>" class="btn btn-warning btn-attendance">
+                    <i class="bi bi-clock-history me-2"></i>الذهاب إلى صفحة تسجيل الحضور
+                </a>
+            </div>
+            <script>
+                let countdown = 5;
+                const countdownElement = document.getElementById('countdown');
+                const attendanceUrl = <?php echo json_encode($attendanceUrl); ?>;
+                
+                const timer = setInterval(function() {
+                    countdown--;
+                    if (countdownElement) {
+                        countdownElement.textContent = countdown;
+                    }
+                    if (countdown <= 0) {
+                        clearInterval(timer);
+                        window.location.href = attendanceUrl;
+                    }
+                }, 1000);
+            </script>
+        </body>
+        </html>
+        <?php
+        exit;
+    }
+}
+
 // التأكد من وجود الجداول المطلوبة
 $customersTableExists = $db->queryOne("SHOW TABLES LIKE 'customers'");
 $productsTableExists = $db->queryOne("SHOW TABLES LIKE 'products'");
@@ -220,6 +317,27 @@ if (!$error && $_SERVER['REQUEST_METHOD'] === 'POST') {
     $action = $_POST['action'] ?? '';
 
     if ($action === 'create_pos_sale') {
+        // التحقق من تسجيل الحضور قبل السماح بإنشاء عملية بيع
+        if (($currentUser['role'] ?? '') === 'sales') {
+            require_once __DIR__ . '/../../includes/attendance.php';
+            $today = date('Y-m-d');
+            $todayAttendanceRecords = getTodayAttendanceRecords($currentUser['id'], $today);
+            $hasCheckedIn = !empty($todayAttendanceRecords);
+            
+            if (!$hasCheckedIn) {
+                $error = 'يجب تسجيل الحضور أولاً لتتمكن من إجراء عمليات البيع.';
+                $attendanceUrl = getRelativeUrl('dashboard/sales.php?page=attendance');
+                // إضافة JavaScript للتحويل بعد عرض الرسالة
+                echo '<script>
+                    setTimeout(function() {
+                        alert("يجب تسجيل الحضور أولاً لتتمكن من استخدام النظام.");
+                        window.location.href = ' . json_encode($attendanceUrl) . ';
+                    }, 100);
+                </script>';
+            }
+        }
+        
+        if (empty($error)) {
         $cartPayload = $_POST['cart_data'] ?? '';
         $cartItems = json_decode($cartPayload, true);
         $saleDate = $_POST['sale_date'] ?? date('Y-m-d');
@@ -582,6 +700,7 @@ if (!$error && $_SERVER['REQUEST_METHOD'] === 'POST') {
         } else {
             $error = implode('<br>', array_map('htmlspecialchars', $validationErrors));
         }
+        } // إغلاق if (empty($error))
     }
 }
 
