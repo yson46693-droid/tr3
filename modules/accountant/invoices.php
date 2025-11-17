@@ -751,3 +751,28 @@ function deleteInvoiceConfirm(invoiceId) {
 }
 </script>
 
+<!-- إعادة تحميل الصفحة تلقائياً بعد أي رسالة (نجاح أو خطأ) لمنع تكرار الطلبات -->
+<script>
+// إعادة تحميل الصفحة تلقائياً بعد أي رسالة (نجاح أو خطأ) لمنع تكرار الطلبات
+(function() {
+    const successAlert = document.getElementById('successAlert');
+    const errorAlert = document.getElementById('errorAlert');
+    
+    // التحقق من وجود رسالة نجاح أو خطأ
+    const alertElement = successAlert || errorAlert;
+    
+    if (alertElement && alertElement.dataset.autoRefresh === 'true') {
+        // انتظار 3 ثوانٍ لإعطاء المستخدم وقتاً لرؤية الرسالة
+        setTimeout(function() {
+            // إعادة تحميل الصفحة بدون معاملات GET لمنع تكرار الطلبات
+            const currentUrl = new URL(window.location.href);
+            // إزالة معاملات success و error من URL
+            currentUrl.searchParams.delete('success');
+            currentUrl.searchParams.delete('error');
+            // إعادة تحميل الصفحة
+            window.location.href = currentUrl.toString();
+        }, 3000);
+    }
+})();
+</script>
+
