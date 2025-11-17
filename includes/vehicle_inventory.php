@@ -478,23 +478,48 @@ function getAvailableProductsFromWarehouse($warehouseId): array
             $vehicleProducts = $db->query(
                 "SELECT 
                     vi.product_id,
-                    COALESCE(NULLIF(TRIM(p.name), ''), CONCAT('منتج رقم ', p.id)) AS product_name,
+                    vi.product_name AS vehicle_product_name,
+                    p.name AS product_name,
                     vi.quantity AS quantity_available,
                     p.unit,
-                    p.unit_price,
-                    p.name AS original_name
+                    p.unit_price
                 FROM vehicle_inventory vi
                 INNER JOIN products p ON vi.product_id = p.id
                 WHERE vi.vehicle_id = ? AND vi.quantity > 0 AND p.status = 'active'
-                ORDER BY p.name ASC",
+                ORDER BY COALESCE(NULLIF(TRIM(vi.product_name), ''), p.name) ASC",
                 [$vehicleId]
             ) ?? [];
 
             foreach ($vehicleProducts as $row) {
-                // استخدام الاسم الحقيقي من جدول products
-                $productName = !empty($row['original_name']) && trim($row['original_name']) !== '' 
-                    ? trim($row['original_name']) 
-                    : ($row['product_name'] ?? 'منتج غير محدد');
+                // أولوية لاستخدام الاسم من vehicle_inventory.product_name
+                // ثم من products.name
+                // تجنب استخدام "منتج رقم X" إلا كحل أخير
+                $productName = 'منتج غير محدد';
+                
+                // محاولة 1: استخدام الاسم من vehicle_inventory
+                if (!empty($row['vehicle_product_name']) && trim($row['vehicle_product_name']) !== '') {
+                    $vehicleName = trim($row['vehicle_product_name']);
+                    if (!preg_match('/^منتج رقم \d+$/', $vehicleName)) {
+                        $productName = $vehicleName;
+                    }
+                }
+                
+                // محاولة 2: إذا لم نجد اسم صحيح من vehicle_inventory، استخدم products.name
+                if ($productName === 'منتج غير محدد' && !empty($row['product_name']) && trim($row['product_name']) !== '') {
+                    $prodName = trim($row['product_name']);
+                    if (!preg_match('/^منتج رقم \d+$/', $prodName)) {
+                        $productName = $prodName;
+                    }
+                }
+                
+                // محاولة 3: إذا كان الاسم لا يزال "منتج غير محدد"، استخدم أي اسم متاح (حتى لو كان "منتج رقم X")
+                if ($productName === 'منتج غير محدد') {
+                    if (!empty($row['vehicle_product_name']) && trim($row['vehicle_product_name']) !== '') {
+                        $productName = trim($row['vehicle_product_name']);
+                    } elseif (!empty($row['product_name']) && trim($row['product_name']) !== '') {
+                        $productName = trim($row['product_name']);
+                    }
+                }
                 
                 $options[] = [
                     'product_id' => (int)$row['product_id'],
@@ -530,9 +555,23 @@ function getAvailableProductsFromWarehouse($warehouseId): array
 
             foreach ($products as $row) {
                 // استخدام الاسم الحقيقي من جدول products
-                $productName = !empty($row['original_name']) && trim($row['original_name']) !== '' 
-                    ? trim($row['original_name']) 
-                    : ($row['product_name'] ?? 'منتج غير محدد');
+                // تجنب استخدام "منتج رقم X" إلا كحل أخير
+                $productName = 'منتج غير محدد';
+                
+                // محاولة استخدام الاسم من products.name
+                if (!empty($row['original_name']) && trim($row['original_name']) !== '') {
+                    $originalName = trim($row['original_name']);
+                    if (!preg_match('/^منتج رقم \d+$/', $originalName)) {
+                        $productName = $originalName;
+                    }
+                }
+                
+                // إذا لم نجد اسم صحيح، استخدم أي اسم متاح
+                if ($productName === 'منتج غير محدد' && !empty($row['original_name']) && trim($row['original_name']) !== '') {
+                    $productName = trim($row['original_name']);
+                } elseif ($productName === 'منتج غير محدد' && !empty($row['product_name']) && trim($row['product_name']) !== '') {
+                    $productName = trim($row['product_name']);
+                }
                 
                 // حساب الكمية المتاحة بعد خصم الكميات المحجوزة في طلبات النقل المعلقة
                 $availableQuantity = (float)$row['quantity_available'];
@@ -591,12 +630,35 @@ function getAvailableProductsFromWarehouse($warehouseId): array
                     $batchId = (int)$fpRow['batch_id'];
                     
                     if ($productId > 0) {
-                        // استخدام الاسم الحقيقي من جدول products أولاً، ثم من finished_products
-                        $productName = !empty($fpRow['original_product_name']) && trim($fpRow['original_product_name']) !== '' 
-                            ? trim($fpRow['original_product_name']) 
-                            : (!empty($fpRow['product_name']) && trim($fpRow['product_name']) !== '' 
-                                ? trim($fpRow['product_name']) 
-                                : 'منتج غير محدد');
+                        // أولوية لاستخدام الاسم الحقيقي من جدول products
+                        // ثم من finished_products.product_name
+                        // تجنب استخدام "منتج رقم X" إلا كحل أخير
+                        $productName = 'منتج غير محدد';
+                        
+                        // محاولة 1: استخدام الاسم من products.name
+                        if (!empty($fpRow['original_product_name']) && trim($fpRow['original_product_name']) !== '') {
+                            $originalName = trim($fpRow['original_product_name']);
+                            if (!preg_match('/^منتج رقم \d+$/', $originalName)) {
+                                $productName = $originalName;
+                            }
+                        }
+                        
+                        // محاولة 2: إذا لم نجد اسم صحيح من products، استخدم finished_products.product_name
+                        if ($productName === 'منتج غير محدد' && !empty($fpRow['product_name']) && trim($fpRow['product_name']) !== '') {
+                            $fpName = trim($fpRow['product_name']);
+                            if (!preg_match('/^منتج رقم \d+$/', $fpName) && $fpName !== 'غير محدد') {
+                                $productName = $fpName;
+                            }
+                        }
+                        
+                        // محاولة 3: إذا كان الاسم لا يزال "منتج غير محدد"، استخدم أي اسم متاح
+                        if ($productName === 'منتج غير محدد') {
+                            if (!empty($fpRow['original_product_name']) && trim($fpRow['original_product_name']) !== '') {
+                                $productName = trim($fpRow['original_product_name']);
+                            } elseif (!empty($fpRow['product_name']) && trim($fpRow['product_name']) !== '' && trim($fpRow['product_name']) !== 'غير محدد') {
+                                $productName = trim($fpRow['product_name']);
+                            }
+                        }
                         
                         // حساب الكمية المتاحة من finished_products
                         $productInfo = $db->queryOne(
