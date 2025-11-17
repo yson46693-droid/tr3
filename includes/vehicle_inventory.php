@@ -531,29 +531,29 @@ function getAvailableProductsFromWarehouse($warehouseId): array
                 // تجنب استخدام "منتج رقم X" إلا كحل أخير
                 $productName = 'منتج غير محدد';
                 
-                // محاولة 1: استخدام الاسم من vehicle_inventory
+                // أولوية قصوى لاستخدام الاسم من vehicle_inventory.product_name
+                // لأنه الاسم الذي أدخله المستخدم عند إضافة المنتج إلى السيارة
                 if (!empty($row['vehicle_product_name']) && trim($row['vehicle_product_name']) !== '') {
                     $vehicleName = trim($row['vehicle_product_name']);
+                    // استخدام الاسم من vehicle_inventory إذا لم يكن "منتج رقم X"
                     if (!preg_match('/^منتج رقم \d+$/', $vehicleName)) {
                         $productName = $vehicleName;
-                    }
-                }
-                
-                // محاولة 2: إذا لم نجد اسم صحيح من vehicle_inventory، استخدم products.name
-                if ($productName === 'منتج غير محدد' && !empty($row['product_name']) && trim($row['product_name']) !== '') {
-                    $prodName = trim($row['product_name']);
-                    if (!preg_match('/^منتج رقم \d+$/', $prodName)) {
-                        $productName = $prodName;
-                    }
-                }
-                
-                // محاولة 3: إذا كان الاسم لا يزال "منتج غير محدد"، استخدم أي اسم متاح (حتى لو كان "منتج رقم X")
-                if ($productName === 'منتج غير محدد') {
-                    if (!empty($row['vehicle_product_name']) && trim($row['vehicle_product_name']) !== '') {
-                        $productName = trim($row['vehicle_product_name']);
                     } elseif (!empty($row['product_name']) && trim($row['product_name']) !== '') {
-                        $productName = trim($row['product_name']);
+                        // إذا كان vehicle_inventory.product_name هو "منتج رقم X"، جرب products.name
+                        $prodName = trim($row['product_name']);
+                        if (!preg_match('/^منتج رقم \d+$/', $prodName)) {
+                            $productName = $prodName;
+                        } else {
+                            // إذا كان كلاهما "منتج رقم X"، استخدم vehicle_inventory.product_name
+                            $productName = $vehicleName;
+                        }
+                    } else {
+                        // إذا لم يكن هناك products.name، استخدم vehicle_inventory.product_name
+                        $productName = $vehicleName;
                     }
+                } elseif (!empty($row['product_name']) && trim($row['product_name']) !== '') {
+                    // إذا لم يكن هناك vehicle_inventory.product_name، استخدم products.name
+                    $productName = trim($row['product_name']);
                 }
                 
                 $options[] = [
