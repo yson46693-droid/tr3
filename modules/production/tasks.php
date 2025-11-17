@@ -548,14 +548,14 @@ function tasksHtml(string $value): string
 
 <div class="container-fluid">
     <?php foreach ($errorMessages as $message): ?>
-        <div class="alert alert-danger alert-dismissible fade show" role="alert">
+        <div class="alert alert-danger alert-dismissible fade show" id="errorAlert" data-auto-refresh="true" role="alert">
             <i class="bi bi-exclamation-triangle me-2"></i><?php echo tasksHtml($message); ?>
             <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="إغلاق"></button>
         </div>
     <?php endforeach; ?>
 
     <?php foreach ($successMessages as $message): ?>
-        <div class="alert alert-success alert-dismissible fade show" role="alert">
+        <div class="alert alert-success alert-dismissible fade show" id="successAlert" data-auto-refresh="true" role="alert">
             <i class="bi bi-check-circle me-2"></i><?php echo tasksHtml($message); ?>
             <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="إغلاق"></button>
         </div>

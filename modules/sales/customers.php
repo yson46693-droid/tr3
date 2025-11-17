@@ -2206,7 +2206,7 @@ document.addEventListener('DOMContentLoaded', function () {
 </script>
 
 <?php if ($error): ?>
-    <div class="alert alert-danger alert-dismissible fade show">
+    <div class="alert alert-danger alert-dismissible fade show" id="errorAlert" data-auto-refresh="true">
         <i class="bi bi-exclamation-triangle-fill me-2"></i>
         <?php echo htmlspecialchars($error); ?>
         <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
@@ -2214,7 +2214,7 @@ document.addEventListener('DOMContentLoaded', function () {
 <?php endif; ?>
 
 <?php if ($success): ?>
-    <div class="alert alert-success alert-dismissible fade show">
+    <div class="alert alert-success alert-dismissible fade show" id="successAlert" data-auto-refresh="true">
         <i class="bi bi-check-circle-fill me-2"></i>
         <?php echo htmlspecialchars($success); ?>
         <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
