@@ -733,7 +733,8 @@ foreach ($vehicleInventory as $item) {
                                 <option value="">اختر المخزن المصدر</option>
                                 <?php foreach ($warehouses as $warehouse): ?>
                                     <option value="<?php echo $warehouse['id']; ?>" 
-                                            data-type="<?php echo $warehouse['warehouse_type']; ?>">
+                                            data-type="<?php echo $warehouse['warehouse_type']; ?>"
+                                            <?php echo ($defaultFromWarehouseId && $warehouse['id'] == $defaultFromWarehouseId) ? 'selected' : ''; ?>>
                                         <?php echo htmlspecialchars($warehouse['name']); ?> 
                                         (<?php echo $warehouse['warehouse_type'] === 'main' ? 'رئيسي' : 'سيارة'; ?>)
                                     </option>

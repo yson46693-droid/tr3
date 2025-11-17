@@ -309,11 +309,22 @@ function distributeCollectionToInvoices($customerId, $amount, $createdBy = null)
                 $newStatus = 'partial';
             }
             
+            // التحقق من وجود عمود remaining_amount
+            $remainingColumnCheck = $db->queryOne("SHOW COLUMNS FROM invoices LIKE 'remaining_amount'");
+            $hasRemainingColumn = !empty($remainingColumnCheck);
+            
             // تحديث الفاتورة
-            $db->execute(
-                "UPDATE invoices SET paid_amount = ?, remaining_amount = ?, status = ?, updated_at = NOW() WHERE id = ?",
-                [$newPaidAmount, $newRemaining, $newStatus, $invoice['id']]
-            );
+            if ($hasRemainingColumn) {
+                $db->execute(
+                    "UPDATE invoices SET paid_amount = ?, remaining_amount = ?, status = ?, updated_at = NOW() WHERE id = ?",
+                    [$newPaidAmount, $newRemaining, $newStatus, $invoice['id']]
+                );
+            } else {
+                $db->execute(
+                    "UPDATE invoices SET paid_amount = ?, status = ?, updated_at = NOW() WHERE id = ?",
+                    [$newPaidAmount, $newStatus, $invoice['id']]
+                );
+            }
             
             // تسجيل سجل التدقيق
             logAudit($createdBy, 'invoice_payment_from_collection', 'invoice', $invoice['id'], 

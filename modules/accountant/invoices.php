@@ -308,14 +308,16 @@ if (isset($_GET['id'])) {
                                 <td>
                                     <span class="badge bg-<?php 
                                         echo $invoice['status'] === 'paid' ? 'success' : 
+                                            ($invoice['status'] === 'partial' ? 'warning' :
                                             ($invoice['status'] === 'sent' ? 'info' : 
                                             ($invoice['status'] === 'cancelled' ? 'danger' : 
-                                            ($invoice['status'] === 'overdue' ? 'warning' : 'secondary'))); 
+                                            ($invoice['status'] === 'overdue' ? 'warning' : 'secondary')))); 
                                     ?>">
                                         <?php 
                                         $statuses = [
                                             'draft' => 'مسودة',
                                             'sent' => 'مرسلة',
+                                            'partial' => 'مدفوع جزئياً',
                                             'paid' => 'مدفوعة',
                                             'cancelled' => 'ملغاة',
                                             'overdue' => 'متأخرة'
