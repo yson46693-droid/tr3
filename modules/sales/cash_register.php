@@ -240,7 +240,7 @@ $salesRepInfo = $db->queryOne(
     </div>
     
     <div class="col-12 col-md-6 col-xl-3">
-        <div class="card shadow-sm border-0 h-100" style="background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);">
+        <div class="card shadow-sm border-0 h-100" style="background: linear-gradient(135deg,rgb(9, 49, 227) 0%,rgba(34, 5, 105, 0.39) 100%);">
             <div class="card-body d-flex align-items-center justify-content-between" style="color: #ffffff !important;">
                 <div>
                     <div class="small fw-semibold" style="color: rgba(255, 255, 255, 0.9) !important;">رصيد الخزنة</div>
