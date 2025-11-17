@@ -91,16 +91,25 @@ function ensureChatSchema(): void {
             }
         }
 
-        $connection->query("DROP TRIGGER IF EXISTS `messages_before_update`");
-        if (!$connection->query("
-            CREATE TRIGGER `messages_before_update`
-            BEFORE UPDATE ON `messages`
-            FOR EACH ROW
-            BEGIN
-                SET NEW.`updated_at` = CURRENT_TIMESTAMP;
-            END
-        ")) {
-            throw new RuntimeException('Failed creating trigger messages_before_update: ' . $connection->error);
+        // محاولة إنشاء trigger لتحديث updated_at (اختياري - قد لا يكون المستخدم لديه صلاحيات)
+        // إذا فشل، لا بأس لأن الجدول يستخدم ON UPDATE CURRENT_TIMESTAMP بالفعل
+        try {
+            $connection->query("DROP TRIGGER IF EXISTS `messages_before_update`");
+            $triggerResult = $connection->query("
+                CREATE TRIGGER `messages_before_update`
+                BEFORE UPDATE ON `messages`
+                FOR EACH ROW
+                BEGIN
+                    SET NEW.`updated_at` = CURRENT_TIMESTAMP;
+                END
+            ");
+            if (!$triggerResult) {
+                // إذا فشل إنشاء trigger، لا بأس - الجدول يستخدم ON UPDATE CURRENT_TIMESTAMP
+                error_log('Note: Could not create trigger messages_before_update (may require TRIGGER permission). Table uses ON UPDATE CURRENT_TIMESTAMP instead.');
+            }
+        } catch (Throwable $triggerError) {
+            // إذا فشل إنشاء trigger، لا بأس - الجدول يستخدم ON UPDATE CURRENT_TIMESTAMP
+            error_log('Note: Could not create trigger messages_before_update: ' . $triggerError->getMessage() . ' (Table uses ON UPDATE CURRENT_TIMESTAMP instead)');
         }
     } catch (Throwable $e) {
         error_log('Chat schema initialization failed: ' . $e->getMessage());
