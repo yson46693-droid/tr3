@@ -76,6 +76,20 @@ if (empty($advancesColumnCheck)) {
     }
 }
 
+// إضافة عمود notes في جدول salaries إذا لم يكن موجوداً
+$notesColumnCheck = $db->queryOne("SHOW COLUMNS FROM salaries LIKE 'notes'");
+if (empty($notesColumnCheck)) {
+    try {
+        $db->execute("
+            ALTER TABLE `salaries` 
+            ADD COLUMN `notes` TEXT DEFAULT NULL COMMENT 'ملاحظات' 
+            AFTER `updated_at`
+        ");
+    } catch (Exception $e) {
+        error_log("Error adding notes column: " . $e->getMessage());
+    }
+}
+
 // الحصول على الشهر والسنة الحالية
 $selectedMonth = isset($_GET['month']) ? intval($_GET['month']) : date('n');
 $selectedYear = isset($_GET['year']) ? intval($_GET['year']) : date('Y');
