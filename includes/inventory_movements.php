@@ -42,12 +42,16 @@ function recordInventoryMovement($productId, $warehouseId, $type, $quantity, $re
         }
         
         // التحقق من نوع المخزن - إذا كان مخزن سيارة، نستخدم vehicle_inventory
-        $warehouse = $db->queryOne("SELECT id, type FROM warehouses WHERE id = ?", [$warehouseId]);
+        $warehouse = null;
         $isVehicleWarehouse = false;
         $vehicleId = null;
         $usingVehicleInventory = false;
         
-        if ($warehouse && ($warehouse['type'] ?? '') === 'vehicle') {
+        if ($warehouseId) {
+            $warehouse = $db->queryOne("SELECT id, warehouse_type FROM warehouses WHERE id = ?", [$warehouseId]);
+        }
+        
+        if ($warehouse && ($warehouse['warehouse_type'] ?? '') === 'vehicle') {
             $isVehicleWarehouse = true;
             // البحث عن vehicle_id المرتبط بهذا المخزن
             $vehicle = $db->queryOne("SELECT id FROM vehicles WHERE warehouse_id = ?", [$warehouseId]);
@@ -234,8 +238,8 @@ function recordInventoryMovement($productId, $warehouseId, $type, $quantity, $re
         return ['success' => true, 'movement_id' => $result['insert_id']];
         
     } catch (Exception $e) {
-        error_log("Inventory Movement Error: " . $e->getMessage());
-        return ['success' => false, 'message' => 'حدث خطأ في تسجيل الحركة'];
+        error_log("Inventory Movement Error: " . $e->getMessage() . " | Product ID: $productId | Warehouse ID: $warehouseId | Type: $type | Quantity: $quantity");
+        return ['success' => false, 'message' => 'حدث خطأ في تسجيل الحركة: ' . $e->getMessage()];
     }
 }
 

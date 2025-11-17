@@ -61,37 +61,73 @@ $filters = array_filter($filters, function($value) {
 
 // معالجة AJAX لجلب المنتجات من مخزن سيارة المندوب
 if (isset($_GET['ajax']) && $_GET['ajax'] === 'get_vehicle_inventory' && isset($_GET['vehicle_id'])) {
-    header('Content-Type: application/json');
+    header('Content-Type: application/json; charset=utf-8');
+    
+    while (ob_get_level() > 0) {
+        ob_end_clean();
+    }
+    
     $salesRepId = intval($_GET['vehicle_id']);
     
-    // الحصول على سيارة المندوب
-    $vehicle = $db->queryOne(
-        "SELECT v.id as vehicle_id FROM vehicles v WHERE v.driver_id = ? AND v.status = 'active'",
-        [$salesRepId]
-    );
-    
-    if (!$vehicle) {
-        echo json_encode(['success' => false, 'message' => 'لم يتم العثور على سيارة للمندوب']);
-        exit;
+    try {
+        // الحصول على سيارة المندوب
+        $vehicle = $db->queryOne(
+            "SELECT v.id as vehicle_id FROM vehicles v WHERE v.driver_id = ? AND v.status = 'active'",
+            [$salesRepId]
+        );
+        
+        if (!$vehicle) {
+            echo json_encode(['success' => false, 'message' => 'لم يتم العثور على سيارة للمندوب'], JSON_UNESCAPED_UNICODE);
+            exit;
+        }
+        
+        $vehicleId = $vehicle['vehicle_id'];
+        $inventory = getVehicleInventory($vehicleId);
+        
+        // تحويل البيانات إلى تنسيق مناسب
+        $products = [];
+        if (is_array($inventory) && !empty($inventory)) {
+            foreach ($inventory as $item) {
+                // الحصول على batch_number من finished_products إذا كان موجوداً
+                $batchNumber = '';
+                if (!empty($item['finished_batch_id'])) {
+                    $batchInfo = $db->queryOne(
+                        "SELECT batch_number FROM finished_products WHERE id = ?",
+                        [intval($item['finished_batch_id'])]
+                    );
+                    if ($batchInfo && !empty($batchInfo['batch_number'])) {
+                        $batchNumber = trim($batchInfo['batch_number']);
+                    }
+                }
+                
+                // إذا لم يكن هناك batch_number من finished_products، استخدم batch_number من vehicle_inventory
+                if (empty($batchNumber) && isset($item['batch_number'])) {
+                    $batchNumber = trim($item['batch_number']);
+                }
+                
+                $products[] = [
+                    'product_id' => isset($item['product_id']) ? intval($item['product_id']) : 0,
+                    'batch_id' => isset($item['finished_batch_id']) ? intval($item['finished_batch_id']) : 0,
+                    'batch_number' => $batchNumber,
+                    'product_name' => isset($item['product_name']) ? trim($item['product_name']) : 'غير محدد',
+                    'quantity' => isset($item['quantity']) ? floatval($item['quantity']) : 0.0,
+                    'unit' => isset($item['unit']) ? trim($item['unit']) : (isset($item['product_unit']) ? trim($item['product_unit']) : 'قطعة')
+                ];
+            }
+        }
+        
+        echo json_encode([
+            'success' => true, 
+            'products' => $products,
+            'count' => count($products)
+        ], JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
+    } catch (Exception $e) {
+        error_log('Error fetching vehicle inventory: ' . $e->getMessage());
+        echo json_encode([
+            'success' => false, 
+            'message' => 'حدث خطأ أثناء جلب المنتجات: ' . $e->getMessage()
+        ], JSON_UNESCAPED_UNICODE);
     }
-    
-    $vehicleId = $vehicle['vehicle_id'];
-    $inventory = getVehicleInventory($vehicleId);
-    
-    // تحويل البيانات إلى تنسيق مناسب
-    $products = [];
-    foreach ($inventory as $item) {
-        $products[] = [
-            'product_id' => $item['product_id'] ?? 0,
-            'batch_id' => $item['finished_batch_id'] ?? 0,
-            'batch_number' => $item['finished_batch_number'] ?? $item['batch_number'] ?? '',
-            'product_name' => $item['product_name'] ?? 'غير محدد',
-            'quantity' => floatval($item['quantity'] ?? 0),
-            'unit' => $item['unit'] ?? $item['product_unit'] ?? 'قطعة'
-        ];
-    }
-    
-    echo json_encode(['success' => true, 'products' => $products]);
     exit;
 }
 
@@ -1610,21 +1646,38 @@ document.addEventListener('DOMContentLoaded', function() {
                 const urlParams = new URLSearchParams(window.location.search);
                 urlParams.set('ajax', 'get_vehicle_inventory');
                 urlParams.set('vehicle_id', salesRepId);
-                fetch(currentUrl + '?' + urlParams.toString())
-                    .then(response => response.json())
+                
+                fetch(currentUrl + '?' + urlParams.toString(), {
+                    method: 'GET',
+                    headers: {
+                        'Accept': 'application/json',
+                        'X-Requested-With': 'XMLHttpRequest'
+                    }
+                })
+                    .then(response => {
+                        if (!response.ok) {
+                            throw new Error('Network response was not ok');
+                        }
+                        return response.json();
+                    })
                     .then(data => {
-                        if (data.success && data.products) {
-                            displaySalesRepProducts(data.products);
+                        console.log('Vehicle inventory data:', data);
+                        if (data.success && Array.isArray(data.products)) {
+                            if (data.products.length > 0) {
+                                displaySalesRepProducts(data.products);
+                            } else {
+                                productsContainer.innerHTML = '<div class="alert alert-info"><i class="bi bi-info-circle me-2"></i>لا توجد منتجات في مخزن سيارة هذا المندوب.</div>';
+                            }
                         } else {
-                            productsContainer.innerHTML = '<div class="alert alert-info">لا توجد منتجات في مخزن سيارة هذا المندوب.</div>';
+                            productsContainer.innerHTML = '<div class="alert alert-warning"><i class="bi bi-exclamation-triangle me-2"></i>' + (data.message || 'لا توجد منتجات في مخزن سيارة هذا المندوب.') + '</div>';
                         }
                     })
                     .catch(error => {
-                        console.error('Error:', error);
-                        productsContainer.innerHTML = '<div class="alert alert-danger">حدث خطأ أثناء جلب المنتجات.</div>';
+                        console.error('Error fetching vehicle inventory:', error);
+                        productsContainer.innerHTML = '<div class="alert alert-danger"><i class="bi bi-exclamation-circle me-2"></i>حدث خطأ أثناء جلب المنتجات. يرجى المحاولة مرة أخرى.</div>';
                     });
             } else {
-                productsContainer.innerHTML = '<div class="alert alert-info">يرجى اختيار المندوب أولاً.</div>';
+                productsContainer.innerHTML = '<div class="alert alert-info"><i class="bi bi-info-circle me-2"></i>يرجى اختيار المندوب أولاً.</div>';
             }
         });
     }
