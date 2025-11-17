@@ -664,9 +664,36 @@ if (isset($_GET['id'])) {
                     $product = $db->queryOne("SELECT name FROM products WHERE id = ?", [$productId]);
                     if ($product && !empty($product['name'])) {
                         $trimmedName = trim($product['name']);
-                        // إذا كان الاسم ليس "منتج رقم X"، استخدمه مباشرة
+                        // إذا كان الاسم ليس "منتج رقم X" وليس فارغاً، استخدمه مباشرة
                         if ($trimmedName !== '' && !preg_match('/^منتج رقم \d+$/', $trimmedName)) {
                             $productName = $trimmedName;
+                        }
+                    }
+                    
+                    // إذا لم نجد اسم صحيح من products، جرب vehicle_inventory
+                    if (($productName === 'منتج غير معروف' || preg_match('/^منتج رقم \d+$/', $productName))) {
+                        // محاولة الحصول على اسم المنتج من vehicle_inventory إذا كان النقل من مخزن سيارة
+                        $transferInfo = $db->queryOne(
+                            "SELECT from_warehouse_id FROM warehouse_transfers WHERE id = ?",
+                            [$basicItem['transfer_id']]
+                        );
+                        if ($transferInfo) {
+                            $fromWarehouse = $db->queryOne(
+                                "SELECT warehouse_type, vehicle_id FROM warehouses WHERE id = ?",
+                                [$transferInfo['from_warehouse_id']]
+                            );
+                            if ($fromWarehouse && ($fromWarehouse['warehouse_type'] ?? '') === 'vehicle' && !empty($fromWarehouse['vehicle_id'])) {
+                                $vehicleProduct = $db->queryOne(
+                                    "SELECT product_name FROM vehicle_inventory WHERE vehicle_id = ? AND product_id = ?",
+                                    [$fromWarehouse['vehicle_id'], $productId]
+                                );
+                                if ($vehicleProduct && !empty($vehicleProduct['product_name'])) {
+                                    $vehicleName = trim($vehicleProduct['product_name']);
+                                    if ($vehicleName !== '' && !preg_match('/^منتج رقم \d+$/', $vehicleName)) {
+                                        $productName = $vehicleName;
+                                    }
+                                }
+                            }
                         }
                     }
                 }
@@ -813,7 +840,7 @@ if (isset($_GET['id'])) {
 <?php endif; ?>
 
 <?php if ($error): ?>
-    <div class="alert alert-danger alert-dismissible fade show">
+    <div class="alert alert-danger alert-dismissible fade show" id="errorAlert" data-auto-refresh="true">
         <i class="bi bi-exclamation-triangle-fill me-2"></i>
         <?php echo htmlspecialchars($error); ?>
         <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
@@ -821,7 +848,7 @@ if (isset($_GET['id'])) {
 <?php endif; ?>
 
 <?php if ($success): ?>
-    <div class="alert alert-success alert-dismissible fade show">
+    <div class="alert alert-success alert-dismissible fade show" id="successAlert" data-auto-refresh="true">
         <i class="bi bi-check-circle-fill me-2"></i>
         <div style="white-space: pre-line;"><?php echo htmlspecialchars($success); ?></div>
         <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
@@ -953,16 +980,35 @@ if (isset($_GET['id'])) {
                                 ?>
                                 <tr class="<?php echo $badgeClass; ?>">
                                     <td>
-                                        <?php echo htmlspecialchars($displayProductName); ?>
-                                        <?php if (empty($item['product_id'])): ?>
-                                            <br><small class="text-muted">(معرف المنتج: غير محدد)</small>
-                                        <?php endif; ?>
+                                        <?php 
+                                        // عرض اسم المنتج الفعلي فقط (بدون معرف المنتج)
+                                        // إزالة أي نص يحتوي على "منتج رقم" أو معرف المنتج
+                                        $cleanProductName = $displayProductName;
+                                        if (preg_match('/^منتج رقم \d+$/', $cleanProductName)) {
+                                            // إذا كان الاسم "منتج رقم X"، نحاول الحصول على اسم أفضل
+                                            if (!empty($item['product_id'])) {
+                                                $product = $db->queryOne("SELECT name FROM products WHERE id = ?", [$item['product_id']]);
+                                                if ($product && !empty($product['name']) && trim($product['name']) !== '' && !preg_match('/^منتج رقم \d+$/', trim($product['name']))) {
+                                                    $cleanProductName = trim($product['name']);
+                                                }
+                                            }
+                                            // إذا لم نجد اسم أفضل، نعرض "منتج" فقط
+                                            if ($cleanProductName === $displayProductName && preg_match('/^منتج رقم \d+$/', $cleanProductName)) {
+                                                $cleanProductName = 'منتج';
+                                            }
+                                        }
+                                        echo htmlspecialchars($cleanProductName); 
+                                        ?>
                                     </td>
                                     <td>
-                                        <?php echo htmlspecialchars($displayBatchNumber); ?>
-                                        <?php if (!empty($item['batch_id']) && $displayBatchNumber === '-'): ?>
-                                            <br><small class="text-muted">(ID: <?php echo $item['batch_id']; ?>)</small>
-                                        <?php endif; ?>
+                                        <?php 
+                                        // عرض رقم التشغيلة (إن وجد)
+                                        if ($displayBatchNumber && $displayBatchNumber !== '-') {
+                                            echo htmlspecialchars($displayBatchNumber);
+                                        } else {
+                                            echo '<span class="text-muted">-</span>';
+                                        }
+                                        ?>
                                     </td>
                                     <td><strong><?php echo number_format($quantity, 2); ?></strong></td>
                                     <td>
@@ -1907,6 +1953,31 @@ document.addEventListener('DOMContentLoaded', function() {
         }
     }
 });
+</script>
+
+<!-- إعادة تحميل الصفحة تلقائياً بعد أي رسالة (نجاح أو خطأ) لمنع تكرار الطلبات -->
+<script>
+// إعادة تحميل الصفحة تلقائياً بعد أي رسالة (نجاح أو خطأ) لمنع تكرار الطلبات
+(function() {
+    const successAlert = document.getElementById('successAlert');
+    const errorAlert = document.getElementById('errorAlert');
+    
+    // التحقق من وجود رسالة نجاح أو خطأ
+    const alertElement = successAlert || errorAlert;
+    
+    if (alertElement && alertElement.dataset.autoRefresh === 'true') {
+        // انتظار 3 ثوانٍ لإعطاء المستخدم وقتاً لرؤية الرسالة
+        setTimeout(function() {
+            // إعادة تحميل الصفحة بدون معاملات GET لمنع تكرار الطلبات
+            const currentUrl = new URL(window.location.href);
+            // إزالة معاملات success و error من URL
+            currentUrl.searchParams.delete('success');
+            currentUrl.searchParams.delete('error');
+            // إعادة تحميل الصفحة
+            window.location.href = currentUrl.toString();
+        }, 3000);
+    }
+})();
 </script>
 
 
