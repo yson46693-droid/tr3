@@ -53,10 +53,10 @@ function recordInventoryMovement($productId, $warehouseId, $type, $quantity, $re
         
         if ($warehouse && ($warehouse['warehouse_type'] ?? '') === 'vehicle') {
             $isVehicleWarehouse = true;
-            // البحث عن vehicle_id المرتبط بهذا المخزن
-            $vehicle = $db->queryOne("SELECT id FROM vehicles WHERE warehouse_id = ?", [$warehouseId]);
-            if ($vehicle) {
-                $vehicleId = (int)$vehicle['id'];
+            // الحصول على vehicle_id مباشرة من warehouses (لأن warehouses.vehicle_id يشير إلى vehicles.id)
+            $warehouseWithVehicle = $db->queryOne("SELECT vehicle_id FROM warehouses WHERE id = ?", [$warehouseId]);
+            if ($warehouseWithVehicle && !empty($warehouseWithVehicle['vehicle_id'])) {
+                $vehicleId = (int)$warehouseWithVehicle['vehicle_id'];
                 $usingVehicleInventory = true;
             }
         }
