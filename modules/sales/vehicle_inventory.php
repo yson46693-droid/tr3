@@ -13,6 +13,61 @@ require_once __DIR__ . '/../../includes/auth.php';
 require_once __DIR__ . '/../../includes/vehicle_inventory.php';
 require_once __DIR__ . '/../../includes/audit_log.php';
 
+// معالجة طلبات AJAX قبل أي شيء آخر (قبل requireRole لتجنب إرسال HTML)
+if (isset($_GET['ajax']) && $_GET['ajax'] === 'load_products') {
+    // التحقق من تسجيل الدخول فقط (بدون requireRole لتجنب redirect)
+    if (!isLoggedIn()) {
+        header('Content-Type: application/json; charset=utf-8');
+        echo json_encode([
+            'success' => false,
+            'message' => 'يجب تسجيل الدخول أولاً'
+        ], JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
+        exit;
+    }
+    
+    // التحقق من الصلاحيات
+    $currentUser = getCurrentUser();
+    $allowedRoles = ['sales', 'accountant', 'production', 'manager'];
+    if (!hasAnyRole($allowedRoles)) {
+        header('Content-Type: application/json; charset=utf-8');
+        echo json_encode([
+            'success' => false,
+            'message' => 'غير مصرح لك بالوصول'
+        ], JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
+        exit;
+    }
+    
+    // تنظيف أي output buffer موجود
+    while (ob_get_level() > 0) {
+        ob_end_clean();
+    }
+    
+    header('Content-Type: application/json; charset=utf-8');
+    header('Cache-Control: no-cache, must-revalidate');
+    
+    $warehouseId = isset($_GET['warehouse_id']) ? intval($_GET['warehouse_id']) : null;
+    
+    try {
+        // التأكد من تحميل الدوال المطلوبة
+        if (!function_exists('getFinishedProductBatchOptions')) {
+            require_once __DIR__ . '/../../includes/vehicle_inventory.php';
+        }
+        
+        $products = getFinishedProductBatchOptions(true, $warehouseId);
+        echo json_encode([
+            'success' => true,
+            'products' => $products
+        ], JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
+    } catch (Exception $e) {
+        error_log('AJAX load_products error: ' . $e->getMessage());
+        echo json_encode([
+            'success' => false,
+            'message' => 'حدث خطأ أثناء تحميل المنتجات: ' . $e->getMessage()
+        ], JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
+    }
+    exit;
+}
+
 require_once __DIR__ . '/table_styles.php';
 
 requireRole(['sales', 'accountant', 'production', 'manager']);
@@ -73,38 +128,6 @@ if ($currentUser['role'] === 'sales') {
             }
         }
     }
-}
-
-// معالجة طلبات AJAX
-if (isset($_GET['ajax']) && $_GET['ajax'] === 'load_products') {
-    // تنظيف أي output buffer موجود
-    while (ob_get_level() > 0) {
-        ob_end_clean();
-    }
-    
-    header('Content-Type: application/json; charset=utf-8');
-    header('Cache-Control: no-cache, must-revalidate');
-    
-    $warehouseId = isset($_GET['warehouse_id']) ? intval($_GET['warehouse_id']) : null;
-    
-    try {
-        // التأكد من تحميل الدوال المطلوبة
-        if (!function_exists('getFinishedProductBatchOptions')) {
-            require_once __DIR__ . '/../../includes/vehicle_inventory.php';
-        }
-        
-        $products = getFinishedProductBatchOptions(true, $warehouseId);
-        echo json_encode([
-            'success' => true,
-            'products' => $products
-        ], JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
-    } catch (Exception $e) {
-        echo json_encode([
-            'success' => false,
-            'message' => $e->getMessage()
-        ], JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
-    }
-    exit;
 }
 
 // معالجة العمليات
