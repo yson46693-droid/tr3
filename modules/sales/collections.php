@@ -433,13 +433,12 @@ $customers = $db->query("SELECT id, name FROM customers WHERE status = 'active' 
                         <th>الحالة</th>
                         <?php endif; ?>
                         <th>المحصل</th>
-                        <th>الإجراءات</th>
                     </tr>
                 </thead>
                 <tbody>
                     <?php if (empty($collections)): ?>
                         <tr>
-                            <td colspan="<?php echo $hasStatusColumn ? '8' : '7'; ?>" class="text-center text-muted">لا توجد تحصيلات</td>
+                            <td colspan="<?php echo $hasStatusColumn ? '7' : '6'; ?>" class="text-center text-muted">لا توجد تحصيلات</td>
                         </tr>
                     <?php else: ?>
                         <?php foreach ($collections as $collection): ?>
@@ -476,13 +475,6 @@ $customers = $db->query("SELECT id, name FROM customers WHERE status = 'active' 
                                 </td>
                                 <?php endif; ?>
                                 <td><?php echo htmlspecialchars($collection['collected_by_name'] ?? '-'); ?></td>
-                                <td>
-                                    <div class="btn-group" role="group">
-                                        <a href="?page=sales_collections&id=<?php echo $collection['id']; ?>" class="btn btn-sm btn-info" title="عرض">
-                                            <i class="bi bi-eye"></i>
-                                        </a>
-                                    </div>
-                                </td>
                             </tr>
                         <?php endforeach; ?>
                     <?php endif; ?>

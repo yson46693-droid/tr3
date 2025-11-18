@@ -367,6 +367,177 @@ $salesRepInfo = $db->queryOne(
     </div>
 </div>
 
+<?php
+// حساب الديون القديمة (العملاء المدينين بدون سجل مشتريات)
+$oldDebtsCustomers = [];
+$oldDebtsTotal = 0.0;
+
+try {
+    // التحقق من وجود جدول customer_purchase_history
+    $purchaseHistoryTableExists = $db->queryOne("SHOW TABLES LIKE 'customer_purchase_history'");
+    
+    if (!empty($purchaseHistoryTableExists)) {
+        // جلب العملاء المدينين الذين ليس لديهم سجل مشتريات
+        $oldDebtsQuery = "
+            SELECT 
+                c.id,
+                c.name,
+                c.phone,
+                c.address,
+                c.balance,
+                c.created_at
+            FROM customers c
+            WHERE c.created_by = ?
+            AND c.balance IS NOT NULL 
+            AND c.balance > 0
+            AND NOT EXISTS (
+                SELECT 1 
+                FROM customer_purchase_history cph 
+                WHERE cph.customer_id = c.id
+            )
+            ORDER BY c.balance DESC, c.name ASC
+        ";
+        
+        $oldDebtsCustomers = $db->query($oldDebtsQuery, [$salesRepId]);
+        
+        // حساب إجمالي الديون القديمة
+        if (!empty($oldDebtsCustomers)) {
+            foreach ($oldDebtsCustomers as $customer) {
+                $oldDebtsTotal += (float)($customer['balance'] ?? 0);
+            }
+        }
+    } else {
+        // إذا لم يكن الجدول موجوداً، نستخدم استعلام مختلف
+        // جلب العملاء المدينين الذين ليس لديهم فواتير
+        $oldDebtsQuery = "
+            SELECT 
+                c.id,
+                c.name,
+                c.phone,
+                c.address,
+                c.balance,
+                c.created_at
+            FROM customers c
+            WHERE c.created_by = ?
+            AND c.balance IS NOT NULL 
+            AND c.balance > 0
+            AND NOT EXISTS (
+                SELECT 1 
+                FROM invoices inv 
+                WHERE inv.customer_id = c.id
+            )
+            ORDER BY c.balance DESC, c.name ASC
+        ";
+        
+        $oldDebtsCustomers = $db->query($oldDebtsQuery, [$salesRepId]);
+        
+        // حساب إجمالي الديون القديمة
+        if (!empty($oldDebtsCustomers)) {
+            foreach ($oldDebtsCustomers as $customer) {
+                $oldDebtsTotal += (float)($customer['balance'] ?? 0);
+            }
+        }
+    }
+} catch (Throwable $oldDebtsError) {
+    error_log('Old debts calculation error: ' . $oldDebtsError->getMessage());
+    $oldDebtsCustomers = [];
+    $oldDebtsTotal = 0.0;
+}
+?>
+
+<!-- جدول الديون القديمة -->
+<div class="card shadow-sm mb-4">
+    <div class="card-header bg-danger text-white">
+        <h5 class="mb-0">
+            <i class="bi bi-clock-history me-2"></i>
+            الديون القديمة
+        </h5>
+    </div>
+    <div class="card-body">
+        <div class="mb-3">
+            <p class="text-muted mb-2">
+                <i class="bi bi-info-circle me-2"></i>
+                العملاء المدينين الذين ليس لديهم سجل مشتريات في النظام.
+            </p>
+            <div class="d-flex align-items-center justify-content-between">
+                <div>
+                    <span class="text-muted small">عدد العملاء: </span>
+                    <strong><?php echo count($oldDebtsCustomers); ?></strong>
+                </div>
+                <div>
+                    <span class="text-muted small">إجمالي الديون: </span>
+                    <strong class="text-danger fs-5"><?php echo formatCurrency($oldDebtsTotal); ?></strong>
+                </div>
+            </div>
+        </div>
+        
+        <?php if (!empty($oldDebtsCustomers)): ?>
+            <div class="table-responsive dashboard-table-wrapper">
+                <table class="table dashboard-table align-middle">
+                    <thead>
+                        <tr>
+                            <th>اسم العميل</th>
+                            <th>الهاتف</th>
+                            <th>العنوان</th>
+                            <th class="text-end">الديون</th>
+                            <th>تاريخ الإضافة</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        <?php foreach ($oldDebtsCustomers as $customer): ?>
+                            <tr>
+                                <td>
+                                    <strong><?php echo htmlspecialchars($customer['name'] ?? '-'); ?></strong>
+                                </td>
+                                <td>
+                                    <?php echo htmlspecialchars($customer['phone'] ?? '-'); ?>
+                                </td>
+                                <td>
+                                    <small class="text-muted">
+                                        <?php echo htmlspecialchars($customer['address'] ?? '-'); ?>
+                                    </small>
+                                </td>
+                                <td class="text-end">
+                                    <strong class="text-danger">
+                                        <?php echo formatCurrency((float)($customer['balance'] ?? 0)); ?>
+                                    </strong>
+                                </td>
+                                <td>
+                                    <small class="text-muted">
+                                        <?php 
+                                        if (!empty($customer['created_at'])) {
+                                            echo date('Y-m-d', strtotime($customer['created_at']));
+                                        } else {
+                                            echo '-';
+                                        }
+                                        ?>
+                                    </small>
+                                </td>
+                            </tr>
+                        <?php endforeach; ?>
+                    </tbody>
+                    <tfoot>
+                        <tr class="table-danger">
+                            <th colspan="3" class="text-end">
+                                <strong>الإجمالي:</strong>
+                            </th>
+                            <th class="text-end">
+                                <strong><?php echo formatCurrency($oldDebtsTotal); ?></strong>
+                            </th>
+                            <th></th>
+                        </tr>
+                    </tfoot>
+                </table>
+            </div>
+        <?php else: ?>
+            <div class="alert alert-info mb-0">
+                <i class="bi bi-check-circle me-2"></i>
+                لا توجد ديون قديمة للعملاء المدينين بدون سجل مشتريات.
+            </div>
+        <?php endif; ?>
+    </div>
+</div>
+
 <!-- إعادة تحميل الصفحة تلقائياً بعد أي رسالة (نجاح أو خطأ) لمنع تكرار الطلبات -->
 <script>
 // إعادة تحميل الصفحة تلقائياً بعد أي رسالة (نجاح أو خطأ) لمنع تكرار الطلبات
