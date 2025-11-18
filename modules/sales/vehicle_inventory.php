@@ -96,7 +96,10 @@ if (isset($_GET['ajax']) && $_GET['ajax'] === 'load_products') {
     exit;
 }
 
-require_once __DIR__ . '/table_styles.php';
+// عدم تحميل CSS إذا كان هذا طلب AJAX
+if (!defined('VEHICLE_INVENTORY_AJAX')) {
+    require_once __DIR__ . '/table_styles.php';
+}
 
 requireRole(['sales', 'accountant', 'production', 'manager']);
 

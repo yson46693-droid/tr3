@@ -4,6 +4,40 @@
  */
 
 define('ACCESS_ALLOWED', true);
+
+// معالجة طلبات AJAX قبل أي require قد يطبع HTML
+if (isset($_GET['ajax']) && $_GET['ajax'] === 'load_products') {
+    $pageParam = $_GET['page'] ?? 'dashboard';
+    if ($pageParam === 'vehicle_inventory') {
+        // تحميل الملفات الأساسية فقط
+        require_once __DIR__ . '/../includes/config.php';
+        require_once __DIR__ . '/../includes/db.php';
+        require_once __DIR__ . '/../includes/auth.php';
+        
+        // التحقق من تسجيل الدخول
+        if (!isLoggedIn()) {
+            header('Content-Type: application/json; charset=utf-8');
+            echo json_encode([
+                'success' => false,
+                'message' => 'يجب تسجيل الدخول أولاً'
+            ], JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
+            exit;
+        }
+        
+        // تنظيف أي output buffer
+        while (ob_get_level() > 0) {
+            ob_end_clean();
+        }
+        
+        $modulePath = __DIR__ . '/../modules/sales/vehicle_inventory.php';
+        if (file_exists($modulePath)) {
+            define('VEHICLE_INVENTORY_AJAX', true);
+            include $modulePath;
+            exit; // الخروج بعد معالجة AJAX
+        }
+    }
+}
+
 require_once __DIR__ . '/../includes/config.php';
 require_once __DIR__ . '/../includes/db.php';
 require_once __DIR__ . '/../includes/auth.php';
@@ -47,15 +81,6 @@ if ($page === 'sales_collections') {
 
 // معالجة طلبات AJAX قبل إرسال أي HTML
 if (isset($_GET['ajax'], $_GET['action'])) {
-    // طلبات مخزن السيارة
-    if ($_GET['ajax'] === 'load_products' && $page === 'vehicle_inventory') {
-        $modulePath = __DIR__ . '/../modules/sales/vehicle_inventory.php';
-        if (file_exists($modulePath)) {
-            define('VEHICLE_INVENTORY_AJAX', true);
-            include $modulePath;
-            exit; // الخروج بعد معالجة AJAX
-        }
-    }
 
     // طلب سجل مشتريات العميل (يحتاج للوحدة customers)
     if ($_GET['ajax'] === 'purchase_history' && $_GET['action'] === 'purchase_history') {
