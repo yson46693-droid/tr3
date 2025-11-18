@@ -846,6 +846,15 @@ if (isset($_GET['ajax'], $_GET['action'])) {
                 }
                 ?>
                 
+            <?php elseif ($page === 'warehouse_transfers'): ?>
+                <!-- صفحة نقل المخازن -->
+                <?php 
+                $modulePath = __DIR__ . '/../modules/manager/warehouse_transfers.php';
+                if (file_exists($modulePath)) {
+                    include $modulePath;
+                }
+                ?>
+                
             <?php elseif ($page === 'returns'): ?>
                 <!-- صفحة المرتجعات -->
                 <?php 
