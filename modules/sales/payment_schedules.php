@@ -209,6 +209,56 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 $error = 'تعذر تحديث موعد التحصيل، يرجى المحاولة مرة أخرى.';
             }
         }
+    } elseif ($action === 'mark_as_paid') {
+        $scheduleId = intval($_POST['schedule_id'] ?? 0);
+        
+        if ($scheduleId <= 0) {
+            $error = 'معرف الجدول غير صالح.';
+        } else {
+            try {
+                $schedule = $db->queryOne(
+                    "SELECT * FROM payment_schedules WHERE id = ? AND sales_rep_id = ?",
+                    [$scheduleId, $currentUser['id']]
+                );
+
+                if (!$schedule) {
+                    $error = 'لا يمكنك تمييز هذا الجدول.';
+                } elseif ($schedule['status'] === 'paid') {
+                    $error = 'هذا الجدول مدفوع بالفعل.';
+                } elseif ($schedule['status'] === 'cancelled') {
+                    $error = 'لا يمكن تمييز جدول ملغى.';
+                } else {
+                    $oldData = [
+                        'status' => $schedule['status'],
+                        'payment_date' => $schedule['payment_date']
+                    ];
+
+                    $db->execute(
+                        "UPDATE payment_schedules 
+                         SET status = 'paid', payment_date = CURDATE(), updated_at = NOW()
+                         WHERE id = ?",
+                        [$scheduleId]
+                    );
+
+                    logAudit(
+                        $currentUser['id'],
+                        'mark_payment_schedule_paid',
+                        'payment_schedule',
+                        $scheduleId,
+                        $oldData,
+                        [
+                            'status' => 'paid',
+                            'payment_date' => date('Y-m-d')
+                        ]
+                    );
+
+                    $success = 'تم تمييز الجدول كمدفوع بنجاح.';
+                }
+            } catch (Throwable $markPaidError) {
+                error_log('Mark payment schedule as paid error: ' . $markPaidError->getMessage());
+                $error = 'تعذر تمييز الجدول كمدفوع، يرجى المحاولة مرة أخرى.';
+            }
+        }
     }
 }
 
@@ -601,33 +651,38 @@ if (isset($_GET['id'])) {
                                     </span>
                                 </td>
                                 <td>
-                                    <div class="btn-group btn-group-sm" role="group">
-                                        <a href="?page=payment_schedules&id=<?php echo $schedule['id']; ?>" 
-                                           class="btn btn-info" title="عرض">
-                                            <i class="bi bi-eye"></i>
-                                        </a>
-                                        <?php if ($schedule['status'] !== 'paid' && $schedule['status'] !== 'cancelled'): ?>
-                                        <button class="btn btn-primary"
+                                    <?php if ($schedule['status'] !== 'paid' && $schedule['status'] !== 'cancelled'): ?>
+                                    <div class="d-flex gap-2 flex-wrap">
+                                        <button class="btn btn-sm btn-warning rounded-pill px-3" 
+                                                data-schedule-id="<?php echo $schedule['id']; ?>"
+                                                onclick="showReminderModal(<?php echo $schedule['id']; ?>)"
+                                                title="تحديد عدد أيام التنبيه"
+                                                style="border: 2px solid #ffc107; background-color: #ffc107; color: #000; font-weight: 500;">
+                                            <i class="bi bi-bell-fill me-1"></i>تنبيه
+                                        </button>
+                                        <button class="btn btn-sm btn-primary rounded-pill px-3"
                                                 data-schedule-id="<?php echo $schedule['id']; ?>"
                                                 data-customer="<?php echo htmlspecialchars($schedule['customer_name'] ?? '-', ENT_QUOTES, 'UTF-8'); ?>"
                                                 data-amount="<?php echo $schedule['amount']; ?>"
                                                 data-due-date="<?php echo htmlspecialchars($schedule['due_date']); ?>"
                                                 onclick="showEditScheduleModal(this)"
-                                                title="تعديل">
-                                            <i class="bi bi-pencil"></i>
+                                                title="تعديل"
+                                                style="border: 2px solid #0d6efd; background-color: #0d6efd; color: #fff; font-weight: 500;">
+                                            <i class="bi bi-pencil-fill me-1"></i>تعديل
                                         </button>
-                                        <button class="btn btn-success" 
-                                                onclick="showPaymentModal(<?php echo $schedule['id']; ?>, <?php echo $schedule['amount']; ?>)"
-                                                title="تسجيل دفعة">
-                                            <i class="bi bi-cash"></i>
-                                        </button>
-                                        <button class="btn btn-warning" 
-                                                onclick="showReminderModal(<?php echo $schedule['id']; ?>)"
-                                                title="إنشاء تذكير">
-                                            <i class="bi bi-bell"></i>
-                                        </button>
-                                        <?php endif; ?>
+                                        <form method="POST" style="display: inline;" onsubmit="return confirm('هل أنت متأكد من تمييز هذا الجدول كمدفوع؟');">
+                                            <input type="hidden" name="action" value="mark_as_paid">
+                                            <input type="hidden" name="schedule_id" value="<?php echo $schedule['id']; ?>">
+                                            <button type="submit" class="btn btn-sm btn-success rounded-pill px-3"
+                                                    title="تم التحصيل"
+                                                    style="border: 2px solid #198754; background-color: #198754; color: #fff; font-weight: 500;">
+                                                <i class="bi bi-check-circle-fill me-1"></i>تم التحصيل
+                                            </button>
+                                        </form>
                                     </div>
+                                    <?php else: ?>
+                                    <span class="text-muted">-</span>
+                                    <?php endif; ?>
                                 </td>
                             </tr>
                         <?php endforeach; ?>
@@ -738,9 +793,9 @@ if (isset($_GET['id'])) {
 <div class="modal fade" id="editScheduleModal" tabindex="-1" aria-hidden="true">
     <div class="modal-dialog">
         <div class="modal-content">
-            <div class="modal-header">
-                <h5 class="modal-title"><i class="bi bi-pencil-square me-2"></i>تعديل موعد التحصيل</h5>
-                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="إغلاق"></button>
+            <div class="modal-header bg-primary text-white">
+                <h5 class="modal-title"><i class="bi bi-pencil-fill me-2"></i>تعديل موعد التحصيل</h5>
+                <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal" aria-label="إغلاق"></button>
             </div>
             <form method="POST">
                 <input type="hidden" name="action" value="update_schedule">
@@ -763,54 +818,22 @@ if (isset($_GET['id'])) {
                     </div>
                 </div>
                 <div class="modal-footer">
-                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">إلغاء</button>
-                    <button type="submit" class="btn btn-primary">حفظ التعديلات</button>
+                    <button type="button" class="btn btn-secondary rounded-pill px-4" data-bs-dismiss="modal">إلغاء</button>
+                    <button type="submit" class="btn btn-primary rounded-pill px-4" style="border: 2px solid #0d6efd; font-weight: 500;">
+                        <i class="bi bi-check-circle me-1"></i>حفظ التعديلات
+                    </button>
                 </div>
             </form>
         </div>
     </div>
 </div>
 
-<!-- Modal تسجيل دفعة -->
-<div class="modal fade" id="paymentModal" tabindex="-1">
-    <div class="modal-dialog">
-        <div class="modal-content">
-            <div class="modal-header">
-                <h5 class="modal-title">تسجيل دفعة</h5>
-                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
-            </div>
-            <form method="POST">
-                <input type="hidden" name="action" value="record_payment">
-                <input type="hidden" name="schedule_id" id="paymentScheduleId">
-                <div class="modal-body">
-                    <div class="mb-3">
-                        <label class="form-label">المبلغ <span class="text-danger">*</span></label>
-                        <input type="number" step="0.01" class="form-control" name="amount" id="paymentAmount" required>
-                    </div>
-                    <div class="mb-3">
-                        <label class="form-label">تاريخ الدفع <span class="text-danger">*</span></label>
-                        <input type="date" class="form-control" name="payment_date" value="<?php echo date('Y-m-d'); ?>" required>
-                    </div>
-                    <div class="mb-3">
-                        <label class="form-label">ملاحظات</label>
-                        <textarea class="form-control" name="notes" rows="3"></textarea>
-                    </div>
-                </div>
-                <div class="modal-footer">
-                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">إلغاء</button>
-                    <button type="submit" class="btn btn-primary">تسجيل</button>
-                </div>
-            </form>
-        </div>
-    </div>
-</div>
-
-<!-- Modal إنشاء تذكير -->
+<!-- Modal تحديد عدد أيام التنبيه -->
 <div class="modal fade" id="reminderModal" tabindex="-1">
     <div class="modal-dialog">
         <div class="modal-content">
-            <div class="modal-header">
-                <h5 class="modal-title">إنشاء تذكير</h5>
+            <div class="modal-header bg-warning text-dark">
+                <h5 class="modal-title"><i class="bi bi-bell-fill me-2"></i>تحديد عدد أيام التنبيه</h5>
                 <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
             </div>
             <form method="POST">
@@ -824,8 +847,10 @@ if (isset($_GET['id'])) {
                     </div>
                 </div>
                 <div class="modal-footer">
-                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">إلغاء</button>
-                    <button type="submit" class="btn btn-primary">إنشاء</button>
+                    <button type="button" class="btn btn-secondary rounded-pill px-4" data-bs-dismiss="modal">إلغاء</button>
+                    <button type="submit" class="btn btn-warning rounded-pill px-4" style="border: 2px solid #ffc107; font-weight: 500;">
+                        <i class="bi bi-check-circle me-1"></i>حفظ
+                    </button>
                 </div>
             </form>
         </div>
@@ -833,13 +858,6 @@ if (isset($_GET['id'])) {
 </div>
 
 <script>
-function showPaymentModal(scheduleId, amount) {
-    document.getElementById('paymentScheduleId').value = scheduleId;
-    document.getElementById('paymentAmount').value = amount;
-    const modal = new bootstrap.Modal(document.getElementById('paymentModal'));
-    modal.show();
-}
-
 function showReminderModal(scheduleId) {
     document.getElementById('reminderScheduleId').value = scheduleId;
     const modal = new bootstrap.Modal(document.getElementById('reminderModal'));
