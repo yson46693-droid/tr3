@@ -210,7 +210,9 @@ if (isset($_GET['ajax'], $_GET['action'])) {
                         if (!empty($salesTableCheck)) {
                             try {
                                 $recentSales = $db->query(
-                                    "SELECT s.*, c.name as customer_name, p.name as product_name 
+                                    "SELECT s.*, 
+                                            c.name as customer_name, 
+                                            COALESCE(p.name, CONCAT('منتج رقم ', s.product_id)) as product_name 
                                      FROM sales s 
                                      LEFT JOIN customers c ON s.customer_id = c.id 
                                      LEFT JOIN products p ON s.product_id = p.id 
@@ -250,8 +252,8 @@ if (isset($_GET['ajax'], $_GET['action'])) {
                                 <?php foreach ($recentSales as $sale): ?>
                                 <tr>
                                     <td><?php echo formatDate($sale['date']); ?></td>
-                                    <td><?php echo htmlspecialchars($sale['customer_name']); ?></td>
-                                    <td><?php echo htmlspecialchars($sale['product_name']); ?></td>
+                                    <td><?php echo htmlspecialchars($sale['customer_name'] ?? '-'); ?></td>
+                                    <td><?php echo htmlspecialchars($sale['product_name'] ?? 'منتج غير محدد'); ?></td>
                                     <td><?php echo $sale['quantity']; ?></td>
                                     <td><?php echo formatCurrency($sale['total']); ?></td>
                                     <td>

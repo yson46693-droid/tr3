@@ -12,6 +12,7 @@ require_once __DIR__ . '/../../includes/db.php';
 require_once __DIR__ . '/../../includes/auth.php';
 require_once __DIR__ . '/../../includes/audit_log.php';
 require_once __DIR__ . '/../../includes/path_helper.php';
+require_once __DIR__ . '/../../includes/product_name_helper.php';
 
 require_once __DIR__ . '/table_styles.php';
 
@@ -52,8 +53,20 @@ if (empty($salesTableCheck)) {
         return $value !== '';
     });
 
-    // بناء استعلام SQL
-    $sql = "SELECT s.*, c.name as customer_name, p.name as product_name,
+    // بناء استعلام SQL - جلب اسم المنتج من finished_products إذا كان متوفراً
+    $sql = "SELECT s.*, c.name as customer_name, 
+                   COALESCE(
+                       (SELECT fp2.product_name 
+                        FROM finished_products fp2 
+                        WHERE fp2.product_id = p.id 
+                          AND fp2.product_name IS NOT NULL 
+                          AND TRIM(fp2.product_name) != ''
+                          AND fp2.product_name NOT LIKE 'منتج رقم%'
+                        ORDER BY fp2.id DESC 
+                        LIMIT 1),
+                       NULLIF(TRIM(p.name), ''),
+                       CONCAT('منتج رقم ', p.id)
+                   ) as product_name,
                    u.full_name as salesperson_name
             FROM sales s
             LEFT JOIN customers c ON s.customer_id = c.id
@@ -253,10 +266,16 @@ $customers = $db->query("SELECT id, name FROM customers WHERE status = 'active' 
                         </tr>
                     <?php else: ?>
                         <?php foreach ($sales as $sale): ?>
+                            <?php
+                            // حل اسم المنتج باستخدام الدالة المساعدة
+                            $productName = resolveProductName([
+                                $sale['product_name'] ?? null
+                            ]);
+                            ?>
                             <tr>
                                 <td><?php echo formatDate($sale['date']); ?></td>
                                 <td><?php echo htmlspecialchars($sale['customer_name'] ?? '-'); ?></td>
-                                <td><?php echo htmlspecialchars($sale['product_name'] ?? '-'); ?></td>
+                                <td><?php echo htmlspecialchars($productName); ?></td>
                                 <td><?php echo number_format($sale['quantity'], 2); ?></td>
                                 <td><?php echo formatCurrency($sale['price']); ?></td>
                                 <td><strong><?php echo formatCurrency($sale['total']); ?></strong></td>
