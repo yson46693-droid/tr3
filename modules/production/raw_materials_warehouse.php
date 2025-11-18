@@ -4957,6 +4957,8 @@ $nutsSuppliers = $db->query("SELECT id, name, phone FROM suppliers WHERE status 
     }
     ?>
     
+    <?php $sesameActionsDisabledAttr = $sesameSectionTableError ? 'disabled' : ''; ?>
+    
     <!-- إحصائيات السمسم -->
     <div class="row mb-4">
         <div class="col-md-6">
@@ -4987,17 +4989,29 @@ $nutsSuppliers = $db->query("SELECT id, name, phone FROM suppliers WHERE status 
         </div>
     </div>
     
+    <?php if ($sesameSectionTableError): ?>
+        <div class="alert alert-warning">
+            <i class="bi bi-info-circle me-2"></i>
+            لا يمكن الوصول إلى جدول مخزون السمسم حالياً. لن يعمل هذا القسم حتى يتم إنشاء الجدول في قاعدة البيانات.
+        </div>
+    <?php endif; ?>
+    
     <div class="row">
         <div class="col-12">
             <div class="card shadow-sm">
                 <div class="card-header text-white d-flex justify-content-between align-items-center" style="background: linear-gradient(135deg, #f4d03f 0%, #f39c12 100%);">
                     <h5 class="mb-0"><i class="bi bi-circle-fill me-2"></i>مخزون السمسم</h5>
-                    <button class="btn btn-light btn-sm" data-bs-toggle="modal" data-bs-target="#addSesameModal">
+                    <button class="btn btn-light btn-sm" data-bs-toggle="modal" data-bs-target="#addSesameModal" <?php echo $sesameActionsDisabledAttr; ?>>
                         <i class="bi bi-plus-circle me-1"></i>إضافة
                     </button>
                 </div>
                 <div class="card-body">
-                    <?php if (empty($sesameStock)): ?>
+                    <?php if ($sesameSectionTableError): ?>
+                        <div class="text-center text-muted py-4">
+                            <i class="bi bi-exclamation-circle fs-1 d-block mb-3 text-warning"></i>
+                            يرجى التأكد من إعداد قاعدة البيانات بشكل صحيح.
+                        </div>
+                    <?php elseif (empty($sesameStock)): ?>
                         <div class="text-center text-muted py-4">
                             <i class="bi bi-inbox fs-1 d-block mb-3"></i>
                             لا يوجد مخزون سمسم
@@ -5027,7 +5041,7 @@ $nutsSuppliers = $db->query("SELECT id, name, phone FROM suppliers WHERE status 
                                             <td class="text-center">
                                                 <button class="btn btn-sm btn-danger"
                                                         onclick="openSesameDamageModal(<?php echo $stock['id']; ?>, '<?php echo htmlspecialchars($stock['supplier_name'], ENT_QUOTES); ?>', <?php echo $stock['quantity']; ?>)"
-                                                        <?php echo $stock['quantity'] <= 0 ? 'disabled' : ''; ?>>
+                                                        <?php echo ($stock['quantity'] <= 0 || $sesameSectionTableError) ? 'disabled' : ''; ?>>
                                                     <i class="bi bi-exclamation-triangle"></i> تسجيل تالف
                                                 </button>
                                             </td>
@@ -5054,6 +5068,11 @@ $nutsSuppliers = $db->query("SELECT id, name, phone FROM suppliers WHERE status 
                     <input type="hidden" name="action" value="add_single_sesame">
                     <input type="hidden" name="submit_token" value="">
                     <div class="modal-body scrollable-modal-body">
+                        <?php if ($sesameSectionTableError): ?>
+                            <div class="alert alert-warning">
+                                لا يمكن إضافة سمسم جديد قبل إنشاء جدول المخزون في قاعدة البيانات.
+                            </div>
+                        <?php endif; ?>
                         <div class="mb-3">
                             <label class="form-label">المورد <span class="text-danger">*</span></label>
                             <select name="supplier_id" class="form-select" required>
@@ -5074,7 +5093,7 @@ $nutsSuppliers = $db->query("SELECT id, name, phone FROM suppliers WHERE status 
                     </div>
                     <div class="modal-footer">
                         <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">إلغاء</button>
-                        <button type="submit" class="btn text-white" style="background: linear-gradient(135deg, #f4d03f 0%, #f39c12 100%);">
+                        <button type="submit" class="btn text-white" style="background: linear-gradient(135deg, #f4d03f 0%, #f39c12 100%);" <?php echo $sesameActionsDisabledAttr; ?>>
                             <i class="bi bi-check-circle me-1"></i>إضافة
                         </button>
                     </div>
@@ -5099,6 +5118,11 @@ $nutsSuppliers = $db->query("SELECT id, name, phone FROM suppliers WHERE status 
                     <input type="hidden" name="damage_unit" value="كجم">
                     <input type="hidden" name="submit_token" value="<?php echo uniqid('tok_', true); ?>">
                     <div class="modal-body scrollable-modal-body">
+                        <?php if ($sesameSectionTableError): ?>
+                            <div class="alert alert-warning">
+                                لا يمكن تسجيل التالف حالياً لعدم توفر جدول السمسم.
+                            </div>
+                        <?php endif; ?>
                         <div class="mb-3">
                             <label class="form-label">المورد</label>
                             <input type="text" class="form-control" id="damage_sesame_supplier" readonly>
@@ -5118,7 +5142,7 @@ $nutsSuppliers = $db->query("SELECT id, name, phone FROM suppliers WHERE status 
                     </div>
                     <div class="modal-footer">
                         <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">إلغاء</button>
-                        <button type="submit" class="btn btn-danger" id="damage_sesame_submit">
+                        <button type="submit" class="btn btn-danger" id="damage_sesame_submit" <?php echo $sesameActionsDisabledAttr; ?>>
                             <i class="bi bi-check-circle me-1"></i>تسجيل
                         </button>
                     </div>
@@ -5128,7 +5152,13 @@ $nutsSuppliers = $db->query("SELECT id, name, phone FROM suppliers WHERE status 
     </div>
     
     <script>
+    const sesameActionsDisabled = <?php echo $sesameSectionTableError ? 'true' : 'false'; ?>;
+
     function openSesameDamageModal(id, supplier, quantity) {
+        if (sesameActionsDisabled) {
+            alert('لا يمكن تسجيل التالف حالياً لعدم توفر جدول السمسم.');
+            return;
+        }
         const qty = parseFloat(quantity) || 0;
         document.getElementById('damage_sesame_stock_id').value = id;
         document.getElementById('damage_sesame_supplier').value = supplier;
