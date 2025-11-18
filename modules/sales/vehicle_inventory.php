@@ -867,16 +867,16 @@ foreach ($vehicleInventory as $item) {
                                     <input type="number" step="0.01" class="form-control quantity" 
                                            name="items[0][quantity]" placeholder="الكمية" required min="0.01">
                                 </div>
+                                <div class="col-md-3">
+                                    <button type="button" class="btn btn-danger remove-item w-100">
+                                        <i class="bi bi-trash"></i> حذف
+                                    </button>
+                                </div>
                                 <div class="col-12">
                                     <small class="text-muted available-hint d-block"></small>
                                     <input type="hidden" name="items[0][product_id]" class="selected-product-id">
                                     <input type="hidden" name="items[0][batch_id]" class="selected-batch-id">
                                     <input type="hidden" name="items[0][batch_number]" class="selected-batch-number">
-                                </div>
-                                <div class="col-md-1">
-                                    <button type="button" class="btn btn-danger remove-item">
-                                        <i class="bi bi-trash"></i>
-                                    </button>
                                 </div>
                             </div>
                         </div>
@@ -1122,16 +1122,16 @@ document.getElementById('addItemBtn')?.addEventListener('click', function() {
             <input type="number" step="0.01" class="form-control quantity" 
                    name="items[${itemIndex}][quantity]" placeholder="الكمية" required min="0.01">
         </div>
+        <div class="col-md-3">
+            <button type="button" class="btn btn-danger remove-item w-100">
+                <i class="bi bi-trash"></i> حذف
+            </button>
+        </div>
         <div class="col-12">
             <small class="text-muted available-hint d-block"></small>
             <input type="hidden" name="items[${itemIndex}][product_id]" class="selected-product-id">
             <input type="hidden" name="items[${itemIndex}][batch_id]" class="selected-batch-id">
             <input type="hidden" name="items[${itemIndex}][batch_number]" class="selected-batch-number">
-        </div>
-        <div class="col-md-1">
-            <button type="button" class="btn btn-danger remove-item">
-                <i class="bi bi-trash"></i>
-            </button>
         </div>
     `;
     itemsDiv.appendChild(newItem);
