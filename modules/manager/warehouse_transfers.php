@@ -576,6 +576,18 @@ if (isset($_GET['id'])) {
     if ($selectedTransfer) {
         // التأكد من أن transfer_id هو رقم صحيح
         $transferId = (int)$selectedTransfer['id'];
+        $fromWarehouseId = (int)($selectedTransfer['from_warehouse_id'] ?? 0);
+        $fromVehicleId = null;
+        if (($selectedTransfer['from_warehouse_type'] ?? '') === 'vehicle' && $fromWarehouseId > 0) {
+            $warehouseDetails = $db->queryOne(
+                "SELECT vehicle_id FROM warehouses WHERE id = ?",
+                [$fromWarehouseId]
+            );
+            if ($warehouseDetails && !empty($warehouseDetails['vehicle_id'])) {
+                $fromVehicleId = (int)$warehouseDetails['vehicle_id'];
+            }
+        }
+        $selectedTransfer['from_vehicle_id'] = $fromVehicleId;
         
         // تهيئة مصفوفة العناصر
         $selectedTransfer['items'] = [];
@@ -745,15 +757,85 @@ if (isset($_GET['id'])) {
                         $finishedBatchNumber = $batch['batch_number'] ?? $basicItem['batch_number'];
                         $batchQuantityProduced = $batch['quantity_produced'] ?? null;
                         
-                        // حساب الكمية المتاحة
-                        $transferred = $db->queryOne(
-                            "SELECT COALESCE(SUM(wti2.quantity), 0) as total_transferred
-                             FROM warehouse_transfer_items wti2
-                             INNER JOIN warehouse_transfers wt2 ON wt2.id = wti2.transfer_id
-                             WHERE wti2.batch_id = ? AND wt2.status IN ('approved', 'completed') AND wti2.id != ?",
-                            [$batchId, $basicItem['item_id']]
-                        );
-                        $batchQuantityAvailable = ($batchQuantityProduced ?? 0) - (float)($transferred['total_transferred'] ?? 0);
+                        $isVehicleSource = (($selectedTransfer['from_warehouse_type'] ?? '') === 'vehicle');
+                        $fromWarehouseIdForItem = (int)($selectedTransfer['from_warehouse_id'] ?? 0);
+                        $currentTransferId = (int)($selectedTransfer['id'] ?? 0);
+                        
+                        if ($isVehicleSource && !empty($selectedTransfer['from_vehicle_id'])) {
+                            $availableRow = $db->queryOne(
+                                "SELECT COALESCE(SUM(quantity), 0) AS qty
+                                 FROM vehicle_inventory
+                                 WHERE vehicle_id = ? AND finished_batch_id = ?",
+                                [$selectedTransfer['from_vehicle_id'], $batchId]
+                            );
+                            $batchQuantityAvailable = (float)($availableRow['qty'] ?? 0);
+                            
+                            if ($batchQuantityAvailable <= 0 && !empty($finishedBatchNumber)) {
+                                $availableRow = $db->queryOne(
+                                    "SELECT COALESCE(SUM(quantity), 0) AS qty
+                                     FROM vehicle_inventory
+                                     WHERE vehicle_id = ? AND finished_batch_number = ?",
+                                    [$selectedTransfer['from_vehicle_id'], $finishedBatchNumber]
+                                );
+                                $batchQuantityAvailable = (float)($availableRow['qty'] ?? 0);
+                            }
+                            
+                            if ($batchQuantityAvailable <= 0 && !empty($basicItem['product_id'])) {
+                                $availableRow = $db->queryOne(
+                                    "SELECT COALESCE(SUM(quantity), 0) AS qty
+                                     FROM vehicle_inventory
+                                     WHERE vehicle_id = ? AND product_id = ?",
+                                    [$selectedTransfer['from_vehicle_id'], (int)$basicItem['product_id']]
+                                );
+                                $batchQuantityAvailable = (float)($availableRow['qty'] ?? 0);
+                            }
+                            
+                            // خصم الطلبات المعلقة الأخرى من نفس المخزن (باستثناء الطلب الحالي)
+                            if ($batchQuantityAvailable > 0 && $fromWarehouseIdForItem > 0) {
+                                $pending = $db->queryOne(
+                                    "SELECT COALESCE(SUM(wti.quantity), 0) AS pending_quantity
+                                     FROM warehouse_transfer_items wti
+                                     INNER JOIN warehouse_transfers wt ON wt.id = wti.transfer_id
+                                     WHERE wti.batch_id = ?
+                                       AND wt.status = 'pending'
+                                       AND wt.from_warehouse_id = ?
+                                       AND wt.id != ?",
+                                    [$batchId, $fromWarehouseIdForItem, $currentTransferId]
+                                );
+                                $batchQuantityAvailable -= (float)($pending['pending_quantity'] ?? 0);
+                            }
+                            
+                            $batchQuantityAvailable = max(0.0, $batchQuantityAvailable);
+                        } else {
+                            // حساب الكمية المتاحة من مخزون المصنع / المخزن الرئيسي
+                            $availableQuantity = (float)($batchQuantityProduced ?? 0);
+                            
+                            $transferred = $db->queryOne(
+                                "SELECT COALESCE(SUM(wti2.quantity), 0) as total_transferred
+                                 FROM warehouse_transfer_items wti2
+                                 INNER JOIN warehouse_transfers wt2 ON wt2.id = wti2.transfer_id
+                                 WHERE wti2.batch_id = ?
+                                   AND wt2.status IN ('approved', 'completed')
+                                   AND wt2.from_warehouse_id = ?
+                                   AND wti2.id != ?",
+                                [$batchId, $fromWarehouseIdForItem, $basicItem['item_id']]
+                            );
+                            $availableQuantity -= (float)($transferred['total_transferred'] ?? 0);
+                            
+                            $pendingTransfers = $db->queryOne(
+                                "SELECT COALESCE(SUM(wti2.quantity), 0) as pending_quantity
+                                 FROM warehouse_transfer_items wti2
+                                 INNER JOIN warehouse_transfers wt2 ON wt2.id = wti2.transfer_id
+                                 WHERE wti2.batch_id = ?
+                                   AND wt2.status = 'pending'
+                                   AND wt2.from_warehouse_id = ?
+                                   AND wt2.id != ?",
+                                [$batchId, $fromWarehouseIdForItem, $currentTransferId]
+                            );
+                            $availableQuantity -= (float)($pendingTransfers['pending_quantity'] ?? 0);
+                            
+                            $batchQuantityAvailable = max(0.0, $availableQuantity);
+                        }
                     }
                 }
                 

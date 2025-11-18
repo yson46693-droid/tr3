@@ -116,20 +116,62 @@ function customerHistorySyncForCustomer(int $customerId): array
         [$customerId, $cutoffDate]
     );
     
-    // تسجيل عدد الفواتير للتشخيص
-    error_log("customerHistorySyncForCustomer: Found " . count($invoiceRows) . " invoices for customer_id=$customerId since $cutoffDate");
-
-    $invoiceIds = array_map(
-        static function ($row) {
-            return (int)($row['id'] ?? 0);
-        },
-        $invoiceRows
+    // جلب المبيعات من جدول sales للعميل خلال آخر 6 أشهر وتجميعها حسب التاريخ
+    $salesRows = $db->query(
+        "SELECT date, SUM(total) as total_amount, SUM(CASE WHEN status = 'completed' THEN total ELSE 0 END) as paid_amount,
+                COUNT(*) as item_count, MIN(id) as first_sale_id
+         FROM sales
+         WHERE customer_id = ? AND date >= ?
+         GROUP BY date
+         ORDER BY date DESC",
+        [$customerId, $cutoffDate]
     );
+    
+    // تحويل المبيعات إلى فواتير وهمية في نفس التنسيق
+    $salesInvoiceRows = [];
+    foreach ($salesRows as $saleRow) {
+        $salesInvoiceRows[] = [
+            'id' => 0, // سيتم استخدام sale_date كمعرف فريد
+            'invoice_number' => 'SALE-' . str_replace('-', '', $saleRow['date']),
+            'date' => $saleRow['date'],
+            'total_amount' => (float)($saleRow['total_amount'] ?? 0.0),
+            'paid_amount' => (float)($saleRow['paid_amount'] ?? 0.0),
+            'status' => (float)($saleRow['paid_amount'] ?? 0.0) >= (float)($saleRow['total_amount'] ?? 0.0) ? 'paid' : 'partial',
+            'is_sale' => true, // علامة للتمييز بين الفواتير الحقيقية والمبيعات
+            'sale_date' => $saleRow['date'],
+        ];
+    }
+    
+    // دمج الفواتير والمبيعات معاً
+    $allInvoiceRows = array_merge($invoiceRows, $salesInvoiceRows);
+    
+    // تسجيل عدد الفواتير والمبيعات للتشخيص
+    error_log("customerHistorySyncForCustomer: Found " . count($invoiceRows) . " invoices and " . count($salesRows) . " sales for customer_id=$customerId since $cutoffDate");
 
-    // تجميع بيانات المرتجعات حسب الفاتورة
+    // إنشاء معرفات فريدة للفواتير والمبيعات
+    $invoiceIds = [];
+    $invoiceIdMap = []; // خريطة لربط المعرفات الوهمية بالمعرفات الحقيقية
+    
+    foreach ($allInvoiceRows as $idx => $row) {
+        if (!empty($row['is_sale'])) {
+            // للمبيعات، نستخدم sale_date كمعرف فريد
+            $fakeId = -1000 - (int)strtotime($row['sale_date']); // رقم سالب فريد
+            $invoiceIds[] = $fakeId;
+            $invoiceIdMap[$fakeId] = $row;
+        } else {
+            $realId = (int)($row['id'] ?? 0);
+            if ($realId > 0) {
+                $invoiceIds[] = $realId;
+                $invoiceIdMap[$realId] = $row;
+            }
+        }
+    }
+
+    // تجميع بيانات المرتجعات حسب الفاتورة (فقط للفواتير الحقيقية، ليس للمبيعات)
     $returnsByInvoice = [];
-    if (!empty($invoiceIds)) {
-        $placeholders = implode(',', array_fill(0, count($invoiceIds), '?'));
+    $realInvoiceIds = array_filter($invoiceIds, function($id) { return $id > 0; });
+    if (!empty($realInvoiceIds)) {
+        $placeholders = implode(',', array_fill(0, count($realInvoiceIds), '?'));
         $returnRows = $db->query(
             "SELECT invoice_id, COUNT(*) as return_count, COALESCE(SUM(refund_amount), 0) as return_total
              FROM returns
@@ -137,7 +179,7 @@ function customerHistorySyncForCustomer(int $customerId): array
                AND invoice_id IN ($placeholders)
                AND return_date >= ?
              GROUP BY invoice_id",
-            array_merge([$customerId], $invoiceIds, [$cutoffDate])
+            array_merge([$customerId], $realInvoiceIds, [$cutoffDate])
         );
 
         foreach ($returnRows as $returnRow) {
@@ -152,10 +194,10 @@ function customerHistorySyncForCustomer(int $customerId): array
         }
     }
 
-    // تجميع بيانات الاستبدالات عبر المرتجعات المرتبطة بالفواتير
+    // تجميع بيانات الاستبدالات عبر المرتجعات المرتبطة بالفواتير (فقط للفواتير الحقيقية)
     $exchangesByInvoice = [];
-    if (!empty($invoiceIds)) {
-        $placeholders = implode(',', array_fill(0, count($invoiceIds), '?'));
+    if (!empty($realInvoiceIds)) {
+        $placeholders = implode(',', array_fill(0, count($realInvoiceIds), '?'));
         $exchangeRows = $db->query(
             "SELECT
                 e.id,
@@ -171,7 +213,7 @@ function customerHistorySyncForCustomer(int $customerId): array
                AND e.exchange_date >= ?
                AND r.invoice_id IS NOT NULL
                AND r.invoice_id IN ($placeholders)",
-            array_merge([$customerId, $cutoffDate], $invoiceIds)
+            array_merge([$customerId, $cutoffDate], $realInvoiceIds)
         );
 
         foreach ($exchangeRows as $exchangeRow) {
@@ -191,9 +233,16 @@ function customerHistorySyncForCustomer(int $customerId): array
     }
 
     // تحديث أو إنشاء السجلات في جدول التاريخ
-    foreach ($invoiceRows as $invoiceRow) {
-        $invoiceId = (int)$invoiceRow['id'];
-        if ($invoiceId <= 0) {
+    foreach ($allInvoiceRows as $invoiceRow) {
+        $invoiceId = (int)($invoiceRow['id'] ?? 0);
+        $isSale = !empty($invoiceRow['is_sale']);
+        
+        // للمبيعات، نستخدم معرف وهمي فريد
+        if ($isSale && $invoiceId <= 0) {
+            $invoiceId = -1000 - (int)strtotime($invoiceRow['sale_date'] ?? $invoiceRow['date']);
+        }
+        
+        if ($invoiceId == 0 && !$isSale) {
             continue;
         }
 
@@ -201,10 +250,17 @@ function customerHistorySyncForCustomer(int $customerId): array
         $paidAmount = (float)($invoiceRow['paid_amount'] ?? 0.0);
         $status = (string)($invoiceRow['status'] ?? '');
 
-        $returnsData = $returnsByInvoice[$invoiceId] ?? ['count' => 0, 'total' => 0.0];
-        $exchangesData = $exchangesByInvoice[$invoiceId] ?? ['count' => 0, 'total' => 0.0];
+        // المرتجعات والاستبدالات لا تنطبق على المبيعات المباشرة (sales) لأنها مرتبطة بالفواتير فقط
+        $returnsData = ['count' => 0, 'total' => 0.0];
+        $exchangesData = ['count' => 0, 'total' => 0.0];
+        
+        if (!$isSale && $invoiceId > 0) {
+            $returnsData = $returnsByInvoice[$invoiceId] ?? ['count' => 0, 'total' => 0.0];
+            $exchangesData = $exchangesByInvoice[$invoiceId] ?? ['count' => 0, 'total' => 0.0];
+        }
 
         try {
+            // للمبيعات، نستخدم invoice_id سالب فريد، ونستخدم invoice_number كمعرف فريد في UNIQUE KEY
             $db->execute(
                 "INSERT INTO customer_purchase_history
                     (customer_id, invoice_id, invoice_number, invoice_date, invoice_total, paid_amount, invoice_status,

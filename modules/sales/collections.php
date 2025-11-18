@@ -468,15 +468,6 @@ $customers = $db->query("SELECT id, name FROM customers WHERE status = 'active' 
                                         <a href="?page=sales_collections&id=<?php echo $collection['id']; ?>" class="btn btn-sm btn-info" title="عرض">
                                             <i class="bi bi-eye"></i>
                                         </a>
-                                        <?php if ($currentUser['role'] === 'sales' && $collection['collected_by'] == $currentUser['id']): ?>
-                                        <button class="btn btn-sm btn-danger" onclick="deleteCollection(<?php echo $collection['id']; ?>)" title="حذف">
-                                            <i class="bi bi-trash"></i>
-                                        </button>
-                                        <?php elseif ($currentUser['role'] !== 'sales'): ?>
-                                        <button class="btn btn-sm btn-danger" onclick="deleteCollection(<?php echo $collection['id']; ?>)" title="حذف">
-                                            <i class="bi bi-trash"></i>
-                                        </button>
-                                        <?php endif; ?>
                                     </div>
                                 </td>
                             </tr>
@@ -585,21 +576,4 @@ $customers = $db->query("SELECT id, name FROM customers WHERE status = 'active' 
 </div>
 <?php endif; ?>
 
-<script>
-// حذف التحصيل
-function deleteCollection(id) {
-    if (!confirm('هل أنت متأكد من حذف هذا التحصيل؟ هذا الإجراء لا يمكن التراجع عنه.')) {
-        return;
-    }
-    
-    const form = document.createElement('form');
-    form.method = 'POST';
-    form.innerHTML = `
-        <input type="hidden" name="action" value="delete_collection">
-        <input type="hidden" name="collection_id" value="${id}">
-    `;
-    document.body.appendChild(form);
-    form.submit();
-}
-</script>
 
