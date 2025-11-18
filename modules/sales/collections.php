@@ -56,6 +56,22 @@ $hasStatusColumn = !empty($statusColumnCheck);
 $approvedByColumnCheck = $db->queryOne("SHOW COLUMNS FROM collections LIKE 'approved_by'");
 $hasApprovedByColumn = !empty($approvedByColumnCheck);
 
+// التحقق من وجود عمود collection_number وإضافته إذا لم يكن موجوداً
+$collectionNumberColumnCheck = $db->queryOne("SHOW COLUMNS FROM collections LIKE 'collection_number'");
+$hasCollectionNumberColumn = !empty($collectionNumberColumnCheck);
+if (!$hasCollectionNumberColumn) {
+    try {
+        $db->execute("ALTER TABLE collections ADD COLUMN collection_number VARCHAR(50) NULL AFTER id");
+        $hasCollectionNumberColumn = true;
+    } catch (Throwable $alterError) {
+        error_log('Failed to add collection_number column: ' . $alterError->getMessage());
+    }
+}
+
+// التحقق من وجود عمود notes
+$notesColumnCheck = $db->queryOne("SHOW COLUMNS FROM collections LIKE 'notes'");
+$hasNotesColumn = !empty($notesColumnCheck);
+
 // معالجة العمليات
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     $action = $_POST['action'] ?? '';
@@ -70,25 +86,41 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         if ($customerId <= 0 || $amount <= 0) {
             $error = 'يجب إدخال العميل والمبلغ';
         } else {
-            // توليد رقم تحصيل
-            $year = date('Y');
-            $month = date('m');
-            $lastCollection = $db->queryOne(
-                "SELECT collection_number FROM collections WHERE collection_number LIKE ? ORDER BY collection_number DESC LIMIT 1",
-                ["COL-{$year}{$month}-%"]
-            );
+            $collectionNumber = null;
             
-            $serial = 1;
-            if ($lastCollection) {
-                $parts = explode('-', $lastCollection['collection_number']);
-                $serial = intval($parts[2] ?? 0) + 1;
+            // توليد رقم تحصيل إذا كان العمود موجوداً
+            if ($hasCollectionNumberColumn) {
+                $year = date('Y');
+                $month = date('m');
+                $lastCollection = $db->queryOne(
+                    "SELECT collection_number FROM collections WHERE collection_number LIKE ? ORDER BY collection_number DESC LIMIT 1",
+                    ["COL-{$year}{$month}-%"]
+                );
+                
+                $serial = 1;
+                if (!empty($lastCollection['collection_number'])) {
+                    $parts = explode('-', $lastCollection['collection_number']);
+                    $serial = intval($parts[2] ?? 0) + 1;
+                }
+                $collectionNumber = sprintf("COL-%s%s-%04d", $year, $month, $serial);
             }
-            $collectionNumber = sprintf("COL-%s%s-%04d", $year, $month, $serial);
             
             // بناء الاستعلام بشكل ديناميكي
-            $columns = ['collection_number', 'customer_id', 'amount', 'date', 'payment_method', 'collected_by', 'notes'];
-            $values = [$collectionNumber, $customerId, $amount, $date, $paymentMethod, $currentUser['id'], $notes];
-            $placeholders = ['?', '?', '?', '?', '?', '?', '?'];
+            $columns = ['customer_id', 'amount', 'date', 'payment_method', 'collected_by'];
+            $values = [$customerId, $amount, $date, $paymentMethod, $currentUser['id']];
+            $placeholders = ['?', '?', '?', '?', '?'];
+            
+            if ($hasCollectionNumberColumn && $collectionNumber !== null) {
+                array_unshift($columns, 'collection_number');
+                array_unshift($values, $collectionNumber);
+                array_unshift($placeholders, '?');
+            }
+            
+            if ($hasNotesColumn) {
+                $columns[] = 'notes';
+                $values[] = $notes;
+                $placeholders[] = '?';
+            }
             
             if ($hasStatusColumn) {
                 $columns[] = 'status';
@@ -111,13 +143,15 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             
             if ($distributionResult['success']) {
                 $updatedCount = count($distributionResult['updated_invoices'] ?? []);
+                $collectionNumberText = $collectionNumber !== null ? $collectionNumber : '#' . $collectionId;
                 if ($updatedCount > 0) {
-                    $success = 'تم إضافة التحصيل بنجاح: ' . $collectionNumber . ' وتم تحديث ' . $updatedCount . ' فاتورة';
+                    $success = 'تم إضافة التحصيل بنجاح: ' . $collectionNumberText . ' وتم تحديث ' . $updatedCount . ' فاتورة';
                 } else {
-                    $success = 'تم إضافة التحصيل بنجاح: ' . $collectionNumber;
+                    $success = 'تم إضافة التحصيل بنجاح: ' . $collectionNumberText;
                 }
             } else {
-                $success = 'تم إضافة التحصيل بنجاح: ' . $collectionNumber . ' (ملاحظة: ' . ($distributionResult['message'] ?? 'لم يتم تحديث الفواتير') . ')';
+                $collectionNumberText = $collectionNumber !== null ? $collectionNumber : '#' . $collectionId;
+                $success = 'تم إضافة التحصيل بنجاح: ' . $collectionNumberText . ' (ملاحظة: ' . ($distributionResult['message'] ?? 'لم يتم تحديث الفواتير') . ')';
             }
         }
     } elseif ($action === 'delete_collection') {
@@ -148,6 +182,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 }
 
 // بناء استعلام SQL
+// استخدام c.* آمن الآن لأننا أضفنا collection_number إذا لم يكن موجوداً
 $sql = "SELECT c.*, cust.name as customer_name, cust.phone as customer_phone, u.full_name as collected_by_name";
 if ($hasApprovedByColumn) {
     $sql .= ", u2.full_name as approved_by_name";

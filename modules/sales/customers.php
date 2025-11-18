@@ -509,26 +509,55 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action'])) {
                 // حفظ التحصيل في جدول collections ليظهر في صفحات التحصيلات وخزنة المندوب
                 $collectionsTableExists = $db->queryOne("SHOW TABLES LIKE 'collections'");
                 if (!empty($collectionsTableExists)) {
+                    // التحقق من وجود الأعمدة
                     $hasStatusColumn = !empty($db->queryOne("SHOW COLUMNS FROM collections LIKE 'status'"));
+                    $hasCollectionNumberColumn = !empty($db->queryOne("SHOW COLUMNS FROM collections LIKE 'collection_number'"));
+                    $hasNotesColumn = !empty($db->queryOne("SHOW COLUMNS FROM collections LIKE 'notes'"));
 
-                    $year = date('Y');
-                    $month = date('m');
-                    $lastCollection = $db->queryOne(
-                        "SELECT collection_number FROM collections WHERE collection_number LIKE ? ORDER BY collection_number DESC LIMIT 1 FOR UPDATE",
-                        ["COL-{$year}{$month}-%"]
-                    );
-
-                    $serial = 1;
-                    if (!empty($lastCollection['collection_number'])) {
-                        $parts = explode('-', $lastCollection['collection_number']);
-                        $serial = intval($parts[2] ?? 0) + 1;
+                    // إضافة عمود collection_number إذا لم يكن موجوداً
+                    if (!$hasCollectionNumberColumn) {
+                        try {
+                            $db->execute("ALTER TABLE collections ADD COLUMN collection_number VARCHAR(50) NULL AFTER id");
+                            $hasCollectionNumberColumn = true;
+                        } catch (Throwable $alterError) {
+                            error_log('Failed to add collection_number column: ' . $alterError->getMessage());
+                        }
                     }
 
-                    $collectionNumber = sprintf("COL-%s%s-%04d", $year, $month, $serial);
+                    // توليد رقم التحصيل إذا كان العمود موجوداً
+                    if ($hasCollectionNumberColumn) {
+                        $year = date('Y');
+                        $month = date('m');
+                        $lastCollection = $db->queryOne(
+                            "SELECT collection_number FROM collections WHERE collection_number LIKE ? ORDER BY collection_number DESC LIMIT 1 FOR UPDATE",
+                            ["COL-{$year}{$month}-%"]
+                        );
 
-                    $collectionColumns = ['collection_number', 'customer_id', 'amount', 'date', 'payment_method', 'collected_by', 'notes'];
-                    $collectionValues = [$collectionNumber, $customerId, $amount, date('Y-m-d'), 'cash', $currentUser['id'], 'تحصيل من صفحة العملاء'];
+                        $serial = 1;
+                        if (!empty($lastCollection['collection_number'])) {
+                            $parts = explode('-', $lastCollection['collection_number']);
+                            $serial = intval($parts[2] ?? 0) + 1;
+                        }
+
+                        $collectionNumber = sprintf("COL-%s%s-%04d", $year, $month, $serial);
+                    }
+
+                    // بناء قائمة الأعمدة والقيم
+                    $collectionColumns = ['customer_id', 'amount', 'date', 'payment_method', 'collected_by'];
+                    $collectionValues = [$customerId, $amount, date('Y-m-d'), 'cash', $currentUser['id']];
                     $collectionPlaceholders = array_fill(0, count($collectionColumns), '?');
+
+                    if ($hasCollectionNumberColumn && $collectionNumber !== null) {
+                        array_unshift($collectionColumns, 'collection_number');
+                        array_unshift($collectionValues, $collectionNumber);
+                        array_unshift($collectionPlaceholders, '?');
+                    }
+
+                    if ($hasNotesColumn) {
+                        $collectionColumns[] = 'notes';
+                        $collectionValues[] = 'تحصيل من صفحة العملاء';
+                        $collectionPlaceholders[] = '?';
+                    }
 
                     if ($hasStatusColumn) {
                         $collectionColumns[] = 'status';
