@@ -863,13 +863,9 @@ foreach ($vehicleInventory as $item) {
                                         <option value="">اختر المنتج</option>
                                     </select>
                                 </div>
-                                <div class="col-md-3">
+                                <div class="col-md-4">
                                     <input type="number" step="0.01" class="form-control quantity" 
                                            name="items[0][quantity]" placeholder="الكمية" required min="0.01">
-                                </div>
-                                <div class="col-md-3">
-                                    <input type="text" class="form-control" 
-                                           name="items[0][notes]" placeholder="ملاحظات">
                                 </div>
                                 <div class="col-12">
                                     <small class="text-muted available-hint d-block"></small>
@@ -887,11 +883,6 @@ foreach ($vehicleInventory as $item) {
                         <button type="button" class="btn btn-sm btn-outline-primary" id="addItemBtn" <?php echo empty($finishedProductOptions) ? 'disabled' : ''; ?>>
                             <i class="bi bi-plus-circle me-2"></i>إضافة عنصر
                         </button>
-                    </div>
-                    
-                    <div class="mb-3">
-                        <label class="form-label">ملاحظات</label>
-                        <textarea class="form-control" name="notes" rows="3"></textarea>
                     </div>
                     
                     <div class="alert alert-info">
@@ -1127,13 +1118,9 @@ document.getElementById('addItemBtn')?.addEventListener('click', function() {
                 ${optionsHtml}
             </select>
         </div>
-        <div class="col-md-3">
+        <div class="col-md-4">
             <input type="number" step="0.01" class="form-control quantity" 
                    name="items[${itemIndex}][quantity]" placeholder="الكمية" required min="0.01">
-        </div>
-        <div class="col-md-3">
-            <input type="text" class="form-control" 
-                   name="items[${itemIndex}][notes]" placeholder="ملاحظات">
         </div>
         <div class="col-12">
             <small class="text-muted available-hint d-block"></small>
