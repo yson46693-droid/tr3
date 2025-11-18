@@ -517,7 +517,7 @@ if ($sessionSuccess) {
 
 // الحصول على القسم المطلوب (افتراضياً: العسل)
 $section = $_GET['section'] ?? 'honey';
-$validSections = ['honey', 'olive_oil', 'beeswax', 'derivatives', 'nuts'];
+$validSections = ['honey', 'olive_oil', 'beeswax', 'derivatives', 'nuts', 'sesame'];
 if (!in_array($section, $validSections)) {
     $section = 'honey';
 }
@@ -704,6 +704,59 @@ $derivativeMaterialOptions = array_map(static function ($type, $data) {
     ];
 }, array_keys($derivativeMaterialAggregates), $derivativeMaterialAggregates);
 
+// السمسم المتاح للاستخدام في القوالب
+$availableSesameForTemplates = [];
+try {
+    $availableSesameForTemplates = $db->query(
+        "SELECT ss.quantity, s.name AS supplier_name
+         FROM sesame_stock ss
+         INNER JOIN suppliers s ON ss.supplier_id = s.id
+         WHERE ss.quantity > 0
+         ORDER BY s.name"
+    );
+} catch (Exception $e) {
+    error_log('Failed to load sesame stock for templates: ' . $e->getMessage());
+    $availableSesameForTemplates = [];
+}
+
+$sesameMaterialAggregates = [];
+$totalSesameQuantity = 0.0;
+$sesameSuppliers = [];
+foreach ($availableSesameForTemplates as $sesameRow) {
+    $totalSesameQuantity += (float)($sesameRow['quantity'] ?? 0);
+    $supplierName = trim((string)($sesameRow['supplier_name'] ?? ''));
+    if ($supplierName !== '' && !in_array($supplierName, $sesameSuppliers, true)) {
+        $sesameSuppliers[] = $supplierName;
+    }
+}
+
+if ($totalSesameQuantity > 0) {
+    $sesameMaterialAggregates['سمسم'] = [
+        'value' => 'سمسم',
+        'quantity' => $totalSesameQuantity,
+        'suppliers' => $sesameSuppliers,
+    ];
+}
+
+$sesameMaterialOptions = array_map(static function ($type, $data) {
+    $quantityLabel = number_format($data['quantity'], 3);
+    $suppliersLabel = '';
+    if (!empty($data['suppliers'])) {
+        $firstSupplier = $data['suppliers'][0];
+        $additionalSuppliers = count($data['suppliers']) - 1;
+        if ($additionalSuppliers > 0) {
+            $suppliersLabel = sprintf(' - مورد: %s (+%d)', $firstSupplier, $additionalSuppliers);
+        } else {
+            $suppliersLabel = sprintf(' - المورد: %s', $firstSupplier);
+        }
+    }
+
+    return [
+        'value' => $type,
+        'label' => sprintf('%s - متاح: %s كجم%s', $type, $quantityLabel, $suppliersLabel),
+    ];
+}, array_keys($sesameMaterialAggregates), $sesameMaterialAggregates);
+
 $rawWarehouseReport = [
     'generated_at' => date('Y-m-d H:i'),
     'generated_by' => $currentUser['full_name'] ?? ($currentUser['username'] ?? 'مستخدم'),
@@ -718,7 +771,7 @@ $rawWarehouseReport['total_suppliers'] = (int)($rawReportQueryOne($db, "
     SELECT COUNT(*) AS total 
     FROM suppliers 
     WHERE status = 'active' 
-      AND type IN ('honey', 'olive_oil', 'beeswax', 'derivatives', 'nuts')
+      AND type IN ('honey', 'olive_oil', 'beeswax', 'derivatives', 'nuts', 'sesame')
 ")['total'] ?? 0);
 
 // Honey summary
@@ -1049,6 +1102,47 @@ if ($nutsSummary || $mixedNutsSummary) {
     $rawWarehouseReport['zero_items'] += (int)($nutsSummary['zero_items'] ?? 0);
 }
 
+// Sesame summary
+$sesameSummary = $rawReportQueryOne($db, "
+    SELECT 
+        COALESCE(SUM(quantity), 0) AS total_quantity,
+        COUNT(*) AS records,
+        COUNT(DISTINCT supplier_id) AS suppliers,
+        SUM(CASE WHEN COALESCE(quantity,0) <= 0 THEN 1 ELSE 0 END) AS zero_items
+    FROM sesame_stock
+");
+if ($sesameSummary) {
+    $sectionKey = 'sesame';
+    $rawWarehouseReport['sections_order'][] = $sectionKey;
+    $rawWarehouseReport['sections'][$sectionKey] = [
+        'title' => 'السمسم',
+        'records' => (int)($sesameSummary['records'] ?? 0),
+        'metrics' => [
+            [
+                'label' => 'إجمالي المخزون',
+                'value' => (float)($sesameSummary['total_quantity'] ?? 0),
+                'unit' => 'كجم',
+                'decimals' => 3
+            ],
+            [
+                'label' => 'عدد السجلات',
+                'value' => (int)($sesameSummary['records'] ?? 0),
+                'unit' => null,
+                'decimals' => 0
+            ],
+            [
+                'label' => 'عدد الموردين',
+                'value' => (int)($sesameSummary['suppliers'] ?? 0),
+                'unit' => null,
+                'decimals' => 0
+            ]
+        ],
+        'top_items' => []
+    ];
+    $rawWarehouseReport['total_records'] += (int)($sesameSummary['records'] ?? 0);
+    $rawWarehouseReport['zero_items'] += (int)($sesameSummary['zero_items'] ?? 0);
+}
+
 $rawWarehouseReport['sections_count'] = count($rawWarehouseReport['sections']);
 
 // ======= معالجة العمليات (تم تعطيل كود إنشاء الجداول القديم) =======
@@ -1279,6 +1373,29 @@ if (empty($mixedNutsIngredientsCheck)) {
     }
 }
 
+// ======= إنشاء جدول مخزن السمسم =======
+$sesameStockCheck = $db->queryOne("SHOW TABLES LIKE 'sesame_stock'");
+if (empty($sesameStockCheck)) {
+    try {
+        $db->execute("
+            CREATE TABLE IF NOT EXISTS `sesame_stock` (
+              `id` int(11) NOT NULL AUTO_INCREMENT,
+              `supplier_id` int(11) NOT NULL,
+              `quantity` decimal(10,3) NOT NULL DEFAULT 0.000 COMMENT 'الكمية بالكيلوجرام',
+              `unit_price` decimal(10,2) DEFAULT NULL COMMENT 'سعر الكيلو',
+              `notes` text DEFAULT NULL,
+              `created_at` timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP,
+              `updated_at` timestamp NULL DEFAULT NULL ON UPDATE CURRENT_TIMESTAMP,
+              PRIMARY KEY (`id`),
+              KEY `supplier_id_idx` (`supplier_id`),
+              CONSTRAINT `sesame_stock_ibfk_1` FOREIGN KEY (`supplier_id`) REFERENCES `suppliers` (`id`) ON DELETE CASCADE
+            ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
+        ");
+    } catch (Exception $e) {
+        error_log("Error creating sesame_stock table: " . $e->getMessage());
+    }
+}
+
 if (!ensureRawMaterialDamageLogsTable()) {
     error_log("Unable to ensure raw_material_damage_logs table exists.");
 }
@@ -1375,7 +1492,7 @@ if (empty($templateRawMaterialsCheck)) {
             CREATE TABLE IF NOT EXISTS `template_raw_materials` (
               `id` int(11) NOT NULL AUTO_INCREMENT,
               `template_id` int(11) NOT NULL,
-              `material_type` enum('honey_raw','honey_filtered','olive_oil','beeswax','derivatives','nuts','other') NOT NULL COMMENT 'نوع المادة الخام',
+              `material_type` enum('honey_raw','honey_filtered','olive_oil','beeswax','derivatives','nuts','sesame','other') NOT NULL COMMENT 'نوع المادة الخام',
               `material_name` varchar(255) NOT NULL COMMENT 'اسم المادة (للمواد الأخرى)',
               `supplier_id` int(11) DEFAULT NULL COMMENT 'المورد الخاص بالمادة',
               `honey_variety` varchar(50) DEFAULT NULL COMMENT 'نوع العسل (سدر، جبلي، إلخ)',
@@ -1404,6 +1521,22 @@ if (empty($templateRawMaterialsCheck)) {
                 error_log("Error adding honey_variety to template_raw_materials: " . $e->getMessage());
             }
         }
+        
+        // تحديث enum material_type لإضافة 'sesame' إذا لم يكن موجوداً
+        try {
+            $materialTypeColumn = $db->queryOne("SHOW COLUMNS FROM template_raw_materials WHERE Field = 'material_type'");
+            if ($materialTypeColumn) {
+                $typeEnum = $materialTypeColumn['Type'];
+                if (strpos($typeEnum, 'sesame') === false) {
+                    $db->execute("
+                        ALTER TABLE `template_raw_materials` 
+                        MODIFY COLUMN `material_type` enum('honey_raw','honey_filtered','olive_oil','beeswax','derivatives','nuts','sesame','other') NOT NULL COMMENT 'نوع المادة الخام'
+                    ");
+                }
+            }
+        } catch (Exception $e) {
+            error_log("Error updating template_raw_materials material_type enum: " . $e->getMessage());
+        }
     } catch (Exception $e) {
         error_log("Error creating template_raw_materials table: " . $e->getMessage());
     }
@@ -1431,15 +1564,22 @@ if (empty($templatePackagingCheck)) {
     }
 }
 
-// إضافة نوع المكسرات إلى عمود type في جدول suppliers إذا لم يكن موجوداً
+// إضافة نوع المكسرات والسمسم إلى عمود type في جدول suppliers إذا لم يكن موجوداً
 try {
     $supplierTypeColumn = $db->queryOne("SHOW COLUMNS FROM suppliers WHERE Field = 'type'");
     if ($supplierTypeColumn) {
         $typeEnum = $supplierTypeColumn['Type'];
-        if (strpos($typeEnum, 'nuts') === false) {
+        $needsUpdate = false;
+        $newEnum = "enum('honey','olive_oil','beeswax','derivatives','packaging','nuts','sesame')";
+        
+        if (strpos($typeEnum, 'nuts') === false || strpos($typeEnum, 'sesame') === false) {
+            $needsUpdate = true;
+        }
+        
+        if ($needsUpdate) {
             $db->execute("
                 ALTER TABLE `suppliers` 
-                MODIFY COLUMN `type` enum('honey','olive_oil','beeswax','derivatives','packaging','nuts') DEFAULT NULL 
+                MODIFY COLUMN `type` {$newEnum} DEFAULT NULL 
                 COMMENT 'نوع المورد'
             ");
         }
@@ -1454,7 +1594,8 @@ $supplierTypeMap = [
     'olive_oil' => 'olive_oil',
     'beeswax' => 'beeswax',
     'derivatives' => 'derivatives',
-    'nuts' => 'nuts'
+    'nuts' => 'nuts',
+    'sesame' => 'sesame'
 ];
 
 $currentSupplierType = $supplierTypeMap[$section] ?? null;
@@ -1668,7 +1809,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             $sectionRedirect = $_POST['redirect_section'] ?? $materialCategory;
             $stockSource = $_POST['stock_source'] ?? 'single';
             
-            $validCategories = ['honey', 'olive_oil', 'beeswax', 'derivatives', 'nuts'];
+            $validCategories = ['honey', 'olive_oil', 'beeswax', 'derivatives', 'nuts', 'sesame'];
             if (!in_array($sectionRedirect, $validCategories, true)) {
                 $sectionRedirect = $materialCategory;
             }
@@ -1810,6 +1951,22 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                                 $logDetails['item_label'] = 'مكسرات';
                                 $logDetails['variety'] = $stock['nut_type'] ?? null;
                             }
+                        }
+                    } elseif ($materialCategory === 'sesame') {
+                        $stock = $db->queryOne("
+                            SELECT ss.*, s.name AS supplier_name
+                            FROM sesame_stock ss
+                            LEFT JOIN suppliers s ON ss.supplier_id = s.id
+                            WHERE ss.id = ?", [$stockId]);
+                        
+                        if (!$stock) {
+                            $error = 'سجل السمسم غير موجود';
+                        } elseif (floatval($stock['quantity']) < $quantity) {
+                            $error = 'الكمية المدخلة أكبر من الكمية المتاحة';
+                        } else {
+                            $db->execute("UPDATE sesame_stock SET quantity = quantity - ?, updated_at = NOW() WHERE id = ?", [$quantity, $stockId]);
+                            $logDetails['supplier_id'] = $stock['supplier_id'];
+                            $logDetails['item_label'] = 'سمسم';
                         }
                     }
                     
@@ -2160,6 +2317,62 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             }
         }
         
+        // عمليات السمسم
+        elseif ($action === 'add_single_sesame') {
+            $supplierId = intval($_POST['supplier_id'] ?? 0);
+            $quantity = floatval($_POST['quantity'] ?? 0);
+            $notes = trim($_POST['notes'] ?? '');
+            $supplyStockId = null;
+            
+            if ($supplierId <= 0) {
+                $error = 'يجب اختيار المورد';
+            } elseif ($quantity <= 0) {
+                $error = 'يجب إدخال كمية صحيحة';
+            } else {
+                $existing = $db->queryOne("SELECT * FROM sesame_stock WHERE supplier_id = ?", [$supplierId]);
+                
+                if ($existing) {
+                    $db->execute("UPDATE sesame_stock SET quantity = quantity + ?, notes = ?, updated_at = NOW() WHERE supplier_id = ?", [$quantity, $notes ?: $existing['notes'], $supplierId]);
+                    if (isset($existing['id'])) {
+                        $supplyStockId = (int)$existing['id'];
+                    }
+                } else {
+                    $insertResult = $db->execute("INSERT INTO sesame_stock (supplier_id, quantity, notes) VALUES (?, ?, ?)", [$supplierId, $quantity, $notes ?: null]);
+                    if (!empty($insertResult['insert_id'])) {
+                        $supplyStockId = (int)$insertResult['insert_id'];
+                    }
+                }
+                
+                logAudit($currentUser['id'], 'add_single_sesame', 'sesame_stock', $supplierId, null, ['quantity' => $quantity]);
+
+                $supplierRow = $db->queryOne("SELECT name FROM suppliers WHERE id = ? LIMIT 1", [$supplierId]);
+                $supplierName = $supplierRow['name'] ?? null;
+                $detailsParts = ['إضافة سمسم خام'];
+                if ($notes !== '') {
+                    $detailsParts[] = 'ملاحظات: ' . mb_substr($notes, 0, 120, 'UTF-8');
+                }
+                recordProductionSupplyLog([
+                    'material_category' => 'sesame',
+                    'material_label' => 'سمسم',
+                    'stock_source' => 'sesame_stock',
+                    'stock_id' => $supplyStockId,
+                    'supplier_id' => $supplierId,
+                    'supplier_name' => $supplierName,
+                    'quantity' => $quantity,
+                    'unit' => 'كجم',
+                    'details' => implode(' | ', $detailsParts),
+                    'recorded_by' => $currentUser['id'] ?? null,
+                ]);
+                
+                preventDuplicateSubmission(
+                    'تم إضافة السمسم بنجاح',
+                    ['page' => 'raw_materials_warehouse', 'section' => 'sesame'],
+                    null,
+                    $dashboardSlug
+                );
+            }
+        }
+        
         // إنشاء مكسرات مشكلة
         elseif ($action === 'create_mixed_nuts') {
             $batchName = trim($_POST['batch_name'] ?? '');
@@ -2293,6 +2506,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 'beeswax'        => 'شمع عسل',
                 'derivatives'    => 'مشتق',
                 'nuts'           => 'مكسرات',
+                'sesame'         => 'سمسم',
                 'other'          => 'مادة أخرى'
             ];
 
@@ -2667,6 +2881,10 @@ $rawMaterialsReportGeneratedAt = $rawWarehouseReport['generated_at'] ?? date('Y-
     background: linear-gradient(135deg, #d4a574 0%, #8b6f47 100%);
 }
 
+.section-tabs .nav-link.active[href*="sesame"] {
+    background: linear-gradient(135deg, #f4d03f 0%, #f39c12 100%);
+}
+
 #createMixedNutsModal .modal-dialog {
     max-width: 920px;
 }
@@ -2975,6 +3193,12 @@ $rawMaterialsReportGeneratedAt = $rawWarehouseReport['generated_at'] ?? date('Y-
             <a class="nav-link <?php echo $section === 'nuts' ? 'active' : ''; ?>" 
                href="?page=raw_materials_warehouse&section=nuts">
                 <i class="bi bi-nut-fill"></i>المكسرات
+            </a>
+        </li>
+        <li class="nav-item">
+            <a class="nav-link <?php echo $section === 'sesame' ? 'active' : ''; ?>" 
+               href="?page=raw_materials_warehouse&section=sesame">
+                <i class="bi bi-circle-fill"></i>السمسم
             </a>
         </li>
     </ul>
@@ -4634,6 +4858,213 @@ $nutsSuppliers = $db->query("SELECT id, name, phone FROM suppliers WHERE status 
     </script>
     
     <?php
+} elseif ($section === 'sesame') {
+    // جلب موردي السمسم
+    $sesameSuppliers = $db->query("SELECT id, name, phone FROM suppliers WHERE status = 'active' AND type = 'sesame' ORDER BY name");
+    
+    // جلب مخزون السمسم
+    $sesameStock = $db->query("
+        SELECT ss.*, s.name as supplier_name, s.phone as supplier_phone 
+        FROM sesame_stock ss
+        INNER JOIN suppliers s ON ss.supplier_id = s.id
+        WHERE ss.quantity > 0
+        ORDER BY s.name
+    ");
+    
+    // إحصائيات السمسم
+    $sesameStats = [
+        'total_quantity' => $db->queryOne("SELECT COALESCE(SUM(quantity), 0) as total FROM sesame_stock")['total'] ?? 0,
+        'suppliers_count' => $db->queryOne("SELECT COUNT(DISTINCT supplier_id) as total FROM sesame_stock")['total'] ?? 0
+    ];
+    ?>
+    
+    <!-- إحصائيات السمسم -->
+    <div class="row mb-4">
+        <div class="col-md-6">
+            <div class="stats-card">
+                <div class="d-flex justify-content-between align-items-center">
+                    <div>
+                        <div class="text-muted small mb-1">إجمالي الكمية</div>
+                        <div class="h4 mb-0"><?php echo number_format($sesameStats['total_quantity'], 2); ?> <small>كجم</small></div>
+                    </div>
+                    <div class="stat-icon" style="background: linear-gradient(135deg, #f4d03f 0%, #f39c12 100%);">
+                        <i class="bi bi-circle-fill"></i>
+                    </div>
+                </div>
+            </div>
+        </div>
+        <div class="col-md-6">
+            <div class="stats-card">
+                <div class="d-flex justify-content-between align-items-center">
+                    <div>
+                        <div class="text-muted small mb-1">عدد الموردين</div>
+                        <div class="h4 mb-0"><?php echo $sesameStats['suppliers_count']; ?></div>
+                    </div>
+                    <div class="stat-icon" style="background: linear-gradient(135deg, #f4d03f 0%, #f39c12 100%);">
+                        <i class="bi bi-people"></i>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+    
+    <div class="row">
+        <div class="col-12">
+            <div class="card shadow-sm">
+                <div class="card-header text-white d-flex justify-content-between align-items-center" style="background: linear-gradient(135deg, #f4d03f 0%, #f39c12 100%);">
+                    <h5 class="mb-0"><i class="bi bi-circle-fill me-2"></i>مخزون السمسم</h5>
+                    <button class="btn btn-light btn-sm" data-bs-toggle="modal" data-bs-target="#addSesameModal">
+                        <i class="bi bi-plus-circle me-1"></i>إضافة
+                    </button>
+                </div>
+                <div class="card-body">
+                    <?php if (empty($sesameStock)): ?>
+                        <div class="text-center text-muted py-4">
+                            <i class="bi bi-inbox fs-1 d-block mb-3"></i>
+                            لا يوجد مخزون سمسم
+                        </div>
+                    <?php else: ?>
+                        <div class="table-responsive">
+                            <table class="table table-sm table-hover">
+                                <thead>
+                                    <tr>
+                                        <th>المورد</th>
+                                        <th class="text-center">الكمية (كجم)</th>
+                                        <th class="text-center">سعر الكيلو</th>
+                                        <th class="text-center">الإجراءات</th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    <?php foreach ($sesameStock as $stock): ?>
+                                        <tr>
+                                            <td>
+                                                <strong><?php echo htmlspecialchars($stock['supplier_name']); ?></strong>
+                                                <?php if ($stock['supplier_phone']): ?>
+                                                    <br><small class="text-muted"><?php echo htmlspecialchars($stock['supplier_phone']); ?></small>
+                                                <?php endif; ?>
+                                            </td>
+                                            <td class="text-center"><strong style="color: #f39c12;"><?php echo number_format($stock['quantity'], 3); ?></strong></td>
+                                            <td class="text-center"><?php echo $stock['unit_price'] ? number_format($stock['unit_price'], 2) . ' ج.م' : '-'; ?></td>
+                                            <td class="text-center">
+                                                <button class="btn btn-sm btn-danger"
+                                                        onclick="openSesameDamageModal(<?php echo $stock['id']; ?>, '<?php echo htmlspecialchars($stock['supplier_name'], ENT_QUOTES); ?>', <?php echo $stock['quantity']; ?>)"
+                                                        <?php echo $stock['quantity'] <= 0 ? 'disabled' : ''; ?>>
+                                                    <i class="bi bi-exclamation-triangle"></i> تسجيل تالف
+                                                </button>
+                                            </td>
+                                        </tr>
+                                    <?php endforeach; ?>
+                                </tbody>
+                            </table>
+                        </div>
+                    <?php endif; ?>
+                </div>
+            </div>
+        </div>
+    </div>
+    
+    <!-- Modal إضافة سمسم -->
+    <div class="modal fade" id="addSesameModal" tabindex="-1">
+        <div class="modal-dialog modal-dialog-scrollable">
+            <div class="modal-content">
+                <div class="modal-header text-white" style="background: linear-gradient(135deg, #f4d03f 0%, #f39c12 100%);">
+                    <h5 class="modal-title"><i class="bi bi-plus-circle me-2"></i>إضافة سمسم</h5>
+                    <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+                </div>
+                <form method="POST">
+                    <input type="hidden" name="action" value="add_single_sesame">
+                    <input type="hidden" name="submit_token" value="">
+                    <div class="modal-body scrollable-modal-body">
+                        <div class="mb-3">
+                            <label class="form-label">المورد <span class="text-danger">*</span></label>
+                            <select name="supplier_id" class="form-select" required>
+                                <option value="">اختر المورد</option>
+                                <?php foreach ($sesameSuppliers as $supplier): ?>
+                                    <option value="<?php echo $supplier['id']; ?>"><?php echo htmlspecialchars($supplier['name']); ?></option>
+                                <?php endforeach; ?>
+                            </select>
+                        </div>
+                        <div class="mb-3">
+                            <label class="form-label">الكمية (كجم) <span class="text-danger">*</span></label>
+                            <input type="number" step="0.001" min="0.001" name="quantity" class="form-control" required>
+                        </div>
+                        <div class="mb-3">
+                            <label class="form-label">ملاحظات</label>
+                            <textarea name="notes" class="form-control" rows="3"></textarea>
+                        </div>
+                    </div>
+                    <div class="modal-footer">
+                        <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">إلغاء</button>
+                        <button type="submit" class="btn text-white" style="background: linear-gradient(135deg, #f4d03f 0%, #f39c12 100%);">
+                            <i class="bi bi-check-circle me-1"></i>إضافة
+                        </button>
+                    </div>
+                </form>
+            </div>
+        </div>
+    </div>
+    
+    <!-- Modal تسجيل تالف للسمسم -->
+    <div class="modal fade" id="damageSesameModal" tabindex="-1">
+        <div class="modal-dialog modal-dialog-scrollable">
+            <div class="modal-content">
+                <div class="modal-header bg-danger text-white">
+                    <h5 class="modal-title"><i class="bi bi-exclamation-diamond me-2"></i>تسجيل تالف للسمسم</h5>
+                    <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+                </div>
+                <form method="POST">
+                    <input type="hidden" name="action" value="record_damage">
+                    <input type="hidden" name="material_category" value="sesame">
+                    <input type="hidden" name="redirect_section" value="sesame">
+                    <input type="hidden" name="stock_id" id="damage_sesame_stock_id">
+                    <input type="hidden" name="damage_unit" value="كجم">
+                    <input type="hidden" name="submit_token" value="<?php echo uniqid('tok_', true); ?>">
+                    <div class="modal-body scrollable-modal-body">
+                        <div class="mb-3">
+                            <label class="form-label">المورد</label>
+                            <input type="text" class="form-control" id="damage_sesame_supplier" readonly>
+                        </div>
+                        <div class="mb-3">
+                            <label class="form-label">الكمية المتاحة</label>
+                            <input type="text" class="form-control" id="damage_sesame_available" readonly>
+                        </div>
+                        <div class="mb-3">
+                            <label class="form-label">الكمية التالفة (كجم)</label>
+                            <input type="number" class="form-control" name="damage_quantity" id="damage_sesame_quantity" step="0.001" min="0.001" required>
+                        </div>
+                        <div class="mb-3">
+                            <label class="form-label">سبب التلف <span class="text-danger">*</span></label>
+                            <textarea class="form-control" name="damage_reason" id="damage_sesame_reason" rows="3" required></textarea>
+                        </div>
+                    </div>
+                    <div class="modal-footer">
+                        <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">إلغاء</button>
+                        <button type="submit" class="btn btn-danger" id="damage_sesame_submit">
+                            <i class="bi bi-check-circle me-1"></i>تسجيل
+                        </button>
+                    </div>
+                </form>
+            </div>
+        </div>
+    </div>
+    
+    <script>
+    function openSesameDamageModal(id, supplier, quantity) {
+        const qty = parseFloat(quantity) || 0;
+        document.getElementById('damage_sesame_stock_id').value = id;
+        document.getElementById('damage_sesame_supplier').value = supplier;
+        document.getElementById('damage_sesame_available').value = qty.toFixed(3) + ' كجم';
+        const qtyInput = document.getElementById('damage_sesame_quantity');
+        qtyInput.value = '';
+        qtyInput.max = qty > 0 ? qty.toFixed(3) : null;
+        qtyInput.disabled = qty <= 0;
+        document.getElementById('damage_sesame_reason').value = '';
+        document.getElementById('damage_sesame_submit').disabled = qty <= 0;
+        new bootstrap.Modal(document.getElementById('damageSesameModal')).show();
+    }
+    </script>
+    
+    <?php
 }
 ?>
 <?php
@@ -4721,6 +5152,7 @@ const honeyVarietyOptionsMarkup = <?php echo json_encode($honeyVarietyOptionsMar
 const materialOptions = <?php echo json_encode([
     'nuts' => $nutMaterialOptions,
     'derivatives' => $derivativeMaterialOptions,
+    'sesame' => $sesameMaterialOptions,
 ], JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES); ?>;
 function addMaterialRow() {
     materialRowCount++;

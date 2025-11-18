@@ -185,6 +185,20 @@ $totalExternalValue = 0;
 foreach ($externalProducts as $ext) {
     $totalExternalValue += floatval($ext['total_value'] ?? 0);
 }
+
+// حساب القيمة الإجمالية لمنتجات المصنع
+$totalFactoryValue = 0;
+foreach ($factoryProducts as $product) {
+    $totalPrice = floatval($product['calculated_total_price'] ?? 0);
+    if ($totalPrice == 0) {
+        $unitPrice = floatval($product['unit_price'] ?? 0);
+        $quantity = floatval($product['quantity_produced'] ?? 0);
+        if ($unitPrice > 0 && $quantity > 0) {
+            $totalPrice = $unitPrice * $quantity;
+        }
+    }
+    $totalFactoryValue += $totalPrice;
+}
 ?>
 
 <style>
@@ -512,6 +526,15 @@ foreach ($externalProducts as $ext) {
             <span class="badge"><?php echo $totalFactoryProducts; ?> منتج</span>
         </div>
         <div class="card-body">
+            <?php if (!empty($factoryProducts)): ?>
+                <div class="total-value-box">
+                    <div class="d-flex justify-content-between align-items-center">
+                        <span class="fw-bold">القيمة الإجمالية لمنتجات المصنع:</span>
+                        <span class="text-success fw-bold"><?php echo formatCurrency($totalFactoryValue); ?></span>
+                    </div>
+                </div>
+            <?php endif; ?>
+            
             <div class="table-responsive dashboard-table-wrapper">
                 <table class="table dashboard-table align-middle mb-0">
                     <thead class="table-light">
