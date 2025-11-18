@@ -116,16 +116,34 @@ function customerHistorySyncForCustomer(int $customerId): array
         [$customerId, $cutoffDate]
     );
     
-    // جلب المبيعات من جدول sales للعميل خلال آخر 6 أشهر وتجميعها حسب التاريخ
-    $salesRows = $db->query(
-        "SELECT date, SUM(total) as total_amount, SUM(CASE WHEN status = 'completed' THEN total ELSE 0 END) as paid_amount,
-                COUNT(*) as item_count, MIN(id) as first_sale_id
-         FROM sales
-         WHERE customer_id = ? AND date >= ?
-         GROUP BY date
-         ORDER BY date DESC",
-        [$customerId, $cutoffDate]
-    );
+    // جلب المبيعات من جدول sales (إن وُجد) للعميل خلال آخر 6 أشهر وتجميعها حسب التاريخ
+    $salesRows = [];
+    try {
+        $salesTableExists = $db->queryOne("SHOW TABLES LIKE 'sales'");
+        if (!empty($salesTableExists)) {
+            $statusColumnExists = $db->queryOne("SHOW COLUMNS FROM sales LIKE 'status'");
+            $paidExpression = "SUM(total)";
+            if (!empty($statusColumnExists)) {
+                $paidExpression = "SUM(CASE WHEN status IN ('approved','completed','sent') THEN total ELSE 0 END)";
+            }
+
+            $salesRows = $db->query(
+                "SELECT date,
+                        SUM(total) as total_amount,
+                        {$paidExpression} as paid_amount,
+                        COUNT(*) as item_count,
+                        MIN(id) as first_sale_id
+                 FROM sales
+                 WHERE customer_id = ? AND date >= ?
+                 GROUP BY date
+                 ORDER BY date DESC",
+                [$customerId, $cutoffDate]
+            );
+        }
+    } catch (Throwable $salesQueryError) {
+        error_log('customerHistorySyncForCustomer: failed loading sales rows -> ' . $salesQueryError->getMessage());
+        $salesRows = [];
+    }
     
     // تحويل المبيعات إلى فواتير وهمية في نفس التنسيق
     $salesInvoiceRows = [];
