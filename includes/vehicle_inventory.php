@@ -1184,6 +1184,9 @@ function createWarehouseTransfer($fromWarehouseId, $toWarehouseId, $transferDate
         } elseif ($fromWarehouse['warehouse_type'] === 'vehicle' && $toWarehouse['warehouse_type'] === 'main') {
             $transferType = 'from_vehicle';
         }
+
+        $isFromVehicleWarehouse = ($fromWarehouse['warehouse_type'] ?? '') === 'vehicle' && !empty($fromWarehouse['vehicle_id']);
+        $fromVehicleId = $isFromVehicleWarehouse ? (int)$fromWarehouse['vehicle_id'] : null;
         
         $transferNumber = generateTransferNumber();
         
@@ -1259,32 +1262,78 @@ function createWarehouseTransfer($fromWarehouseId, $toWarehouseId, $transferDate
                     $productIdForInsert = (int)$batchRow['product_id'];
                 }
 
-                // حساب الكمية المتاحة الفعلية مباشرة من finished_products
-                // استخدام quantity_produced من finished_products كمصدر وحيد للحقيقة
-                $availableQuantity = (float)($batchRow['quantity_produced'] ?? 0);
-                
-                // خصم الكمية المنقولة بالفعل (approved أو completed)
-                $transferred = $db->queryOne(
-                    "SELECT COALESCE(SUM(wti.quantity), 0) AS total_transferred
-                     FROM warehouse_transfer_items wti
-                     INNER JOIN warehouse_transfers wt ON wt.id = wti.transfer_id
-                     WHERE wti.batch_id = ? AND wt.status IN ('approved', 'completed')",
-                    [$batchId]
-                );
-                $availableQuantity -= (float)($transferred['total_transferred'] ?? 0);
-                
-                // خصم الكمية المحجوزة في طلبات النقل المعلقة (pending)
-                $pendingTransfers = $db->queryOne(
-                    "SELECT COALESCE(SUM(wti.quantity), 0) AS pending_quantity
-                     FROM warehouse_transfer_items wti
-                     INNER JOIN warehouse_transfers wt ON wt.id = wti.transfer_id
-                     WHERE wti.batch_id = ? AND wt.status = 'pending'",
-                    [$batchId]
-                );
-                $availableQuantity -= (float)($pendingTransfers['pending_quantity'] ?? 0);
-                
-                // التأكد من أن الكمية المتاحة ليست سالبة
-                $availableQuantity = max(0.0, $availableQuantity);
+                // حساب الكمية المتاحة الفعلية: من مخزون السيارة إذا كان المصدر سيارة، وإلا من finished_products
+                if ($isFromVehicleWarehouse && $fromVehicleId) {
+                    $vehicleStockRow = null;
+                    
+                    // تفضيل السجلات المرتبطة بنص التشغيلة
+                    if ($batchId) {
+                        $vehicleStockRow = $db->queryOne(
+                            "SELECT quantity FROM vehicle_inventory 
+                             WHERE vehicle_id = ? AND finished_batch_id = ? 
+                             ORDER BY id ASC LIMIT 1",
+                            [$fromVehicleId, $batchId]
+                        );
+                    }
+                    
+                    if (!$vehicleStockRow && !empty($batchNumber)) {
+                        $vehicleStockRow = $db->queryOne(
+                            "SELECT quantity FROM vehicle_inventory 
+                             WHERE vehicle_id = ? AND finished_batch_number = ? 
+                             ORDER BY id ASC LIMIT 1",
+                            [$fromVehicleId, $batchNumber]
+                        );
+                    }
+                    
+                    $productLookupId = $productIdForInsert > 0 ? $productIdForInsert : ($batchRow['product_id'] ?? null);
+                    if (!$vehicleStockRow && $productLookupId) {
+                        $vehicleStockRow = $db->queryOne(
+                            "SELECT quantity FROM vehicle_inventory 
+                             WHERE vehicle_id = ? AND product_id = ? 
+                             ORDER BY id ASC LIMIT 1",
+                            [$fromVehicleId, $productLookupId]
+                        );
+                    }
+                    
+                    $availableQuantity = (float)($vehicleStockRow['quantity'] ?? 0);
+                    
+                    // خصم الكمية المحجوزة في طلبات النقل المعلقة من نفس المخزن فقط
+                    $pendingTransfers = $db->queryOne(
+                        "SELECT COALESCE(SUM(wti.quantity), 0) AS pending_quantity
+                         FROM warehouse_transfer_items wti
+                         INNER JOIN warehouse_transfers wt ON wt.id = wti.transfer_id
+                         WHERE wti.batch_id = ? AND wt.status = 'pending' AND wt.from_warehouse_id = ?",
+                        [$batchId, $fromWarehouseId]
+                    );
+                    $availableQuantity -= (float)($pendingTransfers['pending_quantity'] ?? 0);
+                    
+                    $availableQuantity = max(0.0, $availableQuantity);
+                } else {
+                    // استخدام quantity_produced من finished_products كمصدر للكمية عند المخازن غير السيارة
+                    $availableQuantity = (float)($batchRow['quantity_produced'] ?? 0);
+                    
+                    // خصم الكمية المنقولة بالفعل (approved أو completed) من نفس المخزن المصدر
+                    $transferred = $db->queryOne(
+                        "SELECT COALESCE(SUM(wti.quantity), 0) AS total_transferred
+                         FROM warehouse_transfer_items wti
+                         INNER JOIN warehouse_transfers wt ON wt.id = wti.transfer_id
+                         WHERE wti.batch_id = ? AND wt.status IN ('approved', 'completed') AND wt.from_warehouse_id = ?",
+                        [$batchId, $fromWarehouseId]
+                    );
+                    $availableQuantity -= (float)($transferred['total_transferred'] ?? 0);
+                    
+                    // خصم الكمية المحجوزة في طلبات النقل المعلقة (pending) من نفس المخزن فقط
+                    $pendingTransfers = $db->queryOne(
+                        "SELECT COALESCE(SUM(wti.quantity), 0) AS pending_quantity
+                         FROM warehouse_transfer_items wti
+                         INNER JOIN warehouse_transfers wt ON wt.id = wti.transfer_id
+                         WHERE wti.batch_id = ? AND wt.status = 'pending' AND wt.from_warehouse_id = ?",
+                        [$batchId, $fromWarehouseId]
+                    );
+                    $availableQuantity -= (float)($pendingTransfers['pending_quantity'] ?? 0);
+                    
+                    $availableQuantity = max(0.0, $availableQuantity);
+                }
 
                 if ($item['quantity'] > $availableQuantity + 1e-6) {
                     throw new Exception(sprintf(
