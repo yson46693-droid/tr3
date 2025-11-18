@@ -30,6 +30,114 @@ if (!defined('CUSTOMERS_PURCHASE_HISTORY_AJAX')) {
 $currentUser = getCurrentUser();
 $isSalesUser = isset($currentUser['role']) && $currentUser['role'] === 'sales';
 $db = db();
+
+// معالجة update_location قبل أي شيء آخر لمنع أي output
+if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && trim($_POST['action']) === 'update_location') {
+    // تنظيف أي output سابق بشكل كامل
+    while (ob_get_level() > 0) {
+        ob_end_clean();
+    }
+    
+    // التأكد من أن الطلب AJAX
+    $isAjaxRequest = (
+        (isset($_SERVER['HTTP_X_REQUESTED_WITH']) && strtolower($_SERVER['HTTP_X_REQUESTED_WITH']) === 'xmlhttprequest') ||
+        (isset($_SERVER['HTTP_ACCEPT']) && stripos($_SERVER['HTTP_ACCEPT'], 'application/json') !== false)
+    );
+    
+    if (!$isAjaxRequest) {
+        http_response_code(400);
+        header('Content-Type: application/json; charset=utf-8');
+        echo json_encode([
+            'success' => false,
+            'message' => 'طلب غير صالح.',
+        ], JSON_UNESCAPED_UNICODE);
+        exit;
+    }
+    
+    header('Content-Type: application/json; charset=utf-8');
+    header('Cache-Control: no-cache, must-revalidate');
+    header('Expires: Mon, 26 Jul 1997 05:00:00 GMT');
+
+    $customerId = isset($_POST['customer_id']) ? (int)$_POST['customer_id'] : 0;
+    $latitude = $_POST['latitude'] ?? null;
+    $longitude = $_POST['longitude'] ?? null;
+
+    if ($customerId <= 0 || $latitude === null || $longitude === null) {
+        echo json_encode([
+            'success' => false,
+            'message' => 'بيانات الموقع غير مكتملة.',
+        ], JSON_UNESCAPED_UNICODE);
+        exit;
+    }
+
+    if (!is_numeric($latitude) || !is_numeric($longitude)) {
+        echo json_encode([
+            'success' => false,
+            'message' => 'إحداثيات الموقع غير صالحة.',
+        ], JSON_UNESCAPED_UNICODE);
+        exit;
+    }
+
+    $latitude = (float)$latitude;
+    $longitude = (float)$longitude;
+
+    if ($latitude < -90 || $latitude > 90 || $longitude < -180 || $longitude > 180) {
+        echo json_encode([
+            'success' => false,
+            'message' => 'نطاق الإحداثيات غير صحيح.',
+        ], JSON_UNESCAPED_UNICODE);
+        exit;
+    }
+
+    try {
+        $customer = $db->queryOne("SELECT id, created_by FROM customers WHERE id = ?", [$customerId]);
+        if (!$customer) {
+            throw new InvalidArgumentException('العميل المطلوب غير موجود.');
+        }
+
+        if ($isSalesUser && (int)($customer['created_by'] ?? 0) !== (int)$currentUser['id']) {
+            throw new InvalidArgumentException('غير مصرح لك بتحديث موقع هذا العميل.');
+        }
+
+        $db->execute(
+            "UPDATE customers SET latitude = ?, longitude = ?, location_captured_at = NOW() WHERE id = ?",
+            [$latitude, $longitude, $customerId]
+        );
+
+        logAudit(
+            $currentUser['id'],
+            'update_customer_location',
+            'customer',
+            $customerId,
+            null,
+            [
+                'latitude' => $latitude,
+                'longitude' => $longitude,
+            ]
+        );
+
+        echo json_encode([
+            'success' => true,
+            'message' => 'تم تحديث موقع العميل بنجاح.',
+        ], JSON_UNESCAPED_UNICODE);
+    } catch (InvalidArgumentException $invalidLocation) {
+        http_response_code(400);
+        echo json_encode([
+            'success' => false,
+            'message' => $invalidLocation->getMessage(),
+        ], JSON_UNESCAPED_UNICODE);
+    } catch (Throwable $updateLocationError) {
+        error_log('Update customer location error: ' . $updateLocationError->getMessage());
+        http_response_code(500);
+        echo json_encode([
+            'success' => false,
+            'message' => 'حدث خطأ أثناء حفظ الموقع. حاول مرة أخرى.',
+        ], JSON_UNESCAPED_UNICODE);
+    }
+
+    exit;
+}
+
 $error = '';
 $success = '';
 
@@ -345,111 +453,6 @@ if ($section === 'delegates' && !$isSalesUser) {
 // معالجة طلبات AJAX أولاً قبل أي output
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action'])) {
     $action = trim($_POST['action']);
-    
-    // معالجة update_location قبل أي شيء آخر
-    if ($action === 'update_location') {
-        // تنظيف أي output سابق
-        while (ob_get_level() > 0) {
-            ob_end_clean();
-        }
-        
-        // التأكد من أن الطلب AJAX
-        $isAjaxRequest = (
-            (isset($_SERVER['HTTP_X_REQUESTED_WITH']) && strtolower($_SERVER['HTTP_X_REQUESTED_WITH']) === 'xmlhttprequest') ||
-            (isset($_SERVER['HTTP_ACCEPT']) && stripos($_SERVER['HTTP_ACCEPT'], 'application/json') !== false)
-        );
-        
-        if (!$isAjaxRequest) {
-            http_response_code(400);
-            header('Content-Type: application/json; charset=utf-8');
-            echo json_encode([
-                'success' => false,
-                'message' => 'طلب غير صالح.',
-            ], JSON_UNESCAPED_UNICODE);
-            exit;
-        }
-        
-        header('Content-Type: application/json; charset=utf-8');
-        header('Cache-Control: no-cache, must-revalidate');
-        header('Expires: Mon, 26 Jul 1997 05:00:00 GMT');
-
-        $customerId = isset($_POST['customer_id']) ? (int)$_POST['customer_id'] : 0;
-        $latitude = $_POST['latitude'] ?? null;
-        $longitude = $_POST['longitude'] ?? null;
-
-        if ($customerId <= 0 || $latitude === null || $longitude === null) {
-            echo json_encode([
-                'success' => false,
-                'message' => 'بيانات الموقع غير مكتملة.',
-            ], JSON_UNESCAPED_UNICODE);
-            exit;
-        }
-
-        if (!is_numeric($latitude) || !is_numeric($longitude)) {
-            echo json_encode([
-                'success' => false,
-                'message' => 'إحداثيات الموقع غير صالحة.',
-            ], JSON_UNESCAPED_UNICODE);
-            exit;
-        }
-
-        $latitude = (float)$latitude;
-        $longitude = (float)$longitude;
-
-        if ($latitude < -90 || $latitude > 90 || $longitude < -180 || $longitude > 180) {
-            echo json_encode([
-                'success' => false,
-                'message' => 'نطاق الإحداثيات غير صحيح.',
-            ], JSON_UNESCAPED_UNICODE);
-            exit;
-        }
-
-        try {
-            $customer = $db->queryOne("SELECT id, created_by FROM customers WHERE id = ?", [$customerId]);
-            if (!$customer) {
-                throw new InvalidArgumentException('العميل المطلوب غير موجود.');
-            }
-
-            if ($isSalesUser && (int)($customer['created_by'] ?? 0) !== (int)$currentUser['id']) {
-                throw new InvalidArgumentException('غير مصرح لك بتحديث موقع هذا العميل.');
-            }
-
-            $db->execute(
-                "UPDATE customers SET latitude = ?, longitude = ?, location_captured_at = NOW() WHERE id = ?",
-                [$latitude, $longitude, $customerId]
-            );
-
-            logAudit(
-                $currentUser['id'],
-                'update_customer_location',
-                'customer',
-                $customerId,
-                null,
-                [
-                    'latitude' => $latitude,
-                    'longitude' => $longitude,
-                ]
-            );
-
-            echo json_encode([
-                'success' => true,
-                'message' => 'تم تحديث موقع العميل بنجاح.',
-            ], JSON_UNESCAPED_UNICODE);
-        } catch (InvalidArgumentException $invalidLocation) {
-            echo json_encode([
-                'success' => false,
-                'message' => $invalidLocation->getMessage(),
-            ], JSON_UNESCAPED_UNICODE);
-        } catch (Throwable $updateLocationError) {
-            error_log('Update customer location error: ' . $updateLocationError->getMessage());
-            echo json_encode([
-                'success' => false,
-                'message' => 'حدث خطأ أثناء حفظ الموقع. حاول مرة أخرى.',
-            ], JSON_UNESCAPED_UNICODE);
-        }
-
-        exit;
-    }
 
     if ($action === 'collect_debt') {
         $customerId = isset($_POST['customer_id']) ? (int)$_POST['customer_id'] : 0;
@@ -2227,15 +2230,39 @@ document.addEventListener('DOMContentLoaded', function () {
                     },
                     body: formData.toString()
                 }).then(function (response) {
-                    if (!response.ok) {
-                        throw new Error('HTTP error! status: ' + response.status);
+                    // التحقق من نوع المحتوى
+                    var contentType = response.headers.get('content-type');
+                    if (!contentType || !contentType.includes('application/json')) {
+                        return response.text().then(function(text) {
+                            console.error('Invalid content type. Response:', text.substring(0, 200));
+                            throw new Error('استجابة غير صالحة من الخادم: الخادم لم يعد JSON');
+                        });
                     }
+                    
+                    if (!response.ok) {
+                        return response.text().then(function(text) {
+                            try {
+                                var errorData = JSON.parse(text);
+                                throw new Error(errorData.message || 'خطأ في الطلب: ' + response.status);
+                            } catch (e) {
+                                throw new Error('خطأ في الطلب: ' + response.status);
+                            }
+                        });
+                    }
+                    
                     return response.text().then(function(text) {
+                        // تنظيف النص من أي مسافات بيضاء في البداية أو النهاية
+                        text = text.trim();
+                        
+                        if (!text) {
+                            throw new Error('استجابة فارغة من الخادم');
+                        }
+                        
                         try {
                             return JSON.parse(text);
                         } catch (e) {
-                            console.error('JSON parse error:', text);
-                            throw new Error('استجابة غير صالحة من الخادم');
+                            console.error('JSON parse error. Response text:', text.substring(0, 500));
+                            throw new Error('استجابة غير صالحة من الخادم: ' + (text.substring(0, 50) || 'لا يمكن تحليل الاستجابة'));
                         }
                     });
                 }).then(function (data) {
@@ -2251,7 +2278,13 @@ document.addEventListener('DOMContentLoaded', function () {
                 }).catch(function (error) {
                     setButtonLoading(button, false);
                     console.error('Location update error:', error);
-                    showAlert('حدث خطأ أثناء الاتصال بالخادم: ' + (error.message || 'خطأ غير معروف'));
+                    var errorMessage = 'حدث خطأ أثناء الاتصال بالخادم';
+                    if (error.message) {
+                        errorMessage += ': ' + error.message;
+                    } else if (error.name) {
+                        errorMessage += ': ' + error.name;
+                    }
+                    showAlert(errorMessage);
                 });
             }, function (error) {
                 setButtonLoading(button, false);
