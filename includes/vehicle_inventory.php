@@ -481,19 +481,25 @@ function getFinishedProductBatchOptions($onlyAvailable = true, $fromWarehouseId 
             }
 
             $candidateNames = [];
+            
+            // الأولوية الأولى: جلب اسم المنتج من finished_products مباشرة باستخدام batch_id أو batch_number
+            // هذا مهم بشكل خاص للمنتجات التي لها رقم تشغيلة لكن قد لا تكون مرتبطة بمنتج في products
+            $finishedProductName = getFinishedProductNameByBatch($db, $batchId, $row['batch_number'] ?? null);
+            if ($finishedProductName) {
+                $candidateNames[] = $finishedProductName;
+            }
+            
+            // الأولوية الثانية: اسم المنتج من finished_products (product_name في السطر)
+            if (!empty($row['product_name'])) {
+                $candidateNames[] = $row['product_name'];
+            }
+            
+            // الأولوية الثالثة: اسم المنتج من جدول products
             if ($productId > 0) {
                 $product = $db->queryOne("SELECT name FROM products WHERE id = ?", [$productId]);
                 if ($product && isset($product['name'])) {
                     $candidateNames[] = $product['name'];
                 }
-            }
-            if (!empty($row['product_name'])) {
-                $candidateNames[] = $row['product_name'];
-            }
-
-            $fallbackName = getFinishedProductNameByBatch($db, $batchId, $row['batch_number'] ?? null);
-            if ($fallbackName) {
-                $candidateNames[] = $fallbackName;
             }
 
             $productName = resolveProductName($candidateNames);
@@ -576,10 +582,11 @@ function getAvailableProductsFromWarehouse($warehouseId): array
                     $row['finished_batch_number'] ?? null
                 );
 
+                // إعطاء الأولوية لاسم المنتج الفعلي من جدول products
                 $productName = resolveProductName([
+                    $row['product_name'] ?? null,
                     $finishedName,
-                    $row['vehicle_product_name'] ?? null,
-                    $row['product_name'] ?? null
+                    $row['vehicle_product_name'] ?? null
                 ]);
                 
                 $options[] = [
@@ -652,42 +659,94 @@ function getAvailableProductsFromWarehouse($warehouseId): array
             // إضافة المنتجات من finished_products الموجودة في هذا المخزن
             $finishedExists = $db->queryOne("SHOW TABLES LIKE 'finished_products'");
             if ($finishedExists) {
-                $finishedProducts = $db->query(
-                    "SELECT 
-                        fp.id AS batch_id,
-                        COALESCE(fp.product_id, bn.product_id) AS product_id,
-                        COALESCE(NULLIF(TRIM(fp.product_name), ''), p.name, 'غير محدد') AS product_name,
-                        fp.batch_number,
-                        fp.production_date,
-                        fp.quantity_produced,
-                        p.warehouse_id,
-                        p.name AS original_product_name
-                    FROM finished_products fp
-                    LEFT JOIN batch_numbers bn ON fp.batch_number = bn.batch_number
-                    LEFT JOIN products p ON COALESCE(fp.product_id, bn.product_id) = p.id
-                    WHERE p.warehouse_id = ? AND p.status = 'active'
-                    GROUP BY fp.id, COALESCE(fp.product_id, bn.product_id), fp.product_name, fp.batch_number, fp.production_date, fp.quantity_produced, p.name, p.warehouse_id
-                    ORDER BY fp.production_date DESC, product_name ASC, fp.batch_number ASC",
-                    [$warehouseId]
-                ) ?? [];
+                // التحقق من نوع المخزن لتحديد الشروط المناسبة
+                $isMainWarehouse = ($warehouseType === 'main');
+                
+                // بناء شروط WHERE بناءً على نوع المخزن
+                if ($isMainWarehouse) {
+                    // إذا كان المخزن رئيسي، نقبل المنتجات التي:
+                    // 1. warehouse_id = warehouseId AND status = 'active'
+                    // 2. warehouse_id IS NULL (المنتجات الافتراضية في المخزن الرئيسي) AND (status = 'active' OR status IS NULL)
+                    // 3. المنتج غير موجود في products لكن موجود في finished_products (p IS NULL)
+                    $finishedProducts = $db->query(
+                        "SELECT 
+                            fp.id AS batch_id,
+                            COALESCE(fp.product_id, bn.product_id) AS product_id,
+                            COALESCE(NULLIF(TRIM(fp.product_name), ''), p.name, 'غير محدد') AS product_name,
+                            fp.batch_number,
+                            fp.production_date,
+                            fp.quantity_produced,
+                            p.warehouse_id,
+                            p.name AS original_product_name
+                        FROM finished_products fp
+                        LEFT JOIN batch_numbers bn ON fp.batch_number = bn.batch_number
+                        LEFT JOIN products p ON COALESCE(fp.product_id, bn.product_id) = p.id
+                        WHERE (p.id IS NULL OR ((p.warehouse_id = ? OR p.warehouse_id IS NULL) AND (p.status = 'active' OR p.status IS NULL)))
+                        GROUP BY fp.id, COALESCE(fp.product_id, bn.product_id), fp.product_name, fp.batch_number, fp.production_date, fp.quantity_produced, p.name, p.warehouse_id
+                        ORDER BY fp.production_date DESC, product_name ASC, fp.batch_number ASC",
+                        [$warehouseId]
+                    ) ?? [];
+                } else {
+                    // إذا كان مخزن آخر، نستخدم الشروط العادية
+                    $finishedProducts = $db->query(
+                        "SELECT 
+                            fp.id AS batch_id,
+                            COALESCE(fp.product_id, bn.product_id) AS product_id,
+                            COALESCE(NULLIF(TRIM(fp.product_name), ''), p.name, 'غير محدد') AS product_name,
+                            fp.batch_number,
+                            fp.production_date,
+                            fp.quantity_produced,
+                            p.warehouse_id,
+                            p.name AS original_product_name
+                        FROM finished_products fp
+                        LEFT JOIN batch_numbers bn ON fp.batch_number = bn.batch_number
+                        LEFT JOIN products p ON COALESCE(fp.product_id, bn.product_id) = p.id
+                        WHERE p.warehouse_id = ? AND p.status = 'active'
+                        GROUP BY fp.id, COALESCE(fp.product_id, bn.product_id), fp.product_name, fp.batch_number, fp.production_date, fp.quantity_produced, p.name, p.warehouse_id
+                        ORDER BY fp.production_date DESC, product_name ASC, fp.batch_number ASC",
+                        [$warehouseId]
+                    ) ?? [];
+                }
 
                 foreach ($finishedProducts as $fpRow) {
                     $productId = isset($fpRow['product_id']) && $fpRow['product_id'] !== null ? (int)$fpRow['product_id'] : null;
                     $batchId = (int)$fpRow['batch_id'];
                     
+                    // الحصول على اسم المنتج من جدول products مباشرة أولاً (الأولوية القصوى)
+                    $actualProductName = null;
                     if ($productId > 0) {
-                        $fallbackName = getFinishedProductNameByBatch(
-                            $db,
-                            $batchId,
-                            $fpRow['batch_number'] ?? null
+                        $productInfo = $db->queryOne(
+                            "SELECT name FROM products WHERE id = ?",
+                            [$productId]
                         );
+                        $actualProductName = $productInfo['name'] ?? null;
+                    }
+                    
+                    // جلب اسم المنتج - الأولوية الثانية لـ finished_products
+                    $finishedProductName = getFinishedProductNameByBatch(
+                        $db,
+                        $batchId,
+                        $fpRow['batch_number'] ?? null
+                    );
 
-                        $productName = resolveProductName([
-                            $fallbackName,
-                            $fpRow['original_product_name'] ?? null,
-                            $fpRow['product_name'] ?? null
-                        ]);
-                        
+                    $candidateNames = [];
+                    // إعطاء الأولوية لاسم المنتج الفعلي من جدول products
+                    if ($actualProductName) {
+                        $candidateNames[] = $actualProductName;
+                    }
+                    if ($finishedProductName) {
+                        $candidateNames[] = $finishedProductName;
+                    }
+                    if (!empty($fpRow['original_product_name'])) {
+                        $candidateNames[] = $fpRow['original_product_name'];
+                    }
+                    if (!empty($fpRow['product_name'])) {
+                        $candidateNames[] = $fpRow['product_name'];
+                    }
+                    
+                    $productName = resolveProductName($candidateNames);
+                    
+                    if ($productId > 0) {
                         // حساب الكمية المتاحة من finished_products
                         $productInfo = $db->queryOne(
                             "SELECT quantity FROM products WHERE id = ?",
@@ -748,6 +807,65 @@ function getAvailableProductsFromWarehouse($warehouseId): array
                                     'batch_number' => $fpRow['batch_number'] ?? '',
                                     'production_date' => $fpRow['production_date'] ?? null,
                                     'quantity_produced' => (float)$fpRow['quantity_produced'],
+                                    'quantity_available' => max(0, $availableQuantity),
+                                    'warehouse_id' => $warehouseId,
+                                    'unit' => 'قطعة',
+                                    'unit_price' => 0,
+                                ];
+                            }
+                        }
+                    } else {
+                        // إذا لم يكن هناك product_id، نتعامل مع المنتج من finished_products فقط
+                        // نستخدم quantity_produced مباشرة
+                        $availableQuantity = (float)($fpRow['quantity_produced'] ?? 0);
+                        
+                        // خصم الكمية المنقولة بالفعل
+                        if ($availableQuantity > 0) {
+                            $transferred = $db->queryOne(
+                                "SELECT COALESCE(SUM(
+                                    CASE
+                                        WHEN wt.status IN ('approved', 'completed') THEN wti.quantity
+                                        ELSE 0
+                                    END
+                                ), 0) AS transferred_quantity
+                                FROM warehouse_transfer_items wti
+                                LEFT JOIN warehouse_transfers wt ON wt.id = wti.transfer_id
+                                WHERE wti.batch_id = ?",
+                                [$batchId]
+                            );
+                            $availableQuantity -= (float)($transferred['transferred_quantity'] ?? 0);
+                        }
+                        
+                        // خصم الكمية المحجوزة في طلبات النقل المعلقة
+                        if ($batchId > 0) {
+                            $pendingTransfers = $db->queryOne(
+                                "SELECT COALESCE(SUM(wti.quantity), 0) AS pending_quantity
+                                 FROM warehouse_transfer_items wti
+                                 INNER JOIN warehouse_transfers wt ON wt.id = wti.transfer_id
+                                 WHERE wti.batch_id = ? AND wt.from_warehouse_id = ? AND wt.status = 'pending'",
+                                [$batchId, $warehouseId]
+                            );
+                            $availableQuantity -= (float)($pendingTransfers['pending_quantity'] ?? 0);
+                        }
+                        
+                        if ($availableQuantity > 0) {
+                            // التحقق من عدم إضافة batch_id مرتين
+                            $exists = false;
+                            foreach ($options as $opt) {
+                                if ($opt['batch_id'] == $batchId) {
+                                    $exists = true;
+                                    break;
+                                }
+                            }
+                            
+                            if (!$exists) {
+                                $options[] = [
+                                    'product_id' => null,
+                                    'batch_id' => $batchId,
+                                    'product_name' => $productName,
+                                    'batch_number' => $fpRow['batch_number'] ?? '',
+                                    'production_date' => $fpRow['production_date'] ?? null,
+                                    'quantity_produced' => (float)($fpRow['quantity_produced'] ?? 0),
                                     'quantity_available' => max(0, $availableQuantity),
                                     'warehouse_id' => $warehouseId,
                                     'unit' => 'قطعة',
