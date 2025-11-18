@@ -2220,66 +2220,104 @@ if (!$error) {
 })();
 </script>
 
+<?php endif; ?>
+
 <!-- إدارة Modal الفاتورة ومنع Refresh -->
 <script>
 (function() {
-    // فتح Modal الفاتورة تلقائياً بعد البيع
-    const invoiceModal = document.getElementById('posInvoiceModal');
-    const invoiceUrl = <?php echo !empty($posInvoiceLinks['absolute_report_url']) ? json_encode($posInvoiceLinks['absolute_report_url'], JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES) : 'null'; ?>;
+    <?php if (!empty($posInvoiceLinks['absolute_report_url'])): ?>
+    const invoiceUrl = <?php echo json_encode($posInvoiceLinks['absolute_report_url'], JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES); ?>;
     const invoicePrintUrl = <?php echo !empty($posInvoiceLinks['absolute_print_url']) ? json_encode($posInvoiceLinks['absolute_print_url'], JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES) : 'null'; ?>;
+    <?php else: ?>
+    const invoiceUrl = null;
+    const invoicePrintUrl = null;
+    <?php endif; ?>
     
-    if (invoiceModal && invoiceUrl && typeof bootstrap !== 'undefined') {
-        // فتح Modal تلقائياً
-        const modal = new bootstrap.Modal(invoiceModal);
-        modal.show();
+    // الانتظار حتى يتم تحميل DOM بالكامل
+    function initInvoiceModal() {
+        const invoiceModal = document.getElementById('posInvoiceModal');
         
-        // Modal مفتوح - لا حاجة لمنع الإغلاق، يمكن للمستخدم إغلاقه
+        if (invoiceModal && invoiceUrl) {
+            // الانتظار حتى يتم تحميل Bootstrap
+            if (typeof bootstrap !== 'undefined' && bootstrap.Modal) {
+                // فتح Modal تلقائياً
+                try {
+                    const modal = new bootstrap.Modal(invoiceModal, {
+                        backdrop: 'static',
+                        keyboard: false
+                    });
+                    modal.show();
+                    
+                    console.log('[POS Invoice] Modal opened successfully');
+                    
+                    // عند إغلاق Modal، تنظيف URL لمنع refresh
+                    invoiceModal.addEventListener('hidden.bs.modal', function() {
+                        const currentUrl = new URL(window.location.href);
+                        currentUrl.searchParams.delete('success');
+                        currentUrl.searchParams.delete('error');
+                        window.history.replaceState({}, '', currentUrl.toString());
+                    });
+                } catch (error) {
+                    console.error('[POS Invoice] Error opening modal:', error);
+                    // محاولة مرة أخرى بعد قليل
+                    setTimeout(initInvoiceModal, 200);
+                }
+            } else {
+                // إذا لم يكن Bootstrap جاهزاً، ننتظر قليلاً ثم نحاول مرة أخرى
+                console.log('[POS Invoice] Waiting for Bootstrap...');
+                setTimeout(initInvoiceModal, 100);
+            }
+        }
         
-        // عند إغلاق Modal، تنظيف URL لمنع refresh
-        invoiceModal.addEventListener('hidden.bs.modal', function() {
-            const currentUrl = new URL(window.location.href);
-            currentUrl.searchParams.delete('success');
-            currentUrl.searchParams.delete('error');
-            window.history.replaceState({}, '', currentUrl.toString());
-        });
+        // دالة الطباعة
+        window.printInvoice = function() {
+            if (invoicePrintUrl) {
+                const printWindow = window.open(invoicePrintUrl, '_blank');
+                if (printWindow) {
+                    printWindow.onload = function() {
+                        setTimeout(function() {
+                            printWindow.print();
+                        }, 500);
+                    };
+                }
+            } else if (invoiceUrl) {
+                const printUrl = invoiceUrl + (invoiceUrl.includes('?') ? '&' : '?') + 'print=1';
+                const printWindow = window.open(printUrl, '_blank');
+                if (printWindow) {
+                    printWindow.onload = function() {
+                        setTimeout(function() {
+                            printWindow.print();
+                        }, 500);
+                    };
+                }
+            }
+        };
+        
+        // منع refresh تلقائي عند وجود فاتورة
+        const successAlert = document.getElementById('successAlert');
+        const errorAlert = document.getElementById('errorAlert');
+        
+        // فقط إذا لم تكن هناك فاتورة، نفعل auto-refresh
+        if (!invoiceModal && (successAlert || errorAlert)) {
+            const alertElement = successAlert || errorAlert;
+            if (alertElement && alertElement.dataset.autoRefresh === 'true') {
+                setTimeout(function() {
+                    const currentUrl = new URL(window.location.href);
+                    currentUrl.searchParams.delete('success');
+                    currentUrl.searchParams.delete('error');
+                    window.location.href = currentUrl.toString();
+                }, 3000);
+            }
+        }
     }
     
-    // دالة الطباعة
-    window.printInvoice = function() {
-        if (invoicePrintUrl) {
-            const printWindow = window.open(invoicePrintUrl, '_blank');
-            if (printWindow) {
-                printWindow.onload = function() {
-                    printWindow.print();
-                };
-            }
-        } else if (invoiceUrl) {
-            const printWindow = window.open(invoiceUrl + (invoiceUrl.includes('?') ? '&' : '?') + 'print=1', '_blank');
-            if (printWindow) {
-                printWindow.onload = function() {
-                    printWindow.print();
-                };
-            }
-        }
-    };
-    
-    // منع refresh تلقائي عند وجود فاتورة
-    const successAlert = document.getElementById('successAlert');
-    const errorAlert = document.getElementById('errorAlert');
-    
-    // فقط إذا لم تكن هناك فاتورة، نفعل auto-refresh
-    if (!invoiceModal && (successAlert || errorAlert)) {
-        const alertElement = successAlert || errorAlert;
-        if (alertElement && alertElement.dataset.autoRefresh === 'true') {
-            setTimeout(function() {
-                const currentUrl = new URL(window.location.href);
-                currentUrl.searchParams.delete('success');
-                currentUrl.searchParams.delete('error');
-                window.location.href = currentUrl.toString();
-            }, 3000);
-        }
+    // تشغيل الكود عند تحميل الصفحة
+    if (document.readyState === 'loading') {
+        document.addEventListener('DOMContentLoaded', initInvoiceModal);
+    } else {
+        // DOM محمّل بالفعل
+        initInvoiceModal();
     }
 })();
 </script>
-<?php endif; ?>
 
