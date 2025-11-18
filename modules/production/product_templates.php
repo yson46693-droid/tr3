@@ -1188,9 +1188,33 @@ try {
     error_log('Failed to load derivatives from suppliers: ' . $e->getMessage());
 }
 
+// جلب الطحينة من مخزن الطحينة
+try {
+    $tahiniExists = $db->queryOne("SHOW TABLES LIKE 'tahini_stock'");
+    if (!empty($tahiniExists)) {
+        // التحقق من وجود الطحينة المتاحة من الموردين النشطين
+        $hasTahini = $db->queryOne("
+            SELECT COUNT(*) as count 
+            FROM tahini_stock ts
+            INNER JOIN suppliers s ON ts.supplier_id = s.id
+            WHERE ts.quantity > 0 
+            AND s.status = 'active'
+        ");
+        if ($hasTahini && $hasTahini['count'] > 0) {
+            $rawMaterialsData['طحينة'] = [
+                'material_type' => 'tahini',
+                'has_types' => false,
+                'types' => []
+            ];
+        }
+    }
+} catch (Exception $e) {
+    error_log('Failed to load tahini: ' . $e->getMessage());
+}
+
 // إنشاء قائمة بأسماء المواد فقط للعرض في القائمة المنسدلة
-// المواد الخام الأساسية الخمسة فقط: عسل، زيت زيتون، شمع عسل، مشتقات، مكسرات
-$allowedMaterials = ['عسل', 'زيت زيتون', 'شمع عسل', 'مشتقات', 'مكسرات'];
+// المواد الخام الأساسية: عسل، زيت زيتون، شمع عسل، مشتقات، مكسرات، طحينة
+$allowedMaterials = ['عسل', 'زيت زيتون', 'شمع عسل', 'مشتقات', 'مكسرات', 'طحينة'];
 $rawMaterialsForTemplate = array_intersect($allowedMaterials, array_keys($rawMaterialsData));
 
 sort($rawMaterialsForTemplate);
