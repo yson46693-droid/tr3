@@ -665,7 +665,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action'])) {
         $name = trim($_POST['name'] ?? '');
         $phone = trim($_POST['phone'] ?? '');
         $address = trim($_POST['address'] ?? '');
-        $balance = isset($_POST['balance']) ? cleanFinancialValue($_POST['balance']) : 0;
+        $balance = isset($_POST['balance']) ? cleanFinancialValue($_POST['balance'], true) : 0;
 
         if (empty($name)) {
             $error = 'يجب إدخال اسم العميل';

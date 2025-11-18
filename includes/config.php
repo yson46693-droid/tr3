@@ -319,8 +319,10 @@ function formatCurrency($amount) {
 /**
  * دالة لتنظيف القيم المالية وضمان صحتها
  * Validate and clean financial values
+ * @param mixed $value القيمة المراد تنظيفها
+ * @param bool $allowNegative السماح بالقيم السالبة (للرصيد الدائن)
  */
-function cleanFinancialValue($value) {
+function cleanFinancialValue($value, $allowNegative = false) {
     // إذا كانت القيمة null أو فارغة، إرجاع 0
     if ($value === null || $value === '' || $value === false) {
         return 0;
@@ -351,9 +353,17 @@ function cleanFinancialValue($value) {
     }
     
     // التحقق من القيم الكبيرة جداً أو السالبة
-    // القيم المقبولة: من 0 إلى 10000 جنيه/ساعة
-    if ($value > 10000 || $value < 0) {
-        return 0;
+    if ($allowNegative) {
+        // إذا كان مسموحاً بالقيم السالبة (للرصيد الدائن)، فقط التحقق من الحد الأقصى
+        // القيم المقبولة: من -1000000 إلى 1000000
+        if ($value > 1000000 || $value < -1000000) {
+            return 0;
+        }
+    } else {
+        // القيم المقبولة: من 0 إلى 10000 جنيه/ساعة (للأجور والمدفوعات)
+        if ($value > 10000 || $value < 0) {
+            return 0;
+        }
     }
     
     // تقريب إلى منزلتين عشريتين
