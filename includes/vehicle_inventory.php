@@ -1145,9 +1145,18 @@ function createWarehouseTransfer($fromWarehouseId, $toWarehouseId, $transferDate
                                  $reason = null, $notes = null, $requestedBy = null) {
     $transferId = null;
     $transferNumber = null;
+    $transactionStarted = false;
+    $db = null;
+    $conn = null;
     
     try {
         $db = db();
+        $conn = $db->getConnection();
+        
+        if ($conn && method_exists($conn, 'begin_transaction')) {
+            $conn->begin_transaction();
+            $transactionStarted = true;
+        }
 
         ensureWarehouseTransferBatchColumns();
         
@@ -1420,7 +1429,11 @@ function createWarehouseTransfer($fromWarehouseId, $toWarehouseId, $transferDate
             error_log("Warning: Transfer ID $transferId was created but not immediately found in database. Using saved values.");
         }
         
-        // إرجاع النتيجة - حتى لو فشل التحقق، نعتمد على أن الطلب تم إنشاؤه
+        if ($transactionStarted && $conn) {
+            $conn->commit();
+            $transactionStarted = false;
+        }
+
         return [
             'success' => true, 
             'transfer_id' => $transferId, 
@@ -1430,32 +1443,15 @@ function createWarehouseTransfer($fromWarehouseId, $toWarehouseId, $transferDate
     } catch (Exception $e) {
         error_log("Transfer Creation Error: " . $e->getMessage());
         error_log("Transfer Creation Error Stack: " . $e->getTraceAsString());
-        
-        // إذا كان الطلب تم إنشاؤه بالفعل (transferId موجود)، نتحقق من قاعدة البيانات
-        if (!empty($transferId)) {
+
+        if ($transactionStarted && $conn) {
             try {
-                $db = db(); // إعادة الحصول على اتصال قاعدة البيانات
-                $verifyTransfer = $db->queryOne(
-                    "SELECT id, transfer_number FROM warehouse_transfers WHERE id = ?",
-                    [$transferId]
-                );
-                
-                if ($verifyTransfer) {
-                    // الطلب موجود في قاعدة البيانات! كان هناك خطأ بعد إنشاء الطلب
-                    error_log("Warning: Transfer was created (ID: {$verifyTransfer['id']}, Number: {$verifyTransfer['transfer_number']}) but exception occurred after creation: " . $e->getMessage());
-                    // نعيد نجاح لأن الطلب تم إنشاؤه فعلياً
-                    return [
-                        'success' => true,
-                        'transfer_id' => (int)$verifyTransfer['id'],
-                        'transfer_number' => $verifyTransfer['transfer_number']
-                    ];
-                }
-            } catch (Exception $dbException) {
-                error_log("Error checking database in catch block: " . $dbException->getMessage());
+                $conn->rollback();
+            } catch (Exception $rollbackException) {
+                error_log("Transfer Creation Rollback Error: " . $rollbackException->getMessage());
             }
         }
         
-        // الطلب لم يتم إنشاؤه - خطأ حقيقي
         return ['success' => false, 'message' => 'حدث خطأ في إنشاء طلب النقل: ' . $e->getMessage()];
     }
 }
