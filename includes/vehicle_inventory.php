@@ -2213,21 +2213,6 @@ function approveWarehouseTransfer($transferId, $approvedBy = null) {
                     throw new Exception($message);
                 }
             } else {
-                // إذا كان المخزن الوجهة ليس vehicle، نضيف المنتج إلى products ونحدث warehouse_id
-                // تحديث كمية المنتج في المخزن الوجهة
-                $currentProduct = $db->queryOne(
-                    "SELECT quantity, warehouse_id FROM products WHERE id = ?",
-                    [$item['product_id']]
-                );
-                
-                if ($currentProduct) {
-                    // إضافة الكمية إلى products مع تحديث warehouse_id
-                    $db->execute(
-                        "UPDATE products SET quantity = quantity + ?, warehouse_id = ? WHERE id = ?",
-                        [$requestedQuantity, $transfer['to_warehouse_id'], $item['product_id']]
-                    );
-                }
-
                 // إذا كان هناك batch_id وكان المخزن الوجهة رئيسياً، نعيد الكمية إلى finished_products
                 if ($batchId && ($toWarehouse['warehouse_type'] ?? '') === 'main') {
                     $db->execute(
