@@ -706,6 +706,9 @@ $derivativeMaterialOptions = array_map(static function ($type, $data) {
 
 // السمسم المتاح للاستخدام في القوالب
 $availableSesameForTemplates = [];
+if (!isset($sesameStockTableReady)) {
+    $sesameStockTableReady = function_exists('ensureSesameStockTable') ? ensureSesameStockTable() : false;
+}
 if ($sesameStockTableReady) {
     try {
         $availableSesameForTemplates = $db->query(
