@@ -821,6 +821,12 @@ foreach ($vehicleInventory as $item) {
                             <select class="form-select" name="to_warehouse_id" id="toWarehouse" required>
                                 <option value="">اختر المخزن الوجهة</option>
                                 <?php foreach ($warehouses as $warehouse): ?>
+                                    <?php 
+                                    // استبعاد مخزن المندوب الحالي من قائمة "إلى المخزن" إذا كان المستخدم مندوب مبيعات
+                                    if ($currentUser['role'] === 'sales' && $defaultFromWarehouseId && $warehouse['id'] == $defaultFromWarehouseId) {
+                                        continue;
+                                    }
+                                    ?>
                                     <option value="<?php echo $warehouse['id']; ?>" 
                                             data-type="<?php echo $warehouse['warehouse_type']; ?>">
                                         <?php echo htmlspecialchars($warehouse['name']); ?> 
