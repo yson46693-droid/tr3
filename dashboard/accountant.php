@@ -40,6 +40,48 @@ if (
     exit;
 }
 
+// معالجة طلب update_location قبل إرسال أي HTML
+if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && trim($_POST['action']) === 'update_location') {
+    $pageParam = $_GET['page'] ?? 'dashboard';
+    if ($pageParam === 'customers') {
+        // تنظيف أي output buffer
+        while (ob_get_level() > 0) {
+            ob_end_clean();
+        }
+        
+        // تحميل الملفات الأساسية
+        if (!defined('CUSTOMERS_MODULE_BOOTSTRAPPED')) {
+            require_once __DIR__ . '/../includes/config.php';
+            require_once __DIR__ . '/../includes/db.php';
+            require_once __DIR__ . '/../includes/auth.php';
+            require_once __DIR__ . '/../includes/audit_log.php';
+            require_once __DIR__ . '/../includes/path_helper.php';
+            require_once __DIR__ . '/../includes/customer_history.php';
+            require_once __DIR__ . '/../includes/invoices.php';
+            require_once __DIR__ . '/../includes/salary_calculator.php';
+            
+            requireRole(['sales', 'accountant', 'manager']);
+        }
+        
+        // تضمين وحدة customers التي تحتوي على معالج update_location
+        if (file_exists($customersModulePath)) {
+            define('CUSTOMERS_MODULE_BOOTSTRAPPED', true);
+            if (!defined('CUSTOMERS_PURCHASE_HISTORY_AJAX')) {
+                define('CUSTOMERS_PURCHASE_HISTORY_AJAX', true);
+            }
+            include $customersModulePath;
+        } else {
+            http_response_code(404);
+            header('Content-Type: application/json; charset=utf-8');
+            echo json_encode([
+                'success' => false,
+                'message' => 'وحدة العملاء غير متاحة.'
+            ], JSON_UNESCAPED_UNICODE);
+        }
+        exit;
+    }
+}
+
 $financialSuccess = '';
 $financialError = '';
 $financialFormData = [];

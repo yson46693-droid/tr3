@@ -1008,6 +1008,14 @@ if (isset($_GET['ajax']) && $_GET['ajax'] == '1' && $salaryId > 0) {
             <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
         </div>
     <?php endif; ?>
+    
+    <!-- زر الرجوع -->
+    <div class="d-flex justify-content-between align-items-center mb-4">
+        <h2 class="mb-0"><i class="bi bi-cash-coin me-2"></i>السلف</h2>
+        <a href="<?php echo htmlspecialchars($buildViewUrl('list')); ?>" class="btn btn-outline-secondary">
+            <i class="bi bi-arrow-right me-2"></i>الرجوع
+        </a>
+    </div>
 <?php else: ?>
 <?php if ($error): ?>
     <div class="alert alert-danger alert-dismissible fade show" id="errorAlert" data-auto-refresh="true">
