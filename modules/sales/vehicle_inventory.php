@@ -792,17 +792,29 @@ foreach ($vehicleInventory as $item) {
                     <div class="row mb-3">
                         <div class="col-md-6">
                             <label class="form-label">من المخزن <span class="text-danger">*</span></label>
-                            <select class="form-select" name="from_warehouse_id" id="fromWarehouse" required>
-                                <option value="">اختر المخزن المصدر</option>
-                                <?php foreach ($warehouses as $warehouse): ?>
-                                    <option value="<?php echo $warehouse['id']; ?>" 
-                                            data-type="<?php echo $warehouse['warehouse_type']; ?>"
-                                            <?php echo ($defaultFromWarehouseId && $warehouse['id'] == $defaultFromWarehouseId) ? 'selected' : ''; ?>>
-                                        <?php echo htmlspecialchars($warehouse['name']); ?> 
-                                        (<?php echo $warehouse['warehouse_type'] === 'main' ? 'رئيسي' : 'سيارة'; ?>)
-                                    </option>
-                                <?php endforeach; ?>
-                            </select>
+                            <?php if ($currentUser['role'] === 'sales' && $defaultFromWarehouseId): ?>
+                                <?php 
+                                // للمندوبين: إظهار فقط مخزن السيارة الخاص بهم كحقل ثابت
+                                $salesWarehouse = $db->queryOne(
+                                    "SELECT id, name, warehouse_type FROM warehouses WHERE id = ?",
+                                    [$defaultFromWarehouseId]
+                                );
+                                ?>
+                                <input type="hidden" name="from_warehouse_id" value="<?php echo $defaultFromWarehouseId; ?>">
+                                <input type="text" class="form-control" value="<?php echo htmlspecialchars($salesWarehouse['name'] ?? ''); ?> (<?php echo ($salesWarehouse['warehouse_type'] ?? '') === 'main' ? 'رئيسي' : 'سيارة'; ?>)" readonly disabled style="background-color: #e9ecef; cursor: not-allowed;">
+                            <?php else: ?>
+                                <select class="form-select" name="from_warehouse_id" id="fromWarehouse" required>
+                                    <option value="">اختر المخزن المصدر</option>
+                                    <?php foreach ($warehouses as $warehouse): ?>
+                                        <option value="<?php echo $warehouse['id']; ?>" 
+                                                data-type="<?php echo $warehouse['warehouse_type']; ?>"
+                                                <?php echo ($defaultFromWarehouseId && $warehouse['id'] == $defaultFromWarehouseId) ? 'selected' : ''; ?>>
+                                            <?php echo htmlspecialchars($warehouse['name']); ?> 
+                                            (<?php echo $warehouse['warehouse_type'] === 'main' ? 'رئيسي' : 'سيارة'; ?>)
+                                        </option>
+                                    <?php endforeach; ?>
+                                </select>
+                            <?php endif; ?>
                         </div>
                         <div class="col-md-6">
                             <label class="form-label">إلى المخزن <span class="text-danger">*</span></label>
@@ -894,9 +906,22 @@ foreach ($vehicleInventory as $item) {
 let itemIndex = 1;
 let allFinishedProductOptions = <?php echo json_encode($finishedProductOptions); ?>;
 
-// تحميل المنتجات عند تغيير المخزن المصدر
-document.getElementById('fromWarehouse')?.addEventListener('change', function() {
-    const fromWarehouseId = this.value;
+<?php if ($currentUser['role'] === 'sales' && $defaultFromWarehouseId): ?>
+// للمندوبين: تحميل المنتجات تلقائياً عند فتح النموذج
+document.addEventListener('DOMContentLoaded', function() {
+    const transferModal = document.getElementById('createTransferModal');
+    if (transferModal) {
+        transferModal.addEventListener('shown.bs.modal', function() {
+            // تحميل المنتجات من مخزن السيارة الخاص بالمندوب
+            const fromWarehouseId = <?php echo $defaultFromWarehouseId; ?>;
+            loadProductsFromWarehouse(fromWarehouseId);
+        });
+    }
+});
+<?php endif; ?>
+
+// دالة لتحميل المنتجات من المخزن
+function loadProductsFromWarehouse(fromWarehouseId) {
     if (!fromWarehouseId) {
         allFinishedProductOptions = [];
         updateProductSelects();
@@ -1015,6 +1040,12 @@ document.getElementById('fromWarehouse')?.addEventListener('change', function() 
                 infoAlert.innerHTML = '<i class="bi bi-exclamation-triangle-fill"></i><div>' + errorMessage + '</div>';
             }
         });
+}
+
+// تحميل المنتجات عند تغيير المخزن المصدر
+document.getElementById('fromWarehouse')?.addEventListener('change', function() {
+    const fromWarehouseId = this.value;
+    loadProductsFromWarehouse(fromWarehouseId);
 });
 
 // تحديث جميع قوائم المنتجات
