@@ -14,6 +14,7 @@ require_once __DIR__ . '/../../includes/audit_log.php';
 require_once __DIR__ . '/../../includes/notifications.php';
 require_once __DIR__ . '/../../includes/path_helper.php';
 require_once __DIR__ . '/../../includes/invoices.php';
+require_once __DIR__ . '/../../includes/salary_calculator.php';
 
 require_once __DIR__ . '/table_styles.php';
 
@@ -138,6 +139,12 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 'amount' => $amount
             ]);
             
+            refreshSalesCommissionForUser(
+                $currentUser['id'],
+                $date,
+                'تحديث تلقائي بعد تسجيل تحصيل جديد'
+            );
+            
             // توزيع التحصيل على فواتير العميل وتحديثها
             $distributionResult = distributeCollectionToInvoices($customerId, $amount, $currentUser['id']);
             
@@ -172,6 +179,12 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 
                 logAudit($currentUser['id'], 'delete_collection', 'collection', $collectionId, 
                          json_encode($collection), null);
+                
+                refreshSalesCommissionForUser(
+                    $collection['collected_by'] ?? 0,
+                    $collection['date'] ?? null,
+                    'تحديث تلقائي بعد حذف تحصيل'
+                );
                 
                 $success = 'تم حذف التحصيل بنجاح';
             } else {

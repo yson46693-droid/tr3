@@ -15,10 +15,13 @@ require_once __DIR__ . '/../../includes/audit_log.php';
 require_once __DIR__ . '/../../includes/path_helper.php';
 require_once __DIR__ . '/../../includes/customer_history.php';
 require_once __DIR__ . '/../../includes/invoices.php';
+require_once __DIR__ . '/../../includes/salary_calculator.php';
 
 requireRole(['sales', 'accountant', 'manager']);
 
-require_once __DIR__ . '/table_styles.php';
+if (!defined('CUSTOMERS_PURCHASE_HISTORY_AJAX')) {
+    require_once __DIR__ . '/table_styles.php';
+}
 
 $currentUser = getCurrentUser();
 $isSalesUser = isset($currentUser['role']) && $currentUser['role'] === 'sales';
@@ -543,8 +546,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action'])) {
                     }
 
                     // بناء قائمة الأعمدة والقيم
+                    $collectionDate = date('Y-m-d');
                     $collectionColumns = ['customer_id', 'amount', 'date', 'payment_method', 'collected_by'];
-                    $collectionValues = [$customerId, $amount, date('Y-m-d'), 'cash', $currentUser['id']];
+                    $collectionValues = [$customerId, $amount, $collectionDate, 'cash', $currentUser['id']];
                     $collectionPlaceholders = array_fill(0, count($collectionColumns), '?');
 
                     if ($hasCollectionNumberColumn && $collectionNumber !== null) {
@@ -584,6 +588,14 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action'])) {
                             'amount' => $amount,
                         ]
                     );
+                    
+                    if ($isSalesUser) {
+                        refreshSalesCommissionForUser(
+                            $currentUser['id'],
+                            $collectionDate,
+                            'تحديث تلقائي بعد تحصيل من صفحة العملاء'
+                        );
+                    }
                 } else {
                     error_log('collect_debt: collections table not found, skipping collection record.');
                 }

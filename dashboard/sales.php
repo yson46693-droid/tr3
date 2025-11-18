@@ -58,6 +58,9 @@ if (isset($_GET['ajax'], $_GET['action'])) {
 
     // طلب سجل مشتريات العميل (يحتاج للوحدة customers)
     if ($_GET['ajax'] === 'purchase_history' && $_GET['action'] === 'purchase_history') {
+        if (!defined('CUSTOMERS_PURCHASE_HISTORY_AJAX')) {
+            define('CUSTOMERS_PURCHASE_HISTORY_AJAX', true);
+        }
         $customersModulePath = __DIR__ . '/../modules/sales/customers.php';
         if (file_exists($customersModulePath)) {
             include $customersModulePath;

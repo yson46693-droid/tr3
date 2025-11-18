@@ -14,6 +14,7 @@ require_once __DIR__ . '/../../includes/audit_log.php';
 require_once __DIR__ . '/../../includes/notifications.php';
 require_once __DIR__ . '/../../includes/approval_system.php';
 require_once __DIR__ . '/../../includes/table_styles.php';
+require_once __DIR__ . '/../../includes/salary_calculator.php';
 
 requireRole(['accountant', 'manager']);
 
@@ -104,6 +105,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             $error = 'يجب إدخال مبلغ صحيح أكبر من الصفر';
         } else {
             $oldCollection = $db->queryOne("SELECT * FROM collections WHERE id = ?", [$collectionId]);
+            $oldCollectedBy = is_array($oldCollection) && isset($oldCollection['collected_by']) ? $oldCollection['collected_by'] : null;
+            $oldCollectionDate = is_array($oldCollection) && isset($oldCollection['date']) ? $oldCollection['date'] : null;
             
             // التحقق من وجود عمود notes
             $notesColumnCheck = $db->queryOne("SHOW COLUMNS FROM collections LIKE 'notes'");
@@ -125,6 +128,19 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                      json_encode($oldCollection), ['amount' => $amount]);
             
             $success = 'تم تحديث التحصيل بنجاح';
+            
+            if ($oldCollectedBy) {
+                refreshSalesCommissionForUser(
+                    $oldCollectedBy,
+                    $oldCollectionDate,
+                    'تحديث تلقائي بعد تعديل تحصيل'
+                );
+                refreshSalesCommissionForUser(
+                    $oldCollectedBy,
+                    $date,
+                    'تحديث تلقائي بعد تعديل تحصيل'
+                );
+            }
         }
     } elseif ($action === 'delete_collection') {
         $collectionId = intval($_POST['collection_id'] ?? 0);
@@ -133,6 +149,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             $error = 'معرّف التحصيل غير صحيح';
         } else {
             $collection = $db->queryOne("SELECT * FROM collections WHERE id = ?", [$collectionId]);
+            $deletedCollectedBy = is_array($collection) && isset($collection['collected_by']) ? $collection['collected_by'] : null;
+            $deletedCollectionDate = is_array($collection) && isset($collection['date']) ? $collection['date'] : null;
             
             if ($collection) {
                 $db->execute("DELETE FROM collections WHERE id = ?", [$collectionId]);
@@ -141,6 +159,14 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                          json_encode($collection), null);
                 
                 $success = 'تم حذف التحصيل بنجاح';
+                
+                if ($deletedCollectedBy) {
+                    refreshSalesCommissionForUser(
+                        $deletedCollectedBy,
+                        $deletedCollectionDate,
+                        'تحديث تلقائي بعد حذف تحصيل'
+                    );
+                }
             } else {
                 $error = 'التحصيل غير موجود';
             }
@@ -151,6 +177,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         if ($collectionId <= 0) {
             $error = 'معرّف التحصيل غير صحيح';
         } else {
+            $collectionData = $db->queryOne("SELECT collected_by, date FROM collections WHERE id = ?", [$collectionId]);
             $statusColumnCheck = $db->queryOne("SHOW COLUMNS FROM collections LIKE 'status'");
             $approvedByColumnCheck = $db->queryOne("SHOW COLUMNS FROM collections LIKE 'approved_by'");
             
@@ -170,6 +197,14 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 logAudit($currentUser['id'], 'approve_collection', 'collection', $collectionId, null, null);
                 
                 $success = 'تم الموافقة على التحصيل بنجاح';
+                
+                if ($collectionData && !empty($collectionData['collected_by'])) {
+                    refreshSalesCommissionForUser(
+                        $collectionData['collected_by'],
+                        $collectionData['date'] ?? null,
+                        'تحديث تلقائي بعد موافقة التحصيل'
+                    );
+                }
             } else {
                 $error = 'نظام الموافقات غير متاح';
             }
@@ -180,6 +215,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         if ($collectionId <= 0) {
             $error = 'معرّف التحصيل غير صحيح';
         } else {
+            $collectionData = $db->queryOne("SELECT collected_by, date FROM collections WHERE id = ?", [$collectionId]);
             $statusColumnCheck = $db->queryOne("SHOW COLUMNS FROM collections LIKE 'status'");
             $approvedByColumnCheck = $db->queryOne("SHOW COLUMNS FROM collections LIKE 'approved_by'");
             
@@ -199,6 +235,14 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 logAudit($currentUser['id'], 'reject_collection', 'collection', $collectionId, null, null);
                 
                 $success = 'تم رفض التحصيل';
+                
+                if ($collectionData && !empty($collectionData['collected_by'])) {
+                    refreshSalesCommissionForUser(
+                        $collectionData['collected_by'],
+                        $collectionData['date'] ?? null,
+                        'تحديث تلقائي بعد رفض التحصيل'
+                    );
+                }
             } else {
                 $error = 'نظام الموافقات غير متاح';
             }

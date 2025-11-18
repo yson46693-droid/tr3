@@ -82,6 +82,9 @@ if (
     $_GET['ajax'] === 'purchase_history' &&
     $_GET['action'] === 'purchase_history'
 ) {
+    if (!defined('CUSTOMERS_PURCHASE_HISTORY_AJAX')) {
+        define('CUSTOMERS_PURCHASE_HISTORY_AJAX', true);
+    }
     if (file_exists($customersModulePath)) {
         include $customersModulePath;
     } else {

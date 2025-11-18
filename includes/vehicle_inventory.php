@@ -1772,6 +1772,13 @@ function executeWarehouseTransferDirectly($transferId, $executedBy = null) {
                         [$requestedQuantity, $transfer['to_warehouse_id'], $item['product_id']]
                     );
                 }
+
+                if ($batchId && ($toWarehouse['warehouse_type'] ?? '') === 'main') {
+                    $db->execute(
+                        "UPDATE finished_products SET quantity_produced = quantity_produced + ? WHERE id = ?",
+                        [$requestedQuantity, $batchId]
+                    );
+                }
             }
             
             // تسجيل حركة دخول
@@ -2214,6 +2221,14 @@ function approveWarehouseTransfer($transferId, $approvedBy = null) {
                     $db->execute(
                         "UPDATE products SET quantity = quantity + ?, warehouse_id = ? WHERE id = ?",
                         [$requestedQuantity, $transfer['to_warehouse_id'], $item['product_id']]
+                    );
+                }
+
+                // إذا كان هناك batch_id وكان المخزن الوجهة رئيسياً، نعيد الكمية إلى finished_products
+                if ($batchId && ($toWarehouse['warehouse_type'] ?? '') === 'main') {
+                    $db->execute(
+                        "UPDATE finished_products SET quantity_produced = quantity_produced + ? WHERE id = ?",
+                        [$requestedQuantity, $batchId]
                     );
                 }
             }

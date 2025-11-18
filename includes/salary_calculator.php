@@ -124,7 +124,7 @@ function calculateSalesCollections($userId, $month, $year) {
                  )
                  AND MONTH(c.date) = ?
                  AND YEAR(c.date) = ?" . 
-                 ($hasStatus ? " AND c.status = 'approved'" : ""),
+                 ($hasStatus ? " AND c.status IN ('pending','approved')" : ""),
                 [$userId, $month, $year]
             );
             $partialAmount = floatval($partialCollections['total'] ?? 0);
@@ -146,7 +146,7 @@ function calculateSalesCollections($userId, $month, $year) {
                      WHERE inv.sales_rep_id = ?
                      AND inv.status = 'partial'
                  )" . 
-                 ($hasStatus ? " AND c.status = 'approved'" : ""),
+                 ($hasStatus ? " AND c.status IN ('pending','approved')" : ""),
                 [$userId, $month, $year, $userId]
             );
             $customerAmount = floatval($customerCollections['total'] ?? 0);
@@ -161,7 +161,7 @@ function calculateSalesCollections($userId, $month, $year) {
                  WHERE cust.created_by = ?
                  AND MONTH(c.date) = ?
                  AND YEAR(c.date) = ?" . 
-                 ($hasStatus ? " AND c.status = 'approved'" : ""),
+                 ($hasStatus ? " AND c.status IN ('pending','approved')" : ""),
                 [$userId, $month, $year]
             );
             $totalCommissionBase += floatval($customerCollections['total'] ?? 0);
@@ -174,7 +174,7 @@ function calculateSalesCollections($userId, $month, $year) {
                      WHERE collected_by = ? 
                      AND MONTH(date) = ? 
                      AND YEAR(date) = ?
-                     AND status = 'approved'",
+                     AND status IN ('pending','approved')",
                     [$userId, $month, $year]
                 );
             } else {
@@ -1036,6 +1036,55 @@ function calculateAllSalaries($month, $year) {
     }
     
     return $results;
+}
+
+/**
+ * إعادة احتساب راتب المندوب مباشرةً بعد حدوث عملية تؤثر على نسبة التحصيل.
+ *
+ * @param int $userId
+ * @param string|null $referenceDate تاريخ العملية (يتم استخدام تاريخ اليوم إذا تُرك فارغاً)
+ * @param string|null $reason ملاحظة يتم تمريرها لدالة الحساب (اختياري)
+ * @return bool true عند نجاح إعادة الحساب أو false عند الفشل/تجاهل المستخدم
+ */
+function refreshSalesCommissionForUser($userId, $referenceDate = null, $reason = null) {
+    $userId = (int)$userId;
+    if ($userId <= 0) {
+        return false;
+    }
+    
+    try {
+        $db = db();
+        $user = $db->queryOne("SELECT role FROM users WHERE id = ?", [$userId]);
+    } catch (Throwable $e) {
+        error_log('Failed to read user role while refreshing salary: ' . $e->getMessage());
+        return false;
+    }
+    
+    if (!$user || strtolower((string)($user['role'] ?? '')) !== 'sales') {
+        return false;
+    }
+    
+    $timestamp = $referenceDate ? strtotime($referenceDate) : time();
+    if ($timestamp === false) {
+        $timestamp = time();
+    }
+    
+    $month = (int)date('n', $timestamp);
+    $year = (int)date('Y', $timestamp);
+    
+    $note = $reason ?: 'تحديث تلقائي بعد عملية تحصيل';
+    
+    try {
+        $result = createOrUpdateSalary($userId, $month, $year, 0, 0, $note);
+        if (!($result['success'] ?? false)) {
+            error_log('Failed to refresh salary after collection for user ' . $userId . ': ' . ($result['message'] ?? 'unknown error'));
+            return false;
+        }
+        return true;
+    } catch (Throwable $e) {
+        error_log('Exception while refreshing salary after collection for user ' . $userId . ': ' . $e->getMessage());
+        return false;
+    }
 }
 
 /**
