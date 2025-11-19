@@ -533,7 +533,7 @@ $unifiedTemplatesCheck = $db->queryOne("SHOW TABLES LIKE 'unified_product_templa
 if (!empty($unifiedTemplatesCheck)) {
     $unifiedTemplates = $db->query("
         SELECT id, 
-               COALESCE(template_name, product_name, CONCAT('قالب #', id)) as name,
+               COALESCE(product_name, CONCAT('قالب #', id)) as name,
                0 as unit_price
         FROM unified_product_templates 
         WHERE status = 'active' 
@@ -546,7 +546,7 @@ $productTemplatesCheck = $db->queryOne("SHOW TABLES LIKE 'product_templates'");
 if (!empty($productTemplatesCheck)) {
     $productTemplates = $db->query("
         SELECT id, 
-               COALESCE(template_name, product_name, CONCAT('قالب #', id)) as name,
+               COALESCE(product_name, CONCAT('قالب #', id)) as name,
                0 as unit_price
         FROM product_templates 
         WHERE status = 'active' 
