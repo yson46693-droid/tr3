@@ -22,6 +22,19 @@ $db = db();
 $error = '';
 $success = '';
 
+// دالة مساعدة للحصول على اسم جدول عناصر الطلب
+function getOrderItemsTableName($db) {
+    $tableNames = ['order_items', 'customer_order_items'];
+    foreach ($tableNames as $tableName) {
+        $tableCheck = $db->queryOne("SHOW TABLES LIKE ?", [$tableName]);
+        if (!empty($tableCheck)) {
+            return $tableName;
+        }
+    }
+    // إذا لم يكن الجدول موجوداً، نعيد اسم الجدول الافتراضي
+    return 'order_items';
+}
+
 // قراءة الرسائل من session (Post-Redirect-Get pattern)
 applyPRGPattern($error, $success);
 
@@ -202,11 +215,51 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     throw new RuntimeException('فشل إنشاء الطلب: لم يتم الحصول على معرف الطلب.');
                 }
 
+                // التحقق من وجود الجدول وإنشائه إذا لم يكن موجوداً
+                $orderItemsTable = null;
+                $tableNames = ['order_items', 'customer_order_items'];
+                foreach ($tableNames as $tableName) {
+                    $tableCheck = $db->queryOne("SHOW TABLES LIKE ?", [$tableName]);
+                    if (!empty($tableCheck)) {
+                        $orderItemsTable = $tableName;
+                        break;
+                    }
+                }
+                
+                // إذا لم يكن الجدول موجوداً، إنشاؤه
+                if (empty($orderItemsTable)) {
+                    $orderItemsTable = 'order_items';
+                    try {
+                        $db->execute("
+                            CREATE TABLE IF NOT EXISTS `order_items` (
+                              `id` int(11) NOT NULL AUTO_INCREMENT,
+                              `order_id` int(11) NOT NULL,
+                              `product_id` int(11) NULL,
+                              `template_id` int(11) NULL,
+                              `quantity` decimal(10,2) NOT NULL,
+                              `unit_price` decimal(15,2) NOT NULL DEFAULT 0.00,
+                              `total_price` decimal(15,2) NOT NULL DEFAULT 0.00,
+                              `production_status` enum('pending','in_production','completed') DEFAULT 'pending',
+                              `created_at` timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                              PRIMARY KEY (`id`),
+                              KEY `order_id` (`order_id`),
+                              KEY `product_id` (`product_id`),
+                              KEY `template_id` (`template_id`),
+                              CONSTRAINT `order_items_ibfk_1` FOREIGN KEY (`order_id`) REFERENCES `customer_orders` (`id`) ON DELETE CASCADE
+                            ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
+                        ");
+                        error_log('Created order_items table successfully');
+                    } catch (Throwable $createError) {
+                        error_log('Error creating order_items table: ' . $createError->getMessage());
+                        throw new RuntimeException('فشل إنشاء جدول عناصر الطلب: ' . $createError->getMessage());
+                    }
+                }
+
                 // التحقق من وجود عمود template_id وإضافته إذا لم يكن موجوداً
                 try {
-                    $templateIdColumn = $db->queryOne("SHOW COLUMNS FROM order_items LIKE 'template_id'");
+                    $templateIdColumn = $db->queryOne("SHOW COLUMNS FROM {$orderItemsTable} LIKE 'template_id'");
                     if (empty($templateIdColumn)) {
-                        $db->execute("ALTER TABLE order_items ADD COLUMN template_id INT(11) NULL AFTER product_id");
+                        $db->execute("ALTER TABLE {$orderItemsTable} ADD COLUMN template_id INT(11) NULL AFTER product_id");
                     }
                 } catch (Throwable $alterError) {
                     error_log('Error checking/adding template_id column: ' . $alterError->getMessage());
@@ -214,17 +267,17 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 
                 // محاولة تعديل product_id ليكون NULL إذا كان NOT NULL
                 try {
-                    $productIdColumn = $db->queryOne("SHOW COLUMNS FROM order_items WHERE Field = 'product_id'");
-                    if (!empty($productIdColumn) && $productIdColumn['Null'] === 'NO') {
+                    $productIdColumn = $db->queryOne("SHOW COLUMNS FROM {$orderItemsTable} WHERE Field = 'product_id'");
+                    if (!empty($productIdColumn) && isset($productIdColumn['Null']) && $productIdColumn['Null'] === 'NO') {
                         // محاولة إزالة Foreign Key constraint أولاً
                         try {
-                            $db->execute("ALTER TABLE order_items DROP FOREIGN KEY order_items_ibfk_2");
+                            $db->execute("ALTER TABLE {$orderItemsTable} DROP FOREIGN KEY order_items_ibfk_2");
                         } catch (Throwable $fkError) {
                             // قد يكون اسم الـ constraint مختلفاً أو غير موجود
-                            error_log('Error dropping foreign key: ' . $fkError->getMessage());
+                            error_log('Error dropping foreign key (may not exist): ' . $fkError->getMessage());
                         }
                         // تعديل product_id ليكون NULL
-                        $db->execute("ALTER TABLE order_items MODIFY COLUMN product_id INT(11) NULL");
+                        $db->execute("ALTER TABLE {$orderItemsTable} MODIFY COLUMN product_id INT(11) NULL");
                     }
                 } catch (Throwable $modifyError) {
                     error_log('Error modifying product_id column: ' . $modifyError->getMessage());
@@ -270,7 +323,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     // إدراج العنصر مع template_id و product_id = NULL
                     try {
                         $db->execute(
-                            "INSERT INTO order_items (order_id, product_id, template_id, quantity, unit_price, total_price) 
+                            "INSERT INTO {$orderItemsTable} (order_id, product_id, template_id, quantity, unit_price, total_price) 
                              VALUES (?, NULL, ?, ?, ?, ?)",
                             [
                                 $orderId,
@@ -286,7 +339,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                             stripos($insertError->getMessage(), 'Unknown column') !== false) {
                             // محاولة إدراج بدون template_id (product_id = NULL)
                             $db->execute(
-                                "INSERT INTO order_items (order_id, product_id, quantity, unit_price, total_price) 
+                                "INSERT INTO {$orderItemsTable} (order_id, product_id, quantity, unit_price, total_price) 
                                  VALUES (?, NULL, ?, ?, ?)",
                                 [
                                     $orderId,
@@ -486,8 +539,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
                         $orderId = $db->getLastInsertId();
 
+                        $orderItemsTable = getOrderItemsTableName($db);
                         $db->execute(
-                            "INSERT INTO order_items (order_id, product_id, quantity, unit_price, total_price) 
+                            "INSERT INTO {$orderItemsTable} (order_id, product_id, quantity, unit_price, total_price) 
                              VALUES (?, ?, ?, ?, ?)",
                             [
                                 $orderId,
@@ -663,9 +717,10 @@ if (isset($_GET['id'])) {
     );
     
     if ($selectedOrder) {
+        $orderItemsTable = getOrderItemsTableName($db);
         $selectedOrder['items'] = $db->query(
             "SELECT oi.*, p.name as product_name
-             FROM order_items oi
+             FROM {$orderItemsTable} oi
              LEFT JOIN products p ON oi.product_id = p.id
              WHERE oi.order_id = ?
              ORDER BY oi.id",
