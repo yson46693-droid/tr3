@@ -81,7 +81,7 @@ function generateReturnNumber() {
  */
 function createReturn($saleId, $customerId, $salesRepId, $returnDate, $returnType, 
                      $reason, $reasonDescription, $items, $refundMethod = 'cash', 
-                     $notes = null, $createdBy = null) {
+                     $notes = null, $createdBy = null, $invoiceId = null) {
     try {
         $db = db();
         
@@ -104,12 +104,13 @@ function createReturn($saleId, $customerId, $salesRepId, $returnDate, $returnTyp
         
         $db->execute(
             "INSERT INTO returns 
-            (return_number, sale_id, customer_id, sales_rep_id, return_date, return_type, 
+            (return_number, sale_id, invoice_id, customer_id, sales_rep_id, return_date, return_type, 
              reason, reason_description, refund_amount, refund_method, status, notes, created_by) 
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'pending', ?, ?)",
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'pending', ?, ?)",
             [
                 $returnNumber,
                 $saleId ?: null,
+                $invoiceId ?: null,
                 $customerId,
                 $salesRepId,
                 $returnDate,

@@ -161,6 +161,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     
     if ($action === 'create_return') {
         $section = 'returns';
+        require_once __DIR__ . '/../../includes/invoices.php';
+        
+        $invoiceId = intval($_POST['invoice_id'] ?? 0);
         $saleId = intval($_POST['sale_id'] ?? 0);
         $customerId = intval($_POST['customer_id'] ?? 0);
         $salesRepId = !empty($_POST['sales_rep_id']) ? intval($_POST['sales_rep_id']) : $currentUser['id'];
@@ -175,7 +178,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         $items = [];
         if (isset($_POST['items']) && is_array($_POST['items'])) {
             foreach ($_POST['items'] as $item) {
-                if (!empty($item['product_id']) && $item['quantity'] > 0 && $item['unit_price'] > 0) {
+                if (!empty($item['product_id']) && isset($item['quantity']) && floatval($item['quantity']) > 0 && isset($item['unit_price']) && floatval($item['unit_price']) > 0) {
                     $items[] = [
                         'product_id' => intval($item['product_id']),
                         'quantity' => floatval($item['quantity']),
@@ -187,11 +190,11 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             }
         }
         
-        if ($saleId <= 0 || $customerId <= 0 || empty($items)) {
+        if (($invoiceId <= 0 && $saleId <= 0) || $customerId <= 0 || empty($items)) {
             $error = 'يجب إدخال جميع البيانات المطلوبة';
         } else {
             $result = createReturn($saleId, $customerId, $salesRepId, $returnDate, $returnType, 
-                                  $reason, $reasonDescription, $items, $refundMethod, $notes);
+                                  $reason, $reasonDescription, $items, $refundMethod, $notes, null, $invoiceId);
             if ($result['success']) {
                 $success = 'تم إنشاء المرتجع بنجاح: ' . $result['return_number'];
             } else {
@@ -889,115 +892,144 @@ if (isset($_GET['id'])) {
             <form method="POST" id="returnForm">
                 <input type="hidden" name="action" value="create_return">
                 <input type="hidden" name="section" value="returns">
+                <input type="hidden" name="invoice_id" id="invoiceId">
+                <input type="hidden" name="sale_id" id="saleId" value="0">
+                <input type="hidden" name="customer_id" id="customerId">
+                <input type="hidden" name="sales_rep_id" id="salesRepId">
                 <div class="modal-body">
-                    <div class="row mb-3">
-                        <div class="col-md-4">
-                            <label class="form-label">رقم البيع <span class="text-danger">*</span></label>
-                            <select class="form-select" name="sale_id" id="saleSelect" required>
-                                <option value="">اختر البيع</option>
-                                <?php foreach ($sales as $sale): ?>
-                                    <option value="<?php echo $sale['id']; ?>" 
-                                            data-customer-id="<?php echo $sale['customer_id']; ?>"
-                                            data-customer="<?php echo htmlspecialchars($sale['customer_name'] ?? ''); ?>">
-                                        <?php echo htmlspecialchars($sale['sale_number']); ?> - 
-                                        <?php echo htmlspecialchars($sale['customer_name'] ?? ''); ?>
-                                    </option>
-                                <?php endforeach; ?>
-                            </select>
-                        </div>
-                        <div class="col-md-4">
-                            <label class="form-label">العميل <span class="text-danger">*</span></label>
-                            <input type="hidden" name="customer_id" id="customerId">
-                            <input type="text" class="form-control" id="customerName" readonly>
-                        </div>
-                        <div class="col-md-2">
-                            <label class="form-label">تاريخ المرتجع <span class="text-danger">*</span></label>
-                            <input type="date" class="form-control" name="return_date" value="<?php echo date('Y-m-d'); ?>" required>
-                        </div>
-                        <div class="col-md-2">
-                            <label class="form-label">نوع المرتجع</label>
-                            <select class="form-select" name="return_type">
-                                <option value="full">كامل</option>
-                                <option value="partial">جزئي</option>
-                            </select>
-                        </div>
-                    </div>
-                    
-                    <div class="row mb-3">
-                        <div class="col-md-4">
-                            <label class="form-label">السبب</label>
-                            <select class="form-select" name="reason">
-                                <option value="customer_request">طلب العميل</option>
-                                <option value="defective">منتج معيب</option>
-                                <option value="wrong_item">منتج خاطئ</option>
-                                <option value="other">أخرى</option>
-                            </select>
-                        </div>
-                        <div class="col-md-4">
-                            <label class="form-label">طريقة الاسترداد</label>
-                            <select class="form-select" name="refund_method">
-                                <option value="cash">نقدي</option>
-                                <option value="credit">رصيد</option>
-                                <option value="exchange">استبدال</option>
-                            </select>
-                        </div>
-                        <div class="col-md-4">
-                            <label class="form-label">وصف السبب</label>
-                            <textarea class="form-control" name="reason_description" rows="2"></textarea>
-                        </div>
-                    </div>
-                    
-                    <div class="mb-3">
-                        <label class="form-label">عناصر المرتجع</label>
-                        <div id="returnItems">
-                            <div class="return-item row mb-2">
-                                <div class="col-md-5">
-                                    <select class="form-select product-select" name="items[0][product_id]" required>
-                                        <option value="">اختر المنتج</option>
-                                        <?php foreach ($products as $product): ?>
-                                            <option value="<?php echo $product['id']; ?>" 
-                                                    data-price="<?php echo $product['unit_price']; ?>">
-                                                <?php echo htmlspecialchars($product['name']); ?>
-                                            </option>
-                                        <?php endforeach; ?>
-                                    </select>
-                                </div>
-                                <div class="col-md-2">
-                                    <input type="number" step="0.01" class="form-control quantity" 
-                                           name="items[0][quantity]" placeholder="الكمية" required min="0.01">
-                                </div>
-                                <div class="col-md-2">
-                                    <input type="number" step="0.01" class="form-control unit-price" 
-                                           name="items[0][unit_price]" placeholder="السعر" required min="0.01">
-                                </div>
-                                <div class="col-md-2">
-                                    <select class="form-select" name="items[0][condition]">
-                                        <option value="new">جديد</option>
-                                        <option value="used">مستعمل</option>
-                                        <option value="damaged">تالف</option>
-                                        <option value="defective">معيب</option>
-                                    </select>
-                                </div>
-                                <div class="col-md-1">
-                                    <button type="button" class="btn btn-danger remove-item">
-                                        <i class="bi bi-trash"></i>
+                    <!-- خطوة 1: إدخال رقم الفاتورة -->
+                    <div id="invoiceSearchStep">
+                        <div class="row mb-3">
+                            <div class="col-md-8">
+                                <label class="form-label">رقم الفاتورة <span class="text-danger">*</span></label>
+                                <div class="input-group">
+                                    <input type="text" class="form-control" id="invoiceNumberInput" 
+                                           placeholder="أدخل رقم الفاتورة" required>
+                                    <button type="button" class="btn btn-primary" id="fetchInvoiceBtn">
+                                        <i class="bi bi-search me-2"></i>جلب بيانات الفاتورة
                                     </button>
+                                </div>
+                                <div class="invalid-feedback" id="invoiceError"></div>
+                            </div>
+                        </div>
+                        <div id="invoiceLoading" class="text-center" style="display: none;">
+                            <div class="spinner-border text-primary" role="status">
+                                <span class="visually-hidden">جاري التحميل...</span>
+                            </div>
+                            <p class="mt-2">جاري جلب بيانات الفاتورة...</p>
+                        </div>
+                    </div>
+                    
+                    <!-- خطوة 2: عرض بيانات الفاتورة والعناصر -->
+                    <div id="invoiceDetailsStep" style="display: none;">
+                        <div class="card mb-3">
+                            <div class="card-header bg-light">
+                                <h6 class="mb-0">بيانات الفاتورة</h6>
+                            </div>
+                            <div class="card-body">
+                                <div class="row">
+                                    <div class="col-md-3">
+                                        <strong>رقم الفاتورة:</strong>
+                                        <div id="displayInvoiceNumber">-</div>
+                                    </div>
+                                    <div class="col-md-3">
+                                        <strong>العميل:</strong>
+                                        <div id="displayCustomerName">-</div>
+                                    </div>
+                                    <div class="col-md-3">
+                                        <strong>المندوب:</strong>
+                                        <div id="displaySalesRep">-</div>
+                                    </div>
+                                    <div class="col-md-3">
+                                        <strong>إجمالي الفاتورة:</strong>
+                                        <div id="displayTotalAmount">-</div>
+                                    </div>
                                 </div>
                             </div>
                         </div>
-                        <button type="button" class="btn btn-sm btn-outline-primary" id="addReturnItemBtn">
-                            <i class="bi bi-plus-circle me-2"></i>إضافة عنصر
-                        </button>
-                    </div>
-                    
-                    <div class="mb-3">
-                        <label class="form-label">ملاحظات</label>
-                        <textarea class="form-control" name="notes" rows="3"></textarea>
+                        
+                        <div class="mb-3">
+                            <label class="form-label">اختر العناصر المراد إرجاعها <span class="text-danger">*</span></label>
+                            <div class="table-responsive">
+                                <table class="table table-bordered">
+                                    <thead>
+                                        <tr>
+                                            <th width="50">
+                                                <input type="checkbox" id="selectAllItems">
+                                            </th>
+                                            <th>المنتج</th>
+                                            <th>الكمية المباعة</th>
+                                            <th>الكمية المرتجعة</th>
+                                            <th>المتبقي</th>
+                                            <th>سعر الوحدة</th>
+                                            <th>الإجمالي</th>
+                                            <th>الحالة</th>
+                                            <th>الكمية للإرجاع</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody id="invoiceItemsTable">
+                                        <!-- سيتم ملؤه ديناميكياً -->
+                                    </tbody>
+                                </table>
+                            </div>
+                            <div class="text-danger small mt-2" id="itemsError"></div>
+                        </div>
+                        
+                        <div class="row mb-3">
+                            <div class="col-md-2">
+                                <label class="form-label">تاريخ المرتجع <span class="text-danger">*</span></label>
+                                <input type="date" class="form-control" name="return_date" value="<?php echo date('Y-m-d'); ?>" required>
+                            </div>
+                            <div class="col-md-2">
+                                <label class="form-label">نوع المرتجع</label>
+                                <select class="form-select" name="return_type" id="returnType">
+                                    <option value="full">كامل</option>
+                                    <option value="partial">جزئي</option>
+                                </select>
+                            </div>
+                            <div class="col-md-3">
+                                <label class="form-label">السبب</label>
+                                <select class="form-select" name="reason">
+                                    <option value="customer_request">طلب العميل</option>
+                                    <option value="defective">منتج معيب</option>
+                                    <option value="wrong_item">منتج خاطئ</option>
+                                    <option value="other">أخرى</option>
+                                </select>
+                            </div>
+                            <div class="col-md-3">
+                                <label class="form-label">طريقة الاسترداد</label>
+                                <select class="form-select" name="refund_method">
+                                    <option value="cash">نقدي</option>
+                                    <option value="credit">رصيد</option>
+                                    <option value="exchange">استبدال</option>
+                                </select>
+                            </div>
+                        </div>
+                        
+                        <div class="row mb-3">
+                            <div class="col-md-6">
+                                <label class="form-label">وصف السبب</label>
+                                <textarea class="form-control" name="reason_description" rows="2"></textarea>
+                            </div>
+                            <div class="col-md-6">
+                                <label class="form-label">ملاحظات</label>
+                                <textarea class="form-control" name="notes" rows="2"></textarea>
+                            </div>
+                        </div>
+                        
+                        <div class="alert alert-info">
+                            <strong>إجمالي المرتجع:</strong> <span id="totalReturnAmount">0.00</span> ج.م
+                        </div>
                     </div>
                 </div>
                 <div class="modal-footer">
                     <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">إلغاء</button>
-                    <button type="submit" class="btn btn-primary">إنشاء مرتجع</button>
+                    <button type="button" class="btn btn-outline-secondary" id="backToSearchBtn" style="display: none;">
+                        <i class="bi bi-arrow-right me-2"></i>رجوع
+                    </button>
+                    <button type="submit" class="btn btn-primary" id="submitReturnBtn" style="display: none;">
+                        <i class="bi bi-check-circle me-2"></i>إنشاء مرتجع
+                    </button>
                 </div>
             </form>
         </div>
@@ -1005,138 +1037,308 @@ if (isset($_GET['id'])) {
 </div>
 
 <script>
-// إنشاء خيارات المنتجات كسلسلة JavaScript
-const productOptions = <?php 
-$productOptionsArray = [];
-foreach ($products as $product) {
-    $productOptionsArray[] = [
-        'id' => $product['id'],
-        'name' => htmlspecialchars($product['name'], ENT_QUOTES, 'UTF-8'),
-        'price' => $product['unit_price']
-    ];
-}
-echo json_encode($productOptionsArray, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
-?>;
-
-// تحديث العميل عند اختيار البيع
-document.getElementById('saleSelect')?.addEventListener('change', function() {
-    const selectedOption = this.options[this.selectedIndex];
-    const customerId = selectedOption.dataset.customerId || '';
-    const customerName = selectedOption.dataset.customer || '';
-    document.getElementById('customerId').value = customerId;
-    document.getElementById('customerName').value = customerName;
-});
-
-// منطق إضافة وحذف العناصر
-let returnItemIndex = 1;
-
-// إضافة عنصر جديد
-document.getElementById('addReturnItemBtn')?.addEventListener('click', function() {
-    const itemsDiv = document.getElementById('returnItems');
-    const newItem = document.createElement('div');
-    newItem.className = 'return-item row mb-2';
-    // بناء خيارات المنتجات
-    let productOptionsHtml = '<option value="">اختر المنتج</option>';
-    productOptions.forEach(function(product) {
-        productOptionsHtml += '<option value="' + product.id + '" data-price="' + product.price + '">' + product.name + '</option>';
-    });
+(function() {
+    'use strict';
     
-    newItem.innerHTML = `
-        <div class="col-md-5">
-            <select class="form-select product-select" name="items[${returnItemIndex}][product_id]" required>
-                ${productOptionsHtml}
-            </select>
-        </div>
-        <div class="col-md-2">
-            <input type="number" step="0.01" class="form-control quantity" 
-                   name="items[${returnItemIndex}][quantity]" placeholder="الكمية" required min="0.01">
-        </div>
-        <div class="col-md-2">
-            <input type="number" step="0.01" class="form-control unit-price" 
-                   name="items[${returnItemIndex}][unit_price]" placeholder="السعر" required min="0.01">
-        </div>
-        <div class="col-md-2">
-            <select class="form-select" name="items[${returnItemIndex}][condition]">
-                <option value="new">جديد</option>
-                <option value="used">مستعمل</option>
-                <option value="damaged">تالف</option>
-                <option value="defective">معيب</option>
-            </select>
-        </div>
-        <div class="col-md-1">
-            <button type="button" class="btn btn-danger remove-item">
-                <i class="bi bi-trash"></i>
-            </button>
-        </div>
-    `;
-    itemsDiv.appendChild(newItem);
-    returnItemIndex++;
-    attachReturnItemEvents(newItem);
-});
-
-// حذف عنصر
-document.addEventListener('click', function(e) {
-    if (e.target.closest('.remove-item')) {
-        const item = e.target.closest('.return-item');
-        if (item && document.querySelectorAll('.return-item').length > 1) {
-            item.remove();
-        } else if (item && document.querySelectorAll('.return-item').length === 1) {
-            // إذا كان العنصر الأخير، فقط امسح القيم
-            item.querySelector('.product-select').value = '';
-            item.querySelector('.quantity').value = '';
-            item.querySelector('.unit-price').value = '';
-            item.querySelector('select[name*="[condition]"]').value = 'new';
-        }
+    const invoiceNumberInput = document.getElementById('invoiceNumberInput');
+    const fetchInvoiceBtn = document.getElementById('fetchInvoiceBtn');
+    const invoiceSearchStep = document.getElementById('invoiceSearchStep');
+    const invoiceDetailsStep = document.getElementById('invoiceDetailsStep');
+    const invoiceLoading = document.getElementById('invoiceLoading');
+    const invoiceError = document.getElementById('invoiceError');
+    const invoiceItemsTable = document.getElementById('invoiceItemsTable');
+    const selectAllItems = document.getElementById('selectAllItems');
+    const backToSearchBtn = document.getElementById('backToSearchBtn');
+    const submitReturnBtn = document.getElementById('submitReturnBtn');
+    const totalReturnAmount = document.getElementById('totalReturnAmount');
+    const returnForm = document.getElementById('returnForm');
+    
+    let invoiceData = null;
+    let selectedItems = {};
+    
+    // تنسيق العملة
+    function formatCurrency(amount) {
+        return parseFloat(amount).toLocaleString('ar-EG', {
+            minimumFractionDigits: 2,
+            maximumFractionDigits: 2
+        });
     }
-});
-
-// ربط أحداث العناصر
-function attachReturnItemEvents(item) {
-    const productSelect = item.querySelector('.product-select');
-    const quantityInput = item.querySelector('.quantity');
-    const unitPriceInput = item.querySelector('.unit-price');
     
-    productSelect?.addEventListener('change', function() {
-        const price = this.options[this.selectedIndex].dataset.price;
-        if (price) {
-            unitPriceInput.value = price;
+    // جلب بيانات الفاتورة
+    fetchInvoiceBtn?.addEventListener('click', function() {
+        const invoiceNumber = invoiceNumberInput.value.trim();
+        
+        if (!invoiceNumber) {
+            invoiceError.textContent = 'يرجى إدخال رقم الفاتورة';
+            invoiceError.style.display = 'block';
+            invoiceNumberInput.classList.add('is-invalid');
+            return;
         }
-    });
-}
-
-// ربط الأحداث للعناصر الموجودة
-document.querySelectorAll('.return-item').forEach(item => {
-    attachReturnItemEvents(item);
-});
-
-// إعادة تعيين النموذج عند إغلاق المودال
-const addReturnModalElement = document.getElementById('addReturnModal');
-if (addReturnModalElement && typeof bootstrap !== 'undefined') {
-    addReturnModalElement.addEventListener('hidden.bs.modal', function() {
-        // إعادة تعيين النموذج
-        const form = document.getElementById('returnForm');
-        if (form) {
-            form.reset();
-            document.getElementById('customerId').value = '';
-            document.getElementById('customerName').value = '';
-            
-            // إعادة تعيين العناصر - الاحتفاظ بعنصر واحد فقط
-            const itemsDiv = document.getElementById('returnItems');
-            const items = itemsDiv.querySelectorAll('.return-item');
-            items.forEach((item, index) => {
-                if (index > 0) {
-                    item.remove();
+        
+        invoiceError.style.display = 'none';
+        invoiceNumberInput.classList.remove('is-invalid');
+        invoiceLoading.style.display = 'block';
+        fetchInvoiceBtn.disabled = true;
+        
+        fetch('api/get_invoice_for_return.php?invoice_number=' + encodeURIComponent(invoiceNumber))
+            .then(response => response.json())
+            .then(data => {
+                invoiceLoading.style.display = 'none';
+                fetchInvoiceBtn.disabled = false;
+                
+                if (data.success) {
+                    invoiceData = data;
+                    displayInvoiceDetails(data);
                 } else {
-                    item.querySelector('.product-select').value = '';
-                    item.querySelector('.quantity').value = '';
-                    item.querySelector('.unit-price').value = '';
-                    item.querySelector('select[name*="[condition]"]').value = 'new';
+                    invoiceError.textContent = data.message || 'حدث خطأ في جلب بيانات الفاتورة';
+                    invoiceError.style.display = 'block';
+                    invoiceNumberInput.classList.add('is-invalid');
+                }
+            })
+            .catch(error => {
+                invoiceLoading.style.display = 'none';
+                fetchInvoiceBtn.disabled = false;
+                invoiceError.textContent = 'حدث خطأ في الاتصال بالخادم';
+                invoiceError.style.display = 'block';
+                invoiceNumberInput.classList.add('is-invalid');
+                console.error('Error:', error);
+            });
+    });
+    
+    // عرض بيانات الفاتورة
+    function displayInvoiceDetails(data) {
+        // تحديث الحقول المخفية
+        document.getElementById('invoiceId').value = data.invoice.id;
+        document.getElementById('customerId').value = data.invoice.customer_id;
+        document.getElementById('salesRepId').value = data.invoice.sales_rep_id || '';
+        
+        // عرض بيانات الفاتورة
+        document.getElementById('displayInvoiceNumber').textContent = data.invoice.invoice_number;
+        document.getElementById('displayCustomerName').textContent = data.invoice.customer_name;
+        document.getElementById('displaySalesRep').textContent = data.invoice.sales_rep_name || '-';
+        document.getElementById('displayTotalAmount').textContent = formatCurrency(data.invoice.total_amount) + ' ج.م';
+        
+        // عرض العناصر
+        displayInvoiceItems(data.items);
+        
+        // إظهار الخطوة الثانية وإخفاء الأولى
+        invoiceSearchStep.style.display = 'none';
+        invoiceDetailsStep.style.display = 'block';
+        backToSearchBtn.style.display = 'inline-block';
+        submitReturnBtn.style.display = 'inline-block';
+    }
+    
+    // عرض عناصر الفاتورة
+    function displayInvoiceItems(items) {
+        invoiceItemsTable.innerHTML = '';
+        selectedItems = {};
+        
+        if (items.length === 0) {
+            invoiceItemsTable.innerHTML = '<tr><td colspan="8" class="text-center text-muted">لا توجد عناصر في هذه الفاتورة</td></tr>';
+            return;
+        }
+        
+        items.forEach((item, index) => {
+            const row = document.createElement('tr');
+            const canReturn = item.remaining_quantity > 0;
+            const isDisabled = !canReturn;
+            
+            row.innerHTML = `
+                <td>
+                    <input type="checkbox" class="item-checkbox" data-index="${index}" 
+                           ${isDisabled ? 'disabled' : ''} 
+                           data-product-id="${item.product_id}"
+                           data-invoice-item-id="${item.invoice_item_id}"
+                           data-unit-price="${item.unit_price}"
+                           data-remaining="${item.remaining_quantity}">
+                </td>
+                <td>${item.product_name || '-'}</td>
+                <td>${formatCurrency(item.quantity)}</td>
+                <td>${formatCurrency(item.returned_quantity)}</td>
+                <td class="${canReturn ? '' : 'text-danger'}">${formatCurrency(item.remaining_quantity)}</td>
+                <td>${formatCurrency(item.unit_price)} ج.م</td>
+                <td class="item-total">0.00 ج.م</td>
+                <td>
+                    <select class="form-select form-select-sm item-condition" 
+                            data-index="${index}" ${isDisabled ? 'disabled' : ''}>
+                        <option value="new">جديد</option>
+                        <option value="used">مستعمل</option>
+                        <option value="damaged">تالف</option>
+                        <option value="defective">معيب</option>
+                    </select>
+                </td>
+                <td>
+                    <input type="number" step="0.01" min="0" max="${item.remaining_quantity}" 
+                           class="form-control form-control-sm item-quantity" 
+                           data-index="${index}" 
+                           placeholder="الكمية" 
+                           value="${item.remaining_quantity}"
+                           ${isDisabled ? 'disabled' : ''}>
+                </td>
+            `;
+            
+            invoiceItemsTable.appendChild(row);
+            
+            // ربط الأحداث
+            const checkbox = row.querySelector('.item-checkbox');
+            const quantityInput = row.querySelector('.item-quantity');
+            const conditionSelect = row.querySelector('.item-condition');
+            
+            checkbox.addEventListener('change', function() {
+                updateItemSelection(index, this.checked, quantityInput.value, item);
+            });
+            
+            quantityInput.addEventListener('input', function() {
+                const maxQty = parseFloat(this.getAttribute('max'));
+                const value = parseFloat(this.value) || 0;
+                if (value > maxQty) {
+                    this.value = maxQty;
+                }
+                if (checkbox.checked) {
+                    updateItemSelection(index, true, this.value, item);
                 }
             });
-            returnItemIndex = 1;
+            
+            conditionSelect.addEventListener('change', function() {
+                if (checkbox.checked) {
+                    updateItemSelection(index, true, quantityInput.value, item);
+                }
+            });
+        });
+        
+        // ربط حدث "تحديد الكل"
+        selectAllItems.addEventListener('change', function() {
+            const checkboxes = invoiceItemsTable.querySelectorAll('.item-checkbox:not(:disabled)');
+            checkboxes.forEach(cb => {
+                cb.checked = this.checked;
+                if (this.checked) {
+                    const index = parseInt(cb.getAttribute('data-index'));
+                    const row = cb.closest('tr');
+                    const quantityInput = row.querySelector('.item-quantity');
+                    const item = items[index];
+                    updateItemSelection(index, true, quantityInput.value, item);
+                } else {
+                    const index = parseInt(cb.getAttribute('data-index'));
+                    delete selectedItems[index];
+                }
+            });
+            updateTotal();
+        });
+    }
+    
+    // تحديث اختيار العنصر
+    function updateItemSelection(index, isSelected, quantity, item) {
+        if (isSelected && parseFloat(quantity) > 0) {
+            selectedItems[index] = {
+                product_id: item.product_id,
+                invoice_item_id: item.invoice_item_id,
+                quantity: parseFloat(quantity),
+                unit_price: item.unit_price,
+                condition: document.querySelector(`.item-condition[data-index="${index}"]`).value
+            };
+        } else {
+            delete selectedItems[index];
+        }
+        updateTotal();
+    }
+    
+    // تحديث الإجمالي
+    function updateTotal() {
+        let total = 0;
+        Object.values(selectedItems).forEach(item => {
+            total += item.quantity * item.unit_price;
+        });
+        totalReturnAmount.textContent = formatCurrency(total) + ' ج.م';
+        
+        // تحديث الإجمالي لكل صف
+        Object.keys(selectedItems).forEach(index => {
+            const item = selectedItems[index];
+            const row = document.querySelector(`.item-checkbox[data-index="${index}"]`).closest('tr');
+            const totalCell = row.querySelector('.item-total');
+            totalCell.textContent = formatCurrency(item.quantity * item.unit_price) + ' ج.م';
+        });
+        
+        // إعادة تعيين الخلايا غير المحددة
+        document.querySelectorAll('.item-checkbox').forEach(cb => {
+            if (!cb.checked) {
+                const row = cb.closest('tr');
+                const totalCell = row.querySelector('.item-total');
+                totalCell.textContent = '0.00 ج.م';
+            }
+        });
+    }
+    
+    // زر الرجوع
+    backToSearchBtn?.addEventListener('click', function() {
+        invoiceSearchStep.style.display = 'block';
+        invoiceDetailsStep.style.display = 'none';
+        backToSearchBtn.style.display = 'none';
+        submitReturnBtn.style.display = 'none';
+        invoiceData = null;
+        selectedItems = {};
+        invoiceNumberInput.value = '';
+    });
+    
+    // إرسال النموذج
+    returnForm?.addEventListener('submit', function(e) {
+        e.preventDefault();
+        
+        if (Object.keys(selectedItems).length === 0) {
+            document.getElementById('itemsError').textContent = 'يرجى اختيار عنصر واحد على الأقل للإرجاع';
+            return;
+        }
+        
+        // إضافة العناصر المحددة للنموذج
+        const itemsInput = document.createElement('input');
+        itemsInput.type = 'hidden';
+        itemsInput.name = 'items_data';
+        itemsInput.value = JSON.stringify(selectedItems);
+        returnForm.appendChild(itemsInput);
+        
+        // تحويل selectedItems إلى صيغة النموذج
+        Object.keys(selectedItems).forEach((index, i) => {
+            const item = selectedItems[index];
+            const prefix = `items[${i}]`;
+            
+            ['product_id', 'quantity', 'unit_price', 'condition'].forEach(key => {
+                const input = document.createElement('input');
+                input.type = 'hidden';
+                input.name = `${prefix}[${key}]`;
+                input.value = item[key];
+                returnForm.appendChild(input);
+            });
+        });
+        
+        // إرسال النموذج
+        this.submit();
+    });
+    
+    // إعادة تعيين النموذج عند إغلاق المودال
+    const addReturnModalElement = document.getElementById('addReturnModal');
+    if (addReturnModalElement && typeof bootstrap !== 'undefined') {
+        addReturnModalElement.addEventListener('hidden.bs.modal', function() {
+            invoiceSearchStep.style.display = 'block';
+            invoiceDetailsStep.style.display = 'none';
+            backToSearchBtn.style.display = 'none';
+            submitReturnBtn.style.display = 'none';
+            invoiceNumberInput.value = '';
+            invoiceError.style.display = 'none';
+            invoiceNumberInput.classList.remove('is-invalid');
+            invoiceData = null;
+            selectedItems = {};
+            invoiceItemsTable.innerHTML = '';
+            totalReturnAmount.textContent = '0.00';
+        });
+    }
+    
+    // السماح بالضغط على Enter في حقل رقم الفاتورة
+    invoiceNumberInput?.addEventListener('keypress', function(e) {
+        if (e.key === 'Enter') {
+            e.preventDefault();
+            fetchInvoiceBtn.click();
         }
     });
-}
+})();
 </script>
 <?php endif; ?>
 <?php endif; ?>
