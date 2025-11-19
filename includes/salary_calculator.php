@@ -195,9 +195,33 @@ function calculateSalesCollections($userId, $month, $year) {
             );
             $customerAmount = floatval($customerCollections['total'] ?? 0);
             
-            $totalCommissionBase += $partialAmount + $customerAmount;
+            // الحالة 4: التحصيلات التي قام بها المندوب مباشرة (collected_by)
+            // نستثني التحصيلات التي تم احتسابها في الحالتين 2 و 3 لتجنب العد المزدوج
+            $collectedByQuery = "
+                SELECT COALESCE(SUM(c.amount), 0) as total 
+                FROM collections c
+                WHERE c.collected_by = ?
+                AND MONTH(c.date) = ?
+                AND YEAR(c.date) = ?
+                AND c.customer_id NOT IN (
+                    SELECT DISTINCT inv.customer_id 
+                    FROM invoices inv
+                    WHERE inv.sales_rep_id = ?
+                    AND inv.status = 'partial'
+                )
+                AND (c.customer_id NOT IN (
+                    SELECT DISTINCT cust.id
+                    FROM customers cust
+                    WHERE cust.created_by = ?
+                ) OR c.customer_id IS NULL)" . 
+                ($hasStatus ? " AND c.status IN ('pending','approved')" : "");
+            
+            $collectedByResult = $db->queryOne($collectedByQuery, [$userId, $month, $year, $userId, $userId]);
+            $collectedByAmount = floatval($collectedByResult['total'] ?? 0);
+            
+            $totalCommissionBase += $partialAmount + $customerAmount + $collectedByAmount;
         } elseif ($hasCustomers) {
-            // إذا لم يكن جدول invoices موجوداً، نحسب فقط التحصيلات من عملاء المندوب
+            // إذا لم يكن جدول invoices موجوداً، نحسب التحصيلات من عملاء المندوب
             $customerCollections = $db->queryOne(
                 "SELECT COALESCE(SUM(c.amount), 0) as total 
                  FROM collections c
@@ -208,7 +232,26 @@ function calculateSalesCollections($userId, $month, $year) {
                  ($hasStatus ? " AND c.status IN ('pending','approved')" : ""),
                 [$userId, $month, $year]
             );
-            $totalCommissionBase += floatval($customerCollections['total'] ?? 0);
+            $customerAmount = floatval($customerCollections['total'] ?? 0);
+            
+            // التحصيلات التي قام بها المندوب مباشرة (collected_by) من عملاء ليسوا من عملاء المندوب
+            $collectedByQuery = "
+                SELECT COALESCE(SUM(c.amount), 0) as total 
+                FROM collections c
+                WHERE c.collected_by = ?
+                AND MONTH(c.date) = ?
+                AND YEAR(c.date) = ?
+                AND (c.customer_id NOT IN (
+                    SELECT DISTINCT cust.id
+                    FROM customers cust
+                    WHERE cust.created_by = ?
+                ) OR c.customer_id IS NULL)" . 
+                ($hasStatus ? " AND c.status IN ('pending','approved')" : "");
+            
+            $collectedByResult = $db->queryOne($collectedByQuery, [$userId, $month, $year, $userId]);
+            $collectedByAmount = floatval($collectedByResult['total'] ?? 0);
+            
+            $totalCommissionBase += $customerAmount + $collectedByAmount;
         } else {
             // إذا لم يكن جدول customers موجوداً، نستخدم الطريقة القديمة
             if ($hasStatus) {

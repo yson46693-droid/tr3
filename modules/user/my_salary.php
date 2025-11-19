@@ -530,18 +530,42 @@ if ($currentSalary) {
     $totalSalaryStr = preg_replace('/\s+/', '', trim($totalSalaryStr));
     $totalSalaryStr = preg_replace('/[^0-9.]/', '', $totalSalaryStr);
     $monthStats['total_salary'] = cleanFinancialValue($totalSalaryStr ?: 0);
+    
+    // حساب مكافأة التحصيلات - إعادة الحساب دائماً للتأكد من الدقة
     $collectionsBonusValue = cleanFinancialValue($currentSalary['collections_bonus'] ?? 0);
+    $collectionsBaseAmount = cleanFinancialValue($currentSalary['collections_amount'] ?? 0);
+    
+    // إذا كان مندوب مبيعات، أعد حساب مكافأة التحصيلات من التحصيلات الفعلية
+    if ($currentUser['role'] === 'sales') {
+        $recalculatedCollectionsAmount = calculateSalesCollections($currentUser['id'], $selectedMonth, $selectedYear);
+        $recalculatedCollectionsBonus = round($recalculatedCollectionsAmount * 0.02, 2);
+        
+        // استخدم القيمة المحسوبة حديثاً إذا كانت أكبر من القيمة المحفوظة
+        if ($recalculatedCollectionsBonus > $collectionsBonusValue || $collectionsBonusValue == 0) {
+            $collectionsBonusValue = $recalculatedCollectionsBonus;
+            $collectionsBaseAmount = $recalculatedCollectionsAmount;
+        }
+    }
+    
     $monthStats['collections_bonus'] = $collectionsBonusValue;
-    $collectionsBaseAmount = $currentSalary['collections_amount'] ?? ($collectionsBonusValue > 0 ? $collectionsBonusValue / 0.02 : 0);
-    $monthStats['collections_amount'] = cleanFinancialValue($collectionsBaseAmount ?? 0);
+    $monthStats['collections_amount'] = $collectionsBaseAmount;
     $maxAdvance = cleanFinancialValue($monthStats['total_salary'] * 0.5);
 } else {
     // إذا لم يكن هناك راتب محفوظ، احسب الساعات مباشرة من attendance_records
     // لضمان أن الساعات معروضة حتى لو لم يتم حساب الراتب بعد
     $monthStats['total_hours'] = calculateMonthlyHours($currentUser['id'], $selectedMonth, $selectedYear);
     $monthStats['total_salary'] = 0;
-    $monthStats['collections_bonus'] = 0;
-    $monthStats['collections_amount'] = 0;
+    
+    // حساب مكافأة التحصيلات حتى لو لم يكن هناك راتب محفوظ
+    if ($currentUser['role'] === 'sales') {
+        $collectionsAmount = calculateSalesCollections($currentUser['id'], $selectedMonth, $selectedYear);
+        $monthStats['collections_bonus'] = round($collectionsAmount * 0.02, 2);
+        $monthStats['collections_amount'] = $collectionsAmount;
+    } else {
+        $monthStats['collections_bonus'] = 0;
+        $monthStats['collections_amount'] = 0;
+    }
+    
     $maxAdvance = 0;
 }
 
@@ -1455,22 +1479,23 @@ $lang = isset($translations) ? $translations : [];
             <!-- نسبة التحصيلات للمندوبين -->
             <?php if ($currentUser['role'] === 'sales'): ?>
             <?php 
-            $collectionsBonusValue = cleanFinancialValue($currentSalary['collections_bonus'] ?? 0);
-            $collectionsBaseAmount = $currentSalary['collections_amount'] ?? ($collectionsBonusValue > 0 ? $collectionsBonusValue / 0.02 : 0);
+            $displayCollectionsBonus = $monthStats['collections_bonus'] ?? 0;
+            $displayCollectionsAmount = $monthStats['collections_amount'] ?? 0;
             ?>
             <div class="salary-row">
                 <div class="salary-cell label">
                     نسبة التحصيلات (2%)
                 </div>
                 <div class="salary-cell value">
-                    <span class="salary-amount success">+<?php echo formatCurrency($collectionsBonusValue); ?></span>
-                    <span class="salary-description">
-                        <?php if ($collectionsBaseAmount > 0): ?>
-                            من تحصيلات قيمتها <?php echo formatCurrency($collectionsBaseAmount); ?>
-                        <?php else: ?>
-                            لا توجد مكافآت تحصيلات لهذا الشهر بعد
-                        <?php endif; ?>
-                    </span>
+                    <?php if ($displayCollectionsBonus > 0): ?>
+                        <span class="salary-amount success">+<?php echo formatCurrency($displayCollectionsBonus); ?></span>
+                        <span class="salary-description">
+                            من تحصيلات قيمتها <?php echo formatCurrency($displayCollectionsAmount); ?>
+                        </span>
+                    <?php else: ?>
+                        <span class="salary-amount">0.00 ج.م</span>
+                        <span class="salary-description">لا توجد تحصيلات مسجلة بعد</span>
+                    <?php endif; ?>
                 </div>
             </div>
             <?php endif; ?>

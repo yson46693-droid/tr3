@@ -36,6 +36,11 @@ if ($userId <= 0) {
 try {
     $salaryData = getSalarySummary($userId, $month, $year);
     
+    // الحصول على معلومات المستخدم للتحقق من الدور
+    $db = db();
+    $user = $db->queryOne("SELECT role FROM users WHERE id = ?", [$userId]);
+    $isSales = ($user['role'] ?? '') === 'sales';
+    
     $stats = [
         'total_hours' => 0,
         'total_salary' => 0,
@@ -48,16 +53,55 @@ try {
         $salary = $salaryData['salary'];
         $stats['total_hours'] = $salary['total_hours'] ?? 0;
         $stats['total_salary'] = cleanFinancialValue($salary['total_amount'] ?? 0);
-        $stats['collections_bonus'] = cleanFinancialValue($salary['collections_bonus'] ?? 0);
-        $stats['collections_amount'] = cleanFinancialValue($salary['collections_amount'] ?? ($stats['collections_bonus'] > 0 ? $stats['collections_bonus'] / 0.02 : 0));
+        
+        // حساب مكافأة التحصيلات - إعادة الحساب دائماً للتأكد من الدقة
+        $collectionsBonusValue = cleanFinancialValue($salary['collections_bonus'] ?? 0);
+        $collectionsBaseAmount = cleanFinancialValue($salary['collections_amount'] ?? 0);
+        
+        // إذا كان مندوب مبيعات، أعد حساب مكافأة التحصيلات من التحصيلات الفعلية
+        if ($isSales) {
+            $recalculatedCollectionsAmount = calculateSalesCollections($userId, $month, $year);
+            $recalculatedCollectionsBonus = round($recalculatedCollectionsAmount * 0.02, 2);
+            
+            // استخدم القيمة المحسوبة حديثاً إذا كانت أكبر من القيمة المحفوظة
+            if ($recalculatedCollectionsBonus > $collectionsBonusValue || $collectionsBonusValue == 0) {
+                $collectionsBonusValue = $recalculatedCollectionsBonus;
+                $collectionsBaseAmount = $recalculatedCollectionsAmount;
+            }
+        }
+        
+        $stats['collections_bonus'] = $collectionsBonusValue;
+        $stats['collections_amount'] = $collectionsBaseAmount;
         $stats['max_advance'] = cleanFinancialValue($stats['total_salary'] * 0.5);
     } else if (isset($salaryData['calculation']) && $salaryData['calculation']['success']) {
         $calc = $salaryData['calculation'];
         $stats['total_hours'] = $calc['total_hours'] ?? 0;
         $stats['total_salary'] = cleanFinancialValue($calc['total_amount'] ?? 0);
-        $stats['collections_bonus'] = cleanFinancialValue($calc['collections_bonus'] ?? 0);
-        $stats['collections_amount'] = cleanFinancialValue($calc['collections_amount'] ?? ($stats['collections_bonus'] > 0 ? $stats['collections_bonus'] / 0.02 : 0));
+        
+        // حساب مكافأة التحصيلات - إعادة الحساب دائماً للتأكد من الدقة
+        $collectionsBonusValue = cleanFinancialValue($calc['collections_bonus'] ?? 0);
+        $collectionsBaseAmount = cleanFinancialValue($calc['collections_amount'] ?? 0);
+        
+        // إذا كان مندوب مبيعات، أعد حساب مكافأة التحصيلات من التحصيلات الفعلية
+        if ($isSales) {
+            $recalculatedCollectionsAmount = calculateSalesCollections($userId, $month, $year);
+            $recalculatedCollectionsBonus = round($recalculatedCollectionsAmount * 0.02, 2);
+            
+            // استخدم القيمة المحسوبة حديثاً إذا كانت أكبر من القيمة المحفوظة
+            if ($recalculatedCollectionsBonus > $collectionsBonusValue || $collectionsBonusValue == 0) {
+                $collectionsBonusValue = $recalculatedCollectionsBonus;
+                $collectionsBaseAmount = $recalculatedCollectionsAmount;
+            }
+        }
+        
+        $stats['collections_bonus'] = $collectionsBonusValue;
+        $stats['collections_amount'] = $collectionsBaseAmount;
         $stats['max_advance'] = cleanFinancialValue($stats['total_salary'] * 0.5);
+    } else if ($isSales) {
+        // حتى لو لم يكن هناك راتب محفوظ، احسب مكافأة التحصيلات
+        $collectionsAmount = calculateSalesCollections($userId, $month, $year);
+        $stats['collections_bonus'] = round($collectionsAmount * 0.02, 2);
+        $stats['collections_amount'] = $collectionsAmount;
     }
     
     echo json_encode([

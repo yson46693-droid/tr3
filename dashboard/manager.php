@@ -464,6 +464,18 @@ $pageTitle = isset($lang['manager_dashboard']) ? $lang['manager_dashboard'] : '�
                                             </label>
                                         </div>
                                     </div>
+
+                                    <div class="mt-4">
+                                        <div id="invoiceSubmitFeedback" class="alert d-none mb-3" role="alert"></div>
+                                        <div class="d-flex flex-column flex-sm-row gap-2">
+                                            <button type="button" class="btn btn-success flex-fill" id="submitReturnButton">
+                                                <i class="bi bi-arrow-counterclockwise me-1"></i>ØªØ³Ø¬ÙŠÙ„ Ø§Ù„Ù…Ø±ØªØ¬Ø¹
+                                            </button>
+                                            <a href="#" class="btn btn-outline-primary flex-fill d-none" id="printReturnButton" target="_blank" rel="noopener">
+                                                <i class="bi bi-printer me-1"></i>Ø·Ø¨Ø§Ø¹Ø© ÙØ§ØªÙˆØ±Ø© Ø§Ù„Ù…Ø±ØªØ¬Ø¹
+                                            </a>
+                                        </div>
+                                    </div>
                                 </div>
                             </div>
                         </div>
@@ -892,7 +904,8 @@ const invoiceReturnState = {
     invoice: null,
     items: [],
     selectedItems: {},
-    refundMethod: null
+    refundMethod: null,
+    lastReturn: null
 };
 
 function setInvoiceLookupFeedback(message, type = 'info') {
@@ -912,6 +925,7 @@ function setInvoiceLookupFeedback(message, type = 'info') {
 
 function renderInvoiceDetails(invoiceData, items) {
     const resultsContainer = document.getElementById('invoiceLookupResults');
+    const printButton = document.getElementById('printReturnButton');
     const customerNameEl = document.getElementById('invoiceCustomerName');
     const totalAmountEl = document.getElementById('invoiceTotalAmount');
     const itemsBody = document.getElementById('invoiceItemsBody');
@@ -923,6 +937,7 @@ function renderInvoiceDetails(invoiceData, items) {
 
     if (!invoiceData || !Array.isArray(items)) {
         resultsContainer.classList.add('d-none');
+        updateSelectedReturnSummary();
         return;
     }
 
@@ -1035,6 +1050,148 @@ function handleReturnQuantityInput(event) {
     updateSelectedReturnSummary();
 }
 
+function resetRefundMethodSelection() {
+    invoiceReturnState.refundMethod = null;
+    document.querySelectorAll('.refund-method-input').forEach(input => {
+        input.checked = false;
+    });
+    updateRefundMethodSelectionUI();
+}
+
+function updateRefundMethodSelectionUI(selectedValue = invoiceReturnState.refundMethod) {
+    document.querySelectorAll('.refund-option').forEach(option => {
+        const input = option.querySelector('.refund-method-input');
+        const isActive = input && input.value === selectedValue;
+        option.classList.toggle('border-primary', !!isActive);
+        option.classList.toggle('shadow-sm', !!isActive);
+    });
+}
+
+function setReturnSubmitFeedback(message, type = 'info') {
+    const feedbackEl = document.getElementById('invoiceSubmitFeedback');
+    if (!feedbackEl) {
+        return;
+    }
+
+    if (!message) {
+        feedbackEl.className = 'alert d-none mb-3';
+        feedbackEl.textContent = '';
+        return;
+    }
+
+    feedbackEl.className = `alert alert-${type} mb-3`;
+    feedbackEl.textContent = message;
+}
+
+async function submitInvoiceReturn() {
+    const submitButton = document.getElementById('submitReturnButton');
+    const printButton = document.getElementById('printReturnButton');
+
+    if (!invoiceReturnState.invoice) {
+        setReturnSubmitFeedback('ÙŠØ±Ø¬Ù‰ Ø¨Ø­Ø« Ø¹Ù† ÙØ§ØªÙˆØ±Ø© Ø£ÙˆÙ„Ø§Ù‹ Ù‚Ø¨Ù„ ØªØ³Ø¬ÙŠÙ„ Ø§Ù„Ù…Ø±ØªØ¬Ø¹.', 'warning');
+        return;
+    }
+
+    const selectedEntries = [];
+    let hasInvalidQuantity = false;
+
+    invoiceReturnState.items.forEach(item => {
+        const invoiceItemId = item.invoice_item_id;
+        if (!invoiceItemId) {
+            return;
+        }
+        const qty = Number(invoiceReturnState.selectedItems[invoiceItemId] ?? 0);
+        if (qty <= 0) {
+            return;
+        }
+        const remaining = Number(item.remaining_quantity ?? item.quantity ?? 0);
+        if (qty - remaining > 0.0001) {
+            hasInvalidQuantity = true;
+        } else {
+            selectedEntries.push({
+                invoice_item_id: invoiceItemId,
+                quantity: qty
+            });
+        }
+    });
+
+    if (hasInvalidQuantity) {
+        setReturnSubmitFeedback('ØªÙˆØ¬Ø¯ ÙƒÙ…ÙŠØ§Øª Ù…Ø®ØªØ§Ø±Ø© ØªØªØ¬Ø§ÙˆØ² Ø§Ù„Ø­Ø¯ Ø§Ù„Ù…Ø³Ù…ÙˆØ­ Ø¨Ù‡Ø§ Ù„Ù„Ø§Ø±Ø¬Ø§Ø¹.', 'danger');
+        return;
+    }
+
+    if (!selectedEntries.length) {
+        setReturnSubmitFeedback('ÙŠØ±Ø¬Ù‰ Ø§Ø®ØªÙŠØ§Ø± Ø§Ù„Ù…Ù†ØªØ¬Ø§Øª Ø§Ù„ØªÙŠ ØªØ±ØºØ¨ ÙÙŠ Ø§Ø±Ø¬Ø§Ø¹Ù‡Ø§.', 'warning');
+        return;
+    }
+
+    if (!invoiceReturnState.refundMethod) {
+        setReturnSubmitFeedback('Ø§Ø®ØªØ± Ø·Ø±ÙŠÙ‚Ø© Ø§Ø±Ø¬Ø§Ø¹ Ø§Ù„Ù…Ø¨Ù„Øº Ù‚Ø¨Ù„ Ø§Ø³ØªÙƒÙ…Ø§Ù„ Ø§Ù„Ø¹Ù…Ù„ÙŠØ©.', 'warning');
+        return;
+    }
+
+    setReturnSubmitFeedback('Ø¬Ø§Ø±ÙŠ ØªØ³Ø¬ÙŠÙ„ Ø§Ù„Ù…Ø±ØªØ¬Ø¹...', 'info');
+    printButton?.classList.add('d-none');
+    if (submitButton) {
+        submitButton.disabled = true;
+        submitButton.dataset.originalText = submitButton.dataset.originalText || submitButton.innerHTML;
+        submitButton.innerHTML = '<span class="spinner-border spinner-border-sm me-2"></span>Ø¬Ø§Ø±ÙŠ Ø§Ù„Ù…Ø¹Ø§Ù„Ø¬Ø©';
+    }
+
+    try {
+        const payload = {
+            invoice_number: invoiceReturnState.invoice.invoice_number,
+            refund_method: invoiceReturnState.refundMethod,
+            items: selectedEntries
+        };
+
+        const response = await fetch(`${invoiceReturnsEndpoint}?action=submit_return`, {
+            method: 'POST',
+            credentials: 'same-origin',
+            headers: {
+                'Content-Type': 'application/json',
+                'Accept': 'application/json'
+            },
+            body: JSON.stringify(payload)
+        });
+
+        if (!response.ok) {
+            throw new Error('ØªØ¹Ø°Ø± Ø­ÙØ¸ Ø§Ù„Ù…Ø±ØªØ¬Ø¹. ÙŠØ±Ø¬Ù‰ Ø§Ù„Ù…Ø­Ø§ÙˆÙ„Ø© Ù…Ø¬Ø¯Ø¯Ø§Ù‹.');
+        }
+
+        const result = await response.json();
+        if (!result.success) {
+            throw new Error(result.message || 'ÙØ´Ù„Øª Ø¹Ù…Ù„ÙŠØ© ØªØ³Ø¬ÙŠÙ„ Ø§Ù„Ù…Ø±ØªØ¬Ø¹.');
+        }
+
+        invoiceReturnState.lastReturn = {
+            id: result.return_id,
+            number: result.return_number,
+            printUrl: result.print_url || null
+        };
+
+        const statusLabel = result.status_label || '';
+        const feedbackType = statusLabel === 'Ù‚ÙŠØ¯ Ø§Ù„ØªØ·ÙˆÙŠØ±' ? 'warning' : 'success';
+        setReturnSubmitFeedback(result.message || 'ØªÙ… ØªØ³Ø¬ÙŠÙ„ Ø§Ù„Ù…Ø±ØªØ¬Ø¹ Ø¨Ù†Ø¬Ø§Ø­.', feedbackType);
+
+        if (result.print_url && printButton) {
+            printButton.href = result.print_url;
+            printButton.classList.remove('d-none');
+        }
+    } catch (error) {
+        console.error('submitInvoiceReturn error:', error);
+        setReturnSubmitFeedback(error.message || 'Ø­Ø¯Ø« Ø®Ø·Ø£ ØºÙŠØ± Ù…ØªÙˆÙ‚Ø¹ Ø£Ø«Ù†Ø§Ø¡ ØªØ³Ø¬ÙŠÙ„ Ø§Ù„Ù…Ø±ØªØ¬Ø¹.', 'danger');
+    } finally {
+        if (submitButton) {
+            const original = submitButton.dataset.originalText;
+            if (original) {
+                submitButton.innerHTML = original;
+            }
+            submitButton.disabled = false;
+        }
+    }
+}
+
 async function fetchInvoiceDetails(invoiceNumber) {
     const url = `${invoiceReturnsEndpoint}?action=fetch_invoice&invoice_number=${encodeURIComponent(invoiceNumber)}`;
     const response = await fetch(url, {
@@ -1078,9 +1235,15 @@ function initInvoiceReturnModal() {
                 invoiceInput.classList.remove('is-invalid');
             }
             setInvoiceLookupFeedback('');
+            setReturnSubmitFeedback('');
+            if (printButton) {
+                printButton.classList.add('d-none');
+                printButton.removeAttribute('href');
+            }
             if (resultsContainer) {
                 resultsContainer.classList.add('d-none');
             }
+            resetRefundMethodSelection();
             modalInstance.show();
             setTimeout(() => {
                 invoiceInput?.focus();
@@ -1112,6 +1275,12 @@ function initInvoiceReturnModal() {
             if (resultsContainer) {
                 resultsContainer.classList.add('d-none');
             }
+            if (printButton) {
+                printButton.classList.add('d-none');
+                printButton.removeAttribute('href');
+            }
+            setReturnSubmitFeedback('');
+            invoiceReturnState.lastReturn = null;
             setInvoiceLookupFeedback('Ø¬Ø§Ø±ÙŠ Ø¬Ù„Ø¨ ØªÙØ§ØµÙŠÙ„ Ø§Ù„ÙØ§ØªÙˆØ±Ø©...', 'info');
 
             const originalHTML = searchButton.innerHTML;
@@ -1141,6 +1310,20 @@ function initInvoiceReturnModal() {
 
     if (itemsBody) {
         itemsBody.addEventListener('input', handleReturnQuantityInput);
+    }
+
+    document.querySelectorAll('.refund-method-input').forEach(input => {
+        input.addEventListener('change', () => {
+            if (input.checked) {
+                invoiceReturnState.refundMethod = input.value;
+                updateRefundMethodSelectionUI(input.value);
+            }
+        });
+    });
+
+    const submitButton = document.getElementById('submitReturnButton');
+    if (submitButton) {
+        submitButton.addEventListener('click', submitInvoiceReturn);
     }
 }
 

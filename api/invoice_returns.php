@@ -362,7 +362,7 @@ function handleSubmitReturn(): void
             $statusAfterProcessing = 'pending';
             $financialNote = 'تم إرسال طلب لاسترداد المبلغ من الشركة (قيد التطوير).';
             $approvalNotes = "مرتجع فاتورة {$invoiceNumber}\nالمبلغ: " . number_format($totalRefund, 2);
-            requestApproval('financial', $returnId, $userId, $approvalNotes);
+            requestApproval('invoice_return_company', $returnId, $userId, $approvalNotes);
         }
 
         if ($statusAfterProcessing !== 'pending') {

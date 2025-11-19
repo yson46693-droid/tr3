@@ -472,6 +472,13 @@ function updateEntityStatus($type, $entityId, $status, $approvedBy) {
                 }
             }
             break;
+
+        case 'invoice_return_company':
+            $db->execute(
+                "UPDATE returns SET status = ?, approved_by = ?, approved_at = NOW() WHERE id = ?",
+                [$status, $approvedBy, $entityId]
+            );
+            break;
     }
 }
 
@@ -505,6 +512,30 @@ function getEntityName($type, $entityId) {
         case 'warehouse_transfer':
             $entity = $db->queryOne("SELECT transfer_number FROM warehouse_transfers WHERE id = ?", [$entityId]);
             return $entity ? "طلب نقل مخزني {$entity['transfer_number']}" : "طلب نقل مخزني #{$entityId}";
+
+        case 'invoice_return_company':
+            $entity = $db->queryOne(
+                "SELECT r.return_number, i.invoice_number, c.name as customer_name
+                 FROM returns r
+                 LEFT JOIN invoices i ON r.invoice_id = i.id
+                 LEFT JOIN customers c ON r.customer_id = c.id
+                 WHERE r.id = ?",
+                [$entityId]
+            );
+            if ($entity) {
+                $parts = [];
+                if (!empty($entity['return_number'])) {
+                    $parts[] = "مرتجع {$entity['return_number']}";
+                }
+                if (!empty($entity['invoice_number'])) {
+                    $parts[] = "فاتورة {$entity['invoice_number']}";
+                }
+                if (!empty($entity['customer_name'])) {
+                    $parts[] = $entity['customer_name'];
+                }
+                return implode(' - ', $parts);
+            }
+            return "مرتجع فاتورة #{$entityId}";
             
         default:
             return "كيان #{$entityId}";
@@ -535,6 +566,9 @@ function getEntityLink($type, $entityId) {
 
         case 'warehouse_transfer':
             return $baseUrl . 'manager.php?page=warehouse_transfers&id=' . $entityId;
+
+        case 'invoice_return_company':
+            return $baseUrl . 'manager.php?page=returns&id=' . $entityId;
             
         default:
             return $baseUrl . 'manager.php?page=approvals';
