@@ -15,7 +15,7 @@ while (ob_get_level() > 0) {
     ob_end_clean();
 }
 
-// Ø¨Ø¯Ø¡ output buffering Ù„Ø¶Ù…Ø§Ù† Ø¹Ø¯Ù… ÙˆØ¬ÙˆØ¯ Ù…Ø­ØªÙˆÙ‰ Ù‚Ø¨Ù„ DOCTYPE
+// بدء output buffering لضمان عدم وجود محتوى قبل DOCTYPE
 if (!ob_get_level()) {
     ob_start();
 }
@@ -102,7 +102,7 @@ if (
     exit;
 }
 
-// Ù…Ø¹Ø§Ù„Ø¬Ø© Ø·Ù„Ø¨ update_location Ù‚Ø¨Ù„ Ø¥Ø±Ø³Ø§Ù„ Ø£ÙŠ HTML
+// معالجة طلب update_location قبل إرسال أي HTML
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && trim($_POST['action']) === 'update_location') {
     $pageParam = $_GET['page'] ?? 'dashboard';
     if ($pageParam === 'customers') {
@@ -125,7 +125,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && trim($_P
             requireRole(['sales', 'accountant', 'manager']);
         }
         
-        // ØªØ¶Ù…ÙŠÙ† ÙˆØ­Ø¯Ø© customers Ø§Ù„ØªÙŠ ØªØ­ØªÙˆÙŠ Ø¹Ù„Ù‰ Ù…Ø¹Ø§Ù„Ø¬ update_location
+        // تضمين وحدة customers التي تحتوي على معالج update_location
         if (file_exists($customersModulePath)) {
             define('CUSTOMERS_MODULE_BOOTSTRAPPED', true);
             if (!defined('CUSTOMERS_PURCHASE_HISTORY_AJAX')) {
@@ -137,7 +137,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && trim($_P
             header('Content-Type: application/json; charset=utf-8');
             echo json_encode([
                 'success' => false,
-                'message' => 'ÙˆØ­Ø¯Ø© Ø§Ù„Ø¹Ù…Ù„Ø§Ø¡ ØºÙŠØ± Ù…ØªØ§Ø­Ø©.'
+                'message' => 'وحدة العملاء غير متاحة.'
             ], JSON_UNESCAPED_UNICODE);
         }
         exit;
@@ -247,7 +247,7 @@ $pageTitle = isset($lang['manager_dashboard']) ? $lang['manager_dashboard'] : '�
                     <div class="analytics-card-header">
                         <h3 class="analytics-card-title"><i class="bi bi-activity me-2"></i>ملخص الأنشطة السريع</h3>
                         <div>
-                            <button class="btn btn-sm btn-link" data-bs-toggle="tooltip" title="Ù…Ø¹Ù„ÙˆÙ…Ø§Øª">
+                            <button class="btn btn-sm btn-link" data-bs-toggle="tooltip" title="معلومات">
                                 <i class="bi bi-info-circle"></i>
                             </button>
                             <button class="btn btn-sm btn-link" data-bs-toggle="dropdown">
@@ -323,13 +323,13 @@ $pageTitle = isset($lang['manager_dashboard']) ? $lang['manager_dashboard'] : '�
                                 <i class="bi bi-database-check"></i>
                             </div>
                         </div>
-                        <div class="stat-card-title">Ø¢Ø®Ø± Ù†Ø³Ø®Ø© Ø§Ø­ØªÙŠØ§Ø·ÙŠØ©</div>
+                        <div class="stat-card-title">آخر نسخة احتياطية</div>
                         <div class="stat-card-value">
                             <?php 
                             if ($lastBackup && isset($lastBackup['created_at'])) {
                                 echo formatDate($lastBackup['created_at']);
                             } else {
-                                echo 'Ù„Ø§ ØªÙˆØ¬Ø¯';
+                                echo 'لا توجد';
                             }
                             ?>
                         </div>
@@ -341,7 +341,7 @@ $pageTitle = isset($lang['manager_dashboard']) ? $lang['manager_dashboard'] : '�
                                 <i class="bi bi-people"></i>
                             </div>
                         </div>
-                        <div class="stat-card-title">Ø¥Ø¬Ù…Ø§Ù„ÙŠ Ø§Ù„Ù…Ø³ØªØ®Ø¯Ù…ÙŠÙ†</div>
+                        <div class="stat-card-title">إجمالي المستخدمين</div>
                         <div class="stat-card-value"><?php echo $totalUsers['count'] ?? 0; ?></div>
                     </div>
                     
@@ -351,7 +351,7 @@ $pageTitle = isset($lang['manager_dashboard']) ? $lang['manager_dashboard'] : '�
                                 <i class="bi bi-cash-stack"></i>
                             </div>
                         </div>
-                        <div class="stat-card-title">Ø±ØµÙŠØ¯ Ø§Ù„Ø®Ø²Ù†Ø©</div>
+                        <div class="stat-card-title">رصيد الخزنة</div>
                         <div class="stat-card-value"><?php echo formatCurrency($balance['balance'] ?? 0); ?></div>
                     </div>
                     

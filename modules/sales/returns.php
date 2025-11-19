@@ -1005,19 +1005,138 @@ if (isset($_GET['id'])) {
 </div>
 
 <script>
+// إنشاء خيارات المنتجات كسلسلة JavaScript
+const productOptions = <?php 
+$productOptionsArray = [];
+foreach ($products as $product) {
+    $productOptionsArray[] = [
+        'id' => $product['id'],
+        'name' => htmlspecialchars($product['name'], ENT_QUOTES, 'UTF-8'),
+        'price' => $product['unit_price']
+    ];
+}
+echo json_encode($productOptionsArray, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
+?>;
+
 // تحديث العميل عند اختيار البيع
 document.getElementById('saleSelect')?.addEventListener('change', function() {
     const selectedOption = this.options[this.selectedIndex];
+    const customerId = selectedOption.dataset.customerId || '';
     const customerName = selectedOption.dataset.customer || '';
+    document.getElementById('customerId').value = customerId;
     document.getElementById('customerName').value = customerName;
-    // يمكنك إضافة منطق لجلب customer_id من قاعدة البيانات
 });
 
-// منطق إضافة وحذف العناصر (مشابه لطلبات العملاء)
+// منطق إضافة وحذف العناصر
 let returnItemIndex = 1;
+
+// إضافة عنصر جديد
 document.getElementById('addReturnItemBtn')?.addEventListener('click', function() {
-    // إضافة عنصر جديد
+    const itemsDiv = document.getElementById('returnItems');
+    const newItem = document.createElement('div');
+    newItem.className = 'return-item row mb-2';
+    // بناء خيارات المنتجات
+    let productOptionsHtml = '<option value="">اختر المنتج</option>';
+    productOptions.forEach(function(product) {
+        productOptionsHtml += '<option value="' + product.id + '" data-price="' + product.price + '">' + product.name + '</option>';
+    });
+    
+    newItem.innerHTML = `
+        <div class="col-md-5">
+            <select class="form-select product-select" name="items[${returnItemIndex}][product_id]" required>
+                ${productOptionsHtml}
+            </select>
+        </div>
+        <div class="col-md-2">
+            <input type="number" step="0.01" class="form-control quantity" 
+                   name="items[${returnItemIndex}][quantity]" placeholder="الكمية" required min="0.01">
+        </div>
+        <div class="col-md-2">
+            <input type="number" step="0.01" class="form-control unit-price" 
+                   name="items[${returnItemIndex}][unit_price]" placeholder="السعر" required min="0.01">
+        </div>
+        <div class="col-md-2">
+            <select class="form-select" name="items[${returnItemIndex}][condition]">
+                <option value="new">جديد</option>
+                <option value="used">مستعمل</option>
+                <option value="damaged">تالف</option>
+                <option value="defective">معيب</option>
+            </select>
+        </div>
+        <div class="col-md-1">
+            <button type="button" class="btn btn-danger remove-item">
+                <i class="bi bi-trash"></i>
+            </button>
+        </div>
+    `;
+    itemsDiv.appendChild(newItem);
+    returnItemIndex++;
+    attachReturnItemEvents(newItem);
 });
+
+// حذف عنصر
+document.addEventListener('click', function(e) {
+    if (e.target.closest('.remove-item')) {
+        const item = e.target.closest('.return-item');
+        if (item && document.querySelectorAll('.return-item').length > 1) {
+            item.remove();
+        } else if (item && document.querySelectorAll('.return-item').length === 1) {
+            // إذا كان العنصر الأخير، فقط امسح القيم
+            item.querySelector('.product-select').value = '';
+            item.querySelector('.quantity').value = '';
+            item.querySelector('.unit-price').value = '';
+            item.querySelector('select[name*="[condition]"]').value = 'new';
+        }
+    }
+});
+
+// ربط أحداث العناصر
+function attachReturnItemEvents(item) {
+    const productSelect = item.querySelector('.product-select');
+    const quantityInput = item.querySelector('.quantity');
+    const unitPriceInput = item.querySelector('.unit-price');
+    
+    productSelect?.addEventListener('change', function() {
+        const price = this.options[this.selectedIndex].dataset.price;
+        if (price) {
+            unitPriceInput.value = price;
+        }
+    });
+}
+
+// ربط الأحداث للعناصر الموجودة
+document.querySelectorAll('.return-item').forEach(item => {
+    attachReturnItemEvents(item);
+});
+
+// إعادة تعيين النموذج عند إغلاق المودال
+const addReturnModalElement = document.getElementById('addReturnModal');
+if (addReturnModalElement && typeof bootstrap !== 'undefined') {
+    addReturnModalElement.addEventListener('hidden.bs.modal', function() {
+        // إعادة تعيين النموذج
+        const form = document.getElementById('returnForm');
+        if (form) {
+            form.reset();
+            document.getElementById('customerId').value = '';
+            document.getElementById('customerName').value = '';
+            
+            // إعادة تعيين العناصر - الاحتفاظ بعنصر واحد فقط
+            const itemsDiv = document.getElementById('returnItems');
+            const items = itemsDiv.querySelectorAll('.return-item');
+            items.forEach((item, index) => {
+                if (index > 0) {
+                    item.remove();
+                } else {
+                    item.querySelector('.product-select').value = '';
+                    item.querySelector('.quantity').value = '';
+                    item.querySelector('.unit-price').value = '';
+                    item.querySelector('select[name*="[condition]"]').value = 'new';
+                }
+            });
+            returnItemIndex = 1;
+        }
+    });
+}
 </script>
 <?php endif; ?>
 <?php endif; ?>
