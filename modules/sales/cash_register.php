@@ -112,6 +112,9 @@ $cashRegisterBalance = $totalCollections + $fullyPaidSales;
 
 // حساب المبيعات المعلقة (الديون)
 $pendingSales = $totalSales - $fullyPaidSales - $totalCollections;
+if ($pendingSales < 0) {
+    $pendingSales = 0;
+}
 
 // إحصائيات إضافية
 $todaySales = 0.0;
@@ -166,6 +169,85 @@ if (!empty($collectionsTableExists)) {
     );
     $monthCollections = (float)($monthCollectionsResult['total'] ?? 0);
 }
+
+// حساب الديون القديمة (العملاء المدينين بدون سجل مشتريات)
+$oldDebtsCustomers = [];
+$oldDebtsTotal = 0.0;
+
+try {
+    // التحقق من وجود جدول customer_purchase_history
+    $purchaseHistoryTableExists = $db->queryOne("SHOW TABLES LIKE 'customer_purchase_history'");
+    
+    if (!empty($purchaseHistoryTableExists)) {
+        // جلب العملاء المدينين الذين ليس لديهم سجل مشتريات
+        $oldDebtsQuery = "
+            SELECT 
+                c.id,
+                c.name,
+                c.phone,
+                c.address,
+                c.balance,
+                c.created_at
+            FROM customers c
+            WHERE c.created_by = ?
+            AND c.balance IS NOT NULL 
+            AND c.balance > 0
+            AND NOT EXISTS (
+                SELECT 1 
+                FROM customer_purchase_history cph 
+                WHERE cph.customer_id = c.id
+            )
+            ORDER BY c.balance DESC, c.name ASC
+        ";
+        
+        $oldDebtsCustomers = $db->query($oldDebtsQuery, [$salesRepId]);
+        
+        // حساب إجمالي الديون القديمة
+        if (!empty($oldDebtsCustomers)) {
+            foreach ($oldDebtsCustomers as $customer) {
+                $oldDebtsTotal += (float)($customer['balance'] ?? 0);
+            }
+        }
+    } else {
+        // إذا لم يكن الجدول موجوداً، نستخدم استعلام مختلف
+        // جلب العملاء المدينين الذين ليس لديهم فواتير
+        $oldDebtsQuery = "
+            SELECT 
+                c.id,
+                c.name,
+                c.phone,
+                c.address,
+                c.balance,
+                c.created_at
+            FROM customers c
+            WHERE c.created_by = ?
+            AND c.balance IS NOT NULL 
+            AND c.balance > 0
+            AND NOT EXISTS (
+                SELECT 1 
+                FROM invoices inv 
+                WHERE inv.customer_id = c.id
+            )
+            ORDER BY c.balance DESC, c.name ASC
+        ";
+        
+        $oldDebtsCustomers = $db->query($oldDebtsQuery, [$salesRepId]);
+        
+        // حساب إجمالي الديون القديمة
+        if (!empty($oldDebtsCustomers)) {
+            foreach ($oldDebtsCustomers as $customer) {
+                $oldDebtsTotal += (float)($customer['balance'] ?? 0);
+            }
+        }
+    }
+} catch (Throwable $oldDebtsError) {
+    error_log('Old debts calculation error: ' . $oldDebtsError->getMessage());
+    $oldDebtsCustomers = [];
+    $oldDebtsTotal = 0.0;
+}
+
+// إضافة الديون القديمة إلى إجمالي الديون
+$pendingSales += $oldDebtsTotal;
 
 // جلب معلومات المندوب
 $salesRepInfo = $db->queryOne(
@@ -310,6 +392,9 @@ $salesRepInfo = $db->queryOne(
                 <p class="mb-0 text-muted">
                     المبيعات التي لم يتم تحصيلها بالكامل أو المبيعات التي تم تحصيل جزء منها فقط.
                 </p>
+                <p class="mb-0 text-muted small mt-2">
+                    يشمل الإجمالي <?php echo formatCurrency($oldDebtsTotal); ?> ديون العملاء المضافة يدوياً بدون سجل مشتريات.
+                </p>
             </div>
             <div class="col-md-4 text-end">
                 <div class="fs-3 fw-bold text-warning"><?php echo formatCurrency($pendingSales); ?></div>
@@ -349,7 +434,12 @@ $salesRepInfo = $db->queryOne(
                         <td class="text-end text-info">+ <?php echo formatCurrency($fullyPaidSales); ?></td>
                     </tr>
                     <tr class="table-warning">
-                        <td><i class="bi bi-dash-circle me-2"></i>المبيعات المعلقة (الديون)</td>
+                        <td>
+                            <i class="bi bi-dash-circle me-2"></i>المبيعات المعلقة (يشمل الديون اليدوية)
+                            <div class="small text-muted mt-1">
+                                ديون بدون سجل مشتريات: <?php echo formatCurrency($oldDebtsTotal); ?>
+                            </div>
+                        </td>
                         <td class="text-end text-warning">- <?php echo formatCurrency($pendingSales); ?></td>
                     </tr>
                     <tr class="table-primary">
@@ -366,84 +456,6 @@ $salesRepInfo = $db->queryOne(
         </div>
     </div>
 </div>
-
-<?php
-// حساب الديون القديمة (العملاء المدينين بدون سجل مشتريات)
-$oldDebtsCustomers = [];
-$oldDebtsTotal = 0.0;
-
-try {
-    // التحقق من وجود جدول customer_purchase_history
-    $purchaseHistoryTableExists = $db->queryOne("SHOW TABLES LIKE 'customer_purchase_history'");
-    
-    if (!empty($purchaseHistoryTableExists)) {
-        // جلب العملاء المدينين الذين ليس لديهم سجل مشتريات
-        $oldDebtsQuery = "
-            SELECT 
-                c.id,
-                c.name,
-                c.phone,
-                c.address,
-                c.balance,
-                c.created_at
-            FROM customers c
-            WHERE c.created_by = ?
-            AND c.balance IS NOT NULL 
-            AND c.balance > 0
-            AND NOT EXISTS (
-                SELECT 1 
-                FROM customer_purchase_history cph 
-                WHERE cph.customer_id = c.id
-            )
-            ORDER BY c.balance DESC, c.name ASC
-        ";
-        
-        $oldDebtsCustomers = $db->query($oldDebtsQuery, [$salesRepId]);
-        
-        // حساب إجمالي الديون القديمة
-        if (!empty($oldDebtsCustomers)) {
-            foreach ($oldDebtsCustomers as $customer) {
-                $oldDebtsTotal += (float)($customer['balance'] ?? 0);
-            }
-        }
-    } else {
-        // إذا لم يكن الجدول موجوداً، نستخدم استعلام مختلف
-        // جلب العملاء المدينين الذين ليس لديهم فواتير
-        $oldDebtsQuery = "
-            SELECT 
-                c.id,
-                c.name,
-                c.phone,
-                c.address,
-                c.balance,
-                c.created_at
-            FROM customers c
-            WHERE c.created_by = ?
-            AND c.balance IS NOT NULL 
-            AND c.balance > 0
-            AND NOT EXISTS (
-                SELECT 1 
-                FROM invoices inv 
-                WHERE inv.customer_id = c.id
-            )
-            ORDER BY c.balance DESC, c.name ASC
-        ";
-        
-        $oldDebtsCustomers = $db->query($oldDebtsQuery, [$salesRepId]);
-        
-        // حساب إجمالي الديون القديمة
-        if (!empty($oldDebtsCustomers)) {
-            foreach ($oldDebtsCustomers as $customer) {
-                $oldDebtsTotal += (float)($customer['balance'] ?? 0);
-            }
-        }
-    }
-} catch (Throwable $oldDebtsError) {
-    error_log('Old debts calculation error: ' . $oldDebtsError->getMessage());
-    $oldDebtsCustomers = [];
-    $oldDebtsTotal = 0.0;
-}
-?>
 
 <!-- جدول الديون القديمة -->
 <div class="card shadow-sm mb-4">
