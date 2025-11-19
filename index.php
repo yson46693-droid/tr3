@@ -1,6 +1,28 @@
 <?php
 session_start();
 define('ACCESS_ALLOWED', true);
+
+// معالجة طلب manifest.json من المسار /v1/manifest.json
+$requestUri = $_SERVER['REQUEST_URI'] ?? '';
+if (preg_match('#^/v1/manifest\.json$#', $requestUri) || preg_match('#^/[^/]+/v1/manifest\.json$#', $requestUri)) {
+    // إعادة التوجيه إلى manifest.php أو manifest.json
+    $manifestPath = __DIR__ . '/manifest.php';
+    if (file_exists($manifestPath)) {
+        require_once $manifestPath;
+        exit;
+    }
+    $manifestPath = __DIR__ . '/manifest.json';
+    if (file_exists($manifestPath)) {
+        header('Content-Type: application/manifest+json; charset=utf-8');
+        readfile($manifestPath);
+        exit;
+    }
+    http_response_code(404);
+    header('Content-Type: application/json');
+    echo json_encode(['error' => 'Manifest not found']);
+    exit;
+}
+
 require_once __DIR__ . '/includes/config.php';
 require_once __DIR__ . '/includes/install.php';
 

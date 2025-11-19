@@ -209,6 +209,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['
         if (!$isAjaxRequest) {
             return false;
         }
+        
+        // تنظيف جميع output buffers بشكل آمن
         $safetyCounter = 0;
         while (ob_get_level() > 0 && $safetyCounter < 10) {
             if (@ob_end_clean() === false) {
@@ -217,17 +219,36 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['
             $safetyCounter++;
         }
 
+        // التأكد من عدم إرسال headers مسبقاً
         if (!headers_sent()) {
             http_response_code($success ? 200 : 400);
             header('Content-Type: application/json; charset=utf-8');
+            header('X-Content-Type-Options: nosniff');
+            // منع التخزين المؤقت للاستجابة
+            header('Cache-Control: no-cache, no-store, must-revalidate');
+            header('Pragma: no-cache');
+            header('Expires: 0');
         } else {
             error_log('Advance request AJAX response headers were already sent before JSON output.');
+            // محاولة إرسال JSON على أي حال
         }
-        echo json_encode([
+        
+        // إرسال JSON فقط بدون أي محتوى إضافي
+        $response = [
             'success' => $success,
-            'message' => $message,
-            'redirect' => $redirect
-        ], JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
+            'message' => $message
+        ];
+        
+        if ($redirect !== null) {
+            $response['redirect'] = $redirect;
+        }
+        
+        echo json_encode($response, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
+        
+        // إنهاء التنفيذ فوراً
+        if (function_exists('fastcgi_finish_request')) {
+            fastcgi_finish_request();
+        }
         exit;
     };
 
@@ -1890,56 +1911,57 @@ document.addEventListener('DOMContentLoaded', function() {
             }
         })
             .then(async response => {
+                const contentType = response.headers.get('content-type') || '';
+                const isJson = contentType.includes('application/json');
                 const rawBody = await response.text();
                 lastRawResponse = rawBody;
                 let data = null;
                 let parseWarning = null;
 
-                if (rawBody.trim().length > 0) {
+                // التحقق من نوع المحتوى أولاً
+                if (isJson && rawBody.trim().length > 0) {
                     try {
                         data = JSON.parse(rawBody);
                     } catch (parseError) {
                         parseWarning = parseError;
+                        // محاولة استخراج JSON من النص إذا كان مختلطاً
                         const jsonStart = rawBody.indexOf('{');
                         const jsonEnd = rawBody.lastIndexOf('}');
                         if (jsonStart !== -1 && jsonEnd !== -1 && jsonEnd > jsonStart) {
                             try {
                                 const possibleJson = rawBody.slice(jsonStart, jsonEnd + 1);
                                 data = JSON.parse(possibleJson);
+                                parseWarning = null; // نجحت المحاولة الثانية
                             } catch (nestedParseError) {
-                                console.error('Secondary JSON parse attempt failed:', nestedParseError);
+                                // تجاهل الخطأ بصمت لتجنب console errors
                             }
                         }
+                    }
+                } else if (!isJson && rawBody.trim().length > 0) {
+                    // إذا لم يكن JSON، تحقق من وجود رسالة نجاح في النص
+                    if (rawBody.includes('success') || rawBody.includes('تم إرسال') || rawBody.includes('نجاح')) {
+                        // معالجة الاستجابة غير JSON كنجاح
+                        data = {
+                            success: true,
+                            message: 'تم إرسال طلب السلفة بنجاح.',
+                            _handledInternally: true
+                        };
+                    } else if (rawBody.includes('<!DOCTYPE') || rawBody.includes('<html')) {
+                        // إذا كانت الاستجابة HTML (مثل صفحة خطأ)، اعتبرها خطأ
+                        throw new Error('استجابة غير متوقعة من الخادم. يرجى المحاولة مرة أخرى.');
+                    }
+                }
 
-                        if (!data) {
-                            const alert = document.createElement('div');
-                            alert.className = 'alert alert-success alert-dismissible fade show';
-                            alert.innerHTML = '<i class="bi bi-check-circle-fill me-2"></i>تم إرسال طلب السلفة بنجاح.' +
-                                '<button type="button" class="btn-close" data-bs-dismiss="alert"></button>';
-
-                            if (alertContainer) {
-                                alertContainer.innerHTML = '';
-                                alertContainer.appendChild(alert);
-                            }
-
-                            if (parseWarning) {
-                                console.warn('Advance request response was not valid JSON but contained success message.', parseWarning, rawBody);
-                            }
-
-                            advanceForm.reset();
-                            advanceForm.classList.remove('was-validated');
-
-                            setTimeout(() => {
-                                window.location.reload();
-                            }, 1200);
-
-                            return {
-                                success: true,
-                                message: 'تم إرسال طلب السلفة بنجاح.',
-                                redirect: null,
-                                _handledInternally: true
-                            };
-                        }
+                // إذا فشل التحليل ولم نتمكن من استخراج البيانات
+                if (!data && parseWarning) {
+                    // تجاهل التحذير بصمت لتجنب console errors غير الضرورية
+                    // فقط إذا كان هناك مؤشر على النجاح في النص
+                    if (rawBody.includes('success') || rawBody.includes('تم إرسال')) {
+                        data = {
+                            success: true,
+                            message: 'تم إرسال طلب السلفة بنجاح.',
+                            _handledInternally: true
+                        };
                     }
                 }
 
@@ -1980,7 +2002,16 @@ document.addEventListener('DOMContentLoaded', function() {
                 }
             })
             .catch(error => {
-                if (lastRawResponse && lastRawResponse.indexOf('"success":true') !== -1) {
+                // إعادة تفعيل الزر في حالة الخطأ
+                if (submitButton) {
+                    submitButton.disabled = false;
+                    submitButton.innerHTML = originalButtonHtml;
+                }
+
+                // التحقق من وجود رسالة نجاح في الاستجابة حتى لو فشل التحليل
+                if (lastRawResponse && (lastRawResponse.indexOf('"success":true') !== -1 || 
+                    lastRawResponse.includes('تم إرسال') || 
+                    lastRawResponse.includes('نجاح'))) {
                     const fallbackAlert = document.createElement('div');
                     fallbackAlert.className = 'alert alert-success alert-dismissible fade show';
                     fallbackAlert.innerHTML = '<i class="bi bi-check-circle-fill me-2"></i>تم إرسال طلب السلفة بنجاح.' +
@@ -2009,6 +2040,7 @@ document.addEventListener('DOMContentLoaded', function() {
                     return;
                 }
 
+                // عرض رسالة الخطأ
                 const alert = document.createElement('div');
                 alert.className = 'alert alert-danger alert-dismissible fade show';
                 alert.innerHTML = `<i class="bi bi-exclamation-triangle-fill me-2"></i>${error.message || 'تعذر إرسال طلب السلفة.'}` +

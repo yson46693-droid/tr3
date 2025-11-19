@@ -118,7 +118,6 @@
         return true;
     }
 
-    // دالة للبحث عن حقل بحث وتركيزه
     function focusSearchInput() {
         const searchInputs = document.querySelectorAll(
             'input[type="search"], input[type="text"][placeholder*="بحث"], input[type="text"][placeholder*="search"], ' +
@@ -136,7 +135,6 @@
         return false;
     }
 
-    // دالة لإغلاق جميع الـ modals
     function closeAllModals() {
         const modals = document.querySelectorAll('.modal.show, .modal.in');
         modals.forEach(function(modal) {
@@ -165,7 +163,6 @@
         });
     }
 
-    // دالة لإظهار رسالة مساعدة باختصارات لوحة المفاتيح
     function showKeyboardShortcutsHelp() {
         const pageLinks = getPageLinks();
         const shortcuts = [
@@ -174,7 +171,6 @@
             ['Esc', 'إغلاق النوافذ المنبثقة']
         ];
 
-        // إضافة اختصارات التنقل بناءً على الصفحة الحالية
         if (currentPage === 'production.php') {
             shortcuts.push(['Ctrl/Cmd + 1', 'لوحة التحكم']);
             shortcuts.push(['Ctrl/Cmd + 2', 'الإنتاج']);
@@ -209,7 +205,6 @@
         });
         helpHTML += '</table></div>';
 
-        // إنشاء modal للمساعدة
         const modalId = 'keyboardShortcutsHelpModal';
         let modal = document.getElementById(modalId);
 
@@ -264,10 +259,14 @@
         }
     }
 
-    // معالج اختصارات لوحة المفاتيح الرئيسي
     document.addEventListener('keydown', function(event) {
+        // التحقق من وجود event.key قبل استخدام toLowerCase
+        if (!event || !event.key) {
+            return;
+        }
+        
         const isCtrl = event.ctrlKey || event.metaKey;
-        const key = event.key.toLowerCase();
+        const key = (event.key || '').toLowerCase();
         const isInputFocused = document.activeElement && (
             document.activeElement.tagName === 'INPUT' ||
             document.activeElement.tagName === 'TEXTAREA' ||
@@ -276,21 +275,18 @@
             document.activeElement.contentEditable === 'true'
         );
 
-        // Ctrl/Cmd + / للبحث (لا يعمل إذا كان التركيز على حقل إدخال)
         if (isCtrl && (key === '/' || key === '?')) {
             event.preventDefault();
             if (key === '?') {
                 showKeyboardShortcutsHelp();
             } else {
                 if (!focusSearchInput()) {
-                    // إذا لم يوجد حقل بحث، إظهار رسالة
                     console.log('لا يوجد حقل بحث متاح');
                 }
             }
             return;
         }
 
-        // التنقل باستخدام Ctrl/Cmd + رقم (يعمل دائماً إلا في حقول الإدخال النصية الطويلة)
         if (isCtrl && !event.shiftKey && !event.altKey) {
             const pageLinks = getPageLinks();
             let handled = false;
@@ -421,8 +417,13 @@
 
     // تحديث المؤشر عند استخدام الاختصارات
     document.addEventListener('keydown', function(event) {
+        // التحقق من وجود event.key قبل استخدام toLowerCase
+        if (!event || !event.key) {
+            return;
+        }
+        
         const isCtrl = event.ctrlKey || event.metaKey;
-        const key = event.key.toLowerCase();
+        const key = (event.key || '').toLowerCase();
 
         if (isCtrl && ['1', '2', '3', '4', '5', '6', '7', '8'].includes(key)) {
             const pageLinks = getPageLinks();
