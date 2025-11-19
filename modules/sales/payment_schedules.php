@@ -756,7 +756,7 @@ if (isset($_GET['id'])) {
                             <option value="">اختر العميل</option>
                             <?php foreach ($debtorCustomers as $customer): ?>
                                 <option value="<?php echo (int) $customer['id']; ?>">
-                                    <?php echo htmlspecialchars($customer['name']); ?> - رصيد مستحق: <?php echo formatCurrency($customer['balance']); ?>
+                                    <?php echo htmlspecialchars($customer['name']); ?> - رصيد مدين: <?php echo formatCurrency($customer['balance']); ?>
                                 </option>
                             <?php endforeach; ?>
                         </select>

@@ -2464,7 +2464,7 @@ document.addEventListener('DOMContentLoaded', function () {
                                     <strong><?php echo formatCurrency($displayBalanceValue); ?></strong>
                                     <?php if ($customerBalanceValue !== 0.0): ?>
                                         <span class="badge <?php echo $balanceBadgeClass; ?> ms-1">
-                                            <?php echo $customerBalanceValue > 0 ? 'رصيد مستحق' : 'رصيد دائن'; ?>
+                                            <?php echo $customerBalanceValue > 0 ? 'رصيد مدين' : 'رصيد دائن'; ?>
                                         </span>
                                     <?php endif; ?>
                                 </td>
