@@ -1004,7 +1004,7 @@ if (isset($_GET['ajax']) && $_GET['ajax'] == '1' && $salaryId > 0) {
 }
 
 .salary-page-header h1 {
-    font-size: 28px;
+    font-size: 24px;
     font-weight: 700;
     margin: 0;
     color: white;
@@ -1033,12 +1033,12 @@ if (isset($_GET['ajax']) && $_GET['ajax'] == '1' && $salaryId > 0) {
 .salary-card-header {
     background: #2d8cf0;
     color: white;
-    padding: 15px 25px;
+    padding: 12px 20px;
     border-radius: 12px 12px 0 0;
     margin: -25px -25px 20px -25px;
     font-family: 'Cairo', sans-serif;
     font-weight: 700;
-    font-size: 18px;
+    font-size: 16px;
 }
 
 .salary-table-wrapper {
@@ -1082,7 +1082,7 @@ if (isset($_GET['ajax']) && $_GET['ajax'] == '1' && $salaryId > 0) {
 
 .salary-table-wrapper th,
 .salary-table-wrapper td {
-    padding: 12px 15px;
+    padding: 10px 12px;
     text-align: right;
     border-bottom: 1px solid #e5e7eb;
     white-space: nowrap;
@@ -1092,7 +1092,7 @@ if (isset($_GET['ajax']) && $_GET['ajax'] == '1' && $salaryId > 0) {
     background: #f9fafb;
     font-weight: 600;
     color: #374151;
-    font-size: 14px;
+    font-size: 13px;
     position: sticky;
     top: 0;
     z-index: 10;
@@ -1100,7 +1100,7 @@ if (isset($_GET['ajax']) && $_GET['ajax'] == '1' && $salaryId > 0) {
 
 .salary-table-wrapper td {
     color: #1f2937;
-    font-size: 14px;
+    font-size: 13px;
 }
 
 .salary-table-wrapper tr:last-child td {
@@ -1109,6 +1109,17 @@ if (isset($_GET['ajax']) && $_GET['ajax'] == '1' && $salaryId > 0) {
 
 .salary-table-wrapper tbody tr:hover {
     background: #f8f9fc;
+}
+
+.salary-table-wrapper .badge {
+    font-size: 11px;
+    padding: 4px 8px;
+    white-space: nowrap;
+}
+
+.salary-table-wrapper .btn-group-sm .btn {
+    padding: 0.25rem 0.5rem;
+    font-size: 0.75rem;
 }
 
 .btn-primary-salary {
@@ -1131,9 +1142,9 @@ if (isset($_GET['ajax']) && $_GET['ajax'] == '1' && $salaryId > 0) {
 }
 
 .status-badge {
-    padding: 6px 12px;
+    padding: 5px 10px;
     border-radius: 20px;
-    font-size: 12px;
+    font-size: 11px;
     font-weight: 600;
     display: inline-block;
 }
@@ -1171,8 +1182,8 @@ if (isset($_GET['ajax']) && $_GET['ajax'] == '1' && $salaryId > 0) {
     
     .salary-table-wrapper th,
     .salary-table-wrapper td {
-        padding: 10px 12px;
-        font-size: 13px;
+        padding: 8px 10px;
+        font-size: 12px;
     }
 }
 
@@ -1184,7 +1195,7 @@ if (isset($_GET['ajax']) && $_GET['ajax'] == '1' && $salaryId > 0) {
     }
     
     .salary-page-header h1 {
-        font-size: 20px;
+        font-size: 18px;
     }
     
     .salary-page-header .header-controls {
@@ -1230,6 +1241,16 @@ if (isset($_GET['ajax']) && $_GET['ajax'] == '1' && $salaryId > 0) {
     .badge {
         font-size: 10px;
         padding: 4px 8px;
+    }
+    
+    .salary-table-wrapper .badge {
+        font-size: 9px;
+        padding: 3px 6px;
+    }
+    
+    .salary-table-wrapper .btn-group-sm .btn {
+        padding: 0.2rem 0.4rem;
+        font-size: 0.7rem;
     }
     
     .btn-primary-salary {
@@ -1278,7 +1299,7 @@ if (isset($_GET['ajax']) && $_GET['ajax'] == '1' && $salaryId > 0) {
     }
     
     .salary-page-header h1 {
-        font-size: 18px;
+        font-size: 16px;
     }
     
     .salary-card,
@@ -1307,6 +1328,16 @@ if (isset($_GET['ajax']) && $_GET['ajax'] == '1' && $salaryId > 0) {
         padding: 3px 6px;
     }
     
+    .salary-table-wrapper .badge {
+        font-size: 8px;
+        padding: 2px 5px;
+    }
+    
+    .salary-table-wrapper .btn-group-sm .btn {
+        padding: 0.15rem 0.3rem;
+        font-size: 0.65rem;
+    }
+    
     .btn-primary-salary {
         padding: 6px 12px;
         font-size: 11px;
@@ -1314,15 +1345,19 @@ if (isset($_GET['ajax']) && $_GET['ajax'] == '1' && $salaryId > 0) {
     
     /* بطاقات الملخص على الشاشات الصغيرة */
     .salary-summary-card h2 {
-        font-size: 1rem !important;
+        font-size: 0.95rem !important;
     }
     
     .salary-summary-card h6 {
-        font-size: 0.7rem !important;
+        font-size: 0.65rem !important;
     }
     
     .salary-summary-card .card-body {
-        padding: 0.5rem !important;
+        padding: 0.45rem !important;
+    }
+    
+    .salary-summary-card i {
+        font-size: 1.1rem !important;
     }
     
     /* تحسين النماذج على الشاشات الصغيرة */
@@ -1404,14 +1439,14 @@ $pageTitle = ($view === 'advances') ? 'السلف' : (($view === 'pending') ? '�
             <form method="GET" class="d-inline" action="<?php echo htmlspecialchars($currentUrl); ?>">
                 <input type="hidden" name="page" value="salaries">
                 <input type="hidden" name="view" value="<?php echo htmlspecialchars($view); ?>">
-                <select name="month" class="form-select d-inline" style="width: auto; background: rgba(255,255,255,0.2); color: white; border: 1px solid rgba(255,255,255,0.3);" onchange="this.form.submit()">
+                <select name="month" class="form-select d-inline" style="width: 140px; max-width: 100%; font-size: 14px; background: rgba(255,255,255,0.2); color: white; border: 1px solid rgba(255,255,255,0.3);" onchange="this.form.submit()">
                     <?php for ($m = 1; $m <= 12; $m++): ?>
                         <option value="<?php echo $m; ?>" <?php echo $selectedMonth == $m ? 'selected' : ''; ?>>
                             <?php echo date('F', mktime(0, 0, 0, $m, 1)); ?>
                         </option>
                     <?php endfor; ?>
                 </select>
-                <select name="year" class="form-select d-inline ms-2" style="width: auto; background: rgba(255,255,255,0.2); color: white; border: 1px solid rgba(255,255,255,0.3);" onchange="this.form.submit()">
+                <select name="year" class="form-select d-inline ms-2" style="width: 100px; max-width: 100%; font-size: 14px; background: rgba(255,255,255,0.2); color: white; border: 1px solid rgba(255,255,255,0.3);" onchange="this.form.submit()">
                     <?php for ($y = date('Y'); $y >= date('Y') - 5; $y--): ?>
                         <option value="<?php echo $y; ?>" <?php echo $selectedYear == $y ? 'selected' : ''; ?>>
                             <?php echo $y; ?>
@@ -1682,18 +1717,18 @@ $pageTitle = ($view === 'advances') ? 'السلف' : (($view === 'pending') ? '�
 
 .salary-summary-card i {
     filter: drop-shadow(0 2px 4px rgba(0, 0, 0, 0.2));
-    font-size: 2rem !important;
+    font-size: 1.5rem !important;
 }
 
 .salary-summary-card h2 {
-    font-size: 1.5rem;
+    font-size: 1.25rem;
     font-weight: 800;
     text-shadow: 0 2px 4px rgba(0, 0, 0, 0.2);
     margin-bottom: 0.25rem !important;
 }
 
 .salary-summary-card h6 {
-    font-size: 0.75rem;
+    font-size: 0.7rem;
     letter-spacing: 0.5px;
     text-shadow: 0 1px 2px rgba(0, 0, 0, 0.1);
     margin-bottom: 0.5rem !important;
@@ -1726,11 +1761,11 @@ $pageTitle = ($view === 'advances') ? 'السلف' : (($view === 'pending') ? '�
     background: linear-gradient(135deg, #1e3a8a 0%, #2563eb 30%, #3b82f6 60%, #60a5fa 100%);
     color: #ffffff;
     font-weight: 700;
-    padding: 0.6rem 0.4rem;
+    padding: 0.5rem 0.4rem;
     border: none;
     text-align: center;
     vertical-align: middle;
-    font-size: 0.75rem;
+    font-size: 0.7rem;
     white-space: nowrap;
     text-shadow: 0 1px 2px rgba(0, 0, 0, 0.2);
     border-bottom: 3px solid #1e3a8a;
@@ -1745,13 +1780,13 @@ $pageTitle = ($view === 'advances') ? 'السلف' : (($view === 'pending') ? '�
 }
 
 .salary-report-table tbody td {
-    padding: 0.5rem 0.4rem;
+    padding: 0.45rem 0.4rem;
     vertical-align: middle;
     text-align: center;
     border-bottom: 1px solid #e5e7eb;
     background-color: #ffffff;
     transition: all 0.2s ease;
-    font-size: 0.8rem;
+    font-size: 0.75rem;
 }
 
 .salary-report-table tbody td .small,
@@ -1783,10 +1818,11 @@ $pageTitle = ($view === 'advances') ? 'السلف' : (($view === 'pending') ? '�
 }
 
 .salary-report-table .badge {
-    font-size: 0.7rem;
-    padding: 0.25rem 0.5rem;
+    font-size: 0.65rem;
+    padding: 0.2rem 0.45rem;
     font-weight: 600;
     box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+    white-space: nowrap;
 }
 
 /* تحسين عرض تذييل الجدول - تدرج الأزرق الفاتح والأبيض */
@@ -1836,15 +1872,15 @@ $pageTitle = ($view === 'advances') ? 'السلف' : (($view === 'pending') ? '�
 /* تحسين الاستجابة */
 @media (max-width: 768px) {
     .salary-summary-card h2 {
-        font-size: 1.25rem;
+        font-size: 1.1rem;
     }
     
     .salary-summary-card .card-body {
-        padding: 0.75rem !important;
+        padding: 0.65rem !important;
     }
     
     .salary-summary-card i {
-        font-size: 1.5rem !important;
+        font-size: 1.25rem !important;
     }
     
     .salary-report-table {
