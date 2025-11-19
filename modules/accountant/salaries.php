@@ -1025,6 +1025,9 @@ if (isset($_GET['ajax']) && $_GET['ajax'] == '1' && $salaryId > 0) {
     margin-bottom: 30px;
     box-shadow: 0 2px 8px rgba(0,0,0,0.08);
     border: 1px solid #e3e8ef;
+    width: 100%;
+    max-width: 100%;
+    overflow-x: auto;
 }
 
 .salary-card-header {
@@ -1045,11 +1048,36 @@ if (isset($_GET['ajax']) && $_GET['ajax'] == '1' && $salaryId > 0) {
     box-shadow: 0 2px 8px rgba(0,0,0,0.08);
     border: 1px solid #e3e8ef;
     overflow-x: auto;
+    overflow-y: visible;
+    -webkit-overflow-scrolling: touch;
+    width: 100%;
+    max-width: 100%;
+    position: relative;
+}
+
+.salary-table-wrapper::-webkit-scrollbar {
+    height: 8px;
+}
+
+.salary-table-wrapper::-webkit-scrollbar-track {
+    background: #f1f1f1;
+    border-radius: 4px;
+}
+
+.salary-table-wrapper::-webkit-scrollbar-thumb {
+    background: #888;
+    border-radius: 4px;
+}
+
+.salary-table-wrapper::-webkit-scrollbar-thumb:hover {
+    background: #555;
 }
 
 .salary-table-wrapper table {
     width: 100%;
     border-collapse: collapse;
+    min-width: 800px;
+    table-layout: auto;
 }
 
 .salary-table-wrapper th,
@@ -1057,6 +1085,7 @@ if (isset($_GET['ajax']) && $_GET['ajax'] == '1' && $salaryId > 0) {
     padding: 12px 15px;
     text-align: right;
     border-bottom: 1px solid #e5e7eb;
+    white-space: nowrap;
 }
 
 .salary-table-wrapper th {
@@ -1064,6 +1093,9 @@ if (isset($_GET['ajax']) && $_GET['ajax'] == '1' && $salaryId > 0) {
     font-weight: 600;
     color: #374151;
     font-size: 14px;
+    position: sticky;
+    top: 0;
+    z-index: 10;
 }
 
 .salary-table-wrapper td {
@@ -1126,27 +1158,205 @@ if (isset($_GET['ajax']) && $_GET['ajax'] == '1' && $salaryId > 0) {
     color: #991b1b;
 }
 
-@media (max-width: 768px) {
-    .salary-page-header {
-        padding: 20px;
-    }
-    
-    .salary-page-header h1 {
-        font-size: 22px;
-    }
-    
-    .salary-card,
+/* تحسينات للشاشات المتوسطة */
+@media (max-width: 1200px) {
     .salary-table-wrapper {
         padding: 15px;
     }
     
     .salary-table-wrapper table {
+        min-width: 700px;
         font-size: 13px;
     }
     
     .salary-table-wrapper th,
     .salary-table-wrapper td {
-        padding: 8px 10px;
+        padding: 10px 12px;
+        font-size: 13px;
+    }
+}
+
+/* تحسينات للشاشات الصغيرة */
+@media (max-width: 768px) {
+    .salary-page-header {
+        padding: 15px;
+        margin-bottom: 20px;
+    }
+    
+    .salary-page-header h1 {
+        font-size: 20px;
+    }
+    
+    .salary-page-header .header-controls {
+        margin-top: 10px;
+        width: 100%;
+    }
+    
+    .salary-page-header .header-controls .btn,
+    .salary-page-header .header-controls .form-select {
+        width: 100%;
+        margin-bottom: 5px;
+    }
+    
+    .salary-card,
+    .salary-table-wrapper {
+        padding: 12px;
+        margin-bottom: 20px;
+        border-radius: 8px;
+    }
+    
+    .salary-table-wrapper {
+        padding: 10px;
+        overflow-x: auto;
+        -webkit-overflow-scrolling: touch;
+    }
+    
+    .salary-table-wrapper table {
+        min-width: 900px;
+        font-size: 12px;
+    }
+    
+    .salary-table-wrapper th,
+    .salary-table-wrapper td {
+        padding: 8px 6px;
+        font-size: 11px;
+    }
+    
+    .salary-table-wrapper th {
+        font-size: 11px;
+        white-space: nowrap;
+    }
+    
+    .badge {
+        font-size: 10px;
+        padding: 4px 8px;
+    }
+    
+    .btn-primary-salary {
+        padding: 8px 15px;
+        font-size: 12px;
+    }
+    
+    /* تحسين بطاقات الملخص */
+    .salary-summary-card h2 {
+        font-size: 1.1rem !important;
+    }
+    
+    .salary-summary-card .card-body {
+        padding: 0.75rem !important;
+    }
+    
+    .salary-summary-card i {
+        font-size: 1.2rem !important;
+    }
+    
+    /* تحسين الفلاتر */
+    .row.g-3 > div {
+        margin-bottom: 10px;
+    }
+    
+    /* تحسين النماذج */
+    .form-select,
+    .form-control {
+        font-size: 14px;
+    }
+    
+    /* تحسين الأزرار */
+    .btn-group {
+        flex-wrap: wrap;
+    }
+    
+    .btn-group .btn {
+        margin-bottom: 5px;
+    }
+}
+
+/* تحسينات للشاشات الصغيرة جداً */
+@media (max-width: 576px) {
+    .salary-page-header {
+        padding: 12px;
+    }
+    
+    .salary-page-header h1 {
+        font-size: 18px;
+    }
+    
+    .salary-card,
+    .salary-table-wrapper {
+        padding: 10px;
+        margin-bottom: 15px;
+    }
+    
+    .salary-table-wrapper table {
+        min-width: 1000px;
+        font-size: 11px;
+    }
+    
+    .salary-table-wrapper th,
+    .salary-table-wrapper td {
+        padding: 6px 4px;
+        font-size: 10px;
+    }
+    
+    .salary-table-wrapper th {
+        font-size: 10px;
+    }
+    
+    .badge {
+        font-size: 9px;
+        padding: 3px 6px;
+    }
+    
+    .btn-primary-salary {
+        padding: 6px 12px;
+        font-size: 11px;
+    }
+    
+    /* بطاقات الملخص على الشاشات الصغيرة */
+    .salary-summary-card h2 {
+        font-size: 1rem !important;
+    }
+    
+    .salary-summary-card h6 {
+        font-size: 0.7rem !important;
+    }
+    
+    .salary-summary-card .card-body {
+        padding: 0.5rem !important;
+    }
+    
+    /* تحسين النماذج على الشاشات الصغيرة */
+    .form-select,
+    .form-control {
+        font-size: 13px;
+    }
+    
+    /* تحسين الأزرار */
+    .btn {
+        font-size: 11px;
+        padding: 5px 10px;
+    }
+    
+    /* تحسين المجموعات */
+    .btn-group {
+        display: flex;
+        flex-direction: column;
+        width: 100%;
+    }
+    
+    .btn-group .btn {
+        width: 100%;
+        margin-bottom: 5px;
+    }
+    
+    /* تحسين Modals */
+    .modal-dialog {
+        margin: 10px;
+        max-width: calc(100% - 20px);
+    }
+    
+    .modal-content {
+        padding: 15px;
     }
 }
 </style>

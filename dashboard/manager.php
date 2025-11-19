@@ -10,20 +10,16 @@ mb_http_output('UTF-8');
 
 define('ACCESS_ALLOWED', true);
 
-// ØªÙ†Ø¸ÙŠÙ Ø£ÙŠ output buffer Ø³Ø§Ø¨Ù‚ Ù‚Ø¨Ù„ Ø£ÙŠ Ø´ÙŠØ¡
 while (ob_get_level() > 0) {
     ob_end_clean();
 }
 
-// بدء output buffering لضمان عدم وجود محتوى قبل DOCTYPE
 if (!ob_get_level()) {
     ob_start();
 }
 
 $page = $_GET['page'] ?? 'overview';
 
-// معالجة AJAX قبل أي require أو include قد يخرج محتوى HTML
-// Ø®Ø§ØµØ© Ù„ØµÙØ­Ø© Ù‚ÙˆØ§Ù„Ø¨ Ø§Ù„Ù…Ù†ØªØ¬Ø§Øª
 if ($page === 'product_templates' && isset($_GET['ajax']) && $_GET['ajax'] === 'template_details' && isset($_GET['template_id'])) {
 
     require_once __DIR__ . '/../includes/config.php';
@@ -215,7 +211,7 @@ $pageTitle = isset($lang['manager_dashboard']) ? $lang['manager_dashboard'] : '�
 
                 <div class="card mb-4">
                     <div class="card-header d-flex align-items-center justify-content-between">
-                        <h5 class="mb-0"><i class="bi bi-lightning-charge-fill me-2"></i>Ø§Ø®ØªØµØ§Ø±Ø§Øª Ø³Ø±ÙŠØ¹Ø©</h5>
+                        <h5 class="mb-0"><i class="bi bi-lightning-charge-fill me-2"></i>اختصارات سريعة</h5>
                         <span class="text-muted small">Ø±ÙˆØ§Ø¨Ø· Ø³Ø±ÙŠØ¹Ø© Ù„Ø£Ù‡Ù… Ø§Ù„ØµÙØ­Ø§Øª</span>
                     </div>
                     <div class="card-body">
@@ -294,7 +290,6 @@ $pageTitle = isset($lang['manager_dashboard']) ? $lang['manager_dashboard'] : '�
                     </div>
                 </div>
                 
-                <!-- Ø¨Ø·Ø§Ù‚Ø§Øª Ù…Ù„Ø®Øµ Ø¥Ø¶Ø§ÙÙŠØ© -->
                 <div class="cards-grid mt-4">
                     <?php
                     $lastBackup = $db->queryOne(
@@ -391,13 +386,13 @@ $pageTitle = isset($lang['manager_dashboard']) ? $lang['manager_dashboard'] : '�
                                     <label for="invoiceNumberInput" class="form-label">Ø±Ù‚Ù… Ø§Ù„ÙØ§ØªÙˆØ±Ù‡</label>
                                     <input type="text" class="form-control" id="invoiceNumberInput" placeholder="Ø§Ø¯Ø®Ù„ Ø±Ù‚Ù… Ø§Ù„ÙØ§ØªÙˆØ±Ù‡">
                                     <div class="invalid-feedback">
-                                        ÙŠØ±Ø¬Ù‰ Ø¥Ø¯Ø®Ø§Ù„ Ø±Ù‚Ù… Ø§Ù„ÙØ§ØªÙˆØ±Ø© Ù„Ù„Ø¨Ø­Ø«.
+                                        ÙŠØ±Ø¬Ù‰ Ø¥Ø¯Ø®Ø§Ù„ Ø±Ù‚Ù… Ø§Ù„ÙØ§ØªÙˆØ±Ø© Ù„Ù„بحث.
                                     </div>
                                 </div>
                                 <div class="d-flex justify-content-between align-items-center">
-                                    <small class="text-muted">Ø³ÙŠØªÙ… Ø¹Ø±Ø¶ ØªÙØ§ØµÙŠÙ„ Ø§Ù„ÙØ§ØªÙˆØ±Ø© ØªÙ„Ù‚Ø§Ø¦ÙŠØ§Ù‹ Ø¨Ø¹Ø¯ Ø§Ù„Ø¨Ø­Ø«.</small>
+                                    <small class="text-muted">Ø³ÙŠØªÙ… Ø¹Ø±Ø¶ ØªÙØ§ØµÙŠÙ„ Ø§Ù„ÙØ§ØªÙˆØ±Ø© ØªÙ„Ù‚Ø§Ø¦ÙŠØ§Ù‹ Ø¨Ø¹Ø¯ Ø§Ù„بحث.</small>
                                     <button type="button" class="btn btn-primary" id="invoiceSearchButton">
-                                        <i class="bi bi-search me-1"></i>Ø¨Ø­Ø«
+                                        <i class="bi bi-search me-1"></i>بحث
                                     </button>
                                 </div>
                                 <div id="invoiceLookupFeedback" class="alert d-none mt-3 mb-0" role="alert"></div>
@@ -455,8 +450,8 @@ $pageTitle = isset($lang['manager_dashboard']) ? $lang['manager_dashboard'] : '�
                                                 <input type="radio" class="form-check-input mt-1 refund-method-input" name="refundMethod" value="company_request">
                                                 <div>
                                                     <div class="fw-semibold d-flex align-items-center gap-2">
-                                                        Ø·Ù„Ø¨ Ø§Ù„Ù…Ø¨Ù„Øº Ù…Ù† Ø§Ù„Ø´Ø±ÙƒØ©
-                                                        <span class="badge bg-warning text-dark">Ù‚ÙŠØ¯ Ø§Ù„ØªØ·ÙˆÙŠØ±</span>
+                                                        طلب المبلغ من الشركة
+                                                        <span class="badge bg-warning text-dark">قيد التطوير</span>
                                                     </div>
                                                     <div class="text-muted small">ØªÙ… Ø¥Ø±Ø³Ø§Ù„ Ø·Ù„Ø¨ Ù„Ù„Ù…ÙˆØ§ÙÙ‚Ø§Øª Ù„Ù…Ø¹Ø§Ù„Ø¬Ø© Ø§Ù„Ø¹Ù…Ù„ÙŠØ© ÙÙŠÙ…Ø§ Ø¨Ø¹Ø¯.</div>
                                                 </div>
@@ -517,7 +512,7 @@ $pageTitle = isset($lang['manager_dashboard']) ? $lang['manager_dashboard'] : '�
                                     <?php else: ?>
                                         <?php foreach ($logs as $log): ?>
                                             <tr>
-                                                <td><?php echo htmlspecialchars($log['username'] ?? 'ØºÙŠØ± Ù…Ø¹Ø±ÙˆÙ'); ?></td>
+                                                <td><?php echo htmlspecialchars($log['username'] ?? 'غير معروف'); ?></td>
                                                 <td><?php echo htmlspecialchars($log['action']); ?></td>
                                                 <td><?php echo htmlspecialchars($log['entity_type']); ?></td>
                                                 <td><?php echo formatDateTime($log['created_at']); ?></td>
@@ -600,7 +595,7 @@ $pageTitle = isset($lang['manager_dashboard']) ? $lang['manager_dashboard'] : '�
                         <div class="card shadow-sm">
                             <div class="card-body text-center py-5">
                                 <i class="bi bi-exclamation-triangle text-warning display-5 mb-3"></i>
-                                <h4 class="mb-2">ØªÙ‚Ø§Ø±ÙŠØ± Ø§Ù„Ø¥Ù†ØªØ§Ø¬ ØºÙŠØ± Ù…ØªØ§Ø­Ø© Ø­Ø§Ù„ÙŠØ§Ù‹</h4>
+                                <h4 class="mb-2">تقارير الإنتاج غير متاحة حالياً</h4>
                                 <p class="text-muted mb-0">ÙŠØ±Ø¬Ù‰ Ø§Ù„ØªØ­Ù‚Ù‚ Ù…Ù† Ø§Ù„Ù…Ù„ÙØ§Øª Ø£Ùˆ Ø§Ù„ØªÙˆØ§ØµÙ„ Ù…Ø¹ ÙØ±ÙŠÙ‚ Ø§Ù„ØªØ·ÙˆÙŠØ±.</p>
                             </div>
                         </div>
@@ -613,8 +608,8 @@ $pageTitle = isset($lang['manager_dashboard']) ? $lang['manager_dashboard'] : '�
                     <div class="card shadow-sm">
                         <div class="card-body text-center py-5">
                             <i class="bi bi-tools text-muted display-5 mb-3"></i>
-                            <h4 class="mb-2">ØªÙ‚Ø§Ø±ÙŠØ± Ù…Ø§Ù„ÙŠØ©</h4>
-                            <p class="text-muted mb-0">Ù‡Ø°Ø§ Ø§Ù„Ù‚Ø³Ù… Ù‚ÙŠØ¯ Ø§Ù„ØªØ·ÙˆÙŠØ± ÙˆØ³ÙŠØªÙ… ØªÙˆÙÙŠØ±Ù‡ Ù‚Ø±ÙŠØ¨Ø§Ù‹.</p>
+                            <h4 class="mb-2">تقارير مالية</h4>
+                            <p class="text-muted mb-0">Ù‡Ø°Ø§ Ø§Ù„Ù‚Ø³Ù… قيد التطوير ÙˆØ³ÙŠØªÙ… ØªÙˆÙÙŠØ±Ù‡ Ù‚Ø±ÙŠØ¨Ø§Ù‹.</p>
                         </div>
                     </div>
                 </section>
@@ -660,10 +655,10 @@ $pageTitle = isset($lang['manager_dashboard']) ? $lang['manager_dashboard'] : '�
                     });
                 </script>
             <?php elseif ($page === 'performance'): ?>
-                <h2><i class="bi bi-graph-up-arrow me-2"></i><?php echo isset($lang['performance']) ? $lang['performance'] : 'Ø§Ù„Ø£Ø¯Ø§Ø¡'; ?></h2>
+                <h2><i class="bi bi-graph-up-arrow me-2"></i><?php echo isset($lang['performance']) ? $lang['performance'] : 'الأداء'; ?></h2>
                 <div class="card shadow-sm">
                     <div class="card-body">
-                        <p>ØµÙØ­Ø© Ø§Ù„Ø£Ø¯Ø§Ø¡ - Ø³ÙŠØªÙ… Ø¥Ø¶Ø§ÙØªÙ‡Ø§</p>
+                        <p>ØµÙØ­Ø© الأداء - Ø³ÙŠØªÙ… Ø¥Ø¶Ø§ÙØªÙ‡Ø§</p>
                     </div>
                 </div>
                 
@@ -932,7 +927,7 @@ function renderInvoiceDetails(invoiceData, items) {
         return;
     }
 
-    customerNameEl.textContent = invoiceData.customer_name || 'ØºÙŠØ± Ù…Ø¹Ø±ÙˆÙ';
+    customerNameEl.textContent = invoiceData.customer_name || 'غير معروف';
     totalAmountEl.textContent = new Intl.NumberFormat('ar-EG', {
         minimumFractionDigits: 2,
         maximumFractionDigits: 2
@@ -1079,7 +1074,7 @@ async function submitInvoiceReturn() {
     const printButton = document.getElementById('printReturnButton');
 
     if (!invoiceReturnState.invoice) {
-        setReturnSubmitFeedback('ÙŠØ±Ø¬Ù‰ Ø¨Ø­Ø« Ø¹Ù† ÙØ§ØªÙˆØ±Ø© Ø£ÙˆÙ„Ø§Ù‹ Ù‚Ø¨Ù„ ØªØ³Ø¬ÙŠÙ„ Ø§Ù„Ù…Ø±ØªØ¬Ø¹.', 'warning');
+        setReturnSubmitFeedback('ÙŠØ±Ø¬Ù‰ بحث Ø¹Ù† ÙØ§ØªÙˆØ±Ø© Ø£ÙˆÙ„Ø§Ù‹ Ù‚Ø¨Ù„ ØªØ³Ø¬ÙŠÙ„ Ø§Ù„Ù…Ø±ØªØ¬Ø¹.', 'warning');
         return;
     }
 
@@ -1334,7 +1329,7 @@ function approveRequest(id) {
     
     if (btn) {
         btn.disabled = true;
-        btn.innerHTML = '<span class="spinner-border spinner-border-sm me-2"></span>Ø¬Ø§Ø±ÙŠ Ø§Ù„Ù…Ø¹Ø§Ù„Ø¬Ø©...';
+        btn.innerHTML = '<span class="spinner-border spinner-border-sm me-2"></span>جاري المعالجة...';
     }
     
     fetch('api/approve.php', {
@@ -1367,7 +1362,7 @@ function approveRequest(id) {
                 btn.disabled = false;
                 btn.innerHTML = originalHTML;
             }
-            alert('Ø®Ø·Ø£: ' + (data.error || data.message || 'Ø­Ø¯Ø« Ø®Ø·Ø£ ØºÙŠØ± Ù…Ø¹Ø±ÙˆÙ'));
+            alert('Ø®Ø·Ø£: ' + (data.error || data.message || 'حدث خطأ غير معروف'));
         }
     })
     .catch(error => {
@@ -1404,7 +1399,7 @@ function rejectRequest(id, evt) {
     
     if (btn) {
         btn.disabled = true;
-        btn.innerHTML = '<span class="spinner-border spinner-border-sm me-2"></span>Ø¬Ø§Ø±ÙŠ Ø§Ù„Ù…Ø¹Ø§Ù„Ø¬Ø©...';
+        btn.innerHTML = '<span class="spinner-border spinner-border-sm me-2"></span>جاري المعالجة...';
     }
     
     fetch('api/reject.php', {
@@ -1438,7 +1433,7 @@ function rejectRequest(id, evt) {
                 btn.disabled = false;
                 btn.innerHTML = originalHTML;
             }
-            alert('Ø®Ø·Ø£: ' + (data.error || data.message || 'Ø­Ø¯Ø« Ø®Ø·Ø£ ØºÙŠØ± Ù…Ø¹Ø±ÙˆÙ'));
+            alert('Ø®Ø·Ø£: ' + (data.error || data.message || 'حدث خطأ غير معروف'));
         }
     }) 
     .catch(error => {
