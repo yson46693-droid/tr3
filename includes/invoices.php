@@ -161,6 +161,42 @@ function getInvoice($invoiceId) {
 }
 
 /**
+ * الحصول على فاتورة بواسطة رقم الفاتورة مع العناصر
+ */
+function getInvoiceByNumberDetailed($invoiceNumber) {
+    if (!$invoiceNumber) {
+        return null;
+    }
+
+    $db = db();
+
+    $invoice = $db->queryOne(
+        "SELECT i.*, c.name as customer_name, c.phone as customer_phone, c.address as customer_address,
+                c.balance as customer_balance,
+                u.full_name as sales_rep_name, u.id as sales_rep_user_id,
+                u.username as sales_rep_username, u.phone as sales_rep_phone
+         FROM invoices i
+         LEFT JOIN customers c ON i.customer_id = c.id
+         LEFT JOIN users u ON i.sales_rep_id = u.id
+         WHERE i.invoice_number = ?",
+        [$invoiceNumber]
+    );
+
+    if ($invoice) {
+        $invoice['items'] = $db->query(
+            "SELECT ii.*, p.name as product_name, p.unit
+             FROM invoice_items ii
+             LEFT JOIN products p ON ii.product_id = p.id
+             WHERE ii.invoice_id = ?
+             ORDER BY ii.id",
+            [$invoice['id']]
+        );
+    }
+
+    return $invoice;
+}
+
+/**
  * تحديث حالة الفاتورة
  */
 function updateInvoiceStatus($invoiceId, $status, $updatedBy = null) {

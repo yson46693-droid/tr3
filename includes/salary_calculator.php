@@ -14,11 +14,43 @@ require_once __DIR__ . '/db.php';
 require_once __DIR__ . '/audit_log.php';
 
 /**
+ * التأكد من وجود عمود collections_bonus في جدول الرواتب.
+ *
+ * @return bool
+ */
+function ensureCollectionsBonusColumn(): bool {
+    static $collectionsBonusEnsured = null;
+    
+    if ($collectionsBonusEnsured !== null) {
+        return $collectionsBonusEnsured;
+    }
+    
+    try {
+        $db = db();
+        $columnExists = $db->queryOne("SHOW COLUMNS FROM salaries LIKE 'collections_bonus'");
+        if (empty($columnExists)) {
+            $db->execute("
+                ALTER TABLE `salaries`
+                ADD COLUMN `collections_bonus` DECIMAL(10,2) DEFAULT 0.00 COMMENT 'مكافآت التحصيلات 2%' 
+                AFTER `bonus`
+            ");
+        }
+        $collectionsBonusEnsured = true;
+    } catch (Throwable $columnError) {
+        error_log('Failed to ensure collections_bonus column: ' . $columnError->getMessage());
+        $collectionsBonusEnsured = false;
+    }
+    
+    return $collectionsBonusEnsured;
+}
+
+/**
  * حساب عدد الساعات الشهرية للمستخدم
  * يستخدم جدول attendance_records الجديد
  */
 function calculateMonthlyHours($userId, $month, $year) {
     $db = db();
+    $hasCollectionsBonusColumn = ensureCollectionsBonusColumn();
     
     // التحقق من وجود جدول attendance_records
     $tableCheck = $db->queryOne("SHOW TABLES LIKE 'attendance_records'");
@@ -253,6 +285,7 @@ function applyCollectionInstantReward($salesUserId, $collectionAmount, $collecti
     if ($salaryRewardColumns === null) {
         $salaryRewardColumns = [
             'bonus' => null,
+            'collections_bonus' => null,
             'total_amount' => null,
             'accumulated_amount' => null,
             'updated_at' => null,
@@ -268,6 +301,8 @@ function applyCollectionInstantReward($salesUserId, $collectionAmount, $collecti
                 
                 if ($salaryRewardColumns['bonus'] === null && in_array($field, ['bonus', 'total_bonus'], true)) {
                     $salaryRewardColumns['bonus'] = $field;
+                } elseif ($salaryRewardColumns['collections_bonus'] === null && $field === 'collections_bonus') {
+                    $salaryRewardColumns['collections_bonus'] = $field;
                 } elseif ($salaryRewardColumns['total_amount'] === null && in_array($field, ['total_amount', 'amount', 'net_total'], true)) {
                     $salaryRewardColumns['total_amount'] = $field;
                 } elseif ($salaryRewardColumns['accumulated_amount'] === null && $field === 'accumulated_amount') {
@@ -280,6 +315,10 @@ function applyCollectionInstantReward($salesUserId, $collectionAmount, $collecti
             error_log('Instant reward: failed to read salaries columns - ' . $columnError->getMessage());
         }
         
+        if ($salaryRewardColumns['collections_bonus'] === null && $hasCollectionsBonusColumn) {
+            $salaryRewardColumns['collections_bonus'] = 'collections_bonus';
+        }
+        
         if ($salaryRewardColumns['total_amount'] === null) {
             $salaryRewardColumns['total_amount'] = 'total_amount';
         }
@@ -290,6 +329,11 @@ function applyCollectionInstantReward($salesUserId, $collectionAmount, $collecti
     
     if (!empty($salaryRewardColumns['bonus'])) {
         $updateParts[] = "{$salaryRewardColumns['bonus']} = COALESCE({$salaryRewardColumns['bonus']}, 0) + ?";
+        $params[] = $rewardAmount;
+    }
+    
+    if (!empty($salaryRewardColumns['collections_bonus'])) {
+        $updateParts[] = "{$salaryRewardColumns['collections_bonus']} = COALESCE({$salaryRewardColumns['collections_bonus']}, 0) + ?";
         $params[] = $rewardAmount;
     }
     
@@ -429,6 +473,7 @@ function calculateSalary($userId, $month, $year, $bonus = 0, $deductions = 0) {
  */
 function createOrUpdateSalary($userId, $month, $year, $bonus = 0, $deductions = 0, $notes = null) {
     $db = db();
+    $hasCollectionsBonusColumn = ensureCollectionsBonusColumn();
     
     // الحصول على المستخدم الحالي لاستخدامه في created_by
     $currentUser = getCurrentUser();
@@ -678,6 +723,17 @@ function createOrUpdateSalary($userId, $month, $year, $bonus = 0, $deductions = 
                         $existingSalary['id']
                     ]
                 );
+            }
+        }
+        
+        if ($hasCollectionsBonusColumn) {
+            try {
+                $db->execute(
+                    "UPDATE salaries SET collections_bonus = ? WHERE id = ?",
+                    [round($calculation['collections_bonus'] ?? 0, 2), $existingSalary['id']]
+                );
+            } catch (Throwable $collectionsBonusError) {
+                error_log('Failed to update collections_bonus (existing salary): ' . $collectionsBonusError->getMessage());
             }
         }
         
@@ -1142,6 +1198,17 @@ function createOrUpdateSalary($userId, $month, $year, $bonus = 0, $deductions = 
                 "UPDATE salaries SET accumulated_amount = ? WHERE id = ?",
                 [$newAccumulated, $salaryId]
             );
+        }
+        
+        if ($hasCollectionsBonusColumn && $salaryId) {
+            try {
+                $db->execute(
+                    "UPDATE salaries SET collections_bonus = ? WHERE id = ?",
+                    [round($calculation['collections_bonus'] ?? 0, 2), $salaryId]
+                );
+            } catch (Throwable $collectionsBonusError) {
+                error_log('Failed to update collections_bonus (new salary): ' . $collectionsBonusError->getMessage());
+            }
         }
         
         return [

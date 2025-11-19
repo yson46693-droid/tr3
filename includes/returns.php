@@ -14,6 +14,49 @@ require_once __DIR__ . '/notifications.php';
 require_once __DIR__ . '/inventory_movements.php';
 
 /**
+ * ضمان توافق جدول المرتجعات مع متطلبات مرتجعات الفواتير
+ */
+function ensureReturnSchemaSupportsInvoiceReturns(): void
+{
+    static $ensured = false;
+
+    if ($ensured) {
+        return;
+    }
+
+    try {
+        $db = db();
+    } catch (Throwable $e) {
+        return;
+    }
+
+    try {
+        $saleIdColumn = $db->queryOne("SHOW COLUMNS FROM returns LIKE 'sale_id'");
+        if (!empty($saleIdColumn) && strtoupper($saleIdColumn['Null'] ?? '') === 'NO') {
+            $db->execute("ALTER TABLE returns MODIFY `sale_id` int(11) DEFAULT NULL");
+        }
+    } catch (Throwable $e) {
+        error_log('ensureReturnSchemaSupportsInvoiceReturns sale_id alter failed: ' . $e->getMessage());
+    }
+
+    try {
+        $refundColumn = $db->queryOne("SHOW COLUMNS FROM returns LIKE 'refund_method'");
+        if (!empty($refundColumn)) {
+            $type = $refundColumn['Type'] ?? '';
+            if (stripos($type, 'company_request') === false) {
+                $db->execute("ALTER TABLE returns MODIFY `refund_method` enum('cash','credit','exchange','company_request') DEFAULT 'cash'");
+            }
+        }
+    } catch (Throwable $e) {
+        error_log('ensureReturnSchemaSupportsInvoiceReturns refund_method alter failed: ' . $e->getMessage());
+    }
+
+    $ensured = true;
+}
+
+ensureReturnSchemaSupportsInvoiceReturns();
+
+/**
  * توليد رقم مرتجع
  */
 function generateReturnNumber() {
@@ -66,7 +109,7 @@ function createReturn($saleId, $customerId, $salesRepId, $returnDate, $returnTyp
             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'pending', ?, ?)",
             [
                 $returnNumber,
-                $saleId,
+                $saleId ?: null,
                 $customerId,
                 $salesRepId,
                 $returnDate,
