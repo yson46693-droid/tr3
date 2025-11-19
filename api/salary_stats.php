@@ -40,6 +40,7 @@ try {
         'total_hours' => 0,
         'total_salary' => 0,
         'collections_bonus' => 0,
+        'collections_amount' => 0,
         'max_advance' => 0
     ];
     
@@ -47,13 +48,15 @@ try {
         $salary = $salaryData['salary'];
         $stats['total_hours'] = $salary['total_hours'] ?? 0;
         $stats['total_salary'] = cleanFinancialValue($salary['total_amount'] ?? 0);
-        $stats['collections_bonus'] = 0; // سيتم حسابها من الراتب
+        $stats['collections_bonus'] = cleanFinancialValue($salary['collections_bonus'] ?? 0);
+        $stats['collections_amount'] = cleanFinancialValue($salary['collections_amount'] ?? ($stats['collections_bonus'] > 0 ? $stats['collections_bonus'] / 0.02 : 0));
         $stats['max_advance'] = cleanFinancialValue($stats['total_salary'] * 0.5);
     } else if (isset($salaryData['calculation']) && $salaryData['calculation']['success']) {
         $calc = $salaryData['calculation'];
         $stats['total_hours'] = $calc['total_hours'] ?? 0;
         $stats['total_salary'] = cleanFinancialValue($calc['total_amount'] ?? 0);
         $stats['collections_bonus'] = cleanFinancialValue($calc['collections_bonus'] ?? 0);
+        $stats['collections_amount'] = cleanFinancialValue($calc['collections_amount'] ?? ($stats['collections_bonus'] > 0 ? $stats['collections_bonus'] / 0.02 : 0));
         $stats['max_advance'] = cleanFinancialValue($stats['total_salary'] * 0.5);
     }
     

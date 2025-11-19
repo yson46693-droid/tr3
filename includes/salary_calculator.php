@@ -14,34 +14,45 @@ require_once __DIR__ . '/db.php';
 require_once __DIR__ . '/audit_log.php';
 
 /**
- * التأكد من وجود عمود collections_bonus في جدول الرواتب.
+ * التأكد من وجود أعمدة مكافآت التحصيلات في جدول الرواتب.
  *
  * @return bool
  */
 function ensureCollectionsBonusColumn(): bool {
-    static $collectionsBonusEnsured = null;
+    static $collectionsColumnsEnsured = null;
     
-    if ($collectionsBonusEnsured !== null) {
-        return $collectionsBonusEnsured;
+    if ($collectionsColumnsEnsured !== null) {
+        return $collectionsColumnsEnsured;
     }
     
     try {
         $db = db();
-        $columnExists = $db->queryOne("SHOW COLUMNS FROM salaries LIKE 'collections_bonus'");
-        if (empty($columnExists)) {
+        
+        $bonusColumnExists = $db->queryOne("SHOW COLUMNS FROM salaries LIKE 'collections_bonus'");
+        if (empty($bonusColumnExists)) {
             $db->execute("
                 ALTER TABLE `salaries`
                 ADD COLUMN `collections_bonus` DECIMAL(10,2) DEFAULT 0.00 COMMENT 'مكافآت التحصيلات 2%' 
                 AFTER `bonus`
             ");
         }
-        $collectionsBonusEnsured = true;
+        
+        $amountColumnExists = $db->queryOne("SHOW COLUMNS FROM salaries LIKE 'collections_amount'");
+        if (empty($amountColumnExists)) {
+            $db->execute("
+                ALTER TABLE `salaries`
+                ADD COLUMN `collections_amount` DECIMAL(10,2) DEFAULT 0.00 COMMENT 'إجمالي مبالغ التحصيلات للمندوب'
+                AFTER `collections_bonus`
+            ");
+        }
+        
+        $collectionsColumnsEnsured = true;
     } catch (Throwable $columnError) {
-        error_log('Failed to ensure collections_bonus column: ' . $columnError->getMessage());
-        $collectionsBonusEnsured = false;
+        error_log('Failed to ensure collections bonus columns: ' . $columnError->getMessage());
+        $collectionsColumnsEnsured = false;
     }
     
-    return $collectionsBonusEnsured;
+    return $collectionsColumnsEnsured;
 }
 
 /**
@@ -286,6 +297,7 @@ function applyCollectionInstantReward($salesUserId, $collectionAmount, $collecti
         $salaryRewardColumns = [
             'bonus' => null,
             'collections_bonus' => null,
+            'collections_amount' => null,
             'total_amount' => null,
             'accumulated_amount' => null,
             'updated_at' => null,
@@ -303,6 +315,8 @@ function applyCollectionInstantReward($salesUserId, $collectionAmount, $collecti
                     $salaryRewardColumns['bonus'] = $field;
                 } elseif ($salaryRewardColumns['collections_bonus'] === null && $field === 'collections_bonus') {
                     $salaryRewardColumns['collections_bonus'] = $field;
+                } elseif ($salaryRewardColumns['collections_amount'] === null && $field === 'collections_amount') {
+                    $salaryRewardColumns['collections_amount'] = $field;
                 } elseif ($salaryRewardColumns['total_amount'] === null && in_array($field, ['total_amount', 'amount', 'net_total'], true)) {
                     $salaryRewardColumns['total_amount'] = $field;
                 } elseif ($salaryRewardColumns['accumulated_amount'] === null && $field === 'accumulated_amount') {
@@ -317,6 +331,9 @@ function applyCollectionInstantReward($salesUserId, $collectionAmount, $collecti
         
         if ($salaryRewardColumns['collections_bonus'] === null && $hasCollectionsBonusColumn) {
             $salaryRewardColumns['collections_bonus'] = 'collections_bonus';
+        }
+        if ($salaryRewardColumns['collections_amount'] === null && $hasCollectionsBonusColumn) {
+            $salaryRewardColumns['collections_amount'] = 'collections_amount';
         }
         
         if ($salaryRewardColumns['total_amount'] === null) {
@@ -335,6 +352,11 @@ function applyCollectionInstantReward($salesUserId, $collectionAmount, $collecti
     if (!empty($salaryRewardColumns['collections_bonus'])) {
         $updateParts[] = "{$salaryRewardColumns['collections_bonus']} = COALESCE({$salaryRewardColumns['collections_bonus']}, 0) + ?";
         $params[] = $rewardAmount;
+    }
+    
+    if (!empty($salaryRewardColumns['collections_amount'])) {
+        $updateParts[] = "{$salaryRewardColumns['collections_amount']} = COALESCE({$salaryRewardColumns['collections_amount']}, 0) + ?";
+        $params[] = $reverse ? -abs($collectionAmount) : abs($collectionAmount);
     }
     
     if (!empty($salaryRewardColumns['total_amount'])) {
@@ -490,6 +512,8 @@ function createOrUpdateSalary($userId, $month, $year, $bonus = 0, $deductions = 
     
     // حساب الراتب
     $calculation = calculateSalary($userId, $month, $year, $bonus, $deductions);
+    $collectionsBonusCalc = cleanFinancialValue($calculation['collections_bonus'] ?? 0);
+    $collectionsAmountCalc = cleanFinancialValue($calculation['collections_amount'] ?? ($collectionsBonusCalc > 0 ? $collectionsBonusCalc / 0.02 : 0));
     
     if (!$calculation['success']) {
         return $calculation;
@@ -729,11 +753,11 @@ function createOrUpdateSalary($userId, $month, $year, $bonus = 0, $deductions = 
         if ($hasCollectionsBonusColumn) {
             try {
                 $db->execute(
-                    "UPDATE salaries SET collections_bonus = ? WHERE id = ?",
-                    [round($calculation['collections_bonus'] ?? 0, 2), $existingSalary['id']]
+                    "UPDATE salaries SET collections_bonus = ?, collections_amount = ? WHERE id = ?",
+                    [round($collectionsBonusCalc, 2), round($collectionsAmountCalc, 2), $existingSalary['id']]
                 );
             } catch (Throwable $collectionsBonusError) {
-                error_log('Failed to update collections_bonus (existing salary): ' . $collectionsBonusError->getMessage());
+                error_log('Failed to update collections bonus columns (existing salary): ' . $collectionsBonusError->getMessage());
             }
         }
         
@@ -1203,11 +1227,11 @@ function createOrUpdateSalary($userId, $month, $year, $bonus = 0, $deductions = 
         if ($hasCollectionsBonusColumn && $salaryId) {
             try {
                 $db->execute(
-                    "UPDATE salaries SET collections_bonus = ? WHERE id = ?",
-                    [round($calculation['collections_bonus'] ?? 0, 2), $salaryId]
+                    "UPDATE salaries SET collections_bonus = ?, collections_amount = ? WHERE id = ?",
+                    [round($collectionsBonusCalc, 2), round($collectionsAmountCalc, 2), $salaryId]
                 );
             } catch (Throwable $collectionsBonusError) {
-                error_log('Failed to update collections_bonus (new salary): ' . $collectionsBonusError->getMessage());
+                error_log('Failed to update collections bonus columns (new salary): ' . $collectionsBonusError->getMessage());
             }
         }
         
@@ -1599,6 +1623,12 @@ function getSalarySummary($userId, $month, $year) {
     }
     if (isset($salary['current_hourly_rate'])) {
         $salary['current_hourly_rate'] = cleanFinancialValue($salary['current_hourly_rate']);
+    }
+    if (isset($salary['collections_bonus'])) {
+        $salary['collections_bonus'] = cleanFinancialValue($salary['collections_bonus']);
+    }
+    if (isset($salary['collections_amount'])) {
+        $salary['collections_amount'] = cleanFinancialValue($salary['collections_amount']);
     }
     
     return [

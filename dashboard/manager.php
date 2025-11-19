@@ -1,26 +1,26 @@
-<?php
+﻿<?php
 /**
- * لوحة التحكم للمدير
+ * Ù„ÙˆØ­Ø© Ø§Ù„ØªØ­ÙƒÙ… Ù„Ù„Ù…Ø¯ÙŠØ±
  */
 
 define('ACCESS_ALLOWED', true);
 
-// تنظيف أي output buffer سابق قبل أي شيء
+// ØªÙ†Ø¸ÙŠÙ Ø£ÙŠ output buffer Ø³Ø§Ø¨Ù‚ Ù‚Ø¨Ù„ Ø£ÙŠ Ø´ÙŠØ¡
 while (ob_get_level() > 0) {
     ob_end_clean();
 }
 
-// بدء output buffering لضمان عدم وجود محتوى قبل DOCTYPE
+// Ø¨Ø¯Ø¡ output buffering Ù„Ø¶Ù…Ø§Ù† Ø¹Ø¯Ù… ÙˆØ¬ÙˆØ¯ Ù…Ø­ØªÙˆÙ‰ Ù‚Ø¨Ù„ DOCTYPE
 if (!ob_get_level()) {
     ob_start();
 }
 
 $page = $_GET['page'] ?? 'overview';
 
-// معالجة AJAX قبل أي require أو include قد يخرج محتوى HTML
-// خاصة لصفحة قوالب المنتجات
+// Ù…Ø¹Ø§Ù„Ø¬Ø© AJAX Ù‚Ø¨Ù„ Ø£ÙŠ require Ø£Ùˆ include Ù‚Ø¯ ÙŠØ®Ø±Ø¬ Ù…Ø­ØªÙˆÙ‰ HTML
+// Ø®Ø§ØµØ© Ù„ØµÙØ­Ø© Ù‚ÙˆØ§Ù„Ø¨ Ø§Ù„Ù…Ù†ØªØ¬Ø§Øª
 if ($page === 'product_templates' && isset($_GET['ajax']) && $_GET['ajax'] === 'template_details' && isset($_GET['template_id'])) {
-    // تحميل الملفات الأساسية فقط
+    // ØªØ­Ù…ÙŠÙ„ Ø§Ù„Ù…Ù„ÙØ§Øª Ø§Ù„Ø£Ø³Ø§Ø³ÙŠØ© ÙÙ‚Ø·
     require_once __DIR__ . '/../includes/config.php';
     require_once __DIR__ . '/../includes/db.php';
     require_once __DIR__ . '/../includes/auth.php';
@@ -29,18 +29,18 @@ if ($page === 'product_templates' && isset($_GET['ajax']) && $_GET['ajax'] === '
     
     requireRole(['production', 'manager']);
     
-    // تحميل ملف product_templates.php مباشرة للتعامل مع AJAX
+    // ØªØ­Ù…ÙŠÙ„ Ù…Ù„Ù product_templates.php Ù…Ø¨Ø§Ø´Ø±Ø© Ù„Ù„ØªØ¹Ø§Ù…Ù„ Ù…Ø¹ AJAX
     $modulePath = __DIR__ . '/../modules/production/product_templates.php';
     if (file_exists($modulePath)) {
-        // الملف نفسه سيتعامل مع AJAX ويخرج JSON
+        // Ø§Ù„Ù…Ù„Ù Ù†ÙØ³Ù‡ Ø³ÙŠØªØ¹Ø§Ù…Ù„ Ù…Ø¹ AJAX ÙˆÙŠØ®Ø±Ø¬ JSON
         include $modulePath;
-        exit; // إيقاف التنفيذ بعد معالجة AJAX
+        exit; // Ø¥ÙŠÙ‚Ø§Ù Ø§Ù„ØªÙ†ÙÙŠØ° Ø¨Ø¹Ø¯ Ù…Ø¹Ø§Ù„Ø¬Ø© AJAX
     }
 }
 
-// معالجة AJAX قبل أي إخراج HTML - خاصة لصفحة مخزن أدوات التعبئة
+// Ù…Ø¹Ø§Ù„Ø¬Ø© AJAX Ù‚Ø¨Ù„ Ø£ÙŠ Ø¥Ø®Ø±Ø§Ø¬ HTML - Ø®Ø§ØµØ© Ù„ØµÙØ­Ø© Ù…Ø®Ø²Ù† Ø£Ø¯ÙˆØ§Øª Ø§Ù„ØªØ¹Ø¨Ø¦Ø©
 if ($page === 'packaging_warehouse' && isset($_GET['ajax']) && isset($_GET['material_id'])) {
-    // تحميل الملفات الأساسية فقط
+    // ØªØ­Ù…ÙŠÙ„ Ø§Ù„Ù…Ù„ÙØ§Øª Ø§Ù„Ø£Ø³Ø§Ø³ÙŠØ© ÙÙ‚Ø·
     require_once __DIR__ . '/../includes/config.php';
     require_once __DIR__ . '/../includes/db.php';
     require_once __DIR__ . '/../includes/auth.php';
@@ -49,16 +49,16 @@ if ($page === 'packaging_warehouse' && isset($_GET['ajax']) && isset($_GET['mate
     
     requireRole(['production', 'manager']);
     
-    // تحميل ملف packaging_warehouse.php مباشرة للتعامل مع AJAX
+    // ØªØ­Ù…ÙŠÙ„ Ù…Ù„Ù packaging_warehouse.php Ù…Ø¨Ø§Ø´Ø±Ø© Ù„Ù„ØªØ¹Ø§Ù…Ù„ Ù…Ø¹ AJAX
     $modulePath = __DIR__ . '/../modules/production/packaging_warehouse.php';
     if (file_exists($modulePath)) {
-        // الملف نفسه سيتعامل مع AJAX ويخرج JSON
+        // Ø§Ù„Ù…Ù„Ù Ù†ÙØ³Ù‡ Ø³ÙŠØªØ¹Ø§Ù…Ù„ Ù…Ø¹ AJAX ÙˆÙŠØ®Ø±Ø¬ JSON
         include $modulePath;
-        exit; // إيقاف التنفيذ بعد معالجة AJAX
+        exit; // Ø¥ÙŠÙ‚Ø§Ù Ø§Ù„ØªÙ†ÙÙŠØ° Ø¨Ø¹Ø¯ Ù…Ø¹Ø§Ù„Ø¬Ø© AJAX
     }
 }
 
-// تحميل باقي الملفات المطلوبة للصفحة العادية
+// ØªØ­Ù…ÙŠÙ„ Ø¨Ø§Ù‚ÙŠ Ø§Ù„Ù…Ù„ÙØ§Øª Ø§Ù„Ù…Ø·Ù„ÙˆØ¨Ø© Ù„Ù„ØµÙØ­Ø© Ø§Ù„Ø¹Ø§Ø¯ÙŠØ©
 require_once __DIR__ . '/../includes/config.php';
 require_once __DIR__ . '/../includes/db.php';
 require_once __DIR__ . '/../includes/auth.php';
@@ -91,22 +91,22 @@ if (
         header('Content-Type: application/json; charset=utf-8');
         echo json_encode([
             'success' => false,
-            'message' => 'وحدة العملاء غير متاحة.'
+            'message' => 'ÙˆØ­Ø¯Ø© Ø§Ù„Ø¹Ù…Ù„Ø§Ø¡ ØºÙŠØ± Ù…ØªØ§Ø­Ø©.'
         ], JSON_UNESCAPED_UNICODE);
     }
     exit;
 }
 
-// معالجة طلب update_location قبل إرسال أي HTML
+// Ù…Ø¹Ø§Ù„Ø¬Ø© Ø·Ù„Ø¨ update_location Ù‚Ø¨Ù„ Ø¥Ø±Ø³Ø§Ù„ Ø£ÙŠ HTML
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && trim($_POST['action']) === 'update_location') {
     $pageParam = $_GET['page'] ?? 'dashboard';
     if ($pageParam === 'customers') {
-        // تنظيف أي output buffer
+        // ØªÙ†Ø¸ÙŠÙ Ø£ÙŠ output buffer
         while (ob_get_level() > 0) {
             ob_end_clean();
         }
         
-        // تحميل الملفات الأساسية
+        // ØªØ­Ù…ÙŠÙ„ Ø§Ù„Ù…Ù„ÙØ§Øª Ø§Ù„Ø£Ø³Ø§Ø³ÙŠØ©
         if (!defined('CUSTOMERS_MODULE_BOOTSTRAPPED')) {
             require_once __DIR__ . '/../includes/config.php';
             require_once __DIR__ . '/../includes/db.php';
@@ -120,7 +120,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && trim($_P
             requireRole(['sales', 'accountant', 'manager']);
         }
         
-        // تضمين وحدة customers التي تحتوي على معالج update_location
+        // ØªØ¶Ù…ÙŠÙ† ÙˆØ­Ø¯Ø© customers Ø§Ù„ØªÙŠ ØªØ­ØªÙˆÙŠ Ø¹Ù„Ù‰ Ù…Ø¹Ø§Ù„Ø¬ update_location
         if (file_exists($customersModulePath)) {
             define('CUSTOMERS_MODULE_BOOTSTRAPPED', true);
             if (!defined('CUSTOMERS_PURCHASE_HISTORY_AJAX')) {
@@ -132,7 +132,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && trim($_P
             header('Content-Type: application/json; charset=utf-8');
             echo json_encode([
                 'success' => false,
-                'message' => 'وحدة العملاء غير متاحة.'
+                'message' => 'ÙˆØ­Ø¯Ø© Ø§Ù„Ø¹Ù…Ù„Ø§Ø¡ ØºÙŠØ± Ù…ØªØ§Ø­Ø©.'
             ], JSON_UNESCAPED_UNICODE);
         }
         exit;
@@ -149,65 +149,65 @@ if ($page === 'reports' && !in_array('assets/css/production-page.css', $pageStyl
 }
 require_once __DIR__ . '/../includes/lang/' . getCurrentLanguage() . '.php';
 $lang = $translations;
-$pageTitle = isset($lang['manager_dashboard']) ? $lang['manager_dashboard'] : 'لوحة المدير';
+$pageTitle = isset($lang['manager_dashboard']) ? $lang['manager_dashboard'] : 'Ù„ÙˆØ­Ø© Ø§Ù„Ù…Ø¯ÙŠØ±';
 ?>
 <?php include __DIR__ . '/../templates/header.php'; ?>
 
             <?php if ($page === 'overview' || $page === ''): ?>
                 <!-- Page Header -->
                 <div class="page-header">
-                    <h2><i class="bi bi-graph-up"></i><?php echo isset($lang['manager_dashboard']) ? $lang['manager_dashboard'] : 'لوحة المدير'; ?></h2>
+                    <h2><i class="bi bi-graph-up"></i><?php echo isset($lang['manager_dashboard']) ? $lang['manager_dashboard'] : 'Ù„ÙˆØ­Ø© Ø§Ù„Ù…Ø¯ÙŠØ±'; ?></h2>
                 </div>
 
                 <?php
                 $quickLinks = [
                     [
-                        'label' => 'مهام الإنتاج',
+                        'label' => 'Ù…Ù‡Ø§Ù… Ø§Ù„Ø¥Ù†ØªØ§Ø¬',
                         'icon' => 'bi-list-task',
                         'url' => getRelativeUrl('dashboard/manager.php?page=production_tasks')
                     ],
                     [
-                        'label' => 'منتجات الشركة',
+                        'label' => 'Ù…Ù†ØªØ¬Ø§Øª Ø§Ù„Ø´Ø±ÙƒØ©',
                         'icon' => 'bi-box-seam',
                         'url' => getRelativeUrl('dashboard/manager.php?page=company_products')
                     ],
                     [
-                        'label' => 'قوالب المنتجات',
+                        'label' => 'Ù‚ÙˆØ§Ù„Ø¨ Ø§Ù„Ù…Ù†ØªØ¬Ø§Øª',
                         'icon' => 'bi-file-earmark-text',
                         'url' => getRelativeUrl('dashboard/manager.php?page=product_templates')
                     ],
                     [
-                        'label' => 'مواصفات المنتجات',
+                        'label' => 'Ù…ÙˆØ§ØµÙØ§Øª Ø§Ù„Ù…Ù†ØªØ¬Ø§Øª',
                         'icon' => 'bi-journal-text',
                         'url' => getRelativeUrl('dashboard/manager.php?page=product_specifications')
                     ],
                     [
-                        'label' => 'مخزن أدوات التعبئة',
+                        'label' => 'Ù…Ø®Ø²Ù† Ø£Ø¯ÙˆØ§Øª Ø§Ù„ØªØ¹Ø¨Ø¦Ø©',
                         'icon' => 'bi-box-seam',
                         'url' => getRelativeUrl('dashboard/manager.php?page=packaging_warehouse')
                     ],
                     [
-                        'label' => 'مخزن الخامات',
+                        'label' => 'Ù…Ø®Ø²Ù† Ø§Ù„Ø®Ø§Ù…Ø§Øª',
                         'icon' => 'bi-box2-heart',
                         'url' => getRelativeUrl('dashboard/manager.php?page=raw_materials_warehouse')
                     ],
                     [
-                        'label' => 'الموردين',
+                        'label' => 'Ø§Ù„Ù…ÙˆØ±Ø¯ÙŠÙ†',
                         'icon' => 'bi-truck',
                         'url' => getRelativeUrl('dashboard/manager.php?page=suppliers')
                     ],
                     [
-                        'label' => 'العملاء',
+                        'label' => 'Ø§Ù„Ø¹Ù…Ù„Ø§Ø¡',
                         'icon' => 'bi-people',
                         'url' => getRelativeUrl('dashboard/manager.php?page=customers')
                     ],
                     [
-                        'label' => 'طلبات العملاء',
+                        'label' => 'Ø·Ù„Ø¨Ø§Øª Ø§Ù„Ø¹Ù…Ù„Ø§Ø¡',
                         'icon' => 'bi-cart-check',
                         'url' => getRelativeUrl('dashboard/manager.php?page=orders')
                     ],
                     [
-                        'label' => 'نقطة البيع',
+                        'label' => 'Ù†Ù‚Ø·Ø© Ø§Ù„Ø¨ÙŠØ¹',
                         'icon' => 'bi-cart4',
                         'url' => getRelativeUrl('dashboard/manager.php?page=pos')
                     ]
@@ -216,8 +216,8 @@ $pageTitle = isset($lang['manager_dashboard']) ? $lang['manager_dashboard'] : '�
 
                 <div class="card mb-4">
                     <div class="card-header d-flex align-items-center justify-content-between">
-                        <h5 class="mb-0"><i class="bi bi-lightning-charge-fill me-2"></i>اختصارات سريعة</h5>
-                        <span class="text-muted small">روابط سريعة لأهم الصفحات</span>
+                        <h5 class="mb-0"><i class="bi bi-lightning-charge-fill me-2"></i>Ø§Ø®ØªØµØ§Ø±Ø§Øª Ø³Ø±ÙŠØ¹Ø©</h5>
+                        <span class="text-muted small">Ø±ÙˆØ§Ø¨Ø· Ø³Ø±ÙŠØ¹Ø© Ù„Ø£Ù‡Ù… Ø§Ù„ØµÙØ­Ø§Øª</span>
                     </div>
                     <div class="card-body">
                         <div class="row g-3">
@@ -237,12 +237,12 @@ $pageTitle = isset($lang['manager_dashboard']) ? $lang['manager_dashboard'] : '�
                 $activitySummary = getManagerActivitySummary();
                 ?>
 
-                <!-- ملخص الأنشطة السريع -->
+                <!-- Ù…Ù„Ø®Øµ Ø§Ù„Ø£Ù†Ø´Ø·Ø© Ø§Ù„Ø³Ø±ÙŠØ¹ -->
                 <div class="analytics-card mb-4">
                     <div class="analytics-card-header">
-                        <h3 class="analytics-card-title"><i class="bi bi-activity me-2"></i>ملخص الأنشطة السريع</h3>
+                        <h3 class="analytics-card-title"><i class="bi bi-activity me-2"></i>Ù…Ù„Ø®Øµ Ø§Ù„Ø£Ù†Ø´Ø·Ø© Ø§Ù„Ø³Ø±ÙŠØ¹</h3>
                         <div>
-                            <button class="btn btn-sm btn-link" data-bs-toggle="tooltip" title="معلومات">
+                            <button class="btn btn-sm btn-link" data-bs-toggle="tooltip" title="Ù…Ø¹Ù„ÙˆÙ…Ø§Øª">
                                 <i class="bi bi-info-circle"></i>
                             </button>
                             <button class="btn btn-sm btn-link" data-bs-toggle="dropdown">
@@ -258,7 +258,7 @@ $pageTitle = isset($lang['manager_dashboard']) ? $lang['manager_dashboard'] : '�
                                         <i class="bi bi-hourglass-split"></i>
                                     </div>
                                 </div>
-                                <div class="stat-card-title">موافقات معلقة</div>
+                                <div class="stat-card-title">Ù…ÙˆØ§ÙÙ‚Ø§Øª Ù…Ø¹Ù„Ù‚Ø©</div>
                                 <div class="stat-card-value"><?php echo $activitySummary['pending_approvals'] ?? 0; ?></div>
                             </div>
                             
@@ -268,7 +268,7 @@ $pageTitle = isset($lang['manager_dashboard']) ? $lang['manager_dashboard'] : '�
                                         <i class="bi bi-exclamation-triangle"></i>
                                     </div>
                                 </div>
-                                <div class="stat-card-title">منتجات منخفضة المخزون</div>
+                                <div class="stat-card-title">Ù…Ù†ØªØ¬Ø§Øª Ù…Ù†Ø®ÙØ¶Ø© Ø§Ù„Ù…Ø®Ø²ÙˆÙ†</div>
                                 <div class="stat-card-value"><?php echo $activitySummary['low_stock_products'] ?? 0; ?></div>
                             </div>
                             
@@ -278,7 +278,7 @@ $pageTitle = isset($lang['manager_dashboard']) ? $lang['manager_dashboard'] : '�
                                         <i class="bi bi-box-seam"></i>
                                     </div>
                                 </div>
-                                <div class="stat-card-title">إنتاج معلق</div>
+                                <div class="stat-card-title">Ø¥Ù†ØªØ§Ø¬ Ù…Ø¹Ù„Ù‚</div>
                                 <div class="stat-card-value"><?php echo $activitySummary['pending_production'] ?? 0; ?></div>
                             </div>
                             
@@ -288,14 +288,14 @@ $pageTitle = isset($lang['manager_dashboard']) ? $lang['manager_dashboard'] : '�
                                         <i class="bi bi-cart-check"></i>
                                     </div>
                                 </div>
-                                <div class="stat-card-title">مبيعات معلقة</div>
+                                <div class="stat-card-title">Ù…Ø¨ÙŠØ¹Ø§Øª Ù…Ø¹Ù„Ù‚Ø©</div>
                                 <div class="stat-card-value"><?php echo $activitySummary['pending_sales'] ?? 0; ?></div>
                             </div>
                         </div>
                     </div>
                 </div>
                 
-                <!-- بطاقات ملخص إضافية -->
+                <!-- Ø¨Ø·Ø§Ù‚Ø§Øª Ù…Ù„Ø®Øµ Ø¥Ø¶Ø§ÙÙŠØ© -->
                 <div class="cards-grid mt-4">
                     <?php
                     $lastBackup = $db->queryOne(
@@ -318,13 +318,13 @@ $pageTitle = isset($lang['manager_dashboard']) ? $lang['manager_dashboard'] : '�
                                 <i class="bi bi-database-check"></i>
                             </div>
                         </div>
-                        <div class="stat-card-title">آخر نسخة احتياطية</div>
+                        <div class="stat-card-title">Ø¢Ø®Ø± Ù†Ø³Ø®Ø© Ø§Ø­ØªÙŠØ§Ø·ÙŠØ©</div>
                         <div class="stat-card-value">
                             <?php 
                             if ($lastBackup && isset($lastBackup['created_at'])) {
                                 echo formatDate($lastBackup['created_at']);
                             } else {
-                                echo 'لا توجد';
+                                echo 'Ù„Ø§ ØªÙˆØ¬Ø¯';
                             }
                             ?>
                         </div>
@@ -336,7 +336,7 @@ $pageTitle = isset($lang['manager_dashboard']) ? $lang['manager_dashboard'] : '�
                                 <i class="bi bi-people"></i>
                             </div>
                         </div>
-                        <div class="stat-card-title">إجمالي المستخدمين</div>
+                        <div class="stat-card-title">Ø¥Ø¬Ù…Ø§Ù„ÙŠ Ø§Ù„Ù…Ø³ØªØ®Ø¯Ù…ÙŠÙ†</div>
                         <div class="stat-card-value"><?php echo $totalUsers['count'] ?? 0; ?></div>
                     </div>
                     
@@ -346,7 +346,7 @@ $pageTitle = isset($lang['manager_dashboard']) ? $lang['manager_dashboard'] : '�
                                 <i class="bi bi-cash-stack"></i>
                             </div>
                         </div>
-                        <div class="stat-card-title">رصيد الخزنة</div>
+                        <div class="stat-card-title">Ø±ØµÙŠØ¯ Ø§Ù„Ø®Ø²Ù†Ø©</div>
                         <div class="stat-card-value"><?php echo formatCurrency($balance['balance'] ?? 0); ?></div>
                     </div>
                     
@@ -356,9 +356,9 @@ $pageTitle = isset($lang['manager_dashboard']) ? $lang['manager_dashboard'] : '�
                                 <i class="bi bi-cart-check"></i>
                             </div>
                         </div>
-                        <div class="stat-card-title">المبيعات الشهرية</div>
+                        <div class="stat-card-title">Ø§Ù„Ù…Ø¨ÙŠØ¹Ø§Øª Ø§Ù„Ø´Ù‡Ø±ÙŠØ©</div>
                         <div class="stat-card-value"><?php echo formatCurrency($monthlySales['total'] ?? 0); ?></div>
-                        <div class="stat-card-description">هذا الشهر</div>
+                        <div class="stat-card-description">Ù‡Ø°Ø§ Ø§Ù„Ø´Ù‡Ø±</div>
                     </div>
                 </div>
 
@@ -378,17 +378,17 @@ $pageTitle = isset($lang['manager_dashboard']) ? $lang['manager_dashboard'] : '�
                 }
                 ?>
 
-                <h2><i class="bi bi-check-circle me-2"></i><?php echo isset($lang['approvals']) ? $lang['approvals'] : 'الموافقات'; ?></h2>
+                <h2><i class="bi bi-check-circle me-2"></i><?php echo isset($lang['approvals']) ? $lang['approvals'] : 'Ø§Ù„Ù…ÙˆØ§ÙÙ‚Ø§Øª'; ?></h2>
 
                 <div class="btn-group btn-group-sm mb-3" role="group" aria-label="Approvals sections">
                     <a href="?page=approvals&section=pending"
                        class="btn <?php echo $approvalsSection === 'pending' ? 'btn-primary' : 'btn-outline-primary'; ?>">
-                        الموافقات المعلقة
+                        Ø§Ù„Ù…ÙˆØ§ÙÙ‚Ø§Øª Ø§Ù„Ù…Ø¹Ù„Ù‚Ø©
                         <span class="badge bg-light text-dark ms-1"><?php echo $pendingApprovalsCount; ?></span>
                     </a>
                     <a href="?page=approvals&section=warehouse_transfers"
                        class="btn <?php echo $approvalsSection === 'warehouse_transfers' ? 'btn-primary' : 'btn-outline-primary'; ?>">
-                        طلبات النقل بين المخازن
+                        Ø·Ù„Ø¨Ø§Øª Ø§Ù„Ù†Ù‚Ù„ Ø¨ÙŠÙ† Ø§Ù„Ù…Ø®Ø§Ø²Ù†
                     </a>
                 </div>
 
@@ -410,24 +410,24 @@ $pageTitle = isset($lang['manager_dashboard']) ? $lang['manager_dashboard'] : '�
 
                     <div class="card shadow-sm">
                         <div class="card-header bg-primary text-white d-flex justify-content-between align-items-center">
-                            <h5 class="mb-0">الموافقات المعلقة (<?php echo $pendingApprovalsCount; ?>)</h5>
+                            <h5 class="mb-0">Ø§Ù„Ù…ÙˆØ§ÙÙ‚Ø§Øª Ø§Ù„Ù…Ø¹Ù„Ù‚Ø© (<?php echo $pendingApprovalsCount; ?>)</h5>
                         </div>
                         <div class="card-body">
                             <div class="table-responsive dashboard-table-wrapper">
                                 <table class="table dashboard-table align-middle">
                                     <thead>
                                         <tr>
-                                            <th>النوع</th>
-                                            <th>الطلب من</th>
-                                            <th>التاريخ</th>
-                                            <th>التفاصيل</th>
-                                            <th>الإجراءات</th>
+                                            <th>Ø§Ù„Ù†ÙˆØ¹</th>
+                                            <th>Ø§Ù„Ø·Ù„Ø¨ Ù…Ù†</th>
+                                            <th>Ø§Ù„ØªØ§Ø±ÙŠØ®</th>
+                                            <th>Ø§Ù„ØªÙØ§ØµÙŠÙ„</th>
+                                            <th>Ø§Ù„Ø¥Ø¬Ø±Ø§Ø¡Ø§Øª</th>
                                         </tr>
                                     </thead>
                                     <tbody>
                                         <?php if (empty($approvals)): ?>
                                             <tr>
-                                                <td colspan="5" class="text-center text-muted">لا توجد موافقات معلقة</td>
+                                                <td colspan="5" class="text-center text-muted">Ù„Ø§ ØªÙˆØ¬Ø¯ Ù…ÙˆØ§ÙÙ‚Ø§Øª Ù…Ø¹Ù„Ù‚Ø©</td>
                                             </tr>
                                         <?php else: ?>
                                             <?php foreach ($approvals as $approval): ?>
@@ -438,7 +438,7 @@ $pageTitle = isset($lang['manager_dashboard']) ? $lang['manager_dashboard'] : '�
                                                     <td>
                                                         <?php if ($approval['type'] === 'warehouse_transfer'): ?>
                                                             <?php
-                                                            // جلب تفاصيل طلب النقل
+                                                            // Ø¬Ù„Ø¨ ØªÙØ§ØµÙŠÙ„ Ø·Ù„Ø¨ Ø§Ù„Ù†Ù‚Ù„
                                                             require_once __DIR__ . '/../includes/approval_system.php';
                                                             $entityColumn = getApprovalsEntityColumn();
                                                             $transferId = $approval[$entityColumn] ?? null;
@@ -454,7 +454,7 @@ $pageTitle = isset($lang['manager_dashboard']) ? $lang['manager_dashboard'] : '�
                                                                 if (!empty($transferItems)) {
                                                                     echo '<div class="small">';
                                                                     foreach ($transferItems as $item) {
-                                                                        $batchInfo = !empty($item['batch_number']) ? ' - تشغيلة ' . htmlspecialchars($item['batch_number']) : '';
+                                                                        $batchInfo = !empty($item['batch_number']) ? ' - ØªØ´ØºÙŠÙ„Ø© ' . htmlspecialchars($item['batch_number']) : '';
                                                                         echo '<span class="badge bg-info me-1 mb-1">';
                                                                         echo htmlspecialchars($item['product_name'] ?? '-');
                                                                         echo ' (' . number_format((float)$item['quantity'], 2) . ')';
@@ -463,7 +463,7 @@ $pageTitle = isset($lang['manager_dashboard']) ? $lang['manager_dashboard'] : '�
                                                                     }
                                                                     echo '</div>';
                                                                 } else {
-                                                                    echo '<span class="text-muted small">لا توجد منتجات</span>';
+                                                                    echo '<span class="text-muted small">Ù„Ø§ ØªÙˆØ¬Ø¯ Ù…Ù†ØªØ¬Ø§Øª</span>';
                                                                 }
                                                             }
                                                             ?>
@@ -472,10 +472,10 @@ $pageTitle = isset($lang['manager_dashboard']) ? $lang['manager_dashboard'] : '�
                                                     <td>
                                                         <div class="btn-group btn-group-sm" role="group">
                                                             <button class="btn btn-success" onclick="approveRequest(<?php echo $approval['id']; ?>, event)">
-                                                                <i class="bi bi-check"></i> موافقة
+                                                                <i class="bi bi-check"></i> Ù…ÙˆØ§ÙÙ‚Ø©
                                                             </button>
                                                             <button class="btn btn-danger" onclick="rejectRequest(<?php echo $approval['id']; ?>, event)">
-                                                                <i class="bi bi-x"></i> رفض
+                                                                <i class="bi bi-x"></i> Ø±ÙØ¶
                                                             </button>
                                                         </div>
                                                     </td>
@@ -539,7 +539,7 @@ $pageTitle = isset($lang['manager_dashboard']) ? $lang['manager_dashboard'] : '�
                 <?php endif; ?>
 
             <?php elseif ($page === 'audit'): ?>
-                <h2><i class="bi bi-journal-text me-2"></i><?php echo isset($lang['audit_logs']) ? $lang['audit_logs'] : 'سجل التدقيق'; ?></h2>
+                <h2><i class="bi bi-journal-text me-2"></i><?php echo isset($lang['audit_logs']) ? $lang['audit_logs'] : 'Ø³Ø¬Ù„ Ø§Ù„ØªØ¯Ù‚ÙŠÙ‚'; ?></h2>
                 
                 <?php
                 // Pagination
@@ -553,28 +553,28 @@ $pageTitle = isset($lang['manager_dashboard']) ? $lang['manager_dashboard'] : '�
                 
                 <div class="card shadow-sm">
                     <div class="card-header bg-primary text-white d-flex justify-content-between align-items-center">
-                        <h5 class="mb-0">سجل التدقيق (<?php echo $totalLogs; ?> سجل)</h5>
+                        <h5 class="mb-0">Ø³Ø¬Ù„ Ø§Ù„ØªØ¯Ù‚ÙŠÙ‚ (<?php echo $totalLogs; ?> Ø³Ø¬Ù„)</h5>
                     </div>
                     <div class="card-body">
                         <div class="table-responsive dashboard-table-wrapper">
                             <table class="table dashboard-table align-middle">
                                 <thead>
                                     <tr>
-                                        <th>المستخدم</th>
-                                        <th>الإجراء</th>
-                                        <th>النوع</th>
-                                        <th>التاريخ</th>
+                                        <th>Ø§Ù„Ù…Ø³ØªØ®Ø¯Ù…</th>
+                                        <th>Ø§Ù„Ø¥Ø¬Ø±Ø§Ø¡</th>
+                                        <th>Ø§Ù„Ù†ÙˆØ¹</th>
+                                        <th>Ø§Ù„ØªØ§Ø±ÙŠØ®</th>
                                     </tr>
                                 </thead>
                                 <tbody>
                                     <?php if (empty($logs)): ?>
                                         <tr>
-                                            <td colspan="4" class="text-center text-muted">لا توجد سجلات</td>
+                                            <td colspan="4" class="text-center text-muted">Ù„Ø§ ØªÙˆØ¬Ø¯ Ø³Ø¬Ù„Ø§Øª</td>
                                         </tr>
                                     <?php else: ?>
                                         <?php foreach ($logs as $log): ?>
                                             <tr>
-                                                <td><?php echo htmlspecialchars($log['username'] ?? 'غير معروف'); ?></td>
+                                                <td><?php echo htmlspecialchars($log['username'] ?? 'ØºÙŠØ± Ù…Ø¹Ø±ÙˆÙ'); ?></td>
                                                 <td><?php echo htmlspecialchars($log['action']); ?></td>
                                                 <td><?php echo htmlspecialchars($log['entity_type']); ?></td>
                                                 <td><?php echo formatDateTime($log['created_at']); ?></td>
@@ -632,17 +632,17 @@ $pageTitle = isset($lang['manager_dashboard']) ? $lang['manager_dashboard'] : '�
                 
             <?php elseif ($page === 'reports'): ?>
                 <div class="page-header mb-4">
-                    <h2 class="mb-1"><i class="bi bi-file-earmark-text me-2"></i><?php echo isset($lang['reports']) ? $lang['reports'] : 'التقارير'; ?></h2>
-                    <p class="text-muted mb-0">اختر قسم التقارير المطلوب باستخدام الأزرار العلوية.</p>
+                    <h2 class="mb-1"><i class="bi bi-file-earmark-text me-2"></i><?php echo isset($lang['reports']) ? $lang['reports'] : 'Ø§Ù„ØªÙ‚Ø§Ø±ÙŠØ±'; ?></h2>
+                    <p class="text-muted mb-0">Ø§Ø®ØªØ± Ù‚Ø³Ù… Ø§Ù„ØªÙ‚Ø§Ø±ÙŠØ± Ø§Ù„Ù…Ø·Ù„ÙˆØ¨ Ø¨Ø§Ø³ØªØ®Ø¯Ø§Ù… Ø§Ù„Ø£Ø²Ø±Ø§Ø± Ø§Ù„Ø¹Ù„ÙˆÙŠØ©.</p>
                 </div>
 
                 <div class="card shadow-sm mb-4">
                     <div class="card-body d-flex flex-wrap gap-2 align-items-center justify-content-start reports-tabs">
                         <button type="button" class="btn btn-primary reports-tab active" data-target="reportsProductionSection">
-                            <i class="bi bi-gear-wide-connected me-2"></i>تقارير الإنتاج
+                            <i class="bi bi-gear-wide-connected me-2"></i>ØªÙ‚Ø§Ø±ÙŠØ± Ø§Ù„Ø¥Ù†ØªØ§Ø¬
                         </button>
                         <button type="button" class="btn btn-outline-primary reports-tab" data-target="reportsFinancialSection">
-                            <i class="bi bi-cash-stack me-2"></i>تقارير مالية
+                            <i class="bi bi-cash-stack me-2"></i>ØªÙ‚Ø§Ø±ÙŠØ± Ù…Ø§Ù„ÙŠØ©
                         </button>
                     </div>
                 </div>
@@ -657,8 +657,8 @@ $pageTitle = isset($lang['manager_dashboard']) ? $lang['manager_dashboard'] : '�
                         <div class="card shadow-sm">
                             <div class="card-body text-center py-5">
                                 <i class="bi bi-exclamation-triangle text-warning display-5 mb-3"></i>
-                                <h4 class="mb-2">تقارير الإنتاج غير متاحة حالياً</h4>
-                                <p class="text-muted mb-0">يرجى التحقق من الملفات أو التواصل مع فريق التطوير.</p>
+                                <h4 class="mb-2">ØªÙ‚Ø§Ø±ÙŠØ± Ø§Ù„Ø¥Ù†ØªØ§Ø¬ ØºÙŠØ± Ù…ØªØ§Ø­Ø© Ø­Ø§Ù„ÙŠØ§Ù‹</h4>
+                                <p class="text-muted mb-0">ÙŠØ±Ø¬Ù‰ Ø§Ù„ØªØ­Ù‚Ù‚ Ù…Ù† Ø§Ù„Ù…Ù„ÙØ§Øª Ø£Ùˆ Ø§Ù„ØªÙˆØ§ØµÙ„ Ù…Ø¹ ÙØ±ÙŠÙ‚ Ø§Ù„ØªØ·ÙˆÙŠØ±.</p>
                             </div>
                         </div>
                         <?php
@@ -670,8 +670,8 @@ $pageTitle = isset($lang['manager_dashboard']) ? $lang['manager_dashboard'] : '�
                     <div class="card shadow-sm">
                         <div class="card-body text-center py-5">
                             <i class="bi bi-tools text-muted display-5 mb-3"></i>
-                            <h4 class="mb-2">تقارير مالية</h4>
-                            <p class="text-muted mb-0">هذا القسم قيد التطوير وسيتم توفيره قريباً.</p>
+                            <h4 class="mb-2">ØªÙ‚Ø§Ø±ÙŠØ± Ù…Ø§Ù„ÙŠØ©</h4>
+                            <p class="text-muted mb-0">Ù‡Ø°Ø§ Ø§Ù„Ù‚Ø³Ù… Ù‚ÙŠØ¯ Ø§Ù„ØªØ·ÙˆÙŠØ± ÙˆØ³ÙŠØªÙ… ØªÙˆÙÙŠØ±Ù‡ Ù‚Ø±ÙŠØ¨Ø§Ù‹.</p>
                         </div>
                     </div>
                 </section>
@@ -717,10 +717,10 @@ $pageTitle = isset($lang['manager_dashboard']) ? $lang['manager_dashboard'] : '�
                     });
                 </script>
             <?php elseif ($page === 'performance'): ?>
-                <h2><i class="bi bi-graph-up-arrow me-2"></i><?php echo isset($lang['performance']) ? $lang['performance'] : 'الأداء'; ?></h2>
+                <h2><i class="bi bi-graph-up-arrow me-2"></i><?php echo isset($lang['performance']) ? $lang['performance'] : 'Ø§Ù„Ø£Ø¯Ø§Ø¡'; ?></h2>
                 <div class="card shadow-sm">
                     <div class="card-body">
-                        <p>صفحة الأداء - سيتم إضافتها</p>
+                        <p>ØµÙØ­Ø© Ø§Ù„Ø£Ø¯Ø§Ø¡ - Ø³ÙŠØªÙ… Ø¥Ø¶Ø§ÙØªÙ‡Ø§</p>
                     </div>
                 </div>
                 
@@ -742,18 +742,18 @@ $pageTitle = isset($lang['manager_dashboard']) ? $lang['manager_dashboard'] : '�
                 if (file_exists($modulePath)) {
                     include $modulePath;
                 } else {
-                    echo '<div class="alert alert-warning">وحدة الدردشة غير متاحة حالياً</div>';
+                    echo '<div class="alert alert-warning">ÙˆØ­Ø¯Ø© Ø§Ù„Ø¯Ø±Ø¯Ø´Ø© ØºÙŠØ± Ù…ØªØ§Ø­Ø© Ø­Ø§Ù„ÙŠØ§Ù‹</div>';
                 }
                 ?>
                 
             <?php elseif ($page === 'suppliers'): ?>
-                <!-- صفحة إدارة الموردين -->
+                <!-- ØµÙØ­Ø© Ø¥Ø¯Ø§Ø±Ø© Ø§Ù„Ù…ÙˆØ±Ø¯ÙŠÙ† -->
                 <?php 
                 $modulePath = __DIR__ . '/../modules/accountant/suppliers.php';
                 if (file_exists($modulePath)) {
                     include $modulePath;
                 } else {
-                    echo '<div class="alert alert-warning">صفحة الموردين غير متاحة حالياً</div>';
+                    echo '<div class="alert alert-warning">ØµÙØ­Ø© Ø§Ù„Ù…ÙˆØ±Ø¯ÙŠÙ† ØºÙŠØ± Ù…ØªØ§Ø­Ø© Ø­Ø§Ù„ÙŠØ§Ù‹</div>';
                 }
                 ?>
                 
@@ -765,10 +765,10 @@ $pageTitle = isset($lang['manager_dashboard']) ? $lang['manager_dashboard'] : '�
                         include $modulePath;
                     } catch (Throwable $e) {
                         error_log('Manager customers module error: ' . $e->getMessage());
-                        echo '<div class="alert alert-danger">حدث خطأ أثناء تحميل صفحة العملاء: ' . htmlspecialchars($e->getMessage()) . '</div>';
+                        echo '<div class="alert alert-danger">Ø­Ø¯Ø« Ø®Ø·Ø£ Ø£Ø«Ù†Ø§Ø¡ ØªØ­Ù…ÙŠÙ„ ØµÙØ­Ø© Ø§Ù„Ø¹Ù…Ù„Ø§Ø¡: ' . htmlspecialchars($e->getMessage()) . '</div>';
                     }
                 } else {
-                    echo '<div class="alert alert-warning">صفحة العملاء غير متاحة حالياً</div>';
+                    echo '<div class="alert alert-warning">ØµÙØ­Ø© Ø§Ù„Ø¹Ù…Ù„Ø§Ø¡ ØºÙŠØ± Ù…ØªØ§Ø­Ø© Ø­Ø§Ù„ÙŠØ§Ù‹</div>';
                 }
                 ?>
                 
@@ -780,10 +780,10 @@ $pageTitle = isset($lang['manager_dashboard']) ? $lang['manager_dashboard'] : '�
                         include $modulePath;
                     } catch (Throwable $e) {
                         error_log('Manager orders module error: ' . $e->getMessage());
-                        echo '<div class="alert alert-danger">حدث خطأ أثناء تحميل صفحة طلبات العملاء: ' . htmlspecialchars($e->getMessage()) . '</div>';
+                        echo '<div class="alert alert-danger">Ø­Ø¯Ø« Ø®Ø·Ø£ Ø£Ø«Ù†Ø§Ø¡ ØªØ­Ù…ÙŠÙ„ ØµÙØ­Ø© Ø·Ù„Ø¨Ø§Øª Ø§Ù„Ø¹Ù…Ù„Ø§Ø¡: ' . htmlspecialchars($e->getMessage()) . '</div>';
                     }
                 } else {
-                    echo '<div class="alert alert-warning">صفحة طلبات العملاء غير متاحة حالياً</div>';
+                    echo '<div class="alert alert-warning">ØµÙØ­Ø© Ø·Ù„Ø¨Ø§Øª Ø§Ù„Ø¹Ù…Ù„Ø§Ø¡ ØºÙŠØ± Ù…ØªØ§Ø­Ø© Ø­Ø§Ù„ÙŠØ§Ù‹</div>';
                 }
                 ?>
                 
@@ -793,12 +793,12 @@ $pageTitle = isset($lang['manager_dashboard']) ? $lang['manager_dashboard'] : '�
                 if (file_exists($modulePath)) {
                     include $modulePath;
                 } else {
-                    echo '<div class="alert alert-warning">صفحة الرواتب غير متاحة حالياً</div>';
+                    echo '<div class="alert alert-warning">ØµÙØ­Ø© Ø§Ù„Ø±ÙˆØ§ØªØ¨ ØºÙŠØ± Ù…ØªØ§Ø­Ø© Ø­Ø§Ù„ÙŠØ§Ù‹</div>';
                 }
                 ?>
                 
             <?php elseif ($page === 'vehicles'): ?>
-                <!-- صفحة إدارة السيارات -->
+                <!-- ØµÙØ­Ø© Ø¥Ø¯Ø§Ø±Ø© Ø§Ù„Ø³ÙŠØ§Ø±Ø§Øª -->
                 <?php 
                 $modulePath = __DIR__ . '/../modules/manager/vehicles.php';
                 if (file_exists($modulePath)) {
@@ -807,7 +807,7 @@ $pageTitle = isset($lang['manager_dashboard']) ? $lang['manager_dashboard'] : '�
                 ?>
                 
             <?php elseif ($page === 'warehouse_transfers'): ?>
-                <!-- صفحة نقل المخازن -->
+                <!-- ØµÙØ­Ø© Ù†Ù‚Ù„ Ø§Ù„Ù…Ø®Ø§Ø²Ù† -->
                 <?php 
                 $modulePath = __DIR__ . '/../modules/manager/warehouse_transfers.php';
                 if (file_exists($modulePath)) {
@@ -816,7 +816,7 @@ $pageTitle = isset($lang['manager_dashboard']) ? $lang['manager_dashboard'] : '�
                 ?>
                 
             <?php elseif ($page === 'pos'): ?>
-                <!-- صفحة نقطة البيع المحلية وشركات الشحن -->
+                <!-- ØµÙØ­Ø© Ù†Ù‚Ø·Ø© Ø§Ù„Ø¨ÙŠØ¹ Ø§Ù„Ù…Ø­Ù„ÙŠØ© ÙˆØ´Ø±ÙƒØ§Øª Ø§Ù„Ø´Ø­Ù† -->
                 <?php 
                 $modulePath = __DIR__ . '/../modules/manager/pos.php';
                 if (file_exists($modulePath)) {
@@ -825,7 +825,7 @@ $pageTitle = isset($lang['manager_dashboard']) ? $lang['manager_dashboard'] : '�
                 ?>
                 
             <?php elseif ($page === 'returns'): ?>
-                <!-- صفحة المرتجعات والاستبدال -->
+                <!-- ØµÙØ­Ø© Ø§Ù„Ù…Ø±ØªØ¬Ø¹Ø§Øª ÙˆØ§Ù„Ø§Ø³ØªØ¨Ø¯Ø§Ù„ -->
                 <?php 
                 $modulePath = __DIR__ . '/../modules/sales/returns.php';
                 if (file_exists($modulePath)) {
@@ -840,35 +840,35 @@ $pageTitle = isset($lang['manager_dashboard']) ? $lang['manager_dashboard'] : '�
                 ?>
                 
             <?php elseif ($page === 'packaging_warehouse'): ?>
-                <!-- صفحة مخزن أدوات التعبئة -->
+                <!-- ØµÙØ­Ø© Ù…Ø®Ø²Ù† Ø£Ø¯ÙˆØ§Øª Ø§Ù„ØªØ¹Ø¨Ø¦Ø© -->
                 <?php 
                 $modulePath = __DIR__ . '/../modules/production/packaging_warehouse.php';
                 if (file_exists($modulePath)) {
                     include $modulePath;
                 } else {
-                    echo '<div class="alert alert-warning">صفحة مخزن أدوات التعبئة غير متاحة حالياً</div>';
+                    echo '<div class="alert alert-warning">ØµÙØ­Ø© Ù…Ø®Ø²Ù† Ø£Ø¯ÙˆØ§Øª Ø§Ù„ØªØ¹Ø¨Ø¦Ø© ØºÙŠØ± Ù…ØªØ§Ø­Ø© Ø­Ø§Ù„ÙŠØ§Ù‹</div>';
                 }
                 ?>
                 
             <?php elseif ($page === 'product_templates'): ?>
-                <!-- صفحة قوالب المنتجات -->
+                <!-- ØµÙØ­Ø© Ù‚ÙˆØ§Ù„Ø¨ Ø§Ù„Ù…Ù†ØªØ¬Ø§Øª -->
                 <?php 
                 $modulePath = __DIR__ . '/../modules/production/product_templates.php';
                 if (file_exists($modulePath)) {
                     include $modulePath;
                 } else {
-                    echo '<div class="alert alert-warning">صفحة قوالب المنتجات غير متاحة حالياً</div>';
+                    echo '<div class="alert alert-warning">ØµÙØ­Ø© Ù‚ÙˆØ§Ù„Ø¨ Ø§Ù„Ù…Ù†ØªØ¬Ø§Øª ØºÙŠØ± Ù…ØªØ§Ø­Ø© Ø­Ø§Ù„ÙŠØ§Ù‹</div>';
                 }
                 ?>
                 
             <?php elseif ($page === 'company_products'): ?>
-                <!-- صفحة منتجات الشركة -->
+                <!-- ØµÙØ­Ø© Ù…Ù†ØªØ¬Ø§Øª Ø§Ù„Ø´Ø±ÙƒØ© -->
                 <?php 
                 $modulePath = __DIR__ . '/../modules/manager/company_products.php';
                 if (file_exists($modulePath)) {
                     include $modulePath;
                 } else {
-                    echo '<div class="alert alert-warning">صفحة منتجات الشركة غير متاحة حالياً</div>';
+                    echo '<div class="alert alert-warning">ØµÙØ­Ø© Ù…Ù†ØªØ¬Ø§Øª Ø§Ù„Ø´Ø±ÙƒØ© ØºÙŠØ± Ù…ØªØ§Ø­Ø© Ø­Ø§Ù„ÙŠØ§Ù‹</div>';
                 }
                 ?>
                 
@@ -878,63 +878,63 @@ $pageTitle = isset($lang['manager_dashboard']) ? $lang['manager_dashboard'] : '�
                 if (file_exists($modulePath)) {
                     include $modulePath;
                 } else {
-                    echo '<div class="alert alert-warning">صفحة مواصفات المنتجات غير متاحة حالياً</div>';
+                    echo '<div class="alert alert-warning">ØµÙØ­Ø© Ù…ÙˆØ§ØµÙØ§Øª Ø§Ù„Ù…Ù†ØªØ¬Ø§Øª ØºÙŠØ± Ù…ØªØ§Ø­Ø© Ø­Ø§Ù„ÙŠØ§Ù‹</div>';
                 }
                 ?>
                 
             <?php elseif ($page === 'import_packaging'): ?>
-                <!-- صفحة استيراد أدوات التعبئة -->
+                <!-- ØµÙØ­Ø© Ø§Ø³ØªÙŠØ±Ø§Ø¯ Ø£Ø¯ÙˆØ§Øª Ø§Ù„ØªØ¹Ø¨Ø¦Ø© -->
                 <?php 
                 $modulePath = __DIR__ . '/../modules/manager/import_packaging.php';
                 if (file_exists($modulePath)) {
                     include $modulePath;
                 } else {
-                    echo '<div class="alert alert-warning">صفحة استيراد أدوات التعبئة غير متاحة حالياً</div>';
+                    echo '<div class="alert alert-warning">ØµÙØ­Ø© Ø§Ø³ØªÙŠØ±Ø§Ø¯ Ø£Ø¯ÙˆØ§Øª Ø§Ù„ØªØ¹Ø¨Ø¦Ø© ØºÙŠØ± Ù…ØªØ§Ø­Ø© Ø­Ø§Ù„ÙŠØ§Ù‹</div>';
                 }
                 ?>
                 
             <?php elseif ($page === 'raw_materials_warehouse'): ?>
-                <!-- صفحة مخزن الخامات - المدير (عرض فقط) -->
+                <!-- ØµÙØ­Ø© Ù…Ø®Ø²Ù† Ø§Ù„Ø®Ø§Ù…Ø§Øª - Ø§Ù„Ù…Ø¯ÙŠØ± (Ø¹Ø±Ø¶ ÙÙ‚Ø·) -->
                 <?php 
                 $modulePath = __DIR__ . '/../modules/manager/raw_materials_warehouse.php';
                 if (file_exists($modulePath)) {
                     include $modulePath;
                 } else {
-                    echo '<div class="alert alert-warning">صفحة مخزن الخامات غير متاحة حالياً</div>';
+                    echo '<div class="alert alert-warning">ØµÙØ­Ø© Ù…Ø®Ø²Ù† Ø§Ù„Ø®Ø§Ù…Ø§Øª ØºÙŠØ± Ù…ØªØ§Ø­Ø© Ø­Ø§Ù„ÙŠØ§Ù‹</div>';
                 }
                 ?>
                 
             <?php elseif ($page === 'honey_warehouse'): ?>
-                <!-- إعادة توجيه من الرابط القديم -->
+                <!-- Ø¥Ø¹Ø§Ø¯Ø© ØªÙˆØ¬ÙŠÙ‡ Ù…Ù† Ø§Ù„Ø±Ø§Ø¨Ø· Ø§Ù„Ù‚Ø¯ÙŠÙ… -->
                 <?php 
                 header('Location: manager.php?page=raw_materials_warehouse&section=honey');
                 exit;
                 ?>
                 
             <?php elseif ($page === 'security'): ?>
-                <!-- صفحة الأمان والصلاحيات -->
+                <!-- ØµÙØ­Ø© Ø§Ù„Ø£Ù…Ø§Ù† ÙˆØ§Ù„ØµÙ„Ø§Ø­ÙŠØ§Øª -->
                 <?php 
                 $modulePath = __DIR__ . '/../modules/manager/security.php';
                 if (file_exists($modulePath)) {
                     include $modulePath;
                 } else {
-                    echo '<div class="alert alert-warning">صفحة الأمان غير متاحة حالياً</div>';
+                    echo '<div class="alert alert-warning">ØµÙØ­Ø© Ø§Ù„Ø£Ù…Ø§Ù† ØºÙŠØ± Ù…ØªØ§Ø­Ø© Ø­Ø§Ù„ÙŠØ§Ù‹</div>';
                 }
                 ?>
                 
             <?php elseif ($page === 'attendance_management'): ?>
-                <!-- صفحة متابعة الحضور والانصراف -->
+                <!-- ØµÙØ­Ø© Ù…ØªØ§Ø¨Ø¹Ø© Ø§Ù„Ø­Ø¶ÙˆØ± ÙˆØ§Ù„Ø§Ù†ØµØ±Ø§Ù -->
                 <?php 
                 $modulePath = __DIR__ . '/../modules/accountant/attendance_management.php';
                 if (file_exists($modulePath)) {
                     include $modulePath;
                 } else {
-                    echo '<div class="alert alert-warning">صفحة متابعة الحضور والانصراف غير متاحة حالياً</div>';
+                    echo '<div class="alert alert-warning">ØµÙØ­Ø© Ù…ØªØ§Ø¨Ø¹Ø© Ø§Ù„Ø­Ø¶ÙˆØ± ÙˆØ§Ù„Ø§Ù†ØµØ±Ø§Ù ØºÙŠØ± Ù…ØªØ§Ø­Ø© Ø­Ø§Ù„ÙŠØ§Ù‹</div>';
                 }
                 ?>
                 
             <?php elseif ($page === 'batch_reader'): ?>
-                <!-- صفحة قارئ أرقام التشغيلات -->
+                <!-- ØµÙØ­Ø© Ù‚Ø§Ø±Ø¦ Ø£Ø±Ù‚Ø§Ù… Ø§Ù„ØªØ´ØºÙŠÙ„Ø§Øª -->
                 <div class="container-fluid p-0" style="height: 100vh; overflow: hidden;">
                     <iframe src="<?php echo getRelativeUrl('reader/index.php'); ?>" 
                             style="width: 100%; height: 100%; border: none; display: block;"></iframe>
@@ -948,11 +948,11 @@ $pageTitle = isset($lang['manager_dashboard']) ? $lang['manager_dashboard'] : '�
 function approveRequest(id) {
     if (!id) {
         console.error('approveRequest: Missing ID');
-        alert('خطأ: معرّف الطلب غير موجود');
+        alert('Ø®Ø·Ø£: Ù…Ø¹Ø±Ù‘Ù Ø§Ù„Ø·Ù„Ø¨ ØºÙŠØ± Ù…ÙˆØ¬ÙˆØ¯');
         return;
     }
     
-    if (!confirm('هل أنت متأكد من الموافقة على هذا الطلب؟')) {
+    if (!confirm('Ù‡Ù„ Ø£Ù†Øª Ù…ØªØ£ÙƒØ¯ Ù…Ù† Ø§Ù„Ù…ÙˆØ§ÙÙ‚Ø© Ø¹Ù„Ù‰ Ù‡Ø°Ø§ Ø§Ù„Ø·Ù„Ø¨ØŸ')) {
         return;
     }
     
@@ -961,7 +961,7 @@ function approveRequest(id) {
     
     if (btn) {
         btn.disabled = true;
-        btn.innerHTML = '<span class="spinner-border spinner-border-sm me-2"></span>جاري المعالجة...';
+        btn.innerHTML = '<span class="spinner-border spinner-border-sm me-2"></span>Ø¬Ø§Ø±ÙŠ Ø§Ù„Ù…Ø¹Ø§Ù„Ø¬Ø©...';
     }
     
     fetch('api/approve.php', {
@@ -982,9 +982,9 @@ function approveRequest(id) {
     .then(data => {
         if (data.success) {
             if (btn) {
-                btn.innerHTML = '<i class="bi bi-check-circle me-2"></i>تمت الموافقة';
+                btn.innerHTML = '<i class="bi bi-check-circle me-2"></i>ØªÙ…Øª Ø§Ù„Ù…ÙˆØ§ÙÙ‚Ø©';
             }
-            // إرسال حدث لتحديث العداد
+            // Ø¥Ø±Ø³Ø§Ù„ Ø­Ø¯Ø« Ù„ØªØ­Ø¯ÙŠØ« Ø§Ù„Ø¹Ø¯Ø§Ø¯
             document.dispatchEvent(new CustomEvent('approvalUpdated'));
             setTimeout(() => {
                 location.reload();
@@ -994,7 +994,7 @@ function approveRequest(id) {
                 btn.disabled = false;
                 btn.innerHTML = originalHTML;
             }
-            alert('خطأ: ' + (data.error || data.message || 'حدث خطأ غير معروف'));
+            alert('Ø®Ø·Ø£: ' + (data.error || data.message || 'Ø­Ø¯Ø« Ø®Ø·Ø£ ØºÙŠØ± Ù…Ø¹Ø±ÙˆÙ'));
         }
     })
     .catch(error => {
@@ -1003,18 +1003,18 @@ function approveRequest(id) {
             btn.disabled = false;
             btn.innerHTML = originalHTML;
         }
-        alert('خطأ في الاتصال بالخادم. يرجى المحاولة مرة أخرى.');
+        alert('Ø®Ø·Ø£ ÙÙŠ Ø§Ù„Ø§ØªØµØ§Ù„ Ø¨Ø§Ù„Ø®Ø§Ø¯Ù…. ÙŠØ±Ø¬Ù‰ Ø§Ù„Ù…Ø­Ø§ÙˆÙ„Ø© Ù…Ø±Ø© Ø£Ø®Ø±Ù‰.');
     });
 }
 
 function rejectRequest(id, evt) {
     if (!id) {
         console.error('rejectRequest: Missing ID');
-        alert('خطأ: معرّف الطلب غير موجود');
+        alert('Ø®Ø·Ø£: Ù…Ø¹Ø±Ù‘Ù Ø§Ù„Ø·Ù„Ø¨ ØºÙŠØ± Ù…ÙˆØ¬ÙˆØ¯');
         return;
     }
     
-    const reason = prompt('أدخل سبب الرفض:');
+    const reason = prompt('Ø£Ø¯Ø®Ù„ Ø³Ø¨Ø¨ Ø§Ù„Ø±ÙØ¶:');
     if (!reason || reason.trim() === '') {
         return;
     }
@@ -1022,7 +1022,7 @@ function rejectRequest(id, evt) {
     let btn = null;
     let originalHTML = '';
     
-    // محاولة الحصول على الزر من event parameter أو window.event
+    // Ù…Ø­Ø§ÙˆÙ„Ø© Ø§Ù„Ø­ØµÙˆÙ„ Ø¹Ù„Ù‰ Ø§Ù„Ø²Ø± Ù…Ù† event parameter Ø£Ùˆ window.event
     const e = evt || window.event || event;
     if (e && e.target) {
         btn = e.target.closest('button');
@@ -1031,7 +1031,7 @@ function rejectRequest(id, evt) {
     
     if (btn) {
         btn.disabled = true;
-        btn.innerHTML = '<span class="spinner-border spinner-border-sm me-2"></span>جاري المعالجة...';
+        btn.innerHTML = '<span class="spinner-border spinner-border-sm me-2"></span>Ø¬Ø§Ø±ÙŠ Ø§Ù„Ù…Ø¹Ø§Ù„Ø¬Ø©...';
     }
     
     fetch('api/reject.php', {
@@ -1053,9 +1053,9 @@ function rejectRequest(id, evt) {
     .then(data => {
         if (data.success) {
             if (btn) {
-                btn.innerHTML = '<i class="bi bi-x-circle me-2"></i>تم الرفض';
+                btn.innerHTML = '<i class="bi bi-x-circle me-2"></i>ØªÙ… Ø§Ù„Ø±ÙØ¶';
             }
-            // إرسال حدث لتحديث العداد
+            // Ø¥Ø±Ø³Ø§Ù„ Ø­Ø¯Ø« Ù„ØªØ­Ø¯ÙŠØ« Ø§Ù„Ø¹Ø¯Ø§Ø¯
             document.dispatchEvent(new CustomEvent('approvalUpdated'));
             setTimeout(() => {
                 location.reload();
@@ -1065,7 +1065,7 @@ function rejectRequest(id, evt) {
                 btn.disabled = false;
                 btn.innerHTML = originalHTML;
             }
-            alert('خطأ: ' + (data.error || data.message || 'حدث خطأ غير معروف'));
+            alert('Ø®Ø·Ø£: ' + (data.error || data.message || 'Ø­Ø¯Ø« Ø®Ø·Ø£ ØºÙŠØ± Ù…Ø¹Ø±ÙˆÙ'));
         }
     }) 
     .catch(error => {
@@ -1074,12 +1074,12 @@ function rejectRequest(id, evt) {
             btn.disabled = false;
             btn.innerHTML = originalHTML;
         }
-        alert('خطأ في الاتصال بالخادم. يرجى المحاولة مرة أخرى.');
+        alert('Ø®Ø·Ø£ ÙÙŠ Ø§Ù„Ø§ØªØµØ§Ù„ Ø¨Ø§Ù„Ø®Ø§Ø¯Ù…. ÙŠØ±Ø¬Ù‰ Ø§Ù„Ù…Ø­Ø§ÙˆÙ„Ø© Ù…Ø±Ø© Ø£Ø®Ø±Ù‰.');
     });
 }
 
 /**
- * تحديث عداد الموافقات المعلقة
+ * ØªØ­Ø¯ÙŠØ« Ø¹Ø¯Ø§Ø¯ Ø§Ù„Ù…ÙˆØ§ÙÙ‚Ø§Øª Ø§Ù„Ù…Ø¹Ù„Ù‚Ø©
  */
 async function updateApprovalBadge() {
     try {
@@ -1113,17 +1113,18 @@ async function updateApprovalBadge() {
     }
 }
 
-// تحديث العداد عند تحميل الصفحة
+// ØªØ­Ø¯ÙŠØ« Ø§Ù„Ø¹Ø¯Ø§Ø¯ Ø¹Ù†Ø¯ ØªØ­Ù…ÙŠÙ„ Ø§Ù„ØµÙØ­Ø©
 document.addEventListener('DOMContentLoaded', function() {
     updateApprovalBadge();
     
-    // تحديث العداد كل 30 ثانية
+    // ØªØ­Ø¯ÙŠØ« Ø§Ù„Ø¹Ø¯Ø§Ø¯ ÙƒÙ„ 30 Ø«Ø§Ù†ÙŠØ©
     setInterval(updateApprovalBadge, 30000);
     
-    // تحديث العداد بعد الموافقة أو الرفض
+    // ØªØ­Ø¯ÙŠØ« Ø§Ù„Ø¹Ø¯Ø§Ø¯ Ø¨Ø¹Ø¯ Ø§Ù„Ù…ÙˆØ§ÙÙ‚Ø© Ø£Ùˆ Ø§Ù„Ø±ÙØ¶
     document.addEventListener('approvalUpdated', function() {
         setTimeout(updateApprovalBadge, 1000);
     });
 });
 </script>
+
 

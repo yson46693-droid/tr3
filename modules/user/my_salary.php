@@ -517,7 +517,8 @@ if ($salaryData['exists']) {
 $monthStats = [
     'total_hours' => 0,
     'total_salary' => 0,
-    'collections_bonus' => 0
+    'collections_bonus' => 0,
+    'collections_amount' => 0
 ];
 
 if ($currentSalary) {
@@ -529,7 +530,10 @@ if ($currentSalary) {
     $totalSalaryStr = preg_replace('/\s+/', '', trim($totalSalaryStr));
     $totalSalaryStr = preg_replace('/[^0-9.]/', '', $totalSalaryStr);
     $monthStats['total_salary'] = cleanFinancialValue($totalSalaryStr ?: 0);
-    $monthStats['collections_bonus'] = cleanFinancialValue($currentSalary['collections_bonus'] ?? 0);
+    $collectionsBonusValue = cleanFinancialValue($currentSalary['collections_bonus'] ?? 0);
+    $monthStats['collections_bonus'] = $collectionsBonusValue;
+    $collectionsBaseAmount = $currentSalary['collections_amount'] ?? ($collectionsBonusValue > 0 ? $collectionsBonusValue / 0.02 : 0);
+    $monthStats['collections_amount'] = cleanFinancialValue($collectionsBaseAmount ?? 0);
     $maxAdvance = cleanFinancialValue($monthStats['total_salary'] * 0.5);
 } else {
     // إذا لم يكن هناك راتب محفوظ، احسب الساعات مباشرة من attendance_records
@@ -537,6 +541,7 @@ if ($currentSalary) {
     $monthStats['total_hours'] = calculateMonthlyHours($currentUser['id'], $selectedMonth, $selectedYear);
     $monthStats['total_salary'] = 0;
     $monthStats['collections_bonus'] = 0;
+    $monthStats['collections_amount'] = 0;
     $maxAdvance = 0;
 }
 
@@ -588,6 +593,53 @@ $lang = isset($translations) ? $translations : [];
     </div>
 <?php endif; ?>
 
+<div class="row g-3 mb-4">
+    <div class="col-12 col-md-4">
+        <div class="card shadow-sm border-0 stat-card h-100">
+            <div class="card-body">
+                <div class="stat-card-icon primary">
+                    <i class="bi bi-clock-history"></i>
+                </div>
+                <div class="stat-card-title">إجمالي الساعات</div>
+                <div class="h4 fw-bold mb-0"><?php echo number_format($monthStats['total_hours'], 2); ?></div>
+                <div class="stat-card-description text-muted">ساعات العمل المسجلة</div>
+            </div>
+        </div>
+    </div>
+    <div class="col-12 col-md-4">
+        <div class="card shadow-sm border-0 stat-card h-100">
+            <div class="card-body">
+                <div class="stat-card-icon success">
+                    <i class="bi bi-cash-stack"></i>
+                </div>
+                <div class="stat-card-title">الراتب الحالي</div>
+                <div class="h4 fw-bold mb-0"><?php echo formatCurrency($monthStats['total_salary']); ?></div>
+                <div class="stat-card-description text-muted">قبل خصم السلفات</div>
+            </div>
+        </div>
+    </div>
+    <?php if ($currentUser['role'] === 'sales'): ?>
+    <div class="col-12 col-md-4">
+        <div class="card shadow-sm border-0 stat-card h-100">
+            <div class="card-body">
+                <div class="stat-card-icon purple">
+                    <i class="bi bi-percent"></i>
+                </div>
+                <div class="stat-card-title">مكافأة التحصيلات (2%)</div>
+                <div class="h4 fw-bold mb-0"><?php echo formatCurrency($monthStats['collections_bonus']); ?></div>
+                <div class="stat-card-description text-muted" data-collections-base>
+                    <?php if ($monthStats['collections_amount'] > 0): ?>
+                        من تحصيلات قيمتها <?php echo formatCurrency($monthStats['collections_amount']); ?>
+                    <?php else: ?>
+                        لا توجد تحصيلات مسجلة بعد
+                    <?php endif; ?>
+                </div>
+            </div>
+        </div>
+    </div>
+    <?php endif; ?>
+</div>
+
 <style>
 /* تحسينات الأزرار */
 .btn-gradient-primary {
@@ -608,7 +660,51 @@ $lang = isset($translations) ? $translations : [];
 }
 
 .btn-gradient-primary:active {
+.btn-gradient-primary:active {
     transform: translateY(0);
+}
+
+.stat-card {
+    border-radius: 18px;
+    border: none;
+    background: #fff;
+    position: relative;
+    overflow: hidden;
+}
+
+.stat-card-icon {
+    width: 52px;
+    height: 52px;
+    border-radius: 16px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 1.4rem;
+    color: #fff;
+    margin-bottom: 0.75rem;
+    box-shadow: 0 8px 20px rgba(0,0,0,0.12);
+}
+
+.stat-card-icon.primary {
+    background: linear-gradient(135deg, #2563eb 0%, #3b82f6 100%);
+}
+
+.stat-card-icon.success {
+    background: linear-gradient(135deg, #0ea5e9 0%, #14b8a6 100%);
+}
+
+.stat-card-icon.purple {
+    background: linear-gradient(135deg, #7c3aed 0%, #c084fc 100%);
+}
+
+.stat-card-title {
+    font-size: 0.95rem;
+    color: #6b7280;
+    margin-bottom: 0.3rem;
+}
+
+.stat-card-description {
+    font-size: 0.85rem;
 }
 
 .bg-gradient-primary {
@@ -1357,17 +1453,27 @@ $lang = isset($translations) ? $translations : [];
             </div>
             
             <!-- نسبة التحصيلات للمندوبين -->
-                    <?php if ($currentUser['role'] === 'sales' && isset($currentSalary['collections_bonus']) && $currentSalary['collections_bonus'] > 0): ?>
+            <?php if ($currentUser['role'] === 'sales'): ?>
+            <?php 
+            $collectionsBonusValue = cleanFinancialValue($currentSalary['collections_bonus'] ?? 0);
+            $collectionsBaseAmount = $currentSalary['collections_amount'] ?? ($collectionsBonusValue > 0 ? $collectionsBonusValue / 0.02 : 0);
+            ?>
             <div class="salary-row">
                 <div class="salary-cell label">
                     نسبة التحصيلات (2%)
                 </div>
                 <div class="salary-cell value">
-                    <span class="salary-amount success">+<?php echo formatCurrency($currentSalary['collections_bonus']); ?></span>
-                    <span class="salary-description">مكافأة من التحصيلات</span>
+                    <span class="salary-amount success">+<?php echo formatCurrency($collectionsBonusValue); ?></span>
+                    <span class="salary-description">
+                        <?php if ($collectionsBaseAmount > 0): ?>
+                            من تحصيلات قيمتها <?php echo formatCurrency($collectionsBaseAmount); ?>
+                        <?php else: ?>
+                            لا توجد مكافآت تحصيلات لهذا الشهر بعد
+                        <?php endif; ?>
+                    </span>
                 </div>
             </div>
-                    <?php endif; ?>
+            <?php endif; ?>
                     
             <!-- المكافآت - Header -->
             <div class="salary-row section-header">
@@ -1845,12 +1951,28 @@ setInterval(function() {
                 const stats = data.stats;
                 document.querySelectorAll('.stat-card-icon').forEach((icon, index) => {
                     const parent = icon.closest('.card-body');
-                    if (parent) {
-                        const h4 = parent.querySelector('.h4');
-                        if (h4 && index === 0) {
-                            h4.textContent = stats.total_hours.toFixed(2);
-                        } else if (h4 && index === 1) {
-                            h4.textContent = stats.total_salary.toLocaleString('ar-EG', {style: 'currency', currency: 'EGP'});
+                    if (!parent) {
+                        return;
+                    }
+                    
+                    const h4 = parent.querySelector('.h4');
+                    if (!h4) {
+                        return;
+                    }
+                    
+                    if (index === 0) {
+                        h4.textContent = stats.total_hours.toFixed(2);
+                    } else if (index === 1) {
+                        h4.textContent = stats.total_salary.toLocaleString('ar-EG', {style: 'currency', currency: 'EGP'});
+                    } else if (index === 2) {
+                        h4.textContent = stats.collections_bonus.toLocaleString('ar-EG', {style: 'currency', currency: 'EGP'});
+                        const baseTarget = parent.querySelector('[data-collections-base]');
+                        if (baseTarget) {
+                            if (stats.collections_amount > 0) {
+                                baseTarget.textContent = 'من تحصيلات قيمتها ' + stats.collections_amount.toLocaleString('ar-EG', {style: 'currency', currency: 'EGP'});
+                            } else {
+                                baseTarget.textContent = 'لا توجد تحصيلات مسجلة بعد';
+                            }
                         }
                     }
                 });
