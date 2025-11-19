@@ -176,8 +176,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 foreach ($items as $item) {
                     $subtotal += $item['total_price'];
                 }
-                $discountAmount = floatval($_POST['discount_amount'] ?? 0);
-                $totalAmount = $subtotal - $discountAmount;
+                $discountAmount = 0.0;
+                $totalAmount = $subtotal;
 
                 $db->execute(
                     "INSERT INTO customer_orders 
@@ -242,8 +242,12 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 $successMessage = 'تم إنشاء الطلب بنجاح: ' . $orderNumber;
                 preventDuplicateSubmission($successMessage, ['page' => 'orders'], null, $currentUser['role']);
             } catch (Throwable $createOrderError) {
-                if ($transactionStarted && $db->inTransaction()) {
-                    $db->rollback();
+                if ($transactionStarted) {
+                    try {
+                        $db->rollback();
+                    } catch (Throwable $rollbackError) {
+                        error_log('Rollback error: ' . $rollbackError->getMessage());
+                    }
                 }
                 error_log('Create order error: ' . $createOrderError->getMessage());
                 $error = 'حدث خطأ أثناء إنشاء الطلب. يرجى المحاولة مرة أخرى.';
@@ -522,7 +526,37 @@ $params[] = $offset;
 $orders = $db->query($sql, $params);
 
 $customers = $db->query("SELECT id, name FROM customers WHERE status = 'active' ORDER BY name");
-$products = $db->query("SELECT id, name, unit_price FROM products WHERE status = 'active' ORDER BY name");
+
+// جلب القوالب من unified_product_templates و product_templates
+$templates = [];
+$unifiedTemplatesCheck = $db->queryOne("SHOW TABLES LIKE 'unified_product_templates'");
+if (!empty($unifiedTemplatesCheck)) {
+    $unifiedTemplates = $db->query("
+        SELECT id, 
+               COALESCE(template_name, product_name, CONCAT('قالب #', id)) as name,
+               0 as unit_price
+        FROM unified_product_templates 
+        WHERE status = 'active' 
+        ORDER BY name
+    ");
+    $templates = array_merge($templates, $unifiedTemplates);
+}
+
+$productTemplatesCheck = $db->queryOne("SHOW TABLES LIKE 'product_templates'");
+if (!empty($productTemplatesCheck)) {
+    $productTemplates = $db->query("
+        SELECT id, 
+               COALESCE(template_name, product_name, CONCAT('قالب #', id)) as name,
+               0 as unit_price
+        FROM product_templates 
+        WHERE status = 'active' 
+        ORDER BY name
+    ");
+    $templates = array_merge($templates, $productTemplates);
+}
+
+// استخدام القوالب بدلاً من المنتجات
+$products = $templates;
 $salesReps = $db->query("SELECT id, username, full_name FROM users WHERE role = 'sales' AND status = 'active' ORDER BY username");
 $canSendOrderToRep = !empty($salesReps) && !empty($products);
 
@@ -660,10 +694,6 @@ if (isset($_GET['id'])) {
                         <tr>
                             <th>المجموع الفرعي:</th>
                             <td><?php echo formatCurrency($selectedOrder['subtotal']); ?></td>
-                        </tr>
-                        <tr>
-                            <th>الخصم:</th>
-                            <td><?php echo formatCurrency($selectedOrder['discount_amount']); ?></td>
                         </tr>
                         <tr>
                             <th>الإجمالي:</th>
@@ -1125,12 +1155,11 @@ if (isset($_GET['id'])) {
                             <div class="order-item row mb-2">
                                 <div class="col-md-5">
                                     <select class="form-select product-select" name="items[0][product_id]" required>
-                                        <option value="">اختر المنتج</option>
+                                        <option value="">اختر القالب</option>
                                         <?php foreach ($products as $product): ?>
                                             <option value="<?php echo $product['id']; ?>" 
                                                     data-price="<?php echo $product['unit_price']; ?>">
-                                                <?php echo htmlspecialchars($product['name']); ?> 
-                                                (<?php echo formatCurrency($product['unit_price']); ?>)
+                                                <?php echo htmlspecialchars($product['name']); ?>
                                             </option>
                                         <?php endforeach; ?>
                                     </select>
@@ -1166,16 +1195,6 @@ if (isset($_GET['id'])) {
                         <div class="col-md-6">
                             <div class="card bg-light">
                                 <div class="card-body">
-                                    <div class="d-flex justify-content-between mb-2">
-                                        <strong>المجموع الفرعي:</strong>
-                                        <span id="subtotal">0.00 ج.م</span>
-                                    </div>
-                                    <div class="mb-2">
-                                        <label class="form-label">الخصم (ج.م)</label>
-                                        <input type="number" step="0.01" class="form-control" name="discount_amount" 
-                                               value="0" min="0" oninput="calculateOrderTotal()">
-                                    </div>
-                                    <hr>
                                     <div class="d-flex justify-content-between">
                                         <h5>الإجمالي:</h5>
                                         <h5 id="totalAmount">0.00 ج.م</h5>
@@ -1238,12 +1257,11 @@ document.getElementById('addItemBtn')?.addEventListener('click', function() {
     newItem.innerHTML = `
         <div class="col-md-5">
             <select class="form-select product-select" name="items[${itemIndex}][product_id]" required>
-                <option value="">اختر المنتج</option>
+                <option value="">اختر القالب</option>
                 <?php foreach ($products as $product): ?>
                     <option value="<?php echo $product['id']; ?>" 
                             data-price="<?php echo $product['unit_price']; ?>">
-                        <?php echo htmlspecialchars($product['name']); ?> 
-                        (<?php echo formatCurrency($product['unit_price']); ?>)
+                        <?php echo htmlspecialchars($product['name']); ?>
                     </option>
                 <?php endforeach; ?>
             </select>
@@ -1368,15 +1386,11 @@ function calculateOrderTotal() {
     const form = document.getElementById('orderForm');
     if (!form) return;
     
-    let subtotal = 0;
+    let total = 0;
     document.querySelectorAll('.item-total').forEach(input => {
-        subtotal += parseFloat(input.value) || 0;
+        total += parseFloat(input.value) || 0;
     });
     
-    const discountAmount = parseFloat(form.querySelector('[name="discount_amount"]').value) || 0;
-    const total = subtotal - discountAmount;
-    
-    document.getElementById('subtotal').textContent = subtotal.toFixed(2) + ' ج.م';
     document.getElementById('totalAmount').textContent = total.toFixed(2) + ' ج.م';
 }
 

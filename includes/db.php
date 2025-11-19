@@ -14,6 +14,7 @@ require_once __DIR__ . '/config.php';
 class Database {
     private static $instance = null;
     private $connection;
+    private $inTransaction = false;
     
     private function __construct() {
         try {
@@ -165,6 +166,7 @@ class Database {
      * بدء معاملة
      */
     public function beginTransaction() {
+        $this->inTransaction = true;
         return $this->connection->begin_transaction();
     }
     
@@ -172,6 +174,7 @@ class Database {
      * تأكيد المعاملة
      */
     public function commit() {
+        $this->inTransaction = false;
         return $this->connection->commit();
     }
     
@@ -179,7 +182,15 @@ class Database {
      * إلغاء المعاملة
      */
     public function rollback() {
+        $this->inTransaction = false;
         return $this->connection->rollback();
+    }
+    
+    /**
+     * التحقق من وجود معاملة نشطة
+     */
+    public function inTransaction() {
+        return $this->inTransaction;
     }
     
     /**
