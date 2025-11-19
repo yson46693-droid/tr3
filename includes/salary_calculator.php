@@ -11,6 +11,7 @@ if (!defined('ACCESS_ALLOWED')) {
 
 require_once __DIR__ . '/config.php';
 require_once __DIR__ . '/db.php';
+require_once __DIR__ . '/audit_log.php';
 
 /**
  * حساب عدد الساعات الشهرية للمستخدم
@@ -192,6 +193,148 @@ function calculateSalesCollections($userId, $month, $year) {
     }
     
     return round($totalCommissionBase, 2);
+}
+
+/**
+ * إضافة (أو خصم) مكافأة فورية بنسبة 2% على تحصيل مندوب المبيعات
+ *
+ * @param int $salesUserId      معرف المندوب
+ * @param float $collectionAmount قيمة التحصيل
+ * @param string|null $collectionDate تاريخ التحصيل (يستخدم لتحديد الشهر/السنة)
+ * @param int|null $collectionId  معرف عملية التحصيل (لأغراض السجل)
+ * @param int|null $triggeredBy   معرف المستخدم الذي نفّذ العملية (للتدقيق)
+ * @param bool $reverse           في حالة true يتم خصم المكافأة (مثلاً عند حذف التحصيل)
+ * @return bool نجاح أو فشل العملية
+ */
+function applyCollectionInstantReward($salesUserId, $collectionAmount, $collectionDate = null, $collectionId = null, $triggeredBy = null, $reverse = false) {
+    $salesUserId = (int)$salesUserId;
+    $collectionAmount = (float)$collectionAmount;
+    
+    if ($salesUserId <= 0 || $collectionAmount <= 0) {
+        return false;
+    }
+    
+    $collectionDate = $collectionDate ?: date('Y-m-d');
+    $timestamp = strtotime($collectionDate) ?: time();
+    $targetMonth = (int)date('n', $timestamp);
+    $targetYear = (int)date('Y', $timestamp);
+    
+    $rewardAmount = round($collectionAmount * 0.02, 2);
+    if ($reverse) {
+        $rewardAmount *= -1;
+    }
+    
+    if ($rewardAmount == 0.0) {
+        return true;
+    }
+    
+    $db = db();
+    
+    $summary = getSalarySummary($salesUserId, $targetMonth, $targetYear);
+    if (!$summary['exists']) {
+        $creation = createOrUpdateSalary($salesUserId, $targetMonth, $targetYear);
+        if (!($creation['success'] ?? false)) {
+            error_log('Instant reward: failed to ensure salary record for user ' . $salesUserId . ' (collection ' . ($collectionId ?? 'N/A') . ')');
+            return false;
+        }
+        $summary = getSalarySummary($salesUserId, $targetMonth, $targetYear);
+        if (!$summary['exists']) {
+            return false;
+        }
+    }
+    
+    $salary = $summary['salary'];
+    $salaryId = (int)($salary['id'] ?? 0);
+    if ($salaryId <= 0) {
+        return false;
+    }
+    
+    static $salaryRewardColumns = null;
+    if ($salaryRewardColumns === null) {
+        $salaryRewardColumns = [
+            'bonus' => null,
+            'total_amount' => null,
+            'accumulated_amount' => null,
+            'updated_at' => null,
+        ];
+        
+        try {
+            $columns = $db->query("SHOW COLUMNS FROM salaries");
+            foreach ($columns as $column) {
+                $field = $column['Field'] ?? '';
+                if ($field === '') {
+                    continue;
+                }
+                
+                if ($salaryRewardColumns['bonus'] === null && in_array($field, ['bonus', 'total_bonus'], true)) {
+                    $salaryRewardColumns['bonus'] = $field;
+                } elseif ($salaryRewardColumns['total_amount'] === null && in_array($field, ['total_amount', 'amount', 'net_total'], true)) {
+                    $salaryRewardColumns['total_amount'] = $field;
+                } elseif ($salaryRewardColumns['accumulated_amount'] === null && $field === 'accumulated_amount') {
+                    $salaryRewardColumns['accumulated_amount'] = $field;
+                } elseif ($salaryRewardColumns['updated_at'] === null && in_array($field, ['updated_at', 'modified_at', 'last_updated'], true)) {
+                    $salaryRewardColumns['updated_at'] = $field;
+                }
+            }
+        } catch (Throwable $columnError) {
+            error_log('Instant reward: failed to read salaries columns - ' . $columnError->getMessage());
+        }
+        
+        if ($salaryRewardColumns['total_amount'] === null) {
+            $salaryRewardColumns['total_amount'] = 'total_amount';
+        }
+    }
+    
+    $updateParts = [];
+    $params = [];
+    
+    if (!empty($salaryRewardColumns['bonus'])) {
+        $updateParts[] = "{$salaryRewardColumns['bonus']} = COALESCE({$salaryRewardColumns['bonus']}, 0) + ?";
+        $params[] = $rewardAmount;
+    }
+    
+    if (!empty($salaryRewardColumns['total_amount'])) {
+        $updateParts[] = "{$salaryRewardColumns['total_amount']} = COALESCE({$salaryRewardColumns['total_amount']}, 0) + ?";
+        $params[] = $rewardAmount;
+    }
+    
+    if (!empty($salaryRewardColumns['accumulated_amount'])) {
+        $updateParts[] = "{$salaryRewardColumns['accumulated_amount']} = COALESCE({$salaryRewardColumns['accumulated_amount']}, 0) + ?";
+        $params[] = $rewardAmount;
+    }
+    
+    if (!empty($salaryRewardColumns['updated_at'])) {
+        $updateParts[] = "{$salaryRewardColumns['updated_at']} = NOW()";
+    }
+    
+    if (empty($updateParts)) {
+        return false;
+    }
+    
+    $params[] = $salaryId;
+    $db->execute(
+        "UPDATE salaries SET " . implode(', ', $updateParts) . " WHERE id = ?",
+        $params
+    );
+    
+    if (function_exists('logAudit')) {
+        logAudit(
+            $triggeredBy ?: $salesUserId,
+            $rewardAmount > 0 ? 'collection_reward_add' : 'collection_reward_remove',
+            'salary',
+            $salaryId,
+            null,
+            [
+                'collection_id' => $collectionId,
+                'collection_amount' => $collectionAmount,
+                'reward_amount' => $rewardAmount,
+                'month' => $targetMonth,
+                'year' => $targetYear
+            ]
+        );
+    }
+    
+    return true;
 }
 
 /**

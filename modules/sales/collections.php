@@ -158,6 +158,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             // توزيع التحصيل على فواتير العميل وتحديثها
             $distributionResult = distributeCollectionToInvoices($customerId, $amount, $currentUser['id']);
             
+            $instantRewardApplied = false;
+            
             if ($distributionResult['success']) {
                 $updatedCount = count($distributionResult['updated_invoices'] ?? []);
                 $collectionNumberText = $collectionNumber !== null ? $collectionNumber : '#' . $collectionId;
@@ -169,6 +171,25 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             } else {
                 $collectionNumberText = $collectionNumber !== null ? $collectionNumber : '#' . $collectionId;
                 $success = 'تم إضافة التحصيل بنجاح: ' . $collectionNumberText . ' (ملاحظة: ' . ($distributionResult['message'] ?? 'لم يتم تحديث الفواتير') . ')';
+            }
+            
+            // مكافأة فورية بنسبة 2% للمندوب الذي قام بالتحصيل
+            if (($currentUser['role'] ?? '') === 'sales') {
+                try {
+                    $instantRewardApplied = applyCollectionInstantReward(
+                        $currentUser['id'],
+                        $amount,
+                        $date,
+                        $collectionId,
+                        $currentUser['id']
+                    );
+                } catch (Throwable $instantRewardError) {
+                    error_log('Instant collection reward error: ' . $instantRewardError->getMessage());
+                }
+            }
+            
+            if ($instantRewardApplied) {
+                $success .= ' وتم إضافة مكافأة 2% إلى راتبك فوراً.';
             }
         }
     } elseif ($action === 'delete_collection') {
@@ -206,6 +227,33 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 } catch (Throwable $e) {
                     // لا نوقف العملية إذا فشل تحديث الراتب
                     error_log('Error updating sales commission after collection deletion: ' . $e->getMessage());
+                }
+                
+                // إلغاء المكافأة الفورية إذا كان التحصيل لمندوب مبيعات
+                $collectorId = intval($collection['collected_by'] ?? 0);
+                $shouldReverseReward = false;
+                if ($collectorId > 0) {
+                    if ($collectorId === ($currentUser['id'] ?? 0) && ($currentUser['role'] ?? '') === 'sales') {
+                        $shouldReverseReward = true;
+                    } else {
+                        $collectorInfo = $db->queryOne("SELECT role FROM users WHERE id = ?", [$collectorId]);
+                        $shouldReverseReward = ($collectorInfo['role'] ?? '') === 'sales';
+                    }
+                }
+                
+                if ($shouldReverseReward) {
+                    try {
+                        applyCollectionInstantReward(
+                            $collectorId,
+                            floatval($collection['amount'] ?? 0),
+                            $collectionDate,
+                            $collectionId,
+                            $currentUser['id'],
+                            true
+                        );
+                    } catch (Throwable $instantRewardError) {
+                        error_log('Instant collection reward reversal error: ' . $instantRewardError->getMessage());
+                    }
                 }
                 
                 $success = 'تم حذف التحصيل بنجاح';

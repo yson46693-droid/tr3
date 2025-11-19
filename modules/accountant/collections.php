@@ -105,6 +105,20 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             }
             
             $success = 'تم إضافة التحصيل بنجاح';
+            
+            if (($currentUser['role'] ?? '') === 'sales') {
+                try {
+                    applyCollectionInstantReward(
+                        $currentUser['id'],
+                        $amount,
+                        $date,
+                        $result['insert_id'] ?? null,
+                        $currentUser['id']
+                    );
+                } catch (Throwable $instantRewardError) {
+                    error_log('Instant collection reward error (accountant add): ' . $instantRewardError->getMessage());
+                }
+            }
         }
     } elseif ($action === 'update_collection') {
         $collectionId = intval($_POST['collection_id'] ?? 0);
@@ -143,6 +157,42 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                      json_encode($oldCollection), ['amount' => $amount]);
             
             $success = 'تم تحديث التحصيل بنجاح';
+            
+            $collectorId = intval($oldCollection['collected_by'] ?? 0);
+            $shouldAdjustReward = false;
+            if ($collectorId > 0) {
+                if ($collectorId === ($currentUser['id'] ?? 0) && ($currentUser['role'] ?? '') === 'sales') {
+                    $shouldAdjustReward = true;
+                } else {
+                    $collectorInfo = $db->queryOne("SELECT role FROM users WHERE id = ?", [$collectorId]);
+                    $shouldAdjustReward = ($collectorInfo['role'] ?? '') === 'sales';
+                }
+            }
+            
+            if ($shouldAdjustReward) {
+                try {
+                    $oldAmount = floatval($oldCollection['amount'] ?? 0);
+                    if ($oldAmount > 0) {
+                        applyCollectionInstantReward(
+                            $collectorId,
+                            $oldAmount,
+                            $oldCollectionDate,
+                            $collectionId,
+                            $currentUser['id'],
+                            true
+                        );
+                    }
+                    applyCollectionInstantReward(
+                        $collectorId,
+                        $amount,
+                        $date,
+                        $collectionId,
+                        $currentUser['id']
+                    );
+                } catch (Throwable $instantRewardError) {
+                    error_log('Instant collection reward adjustment error: ' . $instantRewardError->getMessage());
+                }
+            }
             
             // تحديث راتب المندوب المسؤول عن العميل (المستحق للعمولة)
             // نحدث للتاريخ القديم والجديد للتأكد من الحساب الصحيح
@@ -188,6 +238,32 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                          json_encode($collection), null);
                 
                 $success = 'تم حذف التحصيل بنجاح';
+                
+                $collectorId = intval($collection['collected_by'] ?? 0);
+                $shouldReverseReward = false;
+                if ($collectorId > 0) {
+                    if ($collectorId === ($currentUser['id'] ?? 0) && ($currentUser['role'] ?? '') === 'sales') {
+                        $shouldReverseReward = true;
+                    } else {
+                        $collectorInfo = $db->queryOne("SELECT role FROM users WHERE id = ?", [$collectorId]);
+                        $shouldReverseReward = ($collectorInfo['role'] ?? '') === 'sales';
+                    }
+                }
+                
+                if ($shouldReverseReward) {
+                    try {
+                        applyCollectionInstantReward(
+                            $collectorId,
+                            floatval($collection['amount'] ?? 0),
+                            $deletedCollectionDate,
+                            $collectionId,
+                            $currentUser['id'],
+                            true
+                        );
+                    } catch (Throwable $instantRewardError) {
+                        error_log('Instant collection reward reversal error: ' . $instantRewardError->getMessage());
+                    }
+                }
                 
                 // تحديث راتب المندوب المسؤول عن العميل (المستحق للعمولة)
                 if ($deletedCustomerId > 0) {
