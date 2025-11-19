@@ -22,10 +22,10 @@ if (!ob_get_level()) {
 
 $page = $_GET['page'] ?? 'overview';
 
-// Ù…Ø¹Ø§Ù„Ø¬Ø© AJAX Ù‚Ø¨Ù„ Ø£ÙŠ require Ø£Ùˆ include Ù‚Ø¯ ÙŠØ®Ø±Ø¬ Ù…Ø­ØªÙˆÙ‰ HTML
+// معالجة AJAX قبل أي require أو include قد يخرج محتوى HTML
 // Ø®Ø§ØµØ© Ù„ØµÙØ­Ø© Ù‚ÙˆØ§Ù„Ø¨ Ø§Ù„Ù…Ù†ØªØ¬Ø§Øª
 if ($page === 'product_templates' && isset($_GET['ajax']) && $_GET['ajax'] === 'template_details' && isset($_GET['template_id'])) {
-    // ØªØ­Ù…ÙŠÙ„ Ø§Ù„Ù…Ù„ÙØ§Øª Ø§Ù„Ø£Ø³Ø§Ø³ÙŠØ© ÙÙ‚Ø·
+
     require_once __DIR__ . '/../includes/config.php';
     require_once __DIR__ . '/../includes/db.php';
     require_once __DIR__ . '/../includes/auth.php';
@@ -34,18 +34,16 @@ if ($page === 'product_templates' && isset($_GET['ajax']) && $_GET['ajax'] === '
     
     requireRole(['production', 'manager']);
     
-    // ØªØ­Ù…ÙŠÙ„ Ù…Ù„Ù product_templates.php Ù…Ø¨Ø§Ø´Ø±Ø© Ù„Ù„ØªØ¹Ø§Ù…Ù„ Ù…Ø¹ AJAX
+    
     $modulePath = __DIR__ . '/../modules/production/product_templates.php';
     if (file_exists($modulePath)) {
-        // Ø§Ù„Ù…Ù„Ù Ù†ÙØ³Ù‡ Ø³ÙŠØªØ¹Ø§Ù…Ù„ Ù…Ø¹ AJAX ÙˆÙŠØ®Ø±Ø¬ JSON
+
         include $modulePath;
-        exit; // Ø¥ÙŠÙ‚Ø§Ù Ø§Ù„ØªÙ†ÙÙŠØ° Ø¨Ø¹Ø¯ Ù…Ø¹Ø§Ù„Ø¬Ø© AJAX
+        exit; 
     }
 }
 
-// Ù…Ø¹Ø§Ù„Ø¬Ø© AJAX Ù‚Ø¨Ù„ Ø£ÙŠ Ø¥Ø®Ø±Ø§Ø¬ HTML - Ø®Ø§ØµØ© Ù„ØµÙØ­Ø© Ù…Ø®Ø²Ù† Ø£Ø¯ÙˆØ§Øª Ø§Ù„ØªØ¹Ø¨Ø¦Ø©
 if ($page === 'packaging_warehouse' && isset($_GET['ajax']) && isset($_GET['material_id'])) {
-    // ØªØ­Ù…ÙŠÙ„ Ø§Ù„Ù…Ù„ÙØ§Øª Ø§Ù„Ø£Ø³Ø§Ø³ÙŠØ© ÙÙ‚Ø·
     require_once __DIR__ . '/../includes/config.php';
     require_once __DIR__ . '/../includes/db.php';
     require_once __DIR__ . '/../includes/auth.php';
@@ -54,16 +52,14 @@ if ($page === 'packaging_warehouse' && isset($_GET['ajax']) && isset($_GET['mate
     
     requireRole(['production', 'manager']);
     
-    // ØªØ­Ù…ÙŠÙ„ Ù…Ù„Ù packaging_warehouse.php Ù…Ø¨Ø§Ø´Ø±Ø© Ù„Ù„ØªØ¹Ø§Ù…Ù„ Ù…Ø¹ AJAX
     $modulePath = __DIR__ . '/../modules/production/packaging_warehouse.php';
     if (file_exists($modulePath)) {
-        // Ø§Ù„Ù…Ù„Ù Ù†ÙØ³Ù‡ Ø³ÙŠØªØ¹Ø§Ù…Ù„ Ù…Ø¹ AJAX ÙˆÙŠØ®Ø±Ø¬ JSON
         include $modulePath;
-        exit; // Ø¥ÙŠÙ‚Ø§Ù Ø§Ù„ØªÙ†ÙÙŠØ° Ø¨Ø¹Ø¯ Ù…Ø¹Ø§Ù„Ø¬Ø© AJAX
+        exit; 
     }
 }
 
-// ØªØ­Ù…ÙŠÙ„ Ø¨Ø§Ù‚ÙŠ Ø§Ù„Ù…Ù„ÙØ§Øª Ø§Ù„Ù…Ø·Ù„ÙˆØ¨Ø© Ù„Ù„ØµÙØ­Ø© Ø§Ù„Ø¹Ø§Ø¯ÙŠØ©
+
 require_once __DIR__ . '/../includes/config.php';
 require_once __DIR__ . '/../includes/db.php';
 require_once __DIR__ . '/../includes/auth.php';
@@ -106,12 +102,10 @@ if (
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && trim($_POST['action']) === 'update_location') {
     $pageParam = $_GET['page'] ?? 'dashboard';
     if ($pageParam === 'customers') {
-        // ØªÙ†Ø¸ÙŠÙ Ø£ÙŠ output buffer
         while (ob_get_level() > 0) {
             ob_end_clean();
         }
         
-        // ØªØ­Ù…ÙŠÙ„ Ø§Ù„Ù…Ù„ÙØ§Øª Ø§Ù„Ø£Ø³Ø§Ø³ÙŠØ©
         if (!defined('CUSTOMERS_MODULE_BOOTSTRAPPED')) {
             require_once __DIR__ . '/../includes/config.php';
             require_once __DIR__ . '/../includes/db.php';
@@ -696,7 +690,7 @@ $pageTitle = isset($lang['manager_dashboard']) ? $lang['manager_dashboard'] : '�
                 ?>
                 
             <?php elseif ($page === 'suppliers'): ?>
-                <!-- ØµÙØ­Ø© Ø¥Ø¯Ø§Ø±Ø© Ø§Ù„Ù…ÙˆØ±Ø¯ÙŠÙ† -->
+   
                 <?php 
                 $modulePath = __DIR__ . '/../modules/accountant/suppliers.php';
                 if (file_exists($modulePath)) {
@@ -757,7 +751,7 @@ $pageTitle = isset($lang['manager_dashboard']) ? $lang['manager_dashboard'] : '�
                 ?>
                 
             <?php elseif ($page === 'vehicles'): ?>
-                <!-- ØµÙØ­Ø© Ø¥Ø¯Ø§Ø±Ø© Ø§Ù„Ø³ÙŠØ§Ø±Ø§Øª -->
+       
                 <?php 
                 $modulePath = __DIR__ . '/../modules/manager/vehicles.php';
                 if (file_exists($modulePath)) {
@@ -766,7 +760,7 @@ $pageTitle = isset($lang['manager_dashboard']) ? $lang['manager_dashboard'] : '�
                 ?>
                 
             <?php elseif ($page === 'warehouse_transfers'): ?>
-                <!-- ØµÙØ­Ø© Ù†Ù‚Ù„ Ø§Ù„Ù…Ø®Ø§Ø²Ù† -->
+    
                 <?php 
                 $modulePath = __DIR__ . '/../modules/manager/warehouse_transfers.php';
                 if (file_exists($modulePath)) {
@@ -775,7 +769,7 @@ $pageTitle = isset($lang['manager_dashboard']) ? $lang['manager_dashboard'] : '�
                 ?>
                 
             <?php elseif ($page === 'pos'): ?>
-                <!-- ØµÙØ­Ø© Ù†Ù‚Ø·Ø© Ø§Ù„Ø¨ÙŠØ¹ Ø§Ù„Ù…Ø­Ù„ÙŠØ© ÙˆØ´Ø±ÙƒØ§Øª Ø§Ù„Ø´Ø­Ù† -->
+        
                 <?php 
                 $modulePath = __DIR__ . '/../modules/manager/pos.php';
                 if (file_exists($modulePath)) {
@@ -784,7 +778,7 @@ $pageTitle = isset($lang['manager_dashboard']) ? $lang['manager_dashboard'] : '�
                 ?>
                 
             <?php elseif ($page === 'returns'): ?>
-                <!-- ØµÙØ­Ø© Ø§Ù„Ù…Ø±ØªØ¬Ø¹Ø§Øª ÙˆØ§Ù„Ø§Ø³ØªØ¨Ø¯Ø§Ù„ -->
+           
                 <?php 
                 $modulePath = __DIR__ . '/../modules/sales/returns.php';
                 if (file_exists($modulePath)) {
@@ -799,7 +793,6 @@ $pageTitle = isset($lang['manager_dashboard']) ? $lang['manager_dashboard'] : '�
                 ?>
                 
             <?php elseif ($page === 'packaging_warehouse'): ?>
-                <!-- ØµÙØ­Ø© Ù…Ø®Ø²Ù† Ø£Ø¯ÙˆØ§Øª Ø§Ù„ØªØ¹Ø¨Ø¦Ø© -->
                 <?php 
                 $modulePath = __DIR__ . '/../modules/production/packaging_warehouse.php';
                 if (file_exists($modulePath)) {
@@ -810,7 +803,6 @@ $pageTitle = isset($lang['manager_dashboard']) ? $lang['manager_dashboard'] : '�
                 ?>
                 
             <?php elseif ($page === 'product_templates'): ?>
-                <!-- ØµÙØ­Ø© Ù‚ÙˆØ§Ù„Ø¨ Ø§Ù„Ù…Ù†ØªØ¬Ø§Øª -->
                 <?php 
                 $modulePath = __DIR__ . '/../modules/production/product_templates.php';
                 if (file_exists($modulePath)) {
@@ -821,7 +813,6 @@ $pageTitle = isset($lang['manager_dashboard']) ? $lang['manager_dashboard'] : '�
                 ?>
                 
             <?php elseif ($page === 'company_products'): ?>
-                <!-- ØµÙØ­Ø© Ù…Ù†ØªØ¬Ø§Øª Ø§Ù„Ø´Ø±ÙƒØ© -->
                 <?php 
                 $modulePath = __DIR__ . '/../modules/manager/company_products.php';
                 if (file_exists($modulePath)) {
@@ -842,7 +833,6 @@ $pageTitle = isset($lang['manager_dashboard']) ? $lang['manager_dashboard'] : '�
                 ?>
                 
             <?php elseif ($page === 'import_packaging'): ?>
-                <!-- ØµÙØ­Ø© Ø§Ø³ØªÙŠØ±Ø§Ø¯ Ø£Ø¯ÙˆØ§Øª Ø§Ù„ØªØ¹Ø¨Ø¦Ø© -->
                 <?php 
                 $modulePath = __DIR__ . '/../modules/manager/import_packaging.php';
                 if (file_exists($modulePath)) {
@@ -853,7 +843,6 @@ $pageTitle = isset($lang['manager_dashboard']) ? $lang['manager_dashboard'] : '�
                 ?>
                 
             <?php elseif ($page === 'raw_materials_warehouse'): ?>
-                <!-- ØµÙØ­Ø© Ù…Ø®Ø²Ù† Ø§Ù„Ø®Ø§Ù…Ø§Øª - Ø§Ù„Ù…Ø¯ÙŠØ± (Ø¹Ø±Ø¶ ÙÙ‚Ø·) -->
                 <?php 
                 $modulePath = __DIR__ . '/../modules/manager/raw_materials_warehouse.php';
                 if (file_exists($modulePath)) {
@@ -871,7 +860,6 @@ $pageTitle = isset($lang['manager_dashboard']) ? $lang['manager_dashboard'] : '�
                 ?>
                 
             <?php elseif ($page === 'security'): ?>
-                <!-- ØµÙØ­Ø© Ø§Ù„Ø£Ù…Ø§Ù† ÙˆØ§Ù„ØµÙ„Ø§Ø­ÙŠØ§Øª -->
                 <?php 
                 $modulePath = __DIR__ . '/../modules/manager/security.php';
                 if (file_exists($modulePath)) {
@@ -882,7 +870,6 @@ $pageTitle = isset($lang['manager_dashboard']) ? $lang['manager_dashboard'] : '�
                 ?>
                 
             <?php elseif ($page === 'attendance_management'): ?>
-                <!-- ØµÙØ­Ø© Ù…ØªØ§Ø¨Ø¹Ø© Ø§Ù„Ø­Ø¶ÙˆØ± ÙˆØ§Ù„Ø§Ù†ØµØ±Ø§Ù -->
                 <?php 
                 $modulePath = __DIR__ . '/../modules/accountant/attendance_management.php';
                 if (file_exists($modulePath)) {
@@ -893,7 +880,6 @@ $pageTitle = isset($lang['manager_dashboard']) ? $lang['manager_dashboard'] : '�
                 ?>
                 
             <?php elseif ($page === 'batch_reader'): ?>
-                <!-- ØµÙØ­Ø© Ù‚Ø§Ø±Ø¦ Ø£Ø±Ù‚Ø§Ù… Ø§Ù„ØªØ´ØºÙŠÙ„Ø§Øª -->
                 <div class="container-fluid p-0" style="height: 100vh; overflow: hidden;">
                     <iframe src="<?php echo getRelativeUrl('reader/index.php'); ?>" 
                             style="width: 100%; height: 100%; border: none; display: block;"></iframe>
@@ -1290,7 +1276,7 @@ function initInvoiceReturnModal() {
 
             const originalHTML = searchButton.innerHTML;
             searchButton.disabled = true;
-            searchButton.innerHTML = '<span class="spinner-border spinner-border-sm me-2"></span>Ø¬Ø§Ø±ÙŠ Ø§Ù„Ø¨Ø­Ø«';
+            searchButton.innerHTML = '<span class="spinner-border spinner-border-sm me-2"></span>جاري البحث';
 
             try {
                 const data = await fetchInvoiceDetails(invoiceNumber);
@@ -1298,7 +1284,7 @@ function initInvoiceReturnModal() {
                 invoiceReturnState.items = data.items || [];
                 invoiceReturnState.selectedItems = {};
                 renderInvoiceDetails(invoiceReturnState.invoice, invoiceReturnState.items);
-                setInvoiceLookupFeedback('ØªÙ… Ø¬Ù„Ø¨ Ø§Ù„Ø¨ÙŠØ§Ù†Ø§Øª Ø¨Ù†Ø¬Ø§Ø­.', 'success');
+                setInvoiceLookupFeedback('تم جلب البيانات بنجاح.', 'success');
             } catch (error) {
                 invoiceReturnState.invoice = null;
                 invoiceReturnState.items = [];
@@ -1371,7 +1357,7 @@ function approveRequest(id) {
             if (btn) {
                 btn.innerHTML = '<i class="bi bi-check-circle me-2"></i>ØªÙ…Øª Ø§Ù„Ù…ÙˆØ§ÙÙ‚Ø©';
             }
-            // Ø¥Ø±Ø³Ø§Ù„ Ø­Ø¯Ø« Ù„ØªØ­Ø¯ÙŠØ« Ø§Ù„Ø¹Ø¯Ø§Ø¯
+            // إرسال حدث لتحديث العداد
             document.dispatchEvent(new CustomEvent('approvalUpdated'));
             setTimeout(() => {
                 location.reload();
@@ -1409,7 +1395,7 @@ function rejectRequest(id, evt) {
     let btn = null;
     let originalHTML = '';
     
-    // Ù…Ø­Ø§ÙˆÙ„Ø© Ø§Ù„Ø­ØµÙˆÙ„ Ø¹Ù„Ù‰ Ø§Ù„Ø²Ø± Ù…Ù† event parameter Ø£Ùˆ window.event
+    // محاولة الحصول على الزر من event parameter أو window.event
     const e = evt || window.event || event;
     if (e && e.target) {
         btn = e.target.closest('button');
@@ -1442,7 +1428,7 @@ function rejectRequest(id, evt) {
             if (btn) {
                 btn.innerHTML = '<i class="bi bi-x-circle me-2"></i>ØªÙ… Ø§Ù„Ø±ÙØ¶';
             }
-            // Ø¥Ø±Ø³Ø§Ù„ Ø­Ø¯Ø« Ù„ØªØ­Ø¯ÙŠØ« Ø§Ù„Ø¹Ø¯Ø§Ø¯
+            // إرسال حدث لتحديث العداد
             document.dispatchEvent(new CustomEvent('approvalUpdated'));
             setTimeout(() => {
                 location.reload();
@@ -1465,9 +1451,7 @@ function rejectRequest(id, evt) {
     });
 }
 
-/**
- * ØªØ­Ø¯ÙŠØ« Ø¹Ø¯Ø§Ø¯ Ø§Ù„Ù…ÙˆØ§ÙÙ‚Ø§Øª Ø§Ù„Ù…Ø¹Ù„Ù‚Ø©
- */
+
 async function updateApprovalBadge() {
     try {
         const basePath = '<?php echo getBasePath(); ?>';
@@ -1500,15 +1484,13 @@ async function updateApprovalBadge() {
     }
 }
 
-// ØªØ­Ø¯ÙŠØ« Ø§Ù„Ø¹Ø¯Ø§Ø¯ Ø¹Ù†Ø¯ ØªØ­Ù…ÙŠÙ„ Ø§Ù„ØµÙØ­Ø©
 document.addEventListener('DOMContentLoaded', function() {
     updateApprovalBadge();
     initInvoiceReturnModal();
     
-    // ØªØ­Ø¯ÙŠØ« Ø§Ù„Ø¹Ø¯Ø§Ø¯ ÙƒÙ„ 30 Ø«Ø§Ù†ÙŠØ©
+    // تحديث العداد كل 30 ثانية
     setInterval(updateApprovalBadge, 30000);
     
-    // ØªØ­Ø¯ÙŠØ« Ø§Ù„Ø¹Ø¯Ø§Ø¯ Ø¨Ø¹Ø¯ Ø§Ù„Ù…ÙˆØ§ÙÙ‚Ø© Ø£Ùˆ Ø§Ù„Ø±ÙØ¶
     document.addEventListener('approvalUpdated', function() {
         setTimeout(updateApprovalBadge, 1000);
     });

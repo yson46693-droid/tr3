@@ -538,6 +538,18 @@ if ($currentSalary) {
     
     $monthStats['collections_bonus'] = $collectionsBonusValue;
     $monthStats['collections_amount'] = $collectionsBaseAmount;
+    
+    // تحديث الراتب الإجمالي ليتضمن نسبة التحصيلات إذا لم تكن مضمنة
+    $baseAmountCheck = cleanFinancialValue($currentSalary['base_amount'] ?? 0);
+    $bonusCheck = cleanFinancialValue($currentSalary['bonus'] ?? 0);
+    $deductionsCheck = cleanFinancialValue($currentSalary['deductions'] ?? 0);
+    $expectedTotalWithCollections = $baseAmountCheck + $bonusCheck + $collectionsBonusValue - $deductionsCheck;
+    
+    // إذا كان الراتب الإجمالي المحفوظ لا يتضمن نسبة التحصيلات، أضفها
+    if (abs($monthStats['total_salary'] - $expectedTotalWithCollections) > 0.01) {
+        $monthStats['total_salary'] = $monthStats['total_salary'] + $collectionsBonusValue;
+    }
+    
     $maxAdvance = cleanFinancialValue($monthStats['total_salary'] * 0.5);
 } else {
     // إذا لم يكن هناك راتب محفوظ، احسب الساعات مباشرة من attendance_records
@@ -566,8 +578,34 @@ $hourlyRate = cleanFinancialValue($currentSalary['hourly_rate'] ?? $currentUser[
 $baseAmount = cleanFinancialValue($currentSalary['base_amount'] ?? 0);
 $bonus = cleanFinancialValue($currentSalary['bonus'] ?? 0);
 $deductions = cleanFinancialValue($currentSalary['deductions'] ?? 0);
-$totalSalary = cleanFinancialValue($monthStats['total_salary'] ?? 0);
 $collectionsBonus = cleanFinancialValue($monthStats['collections_bonus'] ?? 0);
+
+// حساب الراتب الإجمالي - التأكد من تضمين نسبة التحصيلات
+$totalSalaryBase = cleanFinancialValue($monthStats['total_salary'] ?? 0);
+
+// إذا كان المستخدم مندوب مبيعات ولديه نسبة تحصيلات، تأكد من تضمينها في الراتب الإجمالي
+if ($currentUser['role'] === 'sales' && $collectionsBonus > 0) {
+    // حساب الراتب المتوقع مع نسبة التحصيلات
+    $expectedTotalWithCollections = $baseAmount + $bonus + $collectionsBonus - $deductions;
+    
+    // إذا كان الراتب الإجمالي الحالي لا يتطابق مع الراتب المتوقع (مع نسبة التحصيلات)
+    // فهذا يعني أن نسبة التحصيلات غير مضمنة، لذا أضفها
+    if (abs($totalSalaryBase - $expectedTotalWithCollections) > 0.01) {
+        $totalSalary = $totalSalaryBase + $collectionsBonus;
+    } else {
+        // نسبة التحصيلات مضمنة بالفعل
+        $totalSalary = $totalSalaryBase;
+    }
+} else {
+    // للمستخدمين الآخرين أو إذا لم تكن هناك نسبة تحصيلات
+    $totalSalary = $totalSalaryBase;
+}
+
+// تحديث monthStats للعرض الصحيح
+$monthStats['total_salary'] = $totalSalary;
+
+// إعادة حساب الحد الأقصى للسلفة بناءً على الراتب الإجمالي الصحيح (مع نسبة التحصيلات)
+$maxAdvance = cleanFinancialValue($totalSalary * 0.5);
 
 // حساب إجمالي السلفات المعتمدة لهذا الشهر
 $totalApprovedAdvances = 0;
