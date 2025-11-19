@@ -919,6 +919,14 @@ $monthName = date('F', mktime(0, 0, 0, $selectedMonth, 1));
                 <td><strong>الراتب الإجمالي</strong></td>
                 <td><strong><?php echo formatCurrency($totalSalary); ?></strong></td>
             </tr>
+            <?php if ($currentUser['role'] === 'sales' && $collectionsBonus > 0): ?>
+            <tr>
+                <td colspan="2" style="text-align: center; color: #6b7280; font-size: 13px; padding-top: 10px;">
+                    <i class="bi bi-info-circle me-1"></i>
+                    ملاحظة: الراتب الإجمالي يتضمن نسبة التحصيلات (<?php echo formatCurrency($collectionsBonus); ?>)
+                </td>
+            </tr>
+            <?php endif; ?>
         </tbody>
     </table>
 </div>

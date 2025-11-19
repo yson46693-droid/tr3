@@ -1695,7 +1695,7 @@ $pageTitle = ($view === 'advances') ? 'السلف' : (($view === 'pending') ? '�
                 </div>
                 <div class="col-md-2">
                     <label class="form-label">&nbsp;</label>
-                    <button type="button" class="btn btn-info w-100" onclick="showMonthlyReport()">
+                    <button type="button" class="btn btn-primary-salary w-100" onclick="showMonthlyReport()">
                         <i class="bi bi-file-earmark-text me-2"></i>تقرير شهري شامل
                     </button>
                 </div>

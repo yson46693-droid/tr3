@@ -588,10 +588,10 @@ $pageTitle = isset($lang['manager_dashboard']) ? $lang['manager_dashboard'] : '�
                 <div class="card shadow-sm mb-4">
                     <div class="card-body d-flex flex-wrap gap-2 align-items-center justify-content-start reports-tabs">
                         <button type="button" class="btn btn-primary reports-tab active" data-target="reportsProductionSection">
-                            <i class="bi bi-gear-wide-connected me-2"></i>ØªÙ‚Ø§Ø±ÙŠØ± Ø§Ù„Ø¥Ù†ØªØ§Ø¬
+                            <i class="bi bi-gear-wide-connected me-2"></i>تقارير الإنتاج
                         </button>
                         <button type="button" class="btn btn-outline-primary reports-tab" data-target="reportsFinancialSection">
-                            <i class="bi bi-cash-stack me-2"></i>ØªÙ‚Ø§Ø±ÙŠØ± Ù…Ø§Ù„ÙŠØ©
+                            <i class="bi bi-cash-stack me-2"></i>تقارير مالية
                         </button>
                     </div>
                 </div>
@@ -691,7 +691,7 @@ $pageTitle = isset($lang['manager_dashboard']) ? $lang['manager_dashboard'] : '�
                 if (file_exists($modulePath)) {
                     include $modulePath;
                 } else {
-                    echo '<div class="alert alert-warning">ÙˆØ­Ø¯Ø© Ø§Ù„Ø¯Ø±Ø¯Ø´Ø© ØºÙŠØ± Ù…ØªØ§Ø­Ø© Ø­Ø§Ù„ÙŠØ§Ù‹</div>';
+                    echo '<div class="alert alert-warning">وحدة الدردشة غير متاحة حالياً</div>';
                 }
                 ?>
                 
