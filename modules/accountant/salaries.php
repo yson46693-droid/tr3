@@ -1123,6 +1123,8 @@ body .container {
     word-wrap: break-word;
     overflow-wrap: break-word;
     max-width: 200px;
+    overflow: hidden;
+    text-overflow: ellipsis;
 }
 
 .salary-table-wrapper th {
@@ -1135,6 +1137,8 @@ body .container {
     z-index: 10;
     white-space: nowrap;
     min-width: 100px;
+    overflow: hidden;
+    text-overflow: ellipsis;
 }
 
 .salary-table-wrapper td {
