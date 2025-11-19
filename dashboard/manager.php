@@ -174,65 +174,6 @@ $pageTitle = isset($lang['manager_dashboard']) ? $lang['manager_dashboard'] : '�
                 $activitySummary = getManagerActivitySummary();
                 ?>
 
-                <!-- ملخص الأنشطة السريع -->
-                <div class="analytics-card mb-4">
-                    <div class="analytics-card-header">
-                        <h3 class="analytics-card-title"><i class="bi bi-activity me-2"></i>ملخص الأنشطة السريع</h3>
-                        <div>
-                            <button class="btn btn-sm btn-link" data-bs-toggle="tooltip" title="معلومات">
-                                <i class="bi bi-info-circle"></i>
-                            </button>
-                            <button class="btn btn-sm btn-link" data-bs-toggle="dropdown">
-                                <i class="bi bi-three-dots-vertical"></i>
-                            </button>
-                        </div>
-                    </div>
-                    <div class="analytics-card-content">
-                        <div class="cards-grid">
-                            <div class="stat-card">
-                                <div class="stat-card-header">
-                                    <div class="stat-card-icon orange">
-                                        <i class="bi bi-hourglass-split"></i>
-                                    </div>
-                                </div>
-                                <div class="stat-card-title">موافقات معلقة</div>
-                                <div class="stat-card-value"><?php echo $activitySummary['pending_approvals'] ?? 0; ?></div>
-                            </div>
-                            
-                            <div class="stat-card">
-                                <div class="stat-card-header">
-                                    <div class="stat-card-icon red">
-                                        <i class="bi bi-exclamation-triangle"></i>
-                                    </div>
-                                </div>
-                                <div class="stat-card-title">منتجات منخفضة المخزون</div>
-                                <div class="stat-card-value"><?php echo $activitySummary['low_stock_products'] ?? 0; ?></div>
-                            </div>
-                            
-                            <div class="stat-card">
-                                <div class="stat-card-header">
-                                    <div class="stat-card-icon blue">
-                                        <i class="bi bi-box-seam"></i>
-                                    </div>
-                                </div>
-                                <div class="stat-card-title">إنتاج معلق</div>
-                                <div class="stat-card-value"><?php echo $activitySummary['pending_production'] ?? 0; ?></div>
-                            </div>
-                            
-                            <div class="stat-card">
-                                <div class="stat-card-header">
-                                    <div class="stat-card-icon green">
-                                        <i class="bi bi-cart-check"></i>
-                                    </div>
-                                </div>
-                                <div class="stat-card-title">مبيعات معلقة</div>
-                                <div class="stat-card-value"><?php echo $activitySummary['pending_sales'] ?? 0; ?></div>
-                            </div>
-                        </div>
-                    </div>
-                </div>
-                
-                <!-- بطاقات ملخص إضافية -->
                 <div class="cards-grid mt-4">
                     <?php
                     $lastBackup = $db->queryOne(

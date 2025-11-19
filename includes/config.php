@@ -299,9 +299,10 @@ function getCurrencySymbol() {
 }
 
 // دالة مساعدة لتنسيق الأرقام
-function formatCurrency($amount) {
+function formatCurrency($amount, $allowNegative = true) {
     // تنظيف القيمة باستخدام cleanFinancialValue
-    $amount = cleanFinancialValue($amount);
+    // السماح بالقيم السالبة افتراضياً لأنها تستخدم للرصيد الدائن للعملاء
+    $amount = cleanFinancialValue($amount, $allowNegative);
     
     // استخدام getCurrencySymbol للحصول على رمز العملة المنظف
     $currencySymbol = function_exists('getCurrencySymbol') ? getCurrencySymbol() : (defined('CURRENCY_SYMBOL') ? CURRENCY_SYMBOL : 'ج.م');

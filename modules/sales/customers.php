@@ -407,7 +407,7 @@ if ($section === 'delegates' && !$isSalesUser) {
                         'phone'                => (string)($customerRow['phone'] ?? ''),
                         'address'              => (string)($customerRow['address'] ?? ''),
                         'balance'              => (float)($customerRow['balance'] ?? 0.0),
-                        'balance_formatted'    => formatCurrency((float)($customerRow['balance'] ?? 0.0)),
+                        'balance_formatted'    => formatCurrency(abs((float)($customerRow['balance'] ?? 0.0))),
                         'status'               => (string)($customerRow['status'] ?? ''),
                         'latitude'             => $customerRow['latitude'] !== null ? (float)$customerRow['latitude'] : null,
                         'longitude'            => $customerRow['longitude'] !== null ? (float)$customerRow['longitude'] : null,
@@ -2459,8 +2459,10 @@ document.addEventListener('DOMContentLoaded', function () {
                                         $balanceBadgeClass = $customerBalanceValue > 0
                                             ? 'bg-warning-subtle text-warning'
                                             : ($customerBalanceValue < 0 ? 'bg-info-subtle text-info' : 'bg-secondary-subtle text-secondary');
+                                        // عند عرض الرصيد الدائن، نعرض القيمة المطلقة
+                                        $displayBalanceValue = $customerBalanceValue < 0 ? abs($customerBalanceValue) : $customerBalanceValue;
                                     ?>
-                                    <strong><?php echo formatCurrency($customerBalanceValue); ?></strong>
+                                    <strong><?php echo formatCurrency($displayBalanceValue); ?></strong>
                                     <?php if ($customerBalanceValue !== 0.0): ?>
                                         <span class="badge <?php echo $balanceBadgeClass; ?> ms-1">
                                             <?php echo $customerBalanceValue > 0 ? 'رصيد مستحق' : 'رصيد دائن'; ?>
@@ -2505,7 +2507,9 @@ document.addEventListener('DOMContentLoaded', function () {
                                 <td>
                                     <?php
                                     $customerBalance = isset($customer['balance']) ? (float)$customer['balance'] : 0.0;
-                                    $formattedBalance = formatCurrency($customerBalance);
+                                    // عند عرض الرصيد الدائن، نعرض القيمة المطلقة
+                                    $displayBalanceForButton = $customerBalance < 0 ? abs($customerBalance) : $customerBalance;
+                                    $formattedBalance = formatCurrency($displayBalanceForButton);
                                     $rawBalance = number_format($customerBalance, 2, '.', '');
                                     ?>
                                     <div class="d-flex flex-wrap align-items-center gap-2">
