@@ -84,6 +84,43 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 'amount' => $amount
             ]);
             
+            // تحديث راتب المندوب المسؤول عن العميل
+            // نحاول تحديد المندوب من خلال created_by في جدول customers
+            // أو من خلال sales_rep_id في جدول invoices
+            try {
+                $customer = $db->queryOne("SELECT created_by FROM customers WHERE id = ?", [$customerId]);
+                $salesRepId = null;
+                
+                if ($customer && !empty($customer['created_by'])) {
+                    // المندوب الذي أنشأ العميل
+                    $salesRepId = intval($customer['created_by']);
+                } else {
+                    // محاولة الحصول على المندوب من خلال الفواتير
+                    $invoicesTableCheck = $db->queryOne("SHOW TABLES LIKE 'invoices'");
+                    if (!empty($invoicesTableCheck)) {
+                        $invoice = $db->queryOne(
+                            "SELECT sales_rep_id FROM invoices WHERE customer_id = ? AND sales_rep_id IS NOT NULL ORDER BY date DESC LIMIT 1",
+                            [$customerId]
+                        );
+                        if ($invoice && !empty($invoice['sales_rep_id'])) {
+                            $salesRepId = intval($invoice['sales_rep_id']);
+                        }
+                    }
+                }
+                
+                // تحديث راتب المندوب إذا تم تحديده
+                if ($salesRepId && $salesRepId > 0) {
+                    refreshSalesCommissionForUser(
+                        $salesRepId,
+                        $date,
+                        'تحديث تلقائي بعد تسجيل تحصيل جديد من المحاسب'
+                    );
+                }
+            } catch (Throwable $e) {
+                // لا نوقف العملية إذا فشل تحديث الراتب
+                error_log('Error updating sales commission after collection: ' . $e->getMessage());
+            }
+            
             // إرسال إشعار للمدير للموافقة
             if ($hasStatus) {
                 notifyManagers('تحصيل جديد', "تم إضافة تحصيل جديد بقيمة " . formatCurrency($amount), 'info');
