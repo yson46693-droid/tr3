@@ -1,7 +1,12 @@
 ﻿<?php
 /**
- * Ù„ÙˆØ­Ø© Ø§Ù„ØªØ­ÙƒÙ… Ù„Ù„Ù…Ø¯ÙŠØ±
+ * لوحة التحكم للمدير
  */
+
+// تعيين ترميز UTF-8
+header('Content-Type: text/html; charset=UTF-8');
+mb_internal_encoding('UTF-8');
+mb_http_output('UTF-8');
 
 define('ACCESS_ALLOWED', true);
 
@@ -91,7 +96,7 @@ if (
         header('Content-Type: application/json; charset=utf-8');
         echo json_encode([
             'success' => false,
-            'message' => 'ÙˆØ­Ø¯Ø© Ø§Ù„Ø¹Ù…Ù„Ø§Ø¡ ØºÙŠØ± Ù…ØªØ§Ø­Ø©.'
+            'message' => 'وحدة العملاء غير متاحة.'
         ], JSON_UNESCAPED_UNICODE);
     }
     exit;
