@@ -994,13 +994,40 @@ if (isset($_GET['ajax']) && $_GET['ajax'] == '1' && $salaryId > 0) {
 <style>
 @import url('https://fonts.googleapis.com/css2?family=Cairo:wght@400;600;700&display=swap');
 
+/* إصلاح مشكلة تجاوز العناصر للشاشة */
+* {
+    box-sizing: border-box;
+}
+
+/* Container wrapper للصفحة */
+body .container-fluid,
+body .container {
+    max-width: 100%;
+    overflow-x: hidden;
+    padding-left: 15px;
+    padding-right: 15px;
+}
+
+/* إصلاح أي عناصر قد تتجاوز العرض */
+.salary-page-header,
+.salary-card,
+.salary-table-wrapper,
+.nav-tabs {
+    max-width: 100%;
+    overflow-x: hidden;
+}
+
 .salary-page-header {
     background: #2d8cf0;
     color: white;
-    padding: 25px 30px;
+    padding: 20px;
     border-radius: 12px;
     margin-bottom: 30px;
     font-family: 'Cairo', sans-serif;
+    width: 100%;
+    max-width: 100%;
+    overflow-x: hidden;
+    box-sizing: border-box;
 }
 
 .salary-page-header h1 {
@@ -1016,18 +1043,21 @@ if (isset($_GET['ajax']) && $_GET['ajax'] == '1' && $salaryId > 0) {
     align-items: center;
     gap: 15px;
     flex-wrap: wrap;
+    max-width: 100%;
+    overflow-x: hidden;
 }
 
 .salary-card {
     background: white;
     border-radius: 12px;
-    padding: 25px;
+    padding: 20px;
     margin-bottom: 30px;
     box-shadow: 0 2px 8px rgba(0,0,0,0.08);
     border: 1px solid #e3e8ef;
     width: 100%;
     max-width: 100%;
     overflow-x: auto;
+    box-sizing: border-box;
 }
 
 .salary-card-header {
@@ -1035,16 +1065,18 @@ if (isset($_GET['ajax']) && $_GET['ajax'] == '1' && $salaryId > 0) {
     color: white;
     padding: 12px 20px;
     border-radius: 12px 12px 0 0;
-    margin: -25px -25px 20px -25px;
+    margin: -20px -20px 20px -20px;
     font-family: 'Cairo', sans-serif;
     font-weight: 700;
     font-size: 16px;
+    box-sizing: border-box;
+    max-width: calc(100% + 40px);
 }
 
 .salary-table-wrapper {
     background: white;
     border-radius: 12px;
-    padding: 25px;
+    padding: 20px;
     box-shadow: 0 2px 8px rgba(0,0,0,0.08);
     border: 1px solid #e3e8ef;
     overflow-x: auto;
@@ -1053,6 +1085,7 @@ if (isset($_GET['ajax']) && $_GET['ajax'] == '1' && $salaryId > 0) {
     width: 100%;
     max-width: 100%;
     position: relative;
+    box-sizing: border-box;
 }
 
 .salary-table-wrapper::-webkit-scrollbar {
@@ -1076,8 +1109,9 @@ if (isset($_GET['ajax']) && $_GET['ajax'] == '1' && $salaryId > 0) {
 .salary-table-wrapper table {
     width: 100%;
     border-collapse: collapse;
-    min-width: 800px;
+    min-width: 600px;
     table-layout: auto;
+    max-width: 100%;
 }
 
 .salary-table-wrapper th,
@@ -1085,7 +1119,10 @@ if (isset($_GET['ajax']) && $_GET['ajax'] == '1' && $salaryId > 0) {
     padding: 10px 12px;
     text-align: right;
     border-bottom: 1px solid #e5e7eb;
-    white-space: nowrap;
+    white-space: normal;
+    word-wrap: break-word;
+    overflow-wrap: break-word;
+    max-width: 200px;
 }
 
 .salary-table-wrapper th {
@@ -1096,6 +1133,8 @@ if (isset($_GET['ajax']) && $_GET['ajax'] == '1' && $salaryId > 0) {
     position: sticky;
     top: 0;
     z-index: 10;
+    white-space: nowrap;
+    min-width: 100px;
 }
 
 .salary-table-wrapper td {
@@ -1176,12 +1215,13 @@ if (isset($_GET['ajax']) && $_GET['ajax'] == '1' && $salaryId > 0) {
     }
     
     .salary-table-wrapper table {
-        min-width: 700px;
+        min-width: 500px;
         font-size: 13px;
     }
     
     .salary-table-wrapper th,
     .salary-table-wrapper td {
+        max-width: 150px;
         padding: 8px 10px;
         font-size: 12px;
     }
@@ -1223,7 +1263,7 @@ if (isset($_GET['ajax']) && $_GET['ajax'] == '1' && $salaryId > 0) {
     }
     
     .salary-table-wrapper table {
-        min-width: 900px;
+        min-width: 600px;
         font-size: 12px;
     }
     
@@ -1231,11 +1271,13 @@ if (isset($_GET['ajax']) && $_GET['ajax'] == '1' && $salaryId > 0) {
     .salary-table-wrapper td {
         padding: 8px 6px;
         font-size: 11px;
+        max-width: 120px;
     }
     
     .salary-table-wrapper th {
         font-size: 11px;
         white-space: nowrap;
+        min-width: 80px;
     }
     
     .badge {
@@ -1309,7 +1351,7 @@ if (isset($_GET['ajax']) && $_GET['ajax'] == '1' && $salaryId > 0) {
     }
     
     .salary-table-wrapper table {
-        min-width: 1000px;
+        min-width: 500px;
         font-size: 11px;
     }
     
@@ -1317,10 +1359,12 @@ if (isset($_GET['ajax']) && $_GET['ajax'] == '1' && $salaryId > 0) {
     .salary-table-wrapper td {
         padding: 6px 4px;
         font-size: 10px;
+        max-width: 100px;
     }
     
     .salary-table-wrapper th {
         font-size: 10px;
+        min-width: 70px;
     }
     
     .badge {
