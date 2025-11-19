@@ -110,10 +110,28 @@ if (!empty($invoicesTableExists)) {
 // رصيد الخزنة = التحصيلات + المبيعات المدفوعة بالكامل
 $cashRegisterBalance = $totalCollections + $fullyPaidSales;
 
-// حساب المبيعات المعلقة (الديون)
-$pendingSales = $totalSales - $fullyPaidSales - $totalCollections;
-if ($pendingSales < 0) {
-    $pendingSales = 0;
+// حساب المبيعات المعلقة (الديون) بالاعتماد على أرصدة العملاء لضمان التطابق مع صفحة العملاء
+$pendingSales = 0.0;
+$customerDebtResult = null;
+try {
+    $customerDebtSql = "SELECT COALESCE(SUM(balance), 0) AS total_debt FROM customers WHERE balance > 0";
+    $customerDebtParams = [];
+    
+    // إذا كان هناك مندوب محدد، نعرض العملاء الخاصين به فقط (نفس منطق صفحة العملاء)
+    if ($salesRepId) {
+        $customerDebtSql .= " AND created_by = ?";
+        $customerDebtParams[] = $salesRepId;
+    }
+    
+    $customerDebtResult = $db->queryOne($customerDebtSql, $customerDebtParams);
+    $pendingSales = (float)($customerDebtResult['total_debt'] ?? 0);
+} catch (Throwable $customerDebtError) {
+    // في حالة حدوث خطأ، نستخدم الطريقة القديمة كحل احتياطي
+    error_log('Sales cash register debt calculation fallback: ' . $customerDebtError->getMessage());
+    $pendingSales = $totalSales - $fullyPaidSales - $totalCollections;
+    if ($pendingSales < 0) {
+        $pendingSales = 0;
+    }
 }
 
 // إحصائيات إضافية
@@ -245,9 +263,6 @@ try {
     $oldDebtsCustomers = [];
     $oldDebtsTotal = 0.0;
 }
-
-// إضافة الديون القديمة إلى إجمالي الديون
-$pendingSales += $oldDebtsTotal;
 
 // جلب معلومات المندوب
 $salesRepInfo = $db->queryOne(
@@ -390,7 +405,7 @@ $salesRepInfo = $db->queryOne(
         <div class="row align-items-center">
             <div class="col-md-8">
                 <p class="mb-0 text-muted">
-                    المبيعات التي لم يتم تحصيلها بالكامل أو المبيعات التي تم تحصيل جزء منها فقط.
+                    المبيعات/الأرصدة التي لم يتم تحصيلها بالكامل. يتم الحساب مباشرةً من أرصدة العملاء لضمان التطابق مع صفحة العملاء.
                 </p>
                 <p class="mb-0 text-muted small mt-2">
                     يشمل الإجمالي <?php echo formatCurrency($oldDebtsTotal); ?> ديون العملاء المضافة يدوياً بدون سجل مشتريات.
