@@ -75,6 +75,14 @@ $baseUrl = getDashboardUrl();
                 </a>
             </li>
 
+            <li class="nav-item">
+                <a class="nav-link <?php echo (isset($_GET['page']) && $_GET['page'] === 'company_cash') ? 'active' : ''; ?>"
+                   href="<?php echo $baseUrl; ?>manager.php?page=company_cash">
+                    <i class="bi bi-bank"></i>
+                    <span>خزنة الشركة</span>
+                </a>
+            </li>
+
             <div class="sidebar-section">
                 <div class="sidebar-section-title">Listing</div>
                 

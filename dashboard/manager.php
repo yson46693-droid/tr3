@@ -369,174 +369,106 @@ $pageTitle = isset($lang['manager_dashboard']) ? $lang['manager_dashboard'] : '�
                 <?php include __DIR__ . '/../modules/manager/production_tasks.php'; ?>
 
             <?php elseif ($page === 'approvals'): ?>
-                <?php
-                $pendingApprovalsCount = getPendingApprovalsCount();
-                $approvalsSection = $_GET['section'] ?? 'pending';
-                $validApprovalSections = ['pending', 'warehouse_transfers'];
-                if (!in_array($approvalsSection, $validApprovalSections, true)) {
-                    $approvalsSection = 'pending';
-                }
-                ?>
-
-                <h2><i class="bi bi-check-circle me-2"></i><?php echo isset($lang['approvals']) ? $lang['approvals'] : 'Ø§Ù„Ù…ÙˆØ§ÙÙ‚Ø§Øª'; ?></h2>
-
-                <div class="btn-group btn-group-sm mb-3" role="group" aria-label="Approvals sections">
-                    <a href="?page=approvals&section=pending"
-                       class="btn <?php echo $approvalsSection === 'pending' ? 'btn-primary' : 'btn-outline-primary'; ?>">
-                        Ø§Ù„Ù…ÙˆØ§ÙÙ‚Ø§Øª Ø§Ù„Ù…Ø¹Ù„Ù‚Ø©
-                        <span class="badge bg-light text-dark ms-1"><?php echo $pendingApprovalsCount; ?></span>
-                    </a>
-                    <a href="?page=approvals&section=warehouse_transfers"
-                       class="btn <?php echo $approvalsSection === 'warehouse_transfers' ? 'btn-primary' : 'btn-outline-primary'; ?>">
-                        Ø·Ù„Ø¨Ø§Øª Ø§Ù„Ù†Ù‚Ù„ Ø¨ÙŠÙ† Ø§Ù„Ù…Ø®Ø§Ø²Ù†
-                    </a>
+                <div class="approvals-placeholder d-flex align-items-center justify-content-center py-5">
+                    <div class="d-flex flex-column flex-sm-row gap-3">
+                        <button type="button" class="btn btn-primary btn-lg px-5" id="invoiceReturnButton">
+                            Ø§Ø±Ø¬Ø§Ø¹ ÙØ§ØªÙˆØ±Ù‡
+                        </button>
+                        <button type="button" class="btn btn-danger btn-lg px-5" id="damagedReturnButton">
+                            Ø§Ø±Ø¬Ø§Ø¹ ØªÙˆØ§Ù„Ù
+                        </button>
+                    </div>
                 </div>
 
-                <?php if ($approvalsSection === 'pending'): ?>
-                    <?php
-                    $pageNum = isset($_GET['p']) ? max(1, intval($_GET['p'])) : 1;
-                    $perPageApprovals = 10;
-                    $offsetApprovals = ($pageNum - 1) * $perPageApprovals;
-                    $totalPagesApprovals = (int) ceil(($pendingApprovalsCount ?: 0) / $perPageApprovals);
-                    if ($totalPagesApprovals < 1) {
-                        $totalPagesApprovals = 1;
-                    }
-                    if ($pageNum > $totalPagesApprovals) {
-                        $pageNum = $totalPagesApprovals;
-                        $offsetApprovals = ($pageNum - 1) * $perPageApprovals;
-                    }
-                    $approvals = getPendingApprovals($perPageApprovals, $offsetApprovals);
-                    ?>
-
-                    <div class="card shadow-sm">
-                        <div class="card-header bg-primary text-white d-flex justify-content-between align-items-center">
-                            <h5 class="mb-0">Ø§Ù„Ù…ÙˆØ§ÙÙ‚Ø§Øª Ø§Ù„Ù…Ø¹Ù„Ù‚Ø© (<?php echo $pendingApprovalsCount; ?>)</h5>
-                        </div>
-                        <div class="card-body">
-                            <div class="table-responsive dashboard-table-wrapper">
-                                <table class="table dashboard-table align-middle">
-                                    <thead>
-                                        <tr>
-                                            <th>Ø§Ù„Ù†ÙˆØ¹</th>
-                                            <th>Ø§Ù„Ø·Ù„Ø¨ Ù…Ù†</th>
-                                            <th>Ø§Ù„ØªØ§Ø±ÙŠØ®</th>
-                                            <th>Ø§Ù„ØªÙØ§ØµÙŠÙ„</th>
-                                            <th>Ø§Ù„Ø¥Ø¬Ø±Ø§Ø¡Ø§Øª</th>
-                                        </tr>
-                                    </thead>
-                                    <tbody>
-                                        <?php if (empty($approvals)): ?>
-                                            <tr>
-                                                <td colspan="5" class="text-center text-muted">Ù„Ø§ ØªÙˆØ¬Ø¯ Ù…ÙˆØ§ÙÙ‚Ø§Øª Ù…Ø¹Ù„Ù‚Ø©</td>
-                                            </tr>
-                                        <?php else: ?>
-                                            <?php foreach ($approvals as $approval): ?>
-                                                <tr>
-                                                    <td><?php echo htmlspecialchars($approval['type']); ?></td>
-                                                    <td><?php echo htmlspecialchars($approval['requested_by_full_name'] ?? $approval['requested_by_name']); ?></td>
-                                                    <td><?php echo formatDateTime($approval['created_at']); ?></td>
-                                                    <td>
-                                                        <?php if ($approval['type'] === 'warehouse_transfer'): ?>
-                                                            <?php
-                                                            // Ø¬Ù„Ø¨ ØªÙØ§ØµÙŠÙ„ Ø·Ù„Ø¨ Ø§Ù„Ù†Ù‚Ù„
-                                                            require_once __DIR__ . '/../includes/approval_system.php';
-                                                            $entityColumn = getApprovalsEntityColumn();
-                                                            $transferId = $approval[$entityColumn] ?? null;
-                                                            if ($transferId) {
-                                                                $transferItems = $db->query(
-                                                                    "SELECT wti.*, p.name as product_name 
-                                                                     FROM warehouse_transfer_items wti
-                                                                     LEFT JOIN products p ON wti.product_id = p.id
-                                                                     WHERE wti.transfer_id = ?
-                                                                     ORDER BY wti.id",
-                                                                    [$transferId]
-                                                                );
-                                                                if (!empty($transferItems)) {
-                                                                    echo '<div class="small">';
-                                                                    foreach ($transferItems as $item) {
-                                                                        $batchInfo = !empty($item['batch_number']) ? ' - ØªØ´ØºÙŠÙ„Ø© ' . htmlspecialchars($item['batch_number']) : '';
-                                                                        echo '<span class="badge bg-info me-1 mb-1">';
-                                                                        echo htmlspecialchars($item['product_name'] ?? '-');
-                                                                        echo ' (' . number_format((float)$item['quantity'], 2) . ')';
-                                                                        echo $batchInfo;
-                                                                        echo '</span>';
-                                                                    }
-                                                                    echo '</div>';
-                                                                } else {
-                                                                    echo '<span class="text-muted small">Ù„Ø§ ØªÙˆØ¬Ø¯ Ù…Ù†ØªØ¬Ø§Øª</span>';
-                                                                }
-                                                            }
-                                                            ?>
-                                                        <?php endif; ?>
-                                                    </td>
-                                                    <td>
-                                                        <div class="btn-group btn-group-sm" role="group">
-                                                            <button class="btn btn-success" onclick="approveRequest(<?php echo $approval['id']; ?>, event)">
-                                                                <i class="bi bi-check"></i> Ù…ÙˆØ§ÙÙ‚Ø©
-                                                            </button>
-                                                            <button class="btn btn-danger" onclick="rejectRequest(<?php echo $approval['id']; ?>, event)">
-                                                                <i class="bi bi-x"></i> Ø±ÙØ¶
-                                                            </button>
-                                                        </div>
-                                                    </td>
-                                                </tr>
-                                            <?php endforeach; ?>
-                                        <?php endif; ?>
-                                    </tbody>
-                                </table>
+                <div class="modal fade" id="invoiceReturnModal" tabindex="-1" aria-labelledby="invoiceReturnModalLabel" aria-hidden="true">
+                    <div class="modal-dialog modal-dialog-centered">
+                        <div class="modal-content">
+                            <div class="modal-header">
+                                <h5 class="modal-title" id="invoiceReturnModalLabel">Ø§Ø±Ø¬Ø§Ø¹ ÙØ§ØªÙˆØ±Ù‡</h5>
+                                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
                             </div>
+                            <div class="modal-body">
+                                <div class="mb-3">
+                                    <label for="invoiceNumberInput" class="form-label">Ø±Ù‚Ù… Ø§Ù„ÙØ§ØªÙˆØ±Ù‡</label>
+                                    <input type="text" class="form-control" id="invoiceNumberInput" placeholder="Ø§Ø¯Ø®Ù„ Ø±Ù‚Ù… Ø§Ù„ÙØ§ØªÙˆØ±Ù‡">
+                                    <div class="invalid-feedback">
+                                        ÙŠØ±Ø¬Ù‰ Ø¥Ø¯Ø®Ø§Ù„ Ø±Ù‚Ù… Ø§Ù„ÙØ§ØªÙˆØ±Ø© Ù„Ù„Ø¨Ø­Ø«.
+                                    </div>
+                                </div>
+                                <div class="d-flex justify-content-between align-items-center">
+                                    <small class="text-muted">Ø³ÙŠØªÙ… Ø¹Ø±Ø¶ ØªÙØ§ØµÙŠÙ„ Ø§Ù„ÙØ§ØªÙˆØ±Ø© ØªÙ„Ù‚Ø§Ø¦ÙŠØ§Ù‹ Ø¨Ø¹Ø¯ Ø§Ù„Ø¨Ø­Ø«.</small>
+                                    <button type="button" class="btn btn-primary" id="invoiceSearchButton">
+                                        <i class="bi bi-search me-1"></i>Ø¨Ø­Ø«
+                                    </button>
+                                </div>
+                                <div id="invoiceLookupFeedback" class="alert d-none mt-3 mb-0" role="alert"></div>
 
-                            <?php if ($totalPagesApprovals > 1): ?>
-                            <nav aria-label="Page navigation" class="mt-3">
-                                <ul class="pagination justify-content-center flex-wrap">
-                                    <li class="page-item <?php echo $pageNum <= 1 ? 'disabled' : ''; ?>">
-                                        <a class="page-link" href="?page=approvals&section=pending&p=<?php echo $pageNum - 1; ?>">
-                                            <i class="bi bi-chevron-right"></i>
-                                        </a>
-                                    </li>
+                                <div id="invoiceLookupResults" class="d-none mt-4">
+                                    <div class="mb-3">
+                                        <span class="text-muted d-block mb-1">Ø§Ø³Ù… Ø§Ù„Ø¹Ù…ÙŠÙ„</span>
+                                        <strong id="invoiceCustomerName">-</strong>
+                                    </div>
+                                    <div class="table-responsive rounded border">
+                                        <table class="table table-sm align-middle mb-0">
+                                            <thead class="table-light">
+                                                <tr>
+                                                    <th>Ø§Ø³Ù… Ø§Ù„Ù…Ù†ØªØ¬</th>
+                                                    <th class="text-center">Ø§Ù„ÙƒÙ…ÙŠØ© Ø§Ù„Ù…Ø¨Ø§Ø¹Ø©</th>
+                                                    <th class="text-center">Ø³Ø¹Ø± Ø§Ù„ÙˆØ­Ø¯Ø©</th>
+                                                    <th class="text-center">Ø§Ù„ÙƒÙ…ÙŠØ© Ø§Ù„Ù…Ø±ØªØ¬Ø¹Ø©</th>
+                                                    <th class="text-center">Ø¥Ø¬Ù…Ø§Ù„ÙŠ Ø§Ù„Ù…Ø±ØªØ¬Ø¹</th>
+                                                </tr>
+                                            </thead>
+                                            <tbody id="invoiceItemsBody">
+                                                <tr>
+                                                    <td colspan="5" class="text-center text-muted py-3">Ø¬Ø§Ø±ÙŠ Ø§Ù„ØªØ¬Ù‡ÙŠØ²...</td>
+                                                </tr>
+                                            </tbody>
+                                        </table>
+                                    </div>
+                                    <div class="d-flex justify-content-between align-items-center mt-3 pt-2 border-top">
+                                        <span class="fw-semibold">Ø¥Ø¬Ù…Ø§Ù„ÙŠ Ø§Ù„ÙØ§ØªÙˆØ±Ø©</span>
+                                        <span class="fw-bold" id="invoiceTotalAmount">0.00</span>
+                                    </div>
+                                    <div class="d-flex justify-content-between align-items-center mt-2">
+                                        <span class="fw-semibold">Ø§Ù„Ù…Ø¨Ù„Øº Ø§Ù„Ù…Ø±ØªØ¬Ø¹</span>
+                                        <span class="fw-bold fs-5 text-primary" id="selectedReturnTotal">0.00</span>
+                                    </div>
 
-                                    <?php
-                                    $startPageApprovals = max(1, $pageNum - 2);
-                                    $endPageApprovals = min(max(1, $totalPagesApprovals), $pageNum + 2);
-
-                                    if ($startPageApprovals > 1): ?>
-                                        <li class="page-item"><a class="page-link" href="?page=approvals&section=pending&p=1">1</a></li>
-                                        <?php if ($startPageApprovals > 2): ?>
-                                            <li class="page-item disabled"><span class="page-link">...</span></li>
-                                        <?php endif; ?>
-                                    <?php endif; ?>
-
-                                    <?php for ($i = $startPageApprovals; $i <= $endPageApprovals; $i++): ?>
-                                        <li class="page-item <?php echo $i == $pageNum ? 'active' : ''; ?>">
-                                            <a class="page-link" href="?page=approvals&section=pending&p=<?php echo $i; ?>"><?php echo $i; ?></a>
-                                        </li>
-                                    <?php endfor; ?>
-
-                                    <?php if ($endPageApprovals < $totalPagesApprovals): ?>
-                                        <?php if ($endPageApprovals < $totalPagesApprovals - 1): ?>
-                                            <li class="page-item disabled"><span class="page-link">...</span></li>
-                                        <?php endif; ?>
-                                        <li class="page-item"><a class="page-link" href="?page=approvals&section=pending&p=<?php echo $totalPagesApprovals; ?>"><?php echo $totalPagesApprovals; ?></a></li>
-                                    <?php endif; ?>
-
-                                    <li class="page-item <?php echo $pageNum >= $totalPagesApprovals ? 'disabled' : ''; ?>">
-                                        <a class="page-link" href="?page=approvals&section=pending&p=<?php echo $pageNum + 1; ?>">
-                                            <i class="bi bi-chevron-left"></i>
-                                        </a>
-                                    </li>
-                                </ul>
-                            </nav>
-                            <?php endif; ?>
+                                    <div class="mt-4">
+                                    <span class="fw-semibold d-block mb-2">Ø·Ø±ÙŠÙ‚Ø© Ø§Ø±Ø¬Ø§Ø¹ Ø§Ù„Ù…Ø¨Ù„Øº</span>
+                                        <div class="refund-method-options d-flex flex-column gap-2">
+                                            <label class="refund-option border rounded px-3 py-2 d-flex align-items-start gap-2">
+                                                <input type="radio" class="form-check-input mt-1 refund-method-input" name="refundMethod" value="credit">
+                                                <div>
+                                                    <div class="fw-semibold">Ø¥Ø¶Ø§ÙØ© Ù„Ø±ØµÙŠØ¯ Ø§Ù„Ø¹Ù…ÙŠÙ„</div>
+                                                    <div class="text-muted small">ØªØ²ÙŠØ¯ Ù…Ù† Ø±ØµÙŠØ¯ Ø§Ù„Ø¹Ù…ÙŠÙ„ Ø§Ù„Ø¯Ø§Ø¦Ù† Ù„Ù„Ø§Ø³ØªÙØ§Ø¯Ø© Ù…Ù†Ù‡ Ø­Ø§Ù„Ø§Ù‹.</div>
+                                                </div>
+                                            </label>
+                                            <label class="refund-option border rounded px-3 py-2 d-flex align-items-start gap-2">
+                                                <input type="radio" class="form-check-input mt-1 refund-method-input" name="refundMethod" value="cash">
+                                                <div>
+                                                    <div class="fw-semibold">Ø¥Ø±Ø¬Ø§Ø¹ Ù†Ù‚Ø¯Ø§Ù‹</div>
+                                                    <div class="text-muted small">ØªØ³ØªØ±Ø¯ Ø§Ù„Ù…Ø¨Ù„Øº Ù…Ù† Ø®Ø²Ù†Ø© Ø§Ù„Ù…Ù†Ø¯ÙˆØ¨.</div>
+                                                </div>
+                                            </label>
+                                            <label class="refund-option border rounded px-3 py-2 d-flex align-items-start gap-2 position-relative">
+                                                <input type="radio" class="form-check-input mt-1 refund-method-input" name="refundMethod" value="company_request">
+                                                <div>
+                                                    <div class="fw-semibold d-flex align-items-center gap-2">
+                                                        Ø·Ù„Ø¨ Ø§Ù„Ù…Ø¨Ù„Øº Ù…Ù† Ø§Ù„Ø´Ø±ÙƒØ©
+                                                        <span class="badge bg-warning text-dark">Ù‚ÙŠØ¯ Ø§Ù„ØªØ·ÙˆÙŠØ±</span>
+                                                    </div>
+                                                    <div class="text-muted small">ØªÙ… Ø¥Ø±Ø³Ø§Ù„ Ø·Ù„Ø¨ Ù„Ù„Ù…ÙˆØ§ÙÙ‚Ø§Øª Ù„Ù…Ø¹Ø§Ù„Ø¬Ø© Ø§Ù„Ø¹Ù…Ù„ÙŠØ© ÙÙŠÙ…Ø§ Ø¨Ø¹Ø¯.</div>
+                                                </div>
+                                            </label>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
                         </div>
                     </div>
-                <?php elseif ($approvalsSection === 'warehouse_transfers'): ?>
-                    <?php
-                    $warehouseTransfersParentPage = 'approvals';
-                    $warehouseTransfersSectionParam = 'warehouse_transfers';
-                    $warehouseTransfersShowHeading = false;
-                    include __DIR__ . '/../modules/manager/warehouse_transfers.php';
-                    ?>
-                <?php endif; ?>
+                </div>
 
             <?php elseif ($page === 'audit'): ?>
                 <h2><i class="bi bi-journal-text me-2"></i><?php echo isset($lang['audit_logs']) ? $lang['audit_logs'] : 'Ø³Ø¬Ù„ Ø§Ù„ØªØ¯Ù‚ÙŠÙ‚'; ?></h2>
@@ -772,6 +704,16 @@ $pageTitle = isset($lang['manager_dashboard']) ? $lang['manager_dashboard'] : '�
                 }
                 ?>
                 
+            <?php elseif ($page === 'company_cash'): ?>
+                <?php 
+                $modulePath = __DIR__ . '/../modules/manager/company_cash.php';
+                if (file_exists($modulePath)) {
+                    include $modulePath;
+                } else {
+                    echo '<div class="alert alert-warning">صفحة خزنة الشركة غير متاحة حالياً</div>';
+                }
+                ?>
+                
             <?php elseif ($page === 'orders'): ?>
                 <?php 
                 $modulePath = __DIR__ . '/../modules/sales/customer_orders.php';
@@ -945,6 +887,263 @@ $pageTitle = isset($lang['manager_dashboard']) ? $lang['manager_dashboard'] : '�
 <?php include __DIR__ . '/../templates/footer.php'; ?>
 <script src="<?php echo ASSETS_URL; ?>js/reports.js"></script>
 <script>
+const invoiceReturnsEndpoint = '<?php echo addslashes(getRelativeUrl('api/invoice_returns.php')); ?>';
+const invoiceReturnState = {
+    invoice: null,
+    items: [],
+    selectedItems: {},
+    refundMethod: null
+};
+
+function setInvoiceLookupFeedback(message, type = 'info') {
+    const feedbackEl = document.getElementById('invoiceLookupFeedback');
+    if (!feedbackEl) {
+        return;
+    }
+    if (!message) {
+        feedbackEl.classList.add('d-none');
+        feedbackEl.textContent = '';
+        feedbackEl.className = 'alert d-none mt-3 mb-0';
+        return;
+    }
+    feedbackEl.textContent = message;
+    feedbackEl.className = `alert alert-${type} mt-3 mb-0`;
+}
+
+function renderInvoiceDetails(invoiceData, items) {
+    const resultsContainer = document.getElementById('invoiceLookupResults');
+    const customerNameEl = document.getElementById('invoiceCustomerName');
+    const totalAmountEl = document.getElementById('invoiceTotalAmount');
+    const itemsBody = document.getElementById('invoiceItemsBody');
+    const selectedTotalEl = document.getElementById('selectedReturnTotal');
+
+    if (!resultsContainer || !customerNameEl || !totalAmountEl || !itemsBody) {
+        return;
+    }
+
+    if (!invoiceData || !Array.isArray(items)) {
+        resultsContainer.classList.add('d-none');
+        return;
+    }
+
+    customerNameEl.textContent = invoiceData.customer_name || 'ØºÙŠØ± Ù…Ø¹Ø±ÙˆÙ';
+    totalAmountEl.textContent = new Intl.NumberFormat('ar-EG', {
+        minimumFractionDigits: 2,
+        maximumFractionDigits: 2
+    }).format(invoiceData.total_amount || 0);
+
+    if (!items.length) {
+        itemsBody.innerHTML = '<tr><td colspan="5" class="text-center text-muted py-3">Ù„Ø§ ØªØªØ­ ØªÙØ§ØµÙŠÙ„ Ù„Ù‡Ø°Ù‡ Ø§Ù„ÙØ§ØªÙˆØ±Ø©.</td></tr>';
+    } else {
+        itemsBody.innerHTML = items.map(item => {
+            const quantity = Number(item.quantity ?? 0);
+            const unitPrice = Number(item.unit_price ?? 0);
+            const totalPrice = Number(item.total_price ?? quantity * unitPrice);
+            const remaining = Number(item.remaining_quantity ?? quantity);
+            const selectedQty = Number(invoiceReturnState.selectedItems[item.invoice_item_id] ?? 0);
+            const returnTotal = selectedQty * unitPrice;
+            return `
+                <tr>
+                    <td>
+                        <div class="fw-semibold">${item.product_name || item.description || '-'}</div>
+                        <div class="small text-muted">Ø§Ù„Ù…ØªØ§Ø­ Ù„Ù„Ø§Ø±Ø¬Ø§Ø¹: ${remaining.toFixed(2)}</div>
+                    </td>
+                    <td class="text-center">${quantity.toFixed(2)}</td>
+                    <td class="text-center">${unitPrice.toFixed(2)}</td>
+                    <td class="text-center" style="max-width:130px;">
+                        <input type="number"
+                               class="form-control form-control-sm text-center return-qty-input"
+                               min="0"
+                               step="0.01"
+                               max="${remaining}"
+                               value="${selectedQty > 0 ? selectedQty.toFixed(2) : ''}"
+                               data-item-id="${item.invoice_item_id}"
+                               data-unit-price="${unitPrice}">
+                    </td>
+                    <td class="text-center">
+                        <span data-line-total="${item.invoice_item_id}">${returnTotal.toFixed(2)}</span>
+                    </td>
+                </tr>
+            `;
+        }).join('');
+    }
+
+    resultsContainer.classList.remove('d-none');
+    if (selectedTotalEl) {
+        updateSelectedReturnSummary();
+    }
+}
+
+function updateSelectedReturnSummary() {
+    const selectedTotalEl = document.getElementById('selectedReturnTotal');
+    if (!selectedTotalEl) {
+        return;
+    }
+
+    let total = 0;
+    invoiceReturnState.items.forEach(item => {
+        const invoiceItemId = item.invoice_item_id;
+        if (!invoiceItemId) {
+            return;
+        }
+        const qty = Number(invoiceReturnState.selectedItems[invoiceItemId] ?? 0);
+        if (qty <= 0) {
+            return;
+        }
+        const unitPrice = Number(item.unit_price ?? 0);
+        total += qty * unitPrice;
+    });
+
+    selectedTotalEl.textContent = total.toFixed(2);
+}
+
+function handleReturnQuantityInput(event) {
+    const target = event.target;
+    if (!target || !target.classList || !target.classList.contains('return-qty-input')) {
+        return;
+    }
+
+    const invoiceItemId = parseInt(target.getAttribute('data-item-id'), 10);
+    if (!invoiceItemId) {
+        return;
+    }
+
+    const max = parseFloat(target.getAttribute('max')) || 0;
+    let value = parseFloat(target.value);
+    if (isNaN(value) || value < 0) {
+        value = 0;
+    }
+    if (value > max) {
+        value = max;
+    }
+
+    // Normalize to two decimals for display
+    target.value = value > 0 ? value.toFixed(2) : '';
+
+    if (value <= 0) {
+        delete invoiceReturnState.selectedItems[invoiceItemId];
+    } else {
+        invoiceReturnState.selectedItems[invoiceItemId] = value;
+    }
+
+    const unitPrice = parseFloat(target.getAttribute('data-unit-price')) || 0;
+    const lineTotalEl = document.querySelector(`[data-line-total="${invoiceItemId}"]`);
+    if (lineTotalEl) {
+        lineTotalEl.textContent = (value * unitPrice).toFixed(2);
+    }
+
+    updateSelectedReturnSummary();
+}
+
+async function fetchInvoiceDetails(invoiceNumber) {
+    const url = `${invoiceReturnsEndpoint}?action=fetch_invoice&invoice_number=${encodeURIComponent(invoiceNumber)}`;
+    const response = await fetch(url, {
+        method: 'GET',
+        credentials: 'same-origin',
+        headers: {
+            'Accept': 'application/json'
+        }
+    });
+    if (!response.ok) {
+        throw new Error('ØªØ¹Ø°Ø± Ø§Ù„Ø§ØªØµØ§Ù„ Ø¨Ø§Ù„Ø®Ø§Ø¯Ù…');
+    }
+    const payload = await response.json();
+    if (!payload.success) {
+        throw new Error(payload.message || 'Ù„Ù… ÙŠØªÙ… Ø§Ù„Ø¹Ø«ÙˆØ± Ø¹Ù„Ù‰ Ø§Ù„ÙØ§ØªÙˆØ±Ø©');
+    }
+    return payload;
+}
+
+function initInvoiceReturnModal() {
+    const modalElement = document.getElementById('invoiceReturnModal');
+    const openButton = document.getElementById('invoiceReturnButton');
+    const searchButton = document.getElementById('invoiceSearchButton');
+    const invoiceInput = document.getElementById('invoiceNumberInput');
+    const resultsContainer = document.getElementById('invoiceLookupResults');
+    const itemsBody = document.getElementById('invoiceItemsBody');
+
+    if (!modalElement || typeof bootstrap === 'undefined' || !bootstrap.Modal) {
+        return;
+    }
+
+    const modalInstance = new bootstrap.Modal(modalElement, {
+        backdrop: 'static',
+        keyboard: false
+    });
+
+    if (openButton) {
+        openButton.addEventListener('click', () => {
+            if (invoiceInput) {
+                invoiceInput.value = '';
+                invoiceInput.classList.remove('is-invalid');
+            }
+            setInvoiceLookupFeedback('');
+            if (resultsContainer) {
+                resultsContainer.classList.add('d-none');
+            }
+            modalInstance.show();
+            setTimeout(() => {
+                invoiceInput?.focus();
+            }, 250);
+        });
+    }
+
+    if (invoiceInput) {
+        invoiceInput.addEventListener('input', () => {
+            invoiceInput.classList.remove('is-invalid');
+        });
+        invoiceInput.addEventListener('keydown', (event) => {
+            if (event.key === 'Enter') {
+                event.preventDefault();
+                searchButton?.click();
+            }
+        });
+    }
+
+    if (searchButton) {
+        searchButton.addEventListener('click', async () => {
+            const invoiceNumber = (invoiceInput?.value || '').trim();
+            if (!invoiceNumber) {
+                invoiceInput?.classList.add('is-invalid');
+                return;
+            }
+            invoiceInput?.classList.remove('is-invalid');
+
+            if (resultsContainer) {
+                resultsContainer.classList.add('d-none');
+            }
+            setInvoiceLookupFeedback('Ø¬Ø§Ø±ÙŠ Ø¬Ù„Ø¨ ØªÙØ§ØµÙŠÙ„ Ø§Ù„ÙØ§ØªÙˆØ±Ø©...', 'info');
+
+            const originalHTML = searchButton.innerHTML;
+            searchButton.disabled = true;
+            searchButton.innerHTML = '<span class="spinner-border spinner-border-sm me-2"></span>Ø¬Ø§Ø±ÙŠ Ø§Ù„Ø¨Ø­Ø«';
+
+            try {
+                const data = await fetchInvoiceDetails(invoiceNumber);
+                invoiceReturnState.invoice = data.invoice || null;
+                invoiceReturnState.items = data.items || [];
+                invoiceReturnState.selectedItems = {};
+                renderInvoiceDetails(invoiceReturnState.invoice, invoiceReturnState.items);
+                setInvoiceLookupFeedback('ØªÙ… Ø¬Ù„Ø¨ Ø§Ù„Ø¨ÙŠØ§Ù†Ø§Øª Ø¨Ù†Ø¬Ø§Ø­.', 'success');
+            } catch (error) {
+                invoiceReturnState.invoice = null;
+                invoiceReturnState.items = [];
+                invoiceReturnState.selectedItems = {};
+                renderInvoiceDetails(null, []);
+                setInvoiceLookupFeedback(error.message || 'Ù„Ù… ÙŠØªÙ… Ø§Ù„Ø¹Ø«ÙˆØ± Ø¹Ù„Ù‰ Ø§Ù„ÙØ§ØªÙˆØ±Ø©.', 'danger');
+                console.error('Invoice lookup error:', error);
+            } finally {
+                searchButton.disabled = false;
+                searchButton.innerHTML = originalHTML;
+            }
+        });
+    }
+
+    if (itemsBody) {
+        itemsBody.addEventListener('input', handleReturnQuantityInput);
+    }
+}
+
 function approveRequest(id) {
     if (!id) {
         console.error('approveRequest: Missing ID');
@@ -1116,6 +1315,7 @@ async function updateApprovalBadge() {
 // ØªØ­Ø¯ÙŠØ« Ø§Ù„Ø¹Ø¯Ø§Ø¯ Ø¹Ù†Ø¯ ØªØ­Ù…ÙŠÙ„ Ø§Ù„ØµÙØ­Ø©
 document.addEventListener('DOMContentLoaded', function() {
     updateApprovalBadge();
+    initInvoiceReturnModal();
     
     // ØªØ­Ø¯ÙŠØ« Ø§Ù„Ø¹Ø¯Ø§Ø¯ ÙƒÙ„ 30 Ø«Ø§Ù†ÙŠØ©
     setInterval(updateApprovalBadge, 30000);

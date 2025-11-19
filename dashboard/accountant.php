@@ -935,6 +935,16 @@ $pageTitle = isset($lang['accountant_dashboard']) ? $lang['accountant_dashboard'
                 </div>
             </div>
                 
+            <?php elseif ($page === 'accountant_cash'): ?>
+                <?php 
+                $modulePath = __DIR__ . '/../modules/accountant/cash_register.php';
+                if (file_exists($modulePath)) {
+                    include $modulePath;
+                } else {
+                    echo '<div class="alert alert-warning">صفحة خزنة المحاسب غير متاحة حالياً</div>';
+                }
+                ?>
+                
             <?php elseif ($page === 'suppliers'): ?>
                 <!-- صفحة الموردين -->
                 <?php 

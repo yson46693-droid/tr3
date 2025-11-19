@@ -43,6 +43,14 @@ $baseUrl = getDashboardUrl();
                 </a>
             </li>
 
+            <li class="nav-item">
+                <a class="nav-link <?php echo (isset($_GET['page']) && $_GET['page'] === 'accountant_cash') ? 'active' : ''; ?>"
+                   href="<?php echo $baseUrl; ?>accountant.php?page=accountant_cash">
+                    <i class="bi bi-safe2"></i>
+                    <span>خزنة المحاسب</span>
+                </a>
+            </li>
+
             <div class="sidebar-section">
                 <div class="sidebar-section-title">Finance</div>
                 
