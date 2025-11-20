@@ -81,7 +81,7 @@ $baseUrl = getDashboardUrl();
                     <span><?php echo isset($lang['menu_reports']) ? $lang['menu_reports'] : 'التقارير'; ?></span>
                 </a>
             </li>
-
+            
             <li class="nav-item">
                 <a class="nav-link <?php echo (isset($_GET['page']) && $_GET['page'] === 'company_cash') ? 'active' : ''; ?>"
                    href="<?php echo $baseUrl; ?>manager.php?page=company_cash">
