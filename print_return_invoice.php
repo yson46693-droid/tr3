@@ -58,6 +58,18 @@ $returnItems = $db->query(
     [$returnId]
 );
 
+// التأكد من أن return_date موجود، وإلا استخدم created_at أو التاريخ الحالي
+if (empty($returnSummary['return_date']) && !empty($returnSummary['created_at'])) {
+    $returnSummary['return_date'] = $returnSummary['created_at'];
+} elseif (empty($returnSummary['return_date'])) {
+    $returnSummary['return_date'] = date('Y-m-d');
+}
+
+// التأكد من أن جميع الحقول المطلوبة موجودة
+if (empty($returnSummary['return_number'])) {
+    $returnSummary['return_number'] = 'RET-' . str_pad($returnId, 4, '0', STR_PAD_LEFT);
+}
+
 $returnDetails = [
     'summary' => $returnSummary,
     'items'   => $returnItems,
@@ -111,7 +123,14 @@ $returnNumber = $returnSummary['return_number'] ?? ('RET-' . $returnId);
                 </div>
             </div>
 
-            <?php include __DIR__ . '/modules/accountant/invoice_print.php'; ?>
+            <?php 
+            try {
+                include __DIR__ . '/modules/accountant/invoice_print.php'; 
+            } catch (Throwable $e) {
+                error_log('Error printing return invoice: ' . $e->getMessage());
+                echo '<div class="alert alert-danger">حدث خطأ في طباعة المرتجع: ' . htmlspecialchars($e->getMessage()) . '</div>';
+            }
+            ?>
         </div>
     </div>
 

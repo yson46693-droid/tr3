@@ -7,6 +7,14 @@ if (!defined('ACCESS_ALLOWED')) {
     die('Direct access not allowed');
 }
 
+// التأكد من تضمين config.php إذا لم يكن متضمناً بالفعل
+if (!function_exists('formatDate') || !function_exists('formatCurrency')) {
+    $configPath = __DIR__ . '/../../includes/config.php';
+    if (file_exists($configPath)) {
+        require_once $configPath;
+    }
+}
+
 $isReturnDocument = isset($returnDetails) && is_array($returnDetails);
 $returnMetadata = null;
 
@@ -17,7 +25,17 @@ if ($isReturnDocument) {
     }
 
     $returnItems = $returnDetails['items'] ?? [];
+    
+    // التأكد من أن returnItems هو مصفوفة
+    if (!is_array($returnItems)) {
+        $returnItems = [];
+    }
+    
     $normalizedItems = array_map(function ($item) {
+        if (!is_array($item)) {
+            return null;
+        }
+        
         $quantity = isset($item['quantity']) ? (float)$item['quantity'] : 0;
         $unitPrice = isset($item['unit_price']) ? (float)$item['unit_price'] : 0;
         $notes = trim((string)($item['notes'] ?? ''));
@@ -35,6 +53,11 @@ if ($isReturnDocument) {
             'notes'        => $notes,
         ];
     }, $returnItems);
+    
+    // إزالة العناصر null
+    $normalizedItems = array_filter($normalizedItems, function($item) {
+        return $item !== null;
+    });
 
     $invoiceData = [
         'invoice_number'    => $returnSummary['return_number'] ?? ('RET-' . str_pad($returnSummary['id'] ?? 0, 4, '0', STR_PAD_LEFT)),
