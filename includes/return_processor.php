@@ -65,30 +65,70 @@ function getCustomerPurchaseHistory(int $customerId, ?int $salesRepId = null): a
     
     // Calculate already returned quantities
     $returnedQuantities = [];
-    $returnedRows = $db->query(
-        "SELECT ri.invoice_item_id, ri.product_id, COALESCE(SUM(ri.quantity), 0) AS returned_quantity
-         FROM return_items ri
-         INNER JOIN returns r ON r.id = ri.return_id
-         WHERE r.customer_id = ?
-           AND r.status IN ('pending', 'approved', 'processed', 'completed')
-           AND ri.invoice_item_id IS NOT NULL
-         GROUP BY ri.invoice_item_id, ri.product_id",
-        [$customerId]
-    );
     
-    foreach ($returnedRows as $row) {
-        $invoiceItemId = (int)$row['invoice_item_id'];
-        $productId = (int)$row['product_id'];
-        $key = "{$invoiceItemId}_{$productId}";
-        $returnedQuantities[$key] = (float)$row['returned_quantity'];
+    // Check if invoice_item_id column exists
+    $hasInvoiceItemId = false;
+    try {
+        $columnCheck = $db->queryOne("SHOW COLUMNS FROM return_items LIKE 'invoice_item_id'");
+        $hasInvoiceItemId = !empty($columnCheck);
+    } catch (Throwable $e) {
+        $hasInvoiceItemId = false;
+    }
+    
+    if ($hasInvoiceItemId) {
+        $returnedRows = $db->query(
+            "SELECT ri.invoice_item_id, ri.product_id, COALESCE(SUM(ri.quantity), 0) AS returned_quantity
+             FROM return_items ri
+             INNER JOIN returns r ON r.id = ri.return_id
+             WHERE r.customer_id = ?
+               AND r.status IN ('pending', 'approved', 'processed', 'completed')
+               AND ri.invoice_item_id IS NOT NULL
+             GROUP BY ri.invoice_item_id, ri.product_id",
+            [$customerId]
+        );
+        
+        foreach ($returnedRows as $row) {
+            $invoiceItemId = (int)$row['invoice_item_id'];
+            $productId = (int)$row['product_id'];
+            $key = "{$invoiceItemId}_{$productId}";
+            $returnedQuantities[$key] = (float)$row['returned_quantity'];
+        }
+    } else {
+        // Fallback: group by product_id only (less accurate but works)
+        $returnedRows = $db->query(
+            "SELECT ri.product_id, COALESCE(SUM(ri.quantity), 0) AS returned_quantity
+             FROM return_items ri
+             INNER JOIN returns r ON r.id = ri.return_id
+             INNER JOIN invoices i ON r.invoice_id = i.id
+             WHERE r.customer_id = ?
+               AND r.status IN ('pending', 'approved', 'processed', 'completed')
+             GROUP BY ri.product_id",
+            [$customerId]
+        );
+        
+        foreach ($returnedRows as $row) {
+            $productId = (int)$row['product_id'];
+            $key = "product_{$productId}";
+            $returnedQuantities[$key] = (float)$row['returned_quantity'];
+        }
     }
     
     $result = [];
     foreach ($purchaseHistory as $item) {
         $invoiceItemId = (int)$item['invoice_item_id'];
         $productId = (int)$item['product_id'];
-        $key = "{$invoiceItemId}_{$productId}";
-        $returnedQty = $returnedQuantities[$key] ?? 0.0;
+        
+        // Calculate returned quantity
+        $returnedQty = 0.0;
+        if ($hasInvoiceItemId) {
+            $key = "{$invoiceItemId}_{$productId}";
+            $returnedQty = $returnedQuantities[$key] ?? 0.0;
+        } else {
+            // Fallback: use product_id only
+            $key = "product_{$productId}";
+            $returnedQty = $returnedQuantities[$key] ?? 0.0;
+        }
+        
         $purchasedQty = (float)$item['quantity'];
         $remainingQty = max(0, round($purchasedQty - $returnedQty, 3));
         
