@@ -67,7 +67,14 @@ if (empty($salesTableCheck)) {
                        NULLIF(TRIM(p.name), ''),
                        CONCAT('منتج رقم ', p.id)
                    ) as product_name,
-                   u.full_name as salesperson_name
+                   u.full_name as salesperson_name,
+                   (SELECT i.invoice_number 
+                    FROM invoices i 
+                    WHERE i.customer_id = s.customer_id 
+                      AND DATE(i.date) = DATE(s.date)
+                      AND (i.sales_rep_id = s.salesperson_id OR i.sales_rep_id IS NULL)
+                    ORDER BY i.id DESC 
+                    LIMIT 1) as invoice_number
             FROM sales s
             LEFT JOIN customers c ON s.customer_id = c.id
             LEFT JOIN products p ON s.product_id = p.id
@@ -248,6 +255,7 @@ $customers = $db->query("SELECT id, name FROM customers WHERE status = 'active' 
                 <thead>
                     <tr>
                         <th>التاريخ</th>
+                        <th>رقم الفاتورة</th>
                         <th>العميل</th>
                         <th>المنتج</th>
                         <th>الكمية</th>
@@ -262,7 +270,7 @@ $customers = $db->query("SELECT id, name FROM customers WHERE status = 'active' 
                 <tbody>
                     <?php if (empty($sales)): ?>
                         <tr>
-                            <td colspan="<?php echo $currentUser['role'] !== 'sales' ? '8' : '7'; ?>" class="text-center text-muted">لا توجد مبيعات</td>
+                            <td colspan="<?php echo $currentUser['role'] !== 'sales' ? '9' : '8'; ?>" class="text-center text-muted">لا توجد مبيعات</td>
                         </tr>
                     <?php else: ?>
                         <?php foreach ($sales as $sale): ?>
@@ -274,6 +282,13 @@ $customers = $db->query("SELECT id, name FROM customers WHERE status = 'active' 
                             ?>
                             <tr>
                                 <td><?php echo formatDate($sale['date']); ?></td>
+                                <td>
+                                    <?php if (!empty($sale['invoice_number'])): ?>
+                                        <span class="badge bg-info"><?php echo htmlspecialchars($sale['invoice_number']); ?></span>
+                                    <?php else: ?>
+                                        <span class="text-muted">-</span>
+                                    <?php endif; ?>
+                                </td>
                                 <td><?php echo htmlspecialchars($sale['customer_name'] ?? '-'); ?></td>
                                 <td><?php echo htmlspecialchars($productName); ?></td>
                                 <td><?php echo number_format($sale['quantity'], 2); ?></td>
