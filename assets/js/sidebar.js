@@ -63,6 +63,61 @@
                 }
             }
         });
+        
+        // Initialize nested sidebar groups
+        initNestedGroups();
+    }
+    
+    /**
+     * Initialize Nested Sidebar Groups
+     */
+    function initNestedGroups() {
+        const groupHeaders = document.querySelectorAll('.nav-group-header[data-group-toggle]');
+        
+        groupHeaders.forEach(function(header) {
+            // Load saved state from localStorage
+            const groupId = header.closest('.nav-group').getAttribute('data-group-id') || 
+                           header.textContent.trim().replace(/\s+/g, '-').toLowerCase();
+            const children = header.nextElementSibling;
+            
+            if (!children || !children.classList.contains('nav-group-children')) return;
+            
+            // Set group ID for persistence
+            header.closest('.nav-group').setAttribute('data-group-id', groupId);
+            
+            // Check if group has active child (should be expanded)
+            const hasActiveChild = header.classList.contains('has-active');
+            
+            // Load saved state or use default
+            const savedState = localStorage.getItem('sidebar-group-' + groupId);
+            const shouldExpand = savedState !== null ? savedState === 'true' : (hasActiveChild || children.classList.contains('expanded'));
+            
+            if (shouldExpand) {
+                children.classList.add('expanded');
+                header.setAttribute('aria-expanded', 'true');
+            } else {
+                children.classList.remove('expanded');
+                header.setAttribute('aria-expanded', 'false');
+            }
+            
+            // Toggle on click
+            header.addEventListener('click', function(e) {
+                e.preventDefault();
+                e.stopPropagation();
+                
+                const isExpanded = children.classList.contains('expanded');
+                
+                if (isExpanded) {
+                    children.classList.remove('expanded');
+                    header.setAttribute('aria-expanded', 'false');
+                    localStorage.setItem('sidebar-group-' + groupId, 'false');
+                } else {
+                    children.classList.add('expanded');
+                    header.setAttribute('aria-expanded', 'true');
+                    localStorage.setItem('sidebar-group-' + groupId, 'true');
+                }
+            });
+        });
     }
     
     /**
