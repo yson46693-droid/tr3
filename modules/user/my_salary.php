@@ -907,11 +907,7 @@ $monthName = date('F', mktime(0, 0, 0, $selectedMonth, 1));
             <?php endif; ?>
         </div>
     </div>
-    <div class="summary-card">
-        <div class="summary-card-title">قبل خصم السلفات</div>
-        <div class="summary-card-value"><?php echo formatCurrency($monthStats['total_salary']); ?></div>
-        <div class="summary-card-description">الراتب الإجمالي</div>
-    </div>
+    
 </div>
 
 <!-- جدول تفاصيل الراتب -->
