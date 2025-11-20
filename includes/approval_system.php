@@ -101,15 +101,44 @@ function requestApproval($type, $entityId, $requestedBy, $notes = null) {
         }
         
         // إنشاء موافقة جديدة
-        $sql = "INSERT INTO approvals (type, {$entityColumn}, requested_by, status, notes) 
-                VALUES (?, ?, ?, 'pending', ?)";
+        // التحقق من اسم عمود الملاحظات
+        $notesColumn = 'notes';
+        $columns = $db->query("SHOW COLUMNS FROM approvals") ?? [];
+        $hasNotesColumn = false;
+        $hasApprovalNotesColumn = false;
         
-        $result = $db->execute($sql, [
-            $type,
-            $entityId,
-            $requestedBy,
-            $notes
-        ]);
+        foreach ($columns as $column) {
+            $fieldName = $column['Field'] ?? '';
+            if ($fieldName === 'notes') {
+                $hasNotesColumn = true;
+            } elseif ($fieldName === 'approval_notes') {
+                $hasApprovalNotesColumn = true;
+                $notesColumn = 'approval_notes';
+            }
+        }
+        
+        // بناء استعلام الإدراج بناءً على الأعمدة المتاحة
+        if ($hasNotesColumn || $hasApprovalNotesColumn) {
+            $sql = "INSERT INTO approvals (type, {$entityColumn}, requested_by, status, {$notesColumn}) 
+                    VALUES (?, ?, ?, 'pending', ?)";
+            
+            $result = $db->execute($sql, [
+                $type,
+                $entityId,
+                $requestedBy,
+                $notes
+            ]);
+        } else {
+            // إذا لم يكن هناك عمود ملاحظات، إدراج بدون ملاحظات
+            $sql = "INSERT INTO approvals (type, {$entityColumn}, requested_by, status) 
+                    VALUES (?, ?, ?, 'pending')";
+            
+            $result = $db->execute($sql, [
+                $type,
+                $entityId,
+                $requestedBy
+            ]);
+        }
         
         // إرسال إشعار للمديرين
         $entityName = getEntityName($type, $entityId);
@@ -203,11 +232,37 @@ function approveRequest($approvalId, $approvedBy, $notes = null) {
         }
         
         // تحديث حالة الموافقة
-        $db->execute(
-            "UPDATE approvals SET status = 'approved', approved_by = ?, notes = ? 
-             WHERE id = ?",
-            [$approvedBy, $notes, $approvalId]
-        );
+        // التحقق من اسم عمود الملاحظات
+        $notesColumn = 'notes';
+        $columns = $db->query("SHOW COLUMNS FROM approvals") ?? [];
+        $hasNotesColumn = false;
+        $hasApprovalNotesColumn = false;
+        
+        foreach ($columns as $column) {
+            $fieldName = $column['Field'] ?? '';
+            if ($fieldName === 'notes') {
+                $hasNotesColumn = true;
+            } elseif ($fieldName === 'approval_notes') {
+                $hasApprovalNotesColumn = true;
+                $notesColumn = 'approval_notes';
+            }
+        }
+        
+        // بناء استعلام التحديث بناءً على الأعمدة المتاحة
+        if ($hasNotesColumn || $hasApprovalNotesColumn) {
+            $db->execute(
+                "UPDATE approvals SET status = 'approved', approved_by = ?, {$notesColumn} = ? 
+                 WHERE id = ?",
+                [$approvedBy, $notes, $approvalId]
+            );
+        } else {
+            // إذا لم يكن هناك عمود ملاحظات، تحديث بدون ملاحظات
+            $db->execute(
+                "UPDATE approvals SET status = 'approved', approved_by = ? 
+                 WHERE id = ?",
+                [$approvedBy, $approvalId]
+            );
+        }
         
         // تحديث حالة الكيان
         updateEntityStatus($approval['type'], $entityIdentifier, 'approved', $approvedBy);
