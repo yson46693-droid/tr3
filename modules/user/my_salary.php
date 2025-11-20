@@ -604,7 +604,6 @@ $hourlyRate = cleanFinancialValue($currentSalary['hourly_rate'] ?? $currentUser[
 $baseAmount = cleanFinancialValue($currentSalary['base_amount'] ?? 0);
 $bonus = cleanFinancialValue($currentSalary['bonus'] ?? 0);
 $deductions = cleanFinancialValue($currentSalary['deductions'] ?? 0);
-$advancesDeductionAmount = cleanFinancialValue($currentSalary['advances_deduction'] ?? 0);
 $collectionsBonus = cleanFinancialValue($monthStats['collections_bonus'] ?? 0);
 
 // حساب الراتب الإجمالي - التأكد من تضمين نسبة التحصيلات
@@ -613,8 +612,7 @@ $totalSalaryBase = cleanFinancialValue($monthStats['total_salary'] ?? 0);
 // إذا كان المستخدم مندوب مبيعات ولديه نسبة تحصيلات، تأكد من تضمينها في الراتب الإجمالي
 if ($currentUser['role'] === 'sales' && $collectionsBonus > 0) {
     // حساب الراتب المتوقع مع نسبة التحصيلات
-    $expectedTotalWithCollections = $baseAmount + $bonus + $collectionsBonus - $deductions - $advancesDeductionAmount;
-    $expectedTotalWithCollections = $baseAmount + $bonus + $collectionsBonus - $deductions - $advancesDeductionAmount;
+    $expectedTotalWithCollections = $baseAmount + $bonus + $collectionsBonus - $deductions;
     
     // إذا كان الراتب الإجمالي الحالي لا يتطابق مع الراتب المتوقع (مع نسبة التحصيلات)
     // فهذا يعني أن نسبة التحصيلات غير مضمنة، لذا أضفها
@@ -960,24 +958,10 @@ $monthName = date('F', mktime(0, 0, 0, $selectedMonth, 1));
                 <td>الخصومات</td>
                 <td><?php echo formatCurrency($deductions); ?></td>
             </tr>
-            <?php if ($advancesDeductionAmount > 0): ?>
-            <tr>
-                <td>خصم السلف</td>
-                <td>-<?php echo formatCurrency($advancesDeductionAmount); ?></td>
-            </tr>
-            <?php endif; ?>
             <tr>
                 <td><strong>الراتب الإجمالي</strong></td>
                 <td><strong><?php echo formatCurrency($totalSalary); ?></strong></td>
             </tr>
-            <?php if ($advancesDeductionAmount > 0): ?>
-            <tr>
-                <td colspan="2" style="text-align: center; color: #b45309; font-size: 13px; padding-top: 8px;">
-                    <i class="bi bi-info-circle me-1"></i>
-                    تم خصم <?php echo formatCurrency($advancesDeductionAmount); ?> من الراتب الحالي مقابل السلف المعتمدة التي لم تُسدد بعد.
-                </td>
-            </tr>
-            <?php endif; ?>
             <?php if ($currentUser['role'] === 'sales' && $collectionsBonus > 0): ?>
             <tr>
                 <td colspan="2" style="text-align: center; color: #6b7280; font-size: 13px; padding-top: 10px;">

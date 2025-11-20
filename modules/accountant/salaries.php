@@ -832,42 +832,56 @@ foreach ($users as $user) {
         // المستخدم لديه راتب مسجل
         $salaries[] = $salariesMap[$userId];
     } else {
-        // المستخدم ليس لديه راتب مسجل - إنشاء سجل فارغ
-        $hourlyRate = cleanFinancialValue($user['hourly_rate'] ?? 0);
-        $monthHours = calculateMonthlyHours($userId, $selectedMonth, $selectedYear);
-        $baseAmount = round($monthHours * $hourlyRate, 2);
+        // المستخدم ليس لديه راتب مسجل - احسب الراتب بنفس منطق صفحة مرتبي
+        $calculation = calculateSalary($userId, $selectedMonth, $selectedYear);
         
-        // حساب نسبة التحصيلات إذا كان مندوب
-        $collectionsAmount = 0;
-        $collectionsBonus = 0;
-        if ($user['role'] === 'sales') {
-            $collectionsAmount = calculateSalesCollections($userId, $selectedMonth, $selectedYear);
-            $collectionsBonus = $collectionsAmount * 0.02;
+        if (!empty($calculation['success'])) {
+            $salaries[] = [
+                'id' => null,
+                'user_id' => $userId,
+                'full_name' => $user['full_name'] ?? $user['username'],
+                'username' => $user['username'],
+                'role' => $user['role'],
+                'hourly_rate' => cleanFinancialValue($calculation['hourly_rate'] ?? ($user['hourly_rate'] ?? 0)),
+                'current_hourly_rate' => cleanFinancialValue($calculation['hourly_rate'] ?? ($user['hourly_rate'] ?? 0)),
+                'total_hours' => $calculation['total_hours'] ?? 0,
+                'base_amount' => cleanFinancialValue($calculation['base_amount'] ?? 0),
+                'bonus' => cleanFinancialValue($calculation['bonus'] ?? 0),
+                'collections_bonus' => cleanFinancialValue($calculation['collections_bonus'] ?? 0),
+                'collections_amount' => cleanFinancialValue($calculation['collections_amount'] ?? 0),
+                'deductions' => cleanFinancialValue($calculation['deductions'] ?? 0),
+                'total_amount' => cleanFinancialValue($calculation['total_amount'] ?? 0),
+                'status' => 'not_calculated',
+                'approved_by' => null,
+                'approver_name' => null,
+                'created_at' => null,
+                'updated_at' => null
+            ];
+        } else {
+            // في حال فشل الحساب لأي سبب، استخدم القيم الصفرية كحل أخير
+            $hourlyRate = cleanFinancialValue($user['hourly_rate'] ?? 0);
+            $salaries[] = [
+                'id' => null,
+                'user_id' => $userId,
+                'full_name' => $user['full_name'] ?? $user['username'],
+                'username' => $user['username'],
+                'role' => $user['role'],
+                'hourly_rate' => $hourlyRate,
+                'current_hourly_rate' => $hourlyRate,
+                'total_hours' => 0,
+                'base_amount' => 0,
+                'bonus' => 0,
+                'collections_bonus' => 0,
+                'collections_amount' => 0,
+                'deductions' => 0,
+                'total_amount' => 0,
+                'status' => 'not_calculated',
+                'approved_by' => null,
+                'approver_name' => null,
+                'created_at' => null,
+                'updated_at' => null
+            ];
         }
-        
-        $totalAmount = round($baseAmount + $collectionsBonus, 2);
-        
-        $salaries[] = [
-            'id' => null,
-            'user_id' => $userId,
-            'full_name' => $user['full_name'] ?? $user['username'],
-            'username' => $user['username'],
-            'role' => $user['role'],
-            'hourly_rate' => $hourlyRate,
-            'current_hourly_rate' => $hourlyRate,
-            'total_hours' => $monthHours,
-            'base_amount' => $baseAmount,
-            'bonus' => 0,
-            'collections_bonus' => round($collectionsBonus, 2),
-            'collections_amount' => $collectionsAmount,
-            'deductions' => 0,
-            'total_amount' => $totalAmount,
-            'status' => 'not_calculated',
-            'approved_by' => null,
-            'approver_name' => null,
-            'created_at' => null,
-            'updated_at' => null
-        ];
     }
 }
 
