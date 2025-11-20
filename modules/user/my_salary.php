@@ -432,7 +432,26 @@ $isTemporary = false; // هل الراتب محسوب مؤقتاً أم محفو
 
 if ($salaryData['exists']) {
     // الراتب محفوظ في قاعدة البيانات
-    $currentSalary = $salaryData['salary'];
+    // للمندوبين: أعد حساب الراتب دائماً للتأكد من استخدام الراتب الشهري الثابت
+    if ($currentUser['role'] === 'sales') {
+        // إعادة حساب الراتب للمندوبين لضمان استخدام الراتب الشهري الثابت
+        // استخدم الخصومات والمكافآت من الراتب المحفوظ
+        $savedBonus = cleanFinancialValue($salaryData['salary']['bonus'] ?? 0);
+        $savedDeductions = cleanFinancialValue($salaryData['salary']['deductions'] ?? 0);
+        $calculation = calculateSalary($currentUser['id'], $selectedMonth, $selectedYear, $savedBonus, $savedDeductions);
+        if ($calculation['success']) {
+            $currentSalary = $calculation;
+            $isTemporary = true;
+        } else {
+            // إذا فشل الحساب، استخدم القيمة المحفوظة
+            $currentSalary = $salaryData['salary'];
+            $isTemporary = false;
+        }
+    } else {
+        // للآخرين: استخدم القيمة المحفوظة
+        $currentSalary = $salaryData['salary'];
+        $isTemporary = false;
+    }
     
     // تنظيف جميع القيم المالية من 262145
     if (isset($currentSalary['hourly_rate'])) {
