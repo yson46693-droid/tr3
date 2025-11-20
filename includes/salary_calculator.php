@@ -473,20 +473,31 @@ function calculateSalary($userId, $month, $year, $bonus = 0, $deductions = 0) {
     $hourlyRateStr = preg_replace('/[^0-9.]/', '', $hourlyRateStr);
     $hourlyRate = cleanFinancialValue($hourlyRateStr ?: 0);
     
+    $role = $user['role'];
+    
     if ($hourlyRate <= 0) {
+        $errorMessage = ($role === 'sales') 
+            ? 'لم يتم تحديد الراتب الشهري للمندوب'
+            : 'لم يتم تحديد سعر الساعة للمستخدم';
         return [
             'success' => false,
-            'message' => 'لم يتم تحديد سعر الساعة للمستخدم'
+            'message' => $errorMessage
         ];
     }
-    
-    $role = $user['role'];
     
     // حساب عدد الساعات
     $totalHours = calculateMonthlyHours($userId, $month, $year);
     
     // حساب الراتب الأساسي
-    $baseAmount = $totalHours * $hourlyRate;
+    // للمندوبين: hourly_rate هو راتب شهري ثابت وليس سعر ساعة
+    // للآخرين: الراتب = الساعات × سعر الساعة
+    if ($role === 'sales') {
+        // للمندوبين: الراتب الأساسي هو hourly_rate مباشرة (راتب شهري ثابت)
+        $baseAmount = $hourlyRate;
+    } else {
+        // للآخرين: الراتب = الساعات × سعر الساعة
+        $baseAmount = $totalHours * $hourlyRate;
+    }
     
     // حساب نسبة التحصيلات للمندوبين (2%)
     $collectionsBonus = 0;

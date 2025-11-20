@@ -904,13 +904,15 @@ $monthName = date('F', mktime(0, 0, 0, $selectedMonth, 1));
         </thead>
         <tbody>
             <tr>
-                <td>سعر الساعة</td>
+                <td><?php echo ($currentUser['role'] === 'sales') ? 'الراتب الشهري' : 'سعر الساعة'; ?></td>
                 <td><?php echo formatCurrency($hourlyRate); ?></td>
             </tr>
+            <?php if ($currentUser['role'] !== 'sales'): ?>
             <tr>
                 <td>عدد الساعات</td>
                 <td><?php echo number_format($monthStats['total_hours'], 2); ?> ساعة</td>
             </tr>
+            <?php endif; ?>
             <tr>
                 <td>إجمالي التأخير</td>
                 <td><?php echo number_format($delaySummary['total_minutes'] ?? 0, 2); ?> دقيقة</td>
@@ -1140,8 +1142,7 @@ document.addEventListener('DOMContentLoaded', function() {
                     if (rawBody.includes('success') || rawBody.includes('تم إرسال') || rawBody.includes('نجاح')) {
                         data = {
                             success: true,
-                            message: 'تم إرسال طلب السلفة بنجاح.',
-                            _handledInternally: true
+                            message: 'تم إرسال طلب السلفة بنجاح.'
                         };
                     }
                 }
@@ -1158,10 +1159,6 @@ document.addEventListener('DOMContentLoaded', function() {
                 return data;
             })
             .then(data => {
-                if (data && data._handledInternally) {
-                    return;
-                }
-                
                 const alert = document.createElement('div');
                 alert.className = 'alert alert-dismissible fade show ' + (data.success ? 'alert-success' : 'alert-danger');
                 alert.innerHTML = `<i class="bi ${data.success ? 'bi-check-circle-fill' : 'bi-exclamation-triangle-fill'} me-2"></i>${data.message || (data.success ? 'تم إرسال طلب السلفة بنجاح.' : 'تعذر إرسال طلب السلفة.')}` +
