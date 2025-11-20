@@ -10,6 +10,7 @@ require_once __DIR__ . '/../includes/vehicle_inventory.php';
 require_once __DIR__ . '/../includes/inventory_movements.php';
 require_once __DIR__ . '/../includes/approval_system.php';
 require_once __DIR__ . '/../includes/path_helper.php';
+require_once __DIR__ . '/../includes/return_processor.php';
 
 requireRole(['manager']);
 
@@ -342,85 +343,61 @@ function handleSubmitReturn(): void
             }
         }
 
+        // ========== UNIFIED RETURN PROCESSING ==========
+        // Step 1: Input Variables
+        $invoiceTotal = (float)($invoice['total_amount'] ?? 0);
+        $amountPaid = (float)($invoice['paid_amount'] ?? 0);
+        $customer = $db->queryOne("SELECT balance FROM customers WHERE id = ? FOR UPDATE", [$customerId]);
+        $customerBalance = (float)($customer['balance'] ?? 0);
+        $returnAmount = $totalRefund;
+        
+        // Step 2: Determine Customer Status
+        $customerStatus = determineCustomerStatus($amountPaid, $invoiceTotal, $customerBalance);
+        
+        // Step 3: Process Return Financial
         $financialNote = null;
         $statusAfterProcessing = 'processed';
-
-        // جلب بيانات الفاتورة لمعرفة المبلغ المدفوع
-        $invoicePaidAmount = (float)($invoice['paid_amount'] ?? 0);
         
-        // المبلغ الذي يجب إرجاعه = الحد الأدنى بين المبلغ المدفوع وقيمة المرتجعات
-        $amountToRefund = $invoicePaidAmount > 0 ? min($invoicePaidAmount, $totalRefund) : 0;
-        
-        // جلب رصيد العميل الحالي
-        $customer = $db->queryOne("SELECT balance FROM customers WHERE id = ? FOR UPDATE", [$customerId]);
-        $currentBalance = (float)($customer['balance'] ?? 0);
-        
-        // حساب الرصيد المدين (إذا كان الرصيد موجب، فهذا يعني رصيد مدين = العميل مدين للشركة)
-        $debtorBalance = $currentBalance > 0 ? $currentBalance : 0;
-        
-        // المبلغ المتبقي بعد استخدام الرصيد المدين
-        $remainingRefund = $totalRefund;
-        $debtorUsed = 0;
-        
-        // إذا كان المرتجع مدفوعاً وكان للعميل رصيد مدين، استخدم الرصيد المدين أولاً
-        if ($amountToRefund > 0.0001 && $debtorBalance > 0.0001) {
-            // استخدام الرصيد المدين للمبلغ المدفوع فقط
-            $debtorUsed = min($debtorBalance, $amountToRefund);
-            $remainingRefund = round($totalRefund - $debtorUsed, 2);
+        if ($refundMethod === 'company_request') {
+            // Special handling for company request
+            $statusAfterProcessing = 'pending';
+            $unpaidAmount = $invoiceTotal - $amountPaid;
             
-            // تحديث رصيد العميل (خصم الرصيد المدين المستخدم)
-            $newBalance = round($currentBalance - $debtorUsed, 2);
-            $db->execute("UPDATE customers SET balance = ? WHERE id = ?", [$newBalance, $customerId]);
-        } else {
-            $newBalance = $currentBalance;
-        }
-        
-        // معالجة المبلغ المتبقي حسب طريقة الإرجاع
-        if ($remainingRefund > 0.0001) {
-            if ($refundMethod === 'cash') {
-                $cashBalance = calculateSalesRepCashBalance($salesRepId);
-                if ($cashBalance + 0.0001 < $remainingRefund) {
-                    throw new RuntimeException('رصيد خزنة المندوب لا يغطي قيمة المرتجع المتبقية. الرصيد الحالي: ' . number_format($cashBalance, 2) . ' والمبلغ المطلوب: ' . number_format($remainingRefund, 2));
-                }
-                insertNegativeCollection($customerId, $salesRepId, $remainingRefund, $returnNumber, $userId);
-                
-                if ($debtorUsed > 0.0001) {
-                    $financialNote = sprintf('تم خصم %s من رصيد العميل المدين وخصم %s نقداً من خزنة المندوب.', 
-                        formatCurrency($debtorUsed), formatCurrency($remainingRefund));
-                } else {
-                    $financialNote = 'تم خصم المبلغ نقداً من خزنة المندوب.';
-                }
-            } elseif ($refundMethod === 'credit') {
-                // إضافة المبلغ المتبقي لرصيد العميل الدائن (تقليل الدين)
-                $finalBalance = round($newBalance - $remainingRefund, 2);
-                $db->execute("UPDATE customers SET balance = ? WHERE id = ?", [$finalBalance, $customerId]);
-                
-                if ($debtorUsed > 0.0001) {
-                    $financialNote = sprintf('تم خصم %s من رصيد العميل المدين وإضافة %s لرصيد العميل الدائن.', 
-                        formatCurrency($debtorUsed), formatCurrency($remainingRefund));
-                } else {
-                    $financialNote = 'تم إضافة المبلغ إلى رصيد العميل الدائن.';
-                }
-            } elseif ($refundMethod === 'company_request') {
-                $statusAfterProcessing = 'pending';
-                if ($debtorUsed > 0.0001) {
-                    $financialNote = sprintf('تم خصم %s من رصيد العميل المدين وتم إرسال طلب لاسترداد %s من الشركة (قيد التطوير).', 
-                        formatCurrency($debtorUsed), formatCurrency($remainingRefund));
-                } else {
-                    $financialNote = 'تم إرسال طلب لاسترداد المبلغ من الشركة (قيد التطوير).';
-                }
-                $approvalNotes = "مرتجع فاتورة {$invoiceNumber}\nالمبلغ: " . number_format($totalRefund, 2);
-                if ($debtorUsed > 0.0001) {
-                    $approvalNotes .= "\nتم خصم " . number_format($debtorUsed, 2) . " من رصيد العميل المدين";
-                    $approvalNotes .= "\nالمبلغ المطلوب من الشركة: " . number_format($remainingRefund, 2);
-                }
-                requestApproval('invoice_return_company', $returnId, $userId, $approvalNotes);
+            if ($returnAmount <= $unpaidAmount + 0.0001) {
+                $financialNote = sprintf('تم خصم %s من رصيد العميل المدين. المبلغ المتبقي يحتاج موافقة.', 
+                    formatCurrency($returnAmount));
+            } else {
+                $debtorUsed = $unpaidAmount;
+                $remainingRefund = round($returnAmount - $unpaidAmount, 2);
+                $financialNote = sprintf('تم خصم %s من رصيد العميل المدين. المبلغ المتبقي %s يحتاج موافقة.', 
+                    formatCurrency($debtorUsed), formatCurrency($remainingRefund));
             }
-        } else {
-            // تم استخدام الرصيد المدين بالكامل
-            if ($debtorUsed > 0.0001) {
-                $financialNote = sprintf('تم خصم المبلغ بالكامل (%s) من رصيد العميل المدين.', formatCurrency($debtorUsed));
+            
+            $approvalNotes = "مرتجع فاتورة {$invoiceNumber}\nالمبلغ: " . number_format($returnAmount, 2);
+            $approvalNotes .= "\nحالة الدفع: " . $customerStatus['payment'];
+            if ($customerStatus['hasCredit']) {
+                $approvalNotes .= "\nرصيد العميل المدين: " . number_format($customerStatus['creditAmount'], 2);
             }
+            requestApproval('invoice_return_company', $returnId, $userId, $approvalNotes);
+        } else {
+            // Process return using unified formula
+            $returnResult = processReturnFinancial(
+                $customerId,
+                $invoiceTotal,
+                $amountPaid,
+                $customerBalance,
+                $returnAmount,
+                $refundMethod,
+                $salesRepId,
+                $returnNumber,
+                $userId
+            );
+            
+            if (!$returnResult['success']) {
+                throw new RuntimeException($returnResult['message'] ?? 'حدث خطأ في معالجة المرتجع المالي');
+            }
+            
+            $financialNote = $returnResult['financialNote'];
         }
 
         if ($statusAfterProcessing !== 'pending') {
