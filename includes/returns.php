@@ -497,8 +497,8 @@ function approveReturn($returnId, $approvedBy = null) {
         return ['success' => true, 'message' => 'تم الموافقة على المرتجع بنجاح'];
         
     } catch (Exception $e) {
-        if ($db->getConnection()->in_transaction) {
-            $db->getConnection()->rollback();
+        if ($db->inTransaction()) {
+            $db->rollback();
         }
         error_log("Return Approval Error: " . $e->getMessage());
         error_log("Return Approval Error - Stack trace: " . $e->getTraceAsString());
