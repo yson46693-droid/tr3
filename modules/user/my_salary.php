@@ -197,6 +197,16 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['
 
 // معالجة طلب السلفة
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['action'] === 'request_advance') {
+    // تنظيف أي output buffers موجودة مسبقاً في بداية معالجة الطلب
+    while (ob_get_level() > 0) {
+        @ob_end_clean();
+    }
+    
+    // بدء output buffering جديد لضمان عدم إرسال أي output قبل الأوان
+    if (!ob_get_level()) {
+        ob_start();
+    }
+    
     $isAjaxRequest = (
         (isset($_SERVER['HTTP_X_REQUESTED_WITH']) && strtolower($_SERVER['HTTP_X_REQUESTED_WITH']) === 'xmlhttprequest')
         || !empty($_POST['is_ajax'])
@@ -229,8 +239,13 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['
             header('Pragma: no-cache');
             header('Expires: 0');
         } else {
-            error_log('Advance request AJAX response headers were already sent before JSON output.');
-            // محاولة إرسال JSON على أي حال
+            // إذا تم إرسال headers بالفعل، نحاول تنظيف output buffer فقط
+            $headersLocation = headers_sent($file, $line);
+            error_log("Advance request AJAX response headers were already sent before JSON output. Headers sent in: {$file} on line {$line}");
+            // تنظيف أي output موجود
+            while (ob_get_level() > 0) {
+                @ob_end_clean();
+            }
         }
         
         // إرسال JSON فقط بدون أي محتوى إضافي
