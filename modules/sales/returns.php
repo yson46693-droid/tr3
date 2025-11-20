@@ -21,6 +21,56 @@ $db = db();
 $error = '';
 $success = '';
 
+// Auto-run migration to add invoice_item_id column if needed
+try {
+    $columnCheck = $db->queryOne("SHOW COLUMNS FROM return_items LIKE 'invoice_item_id'");
+    if (empty($columnCheck)) {
+        // Add invoice_item_id column
+        try {
+            $db->execute("ALTER TABLE `return_items` ADD COLUMN `invoice_item_id` int(11) DEFAULT NULL AFTER `sale_item_id`");
+        } catch (Throwable $e) {
+            // Column might already exist or table structure is different
+            error_log("Migration: Could not add invoice_item_id: " . $e->getMessage());
+        }
+        
+        // Add index
+        try {
+            $db->execute("ALTER TABLE `return_items` ADD INDEX `idx_invoice_item_id` (`invoice_item_id`)");
+        } catch (Throwable $e) {
+            error_log("Migration: Could not add index: " . $e->getMessage());
+        }
+        
+        // Add foreign key
+        try {
+            $db->execute("ALTER TABLE `return_items` ADD CONSTRAINT `return_items_ibfk_invoice_item` FOREIGN KEY (`invoice_item_id`) REFERENCES `invoice_items` (`id`) ON DELETE SET NULL");
+        } catch (Throwable $e) {
+            error_log("Migration: Could not add foreign key: " . $e->getMessage());
+        }
+    }
+    
+    // Check and add batch_number_id if needed
+    $batchColCheck = $db->queryOne("SHOW COLUMNS FROM return_items LIKE 'batch_number_id'");
+    if (empty($batchColCheck)) {
+        try {
+            $db->execute("ALTER TABLE `return_items` ADD COLUMN `batch_number_id` int(11) DEFAULT NULL AFTER `invoice_item_id`");
+        } catch (Throwable $e) {
+            error_log("Migration: Could not add batch_number_id: " . $e->getMessage());
+        }
+    }
+    
+    // Check and add batch_number if needed
+    $batchNumCheck = $db->queryOne("SHOW COLUMNS FROM return_items LIKE 'batch_number'");
+    if (empty($batchNumCheck)) {
+        try {
+            $db->execute("ALTER TABLE `return_items` ADD COLUMN `batch_number` varchar(100) DEFAULT NULL AFTER `batch_number_id`");
+        } catch (Throwable $e) {
+            error_log("Migration: Could not add batch_number: " . $e->getMessage());
+        }
+    }
+} catch (Throwable $e) {
+    error_log("Migration error: " . $e->getMessage());
+}
+
 // Get base path for API calls
 $basePath = getBasePath();
 ?>
