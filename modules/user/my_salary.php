@@ -311,17 +311,52 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['
         
         $requestId = $result['insert_id'];
         
-        // إرسال إشعار للمحاسب
+        // التحقق من إنشاء الطلب بنجاح
+        if (empty($requestId) || $requestId <= 0) {
+            throw new Exception('فشل إنشاء طلب السلفة في قاعدة البيانات');
+        }
+        
+        // إرسال إشعار للمحاسب - مع التحقق من وجود محاسبين نشطين
         $accountants = $db->query("SELECT id FROM users WHERE role = 'accountant' AND status = 'active'");
-        foreach ($accountants as $accountant) {
-            createNotification(
-                $accountant['id'],
-                'طلب سلفة جديد',
-                'طلب سلفة من ' . ($currentUser['full_name'] ?? $currentUser['username']) . ' بقيمة ' . formatCurrency($amount),
-                'warning',
-                getDashboardUrl('accountant') . '?page=salaries&view=advances',
-                false
-            );
+        
+        if (empty($accountants)) {
+            // إذا لم يكن هناك محاسبون، إرسال إشعار للمديرين
+            $managers = $db->query("SELECT id FROM users WHERE role = 'manager' AND status = 'active'");
+            foreach ($managers as $manager) {
+                createNotification(
+                    $manager['id'],
+                    'طلب سلفة جديد (لا يوجد محاسب نشط)',
+                    'طلب سلفة من ' . ($currentUser['full_name'] ?? $currentUser['username']) . ' بقيمة ' . formatCurrency($amount) . ' - لا يوجد محاسب نشط لمراجعته',
+                    'warning',
+                    getDashboardUrl('manager') . '?page=advance_requests',
+                    false
+                );
+            }
+            error_log("Advance request #{$requestId}: No active accountants found, notification sent to managers instead");
+        } else {
+            // إرسال إشعار للمحاسبين
+            $notificationsSent = 0;
+            foreach ($accountants as $accountant) {
+                try {
+                    createNotification(
+                        $accountant['id'],
+                        'طلب سلفة جديد',
+                        'طلب سلفة من ' . ($currentUser['full_name'] ?? $currentUser['username']) . ' بقيمة ' . formatCurrency($amount),
+                        'warning',
+                        getDashboardUrl('accountant') . '?page=advance_requests',  // تصحيح الرابط
+                        false
+                    );
+                    $notificationsSent++;
+                } catch (Exception $notifError) {
+                    error_log("Failed to create notification for accountant ID: {$accountant['id']} for advance request ID: {$requestId}. Error: " . $notifError->getMessage());
+                }
+            }
+            
+            if ($notificationsSent === 0) {
+                error_log("Advance request #{$requestId}: Failed to send any notifications to accountants");
+            } else {
+                error_log("Advance request #{$requestId}: Successfully sent {$notificationsSent} notification(s) to accountants");
+            }
         }
         
         logAudit($currentUser['id'], 'request_advance', 'salary_advance', $requestId, null, [

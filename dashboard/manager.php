@@ -250,10 +250,21 @@ $pageTitle = isset($lang['manager_dashboard']) ? $lang['manager_dashboard'] : '�
                 <?php
                 $pendingApprovalsCount = getPendingApprovalsCount();
                 $approvalsSection = $_GET['section'] ?? 'pending';
-                $validApprovalSections = ['pending', 'warehouse_transfers'];
+                $validApprovalSections = ['pending', 'warehouse_transfers', 'returns'];
                 if (!in_array($approvalsSection, $validApprovalSections, true)) {
                     $approvalsSection = 'pending';
                 }
+                
+                // Get pending returns count
+                require_once __DIR__ . '/../includes/approval_system.php';
+                $entityColumn = getApprovalsEntityColumn();
+                $pendingReturnsCount = $db->queryOne(
+                    "SELECT COUNT(*) as total
+                     FROM returns r
+                     INNER JOIN approvals a ON a.type = 'return_request' AND a.{$entityColumn} = r.id
+                     WHERE r.status = 'pending' AND a.status = 'pending'"
+                );
+                $pendingReturnsCount = (int)($pendingReturnsCount['total'] ?? 0);
                 ?>
 
                 <h2><i class="bi bi-check-circle me-2"></i><?php echo isset($lang['approvals']) ? $lang['approvals'] : 'الموافقات'; ?></h2>
@@ -267,6 +278,13 @@ $pageTitle = isset($lang['manager_dashboard']) ? $lang['manager_dashboard'] : '�
                     <a href="?page=approvals&section=warehouse_transfers"
                        class="btn <?php echo $approvalsSection === 'warehouse_transfers' ? 'btn-primary' : 'btn-outline-primary'; ?>">
                         طلبات النقل بين المخازن
+                    </a>
+                    <a href="?page=approvals&section=returns"
+                       class="btn <?php echo $approvalsSection === 'returns' ? 'btn-primary' : 'btn-outline-primary'; ?>">
+                        طلبات المرتجعات
+                        <?php if ($pendingReturnsCount > 0): ?>
+                            <span class="badge bg-light text-dark ms-1"><?php echo $pendingReturnsCount; ?></span>
+                        <?php endif; ?>
                     </a>
                 </div>
 
@@ -413,6 +431,10 @@ $pageTitle = isset($lang['manager_dashboard']) ? $lang['manager_dashboard'] : '�
                     $warehouseTransfersSectionParam = 'warehouse_transfers';
                     $warehouseTransfersShowHeading = false;
                     include __DIR__ . '/../modules/manager/warehouse_transfers.php';
+                    ?>
+                <?php elseif ($approvalsSection === 'returns'): ?>
+                    <?php
+                    include __DIR__ . '/../modules/manager/return_approvals.php';
                     ?>
                 <?php endif; ?>
 
