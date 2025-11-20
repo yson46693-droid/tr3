@@ -2056,48 +2056,98 @@ $pageTitle = ($view === 'advances') ? 'السلف' : (($view === 'pending') ? '�
                     </button>
                     
                     <div class="collapse salary-details-collapse" id="<?php echo $collapseId; ?>">
+                        <?php
+                        // حساب بيانات التأخير
+                        $userId = intval($salary['user_id'] ?? 0);
+                        $delaySummary = calculateMonthlyDelaySummary($userId, $selectedMonth, $selectedYear);
+                        
+                        // الحصول على سعر الساعة
+                        $hourlyRate = cleanFinancialValue($salary['hourly_rate'] ?? $salary['current_hourly_rate'] ?? 0);
+                        $userRole = $salary['role'] ?? 'production';
+                        
+                        // حساب نسبة التحصيلات
+                        $collectionsBonus = cleanFinancialValue($salary['collections_bonus'] ?? 0);
+                        $collectionsAmount = cleanFinancialValue($salary['collections_amount'] ?? 0);
+                        
+                        // الحصول على القيم المالية
+                        $baseAmount = cleanFinancialValue($salary['base_amount'] ?? 0);
+                        $bonus = cleanFinancialValue($salary['bonus'] ?? 0);
+                        $deductions = cleanFinancialValue($salary['deductions'] ?? 0);
+                        $totalSalary = cleanFinancialValue($salary['total_amount'] ?? 0);
+                        ?>
                         <div class="detail-row">
-                            <span class="detail-label">سعر الساعة:</span>
-                            <span class="detail-value"><?php echo formatCurrency($salary['hourly_rate'] ?? $salary['current_hourly_rate'] ?? 0); ?></span>
+                            <span class="detail-label"><?php echo ($userRole === 'sales') ? 'الراتب الشهري' : 'سعر الساعة'; ?>:</span>
+                            <span class="detail-value"><?php echo formatCurrency($hourlyRate); ?></span>
                         </div>
+                        <?php if ($userRole !== 'sales'): ?>
                         <div class="detail-row">
                             <span class="detail-label">عدد الساعات:</span>
                             <span class="detail-value"><?php echo number_format($salary['total_hours'] ?? 0, 2); ?> ساعة</span>
                         </div>
+                        <?php endif; ?>
+                        <div class="detail-row">
+                            <span class="detail-label">إجمالي التأخير:</span>
+                            <span class="detail-value"><?php echo number_format($delaySummary['total_minutes'] ?? 0, 2); ?> دقيقة</span>
+                        </div>
+                        <div class="detail-row">
+                            <span class="detail-label">متوسط التأخير:</span>
+                            <span class="detail-value"><?php echo number_format($delaySummary['average_minutes'] ?? 0, 2); ?> دقيقة</span>
+                        </div>
                         <div class="detail-row">
                             <span class="detail-label">الراتب الأساسي:</span>
-                            <span class="detail-value"><?php echo formatCurrency($salary['base_amount'] ?? 0); ?></span>
+                            <span class="detail-value"><?php echo formatCurrency($baseAmount); ?></span>
                         </div>
+                        <?php if ($userRole === 'sales' && $collectionsBonus > 0): ?>
                         <div class="detail-row">
-                            <span class="detail-label">مكافأة:</span>
-                            <span class="detail-value">
-                                <?php 
-                                $bonusAmount = $salary['bonus'] ?? 0;
-                                echo formatCurrency($bonusAmount);
-                                if (isset($salary['collections_bonus']) && $salary['collections_bonus'] > 0) {
-                                    echo ' <small class="text-info">(2% من التحصيلات: ' . formatCurrency($salary['collections_bonus']) . ')</small>';
-                                }
-                                ?>
+                            <span class="detail-label">نسبة التحصيلات:</span>
+                            <span class="detail-value text-info">
+                                <?php echo formatCurrency($collectionsBonus); ?>
+                                <?php if ($collectionsAmount > 0): ?>
+                                    <small class="text-muted d-block" style="font-size: 11px; margin-top: 2px;">
+                                        (من <?php echo formatCurrency($collectionsAmount); ?>)
+                                    </small>
+                                <?php endif; ?>
                             </span>
                         </div>
+                        <?php endif; ?>
                         <div class="detail-row">
-                            <span class="detail-label">خصومات:</span>
-                            <span class="detail-value"><?php echo formatCurrency($salary['deductions'] ?? 0); ?></span>
+                            <span class="detail-label">المكافآت:</span>
+                            <span class="detail-value"><?php echo formatCurrency($bonus); ?></span>
                         </div>
                         <div class="detail-row">
-                            <span class="detail-label">المبلغ التراكمي:</span>
-                            <span class="detail-value text-primary"><?php echo formatCurrency($accumulated); ?></span>
+                            <span class="detail-label">الخصومات:</span>
+                            <span class="detail-value"><?php echo formatCurrency($deductions); ?></span>
                         </div>
                         <div class="detail-row">
-                            <span class="detail-label">المبلغ المدفوع:</span>
-                            <span class="detail-value text-success"><?php echo formatCurrency($paid); ?></span>
+                            <span class="detail-label"><strong>الراتب الإجمالي:</strong></span>
+                            <span class="detail-value"><strong><?php echo formatCurrency($totalSalary); ?></strong></span>
                         </div>
-                        <div class="detail-row">
-                            <span class="detail-label">المتبقي:</span>
-                            <span class="detail-value <?php echo $remaining > 0 ? 'text-warning' : 'text-success'; ?>">
-                                <?php echo formatCurrency($remaining); ?>
+                        <?php if ($userRole === 'sales' && $collectionsBonus > 0): ?>
+                        <div class="detail-row" style="border-bottom: none; padding-top: 8px;">
+                            <span class="detail-label" style="font-size: 12px; color: #6b7280; font-weight: normal;">
+                                <i class="bi bi-info-circle me-1"></i>
+                                ملاحظة: الراتب الإجمالي يتضمن نسبة التحصيلات (<?php echo formatCurrency($collectionsBonus); ?>)
                             </span>
                         </div>
+                        <?php endif; ?>
+                        <?php if ($hasSalaryId): ?>
+                        <div style="margin-top: 15px; padding-top: 15px; border-top: 2px solid #f3f4f6;">
+                            <div class="detail-row">
+                                <span class="detail-label">المبلغ التراكمي:</span>
+                                <span class="detail-value text-primary"><?php echo formatCurrency($accumulated); ?></span>
+                            </div>
+                            <div class="detail-row">
+                                <span class="detail-label">المبلغ المدفوع:</span>
+                                <span class="detail-value text-success"><?php echo formatCurrency($paid); ?></span>
+                            </div>
+                            <div class="detail-row">
+                                <span class="detail-label">المتبقي:</span>
+                                <span class="detail-value <?php echo $remaining > 0 ? 'text-warning' : 'text-success'; ?>">
+                                    <?php echo formatCurrency($remaining); ?>
+                                </span>
+                            </div>
+                        </div>
+                        <?php endif; ?>
                         
                         <?php if ($hasSalaryId): ?>
                         <div class="detail-actions">
