@@ -100,6 +100,14 @@ $baseUrl = getDashboardUrl();
                     </a>
                 </li>
                 
+                <li class="nav-item">
+                    <a class="nav-link <?php echo (isset($_GET['page']) && $_GET['page'] === 'vehicles') ? 'active' : ''; ?>" 
+                       href="<?php echo $baseUrl; ?>manager.php?page=vehicles">
+                        <i class="bi bi-truck"></i>
+                        <span>السيارات</span>
+                    </a>
+                </li>
+                
             </div>
             
             <div class="sidebar-section">
