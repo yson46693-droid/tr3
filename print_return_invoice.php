@@ -44,9 +44,15 @@ if (!$returnSummary) {
 }
 
 $returnItems = $db->query(
-    "SELECT ri.*, p.name as product_name, p.unit
+    "SELECT ri.*, 
+            p.name as product_name, 
+            p.unit,
+            bn.batch_number,
+            ri.condition,
+            ri.notes
      FROM return_items ri
      LEFT JOIN products p ON ri.product_id = p.id
+     LEFT JOIN batch_numbers bn ON ri.batch_number_id = bn.id
      WHERE ri.return_id = ?
      ORDER BY ri.id",
     [$returnId]

@@ -20,12 +20,19 @@ if ($isReturnDocument) {
     $normalizedItems = array_map(function ($item) {
         $quantity = isset($item['quantity']) ? (float)$item['quantity'] : 0;
         $unitPrice = isset($item['unit_price']) ? (float)$item['unit_price'] : 0;
+        $notes = trim((string)($item['notes'] ?? ''));
+        $batchNumber = $item['batch_number'] ?? null;
+        $condition = $item['condition'] ?? null;
+        
         return [
             'product_name' => $item['product_name'] ?? $item['description'] ?? 'منتج',
-            'description'  => $item['notes'] ?? '',
+            'description'  => $notes, // الوصف يحتوي فقط على الملاحظات
             'quantity'     => $quantity,
             'unit_price'   => $unitPrice,
             'total_price'  => $item['total_price'] ?? ($quantity * $unitPrice),
+            'batch_number' => $batchNumber,
+            'condition'    => $condition,
+            'notes'        => $notes,
         ];
     }, $returnItems);
 
@@ -226,6 +233,28 @@ $returnTypeLabel = $isReturnDocument ? ($returnTypeLabels[$returnMetadata['retur
                     <tr>
                         <td>
                             <div class="product-name"><?php echo htmlspecialchars($item['product_name'] ?? 'منتج'); ?></div>
+                            <?php if ($isReturnDocument && !empty($item['batch_number'])): ?>
+                                <div style="font-size: 12px; color: #64748b; margin-top: 4px;">
+                                    <strong>رقم التشغيلة:</strong> <?php echo htmlspecialchars($item['batch_number']); ?>
+                                </div>
+                            <?php endif; ?>
+                            <?php if ($isReturnDocument && !empty($item['condition'])): ?>
+                                <?php
+                                $conditionLabels = [
+                                    'new' => ['label' => 'جديد', 'color' => '#10b981'],
+                                    'used' => ['label' => 'مستعمل', 'color' => '#f59e0b'],
+                                    'damaged' => ['label' => 'تالف', 'color' => '#ef4444'],
+                                    'defective' => ['label' => 'معيب', 'color' => '#dc2626']
+                                ];
+                                $conditionInfo = $conditionLabels[$item['condition']] ?? ['label' => $item['condition'], 'color' => '#64748b'];
+                                ?>
+                                <div style="font-size: 12px; margin-top: 4px;">
+                                    <strong>الحالة:</strong> 
+                                    <span style="color: <?php echo $conditionInfo['color']; ?>; font-weight: 600;">
+                                        <?php echo htmlspecialchars($conditionInfo['label']); ?>
+                                    </span>
+                                </div>
+                            <?php endif; ?>
                         </td>
                         <td>
                             <?php if ($description): ?>
