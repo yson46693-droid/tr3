@@ -542,7 +542,26 @@ function handleCreateReturnRequest(): void
         $approvalNotes .= "المبلغ: " . number_format($totalRefund, 2) . " ج.م\n";
         $approvalNotes .= "عدد المنتجات: " . count($selectedItems);
         
-        requestApproval('return_request', $returnId, $currentUser['id'], $approvalNotes);
+        // Request approval - verify it was successful
+        $approvalResult = requestApproval('return_request', $returnId, $currentUser['id'], $approvalNotes);
+        
+        if (isset($approvalResult['success']) && !$approvalResult['success']) {
+            throw new RuntimeException('فشل إرسال طلب الموافقة: ' . ($approvalResult['message'] ?? 'خطأ غير معروف'));
+        }
+        
+        // التأكد من أن المرتجع لا يزال في حالة 'pending' بعد طلب الموافقة
+        $returnStatus = $db->queryOne(
+            "SELECT status FROM returns WHERE id = ?",
+            [$returnId]
+        );
+        
+        if (!$returnStatus || $returnStatus['status'] !== 'pending') {
+            // إذا لم تكن الحالة 'pending'، قم بإعادة تعيينها
+            $db->execute(
+                "UPDATE returns SET status = 'pending' WHERE id = ?",
+                [$returnId]
+            );
+        }
         
         $conn->commit();
         
@@ -552,6 +571,7 @@ function handleCreateReturnRequest(): void
             'return_id' => $returnId,
             'return_number' => $returnNumber,
             'refund_amount' => $totalRefund,
+            'status' => 'pending'
         ]);
         
     } catch (Throwable $e) {
