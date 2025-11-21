@@ -1,0 +1,16 @@
+# Force correct MIME type for CSS files
+<IfModule mod_mime.c>
+    AddType text/css .css
+</IfModule>
+
+# Cache CSS files
+<IfModule mod_expires.c>
+    ExpiresActive On
+    ExpiresByType text/css "access plus 1 year"
+</IfModule>
+
+# Enable compression
+<IfModule mod_deflate.c>
+    AddOutputFilterByType DEFLATE text/css
+</IfModule>
+

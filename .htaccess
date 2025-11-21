@@ -1,0 +1,108 @@
+# Apache Configuration for InfinityFree
+RewriteEngine On
+
+# استثناء manifest.json و service-worker.js من إعادة التوجيه
+RewriteCond %{REQUEST_URI} \.(json|js)$ [OR]
+RewriteCond %{REQUEST_URI} manifest\.(json|php) [OR]
+RewriteCond %{REQUEST_URI} service-worker\.js
+RewriteRule ^ - [L]
+
+# استثناء مجلد API من إعادة التوجيه (ديناميكي - يعمل مع أي مسار)
+RewriteCond %{REQUEST_URI} ^/api/ [OR]
+RewriteCond %{REQUEST_URI} ^/[^/]+/api/
+RewriteRule ^ - [L]
+
+# استثناء الملفات الثابتة (CSS, JS, Images, etc.) من إعادة التوجيه
+RewriteCond %{REQUEST_URI} \.(css|js|png|jpg|jpeg|gif|svg|ico|woff|woff2|ttf|eot|json|webp)$ [OR]
+RewriteCond %{REQUEST_URI} ^/assets/ [OR]
+RewriteCond %{REQUEST_URI} ^/[^/]+/assets/ [OR]
+RewriteCond %{REQUEST_URI} ^/[^/]+/assets/icons/ [OR]
+RewriteCond %{REQUEST_URI} ^/assets/icons/
+RewriteRule ^ - [L]
+
+# استثناء ملفات PHP المهمة من إعادة التوجيه
+RewriteCond %{REQUEST_URI} logout\.php$ [OR]
+RewriteCond %{REQUEST_URI} index\.php$ [OR]
+RewriteCond %{REQUEST_URI} ^/dashboard/ [OR]
+RewriteCond %{REQUEST_URI} ^/[^/]+/dashboard/
+RewriteRule ^ - [L]
+
+# منع إعادة التوجيه للملفات الموجودة فعلياً
+RewriteCond %{REQUEST_FILENAME} -f [OR]
+RewriteCond %{REQUEST_FILENAME} -d
+RewriteRule ^ - [L]
+
+# Redirect to index.php if file doesn't exist (but not for dashboard or API)
+RewriteCond %{REQUEST_URI} !^/dashboard/ [NC]
+RewriteCond %{REQUEST_URI} !^/[^/]+/dashboard/ [NC]
+RewriteCond %{REQUEST_URI} !^/api/ [NC]
+RewriteCond %{REQUEST_URI} !^/[^/]+/api/ [NC]
+RewriteCond %{REQUEST_FILENAME} !-f
+RewriteCond %{REQUEST_FILENAME} !-d
+RewriteRule ^(.*)$ index.php [QSA,L]
+
+# Security Headers
+<IfModule mod_headers.c>
+    Header set X-Content-Type-Options "nosniff"
+    Header set X-Frame-Options "SAMEORIGIN"
+    Header set X-XSS-Protection "1; mode=block"
+    Header set Referrer-Policy "strict-origin-when-cross-origin"
+</IfModule>
+
+# MIME Types Support
+<IfModule mod_mime.c>
+    AddType application/manifest+json .json
+    AddType application/manifest+json manifest.php
+    AddType application/javascript .js
+    AddType text/cache-manifest .appcache
+    AddType text/css .css
+    AddType image/svg+xml .svg
+</IfModule>
+
+# PHP Settings
+<IfModule mod_php7.c>
+    php_value upload_max_filesize 10M
+    php_value post_max_size 10M
+    php_value max_execution_time 300
+    php_value max_input_time 300
+</IfModule>
+
+# Cache Control for Static Assets
+<IfModule mod_expires.c>
+    ExpiresActive On
+    ExpiresByType image/png "access plus 1 year"
+    ExpiresByType image/jpg "access plus 1 year"
+    ExpiresByType image/jpeg "access plus 1 year"
+    ExpiresByType image/gif "access plus 1 year"
+    ExpiresByType image/svg+xml "access plus 1 year"
+    ExpiresByType text/css "access plus 1 month"
+    ExpiresByType application/javascript "access plus 1 month"
+    ExpiresByType application/manifest+json "access plus 1 week"
+</IfModule>
+
+# Gzip Compression
+<IfModule mod_deflate.c>
+    AddOutputFilterByType DEFLATE text/html text/plain text/xml text/css text/javascript application/javascript application/json
+</IfModule>
+
+# Protect sensitive files but allow application log access
+<FilesMatch "^(?!php-errors\.log$).*\.(sql|log|ini|conf)$">
+    <IfModule mod_authz_core.c>
+        Require all denied
+    </IfModule>
+    <IfModule !mod_authz_core.c>
+        Order allow,deny
+        Deny from all
+    </IfModule>
+</FilesMatch>
+
+# Allow direct access to the PHP error log for debugging
+<Files "php-errors.log">
+    <IfModule mod_authz_core.c>
+        Require all granted
+    </IfModule>
+    <IfModule !mod_authz_core.c>
+        Order allow,deny
+        Allow from all
+    </IfModule>
+</Files>
