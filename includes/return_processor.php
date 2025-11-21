@@ -353,11 +353,11 @@ function applySalesRepPenalty(int $salesRepId, float $returnAmount): array
  * 
  * @param array $returnItems Array of return items with product_id, quantity, batch_number, unit_price
  * @param int $salesRepId
- * @param int|null $vehicleId
  * @param int $userId
+ * @param int|null $vehicleId
  * @return array Result
  */
-function moveInventoryToSalesmanCar(array $returnItems, int $salesRepId, ?int $vehicleId = null, int $userId): array
+function moveInventoryToSalesmanCar(array $returnItems, int $salesRepId, int $userId, ?int $vehicleId = null): array
 {
     $db = db();
     
@@ -530,7 +530,7 @@ function processExchangeInventory(array $returnItems, array $replacementItems, i
     
     try {
         // Step 1: Move returned items to salesman car stock
-        $moveResult = moveInventoryToSalesmanCar($returnItems, $salesRepId, null, $userId);
+        $moveResult = moveInventoryToSalesmanCar($returnItems, $salesRepId, $userId, null);
         if (!$moveResult['success']) {
             throw new RuntimeException($moveResult['message'] ?? 'Failed to move returned items');
         }
@@ -615,10 +615,3 @@ function processExchangeInventory(array $returnItems, array $replacementItems, i
     }
 }
 
-/**
- * Format currency
- */
-function formatCurrency(float $amount): string
-{
-    return number_format($amount, 2) . ' ج.م';
-}

@@ -178,7 +178,7 @@ try {
             ];
         }
         
-        $inventoryResult = moveInventoryToSalesmanCar($itemsForInventory, $salesRepId, null, $currentUser['id']);
+        $inventoryResult = moveInventoryToSalesmanCar($itemsForInventory, $salesRepId, $currentUser['id'], null);
         if (!$inventoryResult['success']) {
             throw new RuntimeException('فشل نقل المخزون: ' . ($inventoryResult['message'] ?? 'خطأ غير معروف'));
         }
