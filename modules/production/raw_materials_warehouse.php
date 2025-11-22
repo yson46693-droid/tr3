@@ -4926,7 +4926,23 @@ if ($section === 'honey') {
                         </div>
                         <div class="mb-3">
                             <label class="form-label">نوع المشتق <span class="text-danger">*</span></label>
-                            <input type="text" class="form-control" name="derivative_type" placeholder="مثال: غذاء ملكات، حبوب لقاح..." required>
+                            <select class="form-select" name="derivative_type" id="derivative_type_select" required>
+                                <option value="">اختر نوع المشتق</option>
+                                <?php if (!empty($derivTypes)): ?>
+                                    <?php foreach ($derivTypes as $type): ?>
+                                        <?php $typeName = trim($type['derivative_type'] ?? ''); ?>
+                                        <?php if ($typeName !== ''): ?>
+                                            <option value="<?php echo htmlspecialchars($typeName, ENT_QUOTES, 'UTF-8'); ?>">
+                                                <?php echo htmlspecialchars($typeName); ?>
+                                            </option>
+                                        <?php endif; ?>
+                                    <?php endforeach; ?>
+                                <?php endif; ?>
+                                <option value="__new__" style="font-style: italic; color: #6c757d;">+ إضافة نوع جديد</option>
+                            </select>
+                            <input type="text" class="form-control mt-2" name="derivative_type_new" id="derivative_type_new" 
+                                   placeholder="أدخل نوع المشتق الجديد..." style="display: none;">
+                            <small class="text-muted">اختر من القائمة أو أضف نوعاً جديداً</small>
                         </div>
                         <div class="mb-3">
                             <label class="form-label">الوزن (كجم)</label>
@@ -5005,6 +5021,44 @@ if ($section === 'honey') {
         document.getElementById('damage_derivative_submit').disabled = qty <= 0;
         new bootstrap.Modal(document.getElementById('damageDerivativeModal')).show();
     }
+    
+    // إدارة حقل إضافة نوع مشتق جديد
+    document.addEventListener('DOMContentLoaded', function() {
+        const derivativeTypeSelect = document.getElementById('derivative_type_select');
+        const derivativeTypeNew = document.getElementById('derivative_type_new');
+        
+        if (derivativeTypeSelect && derivativeTypeNew) {
+            derivativeTypeSelect.addEventListener('change', function() {
+                if (this.value === '__new__') {
+                    derivativeTypeNew.style.display = 'block';
+                    derivativeTypeNew.required = true;
+                    derivativeTypeNew.focus();
+                } else {
+                    derivativeTypeNew.style.display = 'none';
+                    derivativeTypeNew.required = false;
+                    derivativeTypeNew.value = '';
+                }
+            });
+            
+            // عند إرسال النموذج، استخدم القيمة من الحقل النصي إذا تم اختيار "إضافة نوع جديد"
+            const addDerivativeForm = derivativeTypeSelect.closest('form');
+            if (addDerivativeForm) {
+                addDerivativeForm.addEventListener('submit', function(e) {
+                    if (derivativeTypeSelect.value === '__new__') {
+                        const newTypeValue = derivativeTypeNew.value.trim();
+                        if (newTypeValue === '') {
+                            e.preventDefault();
+                            alert('يرجى إدخال نوع المشتق الجديد');
+                            derivativeTypeNew.focus();
+                            return false;
+                        }
+                        // استبدال القيمة في select بالقيمة الجديدة
+                        derivativeTypeSelect.value = newTypeValue;
+                    }
+                });
+            }
+        }
+    });
 </script>
 
     <?php
