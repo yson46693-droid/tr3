@@ -981,7 +981,7 @@ $monthName = date('F', mktime(0, 0, 0, $selectedMonth, 1));
             <?php if ($currentUser['role'] !== 'sales'): ?>
             <tr>
                 <td>عدد الساعات</td>
-                <td><?php echo number_format($monthStats['total_hours'], 2); ?> ساعة</td>
+                <td><?php echo formatHours($monthStats['total_hours']); ?></td>
             </tr>
             <?php endif; ?>
             <tr>

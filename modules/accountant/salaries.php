@@ -1154,7 +1154,7 @@ if (isset($_GET['ajax']) && $_GET['ajax'] == '1' && $salaryId > 0) {
                         <p><strong>المستخدم:</strong> <?php echo htmlspecialchars($salary['full_name'] ?? $salary['username']); ?></p>
                         <p><strong>الشهر:</strong> <?php echo date('F', mktime(0, 0, 0, $selectedMonth, 1)); ?> <?php echo $selectedYear; ?></p>
                         <p><strong>سعر الساعة:</strong> <?php echo formatCurrency($salary['hourly_rate']); ?></p>
-                        <p><strong>عدد الساعات:</strong> <?php echo number_format($salary['total_hours'], 2); ?> ساعة</p>
+                        <p><strong>عدد الساعات:</strong> <?php echo formatHours($salary['total_hours']); ?></p>
                         <p><strong>الراتب الأساسي:</strong> <?php echo formatCurrency($salary['base_amount']); ?></p>
                         <p><strong>مكافأة:</strong> <?php echo formatCurrency($salary['bonus'] ?? 0); ?></p>
                         <p><strong>خصومات:</strong> <?php echo formatCurrency($salary['deductions'] ?? 0); ?></p>
@@ -1792,7 +1792,7 @@ $pageTitle = ($view === 'advances') ? 'السلف' : (($view === 'pending') ? '�
                             <i class="bi bi-clock-history"></i>
                         </div>
                         <h6 class="card-title mb-1 fw-bold text-uppercase small">إجمالي الساعات</h6>
-                        <h2 class="mb-0 fw-bold"><?php echo number_format($monthlyReport['total_hours'], 2); ?></h2>
+                        <h2 class="mb-0 fw-bold"><?php echo formatHours($monthlyReport['total_hours']); ?></h2>
                     </div>
                 </div>
             </div>
@@ -1860,7 +1860,7 @@ $pageTitle = ($view === 'advances') ? 'السلف' : (($view === 'pending') ? '�
                                 </td>
                                 <td data-label="سعر الساعة"><?php echo formatCurrency($salary['hourly_rate']); ?></td>
                                 <td data-label="عدد الساعات">
-                                    <strong><?php echo number_format($salary['total_hours'], 2); ?> ساعة</strong>
+                                    <strong><?php echo formatHours($salary['total_hours']); ?></strong>
                                 </td>
                                 <td data-label="إجمالي التأخير (دقائق)">
                                     <strong><?php echo number_format($salary['total_delay_minutes'] ?? 0, 2); ?></strong>
@@ -1916,7 +1916,7 @@ $pageTitle = ($view === 'advances') ? 'السلف' : (($view === 'pending') ? '�
                 <tfoot>
                     <tr class="table-info">
                         <td colspan="4" class="text-end"><strong>الإجمالي:</strong></td>
-                        <td><strong><?php echo number_format($monthlyReport['total_hours'], 2); ?> ساعة</strong></td>
+                        <td><strong><?php echo formatHours($monthlyReport['total_hours']); ?></strong></td>
                         <td><strong><?php echo number_format($monthlyReport['total_delay_minutes'], 2); ?> دقيقة</strong></td>
                         <td><strong><?php echo number_format($monthlyReport['average_delay_minutes'], 2); ?> دقيقة</strong></td>
                         <td colspan="4"></td>
@@ -2335,7 +2335,7 @@ $pageTitle = ($view === 'advances') ? 'السلف' : (($view === 'pending') ? '�
                         <?php if ($userRole !== 'sales'): ?>
                         <div class="detail-row">
                             <span class="detail-label">عدد الساعات:</span>
-                            <span class="detail-value"><?php echo number_format($salary['total_hours'] ?? 0, 2); ?> ساعة</span>
+                            <span class="detail-value"><?php echo formatHours($salary['total_hours'] ?? 0); ?></span>
                         </div>
                         <?php endif; ?>
                         <div class="detail-row">

@@ -392,6 +392,44 @@ function formatDateTime($datetime, $format = DATETIME_FORMAT) {
     return date($format, $timestamp);
 }
 
+// دالة مساعدة لتنسيق الساعات من الصيغة العشرية إلى ساعات ودقائق
+// مثال: 2.30 ساعة → "2 ساعة و 30 دقيقة"
+function formatHours($decimalHours) {
+    if (empty($decimalHours) || $decimalHours == 0) {
+        return '0 ساعة';
+    }
+    
+    $decimalHours = floatval($decimalHours);
+    
+    // استخراج الساعات الكاملة
+    $hours = floor($decimalHours);
+    
+    // استخراج الدقائق من الجزء العشري
+    $decimalPart = $decimalHours - $hours;
+    $minutes = round($decimalPart * 60);
+    
+    // إذا كانت الدقائق 60، أضف ساعة واحدة
+    if ($minutes >= 60) {
+        $hours += 1;
+        $minutes = 0;
+    }
+    
+    // بناء النص
+    $parts = [];
+    if ($hours > 0) {
+        $parts[] = $hours . ' ساعة';
+    }
+    if ($minutes > 0) {
+        $parts[] = $minutes . ' دقيقة';
+    }
+    
+    if (empty($parts)) {
+        return '0 ساعة';
+    }
+    
+    return implode(' و ', $parts);
+}
+
 // دالة مساعدة للحصول على الاتجاه (RTL/LTR)
 function getDirection() {
     return getCurrentLanguage() === 'ar' ? 'rtl' : 'ltr';

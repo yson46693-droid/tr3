@@ -1511,7 +1511,7 @@ function sendMonthlyAttendanceReportToTelegram(int $month, int $year, array $opt
         "📊 <b>تقرير الحضور الشهري</b>",
         "📅 <b>الشهر:</b> {$monthName} {$report['year']}",
         "👥 <b>عدد الموظفين:</b> {$report['total_employees']}",
-        "⏱️ <b>إجمالي الساعات:</b> " . number_format($report['total_hours'], 2) . " ساعة",
+        "⏱️ <b>إجمالي الساعات:</b> " . formatHours($report['total_hours']),
         "⏳ <b>إجمالي التأخيرات:</b> " . number_format($report['total_delay_minutes'], 2) . " دقيقة",
         "⏳ <b>متوسط التأخير:</b> " . number_format($report['average_delay_minutes'], 2) . " دقيقة",
         "💰 <b>مجموع الرواتب المستحقة:</b> " . number_format($report['total_salary_amount'], 2)
@@ -1533,7 +1533,7 @@ function sendMonthlyAttendanceReportToTelegram(int $month, int $year, array $opt
                 formatRoleName($employee['role']),
                 number_format($employee['total_delay_minutes'], 2),
                 number_format($employee['average_delay_minutes'], 2),
-                number_format($employee['total_hours'], 2)
+                formatHours($employee['total_hours'])
             );
         }
     }

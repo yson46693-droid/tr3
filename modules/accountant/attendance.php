@@ -190,7 +190,7 @@ function calculateHours($checkIn, $checkOut) {
     $in = strtotime($checkIn);
     $out = strtotime($checkOut);
     $hours = ($out - $in) / 3600;
-    return number_format($hours, 2) . ' ساعة';
+    return formatHours($hours);
 }
 ?>
 

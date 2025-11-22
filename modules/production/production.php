@@ -4581,6 +4581,36 @@ $lang = isset($translations) ? $translations : [];
         </div>
     <?php endif; ?>
 
+    <!-- زر طباعة التقرير الشامل -->
+    <div class="card shadow-sm mb-4">
+        <div class="card-body">
+            <div class="d-flex justify-content-between align-items-center flex-wrap gap-3">
+                <div>
+                    <h5 class="mb-1"><i class="bi bi-printer me-2"></i>طباعة التقرير الشامل</h5>
+                    <p class="text-muted mb-0">طباعة تقرير شامل بجميع تفاصيل الحركات كفاتورة</p>
+                </div>
+                <div class="d-flex gap-2">
+                    <?php
+                    $printUrl = getRelativeUrl('print_production_report.php');
+                    $printParams = [
+                        'report_day' => $selectedReportDay,
+                        'report_type' => $reportFilterType,
+                        'supply_category' => $supplyCategoryParam,
+                        'report_query' => $reportFilterQuery,
+                        'period' => ($selectedReportDay === $productionReportsTodayDate && $selectedReportDay === $productionReportsMonthEnd) ? 'day' : 'month'
+                    ];
+                    $printUrlWithParams = $printUrl . '?' . http_build_query($printParams);
+                    ?>
+                    <a href="<?php echo htmlspecialchars($printUrlWithParams); ?>" 
+                       target="_blank" 
+                       class="btn btn-primary">
+                        <i class="bi bi-printer me-2"></i>طباعة التقرير الشامل
+                    </a>
+                </div>
+            </div>
+        </div>
+    </div>
+
     <div class="card production-report-card shadow-sm mb-4">
         <div class="card-body">
             <div class="d-flex justify-content-between align-items-center flex-wrap gap-3">
