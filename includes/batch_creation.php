@@ -418,8 +418,13 @@ function batchCreationDeductTypedStock(PDO $pdo, array $material, float $unitsMu
                 // خصم من الخلطة (mixed_nuts)
                 batchCreationConsumeMixedNuts($pdo, $totalRequired, $supplierId, $materialName, $unit);
             } else {
-                // خصم من المكسرات المنفردة (nuts_stock)
-                batchCreationConsumeSimpleStock($pdo, 'nuts_stock', 'quantity', $totalRequired, $supplierId, $materialName, $unit);
+                // إذا لم توجد الخلطة، فشل العملية
+                throw new RuntimeException(
+                    sprintf(
+                        'الخلطة "%s" غير موجودة في المخزون. يرجى التأكد من وجود الخلطة قبل إنشاء عملية الإنتاج.',
+                        $materialName
+                    )
+                );
             }
             break;
         case 'raw_general':
@@ -492,8 +497,13 @@ function batchCreationDeductTypedStock(PDO $pdo, array $material, float $unitsMu
                     // خصم من الخلطة (mixed_nuts)
                     batchCreationConsumeMixedNuts($pdo, $totalRequired, $supplierId, $materialName, $unit);
                 } else {
-                    // خصم من المكسرات المنفردة (nuts_stock)
-                    batchCreationConsumeSimpleStock($pdo, 'nuts_stock', 'quantity', $totalRequired, $supplierId, $materialName, $unit);
+                    // إذا لم توجد الخلطة، فشل العملية
+                    throw new RuntimeException(
+                        sprintf(
+                            'الخلطة "%s" غير موجودة في المخزون. يرجى التأكد من وجود الخلطة قبل إنشاء عملية الإنتاج.',
+                            $materialName
+                        )
+                    );
                 }
                 break;
             }
