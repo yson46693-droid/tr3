@@ -638,7 +638,23 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                         false
                     );
                     
-                    $success = 'تم رفض السلفة';
+                    // الحصول على معاملات URL للحفاظ عليها
+                    $month = intval($_POST['month'] ?? $selectedMonth);
+                    $year = intval($_POST['year'] ?? $selectedYear);
+                    $view = trim($_POST['view'] ?? 'advances');
+                    
+                    // حفظ رسالة النجاح في session
+                    $_SESSION['salaries_success'] = 'تم رفض السلفة بنجاح';
+                    
+                    // إعادة التوجيه مع الحفاظ على معاملات URL
+                    $redirectUrl = $buildViewUrl($view, ['month' => $month, 'year' => $year]);
+                    if (!headers_sent()) {
+                        header('Location: ' . $redirectUrl);
+                        exit;
+                    } else {
+                        echo '<script>window.location.href = ' . json_encode($redirectUrl, JSON_UNESCAPED_SLASHES) . ';</script>';
+                        exit;
+                    }
                 }
             }
         }
@@ -2723,6 +2739,9 @@ $advanceStatusLabels = [
             <form method="POST">
                 <input type="hidden" name="action" value="reject">
                 <input type="hidden" name="advance_id" id="rejectAdvanceId">
+                <input type="hidden" name="month" value="<?php echo htmlspecialchars($selectedMonth); ?>">
+                <input type="hidden" name="year" value="<?php echo htmlspecialchars($selectedYear); ?>">
+                <input type="hidden" name="view" value="<?php echo htmlspecialchars($view); ?>">
                 <div class="modal-body">
                     <div class="mb-3">
                         <label for="rejection_reason" class="form-label">سبب الرفض <span class="text-danger">*</span></label>
@@ -2846,11 +2865,6 @@ document.getElementById('modifyDeductions')?.addEventListener('input', calculate
 
 // وظائف السلف
 function rejectAdvance(advanceId) {
-    openRejectModal(advanceId);
-}
-
-function openRejectModal(advanceId) {
-    document.getElementById('rejectAdvanceId').value = advanceId;
     openRejectModal(advanceId);
 }
 

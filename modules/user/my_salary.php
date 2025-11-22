@@ -290,47 +290,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['
     // الحصول على بيانات الراتب
     $salaryRecord = $salaryData['exists'] ? $salaryData['salary'] : $salaryData['calculation'];
     
-    // تنظيف القيم المالية
-    $baseAmount = cleanFinancialValue($salaryRecord['base_amount'] ?? 0);
-    $bonus = cleanFinancialValue($salaryRecord['bonus'] ?? 0);
-    $deductions = cleanFinancialValue($salaryRecord['deductions'] ?? 0);
-    $totalSalaryBase = cleanFinancialValue($salaryRecord['total_amount'] ?? 0);
-    
-    // حساب نسبة التحصيلات للمندوبين
-    $collectionsBonus = 0;
-    if ($currentUser['role'] === 'sales') {
-        $collectionsAmount = calculateSalesCollections($currentUser['id'], $month, $year);
-        $collectionsBonus = round($collectionsAmount * 0.02, 2);
-        
-        // إذا كان الراتب محفوظاً، تحقق من وجود نسبة التحصيلات المحفوظة
-        if ($salaryData['exists'] && isset($salaryRecord['collections_bonus'])) {
-            $savedCollectionsBonus = cleanFinancialValue($salaryRecord['collections_bonus'] ?? 0);
-            // استخدم القيمة المحسوبة حديثاً إذا كانت أكبر من القيمة المحفوظة
-            if ($collectionsBonus > $savedCollectionsBonus || $savedCollectionsBonus == 0) {
-                // استخدم القيمة المحسوبة حديثاً
-            } else {
-                $collectionsBonus = $savedCollectionsBonus;
-            }
-        }
-    }
-    
-    // حساب الراتب الإجمالي - التأكد من تضمين نسبة التحصيلات
-    if ($currentUser['role'] === 'sales' && $collectionsBonus > 0) {
-        // حساب الراتب المتوقع مع نسبة التحصيلات
-        $expectedTotalWithCollections = $baseAmount + $bonus + $collectionsBonus - $deductions;
-        
-        // إذا كان الراتب الإجمالي الحالي لا يتطابق مع الراتب المتوقع (مع نسبة التحصيلات)
-        // فهذا يعني أن نسبة التحصيلات غير مضمنة، لذا أضفها
-        if (abs($totalSalaryBase - $expectedTotalWithCollections) > 0.01) {
-            $currentSalary = $totalSalaryBase + $collectionsBonus;
-        } else {
-            // نسبة التحصيلات مضمنة بالفعل
-            $currentSalary = $totalSalaryBase;
-        }
-    } else {
-        // للمستخدمين الآخرين أو إذا لم تكن هناك نسبة تحصيلات
-        $currentSalary = $totalSalaryBase;
-    }
+    // حساب الراتب الإجمالي بشكل صحيح مع نسبة التحصيلات
+    $salaryCalculation = calculateTotalSalaryWithCollections($salaryRecord, $currentUser['id'], $month, $year, $currentUser['role']);
+    $currentSalary = $salaryCalculation['total_salary'];
     
     $maxAdvance = cleanFinancialValue($currentSalary * 0.5); // نصف الراتب
     
@@ -451,6 +413,67 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['
     }
 }
 
+// دالة مساعدة لحساب الراتب الإجمالي بشكل صحيح مع نسبة التحصيلات
+function calculateTotalSalaryWithCollections($salaryRecord, $userId, $month, $year, $role) {
+    $baseAmount = cleanFinancialValue($salaryRecord['base_amount'] ?? 0);
+    $bonus = cleanFinancialValue($salaryRecord['bonus'] ?? 0);
+    $deductions = cleanFinancialValue($salaryRecord['deductions'] ?? 0);
+    $totalSalaryBase = cleanFinancialValue($salaryRecord['total_amount'] ?? 0);
+    
+    // حساب نسبة التحصيلات للمندوبين
+    $collectionsBonus = 0;
+    if ($role === 'sales') {
+        $collectionsAmount = calculateSalesCollections($userId, $month, $year);
+        $collectionsBonus = round($collectionsAmount * 0.02, 2);
+        
+        // إذا كان الراتب محفوظاً، تحقق من وجود نسبة التحصيلات المحفوظة
+        if (isset($salaryRecord['collections_bonus'])) {
+            $savedCollectionsBonus = cleanFinancialValue($salaryRecord['collections_bonus'] ?? 0);
+            // استخدم القيمة المحسوبة حديثاً إذا كانت أكبر من القيمة المحفوظة
+            if ($collectionsBonus > $savedCollectionsBonus || $savedCollectionsBonus == 0) {
+                // استخدم القيمة المحسوبة حديثاً
+            } else {
+                $collectionsBonus = $savedCollectionsBonus;
+            }
+        }
+    }
+    
+    // حساب الراتب الإجمالي - دائماً احسبه من المكونات لضمان الدقة
+    // الراتب الإجمالي = الراتب الأساسي + المكافآت + نسبة التحصيلات - الخصومات
+    $totalSalary = $baseAmount + $bonus + $collectionsBonus - $deductions;
+    
+    // إذا كان الراتب الإجمالي المحفوظ ($totalSalaryBase) أكبر من الراتب المحسوب من المكونات
+    // فهذا يعني أن هناك مكونات إضافية (مثل سلفات مخصومة)، لذا استخدم القيمة المحفوظة
+    // لكن تأكد من تضمين نسبة التحصيلات إذا لم تكن مضمنة
+    if ($role === 'sales' && $collectionsBonus > 0) {
+        // حساب الراتب المتوقع بدون نسبة التحصيلات
+        $expectedTotalWithoutCollections = $baseAmount + $bonus - $deductions;
+        
+        // إذا كان الراتب الإجمالي المحفوظ يساوي الراتب المتوقع بدون نسبة التحصيلات
+        // فهذا يعني أن نسبة التحصيلات غير مضمنة، لذا أضفها
+        if (abs($totalSalaryBase - $expectedTotalWithoutCollections) < 0.01) {
+            // نسبة التحصيلات غير مضمنة، أضفها
+            $totalSalary = $totalSalaryBase + $collectionsBonus;
+        } else {
+            // نسبة التحصيلات مضمنة أو هناك خصومات إضافية (مثل سلفات)
+            // استخدم الراتب المحسوب من المكونات
+            $totalSalary = $baseAmount + $bonus + $collectionsBonus - $deductions;
+        }
+    } else {
+        // للمستخدمين الآخرين أو إذا لم تكن هناك نسبة تحصيلات
+        // استخدم الراتب المحسوب من المكونات
+        $totalSalary = $baseAmount + $bonus - $deductions;
+    }
+    
+    return [
+        'total_salary' => cleanFinancialValue($totalSalary),
+        'collections_bonus' => $collectionsBonus,
+        'base_amount' => $baseAmount,
+        'bonus' => $bonus,
+        'deductions' => $deductions
+    ];
+}
+
 // الحصول على بيانات الراتب الحالي
 $salaryData = getSalarySummary($currentUser['id'], $selectedMonth, $selectedYear);
 
@@ -546,7 +569,10 @@ if ($salaryData['exists']) {
         $currentSalary['deductions'] = cleanFinancialValue($currentSalary['deductions']);
     }
     
-    $maxAdvance = cleanFinancialValue($currentSalary['total_amount'] * 0.5);
+    // حساب الراتب الإجمالي بشكل صحيح مع نسبة التحصيلات
+    $salaryCalculation = calculateTotalSalaryWithCollections($currentSalary, $currentUser['id'], $selectedMonth, $selectedYear, $currentUser['role']);
+    $totalSalaryForAdvance = $salaryCalculation['total_salary'];
+    $maxAdvance = cleanFinancialValue($totalSalaryForAdvance * 0.5);
 } else if (isset($salaryData['calculation']) && $salaryData['calculation']['success']) {
     // الراتب محسوب مؤقتاً بناءً على الساعات حتى الآن
     $currentSalary = $salaryData['calculation'];
@@ -570,7 +596,10 @@ if ($salaryData['exists']) {
         $currentSalary['deductions'] = cleanFinancialValue($currentSalary['deductions']);
     }
     
-    $maxAdvance = cleanFinancialValue($currentSalary['total_amount'] * 0.5);
+    // حساب الراتب الإجمالي بشكل صحيح مع نسبة التحصيلات
+    $salaryCalculation = calculateTotalSalaryWithCollections($currentSalary, $currentUser['id'], $selectedMonth, $selectedYear, $currentUser['role']);
+    $totalSalaryForAdvance = $salaryCalculation['total_salary'];
+    $maxAdvance = cleanFinancialValue($totalSalaryForAdvance * 0.5);
     $isTemporary = true;
 } else {
     // إذا فشل الحساب، حاول حساب الراتب مباشرة
@@ -597,7 +626,10 @@ if ($salaryData['exists']) {
             $currentSalary['deductions'] = cleanFinancialValue($currentSalary['deductions']);
         }
         
-        $maxAdvance = cleanFinancialValue($currentSalary['total_amount'] * 0.5);
+        // حساب الراتب الإجمالي بشكل صحيح مع نسبة التحصيلات
+        $salaryCalculation = calculateTotalSalaryWithCollections($currentSalary, $currentUser['id'], $selectedMonth, $selectedYear, $currentUser['role']);
+        $totalSalaryForAdvance = $salaryCalculation['total_salary'];
+        $maxAdvance = cleanFinancialValue($totalSalaryForAdvance * 0.5);
         $isTemporary = true;
     }
 }
@@ -614,42 +646,18 @@ $monthStats = [
 if ($currentSalary) {
     $monthStats['total_hours'] = $currentSalary['total_hours'] ?? 0;
     $monthStats['recorded_hours'] = $currentSalary['total_hours'] ?? 0; // نفس إجمالي الساعات
-    $totalSalaryRaw = $currentSalary['total_amount'] ?? 0;
-    // تنظيف إضافي للتأكد من إزالة 262145
-    $totalSalaryStr = (string)$totalSalaryRaw;
-    $totalSalaryStr = str_replace('262145', '', $totalSalaryStr);
-    $totalSalaryStr = preg_replace('/\s+/', '', trim($totalSalaryStr));
-    $totalSalaryStr = preg_replace('/[^0-9.]/', '', $totalSalaryStr);
-    $monthStats['total_salary'] = cleanFinancialValue($totalSalaryStr ?: 0);
     
-    // حساب مكافأة التحصيلات - إعادة الحساب دائماً للتأكد من الدقة
-    $collectionsBonusValue = cleanFinancialValue($currentSalary['collections_bonus'] ?? 0);
-    $collectionsBaseAmount = cleanFinancialValue($currentSalary['collections_amount'] ?? 0);
+    // حساب الراتب الإجمالي بشكل صحيح مع نسبة التحصيلات
+    $salaryCalculation = calculateTotalSalaryWithCollections($currentSalary, $currentUser['id'], $selectedMonth, $selectedYear, $currentUser['role']);
+    $monthStats['total_salary'] = $salaryCalculation['total_salary'];
+    $monthStats['collections_bonus'] = $salaryCalculation['collections_bonus'];
     
-    // إذا كان مندوب مبيعات، أعد حساب مكافأة التحصيلات من التحصيلات الفعلية
+    // حساب مبلغ التحصيلات
     if ($currentUser['role'] === 'sales') {
-        $recalculatedCollectionsAmount = calculateSalesCollections($currentUser['id'], $selectedMonth, $selectedYear);
-        $recalculatedCollectionsBonus = round($recalculatedCollectionsAmount * 0.02, 2);
-        
-        // استخدم القيمة المحسوبة حديثاً إذا كانت أكبر من القيمة المحفوظة
-        if ($recalculatedCollectionsBonus > $collectionsBonusValue || $collectionsBonusValue == 0) {
-            $collectionsBonusValue = $recalculatedCollectionsBonus;
-            $collectionsBaseAmount = $recalculatedCollectionsAmount;
-        }
-    }
-    
-    $monthStats['collections_bonus'] = $collectionsBonusValue;
-    $monthStats['collections_amount'] = $collectionsBaseAmount;
-    
-    // تحديث الراتب الإجمالي ليتضمن نسبة التحصيلات إذا لم تكن مضمنة
-    $baseAmountCheck = cleanFinancialValue($currentSalary['base_amount'] ?? 0);
-    $bonusCheck = cleanFinancialValue($currentSalary['bonus'] ?? 0);
-    $deductionsCheck = cleanFinancialValue($currentSalary['deductions'] ?? 0);
-    $expectedTotalWithCollections = $baseAmountCheck + $bonusCheck + $collectionsBonusValue - $deductionsCheck;
-    
-    // إذا كان الراتب الإجمالي المحفوظ لا يتضمن نسبة التحصيلات، أضفها
-    if (abs($monthStats['total_salary'] - $expectedTotalWithCollections) > 0.01) {
-        $monthStats['total_salary'] = $monthStats['total_salary'] + $collectionsBonusValue;
+        $collectionsAmount = calculateSalesCollections($currentUser['id'], $selectedMonth, $selectedYear);
+        $monthStats['collections_amount'] = $collectionsAmount;
+    } else {
+        $monthStats['collections_amount'] = 0;
     }
     
     $maxAdvance = cleanFinancialValue($monthStats['total_salary'] * 0.5);
@@ -682,32 +690,8 @@ $bonus = cleanFinancialValue($currentSalary['bonus'] ?? 0);
 $deductions = cleanFinancialValue($currentSalary['deductions'] ?? 0);
 $collectionsBonus = cleanFinancialValue($monthStats['collections_bonus'] ?? 0);
 
-// حساب الراتب الإجمالي - التأكد من تضمين نسبة التحصيلات
-$totalSalaryBase = cleanFinancialValue($monthStats['total_salary'] ?? 0);
-
-// إذا كان المستخدم مندوب مبيعات ولديه نسبة تحصيلات، تأكد من تضمينها في الراتب الإجمالي
-if ($currentUser['role'] === 'sales' && $collectionsBonus > 0) {
-    // حساب الراتب المتوقع مع نسبة التحصيلات
-    $expectedTotalWithCollections = $baseAmount + $bonus + $collectionsBonus - $deductions;
-    
-    // إذا كان الراتب الإجمالي الحالي لا يتطابق مع الراتب المتوقع (مع نسبة التحصيلات)
-    // فهذا يعني أن نسبة التحصيلات غير مضمنة، لذا أضفها
-    if (abs($totalSalaryBase - $expectedTotalWithCollections) > 0.01) {
-        $totalSalary = $totalSalaryBase + $collectionsBonus;
-    } else {
-        // نسبة التحصيلات مضمنة بالفعل
-        $totalSalary = $totalSalaryBase;
-    }
-} else {
-    // للمستخدمين الآخرين أو إذا لم تكن هناك نسبة تحصيلات
-    $totalSalary = $totalSalaryBase;
-}
-
-// تحديث monthStats للعرض الصحيح
-$monthStats['total_salary'] = $totalSalary;
-
-// إعادة حساب الحد الأقصى للسلفة بناءً على الراتب الإجمالي الصحيح (مع نسبة التحصيلات)
-$maxAdvance = cleanFinancialValue($totalSalary * 0.5);
+// الراتب الإجمالي محسوب بالفعل في $monthStats['total_salary']
+$totalSalary = $monthStats['total_salary'];
 
 // حساب إجمالي السلفات المعتمدة لهذا الشهر
 $totalApprovedAdvances = 0;
