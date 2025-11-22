@@ -311,8 +311,11 @@ function tasksHandleAction(string $action, array $input, array $context): array
                     throw new RuntimeException('المهمة غير موجودة');
                 }
 
-                if ((int) $task['assigned_to'] !== (int) $currentUser['id']) {
-                    throw new RuntimeException('هذه المهمة غير مخصصة لك');
+                // السماح لأي عامل إنتاج بتغيير حالة أي مهمة مخصصة لأي عامل إنتاج
+                // التحقق فقط من أن المهمة مخصصة لعامل إنتاج (وليس للمدير أو المحاسب)
+                $assignedUser = $db->queryOne('SELECT role FROM users WHERE id = ?', [(int) $task['assigned_to']]);
+                if (!$assignedUser || $assignedUser['role'] !== 'production') {
+                    throw new RuntimeException('هذه المهمة غير مخصصة لعامل إنتاج');
                 }
 
                 $statusMap = [
@@ -470,10 +473,11 @@ if ($assignedFilter > 0) {
     $params[] = $assignedFilter;
 }
 
-if ($isProduction) {
-    $whereConditions[] = 't.assigned_to = ?';
-    $params[] = (int) $currentUser['id'];
-}
+// إزالة الفلترة - السماح لجميع عمال الإنتاج برؤية جميع المهام
+// if ($isProduction) {
+//     $whereConditions[] = 't.assigned_to = ?';
+//     $params[] = (int) $currentUser['id'];
+// }
 
 $whereClause = $whereConditions ? 'WHERE ' . implode(' AND ', $whereConditions) : '';
 
@@ -511,10 +515,11 @@ $products = $db->query("SELECT id, name FROM products WHERE status = 'active' OR
 $statsBaseConditions = [];
 $statsBaseParams = [];
 
-if ($isProduction) {
-    $statsBaseConditions[] = 'assigned_to = ?';
-    $statsBaseParams[] = (int) $currentUser['id'];
-}
+// إزالة الفلترة - السماح لجميع عمال الإنتاج برؤية إحصائيات جميع المهام
+// if ($isProduction) {
+//     $statsBaseConditions[] = 'assigned_to = ?';
+//     $statsBaseParams[] = (int) $currentUser['id'];
+// }
 
 $buildStatsQuery = function (?string $extraCondition = null, array $extraParams = []) use ($db, $statsBaseConditions, $statsBaseParams) {
     $conditions = $statsBaseConditions;
@@ -762,19 +767,31 @@ function tasksHtml(string $value): string
                                     <td><?php echo isset($task['created_by_name']) ? tasksHtml($task['created_by_name']) : ''; ?></td>
                                     <td>
                                         <div class="btn-group btn-group-sm" role="group">
-                                            <?php if ($isProduction && (int) ($task['assigned_to'] ?? 0) === (int) $currentUser['id']): ?>
-                                                <?php if ($task['status'] === 'pending'): ?>
-                                                    <button type="button" class="btn btn-outline-info" onclick="submitTaskAction('receive_task', <?php echo (int) $task['id']; ?>)">
-                                                        <i class="bi bi-check-circle me-1"></i>استلام
-                                                    </button>
-                                                <?php elseif ($task['status'] === 'received'): ?>
-                                                    <button type="button" class="btn btn-outline-primary" onclick="submitTaskAction('start_task', <?php echo (int) $task['id']; ?>)">
-                                                        <i class="bi bi-play-circle me-1"></i>بدء
-                                                    </button>
-                                                <?php elseif ($task['status'] === 'in_progress'): ?>
-                                                    <button type="button" class="btn btn-outline-success" onclick="submitTaskAction('complete_task', <?php echo (int) $task['id']; ?>)">
-                                                        <i class="bi bi-check2-circle me-1"></i>إكمال
-                                                    </button>
+                                            <?php if ($isProduction): ?>
+                                                <?php 
+                                                // التحقق من أن المهمة مخصصة لعامل إنتاج
+                                                $taskAssignedTo = (int) ($task['assigned_to'] ?? 0);
+                                                $assignedUserRole = null;
+                                                if ($taskAssignedTo > 0) {
+                                                    $assignedUser = $db->queryOne('SELECT role FROM users WHERE id = ?', [$taskAssignedTo]);
+                                                    $assignedUserRole = $assignedUser['role'] ?? null;
+                                                }
+                                                // السماح لأي عامل إنتاج بتغيير حالة أي مهمة مخصصة لعامل إنتاج
+                                                if ($assignedUserRole === 'production'): 
+                                                ?>
+                                                    <?php if ($task['status'] === 'pending'): ?>
+                                                        <button type="button" class="btn btn-outline-info" onclick="submitTaskAction('receive_task', <?php echo (int) $task['id']; ?>)">
+                                                            <i class="bi bi-check-circle me-1"></i>استلام
+                                                        </button>
+                                                    <?php elseif ($task['status'] === 'received'): ?>
+                                                        <button type="button" class="btn btn-outline-primary" onclick="submitTaskAction('start_task', <?php echo (int) $task['id']; ?>)">
+                                                            <i class="bi bi-play-circle me-1"></i>بدء
+                                                        </button>
+                                                    <?php elseif ($task['status'] === 'in_progress'): ?>
+                                                        <button type="button" class="btn btn-outline-success" onclick="submitTaskAction('complete_task', <?php echo (int) $task['id']; ?>)">
+                                                            <i class="bi bi-check2-circle me-1"></i>إكمال
+                                                        </button>
+                                                    <?php endif; ?>
                                                 <?php endif; ?>
                                             <?php endif; ?>
 
