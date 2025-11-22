@@ -102,6 +102,13 @@ $basePath = getBasePath();
                 <span id="successMessageText"></span>
                 <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close"></button>
             </div>
+            
+            <!-- Dynamic Error Message -->
+            <div id="dynamicErrorAlert" class="alert alert-danger alert-dismissible fade show" role="alert" style="display: none;">
+                <i class="bi bi-exclamation-triangle-fill me-2"></i>
+                <span id="errorMessageText"></span>
+                <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close"></button>
+            </div>
 
             <div class="card shadow-sm">
                 <div class="card-header bg-primary text-white">
@@ -130,8 +137,15 @@ $basePath = getBasePath();
                                 <div class="col-md-6">
                                     <label class="form-label">العميل المحدد</label>
                                     <div id="selectedCustomer" class="alert alert-info" style="display: none;">
-                                        <strong id="selectedCustomerName"></strong><br>
-                                        <small id="selectedCustomerInfo"></small>
+                                        <div class="d-flex justify-content-between align-items-start">
+                                            <div>
+                                                <strong id="selectedCustomerName"></strong><br>
+                                                <small id="selectedCustomerInfo"></small>
+                                            </div>
+                                            <button type="button" class="btn btn-sm btn-outline-secondary" onclick="resetReturnForm()" title="تغيير العميل">
+                                                <i class="bi bi-x-circle"></i> تغيير
+                                            </button>
+                                        </div>
                                     </div>
                                 </div>
                             </div>
@@ -351,6 +365,10 @@ function displayCustomerDropdown(customers) {
 
 function selectCustomer(customerId, customerName, debt, credit) {
     try {
+        // إعادة تعيين المنتجات المحددة سابقاً
+        selectedReturnItems = [];
+        updateReturnItemsTable();
+        
         selectedCustomerId = customerId;
         const customerIdInput = document.getElementById('customerId');
         const selectedDiv = document.getElementById('selectedCustomer');
@@ -405,6 +423,39 @@ function selectCustomer(customerId, customerName, debt, credit) {
     }
 }
 
+function resetReturnForm() {
+    // إعادة تعيين العميل
+    selectedCustomerId = null;
+    selectedReturnItems = [];
+    purchaseHistory = [];
+    
+    // إعادة تعيين حقول النموذج
+    const customerIdInput = document.getElementById('customerId');
+    const customerSearch = document.getElementById('customerSearch');
+    const selectedDiv = document.getElementById('selectedCustomer');
+    const returnNotes = document.getElementById('returnNotes');
+    const purchaseHistorySection = document.getElementById('purchaseHistorySection');
+    const returnItemsSection = document.getElementById('returnItemsSection');
+    const submitBtn = document.getElementById('submitReturnRequest');
+    
+    if (customerIdInput) customerIdInput.value = '';
+    if (customerSearch) customerSearch.value = '';
+    if (selectedDiv) selectedDiv.style.display = 'none';
+    if (returnNotes) returnNotes.value = '';
+    if (purchaseHistorySection) purchaseHistorySection.style.display = 'none';
+    if (returnItemsSection) returnItemsSection.style.display = 'none';
+    if (submitBtn) submitBtn.disabled = true;
+    
+    // إعادة تعيين الجداول
+    const purchaseHistoryTable = document.getElementById('purchaseHistoryTable');
+    const returnItemsTableBody = document.getElementById('returnItemsTableBody');
+    
+    if (purchaseHistoryTable) purchaseHistoryTable.innerHTML = '';
+    if (returnItemsTableBody) {
+        returnItemsTableBody.innerHTML = '<tr><td colspan="8" class="text-center text-muted">لم يتم اختيار أي منتجات</td></tr>';
+    }
+}
+
 function loadPurchaseHistory(customerId) {
     const loadingDiv = document.getElementById('purchaseHistoryLoading');
     const tableDiv = document.getElementById('purchaseHistoryTable');
@@ -450,10 +501,9 @@ function displayPurchaseHistory(history) {
         <table class="table table-bordered table-hover">
             <thead class="table-light">
                 <tr>
-                    <th>رقم الفاتورة</th>
-                    <th>التاريخ</th>
                     <th>المنتج</th>
                     <th>الكمية المشتراة</th>
+                    <th>الكمية المرجعة</th>
                     <th>المتبقي</th>
                     <th>سعر الوحدة</th>
                     <th>الإجمالي</th>
@@ -465,18 +515,26 @@ function displayPurchaseHistory(history) {
     `;
     
     history.forEach(item => {
+        // عرض معلومات الفواتير إذا كانت موجودة
+        const invoicesInfo = item.invoices && item.invoices.length > 0 
+            ? `<br><small class="text-muted">من فواتير: ${item.invoices.map(inv => inv.invoice_number).join(', ')}</small>`
+            : '';
+        
         html += `
             <tr>
-                <td>${item.invoice_number}</td>
-                <td>${item.invoice_date}</td>
-                <td>${item.product_name}</td>
+                <td>
+                    <strong>${item.product_name}</strong>
+                    <small class="text-muted">(${item.unit || ''})</small>
+                    ${invoicesInfo}
+                </td>
                 <td>${parseFloat(item.quantity_purchased).toFixed(2)}</td>
-                <td>${parseFloat(item.quantity_remaining).toFixed(2)}</td>
+                <td>${parseFloat(item.quantity_returned).toFixed(2)}</td>
+                <td><strong>${parseFloat(item.quantity_remaining).toFixed(2)}</strong></td>
                 <td>${parseFloat(item.unit_price).toFixed(2)} ج.م</td>
                 <td>${parseFloat(item.total_price).toFixed(2)} ج.م</td>
                 <td>${item.batch_numbers || '-'}</td>
                 <td>
-                    <button class="btn btn-sm btn-primary" onclick="addToReturnItems(${item.invoice_item_id}, ${item.product_id}, '${item.product_name.replace(/'/g, "\\'")}', ${item.quantity_remaining}, ${item.unit_price}, '${(item.batch_numbers || '').replace(/'/g, "\\'")}')">
+                    <button class="btn btn-sm btn-primary" onclick="addToReturnItems(${item.invoice_item_id}, ${item.product_id}, '${item.product_name.replace(/'/g, "\\'")}', ${item.quantity_remaining}, ${item.unit_price}, '${(item.batch_numbers || '').replace(/'/g, "\\'")}', ${JSON.stringify(item.invoice_item_ids || [item.invoice_item_id]).replace(/'/g, "\\'")})">
                         <i class="bi bi-plus-circle"></i> إضافة
                     </button>
                 </td>
@@ -492,18 +550,18 @@ function displayPurchaseHistory(history) {
     tableDiv.innerHTML = html;
 }
 
-function addToReturnItems(invoiceItemId, productId, productName, maxQuantity, unitPrice, batchNumbers) {
-    // Check if already added
-    const existing = selectedReturnItems.find(item => item.invoice_item_id === invoiceItemId);
+function addToReturnItems(invoiceItemId, productId, productName, maxQuantity, unitPrice, batchNumbers, allInvoiceItemIds) {
+    // Check if already added - التحقق حسب المنتج وليس حسب invoice_item_id
+    const existing = selectedReturnItems.find(item => item.product_id === productId);
     if (existing) {
-        alert('هذا المنتج مضاف بالفعل');
+        alert('هذا المنتج مضاف بالفعل. يرجى إزالته أولاً لإضافة كمية مختلفة.');
         return;
     }
     
     const quantity = prompt(`أدخل الكمية المراد إرجاعها (الحد الأقصى: ${parseFloat(maxQuantity).toFixed(2)})`);
     if (!quantity || parseFloat(quantity) <= 0) {
-            return;
-        }
+        return;
+    }
         
     const qty = parseFloat(quantity);
     if (qty > maxQuantity + 0.0001) {
@@ -513,8 +571,15 @@ function addToReturnItems(invoiceItemId, productId, productName, maxQuantity, un
     
     const total = qty * unitPrice;
     
+    // استخدام جميع invoice_item_ids إذا كانت متوفرة
+    const invoiceItemIds = allInvoiceItemIds ? (Array.isArray(allInvoiceItemIds) ? allInvoiceItemIds : JSON.parse(allInvoiceItemIds)) : [invoiceItemId];
+    
+    // استخدام أول invoice_item_id كرئيسي والآخرين كاحتياطي
+    const primaryInvoiceItemId = invoiceItemIds[0] || invoiceItemId;
+    
     const item = {
-        invoice_item_id: invoiceItemId,
+        invoice_item_id: primaryInvoiceItemId,
+        invoice_item_ids: invoiceItemIds, // جميع IDs المرتبطة
         product_id: productId,
         product_name: productName,
         quantity: qty,
@@ -622,21 +687,34 @@ document.getElementById('submitReturnRequest').addEventListener('click', functio
                 // التمرير إلى أعلى الصفحة لرؤية الرسالة
                 window.scrollTo({ top: 0, behavior: 'smooth' });
                 
-                // الانتظار 3 ثوانٍ ثم إعادة تحميل الصفحة
+                // إعادة تعيين النموذج للسماح بإنشاء طلب جديد
+                resetReturnForm();
+                
+                // تحديث جدول الطلبات الأخيرة بعد تأخير قصير
                 setTimeout(function() {
-                    location.reload();
-                }, 3000);
+                    loadRecentRequests();
+                }, 500);
             } else {
                 // Fallback: استخدام alert إذا لم يتم العثور على العناصر
                 alert('تم إنشاء طلب المرتجع بنجاح!\nرقم المرتجع: ' + data.return_number + '\nتم إرساله للموافقة');
-                setTimeout(function() {
-                    location.reload();
-                }, 2000);
+                resetReturnForm();
+                loadRecentRequests();
             }
         } else {
             btn.disabled = false;
             btn.innerHTML = originalHTML;
-            alert('خطأ: ' + (data.message || 'حدث خطأ غير معروف'));
+            
+            // إظهار رسالة الخطأ في الصفحة
+            const errorAlert = document.getElementById('dynamicErrorAlert');
+            const errorText = document.getElementById('errorMessageText');
+            
+            if (errorAlert && errorText) {
+                errorText.textContent = 'خطأ: ' + (data.message || 'حدث خطأ غير معروف');
+                errorAlert.style.display = 'block';
+                window.scrollTo({ top: 0, behavior: 'smooth' });
+            } else {
+                alert('خطأ: ' + (data.message || 'حدث خطأ غير معروف'));
+            }
         }
     })
     .catch(error => {

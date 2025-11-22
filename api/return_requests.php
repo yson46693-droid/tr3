@@ -11,6 +11,7 @@ require_once __DIR__ . '/../includes/db.php';
 require_once __DIR__ . '/../includes/auth.php';
 require_once __DIR__ . '/../includes/approval_system.php';
 require_once __DIR__ . '/../includes/path_helper.php';
+require_once __DIR__ . '/../includes/product_name_helper.php';
 
 header('Content-Type: application/json; charset=utf-8');
 
@@ -173,7 +174,7 @@ function handleGetPurchaseHistory(): void
         }
     }
     
-    // Get purchase history from invoices
+    // Get purchase history from invoices with real product names
     $purchaseHistory = $db->query(
         "SELECT 
             i.id as invoice_id,
@@ -184,7 +185,20 @@ function handleGetPurchaseHistory(): void
             i.status as invoice_status,
             ii.id as invoice_item_id,
             ii.product_id,
-            p.name as product_name,
+            COALESCE(
+                (SELECT fp2.product_name 
+                 FROM finished_products fp2 
+                 INNER JOIN batch_numbers bn2 ON fp2.batch_id = bn2.id
+                 INNER JOIN sales_batch_numbers sbn2 ON bn2.id = sbn2.batch_number_id
+                 WHERE sbn2.invoice_item_id = ii.id
+                   AND fp2.product_name IS NOT NULL 
+                   AND TRIM(fp2.product_name) != ''
+                   AND fp2.product_name NOT LIKE 'منتج رقم%'
+                 ORDER BY fp2.id DESC 
+                 LIMIT 1),
+                NULLIF(TRIM(p.name), ''),
+                CONCAT('منتج رقم ', p.id)
+            ) as product_name,
             p.unit,
             ii.quantity,
             ii.unit_price,
@@ -252,7 +266,9 @@ function handleGetPurchaseHistory(): void
         }
     }
     
-    $result = [];
+    // تجميع المنتجات حسب المنتج (وليس حسب الفاتورة)
+    $productsMap = [];
+    
     foreach ($purchaseHistory as $item) {
         $invoiceItemId = (int)$item['invoice_item_id'];
         $productId = (int)$item['product_id'];
@@ -275,22 +291,103 @@ function handleGetPurchaseHistory(): void
             continue; // Skip fully returned items
         }
         
-        $result[] = [
+        // تجميع حسب المنتج
+        if (!isset($productsMap[$productId])) {
+            // استخدام resolveProductName للحصول على الاسم الحقيقي
+            $productName = resolveProductName([
+                $item['product_name'] ?? null
+            ], 'غير معروف');
+            
+            $productsMap[$productId] = [
+                'product_id' => $productId,
+                'product_name' => $productName,
+                'unit' => $item['unit'] ?? '',
+                'quantity_purchased' => 0.0,
+                'quantity_returned' => 0.0,
+                'quantity_remaining' => 0.0,
+                'unit_price' => (float)$item['unit_price'],
+                'total_price' => 0.0,
+                'batch_numbers' => [],
+                'invoice_item_ids' => [],
+                'invoices' => []
+            ];
+        }
+        
+        $productsMap[$productId]['quantity_purchased'] += $purchasedQty;
+        $productsMap[$productId]['quantity_returned'] += $returnedQty;
+        $productsMap[$productId]['quantity_remaining'] += $remainingQty;
+        $productsMap[$productId]['total_price'] += (float)$item['total_price'];
+        $productsMap[$productId]['invoice_item_ids'][] = $invoiceItemId;
+        
+        if ($item['batch_numbers']) {
+            $batches = explode(', ', $item['batch_numbers']);
+            foreach ($batches as $batch) {
+                if ($batch && !in_array($batch, $productsMap[$productId]['batch_numbers'])) {
+                    $productsMap[$productId]['batch_numbers'][] = $batch;
+                }
+            }
+        }
+        
+        // إضافة معلومات الفاتورة
+        $productsMap[$productId]['invoices'][] = [
             'invoice_id' => (int)$item['invoice_id'],
             'invoice_number' => $item['invoice_number'],
-            'invoice_date' => $item['invoice_date'],
             'invoice_item_id' => $invoiceItemId,
-            'product_id' => $productId,
-            'product_name' => $item['product_name'] ?? 'غير معروف',
-            'unit' => $item['unit'] ?? '',
-            'quantity_purchased' => $purchasedQty,
-            'quantity_returned' => $returnedQty,
-            'quantity_remaining' => $remainingQty,
-            'unit_price' => (float)$item['unit_price'],
-            'total_price' => (float)$item['total_price'],
-            'batch_numbers' => $item['batch_numbers'] ?? '',
-            'batch_number_ids' => $item['batch_number_ids'] ?? '',
+            'quantity' => $remainingQty
         ];
+    }
+    
+    // تحويل الخريطة إلى مصفوفة
+    $result = [];
+    foreach ($productsMap as $productId => $product) {
+        if ($product['quantity_remaining'] > 0) {
+            // استخدام أول invoice_item_id من المنتج
+            $firstInvoiceItemId = !empty($product['invoice_item_ids']) ? $product['invoice_item_ids'][0] : 0;
+            
+            // الحصول على اسم المنتج الحقيقي من finished_products إذا كان متوفراً
+            $realProductName = $product['product_name'];
+            if (isPlaceholderProductName($realProductName) && $productId > 0) {
+                // محاولة جلب اسم المنتج من finished_products
+                try {
+                    $finishedProduct = $db->queryOne(
+                        "SELECT fp.product_name 
+                         FROM finished_products fp
+                         INNER JOIN batch_numbers bn ON fp.batch_id = bn.id
+                         INNER JOIN sales_batch_numbers sbn ON bn.id = sbn.batch_number_id
+                         WHERE sbn.invoice_item_id IN (" . implode(',', array_map('intval', $product['invoice_item_ids'])) . ")
+                           AND fp.product_name IS NOT NULL 
+                           AND TRIM(fp.product_name) != ''
+                           AND fp.product_name NOT LIKE 'منتج رقم%'
+                         ORDER BY fp.id DESC 
+                         LIMIT 1"
+                    );
+                    
+                    if ($finishedProduct && !empty($finishedProduct['product_name'])) {
+                        $realProductName = trim($finishedProduct['product_name']);
+                    }
+                } catch (Throwable $e) {
+                    // في حالة الخطأ، نستخدم الاسم الموجود
+                }
+            }
+            
+            // استخدام resolveProductName للتأكد من الحصول على الاسم الحقيقي
+            $finalProductName = resolveProductName([$realProductName], 'اسم المنتج غير متوفر');
+            
+            $result[] = [
+                'invoice_item_id' => $firstInvoiceItemId, // للتوافق مع الكود الحالي
+                'product_id' => $productId,
+                'product_name' => $finalProductName,
+                'unit' => $product['unit'],
+                'quantity_purchased' => round($product['quantity_purchased'], 3),
+                'quantity_returned' => round($product['quantity_returned'], 3),
+                'quantity_remaining' => round($product['quantity_remaining'], 3),
+                'unit_price' => $product['unit_price'],
+                'total_price' => round($product['total_price'], 2),
+                'batch_numbers' => implode(', ', $product['batch_numbers']),
+                'invoices' => $product['invoices'], // معلومات إضافية عن الفواتير
+                'invoice_item_ids' => $product['invoice_item_ids'] // جميع invoice_item_ids المرتبطة
+            ];
+        }
     }
     
     returnJson(['success' => true, 'purchase_history' => $result]);
