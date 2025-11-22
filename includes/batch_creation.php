@@ -187,6 +187,11 @@ function batchCreationConsumeMixedNuts(
     $cleanName = trim($materialName);
     $cleanName = preg_replace('/\s*\(خلطة\)\s*$/u', '', $cleanName);
     
+    // إزالة أي بادئات مثل "مكسرات - " أو "مكسرات مشكل"
+    $cleanName = preg_replace('/^مكسرات\s*[-–—]\s*/u', '', $cleanName);
+    $cleanName = preg_replace('/^مكسرات\s+مشكل\s*/u', '', $cleanName);
+    $cleanName = trim($cleanName);
+    
     $attemptSuppliers = [];
     if ($supplierId) {
         $attemptSuppliers[] = $supplierId;
@@ -201,25 +206,65 @@ function batchCreationConsumeMixedNuts(
             break;
         }
 
-        $sql = "SELECT id, total_quantity AS available FROM mixed_nuts WHERE total_quantity > 0";
-        $params = [];
-
-        if ($attemptSupplier) {
-            $sql .= " AND supplier_id = ?";
-            $params[] = $attemptSupplier;
-        }
-
-        // البحث عن الخلطة بالاسم
+        // محاولات بحث متعددة
+        $searchQueries = [];
+        
+        // 1. البحث المطابق تماماً
         if ($cleanName !== '') {
-            $sql .= " AND (batch_name = ? OR batch_name LIKE ?)";
-            $params[] = $cleanName;
-            $params[] = '%' . addcslashes($cleanName, '%_') . '%';
+            $searchQueries[] = [
+                'sql' => "SELECT id, total_quantity AS available, batch_name FROM mixed_nuts WHERE total_quantity > 0 AND batch_name = ?",
+                'params' => [$cleanName]
+            ];
+            
+            // 2. البحث الجزئي (LIKE)
+            $searchQueries[] = [
+                'sql' => "SELECT id, total_quantity AS available, batch_name FROM mixed_nuts WHERE total_quantity > 0 AND batch_name LIKE ?",
+                'params' => ['%' . addcslashes($cleanName, '%_') . '%']
+            ];
+            
+            // 3. البحث العكسي (اسم الخلطة موجود في اسم المادة)
+            $searchQueries[] = [
+                'sql' => "SELECT id, total_quantity AS available, batch_name FROM mixed_nuts WHERE total_quantity > 0 AND ? LIKE CONCAT('%', batch_name, '%')",
+                'params' => [$cleanName]
+            ];
+            
+            // 4. البحث بعد إزالة "مشكل" أو "مشكلة"
+            $nameWithoutMashkal = preg_replace('/\s*مشكل[ةه]?\s*/u', '', $cleanName);
+            $nameWithoutMashkal = trim($nameWithoutMashkal);
+            if ($nameWithoutMashkal !== $cleanName && $nameWithoutMashkal !== '') {
+                $searchQueries[] = [
+                    'sql' => "SELECT id, total_quantity AS available, batch_name FROM mixed_nuts WHERE total_quantity > 0 AND (batch_name = ? OR batch_name LIKE ?)",
+                    'params' => [$nameWithoutMashkal, '%' . addcslashes($nameWithoutMashkal, '%_') . '%']
+                ];
+            }
         }
-
-        $sql .= " ORDER BY total_quantity DESC";
-        $stmt = $pdo->prepare($sql);
-        $stmt->execute($params);
-        $rows = $stmt->fetchAll(PDO::FETCH_ASSOC);
+        
+        $rows = [];
+        foreach ($searchQueries as $query) {
+            $sql = $query['sql'];
+            $params = $query['params'];
+            
+            if ($attemptSupplier) {
+                $sql .= " AND supplier_id = ?";
+                $params[] = $attemptSupplier;
+            }
+            
+            $sql .= " ORDER BY total_quantity DESC LIMIT 10";
+            
+            try {
+                $stmt = $pdo->prepare($sql);
+                $stmt->execute($params);
+                $foundRows = $stmt->fetchAll(PDO::FETCH_ASSOC);
+                
+                if (!empty($foundRows)) {
+                    $rows = $foundRows;
+                    break; // وجدنا نتائج، نتوقف عن البحث
+                }
+            } catch (Exception $e) {
+                error_log('Error in batchCreationConsumeMixedNuts search: ' . $e->getMessage());
+                continue;
+            }
+        }
 
         if (empty($rows)) {
             continue;
@@ -381,50 +426,129 @@ function batchCreationDeductTypedStock(PDO $pdo, array $material, float $unitsMu
         case 'nuts':
             // التحقق أولاً إذا كانت المادة خلطة مكسرات (mixed_nuts)
             $isMixedNuts = false;
+            $foundMixName = null;
             if (batchCreationTableExists($pdo, 'mixed_nuts')) {
                 // تنظيف اسم المادة من "(خلطة)" إذا كان موجوداً
                 $cleanName = trim($materialName);
                 $cleanName = preg_replace('/\s*\(خلطة\)\s*$/u', '', $cleanName);
                 
-                // البحث عن الخلطة في جدول mixed_nuts
-                $checkSql = "SELECT COUNT(*) as count FROM mixed_nuts WHERE batch_name = ? OR batch_name LIKE ?";
-                $checkParams = [$cleanName, '%' . addcslashes($cleanName, '%_') . '%'];
+                // إزالة أي بادئات مثل "مكسرات - " أو "مكسرات مشكل"
+                $cleanName = preg_replace('/^مكسرات\s*[-–—]\s*/u', '', $cleanName);
+                $cleanName = preg_replace('/^مكسرات\s+مشكل\s*/u', '', $cleanName);
+                $cleanName = trim($cleanName);
                 
-                if ($supplierId) {
-                    $checkSql .= " AND supplier_id = ?";
-                    $checkParams[] = $supplierId;
+                // البحث عن الخلطة في جدول mixed_nuts - محاولات متعددة
+                $searchAttempts = [];
+                
+                // المحاولة 1: البحث المطابق تماماً
+                $searchAttempts[] = ['type' => 'exact', 'name' => $cleanName];
+                
+                // المحاولة 2: البحث بعد إزالة "مشكل" أو "مشكلة"
+                $nameWithoutMashkal = preg_replace('/\s*مشكل[ةه]?\s*/u', '', $cleanName);
+                $nameWithoutMashkal = trim($nameWithoutMashkal);
+                if ($nameWithoutMashkal !== $cleanName && $nameWithoutMashkal !== '') {
+                    $searchAttempts[] = ['type' => 'without_mashkal', 'name' => $nameWithoutMashkal];
                 }
                 
-                $checkStmt = $pdo->prepare($checkSql);
-                $checkStmt->execute($checkParams);
-                $checkResult = $checkStmt->fetch(PDO::FETCH_ASSOC);
+                // المحاولة 3: البحث الجزئي
+                $searchAttempts[] = ['type' => 'partial', 'name' => $cleanName];
                 
-                if ($checkResult && (int)($checkResult['count'] ?? 0) > 0) {
-                    $isMixedNuts = true;
-                } else {
-                    // محاولة أخرى بدون فلتر المورد
-                    $checkSql2 = "SELECT COUNT(*) as count FROM mixed_nuts WHERE batch_name = ? OR batch_name LIKE ?";
-                    $checkStmt2 = $pdo->prepare($checkSql2);
-                    $checkStmt2->execute([$cleanName, '%' . addcslashes($cleanName, '%_') . '%']);
-                    $checkResult2 = $checkStmt2->fetch(PDO::FETCH_ASSOC);
+                foreach ($searchAttempts as $attempt) {
+                    if ($isMixedNuts) {
+                        break;
+                    }
                     
-                    if ($checkResult2 && (int)($checkResult2['count'] ?? 0) > 0) {
-                        $isMixedNuts = true;
+                    $checkSql = "SELECT id, batch_name, total_quantity FROM mixed_nuts WHERE total_quantity > 0";
+                    $checkParams = [];
+                    
+                    if ($attempt['type'] === 'exact') {
+                        $checkSql .= " AND batch_name = ?";
+                        $checkParams[] = $attempt['name'];
+                    } elseif ($attempt['type'] === 'without_mashkal') {
+                        $checkSql .= " AND (batch_name = ? OR batch_name LIKE ?)";
+                        $checkParams[] = $attempt['name'];
+                        $checkParams[] = '%' . addcslashes($attempt['name'], '%_') . '%';
+                    } else {
+                        // partial search
+                        $checkSql .= " AND (batch_name LIKE ? OR ? LIKE CONCAT('%', batch_name, '%'))";
+                        $checkParams[] = '%' . addcslashes($attempt['name'], '%_') . '%';
+                        $checkParams[] = $attempt['name'];
+                    }
+                    
+                    if ($supplierId) {
+                        $checkSql .= " AND supplier_id = ?";
+                        $checkParams[] = $supplierId;
+                    }
+                    
+                    $checkSql .= " LIMIT 1";
+                    
+                    try {
+                        $checkStmt = $pdo->prepare($checkSql);
+                        $checkStmt->execute($checkParams);
+                        $checkResult = $checkStmt->fetch(PDO::FETCH_ASSOC);
+                        
+                        if ($checkResult && !empty($checkResult['batch_name'])) {
+                            $isMixedNuts = true;
+                            $foundMixName = $checkResult['batch_name'];
+                            break;
+                        }
+                    } catch (Exception $e) {
+                        error_log('Error checking mixed_nuts: ' . $e->getMessage());
+                    }
+                }
+                
+                // محاولة أخيرة بدون فلتر المورد
+                if (!$isMixedNuts) {
+                    $checkSql3 = "SELECT id, batch_name, total_quantity FROM mixed_nuts WHERE total_quantity > 0 AND (batch_name LIKE ? OR ? LIKE CONCAT('%', batch_name, '%')) LIMIT 1";
+                    try {
+                        $checkStmt3 = $pdo->prepare($checkSql3);
+                        $checkStmt3->execute(['%' . addcslashes($cleanName, '%_') . '%', $cleanName]);
+                        $checkResult3 = $checkStmt3->fetch(PDO::FETCH_ASSOC);
+                        
+                        if ($checkResult3 && !empty($checkResult3['batch_name'])) {
+                            $isMixedNuts = true;
+                            $foundMixName = $checkResult3['batch_name'];
+                        }
+                    } catch (Exception $e) {
+                        error_log('Error checking mixed_nuts (fallback): ' . $e->getMessage());
                     }
                 }
             }
             
             if ($isMixedNuts) {
+                // استخدام اسم الخلطة الفعلي الموجود في قاعدة البيانات
+                $materialNameToUse = $foundMixName ?? $materialName;
                 // خصم من الخلطة (mixed_nuts)
-                batchCreationConsumeMixedNuts($pdo, $totalRequired, $supplierId, $materialName, $unit);
+                batchCreationConsumeMixedNuts($pdo, $totalRequired, $supplierId, $materialNameToUse, $unit);
             } else {
                 // إذا لم توجد الخلطة، فشل العملية
-                throw new RuntimeException(
-                    sprintf(
-                        'الخلطة "%s" غير موجودة في المخزون. يرجى التأكد من وجود الخلطة قبل إنشاء عملية الإنتاج.',
-                        $materialName
-                    )
+                // محاولة جلب جميع أسماء الخلطات المتاحة للمساعدة في التشخيص
+                $availableMixes = [];
+                if (batchCreationTableExists($pdo, 'mixed_nuts')) {
+                    try {
+                        $allMixesStmt = $pdo->prepare("SELECT batch_name FROM mixed_nuts WHERE total_quantity > 0 LIMIT 10");
+                        $allMixesStmt->execute();
+                        $allMixes = $allMixesStmt->fetchAll(PDO::FETCH_ASSOC);
+                        foreach ($allMixes as $mix) {
+                            if (!empty($mix['batch_name'])) {
+                                $availableMixes[] = $mix['batch_name'];
+                            }
+                        }
+                    } catch (Exception $e) {
+                        // ignore
+                    }
+                }
+                
+                $errorMsg = sprintf(
+                    'الخلطة "%s" غير موجودة في المخزون. يرجى التأكد من وجود الخلطة قبل إنشاء عملية الإنتاج.',
+                    $materialName
                 );
+                
+                if (!empty($availableMixes)) {
+                    $errorMsg .= ' الخلطات المتاحة: ' . implode(', ', array_slice($availableMixes, 0, 5));
+                }
+                
+                throw new RuntimeException($errorMsg);
             }
             break;
         case 'raw_general':
@@ -460,50 +584,129 @@ function batchCreationDeductTypedStock(PDO $pdo, array $material, float $unitsMu
                 
                 // التحقق أولاً إذا كانت المادة خلطة مكسرات (mixed_nuts)
                 $isMixedNuts = false;
+                $foundMixName = null;
                 if (batchCreationTableExists($pdo, 'mixed_nuts')) {
                     // تنظيف اسم المادة من "(خلطة)" إذا كان موجوداً
                     $cleanName = trim($materialName);
                     $cleanName = preg_replace('/\s*\(خلطة\)\s*$/u', '', $cleanName);
                     
-                    // البحث عن الخلطة في جدول mixed_nuts
-                    $checkSql = "SELECT COUNT(*) as count FROM mixed_nuts WHERE batch_name = ? OR batch_name LIKE ?";
-                    $checkParams = [$cleanName, '%' . addcslashes($cleanName, '%_') . '%'];
+                    // إزالة أي بادئات مثل "مكسرات - " أو "مكسرات مشكل"
+                    $cleanName = preg_replace('/^مكسرات\s*[-–—]\s*/u', '', $cleanName);
+                    $cleanName = preg_replace('/^مكسرات\s+مشكل\s*/u', '', $cleanName);
+                    $cleanName = trim($cleanName);
                     
-                    if ($supplierId) {
-                        $checkSql .= " AND supplier_id = ?";
-                        $checkParams[] = $supplierId;
+                    // البحث عن الخلطة في جدول mixed_nuts - محاولات متعددة
+                    $searchAttempts = [];
+                    
+                    // المحاولة 1: البحث المطابق تماماً
+                    $searchAttempts[] = ['type' => 'exact', 'name' => $cleanName];
+                    
+                    // المحاولة 2: البحث بعد إزالة "مشكل" أو "مشكلة"
+                    $nameWithoutMashkal = preg_replace('/\s*مشكل[ةه]?\s*/u', '', $cleanName);
+                    $nameWithoutMashkal = trim($nameWithoutMashkal);
+                    if ($nameWithoutMashkal !== $cleanName && $nameWithoutMashkal !== '') {
+                        $searchAttempts[] = ['type' => 'without_mashkal', 'name' => $nameWithoutMashkal];
                     }
                     
-                    $checkStmt = $pdo->prepare($checkSql);
-                    $checkStmt->execute($checkParams);
-                    $checkResult = $checkStmt->fetch(PDO::FETCH_ASSOC);
+                    // المحاولة 3: البحث الجزئي
+                    $searchAttempts[] = ['type' => 'partial', 'name' => $cleanName];
                     
-                    if ($checkResult && (int)($checkResult['count'] ?? 0) > 0) {
-                        $isMixedNuts = true;
-                    } else {
-                        // محاولة أخرى بدون فلتر المورد
-                        $checkSql2 = "SELECT COUNT(*) as count FROM mixed_nuts WHERE batch_name = ? OR batch_name LIKE ?";
-                        $checkStmt2 = $pdo->prepare($checkSql2);
-                        $checkStmt2->execute([$cleanName, '%' . addcslashes($cleanName, '%_') . '%']);
-                        $checkResult2 = $checkStmt2->fetch(PDO::FETCH_ASSOC);
+                    foreach ($searchAttempts as $attempt) {
+                        if ($isMixedNuts) {
+                            break;
+                        }
                         
-                        if ($checkResult2 && (int)($checkResult2['count'] ?? 0) > 0) {
-                            $isMixedNuts = true;
+                        $checkSql = "SELECT id, batch_name, total_quantity FROM mixed_nuts WHERE total_quantity > 0";
+                        $checkParams = [];
+                        
+                        if ($attempt['type'] === 'exact') {
+                            $checkSql .= " AND batch_name = ?";
+                            $checkParams[] = $attempt['name'];
+                        } elseif ($attempt['type'] === 'without_mashkal') {
+                            $checkSql .= " AND (batch_name = ? OR batch_name LIKE ?)";
+                            $checkParams[] = $attempt['name'];
+                            $checkParams[] = '%' . addcslashes($attempt['name'], '%_') . '%';
+                        } else {
+                            // partial search
+                            $checkSql .= " AND (batch_name LIKE ? OR ? LIKE CONCAT('%', batch_name, '%'))";
+                            $checkParams[] = '%' . addcslashes($attempt['name'], '%_') . '%';
+                            $checkParams[] = $attempt['name'];
+                        }
+                        
+                        if ($supplierId) {
+                            $checkSql .= " AND supplier_id = ?";
+                            $checkParams[] = $supplierId;
+                        }
+                        
+                        $checkSql .= " LIMIT 1";
+                        
+                        try {
+                            $checkStmt = $pdo->prepare($checkSql);
+                            $checkStmt->execute($checkParams);
+                            $checkResult = $checkStmt->fetch(PDO::FETCH_ASSOC);
+                            
+                            if ($checkResult && !empty($checkResult['batch_name'])) {
+                                $isMixedNuts = true;
+                                $foundMixName = $checkResult['batch_name'];
+                                break;
+                            }
+                        } catch (Exception $e) {
+                            error_log('Error checking mixed_nuts: ' . $e->getMessage());
+                        }
+                    }
+                    
+                    // محاولة أخيرة بدون فلتر المورد
+                    if (!$isMixedNuts) {
+                        $checkSql3 = "SELECT id, batch_name, total_quantity FROM mixed_nuts WHERE total_quantity > 0 AND (batch_name LIKE ? OR ? LIKE CONCAT('%', batch_name, '%')) LIMIT 1";
+                        try {
+                            $checkStmt3 = $pdo->prepare($checkSql3);
+                            $checkStmt3->execute(['%' . addcslashes($cleanName, '%_') . '%', $cleanName]);
+                            $checkResult3 = $checkStmt3->fetch(PDO::FETCH_ASSOC);
+                            
+                            if ($checkResult3 && !empty($checkResult3['batch_name'])) {
+                                $isMixedNuts = true;
+                                $foundMixName = $checkResult3['batch_name'];
+                            }
+                        } catch (Exception $e) {
+                            error_log('Error checking mixed_nuts (fallback): ' . $e->getMessage());
                         }
                     }
                 }
                 
                 if ($isMixedNuts) {
+                    // استخدام اسم الخلطة الفعلي الموجود في قاعدة البيانات
+                    $materialNameToUse = $foundMixName ?? $materialName;
                     // خصم من الخلطة (mixed_nuts)
-                    batchCreationConsumeMixedNuts($pdo, $totalRequired, $supplierId, $materialName, $unit);
+                    batchCreationConsumeMixedNuts($pdo, $totalRequired, $supplierId, $materialNameToUse, $unit);
                 } else {
                     // إذا لم توجد الخلطة، فشل العملية
-                    throw new RuntimeException(
-                        sprintf(
-                            'الخلطة "%s" غير موجودة في المخزون. يرجى التأكد من وجود الخلطة قبل إنشاء عملية الإنتاج.',
-                            $materialName
-                        )
+                    // محاولة جلب جميع أسماء الخلطات المتاحة للمساعدة في التشخيص
+                    $availableMixes = [];
+                    if (batchCreationTableExists($pdo, 'mixed_nuts')) {
+                        try {
+                            $allMixesStmt = $pdo->prepare("SELECT batch_name FROM mixed_nuts WHERE total_quantity > 0 LIMIT 10");
+                            $allMixesStmt->execute();
+                            $allMixes = $allMixesStmt->fetchAll(PDO::FETCH_ASSOC);
+                            foreach ($allMixes as $mix) {
+                                if (!empty($mix['batch_name'])) {
+                                    $availableMixes[] = $mix['batch_name'];
+                                }
+                            }
+                        } catch (Exception $e) {
+                            // ignore
+                        }
+                    }
+                    
+                    $errorMsg = sprintf(
+                        'الخلطة "%s" غير موجودة في المخزون. يرجى التأكد من وجود الخلطة قبل إنشاء عملية الإنتاج.',
+                        $materialName
                     );
+                    
+                    if (!empty($availableMixes)) {
+                        $errorMsg .= ' الخلطات المتاحة: ' . implode(', ', array_slice($availableMixes, 0, 5));
+                    }
+                    
+                    throw new RuntimeException($errorMsg);
                 }
                 break;
             }
