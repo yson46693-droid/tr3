@@ -6529,8 +6529,12 @@ function renderTemplateSuppliers(details) {
                 }
                 beeswaxGroup.processedKeys.add(componentKey);
             }
-            // تأكد من أن بطاقة الشمع ستُعرض حتى لو كان هناك عسل أيضاً
-            // هذا يعني أن المكوّن شمع وسيتم عرض بطاقة الشمع له
+            // إذا لم يكن هناك baseEntry لكن هناك مكونات شمع، يجب عرض بطاقة الشمع
+            // هذا يحدث عادة عندما يكون هناك شمع فقط أو شمع مع عسل
+            if (!beeswaxGroup.baseEntry && beeswaxComponentEntries.length > 0) {
+                // في هذه الحالة، يجب أن يكون هناك baseEntry، لكن للاحتياط
+                // سيتم عرض بطاقة الشمع لهذا المكون
+            }
         }
 
         const isAggregatedHoneyCard = isHoneyType
@@ -6629,29 +6633,44 @@ function renderTemplateSuppliers(details) {
                 card.appendChild(meta);
             }
             // إضافة عنوان للمكوّنات المجمعة - الشمع
-            if (isAggregatedBeeswaxCard && aggregatedBeeswaxEntries.length > 0) {
-                const header = document.createElement('div');
-                header.className = 'component-card-header mb-2';
-                const title = document.createElement('span');
-                title.className = 'component-card-title';
-                if (aggregatedBeeswaxEntries.length === 1) {
-                    title.textContent = aggregatedBeeswaxEntries[0].component.name || aggregatedBeeswaxEntries[0].component.label || 'مكوّن شمع';
-                } else {
-                    title.textContent = 'مواد الشمع (' + aggregatedBeeswaxEntries.length + ' مكوّن)';
-                }
-                header.appendChild(title);
-                card.appendChild(header);
+            // تأكد من عرض بطاقة الشمع بشكل منفصل حتى لو كان هناك عسل
+            // يجب أن يتم عرض بطاقة الشمع إذا كان المكون شمع وكان هو baseEntry أو إذا كان الشمع فقط
+            const shouldShowBeeswaxCard = isBeeswaxType && (
+                (beeswaxGroup.baseEntry && componentKey === beeswaxGroup.baseEntry.key) ||
+                (!beeswaxGroup.baseEntry && beeswaxComponentEntries.length > 0 && beeswaxComponentEntries.some(e => e.key === componentKey))
+            );
+            
+            if (shouldShowBeeswaxCard) {
+                const beeswaxEntriesToShow = isAggregatedBeeswaxCard ? aggregatedBeeswaxEntries : 
+                    (beeswaxGroup.entries.length > 0 ? beeswaxGroup.entries : 
+                    (beeswaxComponentEntries.length > 0 ? beeswaxComponentEntries.map(e => e.component) : [{ name: component.name || component.label || 'شمع عسل', quantity: component.quantity || component.amount || '' }]));
                 
-                // إضافة معلومات المكوّنات
-                const meta = document.createElement('div');
-                meta.className = 'component-card-meta mb-2';
-                const metaList = aggregatedBeeswaxEntries.map(entry => {
-                    const name = entry.component.name || entry.component.label || 'مكوّن';
-                    const qty = entry.component.quantity || entry.component.amount || '';
-                    return name + (qty ? ' (' + qty + ')' : '');
-                }).join('، ');
-                meta.innerHTML = '<i class="bi bi-hexagon me-2"></i><span>' + metaList + '</span>';
-                card.appendChild(meta);
+                if (beeswaxEntriesToShow.length > 0) {
+                    const header = document.createElement('div');
+                    header.className = 'component-card-header mb-2';
+                    const title = document.createElement('span');
+                    title.className = 'component-card-title';
+                    const firstEntry = beeswaxEntriesToShow[0];
+                    const entryName = firstEntry.name || firstEntry.component?.name || firstEntry.label || firstEntry.component?.label || 'مكوّن شمع';
+                    if (beeswaxEntriesToShow.length === 1) {
+                        title.textContent = entryName;
+                    } else {
+                        title.textContent = 'مواد الشمع (' + beeswaxEntriesToShow.length + ' مكوّن)';
+                    }
+                    header.appendChild(title);
+                    card.appendChild(header);
+                    
+                    // إضافة معلومات المكوّنات
+                    const meta = document.createElement('div');
+                    meta.className = 'component-card-meta mb-2';
+                    const metaList = beeswaxEntriesToShow.map(entry => {
+                        const name = entry.name || entry.component?.name || entry.label || entry.component?.label || 'مكوّن';
+                        const qty = entry.quantity || entry.amount || entry.component?.quantity || entry.component?.amount || '';
+                        return name + (qty ? ' (' + qty + ')' : '');
+                    }).join('، ');
+                    meta.innerHTML = '<i class="bi bi-hexagon me-2"></i><span>' + metaList + '</span>';
+                    card.appendChild(meta);
+                }
             }
         }
 
@@ -6665,7 +6684,8 @@ function renderTemplateSuppliers(details) {
         } else if (isBeeswaxType) {
             // لمكوّنات الشمع، استخدم دائماً "مورد الشمع"
             // تأكد من عرض بطاقة الشمع بشكل منفصل حتى لو كان هناك عسل
-            const beeswaxCount = isAggregatedBeeswaxCard ? aggregatedBeeswaxEntries.length : 1;
+            const beeswaxEntries = isAggregatedBeeswaxCard ? aggregatedBeeswaxEntries : (beeswaxGroup.baseEntry && componentKey === beeswaxGroup.baseEntry.key ? beeswaxGroup.entries : []);
+            const beeswaxCount = beeswaxEntries.length > 0 ? beeswaxEntries.length : 1;
             controlLabel.textContent = beeswaxCount > 1 
                 ? 'مورد الشمع (سيتم تطبيقه على جميع مكوّنات الشمع)'
                 : 'مورد الشمع';
