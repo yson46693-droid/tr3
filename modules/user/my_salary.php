@@ -287,8 +287,52 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['
         exit;
     }
     
-    $currentSalary = $salaryData['exists'] ? $salaryData['salary']['total_amount'] : $salaryData['calculation']['total_amount'];
-    $maxAdvance = $currentSalary * 0.5; // نصف الراتب
+    // الحصول على بيانات الراتب
+    $salaryRecord = $salaryData['exists'] ? $salaryData['salary'] : $salaryData['calculation'];
+    
+    // تنظيف القيم المالية
+    $baseAmount = cleanFinancialValue($salaryRecord['base_amount'] ?? 0);
+    $bonus = cleanFinancialValue($salaryRecord['bonus'] ?? 0);
+    $deductions = cleanFinancialValue($salaryRecord['deductions'] ?? 0);
+    $totalSalaryBase = cleanFinancialValue($salaryRecord['total_amount'] ?? 0);
+    
+    // حساب نسبة التحصيلات للمندوبين
+    $collectionsBonus = 0;
+    if ($currentUser['role'] === 'sales') {
+        $collectionsAmount = calculateSalesCollections($currentUser['id'], $month, $year);
+        $collectionsBonus = round($collectionsAmount * 0.02, 2);
+        
+        // إذا كان الراتب محفوظاً، تحقق من وجود نسبة التحصيلات المحفوظة
+        if ($salaryData['exists'] && isset($salaryRecord['collections_bonus'])) {
+            $savedCollectionsBonus = cleanFinancialValue($salaryRecord['collections_bonus'] ?? 0);
+            // استخدم القيمة المحسوبة حديثاً إذا كانت أكبر من القيمة المحفوظة
+            if ($collectionsBonus > $savedCollectionsBonus || $savedCollectionsBonus == 0) {
+                // استخدم القيمة المحسوبة حديثاً
+            } else {
+                $collectionsBonus = $savedCollectionsBonus;
+            }
+        }
+    }
+    
+    // حساب الراتب الإجمالي - التأكد من تضمين نسبة التحصيلات
+    if ($currentUser['role'] === 'sales' && $collectionsBonus > 0) {
+        // حساب الراتب المتوقع مع نسبة التحصيلات
+        $expectedTotalWithCollections = $baseAmount + $bonus + $collectionsBonus - $deductions;
+        
+        // إذا كان الراتب الإجمالي الحالي لا يتطابق مع الراتب المتوقع (مع نسبة التحصيلات)
+        // فهذا يعني أن نسبة التحصيلات غير مضمنة، لذا أضفها
+        if (abs($totalSalaryBase - $expectedTotalWithCollections) > 0.01) {
+            $currentSalary = $totalSalaryBase + $collectionsBonus;
+        } else {
+            // نسبة التحصيلات مضمنة بالفعل
+            $currentSalary = $totalSalaryBase;
+        }
+    } else {
+        // للمستخدمين الآخرين أو إذا لم تكن هناك نسبة تحصيلات
+        $currentSalary = $totalSalaryBase;
+    }
+    
+    $maxAdvance = cleanFinancialValue($currentSalary * 0.5); // نصف الراتب
     
     if ($amount > $maxAdvance) {
         $error = 'قيمة السلفة لا يمكن أن تتجاوز نصف الراتب الحالي (' . formatCurrency($maxAdvance) . ')';
