@@ -2701,7 +2701,11 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 $sesameStockTableReady = ensureSesameStockTable(true);
             }
             // إعادة محاولة إنشاء/التحقق من جدول الطحينة عند التحويل
-            $tahiniStockTableReady = ensureTahiniStockTable(true);
+            if (function_exists('ensureTahiniStockTable')) {
+                $tahiniStockTableReady = ensureTahiniStockTable(true);
+            } else {
+                $tahiniStockTableReady = false;
+            }
             
             if (!$sesameStockTableReady) {
                 $error = 'لا يمكن الوصول إلى جدول مخزون السمسم. يرجى المحاولة لاحقاً أو التواصل مع الدعم.';
