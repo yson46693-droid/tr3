@@ -531,9 +531,14 @@ if (isset($_GET['edit'])) {
 <div class="card shadow-sm">
     <div class="card-header d-flex justify-content-between align-items-center">
         <h5 class="mb-0"><i class="bi bi-truck me-2"></i><?php echo (isset($lang) && isset($lang['suppliers'])) ? $lang['suppliers'] : 'الموردين'; ?> (<?php echo $totalCount; ?>)</h5>
-        <button class="btn btn-primary" data-bs-toggle="modal" data-bs-target="#addSupplierModal">
-            <i class="bi bi-plus-circle me-2"></i><?php echo isset($lang['add']) ? $lang['add'] : 'إضافة'; ?>
-        </button>
+        <div class="d-flex gap-2">
+            <button class="btn btn-success" data-bs-toggle="modal" data-bs-target="#printSupplierReportModal">
+                <i class="bi bi-printer me-2"></i>طباعة تقرير التوريدات
+            </button>
+            <button class="btn btn-primary" data-bs-toggle="modal" data-bs-target="#addSupplierModal">
+                <i class="bi bi-plus-circle me-2"></i><?php echo isset($lang['add']) ? $lang['add'] : 'إضافة'; ?>
+            </button>
+        </div>
     </div>
     <div class="card-body">
         <?php if ($error): ?>
@@ -1244,6 +1249,58 @@ document.addEventListener('DOMContentLoaded', function() {
     });
 });
 </script>
+
+<!-- Print Supplier Report Modal -->
+<div class="modal fade" id="printSupplierReportModal" tabindex="-1">
+    <div class="modal-dialog modal-dialog-scrollable">
+        <div class="modal-content">
+            <form method="GET" action="print_supplier_report.php" target="_blank">
+                <div class="modal-header">
+                    <h5 class="modal-title"><i class="bi bi-printer me-2"></i>طباعة تقرير التوريدات</h5>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+                </div>
+                <div class="modal-body">
+                    <div class="mb-3">
+                        <label class="form-label">المورد <span class="text-danger">*</span></label>
+                        <select class="form-select" name="supplier_id" required id="reportSupplierId">
+                            <option value="">اختر المورد</option>
+                            <?php 
+                            $allSuppliers = $db->query("SELECT id, name, supplier_code FROM suppliers WHERE status = 'active' ORDER BY name ASC");
+                            foreach ($allSuppliers as $supp): ?>
+                                <option value="<?php echo $supp['id']; ?>">
+                                    <?php echo htmlspecialchars($supp['name']); ?> 
+                                    <?php if (!empty($supp['supplier_code'])): ?>
+                                        (<?php echo htmlspecialchars($supp['supplier_code']); ?>)
+                                    <?php endif; ?>
+                                </option>
+                            <?php endforeach; ?>
+                        </select>
+                    </div>
+                    <div class="row">
+                        <div class="col-md-6 mb-3">
+                            <label class="form-label">من تاريخ</label>
+                            <input type="date" class="form-control" name="date_from" id="reportDateFrom" value="<?php echo date('Y-m-01'); ?>">
+                        </div>
+                        <div class="col-md-6 mb-3">
+                            <label class="form-label">إلى تاريخ</label>
+                            <input type="date" class="form-control" name="date_to" id="reportDateTo" value="<?php echo date('Y-m-d'); ?>">
+                        </div>
+                    </div>
+                    <div class="alert alert-info">
+                        <i class="bi bi-info-circle me-2"></i>
+                        سيتم فتح التقرير في نافذة جديدة للطباعة
+                    </div>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-outline" data-bs-dismiss="modal">إلغاء</button>
+                    <button type="submit" class="btn btn-success">
+                        <i class="bi bi-printer me-2"></i>طباعة التقرير
+                    </button>
+                </div>
+            </form>
+        </div>
+    </div>
+</div>
 
 <!-- إعادة تحميل الصفحة تلقائياً بعد أي رسالة (نجاح أو خطأ) لمنع تكرار الطلبات -->
 <script>
