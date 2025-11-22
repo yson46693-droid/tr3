@@ -3321,6 +3321,25 @@ if (!empty($suppliersTableCheck)) {
     $suppliers = $db->query("SELECT id, name, type FROM suppliers WHERE status = 'active' ORDER BY name");
 }
 
+// جلب موردي الطحينة المتاحين (الموردين الذين لديهم طحينة في tahini_stock)
+$tahiniSuppliers = [];
+$tahiniStockTableCheck = $db->queryOne("SHOW TABLES LIKE 'tahini_stock'");
+if (!empty($tahiniStockTableCheck)) {
+    try {
+        $tahiniSuppliersData = $db->query(
+            "SELECT DISTINCT s.id, s.name, s.type 
+             FROM tahini_stock ts
+             INNER JOIN suppliers s ON ts.supplier_id = s.id
+             WHERE ts.quantity > 0 AND s.status = 'active'
+             ORDER BY s.name"
+        );
+        $tahiniSuppliers = $tahiniSuppliersData;
+    } catch (Exception $e) {
+        error_log('Failed to load tahini suppliers: ' . $e->getMessage());
+        $tahiniSuppliers = [];
+    }
+}
+
 // إنشاء جداول القوالب إذا لم تكن موجودة
 try {
     $templatesTableCheck = $db->queryOne("SHOW TABLES LIKE 'product_templates'");
@@ -5440,6 +5459,16 @@ echo json_encode(array_map(function($supplier) {
     ];
 }, $suppliersForJs), JSON_UNESCAPED_UNICODE);
 ?>;
+window.tahiniSuppliers = <?php
+$tahiniSuppliersForJs = is_array($tahiniSuppliers) ? $tahiniSuppliers : [];
+echo json_encode(array_map(function($supplier) {
+    return [
+        'id' => (int)($supplier['id'] ?? 0),
+        'name' => $supplier['name'] ?? '',
+        'type' => $supplier['type'] ?? ''
+    ];
+}, $tahiniSuppliersForJs), JSON_UNESCAPED_UNICODE);
+?>;
 window.honeyStockData = <?php echo json_encode($honeyStockDataForJs, JSON_UNESCAPED_UNICODE); ?>;
 let currentTemplateMode = 'advanced';
 const TEMPLATE_DETAILS_BASE_URL = '<?php echo addslashes(getRelativeUrl('dashboard/production.php')); ?>';
@@ -5514,8 +5543,14 @@ function getSuppliersForComponent(component) {
         return filterByTypes(['nuts']);
     }
 
-    // للطحينة - استخدام موردي السمسم
+    // للطحينة - استخدام موردي السمسم الذين لديهم طحينة متاحة في tahini_stock
     if (type === 'tahini' || key.startsWith('tahini') || name.includes('طحينة') || name.includes('tahini')) {
+        // استخدام موردي الطحينة المتاحين بدلاً من جميع موردي السمسم
+        const tahiniSuppliers = window.tahiniSuppliers || [];
+        if (tahiniSuppliers.length > 0) {
+            return tahiniSuppliers;
+        }
+        // إذا لم تكن هناك بيانات، استخدم موردي السمسم كبديل
         return filterByTypes(['sesame']);
     }
 
