@@ -441,7 +441,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                                 $currentUser['id']
                             ]
                         );
-                        $historyId = $db->lastInsertId();
+                        $historyId = $db->getLastInsertId();
                         
                         $db->execute(
                             "INSERT INTO financial_transactions (type, amount, supplier_id, description, reference_number, status, approved_by, created_by, approved_at)
@@ -456,7 +456,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                                 $currentUser['id']
                             ]
                         );
-                        $transactionId = $db->lastInsertId();
+                        $transactionId = $db->getLastInsertId();
                         
                         $db->execute(
                             "UPDATE supplier_balance_history SET reference_id = ? WHERE id = ?",
