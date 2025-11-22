@@ -2057,7 +2057,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                                 'unified' AS template_type,
                                 upt.product_name,
                                 pr.id as product_id,
-                                pr.name as product_name_from_products
+                                pr.name as product_name_from_products,
+                                pr.unit_price as product_unit_price
                          FROM unified_product_templates upt
                          LEFT JOIN products pr ON upt.product_name = pr.name
                          WHERE upt.id = ?",
@@ -2068,10 +2069,21 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     if ($template && empty($template['product_name']) && !empty($template['product_name_from_products'])) {
                         $template['product_name'] = $template['product_name_from_products'];
                     }
+                    
+                    // إذا لم يكن هناك unit_price في القالب، جرب جلبها من product_templates المرتبط
+                    if ($template && (empty($template['unit_price']) || (float)($template['unit_price'] ?? 0) <= 0)) {
+                        $relatedTemplate = $db->queryOne(
+                            "SELECT unit_price FROM product_templates WHERE source_template_id = ? AND unit_price IS NOT NULL AND unit_price > 0 LIMIT 1",
+                            [$templateId]
+                        );
+                        if ($relatedTemplate && !empty($relatedTemplate['unit_price'])) {
+                            $template['unit_price'] = $relatedTemplate['unit_price'];
+                        }
+                    }
                 } else {
                     // القوالب التقليدية من جدول product_templates
                     $template = $db->queryOne(
-                        "SELECT pt.*, pr.id as product_id, pr.name as product_name
+                        "SELECT pt.*, pr.id as product_id, pr.name as product_name, pr.unit_price as product_unit_price
                          FROM product_templates pt
                          LEFT JOIN products pr ON pt.product_name = pr.name
                          WHERE pt.id = ?",
@@ -2549,16 +2561,35 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     $existingProduct = $db->queryOne("SELECT id FROM products WHERE name = ? LIMIT 1", [$template['product_name']]);
                     if ($existingProduct) {
                         $productId = $existingProduct['id'];
+                        // تحديث السعر من القالب إذا كان المنتج موجوداً ولكن السعر غير محدد أو صفر
+                        $existingProductPrice = isset($existingProduct['unit_price']) ? (float)$existingProduct['unit_price'] : 0.0;
+                        $templatePrice = isset($template['unit_price']) ? (float)$template['unit_price'] : null;
+                        if (($existingProductPrice <= 0 || $existingProductPrice === 0.0) && $templatePrice !== null && $templatePrice > 0 && $templatePrice <= 10000) {
+                            $db->execute(
+                                "UPDATE products SET unit_price = ? WHERE id = ?",
+                                [$templatePrice, $productId]
+                            );
+                        }
                     } else {
                         $insertProductName = trim((string)$template['product_name']);
                         if ($insertProductName === '') {
                             throw new Exception('يجب تحديد اسم المنتج الحقيقي في قالب الإنتاج قبل إنشاء المنتج.');
                         }
-                        // إنشاء منتج جديد
-                        $result = $db->execute(
-                            "INSERT INTO products (name, category, status, unit) VALUES (?, 'finished', 'active', 'قطعة')",
-                            [$insertProductName]
-                        );
+                        // جلب السعر من القالب
+                        $templatePrice = isset($template['unit_price']) ? (float)$template['unit_price'] : null;
+                        if ($templatePrice !== null && $templatePrice > 0 && $templatePrice <= 10000) {
+                            // إنشاء منتج جديد مع السعر
+                            $result = $db->execute(
+                                "INSERT INTO products (name, category, status, unit, unit_price) VALUES (?, 'finished', 'active', 'قطعة', ?)",
+                                [$insertProductName, $templatePrice]
+                            );
+                        } else {
+                            // إنشاء منتج جديد بدون سعر
+                            $result = $db->execute(
+                                "INSERT INTO products (name, category, status, unit) VALUES (?, 'finished', 'active', 'قطعة')",
+                                [$insertProductName]
+                            );
+                        }
                         $productId = $result['insert_id'];
                     }
                 }
