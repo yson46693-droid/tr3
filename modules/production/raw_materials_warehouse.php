@@ -5013,8 +5013,10 @@ if ($section === 'honey') {
 $nutsSuppliers = $db->query("SELECT id, name, phone FROM suppliers WHERE status = 'active' AND type = 'nuts' ORDER BY name");
     
     // قسم المكسرات
+    $nutsStockTotal = $db->queryOne("SELECT COALESCE(SUM(quantity), 0) as total FROM nuts_stock")['total'] ?? 0;
+    $mixedNutsTotal = $db->queryOne("SELECT COALESCE(SUM(total_quantity), 0) as total FROM mixed_nuts")['total'] ?? 0;
     $nutsStats = [
-        'total_quantity' => $db->queryOne("SELECT COALESCE(SUM(quantity), 0) as total FROM nuts_stock")['total'] ?? 0,
+        'total_quantity' => (float)$nutsStockTotal + (float)$mixedNutsTotal,
         'suppliers_count' => $db->queryOne("SELECT COUNT(DISTINCT supplier_id) as total FROM nuts_stock")['total'] ?? 0,
         'types_count' => $db->queryOne("SELECT COUNT(DISTINCT nut_type) as total FROM nuts_stock")['total'] ?? 0,
         'mixed_batches' => count($mixedNuts)
