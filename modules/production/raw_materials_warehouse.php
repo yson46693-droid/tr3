@@ -5887,7 +5887,6 @@ $nutsSuppliers = $db->query("SELECT id, name, phone FROM suppliers WHERE status 
                                     <tr>
                                         <th>المورد</th>
                                         <th class="text-center">الكمية (كجم)</th>
-                                        <th class="text-center">كمية الطحينة (كجم)</th>
                                         <th class="text-center">الإجراءات</th>
                                     </tr>
                                 </thead>
@@ -5901,11 +5900,6 @@ $nutsSuppliers = $db->query("SELECT id, name, phone FROM suppliers WHERE status 
                                                 <?php endif; ?>
                                             </td>
                                             <td class="text-center"><strong style="color: #f39c12;"><?php echo number_format($stock['quantity'], 3); ?></strong></td>
-                                            <td class="text-center">
-                                                <strong style="color: #28a745;">
-                                                    <?php echo number_format($stock['converted_to_tahini_quantity'] ?? 0, 3); ?>
-                                                </strong>
-                                            </td>
                                             <td class="text-center">
                                                 <div class="btn-group" role="group">
                                                     <button class="btn btn-sm btn-success"
