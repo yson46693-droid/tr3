@@ -140,7 +140,10 @@ function generateShippingOrderNumber(Database $db): string
     return sprintf('%s%04d', $prefix, $serial);
 }
 
-$shippingPosUrl = getRelativeUrl('manager.php?page=pos&section=shipping');
+// استخدام نفس الطريقة المستخدمة في pos.php لتحديد URL
+// هذا يضمن أن URL صحيح حتى عند تحميل الملف من خلال include
+$basePosUrl = getRelativeUrl('manager.php?page=pos');
+$shippingPosUrl = $basePosUrl . '&section=shipping';
 
 $mainWarehouse = $db->queryOne("SELECT id, name FROM warehouses WHERE warehouse_type = 'main' AND status = 'active' LIMIT 1");
 if (!$mainWarehouse) {
