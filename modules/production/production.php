@@ -595,7 +595,7 @@ function checkMaterialsAvailability($db, $templateId, $productionQuantity, array
         }
 
         // إذا كان النوع محدد ومعروف، استخدمه مباشرة
-        if (in_array($normalizedType, ['honey_raw', 'honey_filtered', 'honey', 'olive_oil', 'beeswax', 'derivatives', 'nuts'], true)) {
+        if (in_array($normalizedType, ['honey_raw', 'honey_filtered', 'honey', 'olive_oil', 'beeswax', 'derivatives', 'nuts', 'tahini'], true)) {
             return $normalizedType;
         }
 
@@ -626,6 +626,9 @@ function checkMaterialsAvailability($db, $templateId, $productionQuantity, array
             }
             if (mb_strpos($nameNormalized, 'مكسرات') !== false || mb_strpos($nameNormalized, 'nuts') !== false) {
                 return 'nuts';
+            }
+            if (mb_strpos($nameNormalized, 'طحينة') !== false || mb_strpos($nameNormalized, 'tahini') !== false) {
+                return 'tahini';
             }
         }
 
@@ -972,6 +975,15 @@ function checkMaterialsAvailability($db, $templateId, $productionQuantity, array
                 $nutsTableExists = $db->queryOne("SHOW TABLES LIKE 'nuts_stock'");
                 if (!empty($nutsTableExists)) {
                     $availableQuantity = $checkStock('nuts_stock', 'quantity', $supplierId);
+                    $resolved = true;
+                    $availableUnit = 'kg';
+                }
+                break;
+            case 'tahini':
+                // للطحينة، نستخدم tahini_stock مع supplier_id من السمسم
+                $tahiniTableExists = $db->queryOne("SHOW TABLES LIKE 'tahini_stock'");
+                if (!empty($tahiniTableExists)) {
+                    $availableQuantity = $checkStock('tahini_stock', 'quantity', $supplierId);
                     $resolved = true;
                     $availableUnit = 'kg';
                 }
@@ -2437,7 +2449,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     }
 
                     $isHoneyName = (mb_stripos($rawName, 'عسل') !== false) || (stripos($rawName, 'honey') !== false);
-                    if (!in_array($materialType, ['honey_raw', 'honey_filtered', 'olive_oil', 'beeswax', 'derivatives', 'nuts'], true)) {
+                    if (!in_array($materialType, ['honey_raw', 'honey_filtered', 'olive_oil', 'beeswax', 'derivatives', 'nuts', 'tahini'], true)) {
                         if ($isHoneyName) {
                             $hasRawKeyword = (mb_stripos($rawName, 'خام') !== false) || (stripos($rawName, 'raw') !== false);
                             $hasFilteredKeyword = (mb_stripos($rawName, 'مصفى') !== false) || (stripos($rawName, 'filtered') !== false);
@@ -2840,6 +2852,17 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                                 if ($supplierForDeduction) {
                                     $db->execute(
                                         "UPDATE nuts_stock 
+                                         SET quantity = GREATEST(quantity - ?, 0), updated_at = NOW() 
+                                         WHERE supplier_id = ?",
+                                        [$deductQuantity, $supplierForDeduction]
+                                    );
+                                }
+                                break;
+                            case 'tahini':
+                                if ($supplierForDeduction) {
+                                    // خصم من tahini_stock باستخدام supplier_id من السمسم
+                                    $db->execute(
+                                        "UPDATE tahini_stock 
                                          SET quantity = GREATEST(quantity - ?, 0), updated_at = NOW() 
                                          WHERE supplier_id = ?",
                                         [$deductQuantity, $supplierForDeduction]
@@ -5488,6 +5511,11 @@ function getSuppliersForComponent(component) {
         return filterByTypes(['nuts']);
     }
 
+    // للطحينة - استخدام موردي السمسم
+    if (type === 'tahini' || key.startsWith('tahini') || name.includes('طحينة') || name.includes('tahini')) {
+        return filterByTypes(['sesame']);
+    }
+
     // إذا لم يتم العثور على نوع محدد، إرجاع قائمة فارغة بدلاً من جميع الموردين
     // لتجنب عرض موردين غير مناسبين
     return [];
@@ -6066,6 +6094,7 @@ function renderTemplateSuppliers(details) {
         beeswax: 'شمع عسل',
         derivatives: 'مشتقات',
         nuts: 'مكسرات',
+        tahini: 'السمسم',
         raw_general: 'مادة خام',
         generic: 'مكوّن'
     };
