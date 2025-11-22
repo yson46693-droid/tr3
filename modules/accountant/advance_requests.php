@@ -135,6 +135,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && empty($error)) {
                         break;
                     }
                     
+                    // السماح للمدير بالموافقة مباشرة على الطلبات المعلقة (pending) أو الموافق عليها من المحاسب
                     if (!in_array($advance['status'], ['pending', 'accountant_approved'])) {
                         $error = 'لا يمكن الموافقة على الطلب في حالته الحالية';
                         break;
@@ -168,6 +169,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && empty($error)) {
                             throw new Exception($message);
                         }
 
+                        // إذا كان الطلب معلقاً (pending)، يعتبر المدير قد وافق مباشرة دون الحاجة لموافقة المحاسب
                         if ($advance['status'] === 'pending') {
                             $db->execute(
                                 "UPDATE salary_advances 
@@ -181,6 +183,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && empty($error)) {
                                 [$currentUser['id'], $currentUser['id'], $salaryId, $advanceId]
                             );
                         } else {
+                            // إذا كان المحاسب قد وافق بالفعل
                             $db->execute(
                                 "UPDATE salary_advances 
                                  SET status = 'manager_approved',
@@ -214,7 +217,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && empty($error)) {
                         false
                     );
                     
-                    redirectWithSuccess('تمت الموافقة على السلفة وتم خصمها من الراتب الحالي.', $currentUser['role']);
+                    // إعادة توجيه مع رابط طباعة الفاتورة
+                    $printUrl = getRelativeUrl('print_advance.php?id=' . $advanceId);
+                    redirectWithSuccess('تمت الموافقة على السلفة وتم خصمها من الراتب الحالي. <a href="' . $printUrl . '" target="_blank" class="alert-link">طباعة الفاتورة</a>', $currentUser['role']);
                     break;
                 
                 case 'reject':
@@ -341,7 +346,7 @@ $statusLabels = [
 <?php if ($success): ?>
     <div class="alert alert-success alert-dismissible fade show" id="successAlert" data-auto-refresh="true">
         <i class="bi bi-check-circle-fill me-2"></i>
-        <?php echo htmlspecialchars($success); ?>
+        <?php echo $success; // السماح بعرض HTML للروابط ?>
         <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
     </div>
 <?php endif; ?>
@@ -520,13 +525,24 @@ $statusLabels = [
                                 <td>
                                     <?php if ($request['status'] === 'pending' && in_array($currentUser['role'], ['accountant', 'manager'])): ?>
                                         <div class="d-flex flex-wrap gap-2">
-                                            <form method="POST" onsubmit="return confirm('تأكيد استلام الطلب من قبل المحاسب؟');">
-                                                <input type="hidden" name="action" value="accountant_approve">
-                                                <input type="hidden" name="advance_id" value="<?php echo $request['id']; ?>">
-                                                <button type="submit" class="btn btn-sm btn-info">
-                                                    <i class="bi bi-check-circle me-1"></i>استلام
-                                                </button>
-                                            </form>
+                                            <?php if ($currentUser['role'] === 'accountant'): ?>
+                                                <form method="POST" onsubmit="return confirm('تأكيد استلام الطلب من قبل المحاسب؟');">
+                                                    <input type="hidden" name="action" value="accountant_approve">
+                                                    <input type="hidden" name="advance_id" value="<?php echo $request['id']; ?>">
+                                                    <button type="submit" class="btn btn-sm btn-info">
+                                                        <i class="bi bi-check-circle me-1"></i>استلام
+                                                    </button>
+                                                </form>
+                                            <?php endif; ?>
+                                            <?php if ($currentUser['role'] === 'manager'): ?>
+                                                <form method="POST" onsubmit="return confirm('تأكيد الموافقة المباشرة على السلفة وخصمها من الراتب؟');">
+                                                    <input type="hidden" name="action" value="manager_approve">
+                                                    <input type="hidden" name="advance_id" value="<?php echo $request['id']; ?>">
+                                                    <button type="submit" class="btn btn-sm btn-success">
+                                                        <i class="bi bi-check-circle-fill me-1"></i>موافقة مباشرة
+                                                    </button>
+                                                </form>
+                                            <?php endif; ?>
                                             <button type="button" class="btn btn-sm btn-danger" onclick="openRejectModal(<?php echo $request['id']; ?>)">
                                                 <i class="bi bi-x-circle me-1"></i>رفض
                                             </button>
@@ -543,6 +559,14 @@ $statusLabels = [
                                             <button type="button" class="btn btn-sm btn-danger" onclick="openRejectModal(<?php echo $request['id']; ?>)">
                                                 <i class="bi bi-x-circle me-1"></i>رفض
                                             </button>
+                                        </div>
+                                    <?php elseif ($request['status'] === 'manager_approved'): ?>
+                                        <div class="d-flex flex-wrap gap-2">
+                                            <a href="<?php echo getRelativeUrl('print_advance.php?id=' . $request['id']); ?>" 
+                                               target="_blank" 
+                                               class="btn btn-sm btn-primary">
+                                                <i class="bi bi-printer me-1"></i>طباعة الفاتورة
+                                            </a>
                                         </div>
                                     <?php else: ?>
                                         <span class="text-muted">—</span>
