@@ -721,6 +721,12 @@ function batchCreationDeductTypedStock(PDO $pdo, array $material, float $unitsMu
                 break;
             }
             
+            // طحينة -> tahini_stock (استخدام مورد السمسم)
+            if (mb_stripos($normalizedName, 'طحينة') !== false || stripos($normalizedName, 'tahini') !== false) {
+                batchCreationConsumeSimpleStock($pdo, 'tahini_stock', 'quantity', $totalRequired, $supplierId, $materialName, $unit);
+                break;
+            }
+            
             // إذا لم يتطابق مع أي نوع، نحاول البحث في raw_materials
             if (batchCreationTableExists($pdo, 'raw_materials')) {
                 try {
