@@ -57,17 +57,44 @@ if (!empty($advance['deducted_from_salary_id'])) {
         $salaryDetails['total_amount'] = cleanFinancialValue($salaryDetails['total_amount'] ?? 0);
         $salaryDetails['collections_bonus'] = cleanFinancialValue($salaryDetails['collections_bonus'] ?? 0);
         $salaryDetails['collections_amount'] = cleanFinancialValue($salaryDetails['collections_amount'] ?? 0);
+        $salaryDetails['advances_deduction'] = cleanFinancialValue($salaryDetails['advances_deduction'] ?? 0);
         
         // حساب الراتب الإجمالي مع نسبة التحصيلات
         $month = $salaryDetails['month'] ?? date('n');
         $year = $salaryDetails['year'] ?? date('Y');
         
-        if ($advance['role'] === 'sales' && $salaryDetails['collections_bonus'] > 0) {
-            $expectedTotal = $salaryDetails['base_amount'] + $salaryDetails['bonus'] + $salaryDetails['collections_bonus'] - $salaryDetails['deductions'];
-            if (abs($salaryDetails['total_amount'] - $expectedTotal) > 0.01) {
-                $salaryDetails['total_amount'] = $salaryDetails['total_amount'] + $salaryDetails['collections_bonus'];
-            }
+        // حساب الخصومات الأخرى (بدون السلفة)
+        // إذا كان هناك عمود advances_deduction، استخدمه لفصل السلفة عن الخصومات الأخرى
+        if ($salaryDetails['advances_deduction'] > 0) {
+            // السلفة موجودة في عمود منفصل
+            $otherDeductions = $salaryDetails['deductions'] - $salaryDetails['advances_deduction'];
+        } else {
+            // السلفة موجودة في deductions، اطرحها
+            $otherDeductions = max(0, $salaryDetails['deductions'] - $advanceAmount);
         }
+        
+        // حساب الراتب الإجمالي قبل خصم السلفة
+        $baseAmount = $salaryDetails['base_amount'];
+        $bonus = $salaryDetails['bonus'];
+        $collectionsBonus = $salaryDetails['collections_bonus'];
+        
+        // الراتب الإجمالي قبل خصم السلفة
+        $totalBeforeAdvance = $baseAmount + $bonus + $collectionsBonus - $otherDeductions;
+        
+        // الراتب الإجمالي بعد خصم السلفة (يجب أن يساوي total_amount في قاعدة البيانات)
+        $totalAfterAdvance = $totalBeforeAdvance - $advanceAmount;
+        
+        // تحديث total_amount بالقيمة الصحيحة بعد خصم السلفة
+        // إذا كان total_amount في قاعدة البيانات مختلفاً، استخدم القيمة المحسوبة
+        if (abs($salaryDetails['total_amount'] - $totalAfterAdvance) > 0.01) {
+            $salaryDetails['total_amount'] = max(0, $totalAfterAdvance);
+        } else {
+            // القيمة صحيحة، تأكد من أنها ليست سالبة
+            $salaryDetails['total_amount'] = max(0, $salaryDetails['total_amount']);
+        }
+        
+        // تحديث otherDeductions للعرض
+        $salaryDetails['other_deductions'] = $otherDeductions;
         
         $salaryData = getSalarySummary($advance['user_id'], $month, $year);
     }
@@ -360,8 +387,8 @@ $employeeUsername = $advance['username'] ?? '';
                         </tr>
                         <?php endif; ?>
                         <?php 
-                        $otherDeductions = max(0, $salaryDetails['deductions'] - $advanceAmount);
-                        if ($salaryDetails['deductions'] > 0 || $advanceAmount > 0): 
+                        $otherDeductions = $salaryDetails['other_deductions'] ?? max(0, $salaryDetails['deductions'] - $advanceAmount);
+                        if ($otherDeductions > 0 || $advanceAmount > 0): 
                         ?>
                         <?php if ($otherDeductions > 0): ?>
                         <tr>
@@ -369,10 +396,12 @@ $employeeUsername = $advance['username'] ?? '';
                             <td style="color: #dc3545;">-<?php echo formatCurrency($otherDeductions); ?></td>
                         </tr>
                         <?php endif; ?>
+                        <?php if ($advanceAmount > 0): ?>
                         <tr>
                             <td>خصم السلفة</td>
                             <td style="color: #dc3545; font-weight: bold;">-<?php echo formatCurrency($advanceAmount); ?></td>
                         </tr>
+                        <?php endif; ?>
                         <?php endif; ?>
                         <tr>
                             <td><strong>الراتب الإجمالي (بعد خصم السلفة)</strong></td>
