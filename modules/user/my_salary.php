@@ -35,6 +35,59 @@ $db = db();
 $error = '';
 $success = '';
 
+// التأكد من وجود دالة calculateTotalSalaryWithCollections
+if (!function_exists('calculateTotalSalaryWithCollections')) {
+    /**
+     * حساب الراتب الإجمالي بشكل صحيح مع نسبة التحصيلات (دالة بديلة)
+     */
+    function calculateTotalSalaryWithCollections($salaryRecord, $userId, $month, $year, $role) {
+        $baseAmount = cleanFinancialValue($salaryRecord['base_amount'] ?? 0);
+        $bonus = cleanFinancialValue($salaryRecord['bonus'] ?? 0);
+        $deductions = cleanFinancialValue($salaryRecord['deductions'] ?? 0);
+        $totalSalaryBase = cleanFinancialValue($salaryRecord['total_amount'] ?? 0);
+        
+        // حساب نسبة التحصيلات للمندوبين
+        $collectionsBonus = 0;
+        $collectionsAmount = 0;
+        if ($role === 'sales' && function_exists('calculateSalesCollections')) {
+            $collectionsAmount = calculateSalesCollections($userId, $month, $year);
+            $collectionsBonus = round($collectionsAmount * 0.02, 2);
+            
+            // إذا كان الراتب محفوظاً، تحقق من وجود نسبة التحصيلات المحفوظة
+            if (isset($salaryRecord['collections_bonus'])) {
+                $savedCollectionsBonus = cleanFinancialValue($salaryRecord['collections_bonus'] ?? 0);
+                // استخدم القيمة المحسوبة حديثاً إذا كانت أكبر من القيمة المحفوظة
+                if ($collectionsBonus > $savedCollectionsBonus || $savedCollectionsBonus == 0) {
+                    // استخدم القيمة المحسوبة حديثاً
+                } else {
+                    $collectionsBonus = $savedCollectionsBonus;
+                }
+            }
+        }
+        
+        // حساب الراتب الإجمالي
+        $totalSalary = $baseAmount + $bonus + $collectionsBonus - $deductions;
+        
+        // إذا كان الراتب الإجمالي المحفوظ أكبر من الراتب المحسوب، استخدم القيمة المحفوظة
+        if ($totalSalaryBase > $totalSalary) {
+            // تحقق من أن نسبة التحصيلات مضمنة
+            $expectedWithoutCollections = $baseAmount + $bonus - $deductions;
+            if (abs($totalSalaryBase - $expectedWithoutCollections) < 0.01 && $collectionsBonus > 0) {
+                // نسبة التحصيلات غير مضمنة، أضفها
+                $totalSalary = $totalSalaryBase + $collectionsBonus;
+            } else {
+                $totalSalary = $totalSalaryBase;
+            }
+        }
+        
+        return [
+            'total_salary' => round($totalSalary, 2),
+            'collections_bonus' => round($collectionsBonus, 2),
+            'collections_amount' => round($collectionsAmount, 2)
+        ];
+    }
+}
+
 if (!function_exists('ensureSalaryAdvancesTable')) {
     /**
      * التأكد من وجود جدول السلف وإنشائه عند الحاجة.

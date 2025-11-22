@@ -457,6 +457,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             $error = 'غير مصرح لك بهذا الإجراء';
         } else {
             $advanceId = intval($_POST['advance_id'] ?? 0);
+            $finalApproval = isset($_POST['final_approval']) && $_POST['final_approval'] === '1';
             
             if ($advanceId <= 0) {
                 $error = 'معرف السلفة غير صحيح';
@@ -467,36 +468,103 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     $error = 'السلفة غير موجودة';
                 } elseif ($advance['status'] !== 'pending') {
                     $error = 'تمت معالجة هذا الطلب بالفعل';
+                } elseif (!empty($advance['deducted_from_salary_id'])) {
+                    $error = 'تم خصم هذه السلفة من الراتب بالفعل.';
                 } else {
-                    $db->execute(
-                        "UPDATE salary_advances 
-                         SET status = 'accountant_approved', 
-                             accountant_approved_by = ?, 
-                             accountant_approved_at = NOW() 
-                         WHERE id = ?",
-                        [$currentUser['id'], $advanceId]
-                    );
-                    
-                    logAudit($currentUser['id'], 'accountant_approve_advance', 'salary_advance', $advanceId, null, [
-                        'user_id' => $advance['user_id'],
-                        'amount' => $advance['amount']
-                    ]);
-                    
-                    // إرسال إشعار للمدير
-                    $managers = $db->query("SELECT id FROM users WHERE role = 'manager' AND status = 'active'");
-                    $managerAdvancesLink = $buildViewUrl('advances');
-                    foreach ($managers as $manager) {
-                        createNotification(
-                            $manager['id'],
-                            'طلب سلفة يحتاج موافقتك',
-                            "طلب سلفة بمبلغ " . number_format($advance['amount'], 2) . " ج.م يحتاج موافقتك النهائية.",
-                            'warning',
-                            $managerAdvancesLink,
-                            false
+                    // إذا كان المحاسب يريد الموافقة النهائية والخصم مباشرة
+                    if ($finalApproval && $currentUser['role'] === 'accountant') {
+                        $resolution = salaryAdvanceResolveSalary($advance, $db);
+                        if (!($resolution['success'] ?? false)) {
+                            $error = $resolution['message'] ?? 'تعذر تحديد الراتب المناسب لخصم السلفة.';
+                        } else {
+                            $salaryData = $resolution['salary'];
+                            $salaryId = (int) ($resolution['salary_id'] ?? 0);
+
+                            if ($salaryId <= 0) {
+                                $error = 'تعذر تحديد الراتب المراد الخصم منه.';
+                            } else {
+                                try {
+                                    $db->beginTransaction();
+
+                                    $deductionResult = salaryAdvanceApplyDeduction($advance, $salaryData, $db);
+                                    if (!($deductionResult['success'] ?? false)) {
+                                        $message = $deductionResult['message'] ?? 'تعذر تطبيق الخصم على الراتب.';
+                                        throw new Exception($message);
+                                    }
+
+                                    // تحديث حالة السلفة إلى manager_approved مع تعيين المحاسب كموافق نهائي
+                                    $db->execute(
+                                        "UPDATE salary_advances 
+                                         SET status = 'manager_approved', 
+                                             accountant_approved_by = ?, 
+                                             accountant_approved_at = NOW(), 
+                                             manager_approved_by = ?, 
+                                             manager_approved_at = NOW(),
+                                             deducted_from_salary_id = ?
+                                         WHERE id = ?",
+                                        [$currentUser['id'], $currentUser['id'], $salaryId, $advanceId]
+                                    );
+
+                                    $db->commit();
+                                } catch (Throwable $approvalError) {
+                                    $db->rollback();
+                                    $error = $approvalError->getMessage() ?: 'تعذر إتمام الموافقة على السلفة.';
+                                }
+
+                                if (empty($error)) {
+                                    logAudit($currentUser['id'], 'accountant_final_approve_advance', 'salary_advance', $advanceId, null, [
+                                        'user_id' => $advance['user_id'],
+                                        'amount' => $advance['amount'],
+                                        'salary_id' => $salaryId
+                                    ]);
+                                    
+                                    createNotification(
+                                        $advance['user_id'],
+                                        'تمت الموافقة على طلب السلفة',
+                                        "تمت الموافقة على طلب السلفة بمبلغ " . number_format($advance['amount'], 2) . " ج.م. وتم خصمها من راتبك الحالي.",
+                                        'success',
+                                        null,
+                                        false
+                                    );
+                                    
+                                    // إعادة توجيه مع رابط طباعة الفاتورة
+                                    $printUrl = getRelativeUrl('print_advance.php?id=' . $advanceId);
+                                    $success = 'تمت الموافقة على السلفة وتم خصمها من الراتب الحالي. <a href="' . $printUrl . '" target="_blank" class="alert-link">طباعة الفاتورة</a>';
+                                }
+                            }
+                        }
+                    } else {
+                        // الموافقة الأولية فقط (الاستلام) - السلوك القديم
+                        $db->execute(
+                            "UPDATE salary_advances 
+                             SET status = 'accountant_approved', 
+                                 accountant_approved_by = ?, 
+                                 accountant_approved_at = NOW() 
+                             WHERE id = ?",
+                            [$currentUser['id'], $advanceId]
                         );
+                        
+                        logAudit($currentUser['id'], 'accountant_approve_advance', 'salary_advance', $advanceId, null, [
+                            'user_id' => $advance['user_id'],
+                            'amount' => $advance['amount']
+                        ]);
+                        
+                        // إرسال إشعار للمدير
+                        $managers = $db->query("SELECT id FROM users WHERE role = 'manager' AND status = 'active'");
+                        $managerAdvancesLink = $buildViewUrl('advances');
+                        foreach ($managers as $manager) {
+                            createNotification(
+                                $manager['id'],
+                                'طلب سلفة يحتاج موافقتك',
+                                "طلب سلفة بمبلغ " . number_format($advance['amount'], 2) . " ج.م يحتاج موافقتك النهائية.",
+                                'warning',
+                                $managerAdvancesLink,
+                                false
+                            );
+                        }
+                        
+                        $success = 'تم استلام طلب السلفة وإرساله للمدير للموافقة النهائية.';
                     }
-                    
-                    $success = 'تم استلام طلب السلفة وإرساله للمدير للموافقة النهائية.';
                 }
             }
         }
@@ -2614,15 +2682,23 @@ $advanceStatusLabels = [
                                 </td>
                                 <td>
                                     <?php 
-                                    // للمحاسب: يمكنه استلام الطلبات المعلقة
+                                    // للمحاسب: يمكنه استلام الطلبات المعلقة أو الموافقة النهائية مباشرة
                                     if ($request['status'] === 'pending' && $currentUser['role'] === 'accountant'): 
                                     ?>
                                         <div class="d-flex flex-wrap gap-2">
-                                            <form method="POST" onsubmit="return confirm('تأكيد استلام الطلب من قبل المحاسب؟');">
+                                            <form method="POST" onsubmit="return confirm('تأكيد الموافقة النهائية على السلفة وخصمها من الراتب وطباعة الفاتورة؟');" style="display: inline;">
+                                                <input type="hidden" name="action" value="accountant_approve">
+                                                <input type="hidden" name="advance_id" value="<?php echo $request['id']; ?>">
+                                                <input type="hidden" name="final_approval" value="1">
+                                                <button type="submit" class="btn btn-sm btn-success">
+                                                    <i class="bi bi-check-circle-fill me-1"></i>موافقة نهائية
+                                                </button>
+                                            </form>
+                                            <form method="POST" onsubmit="return confirm('تأكيد استلام الطلب من قبل المحاسب فقط (بدون خصم)؟');" style="display: inline;">
                                                 <input type="hidden" name="action" value="accountant_approve">
                                                 <input type="hidden" name="advance_id" value="<?php echo $request['id']; ?>">
                                                 <button type="submit" class="btn btn-sm btn-info">
-                                                    <i class="bi bi-check-circle me-1"></i>استلام
+                                                    <i class="bi bi-check-circle me-1"></i>استلام فقط
                                                 </button>
                                             </form>
                                             <button type="button" class="btn btn-sm btn-danger" onclick="openRejectModal(<?php echo $request['id']; ?>)">
