@@ -46,6 +46,28 @@ switch ($role) {
                 'badge' => '<span class="badge" id="approvalBadge">0</span>'
             ],
             [
+                'title' => 'منتجات الشركة',
+                'icon' => 'bi-box-seam',
+                'url' => $baseUrl . 'manager.php?page=company_products',
+                'active' => ($currentPage === 'manager.php' && $currentPageParam === 'company_products'),
+                'badge' => null
+            ],
+            [
+                'title' => 'نقطة البيع',
+                'icon' => 'bi-cart4',
+                'url' => $baseUrl . 'manager.php?page=pos',
+                'active' => ($currentPage === 'manager.php' && $currentPageParam === 'pos'),
+                'badge' => null
+            ],
+
+            [
+                'title' => 'خزنة الشركة',
+                'icon' => 'bi-bank',
+                'url' => $baseUrl . 'manager.php?page=company_cash',
+                'active' => ($currentPage === 'manager.php' && $currentPageParam === 'company_cash'),
+                'badge' => null
+            ],
+            [
                 'title' => 'الفواتير',
                 'icon' => 'bi-receipt',
                 'url' => $baseUrl . 'manager.php?page=invoices',
@@ -57,20 +79,6 @@ switch ($role) {
                 'icon' => 'bi-file-earmark-text',
                 'url' => $baseUrl . 'manager.php?page=reports',
                 'active' => ($currentPage === 'manager.php' && $currentPageParam === 'reports'),
-                'badge' => null
-            ],
-            [
-                'title' => 'خزنة الشركة',
-                'icon' => 'bi-bank',
-                'url' => $baseUrl . 'manager.php?page=company_cash',
-                'active' => ($currentPage === 'manager.php' && $currentPageParam === 'company_cash'),
-                'badge' => null
-            ],
-            [
-                'title' => isset($lang['menu_security']) ? $lang['menu_security'] : 'الأمان',
-                'icon' => 'bi-lock',
-                'url' => $baseUrl . 'manager.php?page=security',
-                'active' => ($currentPage === 'manager.php' && in_array($currentPageParam, ['security', 'permissions'])),
                 'badge' => null
             ],
             [
@@ -87,13 +95,7 @@ switch ($role) {
                 'active' => ($currentPage === 'manager.php' && $currentPageParam === 'production_tasks'),
                 'badge' => null
             ],
-            [
-                'title' => 'منتجات الشركة',
-                'icon' => 'bi-box-seam',
-                'url' => $baseUrl . 'manager.php?page=company_products',
-                'active' => ($currentPage === 'manager.php' && $currentPageParam === 'company_products'),
-                'badge' => null
-            ],
+            
             [
                 'title' => 'قوالب المنتجات',
                 'icon' => 'bi-file-earmark-text',
@@ -158,13 +160,6 @@ switch ($role) {
                 'active' => ($currentPage === 'manager.php' && $currentPageParam === 'salaries'),
                 'badge' => null
             ],
-            [
-                'title' => 'نقطة البيع',
-                'icon' => 'bi-cart4',
-                'url' => $baseUrl . 'manager.php?page=pos',
-                'active' => ($currentPage === 'manager.php' && $currentPageParam === 'pos'),
-                'badge' => null
-            ],
             ['divider' => true, 'title' => isset($lang['attendance_section']) ? $lang['attendance_section'] : 'الحضور والانصراف'],
             [
                 'title' => 'متابعة الحضور والانصراف',
@@ -179,6 +174,13 @@ switch ($role) {
                 'icon' => 'bi-upc-scan',
                 'url' => $baseUrl . 'manager.php?page=batch_reader',
                 'active' => ($currentPage === 'manager.php' && $currentPageParam === 'batch_reader'),
+                'badge' => null
+            ],
+            [
+                'title' => isset($lang['menu_security']) ? $lang['menu_security'] : 'الأمان',
+                'icon' => 'bi-lock',
+                'url' => $baseUrl . 'manager.php?page=security',
+                'active' => ($currentPage === 'manager.php' && in_array($currentPageParam, ['security', 'permissions'])),
                 'badge' => null
             ]
         ];
@@ -466,7 +468,6 @@ switch ($role) {
         break;
 }
 
-// إذا لم يكن هناك عناصر قائمة، استخدم القائمة الافتراضية
 if (empty($menuItems)) {
     $menuItems = [
         [
