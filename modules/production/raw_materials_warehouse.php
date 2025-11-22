@@ -744,27 +744,75 @@ if (!function_exists('ensureSesameStockTable')) {
                 return false;
             }
             
-            // إنشاء الجدول
-            $db->execute("
-                CREATE TABLE IF NOT EXISTS `sesame_stock` (
-                  `id` int(11) NOT NULL AUTO_INCREMENT,
-                  `supplier_id` int(11) NOT NULL,
-                  `quantity` decimal(10,3) NOT NULL DEFAULT 0.000 COMMENT 'الكمية بالكيلوجرام',
-                  `unit_price` decimal(10,2) DEFAULT NULL COMMENT 'سعر الكيلو',
-                  `notes` text DEFAULT NULL,
-                  `created_at` timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP,
-                  `updated_at` timestamp NULL DEFAULT NULL ON UPDATE CURRENT_TIMESTAMP,
-                  PRIMARY KEY (`id`),
-                  KEY `supplier_id_idx` (`supplier_id`),
-                  CONSTRAINT `sesame_stock_ibfk_1` FOREIGN KEY (`supplier_id`) REFERENCES `suppliers` (`id`) ON DELETE CASCADE
-                ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
-            ");
+            // محاولة إنشاء الجدول مع Foreign Key constraint
+            try {
+                $db->execute("
+                    CREATE TABLE IF NOT EXISTS `sesame_stock` (
+                      `id` int(11) NOT NULL AUTO_INCREMENT,
+                      `supplier_id` int(11) NOT NULL,
+                      `quantity` decimal(10,3) NOT NULL DEFAULT 0.000 COMMENT 'الكمية بالكيلوجرام',
+                      `unit_price` decimal(10,2) DEFAULT NULL COMMENT 'سعر الكيلو',
+                      `converted_to_tahini_quantity` decimal(10,3) NOT NULL DEFAULT 0.000 COMMENT 'إجمالي كمية التحويل إلى طحينة بالكيلوجرام',
+                      `notes` text DEFAULT NULL,
+                      `created_at` timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                      `updated_at` timestamp NULL DEFAULT NULL ON UPDATE CURRENT_TIMESTAMP,
+                      PRIMARY KEY (`id`),
+                      KEY `supplier_id_idx` (`supplier_id`),
+                      CONSTRAINT `sesame_stock_ibfk_1` FOREIGN KEY (`supplier_id`) REFERENCES `suppliers` (`id`) ON DELETE CASCADE
+                    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
+                ");
+            } catch (Exception $createError) {
+                error_log("ensureSesameStockTable: Failed to create table with FK constraint: " . $createError->getMessage());
+                // محاولة إنشاء الجدول بدون Foreign Key constraint
+                try {
+                    $db->execute("
+                        CREATE TABLE IF NOT EXISTS `sesame_stock` (
+                          `id` int(11) NOT NULL AUTO_INCREMENT,
+                          `supplier_id` int(11) NOT NULL,
+                          `quantity` decimal(10,3) NOT NULL DEFAULT 0.000 COMMENT 'الكمية بالكيلوجرام',
+                          `unit_price` decimal(10,2) DEFAULT NULL COMMENT 'سعر الكيلو',
+                          `converted_to_tahini_quantity` decimal(10,3) NOT NULL DEFAULT 0.000 COMMENT 'إجمالي كمية التحويل إلى طحينة بالكيلوجرام',
+                          `notes` text DEFAULT NULL,
+                          `created_at` timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                          `updated_at` timestamp NULL DEFAULT NULL ON UPDATE CURRENT_TIMESTAMP,
+                          PRIMARY KEY (`id`),
+                          KEY `supplier_id_idx` (`supplier_id`)
+                        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
+                    ");
+                    error_log("ensureSesameStockTable: Created table without FK constraint");
+                } catch (Exception $createError2) {
+                    error_log("ensureSesameStockTable: Failed to create table without FK constraint: " . $createError2->getMessage());
+                    throw $createError2;
+                }
+            }
             
-            // التحقق مرة أخرى من أن الجدول تم إنشاؤه
+            // التحقق مرة أخرى من أن الجدول تم إنشاؤه ويمكن الوصول إليه
             $verifyCheck = $db->queryOne("SHOW TABLES LIKE 'sesame_stock'");
             if (!empty($verifyCheck)) {
-                $ready = true;
-                error_log("ensureSesameStockTable: sesame_stock table created successfully");
+                // التحقق من أن الأعمدة الأساسية موجودة
+                try {
+                    $columnsCheck = $db->queryOne("SHOW COLUMNS FROM sesame_stock LIKE 'supplier_id'");
+                    if (!empty($columnsCheck)) {
+                        // التحقق من وجود عمود converted_to_tahini_quantity وإضافته إذا لم يكن موجوداً
+                        $convertedColumnCheck = $db->queryOne("SHOW COLUMNS FROM sesame_stock LIKE 'converted_to_tahini_quantity'");
+                        if (empty($convertedColumnCheck)) {
+                            try {
+                                $db->execute("ALTER TABLE sesame_stock ADD COLUMN converted_to_tahini_quantity decimal(10,3) NOT NULL DEFAULT 0.000 COMMENT 'إجمالي كمية التحويل إلى طحينة بالكيلوجرام' AFTER unit_price");
+                                error_log("ensureSesameStockTable: Added converted_to_tahini_quantity column");
+                            } catch (Exception $alterError) {
+                                error_log("ensureSesameStockTable: Failed to add converted_to_tahini_quantity column: " . $alterError->getMessage());
+                            }
+                        }
+                        $ready = true;
+                        error_log("ensureSesameStockTable: sesame_stock table created and verified successfully");
+                    } else {
+                        error_log("ensureSesameStockTable: Table exists but required columns are missing");
+                        $ready = false;
+                    }
+                } catch (Exception $colError) {
+                    error_log("ensureSesameStockTable: Error checking table columns: " . $colError->getMessage());
+                    $ready = false;
+                }
             } else {
                 error_log("ensureSesameStockTable: Failed to verify sesame_stock table creation");
                 $ready = false;
@@ -2670,11 +2718,11 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     $wastageRate = 0.002; // 0.2%
                     $tahiniQuantity = $quantity * (1 - $wastageRate);
                     
-                    // خصم الكمية من السمسم
+                    // خصم الكمية من السمسم وإضافة كمية التحويل
                     $newSesameQuantity = $availableQuantity - $quantity;
                     $db->execute(
-                        "UPDATE sesame_stock SET quantity = ?, updated_at = NOW() WHERE id = ?",
-                        [$newSesameQuantity, $sesameStockId]
+                        "UPDATE sesame_stock SET quantity = ?, converted_to_tahini_quantity = converted_to_tahini_quantity + ?, updated_at = NOW() WHERE id = ?",
+                        [$newSesameQuantity, $quantity, $sesameStockId]
                     );
                     
                     // إضافة الطحينة إلى tahini_stock
