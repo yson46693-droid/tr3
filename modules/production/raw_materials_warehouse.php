@@ -751,7 +751,6 @@ if (!function_exists('ensureSesameStockTable')) {
                       `id` int(11) NOT NULL AUTO_INCREMENT,
                       `supplier_id` int(11) NOT NULL,
                       `quantity` decimal(10,3) NOT NULL DEFAULT 0.000 COMMENT 'الكمية بالكيلوجرام',
-                      `unit_price` decimal(10,2) DEFAULT NULL COMMENT 'سعر الكيلو',
                       `converted_to_tahini_quantity` decimal(10,3) NOT NULL DEFAULT 0.000 COMMENT 'إجمالي كمية التحويل إلى طحينة بالكيلوجرام',
                       `notes` text DEFAULT NULL,
                       `created_at` timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP,
@@ -770,7 +769,6 @@ if (!function_exists('ensureSesameStockTable')) {
                           `id` int(11) NOT NULL AUTO_INCREMENT,
                           `supplier_id` int(11) NOT NULL,
                           `quantity` decimal(10,3) NOT NULL DEFAULT 0.000 COMMENT 'الكمية بالكيلوجرام',
-                          `unit_price` decimal(10,2) DEFAULT NULL COMMENT 'سعر الكيلو',
                           `converted_to_tahini_quantity` decimal(10,3) NOT NULL DEFAULT 0.000 COMMENT 'إجمالي كمية التحويل إلى طحينة بالكيلوجرام',
                           `notes` text DEFAULT NULL,
                           `created_at` timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP,
@@ -789,22 +787,33 @@ if (!function_exists('ensureSesameStockTable')) {
             // التحقق مرة أخرى من أن الجدول تم إنشاؤه ويمكن الوصول إليه
             $verifyCheck = $db->queryOne("SHOW TABLES LIKE 'sesame_stock'");
             if (!empty($verifyCheck)) {
-                // التحقق من أن الأعمدة الأساسية موجودة
-                try {
-                    $columnsCheck = $db->queryOne("SHOW COLUMNS FROM sesame_stock LIKE 'supplier_id'");
-                    if (!empty($columnsCheck)) {
-                        // التحقق من وجود عمود converted_to_tahini_quantity وإضافته إذا لم يكن موجوداً
-                        $convertedColumnCheck = $db->queryOne("SHOW COLUMNS FROM sesame_stock LIKE 'converted_to_tahini_quantity'");
-                        if (empty($convertedColumnCheck)) {
-                            try {
-                                $db->execute("ALTER TABLE sesame_stock ADD COLUMN converted_to_tahini_quantity decimal(10,3) NOT NULL DEFAULT 0.000 COMMENT 'إجمالي كمية التحويل إلى طحينة بالكيلوجرام' AFTER unit_price");
-                                error_log("ensureSesameStockTable: Added converted_to_tahini_quantity column");
-                            } catch (Exception $alterError) {
-                                error_log("ensureSesameStockTable: Failed to add converted_to_tahini_quantity column: " . $alterError->getMessage());
+                    // التحقق من أن الأعمدة الأساسية موجودة
+                    try {
+                        $columnsCheck = $db->queryOne("SHOW COLUMNS FROM sesame_stock LIKE 'supplier_id'");
+                        if (!empty($columnsCheck)) {
+                            // إزالة عمود unit_price إذا كان موجوداً
+                            $unitPriceColumnCheck = $db->queryOne("SHOW COLUMNS FROM sesame_stock LIKE 'unit_price'");
+                            if (!empty($unitPriceColumnCheck)) {
+                                try {
+                                    $db->execute("ALTER TABLE sesame_stock DROP COLUMN unit_price");
+                                    error_log("ensureSesameStockTable: Removed unit_price column");
+                                } catch (Exception $dropError) {
+                                    error_log("ensureSesameStockTable: Failed to remove unit_price column: " . $dropError->getMessage());
+                                }
                             }
-                        }
-                        $ready = true;
-                        error_log("ensureSesameStockTable: sesame_stock table created and verified successfully");
+                            
+                            // التحقق من وجود عمود converted_to_tahini_quantity وإضافته إذا لم يكن موجوداً
+                            $convertedColumnCheck = $db->queryOne("SHOW COLUMNS FROM sesame_stock LIKE 'converted_to_tahini_quantity'");
+                            if (empty($convertedColumnCheck)) {
+                                try {
+                                    $db->execute("ALTER TABLE sesame_stock ADD COLUMN converted_to_tahini_quantity decimal(10,3) NOT NULL DEFAULT 0.000 COMMENT 'إجمالي كمية التحويل إلى طحينة بالكيلوجرام' AFTER quantity");
+                                    error_log("ensureSesameStockTable: Added converted_to_tahini_quantity column");
+                                } catch (Exception $alterError) {
+                                    error_log("ensureSesameStockTable: Failed to add converted_to_tahini_quantity column: " . $alterError->getMessage());
+                                }
+                            }
+                            $ready = true;
+                            error_log("ensureSesameStockTable: sesame_stock table created and verified successfully");
                     } else {
                         error_log("ensureSesameStockTable: Table exists but required columns are missing");
                         $ready = false;
@@ -5403,7 +5412,7 @@ $nutsSuppliers = $db->query("SELECT id, name, phone FROM suppliers WHERE status 
                                     <tr>
                                         <th>المورد</th>
                                         <th class="text-center">الكمية (كجم)</th>
-                                        <th class="text-center">سعر الكيلو</th>
+                                        <th class="text-center">كمية الطحينة (كجم)</th>
                                         <th class="text-center">الإجراءات</th>
                                     </tr>
                                 </thead>
@@ -5417,7 +5426,11 @@ $nutsSuppliers = $db->query("SELECT id, name, phone FROM suppliers WHERE status 
                                                 <?php endif; ?>
                                             </td>
                                             <td class="text-center"><strong style="color: #f39c12;"><?php echo number_format($stock['quantity'], 3); ?></strong></td>
-                                            <td class="text-center"><?php echo $stock['unit_price'] ? number_format($stock['unit_price'], 2) . ' ج.م' : '-'; ?></td>
+                                            <td class="text-center">
+                                                <strong style="color: #28a745;">
+                                                    <?php echo number_format($stock['converted_to_tahini_quantity'] ?? 0, 3); ?>
+                                                </strong>
+                                            </td>
                                             <td class="text-center">
                                                 <div class="btn-group" role="group">
                                                     <button class="btn btn-sm btn-success"
