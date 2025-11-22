@@ -937,9 +937,35 @@ $historyTypeLabels = [
     </div>
 </div>
 
+<style>
+#addSupplierModal .modal-body {
+    max-height: 70vh;
+    overflow-y: auto;
+    padding-right: 15px;
+}
+
+#addSupplierModal .modal-body::-webkit-scrollbar {
+    width: 8px;
+}
+
+#addSupplierModal .modal-body::-webkit-scrollbar-track {
+    background: #f1f1f1;
+    border-radius: 10px;
+}
+
+#addSupplierModal .modal-body::-webkit-scrollbar-thumb {
+    background: #888;
+    border-radius: 10px;
+}
+
+#addSupplierModal .modal-body::-webkit-scrollbar-thumb:hover {
+    background: #555;
+}
+</style>
+
 <!-- Add Supplier Modal -->
 <div class="modal fade" id="addSupplierModal" tabindex="-1">
-    <div class="modal-dialog modal-dialog-scrollable">
+    <div class="modal-dialog modal-dialog-scrollable modal-lg">
         <div class="modal-content">
             <form method="POST" action="">
                 <input type="hidden" name="action" value="add">
