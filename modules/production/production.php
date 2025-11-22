@@ -2505,18 +2505,14 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 // تحديد معرف المستخدم
                 $selectedUserId = $currentUser['role'] === 'production' ? $currentUser['id'] : intval($_POST['user_id'] ?? $currentUser['id']);
                 
-                // 3. التحقق من تسجيل حضور المستخدم الحالي فقط
-                // كل حساب له تسجيلاته الخاصة المنفصلة - لا يتم جمع جميع عمال الإنتاج تلقائياً
+                // 3. جمع جميع عمال الإنتاج الحاضرين خلال اليوم لربطهم ببيانات رقم التشغيلة
+                // ملاحظة: تسجيل الحضور منفصل لكل حساب، لكن عند إنشاء التشغيلة نجمع جميع العمال الحاضرين
                 $workersList = [];
                 $attendanceTableCheck = $db->queryOne("SHOW TABLES LIKE 'attendance_records'");
                 
-                // إذا كان المستخدم ليس عامل إنتاج (محاسب/مدير)، أضفه مباشرة
-                if ($currentUser['role'] !== 'production') {
-                    $workersList[] = $selectedUserId;
-                } else {
-                    // إذا كان المستخدم عامل إنتاج، يجب التحقق من تسجيل الحضور
-                    if (!empty($attendanceTableCheck)) {
-                        // التحقق من أن المستخدم الحالي قد سجل حضور في تاريخ الإنتاج
+                if (!empty($attendanceTableCheck)) {
+                    // التحقق من أن المستخدم الحالي قد سجل حضور (ما عدا المدير)
+                    if ($currentUser['role'] !== 'manager') {
                         $userAttendanceCheck = $db->queryOne(
                             "SELECT id 
                              FROM attendance_records 
@@ -2527,27 +2523,42 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                             [$selectedUserId, $productionDate]
                         );
                         
-                        // إذا سجل المستخدم الحالي حضور، أضفه فقط
-                        if (!empty($userAttendanceCheck)) {
-                            $workersList[] = $selectedUserId;
+                        // إذا لم يسجل المستخدم حضور، إظهار رسالة خطأ وإيقاف المعالجة
+                        if (empty($userAttendanceCheck)) {
+                            $error = 'يجب تسجيل الحضور أولاً قبل إضافة عملية إنتاج. يرجى تسجيل الحضور من صفحة الحضور والانصراف.';
+                            preventDuplicateSubmission(null, ['page' => 'production'], null, $currentUser['role'], $error);
                         }
-                        // إذا لم يسجل حضور، لا نضيفه (workersList سيبقى فارغاً)
-                    } else {
-                        // إذا لم يكن هناك جدول حضور، استخدم المستخدم الحالي فقط
+                    }
+                    
+                    // جمع جميع عمال الإنتاج الحاضرين خلال اليوم لربطهم ببيانات رقم التشغيلة
+                    $presentWorkers = $db->query(
+                        "SELECT DISTINCT user_id 
+                         FROM attendance_records 
+                         WHERE date = ? 
+                         AND check_in_time IS NOT NULL 
+                         AND user_id IN (SELECT id FROM users WHERE role = 'production' AND status = 'active')
+                         ORDER BY check_in_time DESC",
+                        [$productionDate]
+                    );
+                    
+                    foreach ($presentWorkers as $worker) {
+                        $workerId = intval($worker['user_id']);
+                        if ($workerId > 0 && !in_array($workerId, $workersList, true)) {
+                            $workersList[] = $workerId;
+                        }
+                    }
+                }
+                
+                // إذا كان المستخدم مدير، أضفه مباشرة (المدير لا يحتاج لتسجيل حضور)
+                if ($currentUser['role'] === 'manager') {
+                    if (!in_array($selectedUserId, $workersList, true)) {
                         $workersList[] = $selectedUserId;
                     }
                 }
                 
-                // التأكد من وجود عامل واحد على الأقل (للمحاسبين/المديرين فقط)
-                if (empty($workersList) && $currentUser['role'] !== 'production') {
+                // التأكد من وجود عامل واحد على الأقل
+                if (empty($workersList)) {
                     $workersList[] = $selectedUserId;
-                }
-                
-                // إذا كان عامل إنتاج ولم يسجل حضور، إظهار رسالة خطأ وإيقاف المعالجة
-                if (empty($workersList) && $currentUser['role'] === 'production') {
-                    $error = 'يجب تسجيل الحضور أولاً قبل إضافة عملية إنتاج. يرجى تسجيل الحضور من صفحة الحضور والانصراف.';
-                    // إيقاف المعالجة هنا
-                    preventDuplicateSubmission(null, ['page' => 'production'], null, $currentUser['role'], $error);
                 }
                 
                 $extraSuppliersDetails = [];
