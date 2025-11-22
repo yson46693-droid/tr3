@@ -60,6 +60,20 @@ switch ($role) {
                 'badge' => null
             ],
             [
+                'title' => isset($lang['customers']) ? $lang['customers'] : 'العملاء',
+                'icon' => 'bi-people',
+                'url' => $baseUrl . 'manager.php?page=customers',
+                'active' => ($currentPage === 'manager.php' && $currentPageParam === 'customers'),
+                'badge' => null
+            ],
+            [
+                'title' => 'طلبات العملاء',
+                'icon' => 'bi-bag-check',
+                'url' => $baseUrl . 'manager.php?page=orders',
+                'active' => ($currentPage === 'manager.php' && $currentPageParam === 'orders'),
+                'badge' => null
+            ],
+            [
                 'title' => 'نقطة البيع',
                 'icon' => 'bi-cart4',
                 'url' => $baseUrl . 'manager.php?page=pos',
@@ -67,17 +81,17 @@ switch ($role) {
                 'badge' => null
             ],
             [
-                'title' => 'خزنة الشركة',
-                'icon' => 'bi-bank',
-                'url' => $baseUrl . 'manager.php?page=company_cash',
-                'active' => ($currentPage === 'manager.php' && $currentPageParam === 'company_cash'),
-                'badge' => null
-            ],
-            [
                 'title' => 'الفواتير',
                 'icon' => 'bi-receipt',
                 'url' => $baseUrl . 'manager.php?page=invoices',
                 'active' => ($currentPage === 'manager.php' && $currentPageParam === 'invoices'),
+                'badge' => null
+            ],
+            [
+                'title' => 'خزنة الشركة',
+                'icon' => 'bi-bank',
+                'url' => $baseUrl . 'manager.php?page=company_cash',
+                'active' => ($currentPage === 'manager.php' && $currentPageParam === 'company_cash'),
                 'badge' => null
             ],
             [
