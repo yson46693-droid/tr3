@@ -673,17 +673,91 @@ function createOrUpdateSalary($userId, $month, $year, $bonus = 0, $deductions = 
     
     if ($existingSalary) {
         // تحديث الراتب الموجود
-        // الحصول على المبلغ التراكمي الحالي
+        // الحصول على المبلغ التراكمي الحالي والسلفات المخصومة
         $currentAccumulated = 0.00;
+        $hasDeductedAdvances = false;
+        $currentTotalAmount = 0.00;
+        
         if ($hasAccumulatedColumn) {
-            $currentSalary = $db->queryOne("SELECT accumulated_amount, total_amount FROM salaries WHERE id = ?", [$existingSalary['id']]);
+            $currentSalary = $db->queryOne("SELECT accumulated_amount, total_amount, advances_deduction FROM salaries WHERE id = ?", [$existingSalary['id']]);
             $currentAccumulated = floatval($currentSalary['accumulated_amount'] ?? 0);
-            // إضافة المبلغ الجديد للتراكمي (إذا تغير total_amount)
-            $oldTotalAmount = floatval($currentSalary['total_amount'] ?? 0);
-            $newTotalAmount = $calculation['total_amount'];
-            if ($newTotalAmount != $oldTotalAmount) {
-                // إضافة الفرق للتراكمي
-                $currentAccumulated += ($newTotalAmount - $oldTotalAmount);
+            $currentTotalAmount = floatval($currentSalary['total_amount'] ?? 0);
+            $currentAdvancesDeduction = floatval($currentSalary['advances_deduction'] ?? 0);
+            
+            // التحقق من وجود سلفات مخصومة بالفعل
+            if ($currentAdvancesDeduction > 0) {
+                $hasDeductedAdvances = true;
+            } else {
+                // التحقق من وجود سلفات مخصومة في جدول salary_advances
+                $deductedAdvancesCheck = $db->queryOne(
+                    "SELECT COUNT(*) as count FROM salary_advances 
+                     WHERE deducted_from_salary_id = ? AND status = 'manager_approved'",
+                    [$existingSalary['id']]
+                );
+                if (!empty($deductedAdvancesCheck) && intval($deductedAdvancesCheck['count'] ?? 0) > 0) {
+                    $hasDeductedAdvances = true;
+                }
+            }
+            
+            // إضافة المبلغ الجديد للتراكمي (إذا تغير total_amount ولم تكن هناك سلفات مخصومة)
+            if (!$hasDeductedAdvances) {
+                $oldTotalAmount = $currentTotalAmount;
+                $newTotalAmount = $calculation['total_amount'];
+                if (abs($newTotalAmount - $oldTotalAmount) > 0.01) {
+                    // إضافة الفرق للتراكمي
+                    $currentAccumulated += ($newTotalAmount - $oldTotalAmount);
+                }
+            }
+        } else {
+            // إذا لم يكن هناك عمود accumulated_amount، احصل على total_amount الحالي
+            $currentSalary = $db->queryOne("SELECT total_amount, advances_deduction FROM salaries WHERE id = ?", [$existingSalary['id']]);
+            $currentTotalAmount = floatval($currentSalary['total_amount'] ?? 0);
+            $currentAdvancesDeduction = floatval($currentSalary['advances_deduction'] ?? 0);
+            
+            // التحقق من وجود سلفات مخصومة بالفعل
+            if ($currentAdvancesDeduction > 0) {
+                $hasDeductedAdvances = true;
+            } else {
+                // التحقق من وجود سلفات مخصومة في جدول salary_advances
+                $deductedAdvancesCheck = $db->queryOne(
+                    "SELECT COUNT(*) as count FROM salary_advances 
+                     WHERE deducted_from_salary_id = ? AND status = 'manager_approved'",
+                    [$existingSalary['id']]
+                );
+                if (!empty($deductedAdvancesCheck) && intval($deductedAdvancesCheck['count'] ?? 0) > 0) {
+                    $hasDeductedAdvances = true;
+                }
+            }
+        }
+        
+        // إذا كانت هناك سلفات مخصومة، احسب total_amount بشكل صحيح
+        if ($hasDeductedAdvances) {
+            // الحصول على إجمالي السلفات المخصومة من هذا الراتب
+            $deductedAdvancesTotal = 0;
+            if ($currentAdvancesDeduction > 0) {
+                $deductedAdvancesTotal = $currentAdvancesDeduction;
+            } else {
+                $deductedAdvancesQuery = $db->queryOne(
+                    "SELECT COALESCE(SUM(amount), 0) as total FROM salary_advances 
+                     WHERE deducted_from_salary_id = ? AND status = 'manager_approved'",
+                    [$existingSalary['id']]
+                );
+                $deductedAdvancesTotal = floatval($deductedAdvancesQuery['total'] ?? 0);
+            }
+            
+            // حساب الراتب الإجمالي قبل خصم السلفات
+            // يجب طرح السلفة من deductions لأنها قد تكون مضمنة فيها
+            $baseAmount = $calculation['base_amount'];
+            $bonus = $calculation['total_bonus'];
+            $otherDeductions = max(0, $calculation['deductions'] - $deductedAdvancesTotal);
+            
+            // حساب total_amount = الراتب قبل الخصم - السلفات المخصومة
+            $totalBeforeAdvances = $baseAmount + $bonus - $otherDeductions;
+            $calculation['total_amount'] = max(0, $totalBeforeAdvances - $deductedAdvancesTotal);
+            
+            // تحديث deductions لاستبعاد السلفة (إذا كانت مضمنة)
+            if ($calculation['deductions'] >= $deductedAdvancesTotal) {
+                $calculation['deductions'] = $otherDeductions;
             }
         }
         
