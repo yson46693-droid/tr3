@@ -42,6 +42,7 @@ if (empty($advancesTableCheck)) {
               `manager_approved_by` int(11) DEFAULT NULL,
               `manager_approved_at` timestamp NULL DEFAULT NULL,
               `deducted_from_salary_id` int(11) DEFAULT NULL COMMENT 'الراتب الذي تم خصم السلفة منه',
+              `total_salary_before_advance` decimal(10,2) DEFAULT NULL COMMENT 'الراتب الإجمالي قبل خصم السلفة',
               `notes` text DEFAULT NULL,
               `created_at` timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP,
               PRIMARY KEY (`id`),
@@ -59,6 +60,20 @@ if (empty($advancesTableCheck)) {
         ");
     } catch (Exception $e) {
         error_log("Error creating salary_advances table: " . $e->getMessage());
+    }
+} else {
+    // التأكد من وجود عمود total_salary_before_advance
+    try {
+        $columnCheck = $db->queryOne("SHOW COLUMNS FROM salary_advances LIKE 'total_salary_before_advance'");
+        if (empty($columnCheck)) {
+            $db->execute("
+                ALTER TABLE `salary_advances`
+                ADD COLUMN `total_salary_before_advance` decimal(10,2) DEFAULT NULL COMMENT 'الراتب الإجمالي قبل خصم السلفة'
+                AFTER `deducted_from_salary_id`
+            ");
+        }
+    } catch (Exception $e) {
+        error_log("Error adding total_salary_before_advance column: " . $e->getMessage());
     }
 }
 
@@ -479,10 +494,36 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                         } else {
                             $salaryData = $resolution['salary'];
                             $salaryId = (int) ($resolution['salary_id'] ?? 0);
+                            $month = $resolution['month'] ?? date('n');
+                            $year = $resolution['year'] ?? date('Y');
 
                             if ($salaryId <= 0) {
                                 $error = 'تعذر تحديد الراتب المراد الخصم منه.';
                             } else {
+                                // حساب الراتب الإجمالي قبل خصم السلفة باستخدام نفس الدالة المستخدمة في صفحة my_salary
+                                $user = $db->queryOne("SELECT role FROM users WHERE id = ?", [$advance['user_id']]);
+                                $userRole = $user['role'] ?? 'production';
+                                
+                                // إنشاء نسخة من salaryData بدون السلفة لحساب الراتب الإجمالي قبل الخصم
+                                $salaryRecordForCalculation = $salaryData;
+                                // إزالة السلفة من deductions إذا كانت موجودة
+                                $currentDeductions = $salaryData['deductions'] ?? 0;
+                                $currentAdvancesDeduction = $salaryData['advances_deduction'] ?? 0;
+                                if ($currentAdvancesDeduction > 0) {
+                                    $salaryRecordForCalculation['deductions'] = $currentDeductions - $currentAdvancesDeduction;
+                                } else {
+                                    $salaryRecordForCalculation['deductions'] = max(0, $currentDeductions - $advance['amount']);
+                                }
+                                
+                                $salaryCalculation = calculateTotalSalaryWithCollections(
+                                    $salaryRecordForCalculation,
+                                    $advance['user_id'],
+                                    $month,
+                                    $year,
+                                    $userRole
+                                );
+                                $totalSalaryBeforeAdvance = $salaryCalculation['total_salary'];
+                                
                                 try {
                                     $db->beginTransaction();
 
@@ -492,7 +533,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                                         throw new Exception($message);
                                     }
 
-                                    // تحديث حالة السلفة إلى manager_approved مع تعيين المحاسب كموافق نهائي
+                                    // تحديث حالة السلفة إلى manager_approved مع تعيين المحاسب كموافق نهائي وحفظ الراتب الإجمالي قبل الخصم
                                     $db->execute(
                                         "UPDATE salary_advances 
                                          SET status = 'manager_approved', 
@@ -500,9 +541,10 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                                              accountant_approved_at = NOW(), 
                                              manager_approved_by = ?, 
                                              manager_approved_at = NOW(),
-                                             deducted_from_salary_id = ?
+                                             deducted_from_salary_id = ?,
+                                             total_salary_before_advance = ?
                                          WHERE id = ?",
-                                        [$currentUser['id'], $currentUser['id'], $salaryId, $advanceId]
+                                        [$currentUser['id'], $currentUser['id'], $salaryId, $totalSalaryBeforeAdvance, $advanceId]
                                     );
 
                                     $db->commit();
@@ -595,10 +637,36 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     } else {
                         $salaryData = $resolution['salary'];
                         $salaryId = (int) ($resolution['salary_id'] ?? 0);
+                        $month = $resolution['month'] ?? date('n');
+                        $year = $resolution['year'] ?? date('Y');
 
                         if ($salaryId <= 0) {
                             $error = 'تعذر تحديد الراتب المراد الخصم منه.';
                         } else {
+                            // حساب الراتب الإجمالي قبل خصم السلفة باستخدام نفس الدالة المستخدمة في صفحة my_salary
+                            $user = $db->queryOne("SELECT role FROM users WHERE id = ?", [$advance['user_id']]);
+                            $userRole = $user['role'] ?? 'production';
+                            
+                            // إنشاء نسخة من salaryData بدون السلفة لحساب الراتب الإجمالي قبل الخصم
+                            $salaryRecordForCalculation = $salaryData;
+                            // إزالة السلفة من deductions إذا كانت موجودة
+                            $currentDeductions = $salaryData['deductions'] ?? 0;
+                            $currentAdvancesDeduction = $salaryData['advances_deduction'] ?? 0;
+                            if ($currentAdvancesDeduction > 0) {
+                                $salaryRecordForCalculation['deductions'] = $currentDeductions - $currentAdvancesDeduction;
+                            } else {
+                                $salaryRecordForCalculation['deductions'] = max(0, $currentDeductions - $advance['amount']);
+                            }
+                            
+                            $salaryCalculation = calculateTotalSalaryWithCollections(
+                                $salaryRecordForCalculation,
+                                $advance['user_id'],
+                                $month,
+                                $year,
+                                $userRole
+                            );
+                            $totalSalaryBeforeAdvance = $salaryCalculation['total_salary'];
+                            
                             try {
                                 $db->beginTransaction();
 
@@ -616,9 +684,10 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                                              accountant_approved_at = NOW(), 
                                              manager_approved_by = ?, 
                                              manager_approved_at = NOW(),
-                                             deducted_from_salary_id = ?
+                                             deducted_from_salary_id = ?,
+                                             total_salary_before_advance = ?
                                          WHERE id = ?",
-                                        [$currentUser['id'], $currentUser['id'], $salaryId, $advanceId]
+                                        [$currentUser['id'], $currentUser['id'], $salaryId, $totalSalaryBeforeAdvance, $advanceId]
                                     );
                                 } else {
                                     $db->execute(
@@ -626,9 +695,10 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                                          SET status = 'manager_approved', 
                                              manager_approved_by = ?, 
                                              manager_approved_at = NOW(),
-                                             deducted_from_salary_id = ?
+                                             deducted_from_salary_id = ?,
+                                             total_salary_before_advance = ?
                                          WHERE id = ?",
-                                        [$currentUser['id'], $salaryId, $advanceId]
+                                        [$currentUser['id'], $salaryId, $totalSalaryBeforeAdvance, $advanceId]
                                     );
                                 }
 
