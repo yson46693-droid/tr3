@@ -168,6 +168,94 @@ function batchCreationConsumeHoneyStock(
 }
 
 /**
+ * Attempt to consume quantity from mixed_nuts table.
+ *
+ * @throws RuntimeException
+ */
+function batchCreationConsumeMixedNuts(
+    PDO $pdo,
+    float $quantityRequired,
+    ?int $supplierId,
+    string $materialName,
+    string $unit
+): void {
+    if (!batchCreationTableExists($pdo, 'mixed_nuts')) {
+        throw new RuntimeException('جدول مخزون الخلطات غير موجود للمادة: ' . $materialName);
+    }
+
+    // تنظيف اسم المادة من "(خلطة)" إذا كان موجوداً
+    $cleanName = trim($materialName);
+    $cleanName = preg_replace('/\s*\(خلطة\)\s*$/u', '', $cleanName);
+    
+    $attemptSuppliers = [];
+    if ($supplierId) {
+        $attemptSuppliers[] = $supplierId;
+    }
+    $attemptSuppliers[] = null; // fallback without supplier filter
+
+    $remaining = $quantityRequired;
+    $updateStmt = $pdo->prepare("UPDATE mixed_nuts SET total_quantity = GREATEST(total_quantity - ?, 0), updated_at = NOW() WHERE id = ?");
+
+    foreach ($attemptSuppliers as $attemptSupplier) {
+        if ($remaining <= 0) {
+            break;
+        }
+
+        $sql = "SELECT id, total_quantity AS available FROM mixed_nuts WHERE total_quantity > 0";
+        $params = [];
+
+        if ($attemptSupplier) {
+            $sql .= " AND supplier_id = ?";
+            $params[] = $attemptSupplier;
+        }
+
+        // البحث عن الخلطة بالاسم
+        if ($cleanName !== '') {
+            $sql .= " AND (batch_name = ? OR batch_name LIKE ?)";
+            $params[] = $cleanName;
+            $params[] = '%' . addcslashes($cleanName, '%_') . '%';
+        }
+
+        $sql .= " ORDER BY total_quantity DESC";
+        $stmt = $pdo->prepare($sql);
+        $stmt->execute($params);
+        $rows = $stmt->fetchAll(PDO::FETCH_ASSOC);
+
+        if (empty($rows)) {
+            continue;
+        }
+
+        foreach ($rows as $row) {
+            if ($remaining <= 0) {
+                break;
+            }
+
+            $available = (float)($row['available'] ?? 0);
+            if ($available <= 0) {
+                continue;
+            }
+
+            $deduct = min($available, $remaining);
+            $updateStmt->execute([$deduct, $row['id']]);
+            $remaining -= $deduct;
+        }
+    }
+
+    if ($remaining > 0.0001) {
+        throw new RuntimeException(
+            sprintf(
+                'المخزون غير كاف للخلطة %s. الكمية المطلوبة %.3f %s، المتبقي %.3f %s.',
+                $materialName,
+                $quantityRequired,
+                $unit,
+                $remaining,
+                $unit
+            )
+        );
+    }
+}
+
+/**
  * Attempt to consume quantity from a simple stock table (olive oil, beeswax, derivatives, nuts, ...).
  *
  * @throws RuntimeException
@@ -291,7 +379,48 @@ function batchCreationDeductTypedStock(PDO $pdo, array $material, float $unitsMu
             batchCreationConsumeSimpleStock($pdo, 'derivatives_stock', 'weight', $totalRequired, $supplierId, $materialName, $unit);
             break;
         case 'nuts':
-            batchCreationConsumeSimpleStock($pdo, 'nuts_stock', 'quantity', $totalRequired, $supplierId, $materialName, $unit);
+            // التحقق أولاً إذا كانت المادة خلطة مكسرات (mixed_nuts)
+            $isMixedNuts = false;
+            if (batchCreationTableExists($pdo, 'mixed_nuts')) {
+                // تنظيف اسم المادة من "(خلطة)" إذا كان موجوداً
+                $cleanName = trim($materialName);
+                $cleanName = preg_replace('/\s*\(خلطة\)\s*$/u', '', $cleanName);
+                
+                // البحث عن الخلطة في جدول mixed_nuts
+                $checkSql = "SELECT COUNT(*) as count FROM mixed_nuts WHERE batch_name = ? OR batch_name LIKE ?";
+                $checkParams = [$cleanName, '%' . addcslashes($cleanName, '%_') . '%'];
+                
+                if ($supplierId) {
+                    $checkSql .= " AND supplier_id = ?";
+                    $checkParams[] = $supplierId;
+                }
+                
+                $checkStmt = $pdo->prepare($checkSql);
+                $checkStmt->execute($checkParams);
+                $checkResult = $checkStmt->fetch(PDO::FETCH_ASSOC);
+                
+                if ($checkResult && (int)($checkResult['count'] ?? 0) > 0) {
+                    $isMixedNuts = true;
+                } else {
+                    // محاولة أخرى بدون فلتر المورد
+                    $checkSql2 = "SELECT COUNT(*) as count FROM mixed_nuts WHERE batch_name = ? OR batch_name LIKE ?";
+                    $checkStmt2 = $pdo->prepare($checkSql2);
+                    $checkStmt2->execute([$cleanName, '%' . addcslashes($cleanName, '%_') . '%']);
+                    $checkResult2 = $checkStmt2->fetch(PDO::FETCH_ASSOC);
+                    
+                    if ($checkResult2 && (int)($checkResult2['count'] ?? 0) > 0) {
+                        $isMixedNuts = true;
+                    }
+                }
+            }
+            
+            if ($isMixedNuts) {
+                // خصم من الخلطة (mixed_nuts)
+                batchCreationConsumeMixedNuts($pdo, $totalRequired, $supplierId, $materialName, $unit);
+            } else {
+                // خصم من المكسرات المنفردة (nuts_stock)
+                batchCreationConsumeSimpleStock($pdo, 'nuts_stock', 'quantity', $totalRequired, $supplierId, $materialName, $unit);
+            }
             break;
         case 'raw_general':
             // محاولة التعرف على نوع المادة من اسمها والبحث في الجداول الخاصة
@@ -320,10 +449,52 @@ function batchCreationDeductTypedStock(PDO $pdo, array $material, float $unitsMu
                 break;
             }
             
-            // مكسرات -> nuts_stock
+            // مكسرات -> التحقق من الخلطة أولاً
             if (mb_stripos($normalizedName, 'مكسرات') !== false || mb_stripos($normalizedName, 'لوز') !== false || mb_stripos($normalizedName, 'جوز') !== false || 
                 stripos($normalizedName, 'nuts') !== false || stripos($normalizedName, 'almond') !== false || stripos($normalizedName, 'walnut') !== false) {
-                batchCreationConsumeSimpleStock($pdo, 'nuts_stock', 'quantity', $totalRequired, $supplierId, $materialName, $unit);
+                
+                // التحقق أولاً إذا كانت المادة خلطة مكسرات (mixed_nuts)
+                $isMixedNuts = false;
+                if (batchCreationTableExists($pdo, 'mixed_nuts')) {
+                    // تنظيف اسم المادة من "(خلطة)" إذا كان موجوداً
+                    $cleanName = trim($materialName);
+                    $cleanName = preg_replace('/\s*\(خلطة\)\s*$/u', '', $cleanName);
+                    
+                    // البحث عن الخلطة في جدول mixed_nuts
+                    $checkSql = "SELECT COUNT(*) as count FROM mixed_nuts WHERE batch_name = ? OR batch_name LIKE ?";
+                    $checkParams = [$cleanName, '%' . addcslashes($cleanName, '%_') . '%'];
+                    
+                    if ($supplierId) {
+                        $checkSql .= " AND supplier_id = ?";
+                        $checkParams[] = $supplierId;
+                    }
+                    
+                    $checkStmt = $pdo->prepare($checkSql);
+                    $checkStmt->execute($checkParams);
+                    $checkResult = $checkStmt->fetch(PDO::FETCH_ASSOC);
+                    
+                    if ($checkResult && (int)($checkResult['count'] ?? 0) > 0) {
+                        $isMixedNuts = true;
+                    } else {
+                        // محاولة أخرى بدون فلتر المورد
+                        $checkSql2 = "SELECT COUNT(*) as count FROM mixed_nuts WHERE batch_name = ? OR batch_name LIKE ?";
+                        $checkStmt2 = $pdo->prepare($checkSql2);
+                        $checkStmt2->execute([$cleanName, '%' . addcslashes($cleanName, '%_') . '%']);
+                        $checkResult2 = $checkStmt2->fetch(PDO::FETCH_ASSOC);
+                        
+                        if ($checkResult2 && (int)($checkResult2['count'] ?? 0) > 0) {
+                            $isMixedNuts = true;
+                        }
+                    }
+                }
+                
+                if ($isMixedNuts) {
+                    // خصم من الخلطة (mixed_nuts)
+                    batchCreationConsumeMixedNuts($pdo, $totalRequired, $supplierId, $materialName, $unit);
+                } else {
+                    // خصم من المكسرات المنفردة (nuts_stock)
+                    batchCreationConsumeSimpleStock($pdo, 'nuts_stock', 'quantity', $totalRequired, $supplierId, $materialName, $unit);
+                }
                 break;
             }
             
