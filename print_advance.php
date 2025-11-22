@@ -10,7 +10,7 @@ require_once __DIR__ . '/includes/auth.php';
 require_once __DIR__ . '/includes/salary_calculator.php';
 require_once __DIR__ . '/includes/path_helper.php';
 
-requireAnyRole(['accountant', 'manager', 'sales', 'production']);
+requireAnyRole(['accountant', 'manager']);
 
 $advanceId = isset($_GET['id']) ? intval($_GET['id']) : 0;
 
@@ -90,6 +90,9 @@ if (!empty($advance['deducted_from_salary_id'])) {
         // تحديث total_amount بالقيمة المحسوبة بعد خصم السلفة
         // استخدم القيمة المحسوبة دائماً لضمان الدقة
         $salaryDetails['total_amount'] = $totalAfterAdvance;
+        
+        // حفظ الراتب الإجمالي قبل خصم السلفة للعرض
+        $salaryDetails['total_before_advance'] = $totalBeforeAdvance;
         
         // تحديث otherDeductions للعرض
         $salaryDetails['other_deductions'] = $otherDeductions;
@@ -368,8 +371,18 @@ $employeeUsername = $advance['username'] ?? '';
                     </thead>
                     <tbody>
                         <tr>
-                            <td>الراتب الأساسي</td>
-                            <td><?php echo formatCurrency($salaryDetails['base_amount']); ?></td>
+                            <td>الراتب الاجمالي</td>
+                            <td><?php 
+                                $totalBeforeAdvance = $salaryDetails['total_before_advance'] ?? 0;
+                                if ($totalBeforeAdvance == 0 && isset($salaryDetails['base_amount'])) {
+                                    // حساب احتياطي في حالة عدم وجود القيمة المحسوبة
+                                    $totalBeforeAdvance = $salaryDetails['base_amount'] + 
+                                                          ($salaryDetails['bonus'] ?? 0) + 
+                                                          ($salaryDetails['collections_bonus'] ?? 0) - 
+                                                          ($salaryDetails['other_deductions'] ?? max(0, ($salaryDetails['deductions'] ?? 0) - $advanceAmount));
+                                }
+                                echo formatCurrency($totalBeforeAdvance);
+                            ?></td>
                         </tr>
                         <?php if ($advance['role'] === 'sales' && $salaryDetails['collections_bonus'] > 0): ?>
                         <tr>
