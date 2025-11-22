@@ -695,8 +695,9 @@ document.getElementById('submitReturnRequest').addEventListener('click', functio
     })
     .then(data => {
         if (data.success) {
-            // إظهار رسالة النجاح
-            const successMessage = 'تم إنشاء طلب المرتجع بنجاح!<br>رقم المرتجع: <strong>' + data.return_number + '</strong><br>تم إرساله للموافقة';
+            // إظهار رسالة النجاح مع رابط الطباعة
+            const printUrl = data.print_url || (basePath + '/print_return_invoice.php?id=' + data.return_id);
+            const successMessage = 'تم إنشاء طلب المرتجع بنجاح!<br>رقم المرتجع: <strong>' + data.return_number + '</strong><br>تم إرساله للموافقة<br><br><a href="' + printUrl + '" target="_blank" class="btn btn-sm btn-outline-primary mt-2"><i class="bi bi-printer me-1"></i>طباعة فاتورة المرتجع</a>';
             const successAlert = document.getElementById('dynamicSuccessAlert');
             const successText = document.getElementById('successMessageText');
             

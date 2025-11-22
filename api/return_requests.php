@@ -765,18 +765,27 @@ function handleCreateReturnRequest(): void
         
         $conn->commit();
         
+        // إنشاء رابط الطباعة
+        $printUrl = getRelativeUrl('print_return_invoice.php?id=' . $returnId);
+        
         returnJson([
             'success' => true,
             'message' => 'تم إنشاء طلب المرتجع بنجاح وتم إرساله للموافقة',
             'return_id' => $returnId,
             'return_number' => $returnNumber,
             'refund_amount' => $totalRefund,
-            'status' => 'pending'
+            'status' => 'pending',
+            'print_url' => $printUrl
         ]);
         
     } catch (Throwable $e) {
         $conn->rollback();
-        throw $e;
+        error_log('Error creating return request: ' . $e->getMessage());
+        error_log('Stack trace: ' . $e->getTraceAsString());
+        returnJson([
+            'success' => false,
+            'message' => 'حدث خطأ أثناء إنشاء طلب المرتجع: ' . $e->getMessage()
+        ], 500);
     }
 }
 
