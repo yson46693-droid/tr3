@@ -1559,27 +1559,63 @@ if (!function_exists('ensureTahiniStockTable')) {
                 return false;
             }
             
-            // إنشاء الجدول
-            $db->execute("
-                CREATE TABLE IF NOT EXISTS `tahini_stock` (
-                  `id` int(11) NOT NULL AUTO_INCREMENT,
-                  `supplier_id` int(11) NOT NULL,
-                  `quantity` decimal(10,3) NOT NULL DEFAULT 0.000 COMMENT 'الكمية بالكيلوجرام',
-                  `unit_price` decimal(10,2) DEFAULT NULL COMMENT 'سعر الكيلو',
-                  `notes` text DEFAULT NULL,
-                  `created_at` timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP,
-                  `updated_at` timestamp NULL DEFAULT NULL ON UPDATE CURRENT_TIMESTAMP,
-                  PRIMARY KEY (`id`),
-                  KEY `supplier_id_idx` (`supplier_id`),
-                  CONSTRAINT `tahini_stock_ibfk_1` FOREIGN KEY (`supplier_id`) REFERENCES `suppliers` (`id`) ON DELETE CASCADE
-                ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
-            ");
+            // محاولة إنشاء الجدول مع Foreign Key constraint
+            try {
+                $db->execute("
+                    CREATE TABLE IF NOT EXISTS `tahini_stock` (
+                      `id` int(11) NOT NULL AUTO_INCREMENT,
+                      `supplier_id` int(11) NOT NULL,
+                      `quantity` decimal(10,3) NOT NULL DEFAULT 0.000 COMMENT 'الكمية بالكيلوجرام',
+                      `unit_price` decimal(10,2) DEFAULT NULL COMMENT 'سعر الكيلو',
+                      `notes` text DEFAULT NULL,
+                      `created_at` timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                      `updated_at` timestamp NULL DEFAULT NULL ON UPDATE CURRENT_TIMESTAMP,
+                      PRIMARY KEY (`id`),
+                      KEY `supplier_id_idx` (`supplier_id`),
+                      CONSTRAINT `tahini_stock_ibfk_1` FOREIGN KEY (`supplier_id`) REFERENCES `suppliers` (`id`) ON DELETE CASCADE
+                    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
+                ");
+            } catch (Exception $createError) {
+                error_log("ensureTahiniStockTable: Failed to create table with FK constraint: " . $createError->getMessage());
+                // محاولة إنشاء الجدول بدون Foreign Key constraint
+                try {
+                    $db->execute("
+                        CREATE TABLE IF NOT EXISTS `tahini_stock` (
+                          `id` int(11) NOT NULL AUTO_INCREMENT,
+                          `supplier_id` int(11) NOT NULL,
+                          `quantity` decimal(10,3) NOT NULL DEFAULT 0.000 COMMENT 'الكمية بالكيلوجرام',
+                          `unit_price` decimal(10,2) DEFAULT NULL COMMENT 'سعر الكيلو',
+                          `notes` text DEFAULT NULL,
+                          `created_at` timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                          `updated_at` timestamp NULL DEFAULT NULL ON UPDATE CURRENT_TIMESTAMP,
+                          PRIMARY KEY (`id`),
+                          KEY `supplier_id_idx` (`supplier_id`)
+                        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
+                    ");
+                    error_log("ensureTahiniStockTable: Created table without FK constraint");
+                } catch (Exception $createError2) {
+                    error_log("ensureTahiniStockTable: Failed to create table without FK constraint: " . $createError2->getMessage());
+                    throw $createError2;
+                }
+            }
             
-            // التحقق مرة أخرى من أن الجدول تم إنشاؤه
+            // التحقق مرة أخرى من أن الجدول تم إنشاؤه ويمكن الوصول إليه
             $verifyCheck = $db->queryOne("SHOW TABLES LIKE 'tahini_stock'");
             if (!empty($verifyCheck)) {
-                $ready = true;
-                error_log("ensureTahiniStockTable: tahini_stock table created successfully");
+                // التحقق من أن الأعمدة الأساسية موجودة
+                try {
+                    $columnsCheck = $db->queryOne("SHOW COLUMNS FROM tahini_stock LIKE 'supplier_id'");
+                    if (!empty($columnsCheck)) {
+                        $ready = true;
+                        error_log("ensureTahiniStockTable: tahini_stock table created and verified successfully");
+                    } else {
+                        error_log("ensureTahiniStockTable: Table exists but required columns are missing");
+                        $ready = false;
+                    }
+                } catch (Exception $colError) {
+                    error_log("ensureTahiniStockTable: Error checking table columns: " . $colError->getMessage());
+                    $ready = false;
+                }
             } else {
                 error_log("ensureTahiniStockTable: Failed to verify tahini_stock table creation");
                 $ready = false;
