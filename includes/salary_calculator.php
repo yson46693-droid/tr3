@@ -543,7 +543,8 @@ function calculateSalary($userId, $month, $year, $bonus = 0, $deductions = 0) {
     // للآخرين: الراتب = الساعات × سعر الساعة
     if ($role === 'sales') {
         // للمندوبين: الراتب الأساسي هو hourly_rate مباشرة (راتب شهري ثابت)
-        $baseAmount = $hourlyRate;
+        // لكن فقط إذا كان لديهم ساعات عمل (إذا لم يعملوا، الراتب = 0)
+        $baseAmount = ($totalHours > 0) ? $hourlyRate : 0;
     } else {
         // للآخرين: الراتب = الساعات × سعر الساعة
         $baseAmount = $totalHours * $hourlyRate;
