@@ -391,20 +391,44 @@ if (!defined('ACCESS_ALLOWED')) {
                 return;
             }
             
-            // إخفاء شاشة التحميل فوراً بعد تحميل الصفحة
-            window.addEventListener('DOMContentLoaded', function() {
-                // إخفاء فوري بدون تأخير
-                pageLoader.classList.add('hidden');
-                
-                // إضافة تأثير fade-in للمحتوى
-                if (dashboardMain) {
-                    dashboardMain.classList.add('content-fade-in');
-                }
-                
-                // إزالة شاشة التحميل من DOM بعد انتهاء التأثير
+            // إظهار شاشة التحميل في كل مرة يتم فتح التطبيق
+            // إعادة تعيين شاشة التحميل عند فتح التطبيق
+            pageLoader.classList.remove('hidden');
+            pageLoader.style.display = 'flex';
+            
+            // إخفاء شاشة التحميل بعد تحميل الصفحة بالكامل
+            window.addEventListener('load', function() {
+                // تأخير بسيط لإظهار الشاشة بشكل كامل
                 setTimeout(function() {
-                    pageLoader.style.display = 'none';
-                }, 500);
+                    pageLoader.classList.add('hidden');
+                    
+                    // إضافة تأثير fade-in للمحتوى
+                    if (dashboardMain) {
+                        dashboardMain.classList.add('content-fade-in');
+                    }
+                    
+                    // إزالة شاشة التحميل من DOM بعد انتهاء التأثير
+                    setTimeout(function() {
+                        pageLoader.style.display = 'none';
+                    }, 500);
+                }, 800); // تأخير 800ms لإظهار الشاشة
+            });
+            
+            // إظهار شاشة التحميل عند العودة للتطبيق (للتطبيقات المثبتة)
+            document.addEventListener('visibilitychange', function() {
+                if (!document.hidden && pageLoader.classList.contains('hidden')) {
+                    // إعادة إظهار الشاشة عند العودة للتطبيق
+                    pageLoader.classList.remove('hidden');
+                    pageLoader.style.display = 'flex';
+                    
+                    // إخفاءها بعد ثانية
+                    setTimeout(function() {
+                        pageLoader.classList.add('hidden');
+                        setTimeout(function() {
+                            pageLoader.style.display = 'none';
+                        }, 500);
+                    }, 1000);
+                }
             });
             
             // إخفاء شاشة التحميل عند فتح أي Modal

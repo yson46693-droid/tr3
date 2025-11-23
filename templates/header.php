@@ -224,14 +224,14 @@ if (ob_get_level() > 0) {
     <!-- 🎬 Page Loading Animation CSS -->
     <?php if (!defined('ENABLE_PAGE_LOADER') || ENABLE_PAGE_LOADER): ?>
     <style>
-        /* شاشة التحميل الرئيسية - تدرجات أزرق متناسقة */
+        /* شاشة التحميل الرئيسية - ألوان التطبيق */
         #pageLoader {
             position: fixed;
             top: 0;
             left: 0;
             width: 100%;
             height: 100%;
-            background: linear-gradient(135deg, #4facfe 0%, #00f2fe 50%, #667eea 100%);
+            background: linear-gradient(135deg, #f4d03f 0%, #f1c40f 50%, #f4d03f 100%);
             background-size: 400% 400%;
             animation: gradientShift 8s ease infinite;
             display: flex;
@@ -366,7 +366,7 @@ if (ob_get_level() > 0) {
         
         @keyframes titleGlow {
             0%, 100% { text-shadow: 0 4px 20px rgba(0, 0, 0, 0.3); }
-            50% { text-shadow: 0 4px 30px rgba(255, 255, 255, 0.6), 0 0 40px rgba(79, 172, 254, 0.8); }
+            50% { text-shadow: 0 4px 30px rgba(255, 255, 255, 0.6), 0 0 40px rgba(241, 196, 15, 0.8); }
         }
         
         /* حاوية السبينر */
@@ -449,16 +449,16 @@ if (ob_get_level() > 0) {
         .loader-progress-bar {
             height: 100%;
             background: linear-gradient(90deg, 
-                #4facfe 0%, 
-                #00f2fe 25%, 
-                #fff 50%, 
-                #00f2fe 75%, 
-                #4facfe 100%
+                #f1c40f 0%, 
+                #fff 25%, 
+                #f4d03f 50%, 
+                #fff 75%, 
+                #f1c40f 100%
             );
             background-size: 200% 100%;
             animation: progressMove 1.8s ease-in-out infinite;
             border-radius: 10px;
-            box-shadow: 0 0 15px rgba(79, 172, 254, 0.8), 0 0 30px rgba(0, 242, 254, 0.6);
+            box-shadow: 0 0 15px rgba(241, 196, 15, 0.8), 0 0 30px rgba(244, 208, 63, 0.6);
         }
         
         /* الأنيميشنات */
