@@ -1698,15 +1698,6 @@ $pageTitle = ($view === 'advances') ? 'السلف' : (($view === 'pending') ? '�
                     <?php endfor; ?>
                 </select>
             </form>
-            <button type="button" class="btn btn-export" onclick="window.print()" title="طباعة">
-                <i class="bi bi-printer me-1"></i>طباعة
-            </button>
-            <button type="button" class="btn btn-export" onclick="exportToPDF()" title="تصدير PDF">
-                <i class="bi bi-file-pdf me-1"></i>PDF
-            </button>
-            <button type="button" class="btn btn-export" onclick="exportToExcel()" title="تصدير Excel">
-                <i class="bi bi-file-excel me-1"></i>Excel
-            </button>
         </div>
     </div>
 </div>
@@ -2259,7 +2250,45 @@ $pageTitle = ($view === 'advances') ? 'السلف' : (($view === 'pending') ? '�
                 // التأكد من أن الراتب الإجمالي لا يكون سالباً
                 $totalAmount = max(0, $totalAmount);
                 
-                $accumulated = floatval($salary['accumulated_amount'] ?? $totalAmount);
+                // إعادة حساب المبلغ التراكمي بدقة من جميع الرواتب السابقة
+                $salaryId = intval($salary['id'] ?? 0);
+                $accumulated = $totalAmount; // ابدأ بالراتب الحالي
+                
+                if ($salaryId > 0) {
+                    // حساب مجموع جميع الرواتب السابقة (حسب التاريخ)
+                    $yearColumnCheck = $db->queryOne("SHOW COLUMNS FROM salaries LIKE 'year'");
+                    $hasYearColumn = !empty($yearColumnCheck);
+                    
+                    if ($hasYearColumn) {
+                        // إذا كان عمود year موجوداً، استخدمه للترتيب
+                        $previousSalaries = $db->query(
+                            "SELECT total_amount FROM salaries 
+                             WHERE user_id = ? AND id != ? 
+                             AND (year < ? OR (year = ? AND month < ?))
+                             ORDER BY year ASC, month ASC",
+                            [$userId, $salaryId, $selectedYear, $selectedYear, $selectedMonth]
+                        );
+                    } else {
+                        // إذا لم يكن year موجوداً، استخدم month فقط
+                        $previousSalaries = $db->query(
+                            "SELECT total_amount FROM salaries 
+                             WHERE user_id = ? AND id != ? 
+                             AND month < ?
+                             ORDER BY month ASC",
+                            [$userId, $salaryId, $selectedMonth]
+                        );
+                    }
+                    
+                    // جمع جميع الرواتب السابقة
+                    foreach ($previousSalaries as $prevSalary) {
+                        $prevTotal = cleanFinancialValue($prevSalary['total_amount'] ?? 0);
+                        $accumulated += max(0, $prevTotal);
+                    }
+                } else {
+                    // إذا لم يكن هناك راتب محفوظ، استخدم القيمة المحسوبة فقط
+                    $accumulated = $totalAmount;
+                }
+                
                 $paid = floatval($salary['paid_amount'] ?? 0);
                 $remaining = max(0, $accumulated - $paid);
                 $collapseId = 'collapse_' . ($salary['id'] ?? 'temp_' . uniqid());
@@ -2357,6 +2386,45 @@ $pageTitle = ($view === 'advances') ? 'السلف' : (($view === 'pending') ? '�
                         
                         // التأكد من أن الراتب الإجمالي لا يكون سالباً
                         $totalSalary = max(0, $totalSalary);
+                        
+                        // إعادة حساب المبلغ التراكمي بدقة من جميع الرواتب السابقة
+                        $salaryId = intval($salary['id'] ?? 0);
+                        $accumulated = $totalSalary; // ابدأ بالراتب الحالي
+                        
+                        if ($salaryId > 0) {
+                            // حساب مجموع جميع الرواتب السابقة (حسب التاريخ)
+                            $yearColumnCheck = $db->queryOne("SHOW COLUMNS FROM salaries LIKE 'year'");
+                            $hasYearColumn = !empty($yearColumnCheck);
+                            
+                            if ($hasYearColumn) {
+                                // إذا كان عمود year موجوداً، استخدمه للترتيب
+                                $previousSalaries = $db->query(
+                                    "SELECT total_amount FROM salaries 
+                                     WHERE user_id = ? AND id != ? 
+                                     AND (year < ? OR (year = ? AND month < ?))
+                                     ORDER BY year ASC, month ASC",
+                                    [$userId, $salaryId, $selectedYear, $selectedYear, $selectedMonth]
+                                );
+                            } else {
+                                // إذا لم يكن year موجوداً، استخدم month فقط
+                                $previousSalaries = $db->query(
+                                    "SELECT total_amount FROM salaries 
+                                     WHERE user_id = ? AND id != ? 
+                                     AND month < ?
+                                     ORDER BY month ASC",
+                                    [$userId, $salaryId, $selectedMonth]
+                                );
+                            }
+                            
+                            // جمع جميع الرواتب السابقة
+                            foreach ($previousSalaries as $prevSalary) {
+                                $prevTotal = cleanFinancialValue($prevSalary['total_amount'] ?? 0);
+                                $accumulated += max(0, $prevTotal);
+                            }
+                        }
+                        
+                        $paid = floatval($salary['paid_amount'] ?? 0);
+                        $remaining = max(0, $accumulated - $paid);
                         ?>
                         <div class="detail-row">
                             <span class="detail-label"><?php echo ($userRole === 'sales') ? 'الراتب الشهري' : 'سعر الساعة'; ?>:</span>
