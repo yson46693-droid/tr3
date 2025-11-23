@@ -1806,7 +1806,7 @@ if ($hasPackagingUsageLogs) {
 
             $usageData[$materialId] = [
                 'total_used' => max(0.0, (float)($logRow['total_used'] ?? 0)),
-                'production_count' => max(0, (int)($logRow['usage_count'] ?? 0)),
+                'production_count' => 0, // سيتم تحديثه من production_materials
                 'first_used' => $logRow['first_used'] ?? null,
                 'last_used' => $logRow['last_used'] ?? null
             ];
@@ -1857,12 +1857,13 @@ if ($materialColumn) {
             $mappedId = $pkgMaterial ? (int) $pkgMaterial['id'] : $materialId;
 
             if (isset($usageData[$mappedId])) {
-                if ($usageDataHasLogs) {
-                    continue;
+                // تحديث production_count دائماً من production_materials (الحساب الصحيح)
+                $usageData[$mappedId]['production_count'] = max(0, (int)($usage['production_count'] ?? 0));
+                
+                // تحديث total_used فقط إذا لم تكن هناك سجلات (لأن السجلات قد تكون أكثر دقة)
+                if (!$usageDataHasLogs) {
+                    $usageData[$mappedId]['total_used'] += (float)($usage['total_used'] ?? 0);
                 }
-
-                $usageData[$mappedId]['total_used'] += (float)($usage['total_used'] ?? 0);
-                $usageData[$mappedId]['production_count'] += (int)($usage['production_count'] ?? 0);
 
                 $firstUsed = $usage['first_used'] ?? null;
                 $lastUsed = $usage['last_used'] ?? null;
@@ -1907,12 +1908,13 @@ if ($materialColumn) {
             }
 
             if (isset($usageData[$materialId])) {
-                if ($usageDataHasLogs) {
-                    continue;
+                // تحديث production_count دائماً من production_materials (الحساب الصحيح)
+                $usageData[$materialId]['production_count'] = max(0, (int)($usage['production_count'] ?? 0));
+                
+                // تحديث total_used فقط إذا لم تكن هناك سجلات (لأن السجلات قد تكون أكثر دقة)
+                if (!$usageDataHasLogs) {
+                    $usageData[$materialId]['total_used'] += (float)($usage['total_used'] ?? 0);
                 }
-
-                $usageData[$materialId]['total_used'] += (float)($usage['total_used'] ?? 0);
-                $usageData[$materialId]['production_count'] += (int)($usage['production_count'] ?? 0);
 
                 $firstUsed = $usage['first_used'] ?? null;
                 $lastUsed = $usage['last_used'] ?? null;
@@ -2036,7 +2038,8 @@ if ($hasPackagingUsageLogs && !$usageDataHasLogs) {
             }
 
             $usageData[$manualMaterialId]['total_used'] += (float)($manualUsage['total_used'] ?? 0);
-            $usageData[$manualMaterialId]['production_count'] += (int)($manualUsage['usage_count'] ?? 0);
+            // لا نستخدم usage_count من السجلات كـ production_count لأنه يحسب سجلات وليس عمليات إنتاج
+            // production_count سيتم تحديثه من production_materials
 
             $manualFirstUsed = $manualUsage['first_used'] ?? null;
             $manualLastUsed = $manualUsage['last_used'] ?? null;
@@ -2120,12 +2123,34 @@ $totalMaterials = count($filteredMaterials);
 $totalPages = ceil($totalMaterials / $perPage);
 $paginatedMaterials = array_slice($filteredMaterials, $offset, $perPage);
 
+// حساب عدد عمليات الإنتاج المميزة (وليس مجموع production_count لكل مادة)
+$totalProductionsCount = 0;
+if ($materialColumn) {
+    try {
+        $totalProductionsResult = $db->queryOne(
+            "SELECT COUNT(DISTINCT pm.production_id) as total_productions
+             FROM production_materials pm
+             WHERE pm.{$materialColumn} IS NOT NULL"
+        );
+        $totalProductionsCount = isset($totalProductionsResult['total_productions']) 
+            ? (int)$totalProductionsResult['total_productions'] 
+            : 0;
+    } catch (Exception $e) {
+        error_log("Error calculating total productions: " . $e->getMessage());
+        // في حالة الخطأ، نستخدم المجموع كبديل
+        $totalProductionsCount = array_sum(array_column($usageData, 'production_count'));
+    }
+} else {
+    // إذا لم يكن هناك materialColumn، نستخدم المجموع
+    $totalProductionsCount = array_sum(array_column($usageData, 'production_count'));
+}
+
 // إحصائيات
 $stats = [
     'total_materials' => count($packagingMaterials),
     'total_used' => array_sum(array_column($usageData, 'total_used')),
     'materials_with_usage' => count($usageData),
-    'total_productions' => array_sum(array_column($usageData, 'production_count'))
+    'total_productions' => $totalProductionsCount
 ];
 
 $packagingReport = [
