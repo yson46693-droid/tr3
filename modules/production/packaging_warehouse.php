@@ -531,51 +531,11 @@ if (!function_exists('buildPackagingReportHtmlDocument')) {
             <span class="value"><?php echo number_format($zeroQuantity); ?></span>
         </div>
         <div class="summary-card">
-            <span class="label">عمليات الإنتاج المرتبطة</span>
+            <span class="label">عمليات الإنتاج </span>
             <span class="value"><?php echo number_format($totalProductions); ?></span>
         </div>
     </section>
 
-    <section class="table-section">
-        <h2>التوزيع حسب النوع</h2>
-        <?php if (empty($typeBreakdown)): ?>
-            <div class="empty-state">لا توجد بيانات كافية لعرض التوزيع حسب النوع.</div>
-        <?php else: ?>
-            <table>
-                <thead>
-                <tr>
-                    <th>الفئة</th>
-                    <th>عدد الأصناف</th>
-                    <th>إجمالي الكمية</th>
-                    <th>تفاصيل الوحدات</th>
-                    <th>متوسط الكمية</th>
-                </tr>
-                </thead>
-                <tbody>
-                <?php foreach ($typeBreakdown as $typeLabel => $info): ?>
-                    <?php
-                    $count = isset($info['count']) ? (int)$info['count'] : 0;
-                    $total = isset($info['total_quantity']) ? (float)$info['total_quantity'] : 0.0;
-                    $average = isset($info['average_quantity']) ? (float)$info['average_quantity'] : 0.0;
-                    $units = isset($info['units']) && is_array($info['units']) ? $info['units'] : [];
-                    $unitBreakdown = [];
-                    foreach ($units as $unitName => $unitQuantity) {
-                        $unitBreakdown[] = number_format((float)$unitQuantity, 2) . ' ' . htmlspecialchars((string)$unitName, ENT_QUOTES, 'UTF-8');
-                    }
-                    $typeLabelSafe = htmlspecialchars((string)$typeLabel, ENT_QUOTES, 'UTF-8');
-                    ?>
-                    <tr>
-                        <td class="fw-semibold"><?php echo $typeLabelSafe; ?></td>
-                        <td><?php echo number_format($count); ?></td>
-                        <td><?php echo number_format($total, 2); ?></td>
-                        <td><?php echo $unitBreakdown ? implode(' • ', $unitBreakdown) : '-'; ?></td>
-                        <td><?php echo number_format($average, 2); ?></td>
-                    </tr>
-                <?php endforeach; ?>
-                </tbody>
-            </table>
-        <?php endif; ?>
-    </section>
 
     <section class="table-section">
         <h2><?php echo $lowStockOnly ? 'الأدوات ذات المخزون القليل أو المعدوم' : 'أعلى الأدوات من حيث الكمية'; ?></h2>
@@ -622,14 +582,6 @@ if (!function_exists('buildPackagingReportHtmlDocument')) {
                 </tbody>
             </table>
         <?php endif; ?>
-    </section>
-
-    <section class="notes">
-        <h3>ملاحظات سريعة</h3>
-        <ul>
-            <li>عدد الأدوات بدون مخزون حالياً: <strong><?php echo number_format($zeroQuantity); ?></strong>. يُنصح بمراجعة إجراءات إعادة التوريد.</li>
-            <li>إجمالي الاستخدام: <strong><?php echo number_format($totalUsed, 2); ?></strong> وحدة عبر <strong><?php echo number_format($totalProductions); ?></strong> عملية إنتاج.</li>
-        </ul>
     </section>
 </div>
 </body>
