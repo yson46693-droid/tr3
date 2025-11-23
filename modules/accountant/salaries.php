@@ -3179,7 +3179,10 @@ function openModifyModal(salaryId, salaryData) {
     document.getElementById('modifyUserName').value = salaryData.full_name || salaryData.username;
     // استخدام الراتب الأساسي المحسوب حديثاً إذا كان متوفراً، وإلا استخدم القيمة المحفوظة
     const baseAmount = salaryData.calculated_base_amount !== undefined ? salaryData.calculated_base_amount : (salaryData.base_amount || 0);
-    document.getElementById('modifyBaseAmount').value = formatCurrency(baseAmount);
+    const baseAmountElement = document.getElementById('modifyBaseAmount');
+    baseAmountElement.value = formatCurrency(baseAmount);
+    // حفظ القيمة الرقمية في data attribute لاستخدامها في الحساب
+    baseAmountElement.setAttribute('data-numeric-value', baseAmount);
     document.getElementById('modifyBonus').value = salaryData.bonus || 0;
     document.getElementById('modifyDeductions').value = salaryData.deductions || 0;
     
@@ -3191,7 +3194,9 @@ function openModifyModal(salaryId, salaryData) {
 }
 
 function calculateNewTotal() {
-    const baseAmount = parseFloat(document.getElementById('modifyBaseAmount').value.replace(/[^\d.]/g, '')) || 0;
+    // استخدام القيمة الرقمية المحفوظة في data attribute بدلاً من قراءة القيمة المنسقة
+    const baseAmountElement = document.getElementById('modifyBaseAmount');
+    const baseAmount = parseFloat(baseAmountElement.getAttribute('data-numeric-value') || baseAmountElement.value.replace(/[^\d.]/g, '')) || 0;
     const bonus = parseFloat(document.getElementById('modifyBonus').value) || 0;
     const deductions = parseFloat(document.getElementById('modifyDeductions').value) || 0;
     const collectionsBonus = parseFloat(document.getElementById('modifyCollectionsBonus').value) || 0;
