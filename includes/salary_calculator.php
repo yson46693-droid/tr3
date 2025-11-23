@@ -110,40 +110,17 @@ function calculateMonthlyHours($userId, $month, $year) {
         }
         
         foreach ($incompleteRecords as $record) {
-            $recordDate = $record['date'];
-            $checkInTime = $record['check_in_time'];
-            $today = date('Y-m-d');
-            
-            // تحديد وقت الانتهاء للحساب
-            $endTime = null;
-            
-            if ($recordDate === $today) {
-                // إذا كان السجل في نفس اليوم، استخدم الوقت الحالي
-                $endTime = date('Y-m-d H:i:s');
-            } elseif ($workTime) {
-                // إذا كان السجل في يوم سابق، استخدم نهاية يوم العمل الرسمي
-                $endTime = $recordDate . ' ' . $workTime['end'];
-            } else {
-                // إذا لم يكن هناك موعد عمل رسمي، استخدم نهاية اليوم (23:59:59)
-                $endTime = $recordDate . ' 23:59:59';
-            }
-            
-            // حساب الساعات من وقت الحضور حتى وقت الانتهاء
-            if ($checkInTime && $endTime) {
-                $checkInTimestamp = strtotime($checkInTime);
-                $endTimestamp = strtotime($endTime);
-                
-                if ($endTimestamp > $checkInTimestamp) {
-                    $hours = ($endTimestamp - $checkInTimestamp) / 3600;
-                    $totalHours += $hours;
-                }
-            }
+            // إذا لم يسجل المستخدم الانصراف، يحتسب النظام 5 ساعات فقط
+            $totalHours += 5.0;
         }
         
         $totalHours = round($totalHours, 2);
         
         // تسجيل للتأكد من أن الساعات تُحسب بشكل صحيح
-        error_log("calculateMonthlyHours: user_id={$userId}, month={$month}, year={$year}, month_key={$monthKey}, completed_hours={$completedResult['total_hours'] ?? 0}, incomplete_count=" . count($incompleteRecords) . ", total_hours={$totalHours}");
+        $completedHours = isset($completedResult['total_hours']) ? $completedResult['total_hours'] : 0;
+        $incompleteCount = count($incompleteRecords);
+        $incompleteHours = $incompleteCount * 5;
+        error_log("calculateMonthlyHours: user_id={$userId}, month={$month}, year={$year}, month_key={$monthKey}, completed_hours={$completedHours}, incomplete_count={$incompleteCount}, incomplete_hours={$incompleteHours}, total_hours={$totalHours}");
         
         return $totalHours;
     } else {

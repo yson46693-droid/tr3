@@ -651,6 +651,9 @@ function recordAttendanceCheckIn($userId, $photoBase64 = null) {
     
     $recordId = $result['insert_id'];
     
+    // التحقق من السجلات غير المكتملة في اليوم السابق وإرسال إشعارات
+    checkAndNotifyIncompleteAttendance($userId);
+    
     // التأكد من وجود عمود delay_count
     ensureDelayCountColumn();
     
@@ -1878,6 +1881,62 @@ function processAutoCheckoutForMissingEmployees(): void
         }
     } catch (Exception $e) {
         error_log('Failed to process auto checkout: ' . $e->getMessage());
+    }
+}
+
+/**
+ * التحقق من السجلات غير المكتملة في اليوم السابق وإرسال إشعارات
+ * يتم استدعاؤها عند تسجيل الحضور في اليوم التالي
+ */
+function checkAndNotifyIncompleteAttendance($userId) {
+    try {
+        $db = db();
+        $today = date('Y-m-d');
+        $yesterday = date('Y-m-d', strtotime('-1 day'));
+        
+        // التحقق من وجود سجلات غير مكتملة في اليوم السابق
+        $incompleteRecords = $db->query(
+            "SELECT id, date, check_in_time 
+             FROM attendance_records 
+             WHERE user_id = ? AND date = ? 
+             AND check_out_time IS NULL
+             AND check_in_time IS NOT NULL",
+            [$userId, $yesterday]
+        );
+        
+        if (empty($incompleteRecords)) {
+            return; // لا توجد سجلات غير مكتملة
+        }
+        
+        // الحصول على معلومات المستخدم
+        $user = $db->queryOne("SELECT full_name, username, role FROM users WHERE id = ?", [$userId]);
+        if (!$user) {
+            return;
+        }
+        
+        $userName = $user['full_name'] ?? $user['username'] ?? 'المستخدم';
+        $incompleteCount = count($incompleteRecords);
+        $calculatedHours = $incompleteCount * 5; // 5 ساعات لكل سجل غير مكتمل
+        
+        // إرسال إشعار للمستخدم
+        $title = 'تنبيه: نسيان تسجيل الانصراف';
+        $message = "تنبيه: لم تقم بتسجيل الانصراف في يوم {$yesterday}. تم احتساب {$calculatedHours} ساعة (5 ساعات لكل يوم) في حساب الراتب. يرجى عدم نسيان تسجيل الانصراف في المستقبل.";
+        
+        $attendanceLink = getAttendanceReminderLink($user['role']);
+        
+        createNotification(
+            $userId,
+            $title,
+            $message,
+            'warning',
+            $attendanceLink,
+            true // إرسال عبر Telegram
+        );
+        
+        error_log("Incomplete attendance notification sent to user {$userId} for date {$yesterday}, calculated hours: {$calculatedHours}");
+        
+    } catch (Exception $e) {
+        error_log('Failed to check and notify incomplete attendance: ' . $e->getMessage());
     }
 }
 
