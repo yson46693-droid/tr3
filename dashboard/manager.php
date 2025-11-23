@@ -880,7 +880,7 @@ function approveRequest(id, event) {
         btn.innerHTML = '<span class="spinner-border spinner-border-sm me-2"></span>جاري المعالجة...';
     }
     
-    fetch('api/approve.php', {
+    fetch('<?php echo getRelativeUrl("api/approve.php"); ?>', {
         method: 'POST',
         headers: {
             'Content-Type': 'application/x-www-form-urlencoded',
@@ -963,7 +963,7 @@ function rejectRequest(id, evt) {
         btn.innerHTML = '<span class="spinner-border spinner-border-sm me-2"></span>جاري المعالجة...';
     }
     
-    fetch('api/reject.php', {
+    fetch('<?php echo getRelativeUrl("api/reject.php"); ?>', {
         method: 'POST',
         headers: {
             'Content-Type': 'application/x-www-form-urlencoded',
