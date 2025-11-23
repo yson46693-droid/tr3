@@ -395,8 +395,24 @@ if (!defined('ACCESS_ALLOWED')) {
             // التحقق من sessionStorage - إذا كانت الشاشة قد ظهرت في هذه الجلسة، لا تظهرها مرة أخرى
             const splashShown = sessionStorage.getItem('pwaSplashShown');
             
+            function hideSplashScreen() {
+                setTimeout(function() {
+                    pageLoader.classList.add('hidden');
+                    
+                    // إضافة تأثير fade-in للمحتوى
+                    if (dashboardMain) {
+                        dashboardMain.classList.add('content-fade-in');
+                    }
+                    
+                    // إزالة شاشة التحميل من DOM بعد انتهاء التأثير
+                    setTimeout(function() {
+                        pageLoader.style.display = 'none';
+                    }, 500);
+                }, 800); // تأخير 800ms لإظهار الشاشة
+            }
+            
             if (!splashShown) {
-                // إظهار الشاشة عند فتح التطبيق لأول مرة في هذه الجلسة
+                // إظهار الشاشة فوراً عند فتح التطبيق لأول مرة في هذه الجلسة
                 pageLoader.classList.remove('hidden');
                 pageLoader.style.display = 'flex';
                 
@@ -404,25 +420,20 @@ if (!defined('ACCESS_ALLOWED')) {
                 sessionStorage.setItem('pwaSplashShown', 'true');
                 
                 // إخفاء شاشة التحميل بعد تحميل الصفحة بالكامل
-                window.addEventListener('load', function() {
-                    // تأخير بسيط لإظهار الشاشة بشكل كامل
-                    setTimeout(function() {
-                        pageLoader.classList.add('hidden');
-                        
-                        // إضافة تأثير fade-in للمحتوى
-                        if (dashboardMain) {
-                            dashboardMain.classList.add('content-fade-in');
-                        }
-                        
-                        // إزالة شاشة التحميل من DOM بعد انتهاء التأثير
-                        setTimeout(function() {
-                            pageLoader.style.display = 'none';
-                        }, 500);
-                    }, 800); // تأخير 800ms لإظهار الشاشة
-                });
+                if (document.readyState === 'complete') {
+                    // الصفحة محملة بالفعل
+                    hideSplashScreen();
+                } else if (document.readyState === 'interactive') {
+                    // DOM جاهز
+                    window.addEventListener('load', hideSplashScreen);
+                } else {
+                    // انتظار تحميل الصفحة
+                    window.addEventListener('load', hideSplashScreen);
+                }
             } else {
                 // إذا كانت الشاشة قد ظهرت من قبل، إخفاؤها مباشرة
                 pageLoader.style.display = 'none';
+                pageLoader.classList.add('hidden');
                 
                 // إضافة تأثير fade-in للمحتوى مباشرة
                 if (dashboardMain) {

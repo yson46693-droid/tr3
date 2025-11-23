@@ -427,8 +427,17 @@ $lang = $translations;
             // التحقق من sessionStorage - إذا كانت الشاشة قد ظهرت في هذه الجلسة، لا تظهرها مرة أخرى
             const splashShown = sessionStorage.getItem('pwaSplashShown');
             
+            function hideSplashScreen() {
+                setTimeout(function() {
+                    splashScreen.classList.add('hidden');
+                    setTimeout(function() {
+                        splashScreen.style.display = 'none';
+                    }, 500);
+                }, 800); // تأخير 800ms لإظهار الشاشة
+            }
+            
             if (!splashShown) {
-                // إظهار الشاشة عند فتح التطبيق لأول مرة في هذه الجلسة
+                // إظهار الشاشة فوراً عند فتح التطبيق لأول مرة في هذه الجلسة
                 splashScreen.classList.remove('hidden');
                 splashScreen.style.display = 'flex';
                 
@@ -436,17 +445,20 @@ $lang = $translations;
                 sessionStorage.setItem('pwaSplashShown', 'true');
                 
                 // إخفاء الشاشة بعد تحميل الصفحة بالكامل
-                window.addEventListener('load', function() {
-                    setTimeout(function() {
-                        splashScreen.classList.add('hidden');
-                        setTimeout(function() {
-                            splashScreen.style.display = 'none';
-                        }, 500);
-                    }, 800); // تأخير 800ms لإظهار الشاشة
-                });
+                if (document.readyState === 'complete') {
+                    // الصفحة محملة بالفعل
+                    hideSplashScreen();
+                } else if (document.readyState === 'interactive') {
+                    // DOM جاهز
+                    window.addEventListener('load', hideSplashScreen);
+                } else {
+                    // انتظار تحميل الصفحة
+                    window.addEventListener('load', hideSplashScreen);
+                }
             } else {
                 // إذا كانت الشاشة قد ظهرت من قبل، إخفاؤها مباشرة
                 splashScreen.style.display = 'none';
+                splashScreen.classList.add('hidden');
             }
         })();
         
