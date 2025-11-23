@@ -2266,6 +2266,7 @@ $pageTitle = ($view === 'advances') ? 'السلف' : (($view === 'pending') ? '�
                 // إضافة الراتب الأساسي المحسوب حديثاً إلى البيانات المرسلة للنموذج
                 // لضمان أن النموذج يعرض نفس القيمة المعروضة في البطاقة
                 $salary['calculated_base_amount'] = $baseAmount;
+                $salary['calculated_collections_bonus'] = $collectionsBonus;
                 
                 // إعادة حساب المبلغ التراكمي بدقة من جميع الرواتب السابقة
                 $salaryId = intval($salary['id'] ?? 0);
@@ -2722,6 +2723,7 @@ $pageTitle = ($view === 'advances') ? 'السلف' : (($view === 'pending') ? '�
                         <label class="form-label">الراتب الأساسي</label>
                         <input type="text" class="form-control" id="modifyBaseAmount" readonly>
                     </div>
+                    <input type="hidden" id="modifyCollectionsBonus" value="0">
                     <div class="row">
                         <div class="col-md-6 mb-3">
                             <label for="modifyBonus" class="form-label">مكافأة</label>
@@ -3181,6 +3183,10 @@ function openModifyModal(salaryId, salaryData) {
     document.getElementById('modifyBonus').value = salaryData.bonus || 0;
     document.getElementById('modifyDeductions').value = salaryData.deductions || 0;
     
+    // حفظ collectionsBonus في حقل مخفي
+    const collectionsBonus = salaryData.calculated_collections_bonus !== undefined ? salaryData.calculated_collections_bonus : (salaryData.collections_bonus || 0);
+    document.getElementById('modifyCollectionsBonus').value = collectionsBonus;
+    
     calculateNewTotal();
 }
 
@@ -3188,9 +3194,12 @@ function calculateNewTotal() {
     const baseAmount = parseFloat(document.getElementById('modifyBaseAmount').value.replace(/[^\d.]/g, '')) || 0;
     const bonus = parseFloat(document.getElementById('modifyBonus').value) || 0;
     const deductions = parseFloat(document.getElementById('modifyDeductions').value) || 0;
+    const collectionsBonus = parseFloat(document.getElementById('modifyCollectionsBonus').value) || 0;
     
-    const newTotal = baseAmount + bonus - deductions;
-    document.getElementById('newTotalAmount').textContent = formatCurrency(newTotal);
+    // حساب الراتب الجديد بنفس طريقة بطاقة الموظف
+    // الراتب الإجمالي = الراتب الأساسي + المكافآت + نسبة التحصيلات - الخصومات
+    const newTotal = baseAmount + bonus + collectionsBonus - deductions;
+    document.getElementById('newTotalAmount').textContent = formatCurrency(Math.max(0, newTotal));
 }
 
 function formatCurrency(amount) {
