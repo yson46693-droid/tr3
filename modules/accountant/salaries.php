@@ -2228,10 +2228,20 @@ $pageTitle = ($view === 'advances') ? 'السلف' : (($view === 'pending') ? '�
                 
                 // حساب الإجمالي الصحيح مع تضمين نسبة التحصيلات للمندوبين
                 $userId = intval($salary['user_id'] ?? 0);
-                $baseAmount = cleanFinancialValue($salary['base_amount'] ?? 0);
+                $hourlyRate = cleanFinancialValue($salary['hourly_rate'] ?? $salary['current_hourly_rate'] ?? 0);
                 $bonus = cleanFinancialValue($salary['bonus'] ?? 0);
                 $deductions = cleanFinancialValue($salary['deductions'] ?? 0);
                 $collectionsBonus = cleanFinancialValue($salary['collections_bonus'] ?? 0);
+                
+                // حساب الراتب الأساسي بناءً على نوع المستخدم
+                if ($roleClass === 'sales') {
+                    // للمندوبين: الراتب الأساسي هو hourly_rate مباشرة (راتب شهري ثابت)
+                    $baseAmount = cleanFinancialValue($salary['base_amount'] ?? $hourlyRate);
+                } else {
+                    // لعمال الإنتاج والمحاسبين: الراتب = عدد الساعات × سعر الساعة
+                    $actualHours = calculateMonthlyHours($userId, $selectedMonth, $selectedYear);
+                    $baseAmount = round($actualHours * $hourlyRate, 2);
+                }
                 
                 // إذا كان مندوب مبيعات، أعد حساب نسبة التحصيلات
                 if ($roleClass === 'sales') {
@@ -2244,8 +2254,12 @@ $pageTitle = ($view === 'advances') ? 'السلف' : (($view === 'pending') ? '�
                     }
                 }
                 
-                // حساب الراتب الإجمالي الصحيح
+                // حساب الراتب الإجمالي الصحيح دائماً من المكونات
+                // الراتب الإجمالي = الراتب الأساسي + المكافآت + نسبة التحصيلات - الخصومات
                 $totalAmount = $baseAmount + $bonus + $collectionsBonus - $deductions;
+                
+                // التأكد من أن الراتب الإجمالي لا يكون سالباً
+                $totalAmount = max(0, $totalAmount);
                 
                 $accumulated = floatval($salary['accumulated_amount'] ?? $totalAmount);
                 $paid = floatval($salary['paid_amount'] ?? 0);
@@ -2326,7 +2340,6 @@ $pageTitle = ($view === 'advances') ? 'السلف' : (($view === 'pending') ? '�
                         // الحصول على القيم المالية
                         $bonus = cleanFinancialValue($salary['bonus'] ?? 0);
                         $deductions = cleanFinancialValue($salary['deductions'] ?? 0);
-                        $totalSalary = cleanFinancialValue($salary['total_amount'] ?? 0);
                         
                         // حساب الراتب الأساسي بناءً على عدد الساعات المعروض
                         // لعمال الإنتاج والمحاسبين: الراتب = عدد الساعات × سعر الساعة
@@ -2340,13 +2353,12 @@ $pageTitle = ($view === 'advances') ? 'السلف' : (($view === 'pending') ? '�
                             $baseAmount = round($actualHoursForBase * $hourlyRate, 2);
                         }
                         
-                        // حساب الراتب الإجمالي المتوقع مع نسبة التحصيلات
-                        $expectedTotalWithCollections = $baseAmount + $bonus + $collectionsBonus - $deductions;
+                        // حساب الراتب الإجمالي دائماً من المكونات لضمان الدقة
+                        // الراتب الإجمالي = الراتب الأساسي + المكافآت + نسبة التحصيلات - الخصومات
+                        $totalSalary = $baseAmount + $bonus + $collectionsBonus - $deductions;
                         
-                        // إذا كان الراتب الإجمالي المحفوظ لا يتضمن نسبة التحصيلات، أضفها
-                        if ($userRole === 'sales' && abs($totalSalary - $expectedTotalWithCollections) > 0.01) {
-                            $totalSalary = $expectedTotalWithCollections;
-                        }
+                        // التأكد من أن الراتب الإجمالي لا يكون سالباً
+                        $totalSalary = max(0, $totalSalary);
                         ?>
                         <div class="detail-row">
                             <span class="detail-label"><?php echo ($userRole === 'sales') ? 'الراتب الشهري' : 'سعر الساعة'; ?>:</span>
