@@ -1193,6 +1193,22 @@ if (isset($_GET['ajax']) && $_GET['ajax'] == '1' && $salaryId > 0) {
     if ($salary) {
         // حساب الساعات من الحضور مباشرة لضمان الدقة (مطابقة مع صفحة الحضور)
         $actualHours = calculateMonthlyHours($salary['user_id'], $selectedMonth, $selectedYear);
+        
+        // تحديث total_hours تلقائياً إذا كان مختلفاً عن القيمة الفعلية
+        $savedTotalHours = floatval($salary['total_hours'] ?? 0);
+        if (abs($actualHours - $savedTotalHours) > 0.01) {
+            // تحديث total_hours في قاعدة البيانات
+            try {
+                $db->execute(
+                    "UPDATE salaries SET total_hours = ?, updated_at = NOW() WHERE id = ?",
+                    [$actualHours, $salary['id']]
+                );
+                // تحديث القيمة في المتغير للعرض
+                $salary['total_hours'] = $actualHours;
+            } catch (Exception $e) {
+                error_log("Error updating total_hours for salary ID {$salary['id']}: " . $e->getMessage());
+            }
+        }
         ?>
         <div class="row g-3">
             <div class="col-md-6">
@@ -2287,6 +2303,25 @@ $pageTitle = ($view === 'advances') ? 'السلف' : (($view === 'pending') ? '�
                 } else {
                     // لعمال الإنتاج والمحاسبين: الراتب = عدد الساعات × سعر الساعة
                     $actualHours = calculateMonthlyHours($userId, $selectedMonth, $selectedYear);
+                    
+                    // تحديث total_hours تلقائياً إذا كان مختلفاً عن القيمة الفعلية
+                    if ($hasSalaryId) {
+                        $savedTotalHours = floatval($salary['total_hours'] ?? 0);
+                        if (abs($actualHours - $savedTotalHours) > 0.01) {
+                            // تحديث total_hours في قاعدة البيانات
+                            try {
+                                $db->execute(
+                                    "UPDATE salaries SET total_hours = ?, updated_at = NOW() WHERE id = ?",
+                                    [$actualHours, $salary['id']]
+                                );
+                                // تحديث القيمة في المتغير للعرض
+                                $salary['total_hours'] = $actualHours;
+                            } catch (Exception $e) {
+                                error_log("Error updating total_hours for salary ID {$salary['id']}: " . $e->getMessage());
+                            }
+                        }
+                    }
+                    
                     $baseAmount = round($actualHours * $hourlyRate, 2);
                 }
                 
@@ -2500,6 +2535,24 @@ $pageTitle = ($view === 'advances') ? 'السلف' : (($view === 'pending') ? '�
                             <?php 
                             // حساب الساعات مباشرة من الحضور لضمان الدقة (مطابقة مع صفحة الحضور)
                             $actualHoursForModal = calculateMonthlyHours($userId, $selectedMonth, $selectedYear);
+                            
+                            // تحديث total_hours تلقائياً إذا كان مختلفاً عن القيمة الفعلية
+                            if ($hasSalaryId) {
+                                $savedTotalHoursForModal = floatval($salary['total_hours'] ?? 0);
+                                if (abs($actualHoursForModal - $savedTotalHoursForModal) > 0.01) {
+                                    // تحديث total_hours في قاعدة البيانات
+                                    try {
+                                        $db->execute(
+                                            "UPDATE salaries SET total_hours = ?, updated_at = NOW() WHERE id = ?",
+                                            [$actualHoursForModal, $salary['id']]
+                                        );
+                                        // تحديث القيمة في المتغير للعرض
+                                        $salary['total_hours'] = $actualHoursForModal;
+                                    } catch (Exception $e) {
+                                        error_log("Error updating total_hours for salary ID {$salary['id']} in modal: " . $e->getMessage());
+                                    }
+                                }
+                            }
                             ?>
                             <span class="detail-value"><?php echo formatHours($actualHoursForModal); ?></span>
                         </div>
