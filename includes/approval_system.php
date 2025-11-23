@@ -185,27 +185,14 @@ function requestApproval($type, $entityId, $requestedBy, $notes = null) {
                             $currentDeductions = cleanFinancialValue($salary['deductions'] ?? 0);
                             $collectionsBonus = cleanFinancialValue($salary['collections_bonus'] ?? 0);
                             
-                            // حساب الراتب الأساسي بناءً على نوع المستخدم (نفس كود بطاقة الموظف)
-                            // استخدم base_amount المحفوظ أولاً، وإذا لم يكن موجوداً أو كان 0، احسبه
-                            $savedBaseAmount = cleanFinancialValue($salary['base_amount'] ?? 0);
-                            
+                            // حساب الراتب الأساسي بناءً على نوع المستخدم (نفس كود بطاقة الموظف بالضبط)
                             if ($userRole === 'sales') {
                                 // للمندوبين: الراتب الأساسي هو hourly_rate مباشرة (راتب شهري ثابت)
-                                if ($savedBaseAmount > 0) {
-                                    $baseAmount = $savedBaseAmount;
-                                } else {
-                                    $baseAmount = cleanFinancialValue($hourlyRate);
-                                }
+                                $baseAmount = cleanFinancialValue($salary['base_amount'] ?? $hourlyRate);
                             } else {
-                                // لعمال الإنتاج والمحاسبين: الراتب = عدد الساعات × سعر الساعة
-                                if ($savedBaseAmount > 0 && $hourlyRate > 0) {
-                                    // استخدم القيمة المحفوظة إذا كانت موجودة وصحيحة
-                                    $baseAmount = $savedBaseAmount;
-                                } else {
-                                    // احسب من الساعات إذا لم تكن القيمة المحفوظة موجودة
-                                    $actualHours = calculateMonthlyHours($userId, $month, $year);
-                                    $baseAmount = round($actualHours * $hourlyRate, 2);
-                                }
+                                // لعمال الإنتاج والمحاسبين: دائماً إعادة الحساب من الساعات (مطابق لبطاقة الموظف)
+                                $actualHours = calculateMonthlyHours($userId, $month, $year);
+                                $baseAmount = round($actualHours * $hourlyRate, 2);
                             }
                             
                             // إذا كان مندوب مبيعات، أعد حساب نسبة التحصيلات (نفس كود بطاقة الموظف)
