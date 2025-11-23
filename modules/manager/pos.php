@@ -1,6 +1,6 @@
 <?php
 /**
- * نقطة بيع محلية للمدير - بيع من مخزن الشركة الرئيسي مع طلبات الشحن
+ * نقطة بيع المدير - بيع من مخزن الشركة الرئيسي
  */
 
 if (!defined('ACCESS_ALLOWED')) {
@@ -17,8 +17,8 @@ require_once __DIR__ . '/../../includes/invoices.php';
 require_once __DIR__ . '/../../includes/reports.php';
 require_once __DIR__ . '/../../includes/simple_telegram.php';
 
-if (!function_exists('renderManagerInvoiceHtml')) {
-    function renderManagerInvoiceHtml(array $invoice, array $meta = []): string
+if (!function_exists('renderSalesInvoiceHtml')) {
+    function renderSalesInvoiceHtml(array $invoice, array $meta = []): string
     {
         ob_start();
         $selectedInvoice = $invoice;
@@ -29,8 +29,8 @@ if (!function_exists('renderManagerInvoiceHtml')) {
     }
 }
 
-if (!function_exists('storeManagerInvoiceDocument')) {
-    function storeManagerInvoiceDocument(array $invoice, array $meta = []): ?array
+if (!function_exists('storeSalesInvoiceDocument')) {
+    function storeSalesInvoiceDocument(array $invoice, array $meta = []): ?array
     {
         try {
             if (!function_exists('ensurePrivateDirectory')) {
@@ -49,22 +49,22 @@ if (!function_exists('storeManagerInvoiceDocument')) {
             ensurePrivateDirectory($basePath);
 
             $exportsDir = $basePath . DIRECTORY_SEPARATOR . 'exports';
-            $managerDir = $exportsDir . DIRECTORY_SEPARATOR . 'manager-pos';
+            $salesDir = $exportsDir . DIRECTORY_SEPARATOR . 'sales-pos';
 
             ensurePrivateDirectory($exportsDir);
-            ensurePrivateDirectory($managerDir);
+            ensurePrivateDirectory($salesDir);
 
-            if (!is_dir($managerDir) || !is_writable($managerDir)) {
-                error_log('Manager POS invoice directory not writable: ' . $managerDir);
+            if (!is_dir($salesDir) || !is_writable($salesDir)) {
+                error_log('POS invoice directory not writable: ' . $salesDir);
                 return null;
             }
 
-            $document = renderManagerInvoiceHtml($invoice, $meta);
+            $document = renderSalesInvoiceHtml($invoice, $meta);
             if ($document === '') {
                 return null;
             }
 
-            $pattern = $managerDir . DIRECTORY_SEPARATOR . 'pos-invoice-*';
+            $pattern = $salesDir . DIRECTORY_SEPARATOR . 'pos-invoice-*';
             foreach (glob($pattern) ?: [] as $file) {
                 if (is_string($file)) {
                     @unlink($file);
@@ -74,13 +74,13 @@ if (!function_exists('storeManagerInvoiceDocument')) {
             $token = bin2hex(random_bytes(8));
             $normalizedNumber = preg_replace('/[^A-Za-z0-9_-]+/', '-', (string) ($invoice['invoice_number'] ?? 'INV'));
             $filename = sprintf('pos-invoice-%s-%s-%s.html', date('Ymd-His'), $normalizedNumber, $token);
-            $fullPath = $managerDir . DIRECTORY_SEPARATOR . $filename;
+            $fullPath = $salesDir . DIRECTORY_SEPARATOR . $filename;
 
             if (@file_put_contents($fullPath, $document) === false) {
                 return null;
             }
 
-            $relativePath = 'exports/manager-pos/' . $filename;
+            $relativePath = 'exports/sales-pos/' . $filename;
             $viewerPath = '/reports/view.php?type=export&file=' . rawurlencode($relativePath) . '&token=' . $token;
             $printPath = $viewerPath . '&print=1';
 
@@ -102,9 +102,97 @@ if (!function_exists('storeManagerInvoiceDocument')) {
                 'token' => $token,
             ];
         } catch (Throwable $error) {
-            error_log('Manager POS invoice storage failed: ' . $error->getMessage());
+            error_log('POS invoice storage failed: ' . $error->getMessage());
             return null;
         }
+    }
+}
+
+// إنشاء جداول طلبات الشحن إذا لم تكن موجودة
+function ensureShippingTables(Database $db): void
+{
+    try {
+        $db->execute(
+            "CREATE TABLE IF NOT EXISTS `shipping_companies` (
+                `id` int(11) NOT NULL AUTO_INCREMENT,
+                `name` varchar(150) NOT NULL,
+                `contact_person` varchar(100) DEFAULT NULL,
+                `phone` varchar(30) DEFAULT NULL,
+                `email` varchar(120) DEFAULT NULL,
+                `address` text DEFAULT NULL,
+                `balance` decimal(15,2) NOT NULL DEFAULT 0.00,
+                `status` enum('active','inactive') NOT NULL DEFAULT 'active',
+                `notes` text DEFAULT NULL,
+                `created_by` int(11) DEFAULT NULL,
+                `updated_by` int(11) DEFAULT NULL,
+                `created_at` timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                `updated_at` timestamp NULL DEFAULT NULL ON UPDATE CURRENT_TIMESTAMP,
+                PRIMARY KEY (`id`),
+                UNIQUE KEY `name` (`name`),
+                KEY `status` (`status`),
+                KEY `created_by` (`created_by`),
+                KEY `updated_by` (`updated_by`),
+                CONSTRAINT `shipping_companies_created_fk` FOREIGN KEY (`created_by`) REFERENCES `users` (`id`) ON DELETE SET NULL,
+                CONSTRAINT `shipping_companies_updated_fk` FOREIGN KEY (`updated_by`) REFERENCES `users` (`id`) ON DELETE SET NULL
+            ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci"
+        );
+    } catch (Throwable $e) {
+        error_log('shipping_companies table creation error: ' . $e->getMessage());
+    }
+
+    try {
+        $db->execute(
+            "CREATE TABLE IF NOT EXISTS `shipping_company_orders` (
+                `id` int(11) NOT NULL AUTO_INCREMENT,
+                `order_number` varchar(50) NOT NULL,
+                `shipping_company_id` int(11) NOT NULL,
+                `customer_id` int(11) NOT NULL,
+                `invoice_id` int(11) DEFAULT NULL,
+                `total_amount` decimal(15,2) NOT NULL DEFAULT 0.00,
+                `status` enum('assigned','in_transit','delivered','cancelled') NOT NULL DEFAULT 'assigned',
+                `handed_over_at` timestamp NULL DEFAULT NULL,
+                `delivered_at` timestamp NULL DEFAULT NULL,
+                `notes` text DEFAULT NULL,
+                `created_by` int(11) DEFAULT NULL,
+                `updated_by` int(11) DEFAULT NULL,
+                `created_at` timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                `updated_at` timestamp NULL DEFAULT NULL ON UPDATE CURRENT_TIMESTAMP,
+                PRIMARY KEY (`id`),
+                UNIQUE KEY `order_number` (`order_number`),
+                KEY `shipping_company_id` (`shipping_company_id`),
+                KEY `customer_id` (`customer_id`),
+                KEY `invoice_id` (`invoice_id`),
+                KEY `status` (`status`),
+                CONSTRAINT `shipping_company_orders_company_fk` FOREIGN KEY (`shipping_company_id`) REFERENCES `shipping_companies` (`id`) ON DELETE CASCADE,
+                CONSTRAINT `shipping_company_orders_customer_fk` FOREIGN KEY (`customer_id`) REFERENCES `customers` (`id`) ON DELETE CASCADE,
+                CONSTRAINT `shipping_company_orders_invoice_fk` FOREIGN KEY (`invoice_id`) REFERENCES `invoices` (`id`) ON DELETE SET NULL,
+                CONSTRAINT `shipping_company_orders_created_fk` FOREIGN KEY (`created_by`) REFERENCES `users` (`id`) ON DELETE SET NULL,
+                CONSTRAINT `shipping_company_orders_updated_fk` FOREIGN KEY (`updated_by`) REFERENCES `users` (`id`) ON DELETE SET NULL
+            ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci"
+        );
+    } catch (Throwable $e) {
+        error_log('shipping_company_orders table creation error: ' . $e->getMessage());
+    }
+
+    try {
+        $db->execute(
+            "CREATE TABLE IF NOT EXISTS `shipping_company_order_items` (
+                `id` int(11) NOT NULL AUTO_INCREMENT,
+                `order_id` int(11) NOT NULL,
+                `product_id` int(11) NOT NULL,
+                `quantity` decimal(10,2) NOT NULL,
+                `unit_price` decimal(15,2) NOT NULL,
+                `total_price` decimal(15,2) NOT NULL,
+                `created_at` timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                PRIMARY KEY (`id`),
+                KEY `order_id` (`order_id`),
+                KEY `product_id` (`product_id`),
+                CONSTRAINT `shipping_company_order_items_order_fk` FOREIGN KEY (`order_id`) REFERENCES `shipping_company_orders` (`id`) ON DELETE CASCADE,
+                CONSTRAINT `shipping_company_order_items_product_fk` FOREIGN KEY (`product_id`) REFERENCES `products` (`id`) ON DELETE CASCADE
+            ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci"
+        );
+    } catch (Throwable $e) {
+        error_log('shipping_company_order_items table creation error: ' . $e->getMessage());
     }
 }
 
@@ -139,107 +227,148 @@ $success = '';
 $validationErrors = [];
 
 // التأكد من وجود الجداول المطلوبة
-$customersTableExists = $db->queryOne("SHOW TABLES LIKE 'customers'");
-$productsTableExists = $db->queryOne("SHOW TABLES LIKE 'products'");
-$salesTableExists = $db->queryOne("SHOW TABLES LIKE 'sales'");
-$warehousesTableExists = $db->queryOne("SHOW TABLES LIKE 'warehouses'");
-
-if (empty($customersTableExists) || empty($productsTableExists) || empty($salesTableExists)) {
-    $error = 'بعض الجداول المطلوبة غير متوفرة في قاعدة البيانات. يرجى التواصل مع المسؤول.';
-}
+ensureShippingTables($db);
 
 // الحصول على المخزن الرئيسي
-$mainWarehouse = null;
-$mainWarehouseId = null;
-
-if (!$error && !empty($warehousesTableExists)) {
-    $mainWarehouse = $db->queryOne(
-        "SELECT id, name, location, description FROM warehouses WHERE warehouse_type = 'main' AND status = 'active' LIMIT 1"
+$mainWarehouse = $db->queryOne("SELECT id, name FROM warehouses WHERE warehouse_type = 'main' AND status = 'active' LIMIT 1");
+if (!$mainWarehouse) {
+    $db->execute(
+        "INSERT INTO warehouses (name, warehouse_type, status, location, description) VALUES (?, 'main', 'active', ?, ?)",
+        ['مخزن الشركة الرئيسي', 'الموقع الرئيسي للشركة', 'المخزن الرئيسي للشركة']
     );
-
-    if (!$mainWarehouse) {
-        $db->execute(
-            "INSERT INTO warehouses (name, warehouse_type, status, location, description) VALUES (?, 'main', 'active', ?, ?)",
-            ['المخزن الرئيسي', 'الموقع الرئيسي للشركة', 'مخزن الشركة الرئيسي']
-        );
-        $mainWarehouseId = $db->getLastInsertId();
-        $mainWarehouse = $db->queryOne(
-            "SELECT id, name, location, description FROM warehouses WHERE id = ?",
-            [$mainWarehouseId]
-        );
-    }
-
-    if ($mainWarehouse) {
-        $mainWarehouseId = (int) $mainWarehouse['id'];
-    }
+    $mainWarehouse = $db->queryOne("SELECT id, name FROM warehouses WHERE warehouse_type = 'main' AND status = 'active' LIMIT 1");
 }
+
+$mainWarehouseId = $mainWarehouse['id'] ?? null;
 
 // تحميل قائمة العملاء
 $customers = [];
-if (!$error && !empty($customersTableExists)) {
-    $statusColumnExists = $db->queryOne("SHOW COLUMNS FROM customers LIKE 'status'");
-    $customerSql = "SELECT id, name FROM customers WHERE 1=1";
-    $customerParams = [];
-
-    if (!empty($statusColumnExists)) {
-        $customerSql .= " AND status = 'active'";
-    }
-
-    $customerSql .= " ORDER BY name ASC";
-    $customers = $db->query($customerSql, $customerParams);
+try {
+    $customers = $db->query("SELECT id, name FROM customers WHERE status = 'active' ORDER BY name ASC");
+} catch (Throwable $e) {
+    error_log('Error fetching customers: ' . $e->getMessage());
 }
 
-// تحميل منتجات المخزن الرئيسي
-$mainWarehouseProducts = [];
+// تحميل منتجات الشركة (منتجات المصنع + المنتجات الخارجية)
+$companyInventory = [];
 $inventoryStats = [
     'total_products' => 0,
     'total_quantity' => 0,
     'total_value' => 0,
 ];
 
-if (!$error && $mainWarehouseId) {
-    try {
-        $mainWarehouseProducts = $db->query(
-            "SELECT 
-                id AS product_id,
-                name AS product_name,
-                COALESCE(category, '') AS category,
-                quantity,
-                unit_price,
-                COALESCE(unit, 'قطعة') AS unit
-            FROM products
-            WHERE status = 'active' 
-                AND quantity > 0
-                AND (warehouse_id = ? OR (warehouse_id IS NULL AND ? IN (SELECT id FROM warehouses WHERE warehouse_type = 'main')))
-            ORDER BY name ASC",
-            [$mainWarehouseId, $mainWarehouseId]
-        ) ?? [];
-
-        foreach ($mainWarehouseProducts as &$item) {
-            $item['quantity'] = cleanFinancialValue($item['quantity'] ?? 0);
-            $item['unit_price'] = cleanFinancialValue($item['unit_price'] ?? 0);
-            $computedTotal = cleanFinancialValue(($item['quantity'] ?? 0) * ($item['unit_price'] ?? 0));
-            $item['total_value'] = $computedTotal;
-
+try {
+    // جلب منتجات المصنع من finished_products
+    $finishedProductsTableExists = $db->queryOne("SHOW TABLES LIKE 'finished_products'");
+    if (!empty($finishedProductsTableExists)) {
+        $factoryProducts = $db->query("
+            SELECT 
+                fp.id AS batch_id,
+                fp.batch_number,
+                COALESCE(fp.product_id, bn.product_id) AS product_id,
+                COALESCE(NULLIF(TRIM(fp.product_name), ''), pr.name, 'غير محدد') AS product_name,
+                pr.category as product_category,
+                fp.quantity_produced AS quantity,
+                COALESCE(fp.unit_price, pr.unit_price, 0) AS unit_price,
+                fp.production_date,
+                'factory' AS product_type
+            FROM finished_products fp
+            LEFT JOIN batch_numbers bn ON fp.batch_number = bn.batch_number
+            LEFT JOIN products pr ON COALESCE(fp.product_id, bn.product_id) = pr.id
+            WHERE (fp.quantity_produced IS NULL OR fp.quantity_produced > 0)
+            ORDER BY fp.production_date DESC, fp.id DESC
+        ");
+        
+        foreach ($factoryProducts as $fp) {
+            $productId = (int)($fp['product_id'] ?? 0);
+            $quantity = (float)($fp['quantity'] ?? 0);
+            $unitPrice = (float)($fp['unit_price'] ?? 0);
+            $totalValue = $quantity * $unitPrice;
+            
+            $companyInventory[] = [
+                'product_id' => $productId,
+                'batch_id' => (int)($fp['batch_id'] ?? 0),
+                'batch_number' => $fp['batch_number'] ?? '',
+                'product_name' => $fp['product_name'] ?? 'غير محدد',
+                'category' => $fp['product_category'] ?? '',
+                'quantity' => $quantity,
+                'unit_price' => $unitPrice,
+                'total_value' => $totalValue,
+                'product_type' => 'factory',
+                'production_date' => $fp['production_date'] ?? null,
+            ];
+            
             $inventoryStats['total_products']++;
-            $inventoryStats['total_quantity'] += (float) ($item['quantity'] ?? 0);
-            $inventoryStats['total_value'] += (float) ($item['total_value'] ?? 0);
+            $inventoryStats['total_quantity'] += $quantity;
+            $inventoryStats['total_value'] += $totalValue;
         }
-        unset($item);
-    } catch (Throwable $e) {
-        error_log('Error loading main warehouse products: ' . $e->getMessage());
-        $mainWarehouseProducts = [];
     }
+    
+    // جلب المنتجات الخارجية
+    $externalProducts = $db->query("
+        SELECT 
+            id AS product_id,
+            name AS product_name,
+            category,
+            quantity,
+            COALESCE(unit, 'قطعة') as unit,
+            unit_price,
+            (quantity * unit_price) as total_value,
+            'external' AS product_type
+        FROM products
+        WHERE product_type = 'external'
+          AND status = 'active'
+          AND quantity > 0
+        ORDER BY name ASC
+    ");
+    
+    foreach ($externalProducts as $ext) {
+        $productId = (int)($ext['product_id'] ?? 0);
+        $quantity = (float)($ext['quantity'] ?? 0);
+        $unitPrice = (float)($ext['unit_price'] ?? 0);
+        $totalValue = (float)($ext['total_value'] ?? 0);
+        
+        $companyInventory[] = [
+            'product_id' => $productId,
+            'batch_id' => null,
+            'batch_number' => null,
+            'product_name' => $ext['product_name'] ?? '',
+            'category' => $ext['category'] ?? '',
+            'quantity' => $quantity,
+            'unit_price' => $unitPrice,
+            'total_value' => $totalValue,
+            'product_type' => 'external',
+            'production_date' => null,
+        ];
+        
+        $inventoryStats['total_products']++;
+        $inventoryStats['total_quantity'] += $quantity;
+        $inventoryStats['total_value'] += $totalValue;
+    }
+} catch (Throwable $e) {
+    error_log('Error fetching company inventory: ' . $e->getMessage());
 }
 
 // معالجة إنشاء عملية بيع جديدة
 $posInvoiceLinks = null;
-$productsByProductId = [];
-foreach ($mainWarehouseProducts as $item) {
-    $productsByProductId[(int) ($item['product_id'] ?? 0)] = $item;
+$inventoryByProduct = [];
+foreach ($companyInventory as $item) {
+    $key = (int)($item['product_id'] ?? 0);
+    if (!isset($inventoryByProduct[$key])) {
+        $inventoryByProduct[$key] = [
+            'quantity' => 0,
+            'unit_price' => 0,
+            'items' => [],
+        ];
+    }
+    $inventoryByProduct[$key]['quantity'] += (float)($item['quantity'] ?? 0);
+    if ((float)($item['unit_price'] ?? 0) > 0) {
+        $inventoryByProduct[$key]['unit_price'] = (float)($item['unit_price'] ?? 0);
+    }
+    $inventoryByProduct[$key]['items'][] = $item;
 }
 
-if (!$error && $_SERVER['REQUEST_METHOD'] === 'POST') {
+if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     $action = $_POST['action'] ?? '';
 
     if ($action === 'create_pos_sale') {
@@ -278,28 +407,28 @@ if (!$error && $_SERVER['REQUEST_METHOD'] === 'POST') {
                 $quantity = isset($row['quantity']) ? (float) $row['quantity'] : 0;
                 $unitPrice = isset($row['unit_price']) ? round((float) $row['unit_price'], 2) : 0;
 
-                if ($productId <= 0 || !isset($productsByProductId[$productId])) {
-                    $validationErrors[] = 'المنتج المحدد رقم ' . ($index + 1) . ' غير متاح في المخزن الرئيسي.';
+                if ($productId <= 0 || !isset($inventoryByProduct[$productId])) {
+                    $validationErrors[] = 'المنتج المحدد رقم ' . ($index + 1) . ' غير متاح في مخزن الشركة.';
                     continue;
                 }
 
-                $product = $productsByProductId[$productId];
+                $product = $inventoryByProduct[$productId];
                 $available = (float) ($product['quantity'] ?? 0);
 
                 if ($quantity <= 0) {
-                    $validationErrors[] = 'يجب تحديد كمية صالحة للمنتج ' . htmlspecialchars($product['product_name'] ?? '', ENT_QUOTES, 'UTF-8') . '.';
+                    $validationErrors[] = 'يجب تحديد كمية صالحة للمنتج رقم ' . ($index + 1) . '.';
                     continue;
                 }
 
                 if ($quantity > $available) {
-                    $validationErrors[] = 'الكمية المطلوبة للمنتج ' . htmlspecialchars($product['product_name'] ?? '', ENT_QUOTES, 'UTF-8') . ' تتجاوز الكمية المتاحة.';
+                    $validationErrors[] = 'الكمية المطلوبة للمنتج رقم ' . ($index + 1) . ' تتجاوز الكمية المتاحة.';
                     continue;
                 }
 
                 if ($unitPrice <= 0) {
                     $unitPrice = round((float) ($product['unit_price'] ?? 0), 2);
                     if ($unitPrice <= 0) {
-                        $validationErrors[] = 'لا يمكن تحديد سعر المنتج ' . htmlspecialchars($product['product_name'] ?? '', ENT_QUOTES, 'UTF-8') . '.';
+                        $validationErrors[] = 'لا يمكن تحديد سعر المنتج رقم ' . ($index + 1) . '.';
                         continue;
                     }
                 }
@@ -307,10 +436,18 @@ if (!$error && $_SERVER['REQUEST_METHOD'] === 'POST') {
                 $lineTotal = round($unitPrice * $quantity, 2);
                 $subtotal += $lineTotal;
 
+                $productName = '';
+                foreach ($product['items'] as $item) {
+                    if (!empty($item['product_name'])) {
+                        $productName = $item['product_name'];
+                        break;
+                    }
+                }
+
                 $normalizedCart[] = [
                     'product_id' => $productId,
-                    'name' => $product['product_name'] ?? 'منتج',
-                    'category' => $product['category'] ?? null,
+                    'name' => $productName ?: 'منتج',
+                    'category' => $product['items'][0]['category'] ?? null,
                     'quantity' => $quantity,
                     'available' => $available,
                     'unit_price' => $unitPrice,
@@ -337,7 +474,7 @@ if (!$error && $_SERVER['REQUEST_METHOD'] === 'POST') {
             } else {
                 $effectivePaidAmount = $paidAmountInput;
             }
-        } else { // credit
+        } else {
             $effectivePaidAmount = 0.0;
         }
 
@@ -354,7 +491,7 @@ if (!$error && $_SERVER['REQUEST_METHOD'] === 'POST') {
             if ($customerId <= 0) {
                 $validationErrors[] = 'يجب اختيار عميل من القائمة.';
             } else {
-                $customer = $db->queryOne("SELECT id, name, balance FROM customers WHERE id = ?", [$customerId]);
+                $customer = $db->queryOne("SELECT id, name, balance, created_by FROM customers WHERE id = ?", [$customerId]);
                 if (!$customer) {
                     $validationErrors[] = 'العميل المحدد غير موجود.';
                 }
@@ -397,6 +534,7 @@ if (!$error && $_SERVER['REQUEST_METHOD'] === 'POST') {
                         'id' => $customerId,
                         'name' => $newCustomerName,
                         'balance' => $dueAmount,
+                        'created_by' => $currentUser['id'],
                     ];
                 } else {
                     $customer = $db->queryOne(
@@ -474,21 +612,19 @@ if (!$error && $_SERVER['REQUEST_METHOD'] === 'POST') {
                     $unitPrice = $item['unit_price'];
                     $lineTotal = $item['line_total'];
 
-                    $productRow = $db->queryOne(
-                        "SELECT quantity FROM products WHERE id = ? FOR UPDATE",
+                    // تحديث كمية المنتج في products
+                    $product = $db->queryOne(
+                        "SELECT id, quantity FROM products WHERE id = ? FOR UPDATE",
                         [$productId]
                     );
 
-                    if (!$productRow) {
-                        throw new RuntimeException('المنتج ' . $item['name'] . ' غير موجود في المخزن.');
+                    if ($product) {
+                        $currentQty = (float)($product['quantity'] ?? 0);
+                        $newQty = max(0, $currentQty - $quantity);
+                        $db->execute("UPDATE products SET quantity = ?, updated_at = NOW() WHERE id = ?", [$newQty, $productId]);
                     }
 
-                    $available = (float)($productRow['quantity'] ?? 0);
-
-                    if ($quantity > $available) {
-                        throw new RuntimeException('الكمية المتاحة للمنتج ' . $item['name'] . ' غير كافية. المتاح: ' . $available . '، المطلوب: ' . $quantity);
-                    }
-
+                    // تسجيل حركة المخزون
                     $movementResult = recordInventoryMovement(
                         $productId,
                         $mainWarehouseId,
@@ -497,31 +633,21 @@ if (!$error && $_SERVER['REQUEST_METHOD'] === 'POST') {
                         'sales',
                         $invoiceId,
                         'بيع من نقطة بيع المدير - فاتورة ' . $invoiceNumber,
-                        $currentUser['id'],
-                        null
+                        $currentUser['id']
                     );
 
                     if (empty($movementResult['success'])) {
                         throw new RuntimeException($movementResult['message'] ?? 'تعذر تسجيل حركة المخزون.');
                     }
 
-                    $newQuantity = max(0, $available - $quantity);
-                    $db->execute(
-                        "UPDATE products SET quantity = ?, updated_at = NOW() WHERE id = ?",
-                        [$newQuantity, $productId]
-                    );
-
                     $db->execute(
                         "INSERT INTO sales (customer_id, product_id, quantity, price, total, date, salesperson_id, status) 
                          VALUES (?, ?, ?, ?, ?, ?, ?, 'completed')",
                         [$customerId, $productId, $quantity, $unitPrice, $lineTotal, $saleDate, $currentUser['id']]
                     );
-
-                    $productsByProductId[$productId]['quantity'] = $newQuantity;
-                    $productsByProductId[$productId]['total_value'] = ($newQuantity * $unitPrice);
                 }
 
-                logAudit($currentUser['id'], 'create_manager_pos_sale', 'invoice', $invoiceId, null, [
+                logAudit($currentUser['id'], 'create_pos_sale_manager', 'invoice', $invoiceId, null, [
                     'invoice_number'    => $invoiceNumber,
                     'items'             => $normalizedCart,
                     'net_total'         => $netTotal,
@@ -546,10 +672,10 @@ if (!$error && $_SERVER['REQUEST_METHOD'] === 'POST') {
                         'due' => $dueAmount,
                     ],
                 ];
-                $reportInfo = $invoiceData ? storeManagerInvoiceDocument($invoiceData, $invoiceMeta) : null;
+                $reportInfo = $invoiceData ? storeSalesInvoiceDocument($invoiceData, $invoiceMeta) : null;
 
                 if ($reportInfo) {
-                    $telegramResult = sendReportAndDelete($reportInfo, 'manager_pos_invoice', 'فاتورة نقطة بيع المدير');
+                    $telegramResult = sendReportAndDelete($reportInfo, 'sales_pos_invoice', 'فاتورة نقطة بيع المدير');
                     $reportInfo['telegram_sent'] = !empty($telegramResult['success']);
                     $posInvoiceLinks = $reportInfo;
                 }
@@ -559,43 +685,118 @@ if (!$error && $_SERVER['REQUEST_METHOD'] === 'POST') {
                     $success .= ' - تم إنشاء العميل الجديد.';
                 }
 
-                // إعادة تحميل المنتجات والإحصائيات
-                $mainWarehouseProducts = $db->query(
-                    "SELECT 
-                        id AS product_id,
-                        name AS product_name,
-                        COALESCE(category, '') AS category,
-                        quantity,
-                        unit_price,
-                        COALESCE(unit, 'قطعة') AS unit
-                    FROM products
-                    WHERE status = 'active' 
-                        AND quantity > 0
-                        AND (warehouse_id = ? OR (warehouse_id IS NULL AND ? IN (SELECT id FROM warehouses WHERE warehouse_type = 'main')))
-                    ORDER BY name ASC",
-                    [$mainWarehouseId, $mainWarehouseId]
-                ) ?? [];
-
+                // إعادة تحميل المخزون
+                $companyInventory = [];
                 $inventoryStats = [
                     'total_products' => 0,
                     'total_quantity' => 0,
                     'total_value' => 0,
                 ];
-                foreach ($mainWarehouseProducts as &$item) {
-                    $item['quantity'] = cleanFinancialValue($item['quantity'] ?? 0);
-                    $item['unit_price'] = cleanFinancialValue($item['unit_price'] ?? 0);
-                    $computedTotal = cleanFinancialValue(($item['quantity'] ?? 0) * ($item['unit_price'] ?? 0));
-                    $item['total_value'] = $computedTotal;
 
-                    $inventoryStats['total_products']++;
-                    $inventoryStats['total_quantity'] += (float) ($item['quantity'] ?? 0);
-                    $inventoryStats['total_value'] += (float) ($item['total_value'] ?? 0);
+                try {
+                    if (!empty($finishedProductsTableExists)) {
+                        $factoryProducts = $db->query("
+                            SELECT 
+                                fp.id AS batch_id,
+                                fp.batch_number,
+                                COALESCE(fp.product_id, bn.product_id) AS product_id,
+                                COALESCE(NULLIF(TRIM(fp.product_name), ''), pr.name, 'غير محدد') AS product_name,
+                                pr.category as product_category,
+                                fp.quantity_produced AS quantity,
+                                COALESCE(fp.unit_price, pr.unit_price, 0) AS unit_price,
+                                fp.production_date,
+                                'factory' AS product_type
+                            FROM finished_products fp
+                            LEFT JOIN batch_numbers bn ON fp.batch_number = bn.batch_number
+                            LEFT JOIN products pr ON COALESCE(fp.product_id, bn.product_id) = pr.id
+                            WHERE (fp.quantity_produced IS NULL OR fp.quantity_produced > 0)
+                            ORDER BY fp.production_date DESC, fp.id DESC
+                        ");
+                        
+                        foreach ($factoryProducts as $fp) {
+                            $productId = (int)($fp['product_id'] ?? 0);
+                            $quantity = (float)($fp['quantity'] ?? 0);
+                            $unitPrice = (float)($fp['unit_price'] ?? 0);
+                            $totalValue = $quantity * $unitPrice;
+                            
+                            $companyInventory[] = [
+                                'product_id' => $productId,
+                                'batch_id' => (int)($fp['batch_id'] ?? 0),
+                                'batch_number' => $fp['batch_number'] ?? '',
+                                'product_name' => $fp['product_name'] ?? 'غير محدد',
+                                'category' => $fp['product_category'] ?? '',
+                                'quantity' => $quantity,
+                                'unit_price' => $unitPrice,
+                                'total_value' => $totalValue,
+                                'product_type' => 'factory',
+                                'production_date' => $fp['production_date'] ?? null,
+                            ];
+                            
+                            $inventoryStats['total_products']++;
+                            $inventoryStats['total_quantity'] += $quantity;
+                            $inventoryStats['total_value'] += $totalValue;
+                        }
+                    }
+                    
+                    $externalProducts = $db->query("
+                        SELECT 
+                            id AS product_id,
+                            name AS product_name,
+                            category,
+                            quantity,
+                            COALESCE(unit, 'قطعة') as unit,
+                            unit_price,
+                            (quantity * unit_price) as total_value,
+                            'external' AS product_type
+                        FROM products
+                        WHERE product_type = 'external'
+                          AND status = 'active'
+                          AND quantity > 0
+                        ORDER BY name ASC
+                    ");
+                    
+                    foreach ($externalProducts as $ext) {
+                        $productId = (int)($ext['product_id'] ?? 0);
+                        $quantity = (float)($ext['quantity'] ?? 0);
+                        $unitPrice = (float)($ext['unit_price'] ?? 0);
+                        $totalValue = (float)($ext['total_value'] ?? 0);
+                        
+                        $companyInventory[] = [
+                            'product_id' => $productId,
+                            'batch_id' => null,
+                            'batch_number' => null,
+                            'product_name' => $ext['product_name'] ?? '',
+                            'category' => $ext['category'] ?? '',
+                            'quantity' => $quantity,
+                            'unit_price' => $unitPrice,
+                            'total_value' => $totalValue,
+                            'product_type' => 'external',
+                            'production_date' => null,
+                        ];
+                        
+                        $inventoryStats['total_products']++;
+                        $inventoryStats['total_quantity'] += $quantity;
+                        $inventoryStats['total_value'] += $totalValue;
+                    }
+                } catch (Throwable $e) {
+                    error_log('Error reloading inventory: ' . $e->getMessage());
                 }
-                unset($item);
 
-                $productsByProductId = [];
-                foreach ($mainWarehouseProducts as $item) {
-                    $productsByProductId[(int) ($item['product_id'] ?? 0)] = $item;
+                $inventoryByProduct = [];
+                foreach ($companyInventory as $item) {
+                    $key = (int)($item['product_id'] ?? 0);
+                    if (!isset($inventoryByProduct[$key])) {
+                        $inventoryByProduct[$key] = [
+                            'quantity' => 0,
+                            'unit_price' => 0,
+                            'items' => [],
+                        ];
+                    }
+                    $inventoryByProduct[$key]['quantity'] += (float)($item['quantity'] ?? 0);
+                    if ((float)($item['unit_price'] ?? 0) > 0) {
+                        $inventoryByProduct[$key]['unit_price'] = (float)($item['unit_price'] ?? 0);
+                    }
+                    $inventoryByProduct[$key]['items'][] = $item;
                 }
 
             } catch (Throwable $exception) {
@@ -608,113 +809,8 @@ if (!$error && $_SERVER['REQUEST_METHOD'] === 'POST') {
             $error = implode('<br>', array_map('htmlspecialchars', $validationErrors));
         }
     }
-}
 
-// آخر عمليات البيع
-$recentSales = [];
-if (!$error) {
-    $recentSales = $db->query(
-        "SELECT s.*, c.name AS customer_name, p.name AS product_name
-         FROM sales s
-         LEFT JOIN customers c ON s.customer_id = c.id
-         LEFT JOIN products p ON s.product_id = p.id
-         WHERE s.salesperson_id = ?
-         ORDER BY s.created_at DESC
-         LIMIT 10",
-        [$currentUser['id']]
-    ) ?? [];
-}
-
-// ========== SHIPPING ORDERS SECTION ==========
-// Ensure shipping tables exist
-try {
-    $db->execute(
-        "CREATE TABLE IF NOT EXISTS `shipping_companies` (
-            `id` int(11) NOT NULL AUTO_INCREMENT,
-            `name` varchar(150) NOT NULL,
-            `contact_person` varchar(100) DEFAULT NULL,
-            `phone` varchar(30) DEFAULT NULL,
-            `email` varchar(120) DEFAULT NULL,
-            `address` text DEFAULT NULL,
-            `balance` decimal(15,2) NOT NULL DEFAULT 0.00,
-            `status` enum('active','inactive') NOT NULL DEFAULT 'active',
-            `notes` text DEFAULT NULL,
-            `created_by` int(11) DEFAULT NULL,
-            `updated_by` int(11) DEFAULT NULL,
-            `created_at` timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP,
-            `updated_at` timestamp NULL DEFAULT NULL ON UPDATE CURRENT_TIMESTAMP,
-            PRIMARY KEY (`id`),
-            UNIQUE KEY `name` (`name`),
-            KEY `status` (`status`),
-            KEY `created_by` (`created_by`),
-            KEY `updated_by` (`updated_by`),
-            CONSTRAINT `shipping_companies_created_fk` FOREIGN KEY (`created_by`) REFERENCES `users` (`id`) ON DELETE SET NULL,
-            CONSTRAINT `shipping_companies_updated_fk` FOREIGN KEY (`updated_by`) REFERENCES `users` (`id`) ON DELETE SET NULL
-        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci"
-    );
-} catch (Throwable $tableError) {
-    error_log('pos: failed ensuring shipping_companies table -> ' . $tableError->getMessage());
-}
-
-try {
-    $db->execute(
-        "CREATE TABLE IF NOT EXISTS `shipping_company_orders` (
-            `id` int(11) NOT NULL AUTO_INCREMENT,
-            `order_number` varchar(50) NOT NULL,
-            `shipping_company_id` int(11) NOT NULL,
-            `customer_id` int(11) NOT NULL,
-            `invoice_id` int(11) DEFAULT NULL,
-            `total_amount` decimal(15,2) NOT NULL DEFAULT 0.00,
-            `status` enum('assigned','in_transit','delivered','cancelled') NOT NULL DEFAULT 'assigned',
-            `handed_over_at` timestamp NULL DEFAULT NULL,
-            `delivered_at` timestamp NULL DEFAULT NULL,
-            `notes` text DEFAULT NULL,
-            `created_by` int(11) DEFAULT NULL,
-            `updated_by` int(11) DEFAULT NULL,
-            `created_at` timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP,
-            `updated_at` timestamp NULL DEFAULT NULL ON UPDATE CURRENT_TIMESTAMP,
-            PRIMARY KEY (`id`),
-            UNIQUE KEY `order_number` (`order_number`),
-            KEY `shipping_company_id` (`shipping_company_id`),
-            KEY `customer_id` (`customer_id`),
-            KEY `invoice_id` (`invoice_id`),
-            KEY `status` (`status`),
-            CONSTRAINT `shipping_company_orders_company_fk` FOREIGN KEY (`shipping_company_id`) REFERENCES `shipping_companies` (`id`) ON DELETE CASCADE,
-            CONSTRAINT `shipping_company_orders_customer_fk` FOREIGN KEY (`customer_id`) REFERENCES `customers` (`id`) ON DELETE CASCADE,
-            CONSTRAINT `shipping_company_orders_invoice_fk` FOREIGN KEY (`invoice_id`) REFERENCES `invoices` (`id`) ON DELETE SET NULL,
-            CONSTRAINT `shipping_company_orders_created_fk` FOREIGN KEY (`created_by`) REFERENCES `users` (`id`) ON DELETE SET NULL,
-            CONSTRAINT `shipping_company_orders_updated_fk` FOREIGN KEY (`updated_by`) REFERENCES `users` (`id`) ON DELETE SET NULL
-        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci"
-    );
-} catch (Throwable $tableError) {
-    error_log('pos: failed ensuring shipping_company_orders table -> ' . $tableError->getMessage());
-}
-
-try {
-    $db->execute(
-        "CREATE TABLE IF NOT EXISTS `shipping_company_order_items` (
-            `id` int(11) NOT NULL AUTO_INCREMENT,
-            `order_id` int(11) NOT NULL,
-            `product_id` int(11) NOT NULL,
-            `quantity` decimal(10,2) NOT NULL,
-            `unit_price` decimal(15,2) NOT NULL,
-            `total_price` decimal(15,2) NOT NULL,
-            `created_at` timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP,
-            PRIMARY KEY (`id`),
-            KEY `order_id` (`order_id`),
-            KEY `product_id` (`product_id`),
-            CONSTRAINT `shipping_company_order_items_order_fk` FOREIGN KEY (`order_id`) REFERENCES `shipping_company_orders` (`id`) ON DELETE CASCADE,
-            CONSTRAINT `shipping_company_order_items_product_fk` FOREIGN KEY (`product_id`) REFERENCES `products` (`id`) ON DELETE CASCADE
-        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci"
-    );
-} catch (Throwable $tableError) {
-    error_log('pos: failed ensuring shipping_company_order_items table -> ' . $tableError->getMessage());
-}
-
-// Handle shipping orders POST requests
-if ($_SERVER['REQUEST_METHOD'] === 'POST') {
-    $action = $_POST['action'] ?? '';
-
+    // معالجة طلبات الشحن
     if ($action === 'add_shipping_company') {
         $name = trim($_POST['company_name'] ?? '');
         $contactPerson = trim($_POST['contact_person'] ?? '');
@@ -746,10 +842,20 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 );
 
                 $success = 'تم إضافة شركة الشحن بنجاح.';
+                
+                // إعادة تحميل قائمة شركات الشحن
+                $shippingCompanies = [];
+                try {
+                    $shippingCompanies = $db->query(
+                        "SELECT id, name, phone, status, balance FROM shipping_companies ORDER BY status = 'active' DESC, name ASC"
+                    );
+                } catch (Throwable $e) {
+                    error_log('Error reloading shipping companies: ' . $e->getMessage());
+                }
             } catch (InvalidArgumentException $validationError) {
                 $error = $validationError->getMessage();
             } catch (Throwable $addError) {
-                error_log('pos: add company error -> ' . $addError->getMessage());
+                error_log('shipping_orders: add company error -> ' . $addError->getMessage());
                 $error = 'تعذر إضافة شركة الشحن. يرجى المحاولة لاحقاً.';
             }
         }
@@ -933,12 +1039,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                         if (empty($movementResult['success'])) {
                             throw new RuntimeException($movementResult['message'] ?? 'تعذر تسجيل حركة المخزون.');
                         }
-
-                        $newQuantity = max(0, (float)($productRow['quantity'] ?? 0) - $normalizedItem['quantity']);
-                        $db->execute(
-                            "UPDATE products SET quantity = ?, updated_at = NOW() WHERE id = ?",
-                            [$newQuantity, $normalizedItem['product_id']]
-                        );
                     }
 
                     $db->execute(
@@ -964,6 +1064,37 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     $transactionStarted = false;
 
                     $success = 'تم تسجيل طلب الشحن وتسليم المنتجات لشركة الشحن بنجاح.';
+                    
+                    // إعادة تحميل البيانات
+                    $shippingCompanies = [];
+                    try {
+                        $shippingCompanies = $db->query(
+                            "SELECT id, name, phone, status, balance FROM shipping_companies ORDER BY status = 'active' DESC, name ASC"
+                        );
+                    } catch (Throwable $e) {
+                        error_log('Error reloading shipping companies: ' . $e->getMessage());
+                    }
+                    
+                    $shippingOrders = [];
+                    try {
+                        $shippingOrders = $db->query(
+                            "SELECT 
+                                sco.*, 
+                                sc.name AS shipping_company_name,
+                                sc.balance AS company_balance,
+                                c.name AS customer_name,
+                                c.phone AS customer_phone,
+                                i.invoice_number
+                            FROM shipping_company_orders sco
+                            LEFT JOIN shipping_companies sc ON sco.shipping_company_id = sc.id
+                            LEFT JOIN customers c ON sco.customer_id = c.id
+                            LEFT JOIN invoices i ON sco.invoice_id = i.id
+                            ORDER BY sco.created_at DESC
+                            LIMIT 50"
+                        );
+                    } catch (Throwable $e) {
+                        error_log('Error reloading shipping orders: ' . $e->getMessage());
+                    }
                 } catch (InvalidArgumentException $validationError) {
                     if ($transactionStarted) {
                         $db->rollback();
@@ -973,7 +1104,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     if ($transactionStarted) {
                         $db->rollback();
                     }
-                    error_log('pos: create order error -> ' . $createError->getMessage());
+                    error_log('shipping_orders: create order error -> ' . $createError->getMessage());
                     $error = 'تعذر إنشاء طلب الشحن. يرجى المحاولة لاحقاً.';
                 }
             }
@@ -1008,8 +1139,30 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 );
 
                 $success = 'تم تحديث حالة طلب الشحن.';
+                
+                // إعادة تحميل طلبات الشحن
+                $shippingOrders = [];
+                try {
+                    $shippingOrders = $db->query(
+                        "SELECT 
+                            sco.*, 
+                            sc.name AS shipping_company_name,
+                            sc.balance AS company_balance,
+                            c.name AS customer_name,
+                            c.phone AS customer_phone,
+                            i.invoice_number
+                        FROM shipping_company_orders sco
+                        LEFT JOIN shipping_companies sc ON sco.shipping_company_id = sc.id
+                        LEFT JOIN customers c ON sco.customer_id = c.id
+                        LEFT JOIN invoices i ON sco.invoice_id = i.id
+                        ORDER BY sco.created_at DESC
+                        LIMIT 50"
+                    );
+                } catch (Throwable $e) {
+                    error_log('Error reloading shipping orders: ' . $e->getMessage());
+                }
             } catch (Throwable $statusError) {
-                error_log('pos: update status error -> ' . $statusError->getMessage());
+                error_log('shipping_orders: update status error -> ' . $statusError->getMessage());
                 $error = 'تعذر تحديث حالة الطلب.';
             }
         }
@@ -1103,6 +1256,37 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 $transactionStarted = false;
 
                 $success = 'تم تأكيد تسليم الطلب للعميل ونقل الدين بنجاح.';
+                
+                // إعادة تحميل البيانات
+                $shippingCompanies = [];
+                try {
+                    $shippingCompanies = $db->query(
+                        "SELECT id, name, phone, status, balance FROM shipping_companies ORDER BY status = 'active' DESC, name ASC"
+                    );
+                } catch (Throwable $e) {
+                    error_log('Error reloading shipping companies: ' . $e->getMessage());
+                }
+                
+                $shippingOrders = [];
+                try {
+                    $shippingOrders = $db->query(
+                        "SELECT 
+                            sco.*, 
+                            sc.name AS shipping_company_name,
+                            sc.balance AS company_balance,
+                            c.name AS customer_name,
+                            c.phone AS customer_phone,
+                            i.invoice_number
+                        FROM shipping_company_orders sco
+                        LEFT JOIN shipping_companies sc ON sco.shipping_company_id = sc.id
+                        LEFT JOIN customers c ON sco.customer_id = c.id
+                        LEFT JOIN invoices i ON sco.invoice_id = i.id
+                        ORDER BY sco.created_at DESC
+                        LIMIT 50"
+                    );
+                } catch (Throwable $e) {
+                    error_log('Error reloading shipping orders: ' . $e->getMessage());
+                }
             } catch (InvalidArgumentException $validationError) {
                 if ($transactionStarted) {
                     $db->rollback();
@@ -1112,47 +1296,26 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 if ($transactionStarted) {
                     $db->rollback();
                 }
-                error_log('pos: complete order error -> ' . $completeError->getMessage());
+                error_log('shipping_orders: complete order error -> ' . $completeError->getMessage());
                 $error = 'تعذر إتمام إجراءات الطلب. يرجى المحاولة لاحقاً.';
             }
         }
     }
 }
 
-// Load shipping data
+// جلب بيانات طلبات الشحن
 $shippingCompanies = [];
 try {
     $shippingCompanies = $db->query(
         "SELECT id, name, phone, status, balance FROM shipping_companies ORDER BY status = 'active' DESC, name ASC"
-    ) ?? [];
-} catch (Throwable $companiesError) {
-    error_log('pos: failed fetching companies -> ' . $companiesError->getMessage());
-    $shippingCompanies = [];
+    );
+} catch (Throwable $e) {
+    error_log('Error fetching shipping companies: ' . $e->getMessage());
 }
 
-$activeCustomers = [];
+$shippingOrders = [];
 try {
-    $activeCustomers = $db->query(
-        "SELECT id, name, phone FROM customers WHERE status = 'active' ORDER BY name ASC"
-    ) ?? [];
-} catch (Throwable $customersError) {
-    error_log('pos: failed fetching customers -> ' . $customersError->getMessage());
-    $activeCustomers = [];
-}
-
-$availableProductsForShipping = [];
-try {
-    $availableProductsForShipping = $db->query(
-        "SELECT id, name, quantity, unit, unit_price FROM products WHERE status = 'active' AND quantity > 0 ORDER BY name ASC"
-    ) ?? [];
-} catch (Throwable $productsError) {
-    error_log('pos: failed fetching products -> ' . $productsError->getMessage());
-    $availableProductsForShipping = [];
-}
-
-$orders = [];
-try {
-    $orders = $db->query(
+    $shippingOrders = $db->query(
         "SELECT 
             sco.*, 
             sc.name AS shipping_company_name,
@@ -1166,37 +1329,9 @@ try {
         LEFT JOIN invoices i ON sco.invoice_id = i.id
         ORDER BY sco.created_at DESC
         LIMIT 50"
-    ) ?? [];
-} catch (Throwable $ordersError) {
-    error_log('pos: failed fetching orders -> ' . $ordersError->getMessage());
-    $orders = [];
-}
-
-$ordersStats = [
-    'total_orders' => 0,
-    'active_orders' => 0,
-    'delivered_orders' => 0,
-    'outstanding_amount' => 0.0,
-];
-
-try {
-    $statsRow = $db->queryOne(
-        "SELECT 
-            COUNT(*) AS total_orders,
-            SUM(CASE WHEN status IN ('assigned','in_transit') THEN 1 ELSE 0 END) AS active_orders,
-            SUM(CASE WHEN status = 'delivered' THEN 1 ELSE 0 END) AS delivered_orders,
-            SUM(CASE WHEN status IN ('assigned','in_transit') THEN total_amount ELSE 0 END) AS outstanding_amount
-        FROM shipping_company_orders"
     );
-
-    if ($statsRow) {
-        $ordersStats['total_orders'] = (int)($statsRow['total_orders'] ?? 0);
-        $ordersStats['active_orders'] = (int)($statsRow['active_orders'] ?? 0);
-        $ordersStats['delivered_orders'] = (int)($statsRow['delivered_orders'] ?? 0);
-        $ordersStats['outstanding_amount'] = (float)($statsRow['outstanding_amount'] ?? 0);
-    }
-} catch (Throwable $statsError) {
-    error_log('pos: failed fetching stats -> ' . $statsError->getMessage());
+} catch (Throwable $e) {
+    error_log('Error fetching shipping orders: ' . $e->getMessage());
 }
 
 $statusLabels = [
@@ -1206,8 +1341,32 @@ $statusLabels = [
     'cancelled' => ['label' => 'ملغي', 'class' => 'bg-secondary'],
 ];
 
-$hasProductsForShipping = !empty($availableProductsForShipping);
-$hasShippingCompanies = !empty($shippingCompanies);
+// آخر عمليات البيع
+$recentSales = [];
+try {
+    $recentSales = $db->query(
+        "SELECT s.*, c.name AS customer_name, p.name AS product_name
+         FROM sales s
+         LEFT JOIN customers c ON s.customer_id = c.id
+         LEFT JOIN products p ON s.product_id = p.id
+         WHERE s.salesperson_id = ?
+         ORDER BY s.created_at DESC
+         LIMIT 10",
+        [$currentUser['id']]
+    );
+} catch (Throwable $e) {
+    error_log('Error fetching recent sales: ' . $e->getMessage());
+}
+
+// جلب المنتجات المتاحة لطلبات الشحن (من products فقط)
+$availableProductsForShipping = [];
+try {
+    $availableProductsForShipping = $db->query(
+        "SELECT id, name, quantity, unit, unit_price FROM products WHERE status = 'active' AND quantity > 0 ORDER BY name ASC"
+    );
+} catch (Throwable $e) {
+    error_log('Error fetching products for shipping: ' . $e->getMessage());
+}
 ?>
 
 <div class="page-header">
@@ -1240,4 +1399,1759 @@ $hasShippingCompanies = !empty($shippingCompanies);
                     <i class="bi bi-receipt-cutoff me-2"></i>
                     فاتورة البيع
                 </h5>
+                <div class="d-flex gap-2">
+                    <button type="button" class="btn btn-light btn-sm" onclick="printInvoice()">
+                        <i class="bi bi-printer me-1"></i>طباعة
+                    </button>
+                    <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal" aria-label="إغلاق"></button>
+                </div>
+            </div>
+            <div class="modal-body p-0" style="height: calc(100vh - 120px);">
+                <iframe id="posInvoiceFrame" src="<?php echo htmlspecialchars($posInvoiceLinks['absolute_report_url']); ?>" style="width: 100%; height: 100%; border: none;"></iframe>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">
+                    <i class="bi bi-x-circle me-1"></i>إغلاق
+                </button>
+                <button type="button" class="btn btn-primary" onclick="printInvoice()">
+                    <i class="bi bi-printer me-1"></i>طباعة الفاتورة
+                </button>
+            </div>
+        </div>
+    </div>
+</div>
+<?php endif; ?>
+
+<!-- Tabs للتنقل بين نقطة البيع وطلبات الشحن -->
+<ul class="nav nav-tabs mb-4" id="posTabs" role="tablist">
+    <li class="nav-item" role="presentation">
+        <button class="nav-link active" id="pos-tab" data-bs-toggle="tab" data-bs-target="#pos-content" type="button" role="tab">
+            <i class="bi bi-cart-check me-2"></i>نقطة البيع
+        </button>
+    </li>
+    <li class="nav-item" role="presentation">
+        <button class="nav-link" id="shipping-tab" data-bs-toggle="tab" data-bs-target="#shipping-content" type="button" role="tab">
+            <i class="bi bi-truck me-2"></i>طلبات الشحن
+        </button>
+    </li>
+</ul>
+
+<div class="tab-content" id="posTabContent">
+    <!-- محتوى نقطة البيع -->
+    <div class="tab-pane fade show active" id="pos-content" role="tabpanel">
+        <style>
+            .pos-wrapper {
+                display: flex;
+                flex-direction: column;
+                gap: 1.5rem;
+            }
+            .pos-warehouse-summary {
+                display: grid;
+                grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+                gap: 1rem;
+            }
+            .pos-summary-card {
+                position: relative;
+                overflow: hidden;
+                border-radius: 18px;
+                padding: 1.5rem;
+                color: #ffffff;
+                background: linear-gradient(135deg, rgba(30,58,95,0.95), rgba(44,82,130,0.88));
+                box-shadow: 0 18px 40px rgba(15, 23, 42, 0.15);
+            }
+            .pos-summary-card .label {
+                font-size: 0.85rem;
+                text-transform: uppercase;
+                letter-spacing: 0.08em;
+                opacity: 0.8;
+            }
+            .pos-summary-card .value {
+                font-size: 1.45rem;
+                font-weight: 700;
+                margin-top: 0.35rem;
+            }
+            .pos-summary-card .meta {
+                margin-top: 0.35rem;
+                font-size: 0.9rem;
+                opacity: 0.85;
+            }
+            .pos-summary-card .icon {
+                position: absolute;
+                bottom: 1rem;
+                right: 1rem;
+                font-size: 2.4rem;
+                opacity: 0.12;
+            }
+            .pos-content {
+                display: grid;
+                grid-template-columns: repeat(12, 1fr);
+                gap: 1.5rem;
+            }
+            .pos-panel {
+                background: #fff;
+                border-radius: 18px;
+                padding: 1.5rem;
+                box-shadow: 0 16px 35px rgba(15, 23, 42, 0.12);
+                border: 1px solid rgba(15, 23, 42, 0.05);
+            }
+            .pos-panel-header {
+                display: flex;
+                flex-wrap: wrap;
+                justify-content: space-between;
+                align-items: center;
+                gap: 1rem;
+                margin-bottom: 1.15rem;
+            }
+            .pos-panel-header h4,
+            .pos-panel-header h5 {
+                margin: 0;
+                font-weight: 700;
+                color: #1f2937;
+            }
+            .pos-panel-header p {
+                margin: 0;
+                color: #64748b;
+                font-size: 0.9rem;
+            }
+            .pos-search {
+                position: relative;
+                flex: 1;
+                min-width: 220px;
+            }
+            .pos-search input {
+                border-radius: 12px;
+                padding-inline-start: 2.75rem;
+                height: 3rem;
+            }
+            .pos-search i {
+                position: absolute;
+                inset-inline-start: 1rem;
+                top: 50%;
+                transform: translateY(-50%);
+                color: #6b7280;
+                font-size: 1.1rem;
+            }
+            .pos-product-grid {
+                display: grid;
+                grid-template-columns: repeat(auto-fill, minmax(240px, 1fr));
+                gap: 1.25rem;
+            }
+            .pos-product-card {
+                border-radius: 18px;
+                border: 1px solid rgba(15, 23, 42, 0.08);
+                padding: 1.15rem;
+                background: #f8fafc;
+                transition: all 0.25s ease;
+                display: flex;
+                flex-direction: column;
+                gap: 0.75rem;
+                position: relative;
+            }
+            .pos-product-card:hover {
+                transform: translateY(-4px);
+                border-color: rgba(30, 58, 95, 0.35);
+                box-shadow: 0 18px 40px rgba(30, 58, 95, 0.15);
+            }
+            .pos-product-card.active {
+                border-color: rgba(30, 58, 95, 0.65);
+                background: #ffffff;
+                box-shadow: 0 20px 45px rgba(30, 58, 95, 0.18);
+            }
+            .pos-product-name {
+                font-size: 1.08rem;
+                font-weight: 700;
+                color: #1f2937;
+            }
+            .pos-product-meta {
+                display: flex;
+                justify-content: space-between;
+                align-items: center;
+                flex-wrap: wrap;
+                gap: 0.4rem;
+                font-size: 0.85rem;
+                color: #475569;
+            }
+            .pos-product-badge {
+                background: rgba(30, 58, 95, 0.08);
+                color: #1e3a5f;
+                border-radius: 999px;
+                font-weight: 600;
+                padding: 0.25rem 0.75rem;
+            }
+            .pos-product-qty {
+                font-weight: 700;
+                color: #059669;
+            }
+            .pos-select-btn {
+                margin-top: auto;
+                border-radius: 12px;
+                font-weight: 600;
+            }
+            .pos-checkout-panel {
+                display: flex;
+                flex-direction: column;
+                gap: 1.25rem;
+            }
+            .pos-selected-product {
+                display: none;
+                border-radius: 18px;
+                padding: 1.25rem;
+                color: #fff;
+                background: linear-gradient(135deg, rgba(6,78,59,0.95), rgba(16,185,129,0.9));
+                box-shadow: 0 18px 40px rgba(6, 78, 59, 0.25);
+            }
+            .pos-selected-product.active {
+                display: block;
+            }
+            .pos-selected-product h5 {
+                margin-bottom: 0.75rem;
+            }
+            .pos-selected-product .meta-row {
+                display: flex;
+                justify-content: space-between;
+                flex-wrap: wrap;
+                gap: 1rem;
+            }
+            .pos-selected-product .meta-block span {
+                font-size: 0.8rem;
+                opacity: 0.8;
+                text-transform: uppercase;
+            }
+            .pos-form .form-control,
+            .pos-form .form-select {
+                border-radius: 12px;
+            }
+            .pos-cart-table thead {
+                background: #f1f5f9;
+                font-size: 0.9rem;
+            }
+            .pos-cart-table td {
+                vertical-align: middle;
+            }
+            .pos-qty-control {
+                display: flex;
+                align-items: center;
+                gap: 0.4rem;
+            }
+            .pos-qty-control .btn {
+                border-radius: 999px;
+                width: 34px;
+                height: 34px;
+                display: flex;
+                align-items: center;
+                justify-content: center;
+            }
+            .pos-qty-control input {
+                width: 80px;
+                text-align: center;
+            }
+            .pos-summary-card-neutral {
+                background: #0f172a;
+                color: #fff;
+                border-radius: 16px;
+                padding: 1rem 1.25rem;
+                display: flex;
+                flex-direction: column;
+                gap: 0.35rem;
+            }
+            .pos-summary-card-neutral .total {
+                font-size: 1.45rem;
+                font-weight: 700;
+            }
+            .pos-payment-options {
+                display: grid;
+                gap: 0.75rem;
+            }
+            .pos-payment-option {
+                position: relative;
+                display: flex;
+                align-items: center;
+                gap: 0.9rem;
+                padding: 0.85rem 1rem;
+                border: 1px solid rgba(15, 23, 42, 0.12);
+                border-radius: 14px;
+                background: #f8fafc;
+                transition: all 0.2s ease;
+                cursor: pointer;
+            }
+            .pos-payment-option:hover {
+                border-color: rgba(30, 64, 175, 0.4);
+                background: #ffffff;
+                box-shadow: 0 10px 24px rgba(30, 64, 175, 0.12);
+            }
+            .pos-payment-option.active {
+                border-color: rgba(22, 163, 74, 0.7);
+                background: rgba(22, 163, 74, 0.08);
+                box-shadow: 0 14px 28px rgba(22, 163, 74, 0.18);
+            }
+            .pos-payment-option .form-check-input {
+                margin: 0;
+                width: 1.1rem;
+                height: 1.1rem;
+                border-width: 2px;
+            }
+            .pos-payment-option-icon {
+                width: 42px;
+                height: 42px;
+                display: flex;
+                align-items: center;
+                justify-content: center;
+                border-radius: 50%;
+                background: rgba(15, 23, 42, 0.08);
+                color: #1f2937;
+                font-size: 1.25rem;
+            }
+            .pos-payment-option.active .pos-payment-option-icon {
+                background: rgba(22, 163, 74, 0.18);
+                color: #15803d;
+            }
+            .pos-payment-option-details {
+                flex: 1;
+            }
+            .pos-payment-option-title {
+                font-weight: 700;
+                color: #111827;
+                display: block;
+            }
+            .pos-payment-option-desc {
+                display: block;
+                margin-top: 0.15rem;
+                font-size: 0.85rem;
+                color: #64748b;
+            }
+            .pos-history-list {
+                display: flex;
+                flex-direction: column;
+                gap: 0.75rem;
+                max-height: 320px;
+                overflow-y: auto;
+            }
+            .pos-sale-card {
+                border-radius: 14px;
+                border: 1px solid rgba(15, 23, 42, 0.08);
+                padding: 0.95rem 1.15rem;
+                display: flex;
+                justify-content: space-between;
+                align-items: flex-start;
+                gap: 1rem;
+            }
+            .pos-sale-card .meta {
+                font-size: 0.85rem;
+                color: #64748b;
+            }
+            .pos-empty {
+                border-radius: 18px;
+                background: #f8fafc;
+                padding: 2.5rem 1.5rem;
+                text-align: center;
+                color: #475569;
+            }
+            .pos-empty-inline {
+                grid-column: 1 / -1;
+                display: flex;
+                flex-direction: column;
+                align-items: center;
+                justify-content: center;
+                min-height: 200px;
+            }
+            .pos-empty i {
+                font-size: 2.6rem;
+                color: #94a3b8;
+            }
+            .pos-cart-empty {
+                text-align: center;
+                padding: 2rem 1rem;
+                color: #6b7280;
+            }
+            .pos-inline-note {
+                font-size: 0.82rem;
+                color: #64748b;
+            }
+            @media (max-width: 992px) {
+                .pos-content {
+                    grid-template-columns: 1fr;
+                }
+            }
+        </style>
+
+        <div class="pos-wrapper">
+            <section class="pos-warehouse-summary">
+                <div class="pos-summary-card">
+                    <span class="label">مخزن الشركة</span>
+                    <div class="value"><?php echo htmlspecialchars($mainWarehouse['name'] ?? 'المخزن الرئيسي'); ?></div>
+                    <div class="meta">المخزن الرئيسي للشركة</div>
+                    <i class="bi bi-building icon"></i>
+                </div>
+                <div class="pos-summary-card">
+                    <span class="label">عدد المنتجات</span>
+                    <div class="value"><?php echo number_format($inventoryStats['total_products']); ?></div>
+                    <div class="meta">أصناف جاهزة للبيع</div>
+                    <i class="bi bi-box-seam icon"></i>
+                </div>
+                <div class="pos-summary-card">
+                    <span class="label">إجمالي الكمية</span>
+                    <div class="value"><?php echo number_format($inventoryStats['total_quantity'], 2); ?></div>
+                    <div class="meta">إجمالي الوحدات في المخزن</div>
+                    <i class="bi bi-stack icon"></i>
+                </div>
+                <div class="pos-summary-card">
+                    <span class="label">قيمة المخزون</span>
+                    <div class="value"><?php echo formatCurrency($inventoryStats['total_value']); ?></div>
+                    <div class="meta">التقييم الإجمالي الحالي</div>
+                    <i class="bi bi-cash-stack icon"></i>
+                </div>
+            </section>
+
+            <section class="pos-content">
+                <div class="pos-panel" style="grid-column: span 7;">
+                    <div class="pos-panel-header">
+                        <div>
+                            <h4>مخزن الشركة الرئيسي</h4>
+                            <p>اضغط على المنتج لإضافته إلى سلة البيع</p>
+                        </div>
+                        <div class="pos-search">
+                            <i class="bi bi-search"></i>
+                            <input type="text" id="posInventorySearch" class="form-control" placeholder="بحث سريع عن منتج..."<?php echo empty($companyInventory) ? ' disabled' : ''; ?>>
+                        </div>
+                    </div>
+                    <div class="pos-product-grid" id="posProductGrid">
+                        <?php if (empty($companyInventory)): ?>
+                            <div class="pos-empty pos-empty-inline">
+                                <i class="bi bi-box"></i>
+                                <h5 class="mt-3 mb-2">لا يوجد مخزون متاح حالياً</h5>
+                                <p class="mb-0">لا توجد منتجات في مخزن الشركة الرئيسي حالياً.</p>
+                            </div>
+                        <?php else: ?>
+                            <?php foreach ($companyInventory as $item): ?>
+                                <div class="pos-product-card" data-product-card data-product-id="<?php echo (int) $item['product_id']; ?>" data-name="<?php echo htmlspecialchars($item['product_name'] ?? '', ENT_QUOTES, 'UTF-8'); ?>" data-category="<?php echo htmlspecialchars($item['category'] ?? '', ENT_QUOTES, 'UTF-8'); ?>">
+                                    <div class="pos-product-name"><?php echo htmlspecialchars($item['product_name'] ?? 'منتج'); ?></div>
+                                    <?php if (!empty($item['category'])): ?>
+                                        <div class="pos-product-meta">
+                                            <span class="pos-product-badge"><?php echo htmlspecialchars($item['category']); ?></span>
+                                        </div>
+                                    <?php endif; ?>
+                                    <?php if (!empty($item['batch_number'])): ?>
+                                        <div class="pos-product-meta">
+                                            <span>رقم التشغيلة</span>
+                                            <span class="text-muted small"><?php echo htmlspecialchars($item['batch_number']); ?></span>
+                                        </div>
+                                    <?php endif; ?>
+                                    <div class="pos-product-meta">
+                                        <span>سعر الوحدة</span>
+                                        <strong><?php echo formatCurrency((float) ($item['unit_price'] ?? 0)); ?></strong>
+                                    </div>
+                                    <div class="pos-product-meta">
+                                        <span>الكمية المتاحة</span>
+                                        <span class="pos-product-qty"><?php echo number_format((float) ($item['quantity'] ?? 0), 2); ?></span>
+                                    </div>
+                                    <button type="button"
+                                            class="btn btn-outline-primary pos-select-btn"
+                                            data-select-product
+                                            data-product-id="<?php echo (int) $item['product_id']; ?>">
+                                        <i class="bi bi-plus-circle me-2"></i>إضافة إلى السلة
+                                    </button>
+                                </div>
+                            <?php endforeach; ?>
+                        <?php endif; ?>
+                    </div>
+                </div>
+
+                <div class="pos-panel pos-checkout-panel" style="grid-column: span 5;">
+                    <div class="pos-selected-product" id="posSelectedProduct">
+                        <h5 class="mb-3">تفاصيل المنتج المختار</h5>
+                        <div class="meta-row">
+                            <div class="meta-block">
+                                <span>المنتج</span>
+                                <div class="fw-semibold" id="posSelectedProductName">-</div>
+                            </div>
+                            <div class="meta-block">
+                                <span>التصنيف</span>
+                                <div class="fw-semibold" id="posSelectedProductCategory">-</div>
+                            </div>
+                        </div>
+                        <div class="meta-row mt-3">
+                            <div class="meta-block">
+                                <span>السعر</span>
+                                <div class="fw-semibold" id="posSelectedProductPrice">-</div>
+                            </div>
+                            <div class="meta-block">
+                                <span>المتوفر</span>
+                                <div class="fw-semibold" id="posSelectedProductStock">-</div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="pos-panel">
+                        <form method="post" id="posSaleForm" class="pos-form needs-validation" novalidate>
+                            <input type="hidden" name="action" value="create_pos_sale">
+                            <input type="hidden" name="cart_data" id="posCartData">
+                            <input type="hidden" name="paid_amount" id="posPaidField" value="0">
+
+                            <div class="row g-3 mb-3 align-items-end">
+                                <div class="col-sm-6">
+                                    <label class="form-label">تاريخ العملية</label>
+                                    <input type="date" class="form-control" name="sale_date" id="posSaleDate" value="<?php echo date('Y-m-d'); ?>">
+                                </div>
+                                <div class="col-sm-6">
+                                    <label class="form-label">اختيار العميل</label>
+                                    <div class="btn-group w-100 pos-customer-mode-toggle" role="group" aria-label="Customer mode options">
+                                        <input class="btn-check" type="radio" name="customer_mode" id="posCustomerModeExisting" value="existing" autocomplete="off" checked>
+                                        <label class="btn btn-outline-primary flex-fill" for="posCustomerModeExisting">
+                                            <i class="bi bi-person-check me-1"></i>عميل حالي
+                                        </label>
+                                        <input class="btn-check" type="radio" name="customer_mode" id="posCustomerModeNew" value="new" autocomplete="off">
+                                        <label class="btn btn-outline-secondary flex-fill" for="posCustomerModeNew">
+                                            <i class="bi bi-person-plus me-1"></i>عميل جديد
+                                        </label>
+                                    </div>
+                                </div>
+                            </div>
+
+                            <div class="mb-3" id="posExistingCustomerWrap">
+                                <label class="form-label">العملاء المسجلون</label>
+                                <select class="form-select" id="posCustomerSelect" name="customer_id" required>
+                                    <option value="">اختر العميل</option>
+                                    <?php foreach ($customers as $customer): ?>
+                                        <option value="<?php echo (int) $customer['id']; ?>"><?php echo htmlspecialchars($customer['name']); ?></option>
+                                    <?php endforeach; ?>
+                                </select>
+                            </div>
+
+                            <div class="mb-3 d-none" id="posNewCustomerWrap">
+                                <div class="row g-3">
+                                    <div class="col-12">
+                                        <label class="form-label">اسم العميل</label>
+                                        <input type="text" class="form-control" name="new_customer_name" id="posNewCustomerName" placeholder="اسم العميل الجديد">
+                                    </div>
+                                    <div class="col-sm-6">
+                                        <label class="form-label">رقم الهاتف <span class="text-muted">(اختياري)</span></label>
+                                        <input type="text" class="form-control" name="new_customer_phone" placeholder="مثال: 01012345678">
+                                    </div>
+                                    <div class="col-sm-6">
+                                        <label class="form-label">العنوان <span class="text-muted">(اختياري)</span></label>
+                                        <input type="text" class="form-control" name="new_customer_address" placeholder="عنوان العميل">
+                                    </div>
+                                </div>
+                            </div>
+
+                            <div class="mb-3">
+                                <div class="d-flex justify-content-between align-items-center mb-2 flex-wrap gap-2">
+                                    <h5 class="mb-0">سلة البيع</h5>
+                                    <button type="button" class="btn btn-outline-danger btn-sm d-flex align-items-center gap-1 gap-md-2" id="posClearCartBtn">
+                                        <i class="bi bi-trash"></i>
+                                        <span class="d-none d-sm-inline">تفريغ السلة</span>
+                                    </button>
+                                </div>
+                                <div class="pos-cart-empty" id="posCartEmpty">
+                                    <i class="bi bi-basket3"></i>
+                                    <p class="mt-2 mb-0">لم يتم اختيار أي منتجات بعد. اضغط على البطاقة لإضافتها.</p>
+                                </div>
+                                <div class="table-responsive d-none" id="posCartTableWrapper">
+                                    <table class="table pos-cart-table align-middle">
+                                        <thead>
+                                            <tr>
+                                                <th>المنتج</th>
+                                                <th width="180">الكمية</th>
+                                                <th width="160">سعر الوحدة</th>
+                                                <th width="160">الإجمالي</th>
+                                                <th width="70"></th>
+                                            </tr>
+                                        </thead>
+                                        <tbody id="posCartBody"></tbody>
+                                    </table>
+                                </div>
+                            </div>
+
+                            <div class="row g-2 g-md-3 align-items-start mb-3">
+                                <div class="col-12 col-sm-6">
+                                    <label class="form-label">مدفوع مسبقاً (اختياري)</label>
+                                    <input type="number" step="0.01" min="0" value="0" class="form-control form-control-sm" id="posPrepaidInput" name="prepaid_amount">
+                                    <div class="pos-inline-note">سيتم خصم المبلغ من إجمالي السلة.</div>
+                                </div>
+                                <div class="col-12 col-sm-6">
+                                    <div class="pos-summary-card-neutral">
+                                        <span class="small text-uppercase opacity-75">الإجمالي بعد الخصم</span>
+                                        <span class="total" id="posNetTotal">0</span>
+                                        <span class="small text-uppercase opacity-75 mt-2">المتبقي على العميل</span>
+                                        <span class="fw-semibold" id="posDueAmount">0</span>
+                                    </div>
+                                </div>
+                            </div>
+
+                            <div class="mb-3">
+                                <label class="form-label">طريقة الدفع</label>
+                                <div class="pos-payment-options">
+                                    <label class="pos-payment-option active" for="posPaymentFull" data-payment-option>
+                                        <input class="form-check-input" type="radio" name="payment_type" id="posPaymentFull" value="full" checked>
+                                        <div class="pos-payment-option-icon">
+                                            <i class="bi bi-cash-stack"></i>
+                                        </div>
+                                        <div class="pos-payment-option-details">
+                                            <span class="pos-payment-option-title">دفع كامل الآن</span>
+                                            <span class="pos-payment-option-desc">تحصيل المبلغ بالكامل فوراً دون أي ديون.</span>
+                                        </div>
+                                    </label>
+                                    <label class="pos-payment-option" for="posPaymentPartial" data-payment-option>
+                                        <input class="form-check-input" type="radio" name="payment_type" id="posPaymentPartial" value="partial">
+                                        <div class="pos-payment-option-icon">
+                                            <i class="bi bi-cash-coin"></i>
+                                        </div>
+                                        <div class="pos-payment-option-details">
+                                            <span class="pos-payment-option-title">تحصيل جزئي الآن</span>
+                                            <span class="pos-payment-option-desc">استلام جزء من المبلغ حالياً وتسجيل المتبقي كدين.</span>
+                                        </div>
+                                    </label>
+                                    <label class="pos-payment-option" for="posPaymentCredit" data-payment-option>
+                                        <input class="form-check-input" type="radio" name="payment_type" id="posPaymentCredit" value="credit">
+                                        <div class="pos-payment-option-icon">
+                                            <i class="bi bi-receipt"></i>
+                                        </div>
+                                        <div class="pos-payment-option-details">
+                                            <span class="pos-payment-option-title">بيع بالآجل</span>
+                                            <span class="pos-payment-option-desc">تمويل كامل للعميل دون تحصيل فوري، مع متابعة الدفعات لاحقاً.</span>
+                                        </div>
+                                    </label>
+                                </div>
+                                <div class="mt-3 d-none" id="posPartialWrapper">
+                                    <label class="form-label">مبلغ التحصيل الجزئي</label>
+                                    <input type="number" step="0.01" min="0" value="0" class="form-control" id="posPartialAmount">
+                                </div>
+                                <div class="mt-3 d-none" id="posDueDateWrapper">
+                                    <label class="form-label">تاريخ الاستحقاق <span class="text-muted">(اختياري)</span></label>
+                                    <input type="date" class="form-control" name="due_date" id="posDueDate">
+                                    <small class="text-muted">اتركه فارغاً لطباعة "أجل غير مسمى"</small>
+                                </div>
+                            </div>
+
+                            <div class="mb-3">
+                                <label class="form-label">ملاحظات إضافية <span class="text-muted">(اختياري)</span></label>
+                                <textarea class="form-control form-control-sm" name="notes" rows="3" placeholder="مثال: تعليمات التسليم، شروط خاصة..."></textarea>
+                            </div>
+
+                            <div class="d-flex flex-wrap gap-2 justify-content-between">
+                                <button type="button" class="btn btn-outline-secondary btn-sm flex-fill flex-md-none" id="posResetFormBtn">
+                                    <i class="bi bi-arrow-repeat me-1 me-md-2"></i><span class="d-none d-sm-inline">إعادة تعيين</span>
+                                </button>
+                                <button type="submit" class="btn btn-success flex-fill flex-md-auto" id="posSubmitBtn" disabled>
+                                    <i class="bi bi-check-circle me-1 me-md-2"></i>إتمام عملية البيع
+                                </button>
+                            </div>
+                        </form>
+                    </div>
+
+                    <div class="pos-panel">
+                        <div class="pos-panel-header">
+                            <div>
+                                <h5>آخر عمليات البيع</h5>
+                                <p>أحدث عملياتك خلال الفترة الأخيرة</p>
+                            </div>
+                        </div>
+                        <?php if (empty($recentSales)): ?>
+                            <div class="pos-empty mb-0">
+                                <div class="empty-state-icon mb-2"><i class="bi bi-receipt"></i></div>
+                                <div class="empty-state-title">لا توجد عمليات بيع مسجلة</div>
+                                <div class="empty-state-description">ابدأ ببيع منتجات مخزن الشركة ليظهر السجل هنا.</div>
+                            </div>
+                        <?php else: ?>
+                            <div class="pos-history-list">
+                                <?php foreach ($recentSales as $sale): ?>
+                                    <div class="pos-sale-card">
+                                        <div>
+                                            <div class="fw-semibold"><?php echo htmlspecialchars($sale['product_name'] ?? '-'); ?></div>
+                                            <div class="meta">
+                                                <?php echo formatDate($sale['date']); ?> • <?php echo htmlspecialchars($sale['customer_name'] ?? '-'); ?>
+                                            </div>
+                                        </div>
+                                        <div class="text-end">
+                                            <div class="fw-semibold mb-1"><?php echo formatCurrency((float) ($sale['total'] ?? 0)); ?></div>
+                                            <span class="badge bg-success">مكتمل</span>
+                                        </div>
+                                    </div>
+                                <?php endforeach; ?>
+                            </div>
+                        <?php endif; ?>
+                    </div>
+                </div>
+            </section>
+        </div>
+    </div>
+    <!-- محتوى طلبات الشحن -->
+    <div class="tab-pane fade" id="shipping-content" role="tabpanel">
+        <?php
+        // إحصائيات طلبات الشحن
+        $ordersStats = [
+            'total_orders' => 0,
+            'active_orders' => 0,
+            'delivered_orders' => 0,
+            'outstanding_amount' => 0.0,
+        ];
+
+        try {
+            $statsRow = $db->queryOne(
+                "SELECT 
+                    COUNT(*) AS total_orders,
+                    SUM(CASE WHEN status IN ('assigned','in_transit') THEN 1 ELSE 0 END) AS active_orders,
+                    SUM(CASE WHEN status = 'delivered' THEN 1 ELSE 0 END) AS delivered_orders,
+                    SUM(CASE WHEN status IN ('assigned','in_transit') THEN total_amount ELSE 0 END) AS outstanding_amount
+                FROM shipping_company_orders"
+            );
+
+            if ($statsRow) {
+                $ordersStats['total_orders'] = (int)($statsRow['total_orders'] ?? 0);
+                $ordersStats['active_orders'] = (int)($statsRow['active_orders'] ?? 0);
+                $ordersStats['delivered_orders'] = (int)($statsRow['delivered_orders'] ?? 0);
+                $ordersStats['outstanding_amount'] = (float)($statsRow['outstanding_amount'] ?? 0);
+            }
+        } catch (Throwable $e) {
+            error_log('Error fetching shipping stats: ' . $e->getMessage());
+        }
+        ?>
+
+        <div class="row g-3 mb-4">
+            <div class="col-md-3 col-sm-6">
+                <div class="stat-card">
+                    <div class="stat-card-header">
+                        <div class="stat-card-icon blue"><i class="bi bi-building"></i></div>
+                    </div>
+                    <div class="stat-card-title">شركات الشحن</div>
+                    <div class="stat-card-value"><?php echo number_format(count($shippingCompanies)); ?></div>
+                </div>
+            </div>
+            <div class="col-md-3 col-sm-6">
+                <div class="stat-card">
+                    <div class="stat-card-header">
+                        <div class="stat-card-icon orange"><i class="bi bi-truck"></i></div>
+                    </div>
+                    <div class="stat-card-title">طلبات نشطة</div>
+                    <div class="stat-card-value"><?php echo number_format($ordersStats['active_orders']); ?></div>
+                </div>
+            </div>
+            <div class="col-md-3 col-sm-6">
+                <div class="stat-card">
+                    <div class="stat-card-header">
+                        <div class="stat-card-icon green"><i class="bi bi-check2-circle"></i></div>
+                    </div>
+                    <div class="stat-card-title">طلبات مكتملة</div>
+                    <div class="stat-card-value"><?php echo number_format($ordersStats['delivered_orders']); ?></div>
+                </div>
+            </div>
+            <div class="col-md-3 col-sm-6">
+                <div class="stat-card">
+                    <div class="stat-card-header">
+                        <div class="stat-card-icon purple"><i class="bi bi-cash-stack"></i></div>
+                    </div>
+                    <div class="stat-card-title">مبالغ قيد التحصيل</div>
+                    <div class="stat-card-value"><?php echo formatCurrency($ordersStats['outstanding_amount']); ?></div>
+                </div>
+            </div>
+        </div>
+
+        <div class="card shadow-sm mb-4">
+            <div class="card-header d-flex justify-content-between align-items-center">
+                <div>
+                    <h5 class="mb-1">تسجيل طلب شحن جديد</h5>
+                    <small class="text-muted">قم بتسليم المنتجات لشركة الشحن وتتبع الدين عليها لحين استلام العميل.</small>
+                </div>
+                <button type="button" class="btn btn-outline-primary btn-sm" data-bs-toggle="modal" data-bs-target="#addShippingCompanyModal">
+                    <i class="bi bi-plus-circle me-1"></i>شركة شحن جديدة
+                </button>
+            </div>
+            <div class="card-body">
+                <?php if (empty($shippingCompanies)): ?>
+                    <div class="alert alert-warning d-flex align-items-center gap-2 mb-0">
+                        <i class="bi bi-info-circle-fill fs-5"></i>
+                        <div>لم يتم إضافة شركات شحن بعد. يرجى إضافة شركة شحن قبل تسجيل الطلبات.</div>
+                    </div>
+                <?php elseif (empty($availableProductsForShipping)): ?>
+                    <div class="alert alert-warning d-flex align-items-center gap-2 mb-0">
+                        <i class="bi bi-box-seam fs-5"></i>
+                        <div>لا توجد منتجات متاحة في المخزن الرئيسي حالياً.</div>
+                    </div>
+                <?php elseif (empty($customers)): ?>
+                    <div class="alert alert-warning d-flex align-items-center gap-2 mb-0">
+                        <i class="bi bi-people fs-5"></i>
+                        <div>لا توجد عملاء نشطون في النظام. قم بإضافة عميل أولاً.</div>
+                    </div>
+                <?php else: ?>
+                    <form method="POST" id="shippingOrderForm" class="needs-validation" novalidate>
+                        <input type="hidden" name="action" value="create_shipping_order">
+                        <div class="row g-3 mb-3">
+                            <div class="col-lg-4 col-md-6">
+                                <label class="form-label">شركة الشحن <span class="text-danger">*</span></label>
+                                <div class="input-group">
+                                    <select class="form-select" name="shipping_company_id" required>
+                                        <option value="">اختر شركة الشحن</option>
+                                        <?php foreach ($shippingCompanies as $company): ?>
+                                            <option value="<?php echo (int)$company['id']; ?>">
+                                                <?php echo htmlspecialchars($company['name']); ?>
+                                                <?php if (!empty($company['phone'])): ?>
+                                                    - <?php echo htmlspecialchars($company['phone']); ?>
+                                                <?php endif; ?>
+                                            </option>
+                                        <?php endforeach; ?>
+                                    </select>
+                                    <button class="btn btn-outline-secondary" type="button" data-bs-toggle="modal" data-bs-target="#addShippingCompanyModal" title="إضافة شركة شحن">
+                                        <i class="bi bi-plus"></i>
+                                    </button>
+                                </div>
+                            </div>
+                            <div class="col-lg-4 col-md-6">
+                                <label class="form-label">العميل <span class="text-danger">*</span></label>
+                                <select class="form-select" name="customer_id" required>
+                                    <option value="">اختر العميل</option>
+                                    <?php foreach ($customers as $customer): ?>
+                                        <option value="<?php echo (int)$customer['id']; ?>">
+                                            <?php echo htmlspecialchars($customer['name']); ?>
+                                        </option>
+                                    <?php endforeach; ?>
+                                </select>
+                            </div>
+                            <div class="col-lg-4">
+                                <label class="form-label">المخزن المصدر</label>
+                                <div class="form-control bg-light">
+                                    <i class="bi bi-building me-1"></i>
+                                    <?php echo htmlspecialchars($mainWarehouse['name'] ?? 'المخزن الرئيسي'); ?>
+                                </div>
+                            </div>
+                        </div>
+
+                        <div class="table-responsive mb-3">
+                            <table class="table table-sm align-middle" id="shippingItemsTable">
+                                <thead class="table-light">
+                                    <tr>
+                                        <th style="min-width: 220px;">المنتج</th>
+                                        <th style="width: 110px;">المتاح</th>
+                                        <th style="width: 140px;">الكمية <span class="text-danger">*</span></th>
+                                        <th style="width: 160px;">سعر الوحدة <span class="text-danger">*</span></th>
+                                        <th style="width: 160px;">الإجمالي</th>
+                                        <th style="width: 80px;">حذف</th>
+                                    </tr>
+                                </thead>
+                                <tbody id="shippingItemsBody"></tbody>
+                            </table>
+                        </div>
+
+                        <div class="d-flex justify-content-between align-items-center flex-wrap gap-2 mb-3">
+                            <button type="button" class="btn btn-outline-primary btn-sm" id="addShippingItemBtn">
+                                <i class="bi bi-plus-circle me-1"></i>إضافة منتج
+                            </button>
+                            <div class="shipping-order-summary card bg-light border-0 px-3 py-2">
+                                <div class="d-flex align-items-center gap-3">
+                                    <div>
+                                        <div class="small text-muted">إجمالي عدد المنتجات</div>
+                                        <div class="fw-semibold" id="shippingItemsCount">0</div>
+                                    </div>
+                                    <div>
+                                        <div class="small text-muted">إجمالي الطلب</div>
+                                        <div class="fw-bold text-success" id="shippingOrderTotal"><?php echo formatCurrency(0); ?></div>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+
+                        <div class="mb-3">
+                            <label class="form-label">ملاحظات إضافية</label>
+                            <textarea class="form-control" name="order_notes" rows="2" placeholder="أي تفاصيل إضافية لشركة الشحن أو فريق المبيعات (اختياري)"></textarea>
+                        </div>
+
+                        <div class="alert alert-info d-flex align-items-center gap-2">
+                            <i class="bi bi-info-circle-fill fs-5"></i>
+                            <div>
+                                سيتم تسجيل هذا الطلب على شركة الشحن كدين لحين تأكيد التسليم للعميل، ثم يتحول الدين إلى العميل ليتم تحصيله لاحقاً.
+                            </div>
+                        </div>
+
+                        <div class="text-end">
+                            <button type="submit" class="btn btn-success btn-lg" id="submitShippingOrderBtn">
+                                <i class="bi bi-send-check me-1"></i>تسجيل الطلب وتسليم المنتجات
+                            </button>
+                        </div>
+                    </form>
+                <?php endif; ?>
+            </div>
+        </div>
+
+        <div class="card shadow-sm mb-4">
+            <div class="card-header">
+                <h5 class="mb-0">شركات الشحن</h5>
+            </div>
+            <div class="card-body p-0">
+                <?php if (empty($shippingCompanies)): ?>
+                    <div class="p-4 text-center text-muted">لم يتم إضافة شركات شحن بعد.</div>
+                <?php else: ?>
+                    <div class="table-responsive">
+                        <table class="table table-striped table-hover mb-0 align-middle">
+                            <thead class="table-light">
+                                <tr>
+                                    <th>الاسم</th>
+                                    <th>الهاتف</th>
+                                    <th>الحالة</th>
+                                    <th>ديون الشركة</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                <?php foreach ($shippingCompanies as $company): ?>
+                                    <tr>
+                                        <td><?php echo htmlspecialchars($company['name']); ?></td>
+                                        <td><?php echo $company['phone'] ? htmlspecialchars($company['phone']) : '<span class="text-muted">غير متوفر</span>'; ?></td>
+                                        <td>
+                                            <?php if (($company['status'] ?? '') === 'active'): ?>
+                                                <span class="badge bg-success">نشطة</span>
+                                            <?php else: ?>
+                                                <span class="badge bg-secondary">غير نشطة</span>
+                                            <?php endif; ?>
+                                        </td>
+                                        <td class="fw-semibold text-<?php echo ($company['balance'] ?? 0) > 0 ? 'danger' : 'muted'; ?>">
+                                            <?php echo formatCurrency((float)($company['balance'] ?? 0)); ?>
+                                        </td>
+                                    </tr>
+                                <?php endforeach; ?>
+                            </tbody>
+                        </table>
+                    </div>
+                <?php endif; ?>
+            </div>
+        </div>
+
+        <div class="card shadow-sm">
+            <div class="card-header d-flex justify-content-between align-items-center">
+                <h5 class="mb-0">أحدث طلبات الشحن</h5>
+            </div>
+            <div class="card-body p-0">
+                <?php if (empty($shippingOrders)): ?>
+                    <div class="p-4 text-center text-muted">لا توجد طلبات شحن مسجلة حالياً.</div>
+                <?php else: ?>
+                    <div class="table-responsive">
+                        <table class="table table-hover table-nowrap mb-0 align-middle">
+                            <thead class="table-light">
+                                <tr>
+                                    <th>رقم الطلب</th>
+                                    <th>شركة الشحن</th>
+                                    <th>العميل</th>
+                                    <th>المبلغ</th>
+                                    <th>الحالة</th>
+                                    <th>تاريخ التسليم للعميل</th>
+                                    <th>الفاتورة</th>
+                                    <th style="width: 220px;">الإجراءات</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                <?php foreach ($shippingOrders as $order): ?>
+                                    <?php
+                                        $statusInfo = $statusLabels[$order['status']] ?? ['label' => $order['status'], 'class' => 'bg-secondary'];
+                                        $deliveredAt = $order['delivered_at'] ?? null;
+                                        $invoiceLink = '';
+                                        if (!empty($order['invoice_id'])) {
+                                            $invoiceUrl = getRelativeUrl('print_invoice.php?id=' . (int)$order['invoice_id']);
+                                            $invoiceLink = '<a href="' . htmlspecialchars($invoiceUrl) . '" target="_blank" class="btn btn-outline-primary btn-sm"><i class="bi bi-file-earmark-text me-1"></i>عرض الفاتورة</a>';
+                                        }
+                                    ?>
+                                    <tr>
+                                        <td>
+                                            <div class="fw-semibold">#<?php echo htmlspecialchars($order['order_number']); ?></div>
+                                            <div class="text-muted small">سجل في <?php echo formatDateTime($order['created_at']); ?></div>
+                                        </td>
+                                        <td>
+                                            <div class="fw-semibold"><?php echo htmlspecialchars($order['shipping_company_name'] ?? 'غير معروف'); ?></div>
+                                            <div class="text-muted small">دين حالي: <?php echo formatCurrency((float)($order['company_balance'] ?? 0)); ?></div>
+                                        </td>
+                                        <td>
+                                            <div class="fw-semibold"><?php echo htmlspecialchars($order['customer_name'] ?? 'غير محدد'); ?></div>
+                                            <?php if (!empty($order['customer_phone'])): ?>
+                                                <div class="text-muted small"><i class="bi bi-telephone"></i> <?php echo htmlspecialchars($order['customer_phone']); ?></div>
+                                            <?php endif; ?>
+                                        </td>
+                                        <td class="fw-semibold"><?php echo formatCurrency((float)$order['total_amount']); ?></td>
+                                        <td>
+                                            <span class="badge <?php echo $statusInfo['class']; ?>">
+                                                <?php echo htmlspecialchars($statusInfo['label']); ?>
+                                            </span>
+                                            <?php if (!empty($order['handed_over_at'])): ?>
+                                                <div class="text-muted small mt-1">سُلِّم للشركة: <?php echo formatDateTime($order['handed_over_at']); ?></div>
+                                            <?php endif; ?>
+                                        </td>
+                                        <td>
+                                            <?php if ($deliveredAt): ?>
+                                                <span class="text-success fw-semibold"><?php echo formatDateTime($deliveredAt); ?></span>
+                                            <?php else: ?>
+                                                <span class="text-muted">لم يتم التسليم بعد</span>
+                                            <?php endif; ?>
+                                        </td>
+                                        <td><?php echo $invoiceLink ?: '<span class="text-muted">لا توجد فاتورة</span>'; ?></td>
+                                        <td>
+                                            <div class="d-flex flex-wrap gap-2">
+                                                <?php if ($order['status'] === 'assigned'): ?>
+                                                    <form method="POST" class="d-inline">
+                                                        <input type="hidden" name="action" value="update_shipping_status">
+                                                        <input type="hidden" name="order_id" value="<?php echo (int)$order['id']; ?>">
+                                                        <input type="hidden" name="status" value="in_transit">
+                                                        <button type="submit" class="btn btn-outline-warning btn-sm">
+                                                            <i class="bi bi-truck me-1"></i>بدء الشحن
+                                                        </button>
+                                                    </form>
+                                                <?php endif; ?>
+
+                                                <?php if (in_array($order['status'], ['assigned', 'in_transit'], true)): ?>
+                                                    <form method="POST" class="d-inline" onsubmit="return confirm('هل ترغب في تأكيد تسليم الطلب للعميل ونقل الدين؟');">
+                                                        <input type="hidden" name="action" value="complete_shipping_order">
+                                                        <input type="hidden" name="order_id" value="<?php echo (int)$order['id']; ?>">
+                                                        <button type="submit" class="btn btn-success btn-sm">
+                                                            <i class="bi bi-check-circle me-1"></i>إجراءات التسليم
+                                                        </button>
+                                                    </form>
+                                                <?php endif; ?>
+                                            </div>
+                                        </td>
+                                    </tr>
+                                <?php endforeach; ?>
+                            </tbody>
+                        </table>
+                    </div>
+                <?php endif; ?>
+            </div>
+        </div>
+
+        <!-- Modal إضافة شركة شحن -->
+        <div class="modal fade" id="addShippingCompanyModal" tabindex="-1" aria-hidden="true">
+            <div class="modal-dialog modal-dialog-centered">
+                <div class="modal-content">
+                    <div class="modal-header">
+                        <h5 class="modal-title"><i class="bi bi-truck me-2"></i>إضافة شركة شحن</h5>
+                        <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+                    </div>
+                    <form method="POST">
+                        <input type="hidden" name="action" value="add_shipping_company">
+                        <div class="modal-body">
+                            <div class="mb-3">
+                                <label class="form-label">اسم الشركة <span class="text-danger">*</span></label>
+                                <input type="text" class="form-control" name="company_name" required>
+                            </div>
+                            <div class="mb-3">
+                                <label class="form-label">الشخص المسؤول</label>
+                                <input type="text" class="form-control" name="contact_person" placeholder="اسم الشخص المسؤول (اختياري)">
+                            </div>
+                            <div class="row g-3">
+                                <div class="col-md-6">
+                                    <label class="form-label">رقم الهاتف</label>
+                                    <input type="text" class="form-control" name="phone" placeholder="مثال: 01000000000">
+                                </div>
+                                <div class="col-md-6">
+                                    <label class="form-label">البريد الإلكتروني</label>
+                                    <input type="email" class="form-control" name="email" placeholder="example@domain.com">
+                                </div>
+                            </div>
+                            <div class="mb-3 mt-3">
+                                <label class="form-label">العنوان</label>
+                                <textarea class="form-control" name="address" rows="2" placeholder="عنوان شركة الشحن (اختياري)"></textarea>
+                            </div>
+                            <div class="mb-0">
+                                <label class="form-label">ملاحظات</label>
+                                <textarea class="form-control" name="company_notes" rows="2" placeholder="أي معلومات إضافية (اختياري)"></textarea>
+                            </div>
+                        </div>
+                        <div class="modal-footer">
+                            <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">إلغاء</button>
+                            <button type="submit" class="btn btn-primary">
+                                <i class="bi bi-save me-1"></i>حفظ
+                            </button>
+                        </div>
+                    </form>
+                </div>
+            </div>
+        </div>
+
+        <script>
+        (function() {
+            const products = <?php echo json_encode(array_map(function ($product) {
+                return [
+                    'id' => (int)($product['id'] ?? 0),
+                    'name' => $product['name'] ?? '',
+                    'quantity' => (float)($product['quantity'] ?? 0),
+                    'unit_price' => (float)($product['unit_price'] ?? 0),
+                    'unit' => $product['unit'] ?? ''
+                ];
+            }, $availableProductsForShipping), JSON_UNESCAPED_UNICODE); ?>;
+
+            const itemsBody = document.getElementById('shippingItemsBody');
+            const addItemBtn = document.getElementById('addShippingItemBtn');
+            const itemsCountEl = document.getElementById('shippingItemsCount');
+            const orderTotalEl = document.getElementById('shippingOrderTotal');
+            const submitBtn = document.getElementById('submitShippingOrderBtn');
+
+            if (!itemsBody || !addItemBtn) {
+                return;
+            }
+
+            if (!Array.isArray(products) || !products.length) {
+                if (submitBtn) {
+                    submitBtn.disabled = true;
+                }
+                return;
+            }
+
+            let rowIndex = 0;
+
+            const formatCurrency = (value) => {
+                return new Intl.NumberFormat('ar-EG', { style: 'currency', currency: 'EGP', minimumFractionDigits: 2 }).format(value || 0);
+            };
+
+            const escapeHtml = (value) => {
+                if (typeof value !== 'string') {
+                    return '';
+                }
+                return value.replace(/[&<>"']/g, function (char) {
+                    switch (char) {
+                        case '&': return '&amp;';
+                        case '<': return '&lt;';
+                        case '>': return '&gt;';
+                        case '"': return '&quot;';
+                        case "'": return '&#39;';
+                        default: return char;
+                    }
+                });
+            };
+
+            const buildProductOptions = () => {
+                return products.map(product => {
+                    const available = Number(product.quantity || 0).toFixed(2);
+                    const unitPrice = Number(product.unit_price || 0).toFixed(2);
+                    const unit = escapeHtml(product.unit || 'وحدة');
+                    const name = escapeHtml(product.name || '');
+                    return `
+                        <option value="${product.id}" data-available="${available}" data-unit-price="${unitPrice}">
+                            ${name} (المتاح: ${available} ${unit})
+                        </option>
+                    `;
+                }).join('');
+            };
+
+            const recalculateTotals = () => {
+                const rows = itemsBody.querySelectorAll('tr');
+                let totalItems = 0;
+                let totalAmount = 0;
+
+                rows.forEach(row => {
+                    const quantityInput = row.querySelector('input[name$="[quantity]"]');
+                    const unitPriceInput = row.querySelector('input[name$="[unit_price]"]');
+                    const lineTotalEl = row.querySelector('.line-total');
+
+                    const quantity = parseFloat(quantityInput?.value || '0');
+                    const unitPrice = parseFloat(unitPriceInput?.value || '0');
+                    const lineTotal = quantity * unitPrice;
+
+                    if (quantity > 0) {
+                        totalItems += quantity;
+                    }
+                    totalAmount += lineTotal;
+
+                    if (lineTotalEl) {
+                        lineTotalEl.textContent = formatCurrency(lineTotal);
+                    }
+                });
+
+                if (itemsCountEl) {
+                    itemsCountEl.textContent = totalItems.toLocaleString('ar-EG', { maximumFractionDigits: 2 });
+                }
+                if (orderTotalEl) {
+                    orderTotalEl.textContent = formatCurrency(totalAmount);
+                }
+            };
+
+            const attachRowEvents = (row) => {
+                const productSelect = row.querySelector('select[name$="[product_id]"]');
+                const quantityInput = row.querySelector('input[name$="[quantity]"]');
+                const unitPriceInput = row.querySelector('input[name$="[unit_price]"]');
+                const availableBadges = row.querySelectorAll('.available-qty');
+                const removeBtn = row.querySelector('.remove-item');
+
+                const updateAvailability = () => {
+                    const selectedOption = productSelect?.selectedOptions?.[0];
+                    const available = parseFloat(selectedOption?.dataset?.available || '0');
+                    const unitPrice = parseFloat(selectedOption?.dataset?.unitPrice || '0');
+
+                    if (quantityInput) {
+                        quantityInput.max = available > 0 ? String(available) : '';
+                        if (available > 0 && parseFloat(quantityInput.value || '0') > available) {
+                            quantityInput.value = available;
+                        }
+                    }
+
+                    if (unitPriceInput && (!unitPriceInput.value || parseFloat(unitPriceInput.value) <= 0)) {
+                        unitPriceInput.value = unitPrice.toFixed(2);
+                    }
+
+                    if (availableBadges.length) {
+                        const message = selectedOption && available > 0
+                            ? `المتاح: ${available.toLocaleString('ar-EG')} وحدة`
+                            : 'لا توجد كمية متاحة';
+                        availableBadges.forEach((badge) => {
+                            badge.textContent = message;
+                            badge.classList.toggle('text-danger', !(selectedOption && available > 0));
+                        });
+                    }
+
+                    recalculateTotals();
+                };
+
+                productSelect?.addEventListener('change', updateAvailability);
+                quantityInput?.addEventListener('input', recalculateTotals);
+                unitPriceInput?.addEventListener('input', recalculateTotals);
+
+                removeBtn?.addEventListener('click', () => {
+                    if (itemsBody.children.length > 1) {
+                        row.remove();
+                        recalculateTotals();
+                    }
+                });
+
+                updateAvailability();
+            };
+
+            const addNewRow = () => {
+                const row = document.createElement('tr');
+                row.innerHTML = `
+                    <td>
+                        <select class="form-select" name="items[${rowIndex}][product_id]" required>
+                            <option value="">اختر المنتج</option>
+                            ${buildProductOptions()}
+                        </select>
+                    </td>
+                    <td class="text-muted fw-semibold">
+                        <span class="available-qty d-inline-block">-</span>
+                    </td>
+                    <td>
+                        <input type="number" class="form-control" name="items[${rowIndex}][quantity]" step="0.01" min="0.01" value="1" required>
+                    </td>
+                    <td>
+                        <input type="number" class="form-control" name="items[${rowIndex}][unit_price]" step="0.01" min="0" required>
+                    </td>
+                    <td class="fw-semibold line-total">${formatCurrency(0)}</td>
+                    <td>
+                        <button type="button" class="btn btn-outline-danger btn-sm remove-item" title="حذف المنتج">
+                            <i class="bi bi-trash"></i>
+                        </button>
+                    </td>
+                `;
+
+                itemsBody.appendChild(row);
+                attachRowEvents(row);
+                rowIndex += 1;
+                recalculateTotals();
+            };
+
+            addItemBtn.addEventListener('click', () => {
+                addNewRow();
+            });
+
+            addNewRow();
+        })();
+        </script>
+    </div>
+</div>
+
+<?php if (!$error): ?>
+<script>
+(function () {
+    const locale = <?php echo json_encode($pageDirection === 'rtl' ? 'ar-EG' : 'en-US'); ?>;
+    const currencySymbolRaw = <?php echo json_encode(CURRENCY_SYMBOL); ?>;
+    const inventory = <?php
+        $inventoryForJs = [];
+        foreach ($companyInventory as $item) {
+            $inventoryForJs[] = [
+                'product_id' => (int) ($item['product_id'] ?? 0),
+                'name' => $item['product_name'] ?? '',
+                'category' => $item['category'] ?? '',
+                'quantity' => (float) ($item['quantity'] ?? 0),
+                'unit_price' => (float) ($item['unit_price'] ?? 0),
+                'total_value' => (float) ($item['total_value'] ?? 0),
+            ];
+        }
+        echo json_encode($inventoryForJs, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
+    ?>;
+
+    inventory.forEach((item) => {
+        item.quantity = sanitizeNumber(item.quantity);
+        item.unit_price = sanitizeNumber(item.unit_price);
+        item.total_value = sanitizeNumber(item.total_value);
+    });
+
+    // تجميع المنتجات حسب product_id
+    const inventoryMap = new Map();
+    inventory.forEach((item) => {
+        const productId = item.product_id;
+        if (inventoryMap.has(productId)) {
+            const existing = inventoryMap.get(productId);
+            existing.quantity += item.quantity;
+            if (item.unit_price > 0) {
+                existing.unit_price = item.unit_price;
+            }
+        } else {
+            inventoryMap.set(productId, {
+                product_id: productId,
+                name: item.name,
+                category: item.category,
+                quantity: item.quantity,
+                unit_price: item.unit_price,
+            });
+        }
+    });
+
+    const cart = [];
+
+    const elements = {
+        form: document.getElementById('posSaleForm'),
+        cartData: document.getElementById('posCartData'),
+        paidField: document.getElementById('posPaidField'),
+        cartBody: document.getElementById('posCartBody'),
+        cartEmpty: document.getElementById('posCartEmpty'),
+        cartTableWrapper: document.getElementById('posCartTableWrapper'),
+        clearCart: document.getElementById('posClearCartBtn'),
+        resetForm: document.getElementById('posResetFormBtn'),
+        netTotal: document.getElementById('posNetTotal'),
+        dueAmount: document.getElementById('posDueAmount'),
+        prepaidInput: document.getElementById('posPrepaidInput'),
+        paymentOptionCards: document.querySelectorAll('[data-payment-option]'),
+        paymentRadios: document.querySelectorAll('input[name="payment_type"]'),
+        partialWrapper: document.getElementById('posPartialWrapper'),
+        partialInput: document.getElementById('posPartialAmount'),
+        dueDateWrapper: document.getElementById('posDueDateWrapper'),
+        dueDateInput: document.getElementById('posDueDate'),
+        submitBtn: document.getElementById('posSubmitBtn'),
+        customerModeRadios: document.querySelectorAll('input[name="customer_mode"]'),
+        existingCustomerWrap: document.getElementById('posExistingCustomerWrap'),
+        customerSelect: document.getElementById('posCustomerSelect'),
+        newCustomerWrap: document.getElementById('posNewCustomerWrap'),
+        newCustomerName: document.getElementById('posNewCustomerName'),
+        inventoryCards: document.querySelectorAll('[data-product-card]'),
+        inventoryButtons: document.querySelectorAll('[data-select-product]'),
+        inventorySearch: document.getElementById('posInventorySearch'),
+        selectedPanel: document.getElementById('posSelectedProduct'),
+        selectedName: document.getElementById('posSelectedProductName'),
+        selectedCategory: document.getElementById('posSelectedProductCategory'),
+        selectedPrice: document.getElementById('posSelectedProductPrice'),
+        selectedStock: document.getElementById('posSelectedProductStock'),
+    };
+
+    function roundTwo(value) {
+        return Math.round((Number(value) + Number.EPSILON) * 100) / 100;
+    }
+
+    function sanitizeCurrencySymbol(value) {
+        if (typeof value !== 'string') {
+            value = value == null ? '' : String(value);
+        }
+        const cleaned = value.replace(/262145/gi, '').replace(/\s+/g, ' ').trim();
+        return cleaned || 'ج.م';
+    }
+
+    const currencySymbol = sanitizeCurrencySymbol(currencySymbolRaw);
+
+    function sanitizeNumber(value) {
+        if (value === null || value === undefined) {
+            return 0;
+        }
+        if (typeof value === 'string') {
+            const stripped = value.replace(/262145/gi, '').replace(/[^\d.\-]/g, '');
+            value = parseFloat(stripped);
+        }
+        if (!Number.isFinite(value)) {
+            return 0;
+        }
+        if (Math.abs(value - 262145) < 0.01 || value > 10000000 || value < 0) {
+            return 0;
+        }
+        return roundTwo(value);
+    }
+
+    function formatCurrency(value) {
+        const sanitized = sanitizeNumber(value);
+        return sanitized.toLocaleString(locale, {
+            minimumFractionDigits: 2,
+            maximumFractionDigits: 2,
+        }) + ' ' + currencySymbol;
+    }
+
+    function escapeHtml(value) {
+        return String(value ?? '').replace(/[&<>\"']/g, function (char) {
+            const escapeMap = { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#039;' };
+            return escapeMap[char] || char;
+        });
+    }
+
+    function renderSelectedProduct(product) {
+        if (!product || !elements.selectedPanel) return;
+        elements.selectedPanel.classList.add('active');
+        elements.selectedName.textContent = product.name || '-';
+        elements.selectedCategory.textContent = product.category || 'غير مصنف';
+        elements.selectedPrice.textContent = formatCurrency(product.unit_price || 0);
+        elements.selectedStock.textContent = (product.quantity ?? 0).toFixed(2);
+    }
+
+    function syncCartData() {
+        const payload = cart.map((item) => ({
+            product_id: item.product_id,
+            quantity: sanitizeNumber(item.quantity),
+            unit_price: sanitizeNumber(item.unit_price),
+        }));
+        elements.cartData.value = JSON.stringify(payload);
+    }
+
+    function refreshPaymentOptionStates() {
+        if (!elements.paymentOptionCards) return;
+        elements.paymentOptionCards.forEach((card) => {
+            const input = card.querySelector('input[type="radio"]');
+            const isChecked = Boolean(input && input.checked);
+            card.classList.toggle('active', isChecked);
+        });
+    }
+
+    function updateSummary() {
+        const subtotal = cart.reduce((total, item) => {
+            const qty = sanitizeNumber(item.quantity);
+            const price = sanitizeNumber(item.unit_price);
+            return total + (qty * price);
+        }, 0);
+        let prepaid = sanitizeNumber(elements.prepaidInput ? elements.prepaidInput.value : '0');
+        let sanitizedSubtotal = sanitizeNumber(subtotal);
+
+        if (prepaid < 0) prepaid = 0;
+        if (prepaid > sanitizedSubtotal) prepaid = sanitizedSubtotal;
+        if (elements.prepaidInput) elements.prepaidInput.value = prepaid.toFixed(2);
+
+        const netTotal = sanitizeNumber(sanitizedSubtotal - prepaid);
+        let paidAmount = 0;
+        const paymentType = Array.from(elements.paymentRadios).find((radio) => radio.checked)?.value || 'full';
+
+        if (paymentType === 'full') {
+            paidAmount = netTotal;
+            elements.partialWrapper.classList.add('d-none');
+            elements.partialInput.value = '0.00';
+            if (elements.dueDateWrapper) elements.dueDateWrapper.classList.add('d-none');
+        } else if (paymentType === 'partial') {
+            elements.partialWrapper.classList.remove('d-none');
+            if (elements.dueDateWrapper) elements.dueDateWrapper.classList.remove('d-none');
+            let partialValue = sanitizeNumber(elements.partialInput.value);
+            if (partialValue < 0) partialValue = 0;
+            if (partialValue >= netTotal && netTotal > 0) partialValue = Math.max(0, netTotal - 0.01);
+            elements.partialInput.value = partialValue.toFixed(2);
+            paidAmount = partialValue;
+        } else {
+            elements.partialWrapper.classList.add('d-none');
+            elements.partialInput.value = '0.00';
+            if (elements.dueDateWrapper) elements.dueDateWrapper.classList.remove('d-none');
+            paidAmount = 0;
+        }
+
+        const dueAmount = sanitizeNumber(Math.max(0, netTotal - paidAmount));
+
+        if (elements.netTotal) elements.netTotal.textContent = formatCurrency(netTotal);
+        if (elements.dueAmount) elements.dueAmount.textContent = formatCurrency(dueAmount);
+        if (elements.paidField) elements.paidField.value = paidAmount.toFixed(2);
+        if (elements.submitBtn) {
+            const hasCartItems = cart.length > 0;
+            const hasValidCustomer = (() => {
+                const customerMode = Array.from(elements.customerModeRadios).find((radio) => radio.checked)?.value || 'existing';
+                if (customerMode === 'existing') {
+                    return elements.customerSelect && elements.customerSelect.value && elements.customerSelect.value !== '';
+                } else {
+                    return elements.newCustomerName && elements.newCustomerName.value && elements.newCustomerName.value.trim() !== '';
+                }
+            })();
+            elements.submitBtn.disabled = !hasCartItems || !hasValidCustomer;
+        }
+        syncCartData();
+        refreshPaymentOptionStates();
+    }
+
+    function renderCart() {
+        if (!elements.cartBody || !elements.cartTableWrapper || !elements.cartEmpty) return;
+
+        if (!cart.length) {
+            elements.cartBody.innerHTML = '';
+            elements.cartTableWrapper.classList.add('d-none');
+            elements.cartEmpty.classList.remove('d-none');
+            updateSummary();
+            return;
+        }
+
+        elements.cartTableWrapper.classList.remove('d-none');
+        elements.cartEmpty.classList.add('d-none');
+
+        const rows = cart.map((item) => {
+            const sanitizedQty = sanitizeNumber(item.quantity);
+            const sanitizedPrice = sanitizeNumber(item.unit_price);
+            const sanitizedAvailable = sanitizeNumber(item.available);
+            return `
+                <tr data-cart-row data-product-id="${item.product_id}">
+                    <td data-label="المنتج">
+                        <div class="fw-semibold">${escapeHtml(item.name)}</div>
+                        <div class="text-muted small">${escapeHtml(item.category || 'غير مصنف')} • متاح: ${sanitizedAvailable.toFixed(2)}</div>
+                    </td>
+                    <td data-label="الكمية">
+                        <div class="pos-qty-control">
+                            <button type="button" class="btn btn-light border" data-action="decrease" data-product-id="${item.product_id}"><i class="bi bi-dash"></i></button>
+                            <input type="number" step="0.01" min="0" max="${sanitizedAvailable.toFixed(2)}" class="form-control" data-cart-qty data-product-id="${item.product_id}" value="${sanitizedQty.toFixed(2)}">
+                            <button type="button" class="btn btn-light border" data-action="increase" data-product-id="${item.product_id}"><i class="bi bi-plus"></i></button>
+                        </div>
+                    </td>
+                    <td data-label="سعر الوحدة">
+                        <input type="number" step="0.01" min="0" class="form-control" data-cart-price data-product-id="${item.product_id}" value="${sanitizedPrice.toFixed(2)}">
+                    </td>
+                    <td data-label="الإجمالي" class="fw-semibold">${formatCurrency(sanitizedQty * sanitizedPrice)}</td>
+                    <td data-label="إجراءات" class="text-end">
+                        <button type="button" class="btn btn-link text-danger p-0" data-action="remove" data-product-id="${item.product_id}"><i class="bi bi-x-circle"></i></button>
+                    </td>
+                </tr>`;
+        }).join('');
+
+        elements.cartBody.innerHTML = rows;
+        updateSummary();
+    }
+
+    function addToCart(productId) {
+        const product = inventoryMap.get(productId);
+        if (!product) return;
+        product.quantity = sanitizeNumber(product.quantity);
+        product.unit_price = sanitizeNumber(product.unit_price);
+        const existing = cart.find((item) => item.product_id === productId);
+        if (existing) {
+            const maxQty = sanitizeNumber(product.quantity);
+            const newQty = sanitizeNumber(existing.quantity + 1);
+            existing.quantity = newQty > maxQty ? maxQty : newQty;
+        } else {
+            if (product.quantity <= 0) return;
+            cart.push({
+                product_id: product.product_id,
+                name: product.name,
+                category: product.category,
+                quantity: Math.min(1, sanitizeNumber(product.quantity)),
+                available: sanitizeNumber(product.quantity),
+                unit_price: sanitizeNumber(product.unit_price),
+            });
+        }
+        renderSelectedProduct(product);
+        renderCart();
+    }
+
+    function removeFromCart(productId) {
+        const index = cart.findIndex((item) => item.product_id === productId);
+        if (index >= 0) {
+            cart.splice(index, 1);
+            renderCart();
+        }
+    }
+
+    function adjustQuantity(productId, delta) {
+        const item = cart.find((entry) => entry.product_id === productId);
+        const product = inventoryMap.get(productId);
+        if (!item || !product) return;
+        let newQuantity = sanitizeNumber(item.quantity + delta);
+        if (newQuantity <= 0) {
+            removeFromCart(productId);
+            return;
+        }
+        const maxQty = sanitizeNumber(product.quantity);
+        if (newQuantity > maxQty) newQuantity = maxQty;
+        item.quantity = newQuantity;
+        renderCart();
+    }
+
+    function updateQuantity(productId, value) {
+        const item = cart.find((entry) => entry.product_id === productId);
+        const product = inventoryMap.get(productId);
+        if (!item || !product) return;
+        let qty = sanitizeNumber(value);
+        if (qty <= 0) {
+            removeFromCart(productId);
+            return;
+        }
+        const maxQty = sanitizeNumber(product.quantity);
+        if (qty > maxQty) qty = maxQty;
+        item.quantity = qty;
+        renderCart();
+    }
+
+    function updateUnitPrice(productId, value) {
+        const item = cart.find((entry) => entry.product_id === productId);
+        if (!item) return;
+        let price = sanitizeNumber(value);
+        if (price < 0) price = 0;
+        item.unit_price = price;
+        renderCart();
+    }
+
+    elements.inventoryButtons.forEach((button) => {
+        button.addEventListener('click', function (event) {
+            event.stopPropagation();
+            addToCart(parseInt(this.dataset.productId, 10));
+        });
+    });
+
+    elements.inventoryCards.forEach((card) => {
+        card.addEventListener('click', function () {
+            const productId = parseInt(this.dataset.productId, 10);
+            elements.inventoryCards.forEach((c) => c.classList.remove('active'));
+            this.classList.add('active');
+            renderSelectedProduct(inventoryMap.get(productId));
+        });
+    });
+
+    if (elements.inventorySearch) {
+        elements.inventorySearch.addEventListener('input', function () {
+            const term = (this.value || '').toLowerCase().trim();
+            elements.inventoryCards.forEach((card) => {
+                const name = (card.dataset.name || '').toLowerCase();
+                const category = (card.dataset.category || '').toLowerCase();
+                card.style.display = !term || name.includes(term) || category.includes(term) ? '' : 'none';
+            });
+        });
+    }
+
+    if (elements.cartBody) {
+        elements.cartBody.addEventListener('click', function (event) {
+            const action = event.target.closest('[data-action]');
+            if (!action) return;
+            const productId = parseInt(action.dataset.productId, 10);
+            switch (action.dataset.action) {
+                case 'increase': adjustQuantity(productId, 1); break;
+                case 'decrease': adjustQuantity(productId, -1); break;
+                case 'remove': removeFromCart(productId); break;
+            }
+        });
+
+        elements.cartBody.addEventListener('input', function (event) {
+            const qtyInput = event.target.matches('[data-cart-qty]') ? event.target : null;
+            const priceInput = event.target.matches('[data-cart-price]') ? event.target : null;
+            const productId = parseInt(event.target.dataset.productId || '0', 10);
+            if (qtyInput) updateQuantity(productId, qtyInput.value);
+            if (priceInput) updateUnitPrice(productId, priceInput.value);
+        });
+    }
+
+    if (elements.clearCart) {
+        elements.clearCart.addEventListener('click', function () {
+            cart.length = 0;
+            renderCart();
+        });
+    }
+
+    if (elements.resetForm) {
+        elements.resetForm.addEventListener('click', function () {
+            cart.length = 0;
+            renderCart();
+            elements.form?.reset();
+            elements.partialWrapper?.classList.add('d-none');
+            elements.submitBtn.disabled = true;
+            elements.selectedPanel?.classList.remove('active');
+        });
+    }
+
+    if (elements.prepaidInput) {
+        elements.prepaidInput.addEventListener('input', updateSummary);
+        elements.prepaidInput.addEventListener('change', updateSummary);
+    }
+
+    if (elements.partialInput) {
+        elements.partialInput.addEventListener('input', updateSummary);
+    }
+
+    elements.paymentRadios.forEach((radio) => {
+        radio.addEventListener('change', updateSummary);
+    });
+
+    elements.customerModeRadios.forEach((radio) => {
+        radio.addEventListener('change', function () {
+            const mode = this.value;
+            if (mode === 'existing') {
+                elements.existingCustomerWrap?.classList.remove('d-none');
+                elements.customerSelect?.setAttribute('required', 'required');
+                elements.newCustomerWrap?.classList.add('d-none');
+                elements.newCustomerName?.removeAttribute('required');
+            } else {
+                elements.existingCustomerWrap?.classList.add('d-none');
+                elements.customerSelect?.removeAttribute('required');
+                elements.newCustomerWrap?.classList.remove('d-none');
+                elements.newCustomerName?.setAttribute('required', 'required');
+            }
+            updateSummary();
+        });
+    });
+
+    if (elements.customerSelect) {
+        elements.customerSelect.addEventListener('change', updateSummary);
+    }
+    if (elements.newCustomerName) {
+        elements.newCustomerName.addEventListener('input', updateSummary);
+    }
+
+    if (elements.form) {
+        elements.form.addEventListener('submit', function (event) {
+            if (!cart.length) {
+                event.preventDefault();
+                alert('يرجى إضافة منتجات إلى السلة قبل إتمام العملية.');
+                return;
+            }
+            updateSummary();
+            if (!elements.form.checkValidity()) {
+                event.preventDefault();
+            }
+            elements.form.classList.add('was-validated');
+        });
+    }
+
+    refreshPaymentOptionStates();
+    renderCart();
+})();
+</script>
+
+<!-- إدارة Modal الفاتورة -->
+<script>
+(function() {
+    <?php if (!empty($posInvoiceLinks['absolute_report_url'])): ?>
+    const invoiceUrl = <?php echo json_encode($posInvoiceLinks['absolute_report_url'], JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES); ?>;
+    const invoicePrintUrl = <?php echo !empty($posInvoiceLinks['absolute_print_url']) ? json_encode($posInvoiceLinks['absolute_print_url'], JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES) : 'null'; ?>;
+    <?php else: ?>
+    const invoiceUrl = null;
+    const invoicePrintUrl = null;
+    <?php endif; ?>
+    
+    function initInvoiceModal() {
+        const invoiceModal = document.getElementById('posInvoiceModal');
+        if (invoiceModal && invoiceUrl && typeof bootstrap !== 'undefined' && bootstrap.Modal) {
+            try {
+                const modal = new bootstrap.Modal(invoiceModal, { backdrop: 'static', keyboard: false });
+                modal.show();
+                invoiceModal.addEventListener('hidden.bs.modal', function() {
+                    const currentUrl = new URL(window.location.href);
+                    currentUrl.searchParams.delete('success');
+                    currentUrl.searchParams.delete('error');
+                    window.history.replaceState({}, '', currentUrl.toString());
+                });
+            } catch (error) {
+                setTimeout(initInvoiceModal, 200);
+            }
+        } else if (invoiceModal && invoiceUrl) {
+            setTimeout(initInvoiceModal, 100);
+        }
         
+        window.printInvoice = function() {
+            const url = invoicePrintUrl || (invoiceUrl ? invoiceUrl + (invoiceUrl.includes('?') ? '&' : '?') + 'print=1' : null);
+            if (url) {
+                const printWindow = window.open(url, '_blank');
+                if (printWindow) {
+                    printWindow.onload = function() {
+                        setTimeout(() => printWindow.print(), 500);
+                    };
+                }
+            }
+        };
+    }
+    
+    if (document.readyState === 'loading') {
+        document.addEventListener('DOMContentLoaded', initInvoiceModal);
+    } else {
+        initInvoiceModal();
+    }
+})();
+</script>
+<?php endif; ?>
