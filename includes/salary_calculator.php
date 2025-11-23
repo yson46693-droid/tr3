@@ -70,20 +70,23 @@ function calculateMonthlyHours($userId, $month, $year) {
         // استخدام الجدول الجديد
         // حساب الساعات من جميع السجلات التي تم إكمالها (check_out_time IS NOT NULL)
         // حتى لو كانت الساعات قليلة (مثل ربع ساعة)
+        // استخدام نفس المنطق المستخدم في صفحة الحضور (getAttendanceStatistics)
+        $monthKey = sprintf('%04d-%02d', $year, $month);
+        
         $result = $db->queryOne(
             "SELECT COALESCE(SUM(work_hours), 0) as total_hours 
              FROM attendance_records 
-             WHERE user_id = ? AND MONTH(date) = ? AND YEAR(date) = ?
+             WHERE user_id = ? AND DATE_FORMAT(date, '%Y-%m') = ?
              AND check_out_time IS NOT NULL
              AND work_hours IS NOT NULL
              AND work_hours > 0",
-            [$userId, $month, $year]
+            [$userId, $monthKey]
         );
         
         $totalHours = round($result['total_hours'] ?? 0, 2);
         
         // تسجيل للتأكد من أن الساعات تُحسب بشكل صحيح
-        error_log("calculateMonthlyHours: user_id={$userId}, month={$month}, year={$year}, total_hours={$totalHours}");
+        error_log("calculateMonthlyHours: user_id={$userId}, month={$month}, year={$year}, month_key={$monthKey}, total_hours={$totalHours}");
         
         return $totalHours;
     } else {

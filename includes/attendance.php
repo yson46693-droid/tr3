@@ -1120,10 +1120,15 @@ function calculateMonthHours($userId, $month) {
         return 0;
     }
     
+    // استخدام نفس المنطق المستخدم في getAttendanceStatistics و calculateMonthlyHours
+    // للتحقق من work_hours IS NOT NULL AND work_hours > 0
     $result = $db->queryOne(
         "SELECT COALESCE(SUM(work_hours), 0) as total_hours 
          FROM attendance_records 
-         WHERE user_id = ? AND DATE_FORMAT(date, '%Y-%m') = ? AND check_out_time IS NOT NULL",
+         WHERE user_id = ? AND DATE_FORMAT(date, '%Y-%m') = ? 
+         AND check_out_time IS NOT NULL
+         AND work_hours IS NOT NULL
+         AND work_hours > 0",
         [$userId, $month]
     );
     
