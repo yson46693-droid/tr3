@@ -949,6 +949,61 @@ function recordAttendanceCheckOut($userId, $photoBase64 = null) {
                     
                     error_log("Existing salary found: ID={$existingSalary['id']}, old_total_hours={$oldTotalHours}, old_base_amount={$oldBaseAmount}, old_total_amount={$oldTotalAmount}");
                     
+                    // تحديث total_hours أولاً بشكل مباشر
+                    if (abs($oldTotalHours - $actualMonthlyHours) > 0.01) {
+                        error_log("Updating total_hours: {$oldTotalHours} -> {$actualMonthlyHours}");
+                        
+                        $updateHoursResult = $db->execute(
+                            "UPDATE salaries SET total_hours = ?, updated_at = NOW() WHERE id = ?",
+                            [$actualMonthlyHours, $existingSalary['id']]
+                        );
+                        
+                        $hoursAffected = $updateHoursResult['affected_rows'] ?? 0;
+                        error_log("total_hours UPDATE: affected_rows={$hoursAffected}");
+                        
+                        // التحقق من التحديث مباشرة
+                        $verifyHours = $db->queryOne(
+                            "SELECT total_hours FROM salaries WHERE id = ?",
+                            [$existingSalary['id']]
+                        );
+                        
+                        if ($verifyHours) {
+                            $verifiedHoursValue = floatval($verifyHours['total_hours'] ?? 0);
+                            error_log("Verified total_hours after update: {$verifiedHoursValue} (expected: {$actualMonthlyHours})");
+                            
+                            if (abs($verifiedHoursValue - $actualMonthlyHours) > 0.01) {
+                                error_log("ERROR: total_hours update failed! Retrying with direct SQL...");
+                                
+                                // محاولة مباشرة باستخدام connection
+                                try {
+                                    $conn = $db->getConnection();
+                                    $stmt = $conn->prepare("UPDATE salaries SET total_hours = ?, updated_at = NOW() WHERE id = ?");
+                                    $stmt->bind_param("di", $actualMonthlyHours, $existingSalary['id']);
+                                    $stmt->execute();
+                                    $directAffected = $stmt->affected_rows;
+                                    $stmt->close();
+                                    
+                                    error_log("Direct SQL UPDATE: affected_rows={$directAffected}");
+                                    
+                                    // التحقق مرة أخرى
+                                    $finalVerify = $db->queryOne(
+                                        "SELECT total_hours FROM salaries WHERE id = ?",
+                                        [$existingSalary['id']]
+                                    );
+                                    
+                                    if ($finalVerify) {
+                                        $finalHours = floatval($finalVerify['total_hours'] ?? 0);
+                                        error_log("Final verified total_hours: {$finalHours} (expected: {$actualMonthlyHours})");
+                                    }
+                                } catch (Exception $directError) {
+                                    error_log("Direct SQL UPDATE failed: " . $directError->getMessage());
+                                }
+                            }
+                        }
+                    } else {
+                        error_log("total_hours already correct: {$oldTotalHours} = {$actualMonthlyHours}");
+                    }
+                    
                     // إعادة حساب الراتب الأساسي بناءً على الساعات الجديدة
                     if ($userRole === 'sales') {
                         // للمندوبين: الراتب الأساسي هو hourly_rate مباشرة (راتب شهري ثابت)
@@ -985,70 +1040,43 @@ function recordAttendanceCheckOut($userId, $photoBase64 = null) {
                     
                     error_log("New calculations: base_amount={$newBaseAmount}, total_amount={$newTotalAmount}");
                     
-                    // تحديث الراتب في قاعدة البيانات - تحديث شامل في استعلام واحد
+                    // تحديث باقي الحقول
                     $updateResult = $db->execute(
                         "UPDATE salaries SET 
-                            total_hours = ?,
                             base_amount = ?,
                             total_amount = ?,
                             updated_at = NOW()
                          WHERE id = ?",
-                        [$actualMonthlyHours, $newBaseAmount, $newTotalAmount, $existingSalary['id']]
+                        [$newBaseAmount, $newTotalAmount, $existingSalary['id']]
                     );
                     
                     $affectedRows = $updateResult['affected_rows'] ?? 0;
-                    error_log("UPDATE executed: affected_rows={$affectedRows}");
+                    error_log("Other fields UPDATE: affected_rows={$affectedRows}");
                     
-                    if ($affectedRows == 0) {
-                        error_log("WARNING: No rows affected by UPDATE! Salary ID: {$existingSalary['id']}");
-                    }
-                    
-                    // التحقق من التحديث - إعادة جلب البيانات مباشرة
-                    $verifySalary = $db->queryOne(
+                    // التحقق النهائي من جميع القيم
+                    $finalVerify = $db->queryOne(
                         "SELECT total_hours, base_amount, total_amount FROM salaries WHERE id = ?",
                         [$existingSalary['id']]
                     );
                     
-                    if ($verifySalary) {
-                        $verifiedHours = floatval($verifySalary['total_hours'] ?? 0);
-                        $verifiedBase = floatval($verifySalary['base_amount'] ?? 0);
-                        $verifiedTotal = floatval($verifySalary['total_amount'] ?? 0);
+                    if ($finalVerify) {
+                        $finalHours = floatval($finalVerify['total_hours'] ?? 0);
+                        $finalBase = floatval($finalVerify['base_amount'] ?? 0);
+                        $finalTotal = floatval($finalVerify['total_amount'] ?? 0);
                         
                         error_log(
-                            "Salary UPDATE VERIFICATION for user {$userId}: " .
+                            "FINAL VERIFICATION for user {$userId}: " .
                             "Month={$attendanceMonthNumber}/{$attendanceYearNumber}, " .
-                            "Hours: {$oldTotalHours} -> {$verifiedHours} (calculated: {$actualMonthlyHours}), " .
-                            "Base: {$oldBaseAmount} -> {$verifiedBase} (calculated: {$newBaseAmount}), " .
-                            "Total: {$oldTotalAmount} -> {$verifiedTotal} (calculated: {$newTotalAmount})"
+                            "Hours: {$oldTotalHours} -> {$finalHours} (calculated: {$actualMonthlyHours}), " .
+                            "Base: {$oldBaseAmount} -> {$finalBase} (calculated: {$newBaseAmount}), " .
+                            "Total: {$oldTotalAmount} -> {$finalTotal} (calculated: {$newTotalAmount})"
                         );
                         
-                        if (abs($verifiedHours - $actualMonthlyHours) > 0.01) {
-                            error_log("ERROR: Verified hours ({$verifiedHours}) don't match calculated hours ({$actualMonthlyHours})! Retrying update...");
-                            
-                            // إعادة المحاولة
-                            $retryResult = $db->execute(
-                                "UPDATE salaries SET total_hours = ?, base_amount = ?, total_amount = ?, updated_at = NOW() WHERE id = ?",
-                                [$actualMonthlyHours, $newBaseAmount, $newTotalAmount, $existingSalary['id']]
-                            );
-                            
-                            $retryAffected = $retryResult['affected_rows'] ?? 0;
-                            error_log("Retry UPDATE: affected_rows={$retryAffected}");
-                            
-                            // التحقق مرة أخرى
-                            $retryVerify = $db->queryOne(
-                                "SELECT total_hours FROM salaries WHERE id = ?",
-                                [$existingSalary['id']]
-                            );
-                            
-                            if ($retryVerify) {
-                                $retryHours = floatval($retryVerify['total_hours'] ?? 0);
-                                error_log("After retry: total_hours={$retryHours} (expected: {$actualMonthlyHours})");
-                            }
+                        if (abs($finalHours - $actualMonthlyHours) <= 0.01) {
+                            error_log("SUCCESS: total_hours updated correctly for user {$userId}");
                         } else {
-                            error_log("SUCCESS: Salary updated correctly for user {$userId}");
+                            error_log("ERROR: total_hours still incorrect after all attempts! Expected: {$actualMonthlyHours}, Got: {$finalHours}");
                         }
-                    } else {
-                        error_log("ERROR: Could not verify salary update for user {$userId} - salary record not found!");
                     }
                 } else {
                     error_log("No existing salary found, creating new one...");
