@@ -179,15 +179,15 @@ function requestApproval($type, $entityId, $requestedBy, $notes = null) {
                             $month = intval($salary['month'] ?? date('n'));
                             $year = intval($salary['year'] ?? date('Y'));
                             
-                            // حساب الراتب الحالي بنفس طريقة الحساب في بطاقة الموظف
+                            // حساب الراتب الحالي بنفس طريقة الحساب في بطاقة الموظف (نسخ الكود بالضبط)
                             $hourlyRate = cleanFinancialValue($salary['hourly_rate'] ?? $salary['current_hourly_rate'] ?? 0);
                             $currentBonus = cleanFinancialValue($salary['bonus'] ?? 0);
                             $currentDeductions = cleanFinancialValue($salary['deductions'] ?? 0);
                             $collectionsBonus = cleanFinancialValue($salary['collections_bonus'] ?? 0);
                             
-                            // حساب الراتب الأساسي بنفس طريقة بطاقة الموظف
+                            // حساب الراتب الأساسي بناءً على نوع المستخدم (نفس كود بطاقة الموظف)
                             if ($userRole === 'sales') {
-                                // للمندوبين: الراتب الأساسي هو base_amount أو hourly_rate
+                                // للمندوبين: الراتب الأساسي هو hourly_rate مباشرة (راتب شهري ثابت)
                                 $baseAmount = cleanFinancialValue($salary['base_amount'] ?? $hourlyRate);
                             } else {
                                 // لعمال الإنتاج والمحاسبين: الراتب = عدد الساعات × سعر الساعة
@@ -195,7 +195,7 @@ function requestApproval($type, $entityId, $requestedBy, $notes = null) {
                                 $baseAmount = round($actualHours * $hourlyRate, 2);
                             }
                             
-                            // حساب نسبة التحصيلات للمندوبين بنفس طريقة بطاقة الموظف
+                            // إذا كان مندوب مبيعات، أعد حساب نسبة التحصيلات (نفس كود بطاقة الموظف)
                             if ($userRole === 'sales') {
                                 $recalculatedCollectionsAmount = calculateSalesCollections($userId, $month, $year);
                                 $recalculatedCollectionsBonus = round($recalculatedCollectionsAmount * 0.02, 2);
@@ -206,8 +206,11 @@ function requestApproval($type, $entityId, $requestedBy, $notes = null) {
                                 }
                             }
                             
-                            // حساب الراتب الحالي بنفس طريقة بطاقة الموظف
+                            // حساب الراتب الإجمالي الصحيح دائماً من المكونات (نفس كود بطاقة الموظف)
+                            // الراتب الإجمالي = الراتب الأساسي + المكافآت + نسبة التحصيلات - الخصومات
                             $currentTotal = $baseAmount + $currentBonus + $collectionsBonus - $currentDeductions;
+                            
+                            // التأكد من أن الراتب الإجمالي لا يكون سالباً
                             $currentTotal = max(0, $currentTotal);
                             
                             // حساب الراتب الجديد مع التعديلات (نفس طريقة الحساب في بطاقة الموظف)
