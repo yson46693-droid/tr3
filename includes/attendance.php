@@ -949,19 +949,21 @@ function recordAttendanceCheckOut($userId, $photoBase64 = null) {
                     
                     error_log("Existing salary found: ID={$existingSalary['id']}, old_total_hours={$oldTotalHours}, old_base_amount={$oldBaseAmount}, old_total_amount={$oldTotalAmount}");
                     
-                    // تحديث total_hours أولاً بشكل مباشر
-                    if (abs($oldTotalHours - $actualMonthlyHours) > 0.01) {
-                        error_log("Updating total_hours: {$oldTotalHours} -> {$actualMonthlyHours}");
-                        
+                    // تحديث total_hours بشكل إجباري دائماً (حتى لو كانت القيمة متساوية)
+                    error_log("FORCE UPDATING total_hours: {$oldTotalHours} -> {$actualMonthlyHours}");
+                    
+                    // محاولة 1: استخدام db()->execute()
+                    try {
                         $updateHoursResult = $db->execute(
                             "UPDATE salaries SET total_hours = ?, updated_at = NOW() WHERE id = ?",
                             [$actualMonthlyHours, $existingSalary['id']]
                         );
                         
                         $hoursAffected = $updateHoursResult['affected_rows'] ?? 0;
-                        error_log("total_hours UPDATE: affected_rows={$hoursAffected}");
+                        error_log("Method 1 (db->execute): affected_rows={$hoursAffected}");
                         
                         // التحقق من التحديث مباشرة
+                        usleep(100000); // انتظار 100ms للتأكد من أن التحديث تم
                         $verifyHours = $db->queryOne(
                             "SELECT total_hours FROM salaries WHERE id = ?",
                             [$existingSalary['id']]
@@ -969,39 +971,81 @@ function recordAttendanceCheckOut($userId, $photoBase64 = null) {
                         
                         if ($verifyHours) {
                             $verifiedHoursValue = floatval($verifyHours['total_hours'] ?? 0);
-                            error_log("Verified total_hours after update: {$verifiedHoursValue} (expected: {$actualMonthlyHours})");
+                            error_log("Method 1 verification: {$verifiedHoursValue} (expected: {$actualMonthlyHours})");
                             
                             if (abs($verifiedHoursValue - $actualMonthlyHours) > 0.01) {
-                                error_log("ERROR: total_hours update failed! Retrying with direct SQL...");
+                                error_log("Method 1 FAILED! Trying Method 2 (direct SQL)...");
                                 
-                                // محاولة مباشرة باستخدام connection
+                                // محاولة 2: استخدام SQL مباشر
                                 try {
                                     $conn = $db->getConnection();
                                     $stmt = $conn->prepare("UPDATE salaries SET total_hours = ?, updated_at = NOW() WHERE id = ?");
-                                    $stmt->bind_param("di", $actualMonthlyHours, $existingSalary['id']);
-                                    $stmt->execute();
-                                    $directAffected = $stmt->affected_rows;
-                                    $stmt->close();
-                                    
-                                    error_log("Direct SQL UPDATE: affected_rows={$directAffected}");
-                                    
-                                    // التحقق مرة أخرى
-                                    $finalVerify = $db->queryOne(
-                                        "SELECT total_hours FROM salaries WHERE id = ?",
-                                        [$existingSalary['id']]
-                                    );
-                                    
-                                    if ($finalVerify) {
-                                        $finalHours = floatval($finalVerify['total_hours'] ?? 0);
-                                        error_log("Final verified total_hours: {$finalHours} (expected: {$actualMonthlyHours})");
+                                    if (!$stmt) {
+                                        error_log("Method 2 prepare failed: " . $conn->error);
+                                    } else {
+                                        $stmt->bind_param("di", $actualMonthlyHours, $existingSalary['id']);
+                                        $execResult = $stmt->execute();
+                                        if (!$execResult) {
+                                            error_log("Method 2 execute failed: " . $stmt->error);
+                                        } else {
+                                            $directAffected = $stmt->affected_rows;
+                                            error_log("Method 2 (direct SQL): affected_rows={$directAffected}, executed={$execResult}");
+                                            $stmt->close();
+                                            
+                                            // التحقق مرة أخرى
+                                            usleep(100000);
+                                            $finalVerify = $db->queryOne(
+                                                "SELECT total_hours FROM salaries WHERE id = ?",
+                                                [$existingSalary['id']]
+                                            );
+                                            
+                                            if ($finalVerify) {
+                                                $finalHours = floatval($finalVerify['total_hours'] ?? 0);
+                                                error_log("Method 2 verification: {$finalHours} (expected: {$actualMonthlyHours})");
+                                                
+                                                if (abs($finalHours - $actualMonthlyHours) > 0.01) {
+                                                    error_log("Method 2 FAILED! Trying Method 3 (raw query)...");
+                                                    
+                                                    // محاولة 3: استخدام raw query
+                                                    try {
+                                                        $rawSql = "UPDATE salaries SET total_hours = " . floatval($actualMonthlyHours) . ", updated_at = NOW() WHERE id = " . intval($existingSalary['id']);
+                                                        $rawResult = $conn->query($rawSql);
+                                                        if (!$rawResult) {
+                                                            error_log("Method 3 (raw query) failed: " . $conn->error);
+                                                        } else {
+                                                            $rawAffected = $conn->affected_rows;
+                                                            error_log("Method 3 (raw query): affected_rows={$rawAffected}");
+                                                            
+                                                            // التحقق النهائي
+                                                            usleep(100000);
+                                                            $rawVerify = $db->queryOne(
+                                                                "SELECT total_hours FROM salaries WHERE id = ?",
+                                                                [$existingSalary['id']]
+                                                            );
+                                                            
+                                                            if ($rawVerify) {
+                                                                $rawHours = floatval($rawVerify['total_hours'] ?? 0);
+                                                                error_log("Method 3 verification: {$rawHours} (expected: {$actualMonthlyHours})");
+                                                            }
+                                                        }
+                                                    } catch (Exception $rawError) {
+                                                        error_log("Method 3 (raw query) exception: " . $rawError->getMessage());
+                                                    }
+                                                }
+                                            }
+                                        }
                                     }
                                 } catch (Exception $directError) {
-                                    error_log("Direct SQL UPDATE failed: " . $directError->getMessage());
+                                    error_log("Method 2 exception: " . $directError->getMessage());
                                 }
+                            } else {
+                                error_log("SUCCESS: Method 1 worked! total_hours updated correctly.");
                             }
+                        } else {
+                            error_log("ERROR: Could not verify update - salary record not found!");
                         }
-                    } else {
-                        error_log("total_hours already correct: {$oldTotalHours} = {$actualMonthlyHours}");
+                    } catch (Exception $updateError) {
+                        error_log("Method 1 exception: " . $updateError->getMessage());
                     }
                     
                     // إعادة حساب الراتب الأساسي بناءً على الساعات الجديدة
