@@ -424,8 +424,28 @@ $lang = $translations;
             const splashScreen = document.getElementById('pwaSplashScreen');
             if (!splashScreen) return;
             
-            // التحقق من sessionStorage - إذا كانت الشاشة قد ظهرت في هذه الجلسة، لا تظهرها مرة أخرى
-            const splashShown = sessionStorage.getItem('pwaSplashShown');
+            let splashShown = false;
+            
+            // التحقق من sessionStorage
+            const splashShownInStorage = sessionStorage.getItem('pwaSplashShown');
+            
+            // استخدام pageshow event للتحقق من أن الصفحة تم تحميلها من جديد (وليس من cache)
+            window.addEventListener('pageshow', function(event) {
+                // إذا كانت الصفحة من cache (back/forward)، لا تظهر splash screen
+                if (event.persisted) {
+                    splashShown = true;
+                    return;
+                }
+                
+                // إذا كانت الصفحة جديدة (ليست من cache)، امسح sessionStorage
+                sessionStorage.removeItem('pwaSplashShown');
+                splashShown = false;
+            });
+            
+            // التحقق من sessionStorage عند تحميل الصفحة
+            if (splashShownInStorage === 'true') {
+                splashShown = true;
+            }
             
             function hideSplashScreen() {
                 setTimeout(function() {
@@ -460,6 +480,11 @@ $lang = $translations;
                 splashScreen.style.display = 'none';
                 splashScreen.classList.add('hidden');
             }
+            
+            // مسح sessionStorage عند إغلاق التطبيق
+            window.addEventListener('beforeunload', function() {
+                sessionStorage.removeItem('pwaSplashShown');
+            });
         })();
         
         // إظهار/إخفاء كلمة المرور

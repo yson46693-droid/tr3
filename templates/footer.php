@@ -392,8 +392,29 @@ if (!defined('ACCESS_ALLOWED')) {
             }
             
             // PWA Splash Screen - إظهار مرة واحدة فقط عند إعادة فتح التطبيق
-            // التحقق من sessionStorage - إذا كانت الشاشة قد ظهرت في هذه الجلسة، لا تظهرها مرة أخرى
-            const splashShown = sessionStorage.getItem('pwaSplashShown');
+            // استخدام pageshow event للتحقق من أن الصفحة تم تحميلها من جديد (وليس من cache)
+            let splashShown = false;
+            
+            // التحقق من sessionStorage
+            const splashShownInStorage = sessionStorage.getItem('pwaSplashShown');
+            
+            // استخدام pageshow event للتحقق من أن الصفحة تم تحميلها من جديد
+            window.addEventListener('pageshow', function(event) {
+                // إذا كانت الصفحة من cache (back/forward)، لا تظهر splash screen
+                if (event.persisted) {
+                    splashShown = true;
+                    return;
+                }
+                
+                // إذا كانت الصفحة جديدة (ليست من cache)، امسح sessionStorage
+                sessionStorage.removeItem('pwaSplashShown');
+                splashShown = false;
+            });
+            
+            // التحقق من sessionStorage عند تحميل الصفحة
+            if (splashShownInStorage === 'true') {
+                splashShown = true;
+            }
             
             function hideSplashScreen() {
                 setTimeout(function() {
@@ -440,6 +461,11 @@ if (!defined('ACCESS_ALLOWED')) {
                     dashboardMain.classList.add('content-fade-in');
                 }
             }
+            
+            // مسح sessionStorage عند إغلاق التطبيق
+            window.addEventListener('beforeunload', function() {
+                sessionStorage.removeItem('pwaSplashShown');
+            });
             
             // إخفاء شاشة التحميل عند فتح أي Modal
             document.addEventListener('show.bs.modal', function() {
