@@ -339,18 +339,29 @@ if (ob_get_level() > 0) {
             z-index: 10 !important;
         }
         
-        /* الشعار أو الأيقونة */
-        .loader-icon {
-            font-size: 4.5rem;
-            color: white;
-            animation: pulse 1.5s ease-in-out infinite, float 3s ease-in-out infinite;
-            margin-bottom: 1.5rem;
-            filter: drop-shadow(0 4px 15px rgba(255, 255, 255, 0.4));
+        /* لوجو PWA */
+        .loader-logo {
+            width: 180px;
+            height: 180px;
+            margin-bottom: 2rem;
+            animation: logoFadeIn 0.8s ease-out, logoFloat 3s ease-in-out infinite 0.8s;
+            filter: drop-shadow(0 8px 25px rgba(0, 0, 0, 0.3));
         }
         
-        @keyframes float {
+        @keyframes logoFadeIn {
+            from {
+                opacity: 0;
+                transform: scale(0.8);
+            }
+            to {
+                opacity: 1;
+                transform: scale(1);
+            }
+        }
+        
+        @keyframes logoFloat {
             0%, 100% { transform: translateY(0px); }
-            50% { transform: translateY(-15px); }
+            50% { transform: translateY(-10px); }
         }
         
         /* العنوان */
@@ -358,41 +369,30 @@ if (ob_get_level() > 0) {
             color: white;
             font-size: 2rem;
             font-weight: 700;
-            margin-bottom: 2.5rem;
-            letter-spacing: 3px;
+            margin-bottom: 1rem;
+            letter-spacing: 2px;
             text-shadow: 0 4px 20px rgba(0, 0, 0, 0.3);
-            animation: titleGlow 2s ease-in-out infinite;
+            animation: titleFadeIn 1s ease-out 0.3s both;
         }
         
-        @keyframes titleGlow {
-            0%, 100% { text-shadow: 0 4px 20px rgba(0, 0, 0, 0.3); }
-            50% { text-shadow: 0 4px 30px rgba(255, 255, 255, 0.6), 0 0 40px rgba(241, 196, 15, 0.8); }
+        @keyframes titleFadeIn {
+            from {
+                opacity: 0;
+                transform: translateY(20px);
+            }
+            to {
+                opacity: 1;
+                transform: translateY(0);
+            }
         }
         
-        /* حاوية السبينر */
+        /* حاوية السبينر - مخفية */
         .loader-spinner {
-            position: relative;
-            width: 130px;
-            height: 130px;
+            display: none;
         }
         
-        /* الدوائر المتحركة - ألوان أزرق متدرجة */
+        /* الدوائر المتحركة - مخفية */
         .spinner-circle {
-            position: absolute;
-            width: 100%;
-            height: 100%;
-            border: 5px solid transparent;
-            border-radius: 50%;
-            animation: spin 1.5s cubic-bezier(0.68, -0.55, 0.265, 1.55) infinite;
-        }
-        
-        .spinner-circle:nth-child(1) {
-            border-top-color: #fff;
-            border-right-color: rgba(255, 255, 255, 0.8);
-            box-shadow: 0 0 20px rgba(255, 255, 255, 0.5);
-        }
-        
-        .spinner-circle:nth-child(2) {
             border-top-color: rgba(79, 172, 254, 1);
             border-right-color: rgba(79, 172, 254, 0.6);
             animation-duration: 2s;
@@ -653,24 +653,11 @@ if (ob_get_level() > 0) {
 <body class="dashboard-body"
       data-user-role="<?php echo htmlspecialchars($currentUser['role'] ?? ''); ?>"
       data-user-id="<?php echo isset($currentUser['id']) ? (int) $currentUser['id'] : 0; ?>">
-    <!-- 🎬 شاشة التحميل -->
+    <!-- 🎬 PWA Splash Screen -->
     <?php if (!defined('ENABLE_PAGE_LOADER') || ENABLE_PAGE_LOADER): ?>
     <div id="pageLoader">
-        <div class="loader-icon">
-            <i class="bi bi-box-seam"></i>
-        </div>
+        <img src="<?php echo ASSETS_URL; ?>icons/icon-192x192.png" alt="<?php echo APP_NAME; ?>" class="loader-logo">
         <div class="loader-title"><?php echo APP_NAME; ?></div>
-        <div class="loader-spinner">
-            <div class="spinner-circle"></div>
-            <div class="spinner-circle"></div>
-            <div class="spinner-circle"></div>
-        </div>
-        <div class="loader-text">
-            جاري التحميل<span class="loading-dots"><span>.</span><span>.</span><span>.</span></span>
-        </div>
-        <div class="loader-progress">
-            <div class="loader-progress-bar"></div>
-        </div>
     </div>
     <?php endif; ?>
     
