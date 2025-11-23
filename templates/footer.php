@@ -391,7 +391,11 @@ if (!defined('ACCESS_ALLOWED')) {
                 return;
             }
             
-            // PWA Splash Screen - إظهار مرة واحدة فقط عند إعادة فتح التطبيق
+            // PWA Splash Screen - استخدام قاعدة البيانات لإدارة الجلسات
+            let splashSessionToken = sessionStorage.getItem('pwaSplashToken');
+            let inactivityTimer = null;
+            let deleteSessionOnUnload = false;
+            
             function hideSplashScreen() {
                 setTimeout(function() {
                     pageLoader.classList.add('hidden');
@@ -408,6 +412,83 @@ if (!defined('ACCESS_ALLOWED')) {
                 }, 800); // تأخير 800ms لإظهار الشاشة
             }
             
+            // حذف الجلسة من قاعدة البيانات
+            function deleteSplashSession(token) {
+                if (!token) return;
+                
+                fetch('<?php echo getRelativeUrl("api/pwa_splash_session.php"); ?>?action=delete&token=' + encodeURIComponent(token), {
+                    method: 'GET',
+                    credentials: 'same-origin'
+                }).catch(function(err) {
+                    console.log('Failed to delete splash session:', err);
+                });
+                
+                sessionStorage.removeItem('pwaSplashToken');
+                splashSessionToken = null;
+            }
+            
+            // إنشاء جلسة جديدة في قاعدة البيانات
+            function createSplashSession() {
+                return fetch('<?php echo getRelativeUrl("api/pwa_splash_session.php"); ?>?action=create', {
+                    method: 'GET',
+                    credentials: 'same-origin'
+                })
+                .then(function(response) {
+                    return response.json();
+                })
+                .then(function(data) {
+                    if (data.success && data.token) {
+                        splashSessionToken = data.token;
+                        sessionStorage.setItem('pwaSplashToken', data.token);
+                        return data.token;
+                    }
+                    return null;
+                })
+                .catch(function(err) {
+                    console.log('Failed to create splash session:', err);
+                    return null;
+                });
+            }
+            
+            // التحقق من وجود جلسة نشطة
+            function checkSplashSession(token) {
+                if (!token) return Promise.resolve(false);
+                
+                return fetch('<?php echo getRelativeUrl("api/pwa_splash_session.php"); ?>?action=check&token=' + encodeURIComponent(token), {
+                    method: 'GET',
+                    credentials: 'same-origin'
+                })
+                .then(function(response) {
+                    return response.json();
+                })
+                .then(function(data) {
+                    return data.exists === true;
+                })
+                .catch(function(err) {
+                    console.log('Failed to check splash session:', err);
+                    return false;
+                });
+            }
+            
+            // إعادة تعيين مؤقت الخمول
+            function resetInactivityTimer() {
+                if (inactivityTimer) {
+                    clearTimeout(inactivityTimer);
+                }
+                
+                // حذف الجلسة بعد 3 ثواني من الخمول
+                inactivityTimer = setTimeout(function() {
+                    if (splashSessionToken) {
+                        deleteSplashSession(splashSessionToken);
+                    }
+                }, 3000);
+            }
+            
+            // مراقبة النشاط
+            ['mousedown', 'mousemove', 'keypress', 'scroll', 'touchstart'].forEach(function(event) {
+                document.addEventListener(event, resetInactivityTimer, true);
+            });
+            
             // استخدام pageshow event للتحقق من أن الصفحة تم تحميلها من جديد
             window.addEventListener('pageshow', function(event) {
                 // إذا كانت الصفحة من cache (back/forward)، لا تظهر splash screen
@@ -420,53 +501,100 @@ if (!defined('ACCESS_ALLOWED')) {
                     return;
                 }
                 
-                // إذا كانت الصفحة جديدة (ليست من cache)، امسح sessionStorage وأظهر splash screen
-                sessionStorage.removeItem('pwaSplashShown');
+                // إذا كانت الصفحة جديدة (ليست من cache)، امسح الجلسة وأظهر splash screen
+                if (splashSessionToken) {
+                    deleteSplashSession(splashSessionToken);
+                }
                 
-                // إظهار splash screen
-                pageLoader.classList.remove('hidden');
-                pageLoader.style.display = 'flex';
-                sessionStorage.setItem('pwaSplashShown', 'true');
-                
-                // إخفاء الشاشة بعد تحميل الصفحة
-                if (document.readyState === 'complete') {
-                    hideSplashScreen();
-                } else {
-                    window.addEventListener('load', hideSplashScreen);
+                // إنشاء جلسة جديدة وإظهار splash screen
+                createSplashSession().then(function(token) {
+                    if (token) {
+                        pageLoader.classList.remove('hidden');
+                        pageLoader.style.display = 'flex';
+                        resetInactivityTimer();
+                        
+                        // إخفاء الشاشة بعد تحميل الصفحة
+                        if (document.readyState === 'complete') {
+                            hideSplashScreen();
+                        } else {
+                            window.addEventListener('load', hideSplashScreen);
+                        }
+                    }
+                });
+            });
+            
+            // التحقق من الجلسة عند تحميل الصفحة لأول مرة
+            if (splashSessionToken) {
+                checkSplashSession(splashSessionToken).then(function(exists) {
+                    if (exists) {
+                        // الجلسة موجودة، لا تظهر splash screen
+                        pageLoader.style.display = 'none';
+                        pageLoader.classList.add('hidden');
+                        
+                        if (dashboardMain) {
+                            dashboardMain.classList.add('content-fade-in');
+                        }
+                        
+                        resetInactivityTimer();
+                    } else {
+                        // الجلسة غير موجودة، أنشئ جلسة جديدة وأظهر splash screen
+                        createSplashSession().then(function(token) {
+                            if (token) {
+                                pageLoader.classList.remove('hidden');
+                                pageLoader.style.display = 'flex';
+                                resetInactivityTimer();
+                                
+                                if (document.readyState === 'complete') {
+                                    hideSplashScreen();
+                                } else if (document.readyState === 'interactive') {
+                                    window.addEventListener('load', hideSplashScreen);
+                                } else {
+                                    window.addEventListener('load', hideSplashScreen);
+                                }
+                            }
+                        });
+                    }
+                });
+            } else {
+                // لا توجد جلسة، أنشئ جلسة جديدة وأظهر splash screen
+                createSplashSession().then(function(token) {
+                    if (token) {
+                        pageLoader.classList.remove('hidden');
+                        pageLoader.style.display = 'flex';
+                        resetInactivityTimer();
+                        
+                        if (document.readyState === 'complete') {
+                            hideSplashScreen();
+                        } else if (document.readyState === 'interactive') {
+                            window.addEventListener('load', hideSplashScreen);
+                        } else {
+                            window.addEventListener('load', hideSplashScreen);
+                        }
+                    }
+                });
+            }
+            
+            // حذف الجلسة عند إغلاق التطبيق
+            window.addEventListener('beforeunload', function() {
+                if (splashSessionToken) {
+                    deleteSplashSession(splashSessionToken);
                 }
             });
             
-            // التحقق من sessionStorage عند تحميل الصفحة لأول مرة
-            const splashShown = sessionStorage.getItem('pwaSplashShown');
-            
-            if (!splashShown) {
-                // إظهار الشاشة فوراً عند فتح التطبيق لأول مرة في هذه الجلسة
-                pageLoader.classList.remove('hidden');
-                pageLoader.style.display = 'flex';
-                sessionStorage.setItem('pwaSplashShown', 'true');
-                
-                // إخفاء شاشة التحميل بعد تحميل الصفحة بالكامل
-                if (document.readyState === 'complete') {
-                    hideSplashScreen();
-                } else if (document.readyState === 'interactive') {
-                    window.addEventListener('load', hideSplashScreen);
+            // حذف الجلسة عند فقدان التركيز (إغلاق التطبيق)
+            document.addEventListener('visibilitychange', function() {
+                if (document.hidden) {
+                    deleteSessionOnUnload = true;
+                    // حذف الجلسة بعد 3 ثواني من فقدان التركيز
+                    setTimeout(function() {
+                        if (deleteSessionOnUnload && splashSessionToken) {
+                            deleteSplashSession(splashSessionToken);
+                        }
+                    }, 3000);
                 } else {
-                    window.addEventListener('load', hideSplashScreen);
+                    deleteSessionOnUnload = false;
+                    resetInactivityTimer();
                 }
-            } else {
-                // إذا كانت الشاشة قد ظهرت من قبل، إخفاؤها مباشرة
-                pageLoader.style.display = 'none';
-                pageLoader.classList.add('hidden');
-                
-                // إضافة تأثير fade-in للمحتوى مباشرة
-                if (dashboardMain) {
-                    dashboardMain.classList.add('content-fade-in');
-                }
-            }
-            
-            // مسح sessionStorage عند إغلاق التطبيق
-            window.addEventListener('beforeunload', function() {
-                sessionStorage.removeItem('pwaSplashShown');
             });
             
             // إخفاء شاشة التحميل عند فتح أي Modal

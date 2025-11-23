@@ -43,6 +43,56 @@ class Database {
                 error_log('Profile photo column migration error: ' . $migrationError->getMessage());
             }
 
+            // إنشاء جدول جلسات PWA Splash Screen تلقائياً من ملف SQL
+            try {
+                $tableCheck = $this->connection->query("SHOW TABLES LIKE 'pwa_splash_sessions'");
+                if ($tableCheck instanceof mysqli_result && $tableCheck->num_rows === 0) {
+                    // قراءة ملف SQL وتنفيذه
+                    $migrationFile = __DIR__ . '/../database/migrations/add_pwa_splash_sessions.sql';
+                    if (file_exists($migrationFile)) {
+                        $sql = file_get_contents($migrationFile);
+                        
+                        // إزالة التعليقات والمسافات الزائدة
+                        $sql = preg_replace('/--.*$/m', '', $sql);
+                        $sql = trim($sql);
+                        
+                        // تنفيذ الاستعلامات
+                        if (!empty($sql)) {
+                            // تقسيم الاستعلامات إذا كان هناك أكثر من واحد
+                            $queries = array_filter(array_map('trim', explode(';', $sql)));
+                            foreach ($queries as $query) {
+                                if (!empty($query) && !preg_match('/^--/', $query)) {
+                                    $this->connection->query($query);
+                                }
+                            }
+                        }
+                    } else {
+                        // إذا لم يوجد الملف، استخدم الكود المباشر كبديل
+                        $this->connection->query("
+                            CREATE TABLE IF NOT EXISTS `pwa_splash_sessions` (
+                              `id` int(11) NOT NULL AUTO_INCREMENT,
+                              `user_id` int(11) DEFAULT NULL,
+                              `session_token` varchar(64) NOT NULL,
+                              `ip_address` varchar(45) DEFAULT NULL,
+                              `user_agent` text DEFAULT NULL,
+                              `created_at` timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                              `expires_at` timestamp NOT NULL,
+                              PRIMARY KEY (`id`),
+                              UNIQUE KEY `session_token` (`session_token`),
+                              KEY `user_id` (`user_id`),
+                              KEY `expires_at` (`expires_at`),
+                              CONSTRAINT `pwa_splash_sessions_ibfk_1` FOREIGN KEY (`user_id`) REFERENCES `users` (`id`) ON DELETE CASCADE
+                            ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
+                        ");
+                    }
+                }
+                if ($tableCheck instanceof mysqli_result) {
+                    $tableCheck->free();
+                }
+            } catch (Throwable $migrationError) {
+                error_log('PWA splash sessions table migration error: ' . $migrationError->getMessage());
+            }
+
             $this->ensureVehicleInventoryAutoUpgrade();
             
         } catch (Exception $e) {
