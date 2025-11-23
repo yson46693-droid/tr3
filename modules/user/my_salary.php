@@ -636,8 +636,9 @@ $monthStats = [
 ];
 
 if ($currentSalary) {
-    $monthStats['total_hours'] = $currentSalary['total_hours'] ?? 0;
-    $monthStats['recorded_hours'] = $currentSalary['total_hours'] ?? 0; // نفس إجمالي الساعات
+    // حساب الساعات مباشرة من الحضور لضمان الدقة (مطابقة مع صفحة الحضور)
+    $monthStats['total_hours'] = calculateMonthlyHours($currentUser['id'], $selectedMonth, $selectedYear);
+    $monthStats['recorded_hours'] = $monthStats['total_hours']; // نفس إجمالي الساعات
     
     // حساب الراتب الإجمالي بشكل صحيح مع نسبة التحصيلات
     $salaryCalculation = calculateTotalSalaryWithCollections($currentSalary, $currentUser['id'], $selectedMonth, $selectedYear, $currentUser['role']);
