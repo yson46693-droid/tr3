@@ -68,12 +68,10 @@ function calculateMonthlyHours($userId, $month, $year) {
     
     if (!empty($tableCheck)) {
         // استخدام الجدول الجديد
-        // حساب الساعات من جميع السجلات التي تم إكمالها (check_out_time IS NOT NULL)
-        // حتى لو كانت الساعات قليلة (مثل ربع ساعة)
-        // استخدام نفس المنطق المستخدم في صفحة الحضور (getAttendanceStatistics)
         $monthKey = sprintf('%04d-%02d', $year, $month);
         
-        $result = $db->queryOne(
+        // 1. حساب الساعات من السجلات المكتملة (التي لديها check_out_time)
+        $completedResult = $db->queryOne(
             "SELECT COALESCE(SUM(work_hours), 0) as total_hours 
              FROM attendance_records 
              WHERE user_id = ? AND DATE_FORMAT(date, '%Y-%m') = ?
@@ -83,10 +81,69 @@ function calculateMonthlyHours($userId, $month, $year) {
             [$userId, $monthKey]
         );
         
-        $totalHours = round($result['total_hours'] ?? 0, 2);
+        $totalHours = round($completedResult['total_hours'] ?? 0, 2);
+        
+        // 2. حساب الساعات من السجلات غير المكتملة (حضور بدون انصراف)
+        $incompleteRecords = $db->query(
+            "SELECT id, date, check_in_time 
+             FROM attendance_records 
+             WHERE user_id = ? AND DATE_FORMAT(date, '%Y-%m') = ?
+             AND check_out_time IS NULL
+             AND check_in_time IS NOT NULL",
+            [$userId, $monthKey]
+        );
+        
+        // الحصول على موعد العمل الرسمي للمستخدم
+        // استخدام نفس المنطق الموجود في attendance.php
+        $user = $db->queryOne("SELECT role FROM users WHERE id = ?", [$userId]);
+        $workTime = null;
+        if ($user) {
+            $role = $user['role'];
+            if ($role === 'accountant') {
+                $workTime = ['start' => '10:00:00', 'end' => '19:00:00'];
+            } elseif ($role === 'sales') {
+                $workTime = ['start' => '10:00:00', 'end' => '19:00:00'];
+            } elseif ($role !== 'manager') {
+                // عمال الإنتاج
+                $workTime = ['start' => '09:00:00', 'end' => '19:00:00'];
+            }
+        }
+        
+        foreach ($incompleteRecords as $record) {
+            $recordDate = $record['date'];
+            $checkInTime = $record['check_in_time'];
+            $today = date('Y-m-d');
+            
+            // تحديد وقت الانتهاء للحساب
+            $endTime = null;
+            
+            if ($recordDate === $today) {
+                // إذا كان السجل في نفس اليوم، استخدم الوقت الحالي
+                $endTime = date('Y-m-d H:i:s');
+            } elseif ($workTime) {
+                // إذا كان السجل في يوم سابق، استخدم نهاية يوم العمل الرسمي
+                $endTime = $recordDate . ' ' . $workTime['end'];
+            } else {
+                // إذا لم يكن هناك موعد عمل رسمي، استخدم نهاية اليوم (23:59:59)
+                $endTime = $recordDate . ' 23:59:59';
+            }
+            
+            // حساب الساعات من وقت الحضور حتى وقت الانتهاء
+            if ($checkInTime && $endTime) {
+                $checkInTimestamp = strtotime($checkInTime);
+                $endTimestamp = strtotime($endTime);
+                
+                if ($endTimestamp > $checkInTimestamp) {
+                    $hours = ($endTimestamp - $checkInTimestamp) / 3600;
+                    $totalHours += $hours;
+                }
+            }
+        }
+        
+        $totalHours = round($totalHours, 2);
         
         // تسجيل للتأكد من أن الساعات تُحسب بشكل صحيح
-        error_log("calculateMonthlyHours: user_id={$userId}, month={$month}, year={$year}, month_key={$monthKey}, total_hours={$totalHours}");
+        error_log("calculateMonthlyHours: user_id={$userId}, month={$month}, year={$year}, month_key={$monthKey}, completed_hours={$completedResult['total_hours'] ?? 0}, incomplete_count=" . count($incompleteRecords) . ", total_hours={$totalHours}");
         
         return $totalHours;
     } else {
