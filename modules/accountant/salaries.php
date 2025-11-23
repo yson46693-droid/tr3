@@ -1261,22 +1261,21 @@ body {
 
 /* Export Buttons */
 .btn-export {
-    background: rgba(255, 255, 255, 0.2);
+    background: #3b82f6;
     color: white;
-    border: 1px solid rgba(255, 255, 255, 0.3);
+    border: 1px solid #2563eb;
     padding: 8px 16px;
     border-radius: 8px;
     font-weight: 600;
     font-size: 14px;
     transition: all 0.3s ease;
-    backdrop-filter: blur(10px);
 }
 
 .btn-export:hover {
-    background: rgba(255, 255, 255, 0.3);
+    background: #2563eb;
     color: white;
     transform: translateY(-2px);
-    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+    box-shadow: 0 4px 12px rgba(59, 130, 246, 0.4);
 }
 
 /* Employee Cards Grid */
