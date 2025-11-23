@@ -600,13 +600,26 @@ function updateEntityStatus($type, $entityId, $status, $approvedBy) {
                 $notes = trim($modificationData['notes'] ?? '');
                 
                 // الحصول على الراتب الحالي
-                $salary = $db->queryOne("SELECT * FROM salaries WHERE id = ?", [$salaryId]);
+                $salary = $db->queryOne("SELECT s.*, u.role FROM salaries s LEFT JOIN users u ON s.user_id = u.id WHERE s.id = ?", [$salaryId]);
                 if (!$salary) {
                     throw new Exception('الراتب غير موجود');
                 }
                 
+                require_once __DIR__ . '/salary_calculator.php';
+                
+                $userId = intval($salary['user_id'] ?? 0);
+                $userRole = $salary['role'] ?? 'production';
+                $month = intval($salary['month'] ?? date('n'));
+                $year = intval($salary['year'] ?? date('Y'));
+                
+                // حساب نسبة التحصيلات الحالية (للمندوبين)
+                $currentSalaryCalc = calculateTotalSalaryWithCollections($salary, $userId, $month, $year, $userRole);
+                $collectionsBonus = $currentSalaryCalc['collections_bonus'];
+                
+                // حساب الراتب الجديد بنفس طريقة الحساب في بطاقة الموظف
                 $baseAmount = floatval($salary['base_amount'] ?? 0);
-                $newTotal = round($baseAmount + $bonus - $deductions, 2);
+                $newTotal = round($baseAmount + $bonus + $collectionsBonus - $deductions, 2);
+                $newTotal = max(0, $newTotal);
                 
                 // تحديث الراتب مع إزالة التعديل المعلق من notes
                 $currentNotes = $salary['notes'] ?? '';
