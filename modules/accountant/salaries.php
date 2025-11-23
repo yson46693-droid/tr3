@@ -320,6 +320,41 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         $redirectUrl .= '?page=salaries&view=list&report=1&month=' . $month . '&year=' . $year;
         header('Location: ' . $redirectUrl);
         exit;
+    } elseif ($action === 'update_total_hours') {
+        // تحديث total_hours من attendance_records
+        require_once __DIR__ . '/../../includes/salary_calculator.php';
+        
+        $month = intval($_POST['month'] ?? $selectedMonth);
+        $year = intval($_POST['year'] ?? $selectedYear);
+        $userId = isset($_POST['user_id']) && intval($_POST['user_id']) > 0 ? intval($_POST['user_id']) : null;
+        
+        $result = updateTotalHoursFromAttendanceRecords($userId, $month, $year);
+        
+        if ($result['success']) {
+            $message = $result['message'];
+            if (!empty($result['errors'])) {
+                $message .= ' (' . count($result['errors']) . ' أخطاء)';
+            }
+            $_SESSION['salaries_success'] = $message;
+            
+            // تسجيل سجل التدقيق
+            logAudit($currentUser['id'], 'update_total_hours', 'salary', null, null, [
+                'month' => $month,
+                'year' => $year,
+                'user_id' => $userId,
+                'updated_count' => $result['updated_count'] ?? 0
+            ]);
+        } else {
+            $_SESSION['salaries_error'] = $result['message'];
+        }
+        
+        // عمل redirect
+        $redirectUrl = getRelativeUrl('dashboard/accountant.php') . '?page=salaries&view=list&month=' . $month . '&year=' . $year;
+        if ($userId) {
+            $redirectUrl .= '&user_id=' . $userId;
+        }
+        header('Location: ' . $redirectUrl);
+        exit;
     } elseif ($action === 'modify_salary') {
         // وظيفة تعديل الراتب من salary_details.php
         $salaryId = intval($_POST['salary_id'] ?? 0);
@@ -2201,7 +2236,17 @@ $pageTitle = ($view === 'advances') ? 'السلف' : (($view === 'pending') ? '�
             </div>
             <div class="col-md-2">
                 <label class="form-label">&nbsp;</label>
-                
+                <form method="POST" style="display: inline-block;" onsubmit="return confirm('هل تريد تحديث عدد الساعات (total_hours) لجميع الرواتب من سجلات الحضور؟');">
+                    <input type="hidden" name="action" value="update_total_hours">
+                    <input type="hidden" name="month" value="<?php echo $selectedMonth; ?>">
+                    <input type="hidden" name="year" value="<?php echo $selectedYear; ?>">
+                    <?php if ($selectedUserId > 0): ?>
+                        <input type="hidden" name="user_id" value="<?php echo $selectedUserId; ?>">
+                    <?php endif; ?>
+                    <button type="submit" class="btn btn-info w-100" title="تحديث عدد الساعات من سجلات الحضور">
+                        <i class="bi bi-clock-history me-1"></i>تحديث الساعات
+                    </button>
+                </form>
             </div>
         </form>
     </div>

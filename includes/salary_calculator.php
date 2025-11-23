@@ -2071,3 +2071,137 @@ function calculateTotalSalaryWithCollections($salaryRecord, $userId, $month, $ye
     ];
 }
 
+/**
+ * حساب وتحديث total_hours في جدول salaries من attendance_records
+ * تستخدم استعلام SELECT * FROM attendance_records ORDER BY work_hours ASC
+ * لحساب إجمالي ساعات العمل لكل موظف بشكل صحيح
+ * 
+ * @param int|null $userId معرّف المستخدم (اختياري - إذا كان null يتم تحديث جميع المستخدمين)
+ * @param int|null $month الشهر (اختياري - إذا كان null يتم تحديث جميع الأشهر)
+ * @param int|null $year السنة (اختياري - إذا كان null يتم تحديث جميع السنوات)
+ * @return array نتيجة العملية
+ */
+function updateTotalHoursFromAttendanceRecords($userId = null, $month = null, $year = null) {
+    try {
+        $db = db();
+        
+        // التحقق من وجود جدول attendance_records
+        $tableCheck = $db->queryOne("SHOW TABLES LIKE 'attendance_records'");
+        if (empty($tableCheck)) {
+            return [
+                'success' => false,
+                'message' => 'جدول attendance_records غير موجود'
+            ];
+        }
+        
+        // التحقق من وجود عمود total_hours في جدول salaries
+        $totalHoursColumnCheck = $db->queryOne("SHOW COLUMNS FROM salaries LIKE 'total_hours'");
+        if (empty($totalHoursColumnCheck)) {
+            return [
+                'success' => false,
+                'message' => 'عمود total_hours غير موجود في جدول salaries'
+            ];
+        }
+        
+        // استخدام الاستعلام المطلوب: SELECT * FROM attendance_records ORDER BY work_hours ASC
+        // ثم تجميع الساعات لكل موظف وشهر
+        // بناء شروط WHERE للاستعلام الداخلي
+        $innerWhereConditions = [];
+        $innerParams = [];
+        
+        if ($userId !== null) {
+            $innerWhereConditions[] = "user_id = ?";
+            $innerParams[] = $userId;
+        }
+        
+        if ($month !== null && $year !== null) {
+            $innerWhereConditions[] = "DATE_FORMAT(date, '%Y-%m') = ?";
+            $innerParams[] = sprintf('%04d-%02d', $year, $month);
+        }
+        
+        $innerWhereClause = !empty($innerWhereConditions) ? "WHERE " . implode(" AND ", $innerWhereConditions) : "";
+        
+        $query = "
+            SELECT 
+                ar.user_id,
+                DATE_FORMAT(ar.date, '%Y-%m') as month_year,
+                YEAR(ar.date) as year,
+                MONTH(ar.date) as month,
+                COALESCE(SUM(ar.work_hours), 0) as total_hours
+            FROM (
+                SELECT * 
+                FROM attendance_records 
+                {$innerWhereClause}
+                ORDER BY attendance_records.work_hours ASC
+            ) ar
+            WHERE ar.work_hours IS NOT NULL 
+              AND ar.work_hours > 0
+              AND ar.check_out_time IS NOT NULL
+            GROUP BY ar.user_id, DATE_FORMAT(ar.date, '%Y-%m')
+        ";
+        
+        // استخدام نفس المعاملات للاستعلام الداخلي
+        $params = $innerParams;
+        
+        // تنفيذ الاستعلام
+        $results = $db->query($query, $params);
+        
+        if (empty($results)) {
+            return [
+                'success' => true,
+                'message' => 'لا توجد سجلات حضور لتحديثها',
+                'updated_count' => 0
+            ];
+        }
+        
+        $updatedCount = 0;
+        $errors = [];
+        
+        // تحديث total_hours لكل سجل راتب
+        foreach ($results as $result) {
+            $userIdValue = intval($result['user_id']);
+            $monthValue = intval($result['month']);
+            $yearValue = intval($result['year']);
+            $totalHours = round(floatval($result['total_hours']), 2);
+            
+            try {
+                // البحث عن سجل الراتب المطابق
+                $salary = $db->queryOne(
+                    "SELECT id FROM salaries WHERE user_id = ? AND month = ? AND year = ?",
+                    [$userIdValue, $monthValue, $yearValue]
+                );
+                
+                if ($salary) {
+                    // تحديث total_hours
+                    $db->execute(
+                        "UPDATE salaries SET total_hours = ?, updated_at = NOW() WHERE id = ?",
+                        [$totalHours, $salary['id']]
+                    );
+                    $updatedCount++;
+                } else {
+                    // إذا لم يكن هناك سجل راتب، يمكن إنشاؤه (اختياري)
+                    // أو تسجيله كخطأ
+                    $errors[] = "لا يوجد سجل راتب للمستخدم #{$userIdValue} للشهر {$monthValue}/{$yearValue}";
+                }
+            } catch (Exception $e) {
+                $errors[] = "خطأ في تحديث راتب المستخدم #{$userIdValue} للشهر {$monthValue}/{$yearValue}: " . $e->getMessage();
+                error_log("Error updating total_hours for user {$userIdValue}, month {$monthValue}/{$yearValue}: " . $e->getMessage());
+            }
+        }
+        
+        return [
+            'success' => true,
+            'message' => "تم تحديث {$updatedCount} سجل راتب بنجاح",
+            'updated_count' => $updatedCount,
+            'errors' => $errors
+        ];
+        
+    } catch (Exception $e) {
+        error_log("Error in updateTotalHoursFromAttendanceRecords: " . $e->getMessage());
+        return [
+            'success' => false,
+            'message' => 'حدث خطأ أثناء تحديث total_hours: ' . $e->getMessage()
+        ];
+    }
+}
+
