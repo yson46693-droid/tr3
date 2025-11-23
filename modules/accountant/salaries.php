@@ -2250,6 +2250,10 @@ $pageTitle = ($view === 'advances') ? 'السلف' : (($view === 'pending') ? '�
                 // التأكد من أن الراتب الإجمالي لا يكون سالباً
                 $totalAmount = max(0, $totalAmount);
                 
+                // إضافة الراتب الأساسي المحسوب حديثاً إلى البيانات المرسلة للنموذج
+                // لضمان أن النموذج يعرض نفس القيمة المعروضة في البطاقة
+                $salary['calculated_base_amount'] = $baseAmount;
+                
                 // إعادة حساب المبلغ التراكمي بدقة من جميع الرواتب السابقة
                 $salaryId = intval($salary['id'] ?? 0);
                 $accumulated = $totalAmount; // ابدأ بالراتب الحالي
@@ -3093,7 +3097,9 @@ function viewSalaryDetails(salaryId) {
 function openModifyModal(salaryId, salaryData) {
     document.getElementById('modifySalaryId').value = salaryId || '';
     document.getElementById('modifyUserName').value = salaryData.full_name || salaryData.username;
-    document.getElementById('modifyBaseAmount').value = formatCurrency(salaryData.base_amount || 0);
+    // استخدام الراتب الأساسي المحسوب حديثاً إذا كان متوفراً، وإلا استخدم القيمة المحفوظة
+    const baseAmount = salaryData.calculated_base_amount !== undefined ? salaryData.calculated_base_amount : (salaryData.base_amount || 0);
+    document.getElementById('modifyBaseAmount').value = formatCurrency(baseAmount);
     document.getElementById('modifyBonus').value = salaryData.bonus || 0;
     document.getElementById('modifyDeductions').value = salaryData.deductions || 0;
     
