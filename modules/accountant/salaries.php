@@ -1255,7 +1255,7 @@ body {
 }
 
 .salary-page-header .header-controls .form-select option {
-    background: #667eea;
+    background:rgb(42, 75, 222);
     color: white;
 }
 
