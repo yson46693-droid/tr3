@@ -2317,21 +2317,6 @@ $packagingReportGeneratedAt = $packagingReport['generated_at'] ?? date('Y-m-d H:
             <div class="card-body">
                 <div class="d-flex justify-content-between align-items-center">
                     <div>
-                        <div class="text-muted small">إجمالي المستخدم</div>
-                        <div class="h4 mb-0"><?php echo number_format($stats['total_used'], 0); ?></div>
-                    </div>
-                    <div class="text-warning">
-                        <i class="bi bi-arrow-down-circle fs-1"></i>
-                    </div>
-                </div>
-            </div>
-        </div>
-    </div>
-    <div class="col-md-3">
-        <div class="card shadow-sm">
-            <div class="card-body">
-                <div class="d-flex justify-content-between align-items-center">
-                    <div>
                         <div class="text-muted small">أدوات مستخدمة</div>
                         <div class="h4 mb-0"><?php echo $stats['materials_with_usage']; ?></div>
                     </div>
@@ -2410,15 +2395,7 @@ $packagingReportGeneratedAt = $packagingReport['generated_at'] ?? date('Y-m-d H:
 <div class="card shadow-sm">
     <div class="card-header bg-primary text-white d-flex flex-wrap gap-2 justify-content-between align-items-center">
         <h5 class="mb-0">قائمة أدوات التعبئة (<?php echo $totalMaterials; ?>)</h5>
-        <button
-            type="button"
-            id="printPackagingWarehouseReportButton"
-            class="btn btn-outline-light btn-sm d-print-none"
-            aria-label="طباعة تقرير أدوات التعبئة"
-        >
-            <i class="bi bi-printer me-1"></i>
-            طباعة التقرير
-        </button>
+        
     </div>
     <div class="card-body">
         <?php if (empty($paginatedMaterials)): ?>
