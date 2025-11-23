@@ -519,13 +519,29 @@ if (!defined('ACCESS_ALLOWED')) {
                         } else {
                             window.addEventListener('load', hideSplashScreen);
                         }
+                    } else {
+                        // إذا فشل إنشاء الجلسة، أخفي splash screen
+                        hideSplashScreen();
                     }
+                }).catch(function() {
+                    // إذا فشل API، أخفي splash screen
+                    hideSplashScreen();
                 });
             });
             
             // التحقق من الجلسة عند تحميل الصفحة لأول مرة
+            // استخدام timeout لضمان إخفاء splash screen حتى لو فشل API
+            let splashCheckTimeout = setTimeout(function() {
+                // إذا استغرق التحقق أكثر من 2 ثانية، أخفي splash screen تلقائياً
+                if (pageLoader && !pageLoader.classList.contains('hidden')) {
+                    hideSplashScreen();
+                }
+            }, 2000);
+            
             if (splashSessionToken) {
                 checkSplashSession(splashSessionToken).then(function(exists) {
+                    clearTimeout(splashCheckTimeout);
+                    
                     if (exists) {
                         // الجلسة موجودة، لا تظهر splash screen
                         pageLoader.style.display = 'none';
@@ -551,13 +567,25 @@ if (!defined('ACCESS_ALLOWED')) {
                                 } else {
                                     window.addEventListener('load', hideSplashScreen);
                                 }
+                            } else {
+                                // إذا فشل إنشاء الجلسة، أخفي splash screen
+                                hideSplashScreen();
                             }
+                        }).catch(function() {
+                            // إذا فشل API، أخفي splash screen
+                            hideSplashScreen();
                         });
                     }
+                }).catch(function() {
+                    // إذا فشل API، أخفي splash screen
+                    clearTimeout(splashCheckTimeout);
+                    hideSplashScreen();
                 });
             } else {
                 // لا توجد جلسة، أنشئ جلسة جديدة وأظهر splash screen
                 createSplashSession().then(function(token) {
+                    clearTimeout(splashCheckTimeout);
+                    
                     if (token) {
                         pageLoader.classList.remove('hidden');
                         pageLoader.style.display = 'flex';
@@ -570,7 +598,14 @@ if (!defined('ACCESS_ALLOWED')) {
                         } else {
                             window.addEventListener('load', hideSplashScreen);
                         }
+                    } else {
+                        // إذا فشل إنشاء الجلسة، أخفي splash screen
+                        hideSplashScreen();
                     }
+                }).catch(function() {
+                    // إذا فشل API، أخفي splash screen
+                    clearTimeout(splashCheckTimeout);
+                    hideSplashScreen();
                 });
             }
             
