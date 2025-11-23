@@ -1143,6 +1143,8 @@ if (isset($_GET['ajax']) && $_GET['ajax'] == '1' && $salaryId > 0) {
     );
     
     if ($salary) {
+        // حساب الساعات من الحضور مباشرة لضمان الدقة (مطابقة مع صفحة الحضور)
+        $actualHours = calculateMonthlyHours($salary['user_id'], $selectedMonth, $selectedYear);
         ?>
         <div class="row g-3">
             <div class="col-md-6">
@@ -1154,7 +1156,11 @@ if (isset($_GET['ajax']) && $_GET['ajax'] == '1' && $salaryId > 0) {
                         <p><strong>المستخدم:</strong> <?php echo htmlspecialchars($salary['full_name'] ?? $salary['username']); ?></p>
                         <p><strong>الشهر:</strong> <?php echo date('F', mktime(0, 0, 0, $selectedMonth, 1)); ?> <?php echo $selectedYear; ?></p>
                         <p><strong>سعر الساعة:</strong> <?php echo formatCurrency($salary['hourly_rate']); ?></p>
-                        <p><strong>عدد الساعات:</strong> <?php echo formatHours($salary['total_hours']); ?></p>
+                        <p><strong>عدد الساعات:</strong> <?php echo formatHours($actualHours); ?> 
+                            <?php if (abs($actualHours - ($salary['total_hours'] ?? 0)) > 0.01): ?>
+                                <span class="badge bg-warning text-dark ms-2" title="القيمة المحفوظة: <?php echo formatHours($salary['total_hours'] ?? 0); ?>">محدث</span>
+                            <?php endif; ?>
+                        </p>
                         <p><strong>الراتب الأساسي:</strong> <?php echo formatCurrency($salary['base_amount']); ?></p>
                         <p><strong>مكافأة:</strong> <?php echo formatCurrency($salary['bonus'] ?? 0); ?></p>
                         <p><strong>خصومات:</strong> <?php echo formatCurrency($salary['deductions'] ?? 0); ?></p>
@@ -1860,7 +1866,11 @@ $pageTitle = ($view === 'advances') ? 'السلف' : (($view === 'pending') ? '�
                                 </td>
                                 <td data-label="سعر الساعة"><?php echo formatCurrency($salary['hourly_rate']); ?></td>
                                 <td data-label="عدد الساعات">
-                                    <strong><?php echo formatHours($salary['total_hours']); ?></strong>
+                                    <?php 
+                                    // حساب الساعات مباشرة من الحضور لضمان الدقة (مطابقة مع صفحة الحضور)
+                                    $actualHoursForTable = calculateMonthlyHours($salary['user_id'], $selectedMonth, $selectedYear);
+                                    ?>
+                                    <strong><?php echo formatHours($actualHoursForTable); ?></strong>
                                 </td>
                                 <td data-label="إجمالي التأخير (دقائق)">
                                     <strong><?php echo number_format($salary['total_delay_minutes'] ?? 0, 2); ?></strong>
@@ -2335,7 +2345,11 @@ $pageTitle = ($view === 'advances') ? 'السلف' : (($view === 'pending') ? '�
                         <?php if ($userRole !== 'sales'): ?>
                         <div class="detail-row">
                             <span class="detail-label">عدد الساعات:</span>
-                            <span class="detail-value"><?php echo formatHours($salary['total_hours'] ?? 0); ?></span>
+                            <?php 
+                            // حساب الساعات مباشرة من الحضور لضمان الدقة (مطابقة مع صفحة الحضور)
+                            $actualHoursForModal = calculateMonthlyHours($userId, $selectedMonth, $selectedYear);
+                            ?>
+                            <span class="detail-value"><?php echo formatHours($actualHoursForModal); ?></span>
                         </div>
                         <?php endif; ?>
                         <div class="detail-row">
