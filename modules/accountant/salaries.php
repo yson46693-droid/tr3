@@ -1678,7 +1678,7 @@ $pageTitle = ($view === 'advances') ? 'السلف' : (($view === 'pending') ? '�
 <!-- Header للشهر والسنة -->
 <div class="salary-page-header">
     <div class="d-flex justify-content-between align-items-center flex-wrap">
-        <h1><?php echo htmlspecialchars($pageTitle); ?> - <?php echo htmlspecialchars($monthName); ?> <?php echo $selectedYear; ?></h1>
+        <h1><?php echo htmlspecialchars($pageTitle); ?></h1>
         <div class="header-controls">
             <form method="GET" class="d-inline" action="<?php echo htmlspecialchars($currentUrl); ?>">
                 <input type="hidden" name="page" value="salaries">
