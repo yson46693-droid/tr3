@@ -531,14 +531,44 @@ function checkMaterialsAvailability($db, $templateId, $productionQuantity, array
             }
         }
 
+        // التحقق من توفر الكمية المطلوبة حتى عند اختيار مورد
         if ($bestAvailability !== null && $bestAvailability['available'] >= $requiredQuantity) {
             continue;
         }
 
+        // إذا كان المورد محدداً ولكن الكمية غير كافية، يجب التحقق من ذلك
         if ($hasSupplierSelection) {
+            // التحقق من الكمية المتاحة من المورد المحدد
+            $selectedSupplierId = null;
+            foreach ($supplierKeys as $supplierKey) {
+                if (isset($materialSuppliers[$supplierKey]) && intval($materialSuppliers[$supplierKey]) > 0) {
+                    $selectedSupplierId = intval($materialSuppliers[$supplierKey]);
+                    break;
+                }
+            }
+            
+            // إذا كان المورد محدداً ولكن الكمية غير كافية، أضفه إلى القائمة
+            if ($selectedSupplierId && $availabilityChecked) {
+                if ($bestAvailability === null || $bestAvailability['available'] < $requiredQuantity) {
+                    $insufficientMaterials[] = [
+                        'name' => $bestAvailability['name'] ?? $packagingName,
+                        'required' => $requiredQuantity,
+                        'available' => max(0, $bestAvailability['available'] ?? 0),
+                        'type' => 'مواد التعبئة',
+                        'unit' => 'قطعة'
+                    ];
+                }
+            } else if (!$availabilityChecked) {
+                // إذا لم يتم العثور على المادة حتى مع المورد المحدد
+                $missingMaterials[] = [
+                    'name' => $packagingName !== '' ? $packagingName : 'مادة تعبئة غير معروفة',
+                    'type' => 'مواد التعبئة'
+                ];
+            }
             continue;
         }
 
+        // إذا لم يكن هناك مورد محدد، التحقق من الكمية المتاحة
         if ($availabilityChecked) {
             $insufficientMaterials[] = [
                 'name' => $bestAvailability['name'] ?? $packagingName,
@@ -2211,9 +2241,11 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     }
                 }
 
+                // التحقق من توفر جميع المكونات قبل بدء عملية الإنتاج
                 $materialsCheck = checkMaterialsAvailability($db, $templateId, $quantity, $materialSuppliers, $honeySupplierIdForCheck);
                 if (!$materialsCheck['available']) {
-                    throw new Exception('المكونات غير متوفرة: ' . $materialsCheck['message']);
+                    $db->rollBack();
+                    throw new Exception('لا يمكن إتمام عملية الإنتاج: ' . $materialsCheck['message']);
                 }
 
                 $templateType = $template['template_type'] ?? $templateType;
