@@ -403,23 +403,29 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['
         // إرسال إشعار للمحاسب - مع التحقق من وجود محاسبين نشطين
         $accountants = $db->query("SELECT id FROM users WHERE role = 'accountant' AND status = 'active'");
         
+        $notificationsSent = 0;
+        
         if (empty($accountants)) {
-            // إذا لم يكن هناك محاسبون، إرسال إشعار للمديرين
+            // إذا لم يكن هناك محاسبون، إرسال إشعار للمديرين فقط
             $managers = $db->query("SELECT id FROM users WHERE role = 'manager' AND status = 'active'");
             foreach ($managers as $manager) {
-                createNotification(
-                    $manager['id'],
-                    'طلب سلفة جديد (لا يوجد محاسب نشط)',
-                    'طلب سلفة من ' . ($currentUser['full_name'] ?? $currentUser['username']) . ' بقيمة ' . formatCurrency($amount) . ' - لا يوجد محاسب نشط لمراجعته',
-                    'warning',
-                    getDashboardUrl('manager') . '?page=advance_requests',
-                    false
-                );
+                try {
+                    createNotification(
+                        $manager['id'],
+                        'طلب سلفة جديد (لا يوجد محاسب نشط)',
+                        'طلب سلفة من ' . ($currentUser['full_name'] ?? $currentUser['username']) . ' بقيمة ' . formatCurrency($amount) . ' - لا يوجد محاسب نشط لمراجعته',
+                        'warning',
+                        getDashboardUrl('manager') . '?page=salaries&view=advances',
+                        false
+                    );
+                    $notificationsSent++;
+                } catch (Exception $notifError) {
+                    error_log("Failed to create notification for manager ID: {$manager['id']} for advance request ID: {$requestId}. Error: " . $notifError->getMessage());
+                }
             }
             error_log("Advance request #{$requestId}: No active accountants found, notification sent to managers instead");
         } else {
             // إرسال إشعار للمحاسبين
-            $notificationsSent = 0;
             foreach ($accountants as $accountant) {
                 try {
                     createNotification(
@@ -427,7 +433,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['
                         'طلب سلفة جديد',
                         'طلب سلفة من ' . ($currentUser['full_name'] ?? $currentUser['username']) . ' بقيمة ' . formatCurrency($amount),
                         'warning',
-                        getDashboardUrl('accountant') . '?page=advance_requests',  // تصحيح الرابط
+                        getDashboardUrl('accountant') . '?page=salaries&view=advances',
                         false
                     );
                     $notificationsSent++;
@@ -436,10 +442,28 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['
                 }
             }
             
+            // إرسال إشعار للمديرين أيضاً حتى يكونوا على علم بطلب السلفة
+            $managers = $db->query("SELECT id FROM users WHERE role = 'manager' AND status = 'active'");
+            foreach ($managers as $manager) {
+                try {
+                    createNotification(
+                        $manager['id'],
+                        'طلب سلفة جديد',
+                        'طلب سلفة من ' . ($currentUser['full_name'] ?? $currentUser['username']) . ' بقيمة ' . formatCurrency($amount) . ' - بانتظار مراجعة المحاسب',
+                        'info',
+                        getDashboardUrl('manager') . '?page=salaries&view=advances',
+                        false
+                    );
+                    $notificationsSent++;
+                } catch (Exception $notifError) {
+                    error_log("Failed to create notification for manager ID: {$manager['id']} for advance request ID: {$requestId}. Error: " . $notifError->getMessage());
+                }
+            }
+            
             if ($notificationsSent === 0) {
-                error_log("Advance request #{$requestId}: Failed to send any notifications to accountants");
+                error_log("Advance request #{$requestId}: Failed to send any notifications");
             } else {
-                error_log("Advance request #{$requestId}: Successfully sent {$notificationsSent} notification(s) to accountants");
+                error_log("Advance request #{$requestId}: Successfully sent {$notificationsSent} notification(s)");
             }
         }
         
@@ -727,22 +751,22 @@ $hourlyRate = cleanFinancialValue($currentSalary['hourly_rate'] ?? $currentUser[
 $bonus = cleanFinancialValue($currentSalary['bonus'] ?? 0);
 $deductions = cleanFinancialValue($currentSalary['deductions'] ?? 0);
 
-// حساب الراتب الأساسي بناءً على عدد الساعات المعروض
+// حساب الراتب الأساسي - استخدام القيمة المحفوظة من قاعدة البيانات إذا كانت موجودة
 // لعمال الإنتاج والمحاسبين: الراتب = عدد الساعات × سعر الساعة
 // للمندوبين: الراتب الأساسي هو hourly_rate مباشرة (راتب شهري ثابت)
 if ($currentUser['role'] === 'sales') {
     $baseAmount = cleanFinancialValue($currentSalary['base_amount'] ?? $hourlyRate);
 } else {
-    // إعادة حساب الراتب الأساسي بناءً على عدد الساعات الحالي المعروض
-    $baseAmount = round($monthStats['total_hours'] * $hourlyRate, 2);
-    
-    // تحديث $currentSalary بالراتب الأساسي الجديد لإعادة حساب الراتب الإجمالي
-    if ($currentSalary) {
-        $currentSalary['base_amount'] = $baseAmount;
+    // استخدام الراتب الأساسي المحفوظ من قاعدة البيانات إذا كان موجوداً
+    if ($currentSalary && isset($currentSalary['base_amount']) && $currentSalary['base_amount'] > 0) {
+        $baseAmount = cleanFinancialValue($currentSalary['base_amount']);
+    } else {
+        // إذا لم يكن محفوظاً، احسبه من الساعات الحالية
+        $baseAmount = round($monthStats['total_hours'] * $hourlyRate, 2);
     }
 }
 
-// إعادة حساب الراتب الإجمالي بناءً على الراتب الأساسي المحدث
+// حساب الراتب الإجمالي - استخدام القيمة المحفوظة من قاعدة البيانات إذا كانت موجودة وصحيحة
 if ($currentSalary) {
     if ($currentUser['role'] === 'sales') {
         // للمندوبين: استخدم الحساب الأصلي مع نسبة التحصيلات
@@ -750,9 +774,27 @@ if ($currentSalary) {
         $totalSalary = $salaryCalculation['total_salary'];
         $collectionsBonus = $salaryCalculation['collections_bonus'];
     } else {
-        // لعمال الإنتاج والمحاسبين: الراتب الإجمالي = الراتب الأساسي + المكافآت - الخصومات
-        $totalSalary = round($baseAmount + $bonus - $deductions, 2);
-        // تحديث $monthStats['total_salary'] بالقيمة الجديدة
+        // لعمال الإنتاج والمحاسبين: احسب الراتب الإجمالي من المكونات
+        // الراتب الإجمالي = الراتب الأساسي + المكافآت - الخصومات
+        $calculatedTotal = round($baseAmount + $bonus - $deductions, 2);
+        
+        // إذا كان الراتب محفوظاً في قاعدة البيانات، تحقق من صحته
+        if (isset($currentSalary['total_amount']) && $currentSalary['total_amount'] > 0) {
+            $savedTotal = cleanFinancialValue($currentSalary['total_amount']);
+            // إذا كان الراتب المحفوظ يطابق الحساب أو قريب منه، استخدم المحفوظ
+            // وإلا استخدم الحساب (لأن المحفوظ قد يكون خاطئاً)
+            if (abs($savedTotal - $calculatedTotal) < 0.01) {
+                $totalSalary = $savedTotal;
+            } else {
+                // الراتب المحفوظ مختلف عن الحساب، استخدم الحساب الصحيح
+                $totalSalary = $calculatedTotal;
+            }
+        } else {
+            // لا يوجد راتب محفوظ، استخدم الحساب
+            $totalSalary = $calculatedTotal;
+        }
+        
+        // تحديث $monthStats['total_salary'] بالقيمة الصحيحة
         $monthStats['total_salary'] = $totalSalary;
         $collectionsBonus = 0; // لا توجد نسبة تحصيلات لعمال الإنتاج والمحاسبين
     }
