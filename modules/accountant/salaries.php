@@ -95,10 +95,23 @@ if (empty($advancesColumnCheck)) {
 $notesColumnCheck = $db->queryOne("SHOW COLUMNS FROM salaries LIKE 'notes'");
 if (empty($notesColumnCheck)) {
     try {
+        // التحقق من وجود عمود updated_at أو استخدام عمود آخر
+        $updatedAtCheck = $db->queryOne("SHOW COLUMNS FROM salaries WHERE Field IN ('updated_at', 'modified_at', 'last_updated')");
+        $afterColumn = 'created_at'; // افتراضي: بعد created_at
+        if (!empty($updatedAtCheck)) {
+            $afterColumn = $updatedAtCheck['Field'];
+        } else {
+            // التحقق من وجود total_amount
+            $totalAmountCheck = $db->queryOne("SHOW COLUMNS FROM salaries WHERE Field IN ('total_amount', 'amount', 'net_total')");
+            if (!empty($totalAmountCheck)) {
+                $afterColumn = $totalAmountCheck['Field'];
+            }
+        }
+        
         $db->execute("
             ALTER TABLE `salaries` 
             ADD COLUMN `notes` TEXT DEFAULT NULL COMMENT 'ملاحظات' 
-            AFTER `updated_at`
+            AFTER `{$afterColumn}`
         ");
     } catch (Exception $e) {
         error_log("Error adding notes column: " . $e->getMessage());

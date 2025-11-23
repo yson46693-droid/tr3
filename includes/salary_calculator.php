@@ -28,12 +28,25 @@ function ensureCollectionsBonusColumn(): bool {
     try {
         $db = db();
         
+        // التحقق من وجود عمود bonus أو bonuses لتحديد موضع الإضافة
+        $bonusColumnCheck = $db->queryOne("SHOW COLUMNS FROM salaries WHERE Field IN ('bonus', 'bonuses')");
+        $afterColumn = 'deductions'; // افتراضي: بعد deductions
+        if (!empty($bonusColumnCheck)) {
+            $afterColumn = $bonusColumnCheck['Field'];
+        } else {
+            // التحقق من وجود deductions
+            $deductionsCheck = $db->queryOne("SHOW COLUMNS FROM salaries LIKE 'deductions'");
+            if (empty($deductionsCheck)) {
+                $afterColumn = 'base_amount'; // إذا لم يكن deductions موجوداً، استخدم base_amount
+            }
+        }
+        
         $bonusColumnExists = $db->queryOne("SHOW COLUMNS FROM salaries LIKE 'collections_bonus'");
         if (empty($bonusColumnExists)) {
             $db->execute("
                 ALTER TABLE `salaries`
                 ADD COLUMN `collections_bonus` DECIMAL(10,2) DEFAULT 0.00 COMMENT 'مكافآت التحصيلات 2%' 
-                AFTER `bonus`
+                AFTER `{$afterColumn}`
             ");
         }
         
