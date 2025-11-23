@@ -343,18 +343,23 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['
     // الحصول على بيانات الراتب
     $salaryRecord = $salaryData['exists'] ? $salaryData['salary'] : $salaryData['calculation'];
     
-    // حساب الراتب الإجمالي بشكل صحيح مع نسبة التحصيلات
-    $salaryCalculation = calculateTotalSalaryWithCollections($salaryRecord, $currentUser['id'], $month, $year, $currentUser['role']);
-    $currentSalary = $salaryCalculation['total_salary'];
+    // حساب عدد الساعات الفعلية من الحضور
+    $actualHours = calculateMonthlyHours($currentUser['id'], $month, $year);
+    $hourlyRate = cleanFinancialValue($salaryRecord['hourly_rate'] ?? $currentUser['hourly_rate'] ?? 0);
+    $bonus = cleanFinancialValue($salaryRecord['bonus'] ?? 0);
+    $deductions = cleanFinancialValue($salaryRecord['deductions'] ?? 0);
     
-    // حساب الحد الأقصى للسلفة بناءً على الراتب الإجمالي من جدول تفاصيل الراتب
-    // إذا كان الراتب محفوظاً في الجدول، استخدم الراتب الإجمالي المحفوظ مباشرة
-    if ($salaryData['exists'] && isset($salaryRecord['total_amount'])) {
-        $totalSalaryFromTable = cleanFinancialValue($salaryRecord['total_amount'] ?? 0);
-        // إذا كان الراتب المحفوظ أكبر من الصفر، استخدمه
-        if ($totalSalaryFromTable > 0) {
-            $currentSalary = $totalSalaryFromTable;
-        }
+    // حساب الراتب الإجمالي بناءً على عدد الساعات الفعلية
+    if ($currentUser['role'] === 'sales') {
+        // للمندوبين: استخدم الحساب مع نسبة التحصيلات
+        $salaryCalculation = calculateTotalSalaryWithCollections($salaryRecord, $currentUser['id'], $month, $year, $currentUser['role']);
+        $currentSalary = $salaryCalculation['total_salary'];
+    } else {
+        // لعمال الإنتاج والمحاسبين: احسب الراتب من عدد الساعات الفعلية
+        // الراتب الأساسي = عدد الساعات الفعلية × سعر الساعة
+        $baseAmount = round($actualHours * $hourlyRate, 2);
+        // الراتب الإجمالي = الراتب الأساسي + المكافآت - الخصومات
+        $currentSalary = round($baseAmount + $bonus - $deductions, 2);
     }
     
     $maxAdvance = cleanFinancialValue($currentSalary * 0.5); // نصف الراتب
@@ -751,22 +756,18 @@ $hourlyRate = cleanFinancialValue($currentSalary['hourly_rate'] ?? $currentUser[
 $bonus = cleanFinancialValue($currentSalary['bonus'] ?? 0);
 $deductions = cleanFinancialValue($currentSalary['deductions'] ?? 0);
 
-// حساب الراتب الأساسي - استخدام القيمة المحفوظة من قاعدة البيانات إذا كانت موجودة
-// لعمال الإنتاج والمحاسبين: الراتب = عدد الساعات × سعر الساعة
+// حساب الراتب الأساسي بناءً على عدد الساعات المعروض في الصفحة
+// لعمال الإنتاج والمحاسبين: الراتب = عدد الساعات المعروض × سعر الساعة
 // للمندوبين: الراتب الأساسي هو hourly_rate مباشرة (راتب شهري ثابت)
 if ($currentUser['role'] === 'sales') {
     $baseAmount = cleanFinancialValue($currentSalary['base_amount'] ?? $hourlyRate);
 } else {
-    // استخدام الراتب الأساسي المحفوظ من قاعدة البيانات إذا كان موجوداً
-    if ($currentSalary && isset($currentSalary['base_amount']) && $currentSalary['base_amount'] > 0) {
-        $baseAmount = cleanFinancialValue($currentSalary['base_amount']);
-    } else {
-        // إذا لم يكن محفوظاً، احسبه من الساعات الحالية
-        $baseAmount = round($monthStats['total_hours'] * $hourlyRate, 2);
-    }
+    // لعمال الإنتاج والمحاسبين: دائماً احسب الراتب الأساسي من عدد الساعات المعروض في الصفحة
+    // هذا يضمن أن الراتب المعروض يطابق عدد الساعات المعروض
+    $baseAmount = round($monthStats['total_hours'] * $hourlyRate, 2);
 }
 
-// حساب الراتب الإجمالي - استخدام القيمة المحفوظة من قاعدة البيانات إذا كانت موجودة وصحيحة
+// حساب الراتب الإجمالي بناءً على عدد الساعات المعروض في الصفحة
 if ($currentSalary) {
     if ($currentUser['role'] === 'sales') {
         // للمندوبين: استخدم الحساب الأصلي مع نسبة التحصيلات
@@ -774,27 +775,12 @@ if ($currentSalary) {
         $totalSalary = $salaryCalculation['total_salary'];
         $collectionsBonus = $salaryCalculation['collections_bonus'];
     } else {
-        // لعمال الإنتاج والمحاسبين: احسب الراتب الإجمالي من المكونات
-        // الراتب الإجمالي = الراتب الأساسي + المكافآت - الخصومات
-        $calculatedTotal = round($baseAmount + $bonus - $deductions, 2);
+        // لعمال الإنتاج والمحاسبين: احسب الراتب الإجمالي من المكونات بناءً على عدد الساعات المعروض
+        // الراتب الإجمالي = (عدد الساعات المعروض × سعر الساعة) + المكافآت - الخصومات
+        // دائماً استخدم الحساب من عدد الساعات المعروض وليس القيمة المحفوظة
+        $totalSalary = round($baseAmount + $bonus - $deductions, 2);
         
-        // إذا كان الراتب محفوظاً في قاعدة البيانات، تحقق من صحته
-        if (isset($currentSalary['total_amount']) && $currentSalary['total_amount'] > 0) {
-            $savedTotal = cleanFinancialValue($currentSalary['total_amount']);
-            // إذا كان الراتب المحفوظ يطابق الحساب أو قريب منه، استخدم المحفوظ
-            // وإلا استخدم الحساب (لأن المحفوظ قد يكون خاطئاً)
-            if (abs($savedTotal - $calculatedTotal) < 0.01) {
-                $totalSalary = $savedTotal;
-            } else {
-                // الراتب المحفوظ مختلف عن الحساب، استخدم الحساب الصحيح
-                $totalSalary = $calculatedTotal;
-            }
-        } else {
-            // لا يوجد راتب محفوظ، استخدم الحساب
-            $totalSalary = $calculatedTotal;
-        }
-        
-        // تحديث $monthStats['total_salary'] بالقيمة الصحيحة
+        // تحديث $monthStats['total_salary'] بالقيمة المحسوبة من عدد الساعات المعروض
         $monthStats['total_salary'] = $totalSalary;
         $collectionsBonus = 0; // لا توجد نسبة تحصيلات لعمال الإنتاج والمحاسبين
     }
