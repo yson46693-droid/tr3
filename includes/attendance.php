@@ -934,11 +934,34 @@ function recordAttendanceCheckOut($userId, $photoBase64 = null) {
                 $actualMonthlyHours = calculateMonthlyHours($userId, $attendanceMonthNumber, $attendanceYearNumber);
                 error_log("Calculated monthly hours: {$actualMonthlyHours}");
                 
+                // التحقق من وجود الأعمدة في جدول salaries
+                $columns = $db->query("SHOW COLUMNS FROM salaries");
+                $columnNames = [];
+                foreach ($columns as $column) {
+                    $columnNames[] = $column['Field'] ?? '';
+                }
+                
+                $hasBonus = in_array('bonus', $columnNames, true);
+                $hasDeductions = in_array('deductions', $columnNames, true);
+                $hasCollectionsBonus = in_array('collections_bonus', $columnNames, true);
+                
+                // بناء استعلام SELECT بناءً على الأعمدة الموجودة
+                $selectFields = ['id', 'total_hours', 'base_amount', 'total_amount'];
+                if ($hasBonus) {
+                    $selectFields[] = 'bonus';
+                }
+                if ($hasDeductions) {
+                    $selectFields[] = 'deductions';
+                }
+                if ($hasCollectionsBonus) {
+                    $selectFields[] = 'collections_bonus';
+                }
+                
+                $selectSql = "SELECT " . implode(', ', $selectFields) . " FROM salaries WHERE user_id = ? AND month = ? AND year = ?";
+                
                 // البحث عن سجل الراتب الموجود
                 $existingSalary = $db->queryOne(
-                    "SELECT id, total_hours, base_amount, bonus, deductions, collections_bonus, total_amount 
-                     FROM salaries 
-                     WHERE user_id = ? AND month = ? AND year = ?",
+                    $selectSql,
                     [$userId, $attendanceMonthNumber, $attendanceYearNumber]
                 );
                 
@@ -1077,22 +1100,22 @@ function recordAttendanceCheckOut($userId, $photoBase64 = null) {
                     }
                     
                     // حساب الراتب الإجمالي الجديد
-                    $currentBonus = floatval($existingSalary['bonus'] ?? 0);
-                    $currentDeductions = floatval($existingSalary['deductions'] ?? 0);
+                    $currentBonus = $hasBonus ? floatval($existingSalary['bonus'] ?? 0) : 0;
+                    $currentDeductions = $hasDeductions ? floatval($existingSalary['deductions'] ?? 0) : 0;
                     $newTotalAmount = round($newBaseAmount + $currentBonus + $collectionsBonus - $currentDeductions, 2);
                     $newTotalAmount = max(0, $newTotalAmount);
                     
                     error_log("New calculations: base_amount={$newBaseAmount}, total_amount={$newTotalAmount}");
                     
-                    // تحديث باقي الحقول
-                    $updateResult = $db->execute(
-                        "UPDATE salaries SET 
-                            base_amount = ?,
-                            total_amount = ?,
-                            updated_at = NOW()
-                         WHERE id = ?",
-                        [$newBaseAmount, $newTotalAmount, $existingSalary['id']]
-                    );
+                    // تحديث باقي الحقول - بناء الاستعلام بناءً على الأعمدة الموجودة
+                    $updateFields = ['base_amount = ?', 'total_amount = ?', 'updated_at = NOW()'];
+                    $updateParams = [$newBaseAmount, $newTotalAmount];
+                    
+                    // إضافة base_amount و total_amount للتحديث
+                    $updateSql = "UPDATE salaries SET " . implode(', ', $updateFields) . " WHERE id = ?";
+                    $updateParams[] = $existingSalary['id'];
+                    
+                    $updateResult = $db->execute($updateSql, $updateParams);
                     
                     $affectedRows = $updateResult['affected_rows'] ?? 0;
                     error_log("Other fields UPDATE: affected_rows={$affectedRows}");
