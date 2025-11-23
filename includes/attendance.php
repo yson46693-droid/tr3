@@ -913,7 +913,7 @@ function recordAttendanceCheckOut($userId, $photoBase64 = null) {
     $todayHours = calculateTodayHours($userId, $attendanceDateTime->format('Y-m-d'));
     $monthHours = calculateMonthHours($userId, $attendanceMonthKey);
     
-    // حساب الراتب تلقائياً بعد تسجيل الانصراف
+    // تحديث total_hours والراتب تلقائياً بعد تسجيل الانصراف
     try {
         // التحقق من وجود سعر ساعة للمستخدم
         $user = $db->queryOne("SELECT hourly_rate, role FROM users WHERE id = ?", [$userId]);
@@ -922,25 +922,96 @@ function recordAttendanceCheckOut($userId, $photoBase64 = null) {
             error_log("User not found for salary calculation: user_id={$userId}");
         } else {
             $hourlyRate = floatval($user['hourly_rate'] ?? 0);
+            $userRole = $user['role'] ?? 'production';
             
             if ($hourlyRate > 0) {
-                // حساب الراتب تلقائياً للشهر الحالي
-                $salaryResult = createOrUpdateSalary(
-                    $userId,
-                    $attendanceMonthNumber,
-                    $attendanceYearNumber,
-                    0,
-                    0,
-                    'حساب تلقائي بعد تسجيل الانصراف'
+                // حساب الساعات الشهرية الفعلية من attendance_records
+                $actualMonthlyHours = calculateMonthlyHours($userId, $attendanceMonthNumber, $attendanceYearNumber);
+                
+                // البحث عن سجل الراتب الموجود
+                $existingSalary = $db->queryOne(
+                    "SELECT id, total_hours, base_amount, bonus, deductions, collections_bonus, total_amount 
+                     FROM salaries 
+                     WHERE user_id = ? AND month = ? AND year = ?",
+                    [$userId, $attendanceMonthNumber, $attendanceYearNumber]
                 );
                 
-                if ($salaryResult['success']) {
-                    // تم حساب الراتب بنجاح
+                if ($existingSalary) {
+                    // تحديث total_hours مباشرة
+                    $db->execute(
+                        "UPDATE salaries SET total_hours = ?, updated_at = NOW() WHERE id = ?",
+                        [$actualMonthlyHours, $existingSalary['id']]
+                    );
+                    
+                    // إعادة حساب الراتب الأساسي بناءً على الساعات الجديدة
+                    if ($userRole === 'sales') {
+                        // للمندوبين: الراتب الأساسي هو hourly_rate مباشرة (راتب شهري ثابت)
+                        $newBaseAmount = $hourlyRate;
+                    } else {
+                        // لعمال الإنتاج والمحاسبين: الراتب = الساعات × سعر الساعة
+                        $newBaseAmount = round($actualMonthlyHours * $hourlyRate, 2);
+                    }
+                    
+                    // حساب نسبة التحصيلات للمندوبين
+                    $collectionsBonus = 0;
+                    if ($userRole === 'sales') {
+                        $collectionsAmount = calculateSalesCollections($userId, $attendanceMonthNumber, $attendanceYearNumber);
+                        $collectionsBonus = round($collectionsAmount * 0.02, 2);
+                        
+                        // تحديث collections_bonus إذا كان موجوداً
+                        $collectionsBonusColumnCheck = $db->queryOne("SHOW COLUMNS FROM salaries LIKE 'collections_bonus'");
+                        if (!empty($collectionsBonusColumnCheck)) {
+                            $db->execute(
+                                "UPDATE salaries SET collections_bonus = ?, collections_amount = ? WHERE id = ?",
+                                [$collectionsBonus, $collectionsAmount, $existingSalary['id']]
+                            );
+                        }
+                    }
+                    
+                    // حساب الراتب الإجمالي الجديد
+                    $currentBonus = floatval($existingSalary['bonus'] ?? 0);
+                    $currentDeductions = floatval($existingSalary['deductions'] ?? 0);
+                    $newTotalAmount = round($newBaseAmount + $currentBonus + $collectionsBonus - $currentDeductions, 2);
+                    $newTotalAmount = max(0, $newTotalAmount);
+                    
+                    // تحديث الراتب في قاعدة البيانات
+                    $db->execute(
+                        "UPDATE salaries SET 
+                            total_hours = ?,
+                            base_amount = ?,
+                            total_amount = ?,
+                            updated_at = NOW()
+                         WHERE id = ?",
+                        [$actualMonthlyHours, $newBaseAmount, $newTotalAmount, $existingSalary['id']]
+                    );
+                    
                     error_log(
-                        "Salary auto-calculated for user {$userId} after checkout: Month={$attendanceMonthNumber}/{$attendanceYearNumber}, Hours={$salaryResult['calculation']['total_hours']}, Total={$salaryResult['calculation']['total_amount']}"
+                        "Salary updated after checkout for user {$userId}: " .
+                        "Month={$attendanceMonthNumber}/{$attendanceYearNumber}, " .
+                        "Hours={$actualMonthlyHours} (was {$existingSalary['total_hours']}), " .
+                        "Base={$newBaseAmount}, Total={$newTotalAmount}"
                     );
                 } else {
-                    error_log("Failed to calculate salary for user {$userId} after checkout: {$salaryResult['message']}");
+                    // إذا لم يكن هناك سجل راتب، قم بإنشائه
+                    $salaryResult = createOrUpdateSalary(
+                        $userId,
+                        $attendanceMonthNumber,
+                        $attendanceYearNumber,
+                        0,
+                        0,
+                        'حساب تلقائي بعد تسجيل الانصراف'
+                    );
+                    
+                    if ($salaryResult['success']) {
+                        error_log(
+                            "Salary created for user {$userId} after checkout: " .
+                            "Month={$attendanceMonthNumber}/{$attendanceYearNumber}, " .
+                            "Hours={$salaryResult['calculation']['total_hours']}, " .
+                            "Total={$salaryResult['calculation']['total_amount']}"
+                        );
+                    } else {
+                        error_log("Failed to create salary for user {$userId} after checkout: {$salaryResult['message']}");
+                    }
                 }
             } else {
                 error_log("User {$userId} has no hourly_rate set (value: {$hourlyRate}), skipping salary calculation");
@@ -948,7 +1019,7 @@ function recordAttendanceCheckOut($userId, $photoBase64 = null) {
         }
     } catch (Exception $e) {
         // في حالة حدوث خطأ في حساب الراتب، لا نمنع تسجيل الانصراف
-        error_log("Error auto-calculating salary after checkout for user {$userId}: " . $e->getMessage());
+        error_log("Error updating salary after checkout for user {$userId}: " . $e->getMessage());
         error_log("Stack trace: " . $e->getTraceAsString());
     }
     
@@ -1875,6 +1946,88 @@ function processAutoCheckoutForMissingEmployees(): void
                     
                     error_log("Auto checkout: User {$userId} reached 3+ warnings, deducted 2 additional hours");
                 }
+            }
+            
+            // تحديث total_hours والراتب بعد الانصراف التلقائي
+            try {
+                $attendanceDateObj = new DateTime($attendanceDate);
+                $attendanceMonthNumber = (int)$attendanceDateObj->format('n');
+                $attendanceYearNumber = (int)$attendanceDateObj->format('Y');
+                
+                $user = $db->queryOne("SELECT hourly_rate, role FROM users WHERE id = ?", [$userId]);
+                
+                if ($user) {
+                    $hourlyRate = floatval($user['hourly_rate'] ?? 0);
+                    $userRole = $user['role'] ?? 'production';
+                    
+                    if ($hourlyRate > 0) {
+                        // حساب الساعات الشهرية الفعلية من attendance_records
+                        $actualMonthlyHours = calculateMonthlyHours($userId, $attendanceMonthNumber, $attendanceYearNumber);
+                        
+                        // البحث عن سجل الراتب الموجود
+                        $existingSalary = $db->queryOne(
+                            "SELECT id, total_hours, base_amount, bonus, deductions, collections_bonus, total_amount 
+                             FROM salaries 
+                             WHERE user_id = ? AND month = ? AND year = ?",
+                            [$userId, $attendanceMonthNumber, $attendanceYearNumber]
+                        );
+                        
+                        if ($existingSalary) {
+                            // تحديث total_hours مباشرة
+                            $db->execute(
+                                "UPDATE salaries SET total_hours = ?, updated_at = NOW() WHERE id = ?",
+                                [$actualMonthlyHours, $existingSalary['id']]
+                            );
+                            
+                            // إعادة حساب الراتب الأساسي بناءً على الساعات الجديدة
+                            if ($userRole === 'sales') {
+                                $newBaseAmount = $hourlyRate;
+                            } else {
+                                $newBaseAmount = round($actualMonthlyHours * $hourlyRate, 2);
+                            }
+                            
+                            // حساب نسبة التحصيلات للمندوبين
+                            $collectionsBonus = 0;
+                            if ($userRole === 'sales') {
+                                $collectionsAmount = calculateSalesCollections($userId, $attendanceMonthNumber, $attendanceYearNumber);
+                                $collectionsBonus = round($collectionsAmount * 0.02, 2);
+                                
+                                $collectionsBonusColumnCheck = $db->queryOne("SHOW COLUMNS FROM salaries LIKE 'collections_bonus'");
+                                if (!empty($collectionsBonusColumnCheck)) {
+                                    $db->execute(
+                                        "UPDATE salaries SET collections_bonus = ?, collections_amount = ? WHERE id = ?",
+                                        [$collectionsBonus, $collectionsAmount, $existingSalary['id']]
+                                    );
+                                }
+                            }
+                            
+                            // حساب الراتب الإجمالي الجديد
+                            $currentBonus = floatval($existingSalary['bonus'] ?? 0);
+                            $currentDeductions = floatval($existingSalary['deductions'] ?? 0);
+                            $newTotalAmount = round($newBaseAmount + $currentBonus + $collectionsBonus - $currentDeductions, 2);
+                            $newTotalAmount = max(0, $newTotalAmount);
+                            
+                            // تحديث الراتب في قاعدة البيانات
+                            $db->execute(
+                                "UPDATE salaries SET 
+                                    total_hours = ?,
+                                    base_amount = ?,
+                                    total_amount = ?,
+                                    updated_at = NOW()
+                                 WHERE id = ?",
+                                [$actualMonthlyHours, $newBaseAmount, $newTotalAmount, $existingSalary['id']]
+                            );
+                            
+                            error_log(
+                                "Salary updated after auto checkout for user {$userId}: " .
+                                "Month={$attendanceMonthNumber}/{$attendanceYearNumber}, " .
+                                "Hours={$actualMonthlyHours}, Base={$newBaseAmount}, Total={$newTotalAmount}"
+                            );
+                        }
+                    }
+                }
+            } catch (Exception $e) {
+                error_log("Error updating salary after auto checkout for user {$userId}: " . $e->getMessage());
             }
             
             error_log("Auto checkout processed for user {$userId} at {$autoCheckoutTime}");
