@@ -332,23 +332,29 @@ $pageTitle = isset($lang['manager_dashboard']) ? $lang['manager_dashboard'] : '�
                                                     <td><?php echo htmlspecialchars($approval['requested_by_full_name'] ?? $approval['requested_by_name']); ?></td>
                                                     <td><?php echo formatDateTime($approval['created_at']); ?></td>
                                                     <td>
-                                                        <?php if ($approval['type'] === 'warehouse_transfer'): ?>
-                                                            <?php
-                                                            // جلب تفاصيل طلب النقل
-                                                            require_once __DIR__ . '/../includes/approval_system.php';
-                                                            $entityColumn = getApprovalsEntityColumn();
-                                                            $transferId = $approval[$entityColumn] ?? null;
-                                                            if ($transferId) {
+                                                        <?php
+                                                        // استخدام دالة getEntityName لعرض تفاصيل الكيان
+                                                        require_once __DIR__ . '/../includes/approval_system.php';
+                                                        $entityColumn = getApprovalsEntityColumn();
+                                                        $entityId = $approval[$entityColumn] ?? null;
+                                                        
+                                                        if ($entityId) {
+                                                            $entityName = getEntityName($approval['type'], $entityId);
+                                                            
+                                                            // عرض تفاصيل خاصة حسب نوع الموافقة
+                                                            if ($approval['type'] === 'warehouse_transfer') {
+                                                                // جلب تفاصيل طلب النقل
                                                                 $transferItems = $db->query(
                                                                     "SELECT wti.*, p.name as product_name 
                                                                      FROM warehouse_transfer_items wti
                                                                      LEFT JOIN products p ON wti.product_id = p.id
                                                                      WHERE wti.transfer_id = ?
                                                                      ORDER BY wti.id",
-                                                                    [$transferId]
+                                                                    [$entityId]
                                                                 );
                                                                 if (!empty($transferItems)) {
                                                                     echo '<div class="small">';
+                                                                    echo '<strong>' . htmlspecialchars($entityName) . '</strong><br>';
                                                                     foreach ($transferItems as $item) {
                                                                         $batchInfo = !empty($item['batch_number']) ? ' - تشغيلة ' . htmlspecialchars($item['batch_number']) : '';
                                                                         echo '<span class="badge bg-info me-1 mb-1">';
@@ -359,11 +365,67 @@ $pageTitle = isset($lang['manager_dashboard']) ? $lang['manager_dashboard'] : '�
                                                                     }
                                                                     echo '</div>';
                                                                 } else {
-                                                                    echo '<span class="text-muted small">لا توجد منتجات</span>';
+                                                                    echo '<span class="text-muted small">' . htmlspecialchars($entityName) . '</span>';
+                                                                }
+                                                            } elseif ($approval['type'] === 'salary_modification') {
+                                                                // عرض تفاصيل تعديل الراتب
+                                                                $salary = $db->queryOne(
+                                                                    "SELECT s.*, u.full_name, u.username 
+                                                                     FROM salaries s 
+                                                                     LEFT JOIN users u ON s.user_id = u.id 
+                                                                     WHERE s.id = ?",
+                                                                    [$entityId]
+                                                                );
+                                                                if ($salary) {
+                                                                    $employeeName = $salary['full_name'] ?? $salary['username'] ?? 'غير محدد';
+                                                                    echo '<div class="small">';
+                                                                    echo '<strong>تعديل راتب:</strong> ' . htmlspecialchars($employeeName) . '<br>';
+                                                                    
+                                                                    // محاولة استخراج بيانات التعديل من notes
+                                                                    $approvalNotes = $approval['notes'] ?? $approval['approval_notes'] ?? '';
+                                                                    if (preg_match('/\[DATA\]:(.+)/s', $approvalNotes, $matches)) {
+                                                                        $modificationData = json_decode(trim($matches[1]), true);
+                                                                        if ($modificationData) {
+                                                                            $bonus = floatval($modificationData['bonus'] ?? 0);
+                                                                            $deductions = floatval($modificationData['deductions'] ?? 0);
+                                                                            $notes = trim($modificationData['notes'] ?? '');
+                                                                            
+                                                                            if ($bonus > 0) {
+                                                                                echo '<span class="badge bg-success me-1">مكافأة: ' . number_format($bonus, 2) . ' ج.م</span>';
+                                                                            }
+                                                                            if ($deductions > 0) {
+                                                                                echo '<span class="badge bg-danger me-1">خصومات: ' . number_format($deductions, 2) . ' ج.م</span>';
+                                                                            }
+                                                                            if ($notes) {
+                                                                                echo '<br><small class="text-muted">' . htmlspecialchars($notes) . '</small>';
+                                                                            }
+                                                                        }
+                                                                    } else {
+                                                                        echo '<span class="text-muted">' . htmlspecialchars($entityName) . '</span>';
+                                                                    }
+                                                                    echo '</div>';
+                                                                } else {
+                                                                    echo '<span class="text-muted small">' . htmlspecialchars($entityName) . '</span>';
+                                                                }
+                                                            } else {
+                                                                // للأنواع الأخرى، عرض اسم الكيان فقط
+                                                                echo '<span class="text-muted small">' . htmlspecialchars($entityName) . '</span>';
+                                                                
+                                                                // عرض الملاحظات إن وجدت
+                                                                $approvalNotes = $approval['notes'] ?? $approval['approval_notes'] ?? '';
+                                                                if ($approvalNotes && strlen($approvalNotes) > 0) {
+                                                                    // إزالة [DATA]: من الملاحظات للعرض
+                                                                    $displayNotes = preg_replace('/\[DATA\]:.*/s', '', $approvalNotes);
+                                                                    $displayNotes = trim($displayNotes);
+                                                                    if ($displayNotes) {
+                                                                        echo '<br><small class="text-muted">' . htmlspecialchars(mb_substr($displayNotes, 0, 100)) . '</small>';
+                                                                    }
                                                                 }
                                                             }
-                                                            ?>
-                                                        <?php endif; ?>
+                                                        } else {
+                                                            echo '<span class="text-muted small">لا توجد تفاصيل</span>';
+                                                        }
+                                                        ?>
                                                     </td>
                                                     <td>
                                                         <div class="btn-group btn-group-sm" role="group">

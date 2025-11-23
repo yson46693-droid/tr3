@@ -162,7 +162,7 @@ function requestApproval($type, $entityId, $requestedBy, $notes = null) {
                         
                         // الحصول على بيانات الراتب والموظف
                         $salary = $db->queryOne(
-                            "SELECT s.*, u.full_name, u.username 
+                            "SELECT s.*, u.full_name, u.username, u.role 
                              FROM salaries s 
                              LEFT JOIN users u ON s.user_id = u.id 
                              WHERE s.id = ?",
@@ -170,22 +170,29 @@ function requestApproval($type, $entityId, $requestedBy, $notes = null) {
                         );
                         
                         if ($salary) {
-                            $employeeName = $salary['full_name'] ?? $salary['username'] ?? 'غير محدد';
-                            $baseAmount = cleanFinancialValue($salary['base_amount'] ?? 0);
-                            $currentTotal = cleanFinancialValue($salary['total_amount'] ?? 0);
-                            $newTotal = $baseAmount + $bonus - $deductions;
+                            require_once __DIR__ . '/salary_calculator.php';
                             
+                            $employeeName = $salary['full_name'] ?? $salary['username'] ?? 'غير محدد';
+                            $userRole = $salary['role'] ?? 'production';
+                            $userId = intval($salary['user_id'] ?? 0);
+                            $month = intval($salary['month'] ?? date('n'));
+                            $year = intval($salary['year'] ?? date('Y'));
+                            
+                            // حساب الراتب الحالي باستخدام نفس الدالة المستخدمة في بطاقة الموظف
+                            $currentSalaryCalc = calculateTotalSalaryWithCollections($salary, $userId, $month, $year, $userRole);
+                            $currentTotal = $currentSalaryCalc['total_salary'];
+                            $currentCollectionsBonus = $currentSalaryCalc['collections_bonus'];
+                            
+                            // حساب الراتب الجديد مع التعديلات (نفس طريقة الحساب في بطاقة الموظف)
+                            $baseAmount = cleanFinancialValue($salary['base_amount'] ?? 0);
+                            $newTotal = $baseAmount + $bonus + $currentCollectionsBonus - $deductions;
+                            $newTotal = max(0, $newTotal);
+                            
+                            // إشعار مختصر
                             $salaryDetails = sprintf(
-                                "\n\n📋 تفاصيل الطلب:\n━━━━━━━━━━━━━━━━━━━━\n👤 الموظف: %s\n\n💰 الراتب الحالي:\n  • الراتب الأساسي: %s\n  • المكافأة الحالية: %s\n  • الخصومات الحالية: %s\n  • الراتب الإجمالي: %s\n\n✨ التعديلات المطلوبة:\n  • المكافأة الجديدة: %s %s\n  • الخصومات الجديدة: %s %s\n  • الراتب الإجمالي الجديد: %s\n\n📝 الملاحظات: %s",
+                                "\n\n👤 الموظف: %s\n💰 الراتب الحالي: %s\n✨ الراتب الجديد: %s\n📝 الملاحظات: %s",
                                 $employeeName,
-                                formatCurrency($baseAmount),
-                                formatCurrency($originalBonus),
-                                formatCurrency($originalDeductions),
                                 formatCurrency($currentTotal),
-                                formatCurrency($bonus),
-                                ($bonus > $originalBonus ? '⬆️' : ($bonus < $originalBonus ? '⬇️' : '➡️')),
-                                formatCurrency($deductions),
-                                ($deductions > $originalDeductions ? '⬆️' : ($deductions < $originalDeductions ? '⬇️' : '➡️')),
                                 formatCurrency($newTotal),
                                 $notesText ?: 'لا توجد ملاحظات'
                             );
@@ -197,7 +204,7 @@ function requestApproval($type, $entityId, $requestedBy, $notes = null) {
             }
             
             $notificationTitle = 'طلب تعديل راتب يحتاج موافقتك';
-            $notificationMessage = "تم استلام طلب تعديل راتب جديد يحتاج مراجعتك وموافقتك.{$salaryDetails}\n\nيرجى مراجعة الطلب والموافقة عليه.";
+            $notificationMessage = "تم استلام طلب تعديل راتب جديد يحتاج مراجعتك وموافقتك.{$salaryDetails}";
         } elseif ($type === 'warehouse_transfer') {
             $transferNumber = '';
             $transferDetails = '';
