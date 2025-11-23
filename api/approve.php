@@ -9,32 +9,47 @@ require_once __DIR__ . '/../includes/db.php';
 require_once __DIR__ . '/../includes/auth.php';
 require_once __DIR__ . '/../includes/approval_system.php';
 
-header('Content-Type: application/json');
-requireRole('manager');
-
-$currentUser = getCurrentUser();
-
-if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
-    http_response_code(405);
-    echo json_encode(['error' => 'Method not allowed']);
-    exit;
+// تنظيف أي output buffers موجودة
+while (ob_get_level() > 0) {
+    @ob_end_clean();
 }
 
-$approvalId = intval($_POST['id'] ?? 0);
-$notes = $_POST['notes'] ?? null;
+header('Content-Type: application/json; charset=utf-8');
 
-if ($approvalId <= 0) {
-    http_response_code(400);
-    echo json_encode(['error' => 'Invalid approval ID']);
-    exit;
-}
+try {
+    requireRole('manager');
+    $currentUser = getCurrentUser();
 
-$result = approveRequest($approvalId, $currentUser['id'], $notes);
+    if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
+        http_response_code(405);
+        echo json_encode(['success' => false, 'error' => 'Method not allowed'], JSON_UNESCAPED_UNICODE);
+        exit;
+    }
 
-if ($result['success']) {
-    echo json_encode(['success' => true, 'message' => 'تمت الموافقة بنجاح']);
-} else {
-    http_response_code(400);
-    echo json_encode(['error' => $result['message']]);
+    $approvalId = intval($_POST['id'] ?? 0);
+    $notes = $_POST['notes'] ?? null;
+
+    if ($approvalId <= 0) {
+        http_response_code(400);
+        echo json_encode(['success' => false, 'error' => 'معرّف الطلب غير صحيح'], JSON_UNESCAPED_UNICODE);
+        exit;
+    }
+
+    $result = approveRequest($approvalId, $currentUser['id'], $notes);
+
+    if ($result['success']) {
+        echo json_encode(['success' => true, 'message' => 'تمت الموافقة بنجاح'], JSON_UNESCAPED_UNICODE);
+    } else {
+        http_response_code(400);
+        echo json_encode(['success' => false, 'error' => $result['message'] ?? 'حدث خطأ في الموافقة'], JSON_UNESCAPED_UNICODE);
+    }
+} catch (Exception $e) {
+    http_response_code(500);
+    error_log('Error in approve.php: ' . $e->getMessage());
+    echo json_encode(['success' => false, 'error' => 'حدث خطأ في الخادم: ' . $e->getMessage()], JSON_UNESCAPED_UNICODE);
+} catch (Throwable $e) {
+    http_response_code(500);
+    error_log('Fatal error in approve.php: ' . $e->getMessage());
+    echo json_encode(['success' => false, 'error' => 'حدث خطأ فادح في الخادم'], JSON_UNESCAPED_UNICODE);
 }
 

@@ -143,8 +143,62 @@ function requestApproval($type, $entityId, $requestedBy, $notes = null) {
         // إرسال إشعار للمديرين
         $entityName = getEntityName($type, $entityId);
         
-        // تحسين رسالة الإشعار لطلبات نقل المنتجات
-        if ($type === 'warehouse_transfer') {
+        // تحسين رسالة الإشعار لطلبات تعديل الرواتب
+        if ($type === 'salary_modification') {
+            $salaryDetails = '';
+            try {
+                // استخراج البيانات من notes
+                $dataStart = strpos($notes, '[DATA]:');
+                if ($dataStart !== false) {
+                    $jsonData = substr($notes, $dataStart + 7);
+                    $modificationData = json_decode($jsonData, true);
+                    
+                    if ($modificationData) {
+                        $bonus = floatval($modificationData['bonus'] ?? 0);
+                        $deductions = floatval($modificationData['deductions'] ?? 0);
+                        $originalBonus = floatval($modificationData['original_bonus'] ?? 0);
+                        $originalDeductions = floatval($modificationData['original_deductions'] ?? 0);
+                        $notesText = $modificationData['notes'] ?? '';
+                        
+                        // الحصول على بيانات الراتب والموظف
+                        $salary = $db->queryOne(
+                            "SELECT s.*, u.full_name, u.username 
+                             FROM salaries s 
+                             LEFT JOIN users u ON s.user_id = u.id 
+                             WHERE s.id = ?",
+                            [$entityId]
+                        );
+                        
+                        if ($salary) {
+                            $employeeName = $salary['full_name'] ?? $salary['username'] ?? 'غير محدد';
+                            $baseAmount = cleanFinancialValue($salary['base_amount'] ?? 0);
+                            $currentTotal = cleanFinancialValue($salary['total_amount'] ?? 0);
+                            $newTotal = $baseAmount + $bonus - $deductions;
+                            
+                            $salaryDetails = sprintf(
+                                "\n\n📋 تفاصيل الطلب:\n━━━━━━━━━━━━━━━━━━━━\n👤 الموظف: %s\n\n💰 الراتب الحالي:\n  • الراتب الأساسي: %s\n  • المكافأة الحالية: %s\n  • الخصومات الحالية: %s\n  • الراتب الإجمالي: %s\n\n✨ التعديلات المطلوبة:\n  • المكافأة الجديدة: %s %s\n  • الخصومات الجديدة: %s %s\n  • الراتب الإجمالي الجديد: %s\n\n📝 الملاحظات: %s",
+                                $employeeName,
+                                formatCurrency($baseAmount),
+                                formatCurrency($originalBonus),
+                                formatCurrency($originalDeductions),
+                                formatCurrency($currentTotal),
+                                formatCurrency($bonus),
+                                ($bonus > $originalBonus ? '⬆️' : ($bonus < $originalBonus ? '⬇️' : '➡️')),
+                                formatCurrency($deductions),
+                                ($deductions > $originalDeductions ? '⬆️' : ($deductions < $originalDeductions ? '⬇️' : '➡️')),
+                                formatCurrency($newTotal),
+                                $notesText ?: 'لا توجد ملاحظات'
+                            );
+                        }
+                    }
+                }
+            } catch (Exception $e) {
+                error_log('Error getting salary modification details for notification: ' . $e->getMessage());
+            }
+            
+            $notificationTitle = 'طلب تعديل راتب يحتاج موافقتك';
+            $notificationMessage = "تم استلام طلب تعديل راتب جديد يحتاج مراجعتك وموافقتك.{$salaryDetails}\n\nيرجى مراجعة الطلب والموافقة عليه.";
+        } elseif ($type === 'warehouse_transfer') {
             $transferNumber = '';
             $transferDetails = '';
             try {

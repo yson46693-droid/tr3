@@ -2576,12 +2576,77 @@ $pageTitle = ($view === 'advances') ? 'السلف' : (($view === 'pending') ? '�
                             <th>المستخدم</th>
                             <th>المحاسب</th>
                             <th>التاريخ</th>
-                            <th>الملاحظات</th>
+                            <th>التفاصيل</th>
                             <th>الإجراءات</th>
                         </tr>
                     </thead>
                     <tbody>
                         <?php foreach ($pendingModifications as $mod): ?>
+                            <?php
+                            // استخراج بيانات التعديل من notes
+                            $modificationDetails = '';
+                            $notesText = '';
+                            $dataStart = strpos($mod['notes'] ?? '', '[DATA]:');
+                            if ($dataStart !== false) {
+                                $jsonData = substr($mod['notes'], $dataStart + 7);
+                                $modificationData = json_decode($jsonData, true);
+                                
+                                if ($modificationData) {
+                                    $bonus = floatval($modificationData['bonus'] ?? 0);
+                                    $deductions = floatval($modificationData['deductions'] ?? 0);
+                                    $originalBonus = floatval($modificationData['original_bonus'] ?? 0);
+                                    $originalDeductions = floatval($modificationData['original_deductions'] ?? 0);
+                                    $notesText = $modificationData['notes'] ?? '';
+                                    
+                                    // الحصول على بيانات الراتب
+                                    $entityColumn = getApprovalsEntityColumn();
+                                    $salaryId = intval($mod[$entityColumn] ?? 0);
+                                    $salary = $db->queryOne(
+                                        "SELECT base_amount, total_amount FROM salaries WHERE id = ?",
+                                        [$salaryId]
+                                    );
+                                    
+                                    if ($salary) {
+                                        $baseAmount = cleanFinancialValue($salary['base_amount'] ?? 0);
+                                        $currentTotal = cleanFinancialValue($salary['total_amount'] ?? 0);
+                                        $newTotal = $baseAmount + $bonus - $deductions;
+                                        
+                                        $modificationDetails = sprintf(
+                                            '<div class="small">' .
+                                            '<div class="mb-1"><strong>الراتب الحالي:</strong> %s</div>' .
+                                            '<div class="mb-1"><strong>المكافأة:</strong> %s → %s</div>' .
+                                            '<div class="mb-1"><strong>الخصومات:</strong> %s → %s</div>' .
+                                            '<div class="mb-1"><strong>الراتب الجديد:</strong> <span class="text-success">%s</span></div>' .
+                                            '%s' .
+                                            '</div>',
+                                            formatCurrency($currentTotal),
+                                            formatCurrency($originalBonus),
+                                            formatCurrency($bonus),
+                                            formatCurrency($originalDeductions),
+                                            formatCurrency($deductions),
+                                            formatCurrency($newTotal),
+                                            $notesText ? '<div class="mt-2 text-muted"><em>ملاحظة: ' . htmlspecialchars($notesText) . '</em></div>' : ''
+                                        );
+                                    } else {
+                                        $modificationDetails = sprintf(
+                                            '<div class="small">' .
+                                            '<div class="mb-1"><strong>المكافأة:</strong> %s</div>' .
+                                            '<div class="mb-1"><strong>الخصومات:</strong> %s</div>' .
+                                            '%s' .
+                                            '</div>',
+                                            formatCurrency($bonus),
+                                            formatCurrency($deductions),
+                                            $notesText ? '<div class="mt-2 text-muted"><em>ملاحظة: ' . htmlspecialchars($notesText) . '</em></div>' : ''
+                                        );
+                                    }
+                                }
+                            }
+                            
+                            // إذا لم يتم استخراج البيانات، عرض الملاحظات الأصلية
+                            if (empty($modificationDetails)) {
+                                $modificationDetails = htmlspecialchars($mod['notes'] ?? '-');
+                            }
+                            ?>
                             <tr>
                                 <td><strong><?php echo htmlspecialchars($mod['full_name'] ?? $mod['username']); ?></strong></td>
                                 <td><?php 
@@ -2589,7 +2654,7 @@ $pageTitle = ($view === 'advances') ? 'السلف' : (($view === 'pending') ? '�
                                     echo htmlspecialchars($requester['full_name'] ?? $requester['username']);
                                 ?></td>
                                 <td><?php echo formatDateTime($mod['created_at']); ?></td>
-                                <td><?php echo htmlspecialchars($mod['notes'] ?? '-'); ?></td>
+                                <td><?php echo $modificationDetails; ?></td>
                                 <td>
                                     <a href="<?php echo $currentUrl; ?>?page=salaries&approval_id=<?php echo $mod['id']; ?>&month=<?php echo $selectedMonth; ?>&year=<?php echo $selectedYear; ?>&view=pending" 
                                        class="btn btn-sm btn-primary-salary">

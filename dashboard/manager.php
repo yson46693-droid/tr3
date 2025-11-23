@@ -858,7 +858,10 @@ $pageTitle = isset($lang['manager_dashboard']) ? $lang['manager_dashboard'] : '�
 <?php include __DIR__ . '/../templates/footer.php'; ?>
 <script src="<?php echo ASSETS_URL; ?>js/reports.js"></script>
 <script>
-function approveRequest(id) {
+function approveRequest(id, event) {
+    // استخدام event الممرر أو window.event
+    const evt = event || window.event;
+    
     if (!id) {
         console.error('approveRequest: Missing ID');
         alert('خطأ: معرّف الطلب غير موجود');
@@ -869,7 +872,7 @@ function approveRequest(id) {
         return;
     }
     
-    const btn = event?.target?.closest('button');
+    const btn = evt?.target?.closest('button');
     const originalHTML = btn ? btn.innerHTML : '';
     
     if (btn) {
@@ -887,10 +890,23 @@ function approveRequest(id) {
         })
     })
     .then(response => {
-        if (!response.ok) {
-            throw new Error('Network response was not ok');
-        }
-        return response.json();
+        // قراءة النص أولاً لمعرفة ما إذا كان JSON صالح
+        return response.text().then(text => {
+            let data;
+            try {
+                data = JSON.parse(text);
+            } catch (e) {
+                // إذا لم يكن JSON صالحاً، عرض النص كخطأ
+                throw new Error(text || 'خطأ غير معروف من الخادم');
+            }
+            
+            // إذا كان status code غير 200، اعرض الخطأ
+            if (!response.ok) {
+                throw new Error(data.error || data.message || 'خطأ في الاستجابة من الخادم');
+            }
+            
+            return data;
+        });
     })
     .then(data => {
         if (data.success) {
@@ -916,7 +932,7 @@ function approveRequest(id) {
             btn.disabled = false;
             btn.innerHTML = originalHTML;
         }
-        alert('خطأ في الاتصال بالخادم. يرجى المحاولة مرة أخرى.');
+        alert('خطأ في الاتصال بالخادم: ' + (error.message || 'يرجى المحاولة مرة أخرى.'));
     });
 }
 
