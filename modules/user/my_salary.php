@@ -678,13 +678,35 @@ $delaySummary = calculateMonthlyDelaySummary($currentUser['id'], $selectedMonth,
 
 // حساب القيم المطلوبة للعرض
 $hourlyRate = cleanFinancialValue($currentSalary['hourly_rate'] ?? $currentUser['hourly_rate'] ?? 0);
-$baseAmount = cleanFinancialValue($currentSalary['base_amount'] ?? 0);
 $bonus = cleanFinancialValue($currentSalary['bonus'] ?? 0);
 $deductions = cleanFinancialValue($currentSalary['deductions'] ?? 0);
-$collectionsBonus = cleanFinancialValue($monthStats['collections_bonus'] ?? 0);
 
-// الراتب الإجمالي محسوب بالفعل في $monthStats['total_salary']
-$totalSalary = $monthStats['total_salary'];
+// حساب الراتب الأساسي بناءً على عدد الساعات المعروض
+// لعمال الإنتاج والمحاسبين: الراتب = عدد الساعات × سعر الساعة
+// للمندوبين: الراتب الأساسي هو hourly_rate مباشرة (راتب شهري ثابت)
+if ($currentUser['role'] === 'sales') {
+    $baseAmount = cleanFinancialValue($currentSalary['base_amount'] ?? $hourlyRate);
+} else {
+    // إعادة حساب الراتب الأساسي بناءً على عدد الساعات الحالي المعروض
+    $baseAmount = round($monthStats['total_hours'] * $hourlyRate, 2);
+    
+    // تحديث $currentSalary بالراتب الأساسي الجديد لإعادة حساب الراتب الإجمالي
+    $currentSalary['base_amount'] = $baseAmount;
+}
+
+// إعادة حساب الراتب الإجمالي بناءً على الراتب الأساسي المحدث
+if ($currentUser['role'] === 'sales') {
+    // للمندوبين: استخدم الحساب الأصلي مع نسبة التحصيلات
+    $salaryCalculation = calculateTotalSalaryWithCollections($currentSalary, $currentUser['id'], $selectedMonth, $selectedYear, $currentUser['role']);
+    $totalSalary = $salaryCalculation['total_salary'];
+    $collectionsBonus = $salaryCalculation['collections_bonus'];
+} else {
+    // لعمال الإنتاج والمحاسبين: الراتب الإجمالي = الراتب الأساسي + المكافآت - الخصومات
+    $totalSalary = round($baseAmount + $bonus - $deductions, 2);
+    // تحديث $monthStats['total_salary'] بالقيمة الجديدة
+    $monthStats['total_salary'] = $totalSalary;
+    $collectionsBonus = 0; // لا توجد نسبة تحصيلات لعمال الإنتاج والمحاسبين
+}
 
 // حساب إجمالي السلفات المعتمدة لهذا الشهر
 $totalApprovedAdvances = 0;

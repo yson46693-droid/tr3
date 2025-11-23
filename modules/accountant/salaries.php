@@ -2325,10 +2325,21 @@ $pageTitle = ($view === 'advances') ? 'السلف' : (($view === 'pending') ? '�
                         }
                         
                         // الحصول على القيم المالية
-                        $baseAmount = cleanFinancialValue($salary['base_amount'] ?? 0);
                         $bonus = cleanFinancialValue($salary['bonus'] ?? 0);
                         $deductions = cleanFinancialValue($salary['deductions'] ?? 0);
                         $totalSalary = cleanFinancialValue($salary['total_amount'] ?? 0);
+                        
+                        // حساب الراتب الأساسي بناءً على عدد الساعات المعروض
+                        // لعمال الإنتاج والمحاسبين: الراتب = عدد الساعات × سعر الساعة
+                        // للمندوبين: الراتب الأساسي هو hourly_rate مباشرة (راتب شهري ثابت)
+                        if ($userRole === 'sales') {
+                            $baseAmount = cleanFinancialValue($salary['base_amount'] ?? $hourlyRate);
+                        } else {
+                            // حساب الساعات أولاً
+                            $actualHoursForBase = calculateMonthlyHours($userId, $selectedMonth, $selectedYear);
+                            // إعادة حساب الراتب الأساسي بناءً على عدد الساعات الحالي
+                            $baseAmount = round($actualHoursForBase * $hourlyRate, 2);
+                        }
                         
                         // حساب الراتب الإجمالي المتوقع مع نسبة التحصيلات
                         $expectedTotalWithCollections = $baseAmount + $bonus + $collectionsBonus - $deductions;
