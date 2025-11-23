@@ -263,8 +263,9 @@ if (!function_exists('buildPackagingReportHtmlDocument')) {
      * إنشاء مستند HTML لتقرير مخزن أدوات التعبئة.
      *
      * @param array<string, mixed> $report
+     * @param bool $lowStockOnly إذا كان true، يعرض فقط الأدوات ذات المخزون القليل أو المعدوم
      */
-    function buildPackagingReportHtmlDocument(array $report): string
+    function buildPackagingReportHtmlDocument(array $report, bool $lowStockOnly = false): string
     {
         $generatedAt = htmlspecialchars((string)($report['generated_at'] ?? ''), ENT_QUOTES, 'UTF-8');
         $generatedBy = htmlspecialchars((string)($report['generated_by'] ?? ''), ENT_QUOTES, 'UTF-8');
@@ -284,6 +285,59 @@ if (!function_exists('buildPackagingReportHtmlDocument')) {
         $topItems = $report['top_items'] ?? [];
         if (!is_array($topItems)) {
             $topItems = [];
+        }
+
+        // عند الطباعة، نعرض فقط الأدوات ذات المخزون القليل أو المعدوم
+        if ($lowStockOnly) {
+            // تصفية top_items لعرض فقط الأدوات التي quantity <= 0 أو قليل (أقل من 10)
+            $topItems = array_filter($topItems, static function ($item) {
+                $quantity = isset($item['quantity']) ? (float)$item['quantity'] : 0.0;
+                return $quantity <= 0 || $quantity < 10;
+            });
+            
+            // إعادة ترتيب top_items حسب الكمية (الأقل أولاً للطباعة)
+            usort($topItems, static function ($a, $b) {
+                $qtyA = isset($a['quantity']) ? (float)$a['quantity'] : 0.0;
+                $qtyB = isset($b['quantity']) ? (float)$b['quantity'] : 0.0;
+                return $qtyA <=> $qtyB;
+            });
+            
+            // عند الطباعة، نعرض جميع الأدوات ذات المخزون القليل (وليس فقط 8)
+            
+            // إعادة حساب type_breakdown بناءً على الأدوات المفلترة فقط
+            $filteredTypeBreakdown = [];
+            foreach ($topItems as $item) {
+                $typeLabel = isset($item['type']) ? (string)$item['type'] : 'غير مصنف';
+                $quantity = isset($item['quantity']) ? (float)$item['quantity'] : 0.0;
+                $unit = isset($item['unit']) ? (string)$item['unit'] : 'وحدة';
+                
+                if (!isset($filteredTypeBreakdown[$typeLabel])) {
+                    $filteredTypeBreakdown[$typeLabel] = [
+                        'count' => 0,
+                        'total_quantity' => 0.0,
+                        'units' => []
+                    ];
+                }
+                
+                $filteredTypeBreakdown[$typeLabel]['count']++;
+                $filteredTypeBreakdown[$typeLabel]['total_quantity'] += $quantity;
+                if (!isset($filteredTypeBreakdown[$typeLabel]['units'][$unit])) {
+                    $filteredTypeBreakdown[$typeLabel]['units'][$unit] = 0.0;
+                }
+                $filteredTypeBreakdown[$typeLabel]['units'][$unit] += $quantity;
+            }
+            
+            // حساب المتوسط لكل فئة
+            foreach ($filteredTypeBreakdown as $typeLabel => &$breakdownEntry) {
+                $count = max(1, (int)$breakdownEntry['count']);
+                $breakdownEntry['average_quantity'] = $breakdownEntry['total_quantity'] / $count;
+            }
+            unset($breakdownEntry);
+            
+            $typeBreakdown = $filteredTypeBreakdown;
+        } else {
+            // في العرض العادي، نعرض فقط أعلى 8 أدوات من حيث الكمية
+            $topItems = array_slice($topItems, 0, 8);
         }
 
         ob_start();
@@ -524,9 +578,9 @@ if (!function_exists('buildPackagingReportHtmlDocument')) {
     </section>
 
     <section class="table-section">
-        <h2>أعلى الأدوات من حيث الكمية</h2>
+        <h2><?php echo $lowStockOnly ? 'الأدوات ذات المخزون القليل أو المعدوم' : 'أعلى الأدوات من حيث الكمية'; ?></h2>
         <?php if (empty($topItems)): ?>
-            <div class="empty-state">لا توجد بيانات لعرض أفضل الأدوات حالياً.</div>
+            <div class="empty-state"><?php echo $lowStockOnly ? 'لا توجد أدوات بمخزون قليل أو معدوم حالياً.' : 'لا توجد بيانات لعرض أفضل الأدوات حالياً.'; ?></div>
         <?php else: ?>
             <table>
                 <thead>
@@ -621,26 +675,42 @@ if (!function_exists('storePackagingReportDocument')) {
                 return null;
             }
 
-            $document = buildPackagingReportHtmlDocument($report);
+            // إنشاء تقريرين: واحد للعرض العادي وواحد للطباعة (مخزون قليل فقط)
+            $document = buildPackagingReportHtmlDocument($report, false);
+            $printDocument = buildPackagingReportHtmlDocument($report, true);
 
-            $pattern = $reportDir . DIRECTORY_SEPARATOR . 'packaging-report-*.html';
-            foreach (glob($pattern) ?: [] as $file) {
-                if (is_string($file)) {
-                    @unlink($file);
+            // حذف الملفات القديمة (العادية وملفات الطباعة)
+            $patterns = [
+                $reportDir . DIRECTORY_SEPARATOR . 'packaging-report-*.html',
+                $reportDir . DIRECTORY_SEPARATOR . 'packaging-report-print-*.html'
+            ];
+            foreach ($patterns as $pattern) {
+                foreach (glob($pattern) ?: [] as $file) {
+                    if (is_string($file)) {
+                        @unlink($file);
+                    }
                 }
             }
 
             $token = bin2hex(random_bytes(8));
             $filename = sprintf('packaging-report-%s-%s.html', date('Ymd-His'), $token);
+            $printFilename = sprintf('packaging-report-print-%s-%s.html', date('Ymd-His'), $token);
+            
             $fullPath = $reportDir . DIRECTORY_SEPARATOR . $filename;
+            $printFullPath = $reportDir . DIRECTORY_SEPARATOR . $printFilename;
 
             if (@file_put_contents($fullPath, $document) === false) {
                 return null;
             }
+            
+            if (@file_put_contents($printFullPath, $printDocument) === false) {
+                error_log('Failed to create print version of packaging report');
+            }
 
             $relativePath = 'exports/packaging/' . $filename;
+            $printRelativePath = 'exports/packaging/' . $printFilename;
             $viewerPath = '/reports/view.php?type=export&file=' . rawurlencode($relativePath) . '&token=' . $token;
-            $printPath = $viewerPath . '&print=1';
+            $printPath = '/reports/view.php?type=export&file=' . rawurlencode($printRelativePath) . '&token=' . $token . '&print=1';
 
             $absoluteViewer = function_exists('getAbsoluteUrl')
                 ? getAbsoluteUrl(ltrim($viewerPath, '/'))
@@ -2234,10 +2304,12 @@ unset($breakdownEntry);
 
 ksort($packagingReport['type_breakdown'], SORT_NATURAL | SORT_FLAG_CASE);
 
+// ترتيب الأدوات حسب الكمية (الأعلى أولاً للعرض العادي)
 usort($packagingReport['top_items'], static function ($a, $b) {
     return $b['quantity'] <=> $a['quantity'];
 });
-$packagingReport['top_items'] = array_slice($packagingReport['top_items'], 0, 8);
+// نحتفظ بجميع الأدوات في التقرير (وليس فقط أعلى 8) حتى يمكن تصفيتها عند الطباعة
+// $packagingReport['top_items'] = array_slice($packagingReport['top_items'], 0, 8);
 
 $packagingReport['last_updated'] = $lastUpdatedTimestamp
     ? date('Y-m-d H:i', $lastUpdatedTimestamp)
