@@ -944,6 +944,7 @@ function recordAttendanceCheckOut($userId, $photoBase64 = null) {
                 $hasBonus = in_array('bonus', $columnNames, true);
                 $hasDeductions = in_array('deductions', $columnNames, true);
                 $hasCollectionsBonus = in_array('collections_bonus', $columnNames, true);
+                $hasUpdatedAt = in_array('updated_at', $columnNames, true);
                 
                 // بناء استعلام SELECT بناءً على الأعمدة الموجودة
                 $selectFields = ['id', 'total_hours', 'base_amount', 'total_amount'];
@@ -977,8 +978,12 @@ function recordAttendanceCheckOut($userId, $photoBase64 = null) {
                     
                     // محاولة 1: استخدام db()->execute()
                     try {
+                        $updateSql1 = $hasUpdatedAt 
+                            ? "UPDATE salaries SET total_hours = ?, updated_at = NOW() WHERE id = ?"
+                            : "UPDATE salaries SET total_hours = ? WHERE id = ?";
+                        
                         $updateHoursResult = $db->execute(
-                            "UPDATE salaries SET total_hours = ?, updated_at = NOW() WHERE id = ?",
+                            $updateSql1,
                             [$actualMonthlyHours, $existingSalary['id']]
                         );
                         
@@ -1002,7 +1007,10 @@ function recordAttendanceCheckOut($userId, $photoBase64 = null) {
                                 // محاولة 2: استخدام SQL مباشر
                                 try {
                                     $conn = $db->getConnection();
-                                    $stmt = $conn->prepare("UPDATE salaries SET total_hours = ?, updated_at = NOW() WHERE id = ?");
+                                    $updateSql2 = $hasUpdatedAt 
+                                        ? "UPDATE salaries SET total_hours = ?, updated_at = NOW() WHERE id = ?"
+                                        : "UPDATE salaries SET total_hours = ? WHERE id = ?";
+                                    $stmt = $conn->prepare($updateSql2);
                                     if (!$stmt) {
                                         error_log("Method 2 prepare failed: " . $conn->error);
                                     } else {
@@ -1031,7 +1039,8 @@ function recordAttendanceCheckOut($userId, $photoBase64 = null) {
                                                     
                                                     // محاولة 3: استخدام raw query
                                                     try {
-                                                        $rawSql = "UPDATE salaries SET total_hours = " . floatval($actualMonthlyHours) . ", updated_at = NOW() WHERE id = " . intval($existingSalary['id']);
+                                                        $updatedAtPart = $hasUpdatedAt ? ", updated_at = NOW()" : "";
+                                                        $rawSql = "UPDATE salaries SET total_hours = " . floatval($actualMonthlyHours) . $updatedAtPart . " WHERE id = " . intval($existingSalary['id']);
                                                         $rawResult = $conn->query($rawSql);
                                                         if (!$rawResult) {
                                                             error_log("Method 3 (raw query) failed: " . $conn->error);
@@ -1108,10 +1117,13 @@ function recordAttendanceCheckOut($userId, $photoBase64 = null) {
                     error_log("New calculations: base_amount={$newBaseAmount}, total_amount={$newTotalAmount}");
                     
                     // تحديث باقي الحقول - بناء الاستعلام بناءً على الأعمدة الموجودة
-                    $updateFields = ['base_amount = ?', 'total_amount = ?', 'updated_at = NOW()'];
+                    $updateFields = ['base_amount = ?', 'total_amount = ?'];
                     $updateParams = [$newBaseAmount, $newTotalAmount];
                     
-                    // إضافة base_amount و total_amount للتحديث
+                    if ($hasUpdatedAt) {
+                        $updateFields[] = 'updated_at = NOW()';
+                    }
+                    
                     $updateSql = "UPDATE salaries SET " . implode(', ', $updateFields) . " WHERE id = ?";
                     $updateParams[] = $existingSalary['id'];
                     
@@ -2114,6 +2126,18 @@ function processAutoCheckoutForMissingEmployees(): void
                 $attendanceMonthNumber = (int)$attendanceDateObj->format('n');
                 $attendanceYearNumber = (int)$attendanceDateObj->format('Y');
                 
+                // التحقق من وجود الأعمدة في جدول salaries
+                $columns = $db->query("SHOW COLUMNS FROM salaries");
+                $columnNames = [];
+                foreach ($columns as $column) {
+                    $columnNames[] = $column['Field'] ?? '';
+                }
+                
+                $hasBonus = in_array('bonus', $columnNames, true);
+                $hasDeductions = in_array('deductions', $columnNames, true);
+                $hasCollectionsBonus = in_array('collections_bonus', $columnNames, true);
+                $hasUpdatedAt = in_array('updated_at', $columnNames, true);
+                
                 $user = $db->queryOne("SELECT hourly_rate, role FROM users WHERE id = ?", [$userId]);
                 
                 if ($user) {
@@ -2124,18 +2148,34 @@ function processAutoCheckoutForMissingEmployees(): void
                         // حساب الساعات الشهرية الفعلية من attendance_records
                         $actualMonthlyHours = calculateMonthlyHours($userId, $attendanceMonthNumber, $attendanceYearNumber);
                         
+                        // بناء استعلام SELECT بناءً على الأعمدة الموجودة
+                        $selectFields = ['id', 'total_hours', 'base_amount', 'total_amount'];
+                        if ($hasBonus) {
+                            $selectFields[] = 'bonus';
+                        }
+                        if ($hasDeductions) {
+                            $selectFields[] = 'deductions';
+                        }
+                        if ($hasCollectionsBonus) {
+                            $selectFields[] = 'collections_bonus';
+                        }
+                        
+                        $selectSql = "SELECT " . implode(', ', $selectFields) . " FROM salaries WHERE user_id = ? AND month = ? AND year = ?";
+                        
                         // البحث عن سجل الراتب الموجود
                         $existingSalary = $db->queryOne(
-                            "SELECT id, total_hours, base_amount, bonus, deductions, collections_bonus, total_amount 
-                             FROM salaries 
-                             WHERE user_id = ? AND month = ? AND year = ?",
+                            $selectSql,
                             [$userId, $attendanceMonthNumber, $attendanceYearNumber]
                         );
                         
                         if ($existingSalary) {
                             // تحديث total_hours مباشرة
+                            $updateHoursSql = $hasUpdatedAt 
+                                ? "UPDATE salaries SET total_hours = ?, updated_at = NOW() WHERE id = ?"
+                                : "UPDATE salaries SET total_hours = ? WHERE id = ?";
+                            
                             $db->execute(
-                                "UPDATE salaries SET total_hours = ?, updated_at = NOW() WHERE id = ?",
+                                $updateHoursSql,
                                 [$actualMonthlyHours, $existingSalary['id']]
                             );
                             
@@ -2162,21 +2202,23 @@ function processAutoCheckoutForMissingEmployees(): void
                             }
                             
                             // حساب الراتب الإجمالي الجديد
-                            $currentBonus = floatval($existingSalary['bonus'] ?? 0);
-                            $currentDeductions = floatval($existingSalary['deductions'] ?? 0);
+                            $currentBonus = $hasBonus ? floatval($existingSalary['bonus'] ?? 0) : 0;
+                            $currentDeductions = $hasDeductions ? floatval($existingSalary['deductions'] ?? 0) : 0;
                             $newTotalAmount = round($newBaseAmount + $currentBonus + $collectionsBonus - $currentDeductions, 2);
                             $newTotalAmount = max(0, $newTotalAmount);
                             
-                            // تحديث الراتب في قاعدة البيانات
-                            $db->execute(
-                                "UPDATE salaries SET 
-                                    total_hours = ?,
-                                    base_amount = ?,
-                                    total_amount = ?,
-                                    updated_at = NOW()
-                                 WHERE id = ?",
-                                [$actualMonthlyHours, $newBaseAmount, $newTotalAmount, $existingSalary['id']]
-                            );
+                            // تحديث الراتب في قاعدة البيانات - بناء الاستعلام بناءً على الأعمدة الموجودة
+                            $updateFields = ['total_hours = ?', 'base_amount = ?', 'total_amount = ?'];
+                            $updateParams = [$actualMonthlyHours, $newBaseAmount, $newTotalAmount];
+                            
+                            if ($hasUpdatedAt) {
+                                $updateFields[] = 'updated_at = NOW()';
+                            }
+                            
+                            $updateSql = "UPDATE salaries SET " . implode(', ', $updateFields) . " WHERE id = ?";
+                            $updateParams[] = $existingSalary['id'];
+                            
+                            $db->execute($updateSql, $updateParams);
                             
                             error_log(
                                 "Salary updated after auto checkout for user {$userId}: " .
