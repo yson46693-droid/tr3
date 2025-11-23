@@ -914,19 +914,25 @@ function recordAttendanceCheckOut($userId, $photoBase64 = null) {
     $monthHours = calculateMonthHours($userId, $attendanceMonthKey);
     
     // تحديث total_hours والراتب تلقائياً بعد تسجيل الانصراف
+    error_log("=== Starting salary update after checkout for user {$userId} ===");
+    error_log("Attendance date: {$attendanceDate}, Month: {$attendanceMonthNumber}, Year: {$attendanceYearNumber}");
+    
     try {
         // التحقق من وجود سعر ساعة للمستخدم
         $user = $db->queryOne("SELECT hourly_rate, role FROM users WHERE id = ?", [$userId]);
         
         if (!$user) {
-            error_log("User not found for salary calculation: user_id={$userId}");
+            error_log("ERROR: User not found for salary calculation: user_id={$userId}");
         } else {
             $hourlyRate = floatval($user['hourly_rate'] ?? 0);
             $userRole = $user['role'] ?? 'production';
             
+            error_log("User found: hourly_rate={$hourlyRate}, role={$userRole}");
+            
             if ($hourlyRate > 0) {
                 // حساب الساعات الشهرية الفعلية من attendance_records
                 $actualMonthlyHours = calculateMonthlyHours($userId, $attendanceMonthNumber, $attendanceYearNumber);
+                error_log("Calculated monthly hours: {$actualMonthlyHours}");
                 
                 // البحث عن سجل الراتب الموجود
                 $existingSalary = $db->queryOne(
@@ -937,11 +943,11 @@ function recordAttendanceCheckOut($userId, $photoBase64 = null) {
                 );
                 
                 if ($existingSalary) {
-                    // تحديث total_hours مباشرة
-                    $db->execute(
-                        "UPDATE salaries SET total_hours = ?, updated_at = NOW() WHERE id = ?",
-                        [$actualMonthlyHours, $existingSalary['id']]
-                    );
+                    $oldTotalHours = floatval($existingSalary['total_hours'] ?? 0);
+                    $oldBaseAmount = floatval($existingSalary['base_amount'] ?? 0);
+                    $oldTotalAmount = floatval($existingSalary['total_amount'] ?? 0);
+                    
+                    error_log("Existing salary found: ID={$existingSalary['id']}, old_total_hours={$oldTotalHours}, old_base_amount={$oldBaseAmount}, old_total_amount={$oldTotalAmount}");
                     
                     // إعادة حساب الراتب الأساسي بناءً على الساعات الجديدة
                     if ($userRole === 'sales') {
@@ -954,9 +960,11 @@ function recordAttendanceCheckOut($userId, $photoBase64 = null) {
                     
                     // حساب نسبة التحصيلات للمندوبين
                     $collectionsBonus = 0;
+                    $collectionsAmount = 0;
                     if ($userRole === 'sales') {
                         $collectionsAmount = calculateSalesCollections($userId, $attendanceMonthNumber, $attendanceYearNumber);
                         $collectionsBonus = round($collectionsAmount * 0.02, 2);
+                        error_log("Sales collections: amount={$collectionsAmount}, bonus={$collectionsBonus}");
                         
                         // تحديث collections_bonus إذا كان موجوداً
                         $collectionsBonusColumnCheck = $db->queryOne("SHOW COLUMNS FROM salaries LIKE 'collections_bonus'");
@@ -965,6 +973,7 @@ function recordAttendanceCheckOut($userId, $photoBase64 = null) {
                                 "UPDATE salaries SET collections_bonus = ?, collections_amount = ? WHERE id = ?",
                                 [$collectionsBonus, $collectionsAmount, $existingSalary['id']]
                             );
+                            error_log("Updated collections_bonus: {$collectionsBonus}");
                         }
                     }
                     
@@ -974,8 +983,10 @@ function recordAttendanceCheckOut($userId, $photoBase64 = null) {
                     $newTotalAmount = round($newBaseAmount + $currentBonus + $collectionsBonus - $currentDeductions, 2);
                     $newTotalAmount = max(0, $newTotalAmount);
                     
-                    // تحديث الراتب في قاعدة البيانات
-                    $db->execute(
+                    error_log("New calculations: base_amount={$newBaseAmount}, total_amount={$newTotalAmount}");
+                    
+                    // تحديث الراتب في قاعدة البيانات - تحديث شامل في استعلام واحد
+                    $updateResult = $db->execute(
                         "UPDATE salaries SET 
                             total_hours = ?,
                             base_amount = ?,
@@ -985,13 +996,62 @@ function recordAttendanceCheckOut($userId, $photoBase64 = null) {
                         [$actualMonthlyHours, $newBaseAmount, $newTotalAmount, $existingSalary['id']]
                     );
                     
-                    error_log(
-                        "Salary updated after checkout for user {$userId}: " .
-                        "Month={$attendanceMonthNumber}/{$attendanceYearNumber}, " .
-                        "Hours={$actualMonthlyHours} (was {$existingSalary['total_hours']}), " .
-                        "Base={$newBaseAmount}, Total={$newTotalAmount}"
+                    $affectedRows = $updateResult['affected_rows'] ?? 0;
+                    error_log("UPDATE executed: affected_rows={$affectedRows}");
+                    
+                    if ($affectedRows == 0) {
+                        error_log("WARNING: No rows affected by UPDATE! Salary ID: {$existingSalary['id']}");
+                    }
+                    
+                    // التحقق من التحديث - إعادة جلب البيانات مباشرة
+                    $verifySalary = $db->queryOne(
+                        "SELECT total_hours, base_amount, total_amount FROM salaries WHERE id = ?",
+                        [$existingSalary['id']]
                     );
+                    
+                    if ($verifySalary) {
+                        $verifiedHours = floatval($verifySalary['total_hours'] ?? 0);
+                        $verifiedBase = floatval($verifySalary['base_amount'] ?? 0);
+                        $verifiedTotal = floatval($verifySalary['total_amount'] ?? 0);
+                        
+                        error_log(
+                            "Salary UPDATE VERIFICATION for user {$userId}: " .
+                            "Month={$attendanceMonthNumber}/{$attendanceYearNumber}, " .
+                            "Hours: {$oldTotalHours} -> {$verifiedHours} (calculated: {$actualMonthlyHours}), " .
+                            "Base: {$oldBaseAmount} -> {$verifiedBase} (calculated: {$newBaseAmount}), " .
+                            "Total: {$oldTotalAmount} -> {$verifiedTotal} (calculated: {$newTotalAmount})"
+                        );
+                        
+                        if (abs($verifiedHours - $actualMonthlyHours) > 0.01) {
+                            error_log("ERROR: Verified hours ({$verifiedHours}) don't match calculated hours ({$actualMonthlyHours})! Retrying update...");
+                            
+                            // إعادة المحاولة
+                            $retryResult = $db->execute(
+                                "UPDATE salaries SET total_hours = ?, base_amount = ?, total_amount = ?, updated_at = NOW() WHERE id = ?",
+                                [$actualMonthlyHours, $newBaseAmount, $newTotalAmount, $existingSalary['id']]
+                            );
+                            
+                            $retryAffected = $retryResult['affected_rows'] ?? 0;
+                            error_log("Retry UPDATE: affected_rows={$retryAffected}");
+                            
+                            // التحقق مرة أخرى
+                            $retryVerify = $db->queryOne(
+                                "SELECT total_hours FROM salaries WHERE id = ?",
+                                [$existingSalary['id']]
+                            );
+                            
+                            if ($retryVerify) {
+                                $retryHours = floatval($retryVerify['total_hours'] ?? 0);
+                                error_log("After retry: total_hours={$retryHours} (expected: {$actualMonthlyHours})");
+                            }
+                        } else {
+                            error_log("SUCCESS: Salary updated correctly for user {$userId}");
+                        }
+                    } else {
+                        error_log("ERROR: Could not verify salary update for user {$userId} - salary record not found!");
+                    }
                 } else {
+                    error_log("No existing salary found, creating new one...");
                     // إذا لم يكن هناك سجل راتب، قم بإنشائه
                     $salaryResult = createOrUpdateSalary(
                         $userId,
@@ -1004,24 +1064,29 @@ function recordAttendanceCheckOut($userId, $photoBase64 = null) {
                     
                     if ($salaryResult['success']) {
                         error_log(
-                            "Salary created for user {$userId} after checkout: " .
+                            "Salary CREATED for user {$userId} after checkout: " .
                             "Month={$attendanceMonthNumber}/{$attendanceYearNumber}, " .
                             "Hours={$salaryResult['calculation']['total_hours']}, " .
                             "Total={$salaryResult['calculation']['total_amount']}"
                         );
                     } else {
-                        error_log("Failed to create salary for user {$userId} after checkout: {$salaryResult['message']}");
+                        error_log("ERROR: Failed to create salary for user {$userId} after checkout: {$salaryResult['message']}");
                     }
                 }
             } else {
-                error_log("User {$userId} has no hourly_rate set (value: {$hourlyRate}), skipping salary calculation");
+                error_log("SKIPPED: User {$userId} has no hourly_rate set (value: {$hourlyRate})");
             }
         }
     } catch (Exception $e) {
         // في حالة حدوث خطأ في حساب الراتب، لا نمنع تسجيل الانصراف
-        error_log("Error updating salary after checkout for user {$userId}: " . $e->getMessage());
+        error_log("EXCEPTION updating salary after checkout for user {$userId}: " . $e->getMessage());
+        error_log("Stack trace: " . $e->getTraceAsString());
+    } catch (Throwable $e) {
+        error_log("FATAL ERROR updating salary after checkout for user {$userId}: " . $e->getMessage());
         error_log("Stack trace: " . $e->getTraceAsString());
     }
+    
+    error_log("=== Finished salary update after checkout for user {$userId} ===");
     
     // الحصول على معلومات المستخدم
     $user = $db->queryOne("SELECT username, full_name, role FROM users WHERE id = ?", [$userId]);
