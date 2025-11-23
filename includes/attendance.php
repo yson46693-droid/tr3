@@ -1120,19 +1120,14 @@ function calculateMonthHours($userId, $month) {
         return 0;
     }
     
-    // استخدام نفس المنطق المستخدم في getAttendanceStatistics و calculateMonthlyHours
-    // للتحقق من work_hours IS NOT NULL AND work_hours > 0
-    $result = $db->queryOne(
-        "SELECT COALESCE(SUM(work_hours), 0) as total_hours 
-         FROM attendance_records 
-         WHERE user_id = ? AND DATE_FORMAT(date, '%Y-%m') = ? 
-         AND check_out_time IS NOT NULL
-         AND work_hours IS NOT NULL
-         AND work_hours > 0",
-        [$userId, $month]
-    );
+    // استخراج الشهر والسنة من monthKey (YYYY-MM)
+    $parts = explode('-', $month);
+    $year = isset($parts[0]) ? (int)$parts[0] : (int)date('Y');
+    $monthNum = isset($parts[1]) ? (int)$parts[1] : (int)date('m');
     
-    return round($result['total_hours'] ?? 0, 2);
+    // استخدام نفس الدالة calculateMonthlyHours لضمان التطابق
+    require_once __DIR__ . '/salary_calculator.php';
+    return calculateMonthlyHours($userId, $monthNum, $year);
 }
 
 /**
@@ -1212,7 +1207,14 @@ function getAttendanceStatistics($userId, $month = null) {
     );
     
     $stats['present_days'] = $monthStats['present_days'] ?? 0;
-    $stats['total_hours'] = round($monthStats['total_hours'] ?? 0, 2);
+    
+    // حساب الساعات الإجمالية (بما في ذلك السجلات غير المكتملة) باستخدام calculateMonthlyHours
+    // لضمان التطابق مع حساب الراتب
+    $parts = explode('-', $month);
+    $year = isset($parts[0]) ? (int)$parts[0] : (int)date('Y');
+    $monthNum = isset($parts[1]) ? (int)$parts[1] : (int)date('m');
+    require_once __DIR__ . '/salary_calculator.php';
+    $stats['total_hours'] = calculateMonthlyHours($userId, $monthNum, $year);
     
     $delaySummary = calculateMonthlyDelaySummary($userId, $month);
     $stats['average_delay'] = $delaySummary['average_minutes'];
