@@ -974,10 +974,23 @@ function rejectRequest(id, evt) {
         })
     })
     .then(response => {
-        if (!response.ok) {
-            throw new Error('Network response was not ok');
-        }
-        return response.json();
+        // قراءة النص أولاً لمعرفة ما إذا كان JSON صالح
+        return response.text().then(text => {
+            let data;
+            try {
+                data = JSON.parse(text);
+            } catch (e) {
+                // إذا لم يكن JSON صالحاً، عرض النص كخطأ
+                throw new Error(text || 'خطأ غير معروف من الخادم');
+            }
+            
+            // إذا كان status code غير 200، اعرض الخطأ
+            if (!response.ok) {
+                throw new Error(data.error || data.message || 'خطأ في الاستجابة من الخادم');
+            }
+            
+            return data;
+        });
     })
     .then(data => {
         if (data.success) {
@@ -1003,7 +1016,7 @@ function rejectRequest(id, evt) {
             btn.disabled = false;
             btn.innerHTML = originalHTML;
         }
-        alert('خطأ في الاتصال بالخادم. يرجى المحاولة مرة أخرى.');
+        alert('خطأ في الاتصال بالخادم: ' + (error.message || 'يرجى المحاولة مرة أخرى.'));
     });
 }
 
