@@ -737,22 +737,34 @@ if ($currentUser['role'] === 'sales') {
     $baseAmount = round($monthStats['total_hours'] * $hourlyRate, 2);
     
     // تحديث $currentSalary بالراتب الأساسي الجديد لإعادة حساب الراتب الإجمالي
-    $currentSalary['base_amount'] = $baseAmount;
+    if ($currentSalary) {
+        $currentSalary['base_amount'] = $baseAmount;
+    }
 }
 
 // إعادة حساب الراتب الإجمالي بناءً على الراتب الأساسي المحدث
-if ($currentUser['role'] === 'sales') {
-    // للمندوبين: استخدم الحساب الأصلي مع نسبة التحصيلات
-    $salaryCalculation = calculateTotalSalaryWithCollections($currentSalary, $currentUser['id'], $selectedMonth, $selectedYear, $currentUser['role']);
-    $totalSalary = $salaryCalculation['total_salary'];
-    $collectionsBonus = $salaryCalculation['collections_bonus'];
+if ($currentSalary) {
+    if ($currentUser['role'] === 'sales') {
+        // للمندوبين: استخدم الحساب الأصلي مع نسبة التحصيلات
+        $salaryCalculation = calculateTotalSalaryWithCollections($currentSalary, $currentUser['id'], $selectedMonth, $selectedYear, $currentUser['role']);
+        $totalSalary = $salaryCalculation['total_salary'];
+        $collectionsBonus = $salaryCalculation['collections_bonus'];
+    } else {
+        // لعمال الإنتاج والمحاسبين: الراتب الإجمالي = الراتب الأساسي + المكافآت - الخصومات
+        $totalSalary = round($baseAmount + $bonus - $deductions, 2);
+        // تحديث $monthStats['total_salary'] بالقيمة الجديدة
+        $monthStats['total_salary'] = $totalSalary;
+        $collectionsBonus = 0; // لا توجد نسبة تحصيلات لعمال الإنتاج والمحاسبين
+    }
 } else {
-    // لعمال الإنتاج والمحاسبين: الراتب الإجمالي = الراتب الأساسي + المكافآت - الخصومات
-    $totalSalary = round($baseAmount + $bonus - $deductions, 2);
-    // تحديث $monthStats['total_salary'] بالقيمة الجديدة
-    $monthStats['total_salary'] = $totalSalary;
-    $collectionsBonus = 0; // لا توجد نسبة تحصيلات لعمال الإنتاج والمحاسبين
+    // إذا لم يكن هناك راتب، استخدم القيمة من $monthStats
+    $totalSalary = $monthStats['total_salary'] ?? 0;
+    $collectionsBonus = $monthStats['collections_bonus'] ?? 0;
 }
+
+// إعادة حساب الحد الأقصى للسلفة بناءً على الراتب الإجمالي النهائي المعروض في الجدول
+// هذا يضمن أن الحد الأقصى يعتمد على نفس القيمة المعروضة للمستخدم (159.80 ج.م)
+$maxAdvance = cleanFinancialValue($totalSalary * 0.5);
 
 // حساب إجمالي السلفات المعتمدة لهذا الشهر
 $totalApprovedAdvances = 0;
