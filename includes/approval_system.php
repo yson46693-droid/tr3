@@ -162,7 +162,7 @@ function requestApproval($type, $entityId, $requestedBy, $notes = null) {
                         
                         // الحصول على بيانات الراتب والموظف
                         $salary = $db->queryOne(
-                            "SELECT s.*, u.full_name, u.username, u.role 
+                            "SELECT s.*, u.full_name, u.username, u.role, u.hourly_rate as current_hourly_rate 
                              FROM salaries s 
                              LEFT JOIN users u ON s.user_id = u.id 
                              WHERE s.id = ?",
@@ -180,7 +180,7 @@ function requestApproval($type, $entityId, $requestedBy, $notes = null) {
                             $year = intval($salary['year'] ?? date('Y'));
                             
                             // حساب الراتب الحالي بنفس طريقة الحساب في بطاقة الموظف
-                            $hourlyRate = cleanFinancialValue($salary['hourly_rate'] ?? 0);
+                            $hourlyRate = cleanFinancialValue($salary['hourly_rate'] ?? $salary['current_hourly_rate'] ?? 0);
                             $currentBonus = cleanFinancialValue($salary['bonus'] ?? 0);
                             $currentDeductions = cleanFinancialValue($salary['deductions'] ?? 0);
                             $collectionsBonus = cleanFinancialValue($salary['collections_bonus'] ?? 0);
