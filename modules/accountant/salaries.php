@@ -2508,8 +2508,8 @@ $pageTitle = ($view === 'advances') ? 'السلف' : (($view === 'pending') ? '�
                         </div>
                         <?php endif; ?>
                         
-                        <?php if ($hasSalaryId): ?>
                         <div class="detail-actions">
+                            <?php if ($hasSalaryId): ?>
                             <button class="btn btn-info btn-sm" 
                                     onclick="viewSalaryDetails(<?php echo $salary['id']; ?>)" 
                                     data-bs-toggle="modal" 
@@ -2518,14 +2518,21 @@ $pageTitle = ($view === 'advances') ? 'السلف' : (($view === 'pending') ? '�
                                     title="تفاصيل">
                                 <i class="bi bi-eye me-1"></i>عرض
                             </button>
+                            <?php else: ?>
+                            <button class="btn btn-info btn-sm" disabled title="يجب حساب الراتب أولاً">
+                                <i class="bi bi-eye me-1"></i>عرض
+                            </button>
+                            <?php endif; ?>
+                            
                             <button class="btn btn-warning btn-sm" 
-                                    onclick="openModifyModal(<?php echo $salary['id']; ?>, <?php echo htmlspecialchars(json_encode($salary), ENT_QUOTES); ?>)" 
+                                    onclick="openModifyModal(<?php echo $hasSalaryId ? $salary['id'] : 'null'; ?>, <?php echo htmlspecialchars(json_encode($salary), ENT_QUOTES); ?>)" 
                                     data-bs-toggle="modal" 
                                     data-bs-target="#modifySalaryModal"
                                     title="تعديل">
                                 <i class="bi bi-pencil me-1"></i>تعديل
                             </button>
-                            <?php if ($remaining > 0): ?>
+                            
+                            <?php if ($hasSalaryId && $remaining > 0): ?>
                             <button class="btn btn-success btn-sm" 
                                     onclick="openSettleModal(<?php echo $salary['id']; ?>, <?php echo htmlspecialchars(json_encode($salary), ENT_QUOTES); ?>, <?php echo $remaining; ?>)" 
                                     data-bs-toggle="modal" 
@@ -2533,9 +2540,16 @@ $pageTitle = ($view === 'advances') ? 'السلف' : (($view === 'pending') ? '�
                                     title="تسوية مستحقات">
                                 <i class="bi bi-cash-coin me-1"></i>تسوية
                             </button>
+                            <?php elseif ($hasSalaryId && $remaining <= 0): ?>
+                            <button class="btn btn-success btn-sm" disabled title="لا يوجد مبلغ متبقي">
+                                <i class="bi bi-cash-coin me-1"></i>تسوية
+                            </button>
+                            <?php else: ?>
+                            <button class="btn btn-success btn-sm" disabled title="يجب حساب الراتب أولاً">
+                                <i class="bi bi-cash-coin me-1"></i>تسوية
+                            </button>
                             <?php endif; ?>
                         </div>
-                        <?php endif; ?>
                     </div>
                 </div>
             <?php endforeach; ?>
@@ -3077,7 +3091,7 @@ function viewSalaryDetails(salaryId) {
 }
 
 function openModifyModal(salaryId, salaryData) {
-    document.getElementById('modifySalaryId').value = salaryId;
+    document.getElementById('modifySalaryId').value = salaryId || '';
     document.getElementById('modifyUserName').value = salaryData.full_name || salaryData.username;
     document.getElementById('modifyBaseAmount').value = formatCurrency(salaryData.base_amount || 0);
     document.getElementById('modifyBonus').value = salaryData.bonus || 0;
