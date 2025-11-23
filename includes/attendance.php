@@ -945,6 +945,7 @@ function recordAttendanceCheckOut($userId, $photoBase64 = null) {
                 $hasDeductions = in_array('deductions', $columnNames, true);
                 $hasCollectionsBonus = in_array('collections_bonus', $columnNames, true);
                 $hasUpdatedAt = in_array('updated_at', $columnNames, true);
+                $hasYear = in_array('year', $columnNames, true);
                 
                 // بناء استعلام SELECT بناءً على الأعمدة الموجودة
                 $selectFields = ['id', 'total_hours', 'base_amount', 'total_amount'];
@@ -958,12 +959,31 @@ function recordAttendanceCheckOut($userId, $photoBase64 = null) {
                     $selectFields[] = 'collections_bonus';
                 }
                 
-                $selectSql = "SELECT " . implode(', ', $selectFields) . " FROM salaries WHERE user_id = ? AND month = ? AND year = ?";
+                // بناء WHERE clause بناءً على وجود عمود year
+                if ($hasYear) {
+                    $selectSql = "SELECT " . implode(', ', $selectFields) . " FROM salaries WHERE user_id = ? AND month = ? AND year = ?";
+                    $selectParams = [$userId, $attendanceMonthNumber, $attendanceYearNumber];
+                } else {
+                    // إذا لم يكن year موجوداً، تحقق من نوع month
+                    $monthColumnCheck = $db->queryOne("SHOW COLUMNS FROM salaries WHERE Field = 'month'");
+                    $monthType = $monthColumnCheck['Type'] ?? '';
+                    
+                    if (stripos($monthType, 'date') !== false) {
+                        // إذا كان month من نوع DATE
+                        $targetDate = sprintf('%04d-%02d-01', $attendanceYearNumber, $attendanceMonthNumber);
+                        $selectSql = "SELECT " . implode(', ', $selectFields) . " FROM salaries WHERE user_id = ? AND DATE_FORMAT(month, '%Y-%m') = ?";
+                        $selectParams = [$userId, sprintf('%04d-%02d', $attendanceYearNumber, $attendanceMonthNumber)];
+                    } else {
+                        // إذا كان month من نوع INT فقط
+                        $selectSql = "SELECT " . implode(', ', $selectFields) . " FROM salaries WHERE user_id = ? AND month = ?";
+                        $selectParams = [$userId, $attendanceMonthNumber];
+                    }
+                }
                 
                 // البحث عن سجل الراتب الموجود
                 $existingSalary = $db->queryOne(
                     $selectSql,
-                    [$userId, $attendanceMonthNumber, $attendanceYearNumber]
+                    $selectParams
                 );
                 
                 if ($existingSalary) {
@@ -2137,6 +2157,7 @@ function processAutoCheckoutForMissingEmployees(): void
                 $hasDeductions = in_array('deductions', $columnNames, true);
                 $hasCollectionsBonus = in_array('collections_bonus', $columnNames, true);
                 $hasUpdatedAt = in_array('updated_at', $columnNames, true);
+                $hasYear = in_array('year', $columnNames, true);
                 
                 $user = $db->queryOne("SELECT hourly_rate, role FROM users WHERE id = ?", [$userId]);
                 
@@ -2160,12 +2181,31 @@ function processAutoCheckoutForMissingEmployees(): void
                             $selectFields[] = 'collections_bonus';
                         }
                         
-                        $selectSql = "SELECT " . implode(', ', $selectFields) . " FROM salaries WHERE user_id = ? AND month = ? AND year = ?";
+                        // بناء WHERE clause بناءً على وجود عمود year
+                        if ($hasYear) {
+                            $selectSql = "SELECT " . implode(', ', $selectFields) . " FROM salaries WHERE user_id = ? AND month = ? AND year = ?";
+                            $selectParams = [$userId, $attendanceMonthNumber, $attendanceYearNumber];
+                        } else {
+                            // إذا لم يكن year موجوداً، تحقق من نوع month
+                            $monthColumnCheck = $db->queryOne("SHOW COLUMNS FROM salaries WHERE Field = 'month'");
+                            $monthType = $monthColumnCheck['Type'] ?? '';
+                            
+                            if (stripos($monthType, 'date') !== false) {
+                                // إذا كان month من نوع DATE
+                                $targetDate = sprintf('%04d-%02d-01', $attendanceYearNumber, $attendanceMonthNumber);
+                                $selectSql = "SELECT " . implode(', ', $selectFields) . " FROM salaries WHERE user_id = ? AND DATE_FORMAT(month, '%Y-%m') = ?";
+                                $selectParams = [$userId, sprintf('%04d-%02d', $attendanceYearNumber, $attendanceMonthNumber)];
+                            } else {
+                                // إذا كان month من نوع INT فقط
+                                $selectSql = "SELECT " . implode(', ', $selectFields) . " FROM salaries WHERE user_id = ? AND month = ?";
+                                $selectParams = [$userId, $attendanceMonthNumber];
+                            }
+                        }
                         
                         // البحث عن سجل الراتب الموجود
                         $existingSalary = $db->queryOne(
                             $selectSql,
-                            [$userId, $attendanceMonthNumber, $attendanceYearNumber]
+                            $selectParams
                         );
                         
                         if ($existingSalary) {
