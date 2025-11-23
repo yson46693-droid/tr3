@@ -1030,6 +1030,31 @@ $salariesFromDb = $db->query(
     $params
 );
 
+// تحديث total_hours تلقائياً لجميع الرواتب إذا كانت مختلفة عن القيمة الفعلية
+foreach ($salariesFromDb as &$salary) {
+    $userId = intval($salary['user_id'] ?? 0);
+    if ($userId > 0 && !empty($salary['id'])) {
+        // حساب الساعات الفعلية من attendance_records
+        $actualHours = calculateMonthlyHours($userId, $selectedMonth, $selectedYear);
+        $savedTotalHours = floatval($salary['total_hours'] ?? 0);
+        
+        // إذا كانت القيمة مختلفة، قم بالتحديث
+        if (abs($actualHours - $savedTotalHours) > 0.01) {
+            try {
+                $db->execute(
+                    "UPDATE salaries SET total_hours = ?, updated_at = NOW() WHERE id = ?",
+                    [$actualHours, $salary['id']]
+                );
+                // تحديث القيمة في المتغير
+                $salary['total_hours'] = $actualHours;
+            } catch (Exception $e) {
+                error_log("Error auto-updating total_hours for salary ID {$salary['id']}: " . $e->getMessage());
+            }
+        }
+    }
+}
+unset($salary); // إلغاء المرجع
+
 // إنشاء مصفوفة مرتبة برقم المستخدم للبحث السريع
 $salariesMap = [];
 foreach ($salariesFromDb as $salary) {
@@ -1196,6 +1221,7 @@ if (isset($_GET['ajax']) && $_GET['ajax'] == '1' && $salaryId > 0) {
         
         // تحديث total_hours تلقائياً إذا كان مختلفاً عن القيمة الفعلية
         $savedTotalHours = floatval($salary['total_hours'] ?? 0);
+        $wasUpdated = false;
         if (abs($actualHours - $savedTotalHours) > 0.01) {
             // تحديث total_hours في قاعدة البيانات
             try {
@@ -1203,8 +1229,17 @@ if (isset($_GET['ajax']) && $_GET['ajax'] == '1' && $salaryId > 0) {
                     "UPDATE salaries SET total_hours = ?, updated_at = NOW() WHERE id = ?",
                     [$actualHours, $salary['id']]
                 );
-                // تحديث القيمة في المتغير للعرض
-                $salary['total_hours'] = $actualHours;
+                // إعادة جلب البيانات من قاعدة البيانات للتأكد من الحصول على القيمة المحدثة
+                $updatedSalary = $db->queryOne(
+                    "SELECT total_hours FROM salaries WHERE id = ?",
+                    [$salary['id']]
+                );
+                if ($updatedSalary) {
+                    $salary['total_hours'] = floatval($updatedSalary['total_hours'] ?? $actualHours);
+                } else {
+                    $salary['total_hours'] = $actualHours;
+                }
+                $wasUpdated = true;
             } catch (Exception $e) {
                 error_log("Error updating total_hours for salary ID {$salary['id']}: " . $e->getMessage());
             }
@@ -1221,8 +1256,8 @@ if (isset($_GET['ajax']) && $_GET['ajax'] == '1' && $salaryId > 0) {
                         <p><strong>الشهر:</strong> <?php echo date('F', mktime(0, 0, 0, $selectedMonth, 1)); ?> <?php echo $selectedYear; ?></p>
                         <p><strong>سعر الساعة:</strong> <?php echo formatCurrency($salary['hourly_rate']); ?></p>
                         <p><strong>عدد الساعات:</strong> <?php echo formatHours($actualHours); ?> 
-                            <?php if (abs($actualHours - ($salary['total_hours'] ?? 0)) > 0.01): ?>
-                                <span class="badge bg-warning text-dark ms-2" title="القيمة المحفوظة: <?php echo formatHours($salary['total_hours'] ?? 0); ?>">محدث</span>
+                            <?php if ($wasUpdated): ?>
+                                <span class="badge bg-success text-white ms-2" title="تم تحديث القيمة من <?php echo formatHours($savedTotalHours); ?> إلى <?php echo formatHours($actualHours); ?>">تم التحديث</span>
                             <?php endif; ?>
                         </p>
                         <p><strong>الراتب الأساسي:</strong> <?php echo formatCurrency($salary['base_amount']); ?></p>
@@ -2314,8 +2349,16 @@ $pageTitle = ($view === 'advances') ? 'السلف' : (($view === 'pending') ? '�
                                     "UPDATE salaries SET total_hours = ?, updated_at = NOW() WHERE id = ?",
                                     [$actualHours, $salary['id']]
                                 );
-                                // تحديث القيمة في المتغير للعرض
-                                $salary['total_hours'] = $actualHours;
+                                // إعادة جلب البيانات من قاعدة البيانات للتأكد من الحصول على القيمة المحدثة
+                                $updatedSalary = $db->queryOne(
+                                    "SELECT total_hours FROM salaries WHERE id = ?",
+                                    [$salary['id']]
+                                );
+                                if ($updatedSalary) {
+                                    $salary['total_hours'] = floatval($updatedSalary['total_hours'] ?? $actualHours);
+                                } else {
+                                    $salary['total_hours'] = $actualHours;
+                                }
                             } catch (Exception $e) {
                                 error_log("Error updating total_hours for salary ID {$salary['id']}: " . $e->getMessage());
                             }
@@ -2546,8 +2589,16 @@ $pageTitle = ($view === 'advances') ? 'السلف' : (($view === 'pending') ? '�
                                             "UPDATE salaries SET total_hours = ?, updated_at = NOW() WHERE id = ?",
                                             [$actualHoursForModal, $salary['id']]
                                         );
-                                        // تحديث القيمة في المتغير للعرض
-                                        $salary['total_hours'] = $actualHoursForModal;
+                                        // إعادة جلب البيانات من قاعدة البيانات للتأكد من الحصول على القيمة المحدثة
+                                        $updatedSalary = $db->queryOne(
+                                            "SELECT total_hours FROM salaries WHERE id = ?",
+                                            [$salary['id']]
+                                        );
+                                        if ($updatedSalary) {
+                                            $salary['total_hours'] = floatval($updatedSalary['total_hours'] ?? $actualHoursForModal);
+                                        } else {
+                                            $salary['total_hours'] = $actualHoursForModal;
+                                        }
                                     } catch (Exception $e) {
                                         error_log("Error updating total_hours for salary ID {$salary['id']} in modal: " . $e->getMessage());
                                     }
