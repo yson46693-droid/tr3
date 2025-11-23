@@ -391,45 +391,44 @@ if (!defined('ACCESS_ALLOWED')) {
                 return;
             }
             
-            // إظهار شاشة التحميل في كل مرة يتم فتح التطبيق
-            // إعادة تعيين شاشة التحميل عند فتح التطبيق
-            pageLoader.classList.remove('hidden');
-            pageLoader.style.display = 'flex';
+            // PWA Splash Screen - إظهار مرة واحدة فقط عند إعادة فتح التطبيق
+            // التحقق من sessionStorage - إذا كانت الشاشة قد ظهرت في هذه الجلسة، لا تظهرها مرة أخرى
+            const splashShown = sessionStorage.getItem('pwaSplashShown');
             
-            // إخفاء شاشة التحميل بعد تحميل الصفحة بالكامل
-            window.addEventListener('load', function() {
-                // تأخير بسيط لإظهار الشاشة بشكل كامل
-                setTimeout(function() {
-                    pageLoader.classList.add('hidden');
-                    
-                    // إضافة تأثير fade-in للمحتوى
-                    if (dashboardMain) {
-                        dashboardMain.classList.add('content-fade-in');
-                    }
-                    
-                    // إزالة شاشة التحميل من DOM بعد انتهاء التأثير
-                    setTimeout(function() {
-                        pageLoader.style.display = 'none';
-                    }, 500);
-                }, 800); // تأخير 800ms لإظهار الشاشة
-            });
-            
-            // إظهار شاشة التحميل عند العودة للتطبيق (للتطبيقات المثبتة)
-            document.addEventListener('visibilitychange', function() {
-                if (!document.hidden && pageLoader.classList.contains('hidden')) {
-                    // إعادة إظهار الشاشة عند العودة للتطبيق
-                    pageLoader.classList.remove('hidden');
-                    pageLoader.style.display = 'flex';
-                    
-                    // إخفاءها بعد ثانية
+            if (!splashShown) {
+                // إظهار الشاشة عند فتح التطبيق لأول مرة في هذه الجلسة
+                pageLoader.classList.remove('hidden');
+                pageLoader.style.display = 'flex';
+                
+                // تعيين علامة في sessionStorage أن الشاشة قد ظهرت
+                sessionStorage.setItem('pwaSplashShown', 'true');
+                
+                // إخفاء شاشة التحميل بعد تحميل الصفحة بالكامل
+                window.addEventListener('load', function() {
+                    // تأخير بسيط لإظهار الشاشة بشكل كامل
                     setTimeout(function() {
                         pageLoader.classList.add('hidden');
+                        
+                        // إضافة تأثير fade-in للمحتوى
+                        if (dashboardMain) {
+                            dashboardMain.classList.add('content-fade-in');
+                        }
+                        
+                        // إزالة شاشة التحميل من DOM بعد انتهاء التأثير
                         setTimeout(function() {
                             pageLoader.style.display = 'none';
                         }, 500);
-                    }, 1000);
+                    }, 800); // تأخير 800ms لإظهار الشاشة
+                });
+            } else {
+                // إذا كانت الشاشة قد ظهرت من قبل، إخفاؤها مباشرة
+                pageLoader.style.display = 'none';
+                
+                // إضافة تأثير fade-in للمحتوى مباشرة
+                if (dashboardMain) {
+                    dashboardMain.classList.add('content-fade-in');
                 }
-            });
+            }
             
             // إخفاء شاشة التحميل عند فتح أي Modal
             document.addEventListener('show.bs.modal', function() {

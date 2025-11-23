@@ -419,37 +419,35 @@ $lang = $translations;
     <script src="<?php echo ASSETS_URL; ?>js/main.js"></script>
     
     <script>
-        // PWA Splash Screen - إظهار في كل مرة يتم فتح التطبيق
+        // PWA Splash Screen - إظهار مرة واحدة فقط عند إعادة فتح التطبيق
         (function() {
             const splashScreen = document.getElementById('pwaSplashScreen');
             if (!splashScreen) return;
             
-            // إظهار الشاشة عند فتح التطبيق
-            splashScreen.classList.remove('hidden');
+            // التحقق من sessionStorage - إذا كانت الشاشة قد ظهرت في هذه الجلسة، لا تظهرها مرة أخرى
+            const splashShown = sessionStorage.getItem('pwaSplashShown');
             
-            // إخفاء الشاشة بعد تحميل الصفحة بالكامل
-            window.addEventListener('load', function() {
-                setTimeout(function() {
-                    splashScreen.classList.add('hidden');
-                    setTimeout(function() {
-                        splashScreen.style.display = 'none';
-                    }, 500);
-                }, 800); // تأخير 800ms لإظهار الشاشة
-            });
-            
-            // إظهار الشاشة عند العودة للتطبيق (للتطبيقات المثبتة)
-            document.addEventListener('visibilitychange', function() {
-                if (!document.hidden && splashScreen.classList.contains('hidden')) {
-                    splashScreen.style.display = 'flex';
-                    splashScreen.classList.remove('hidden');
+            if (!splashShown) {
+                // إظهار الشاشة عند فتح التطبيق لأول مرة في هذه الجلسة
+                splashScreen.classList.remove('hidden');
+                splashScreen.style.display = 'flex';
+                
+                // تعيين علامة في sessionStorage أن الشاشة قد ظهرت
+                sessionStorage.setItem('pwaSplashShown', 'true');
+                
+                // إخفاء الشاشة بعد تحميل الصفحة بالكامل
+                window.addEventListener('load', function() {
                     setTimeout(function() {
                         splashScreen.classList.add('hidden');
                         setTimeout(function() {
                             splashScreen.style.display = 'none';
                         }, 500);
-                    }, 1000);
-                }
-            });
+                    }, 800); // تأخير 800ms لإظهار الشاشة
+                });
+            } else {
+                // إذا كانت الشاشة قد ظهرت من قبل، إخفاؤها مباشرة
+                splashScreen.style.display = 'none';
+            }
         })();
         
         // إظهار/إخفاء كلمة المرور
