@@ -549,66 +549,117 @@ function updateEntityStatus($type, $entityId, $status, $approvedBy) {
             if ($status === 'approved') {
                 // entityId هنا هو approval_id وليس salary_id
                 $approval = $db->queryOne("SELECT * FROM approvals WHERE id = ?", [$entityId]);
-                if ($approval) {
-                    $entityColumnName = getApprovalsEntityColumn();
-                    $salaryId = $approval[$entityColumnName] ?? null;
-                    if ($salaryId === null) {
-                        break;
-                    }
-                    
-                    // استخراج بيانات التعديل من notes
-                    $modificationData = null;
-                    if ($approval['notes']) {
-                        // محاولة استخراج JSON من notes بعد [DATA]:
-                        if (preg_match('/\[DATA\]:(.+)/s', $approval['notes'], $matches)) {
-                            $modificationData = json_decode(trim($matches[1]), true);
-                        } else {
-                            // محاولة بديلة: استخراج من notes في جدول salaries
-                            $salaryNote = $db->queryOne("SELECT notes FROM salaries WHERE id = ?", [$salaryId]);
-                            if ($salaryNote && preg_match('/\[تعديل معلق\]:\s*(.+)/s', $salaryNote['notes'], $matches)) {
-                                $modificationData = json_decode(trim($matches[1]), true);
+                if (!$approval) {
+                    throw new Exception('طلب الموافقة غير موجود');
+                }
+                
+                $entityColumnName = getApprovalsEntityColumn();
+                $salaryId = $approval[$entityColumnName] ?? null;
+                if ($salaryId === null) {
+                    throw new Exception('تعذر تحديد الراتب المراد تعديله');
+                }
+                
+                // استخراج بيانات التعديل من notes أو approval_notes
+                $modificationData = null;
+                $approvalNotes = $approval['notes'] ?? $approval['approval_notes'] ?? null;
+                
+                if ($approvalNotes) {
+                    // محاولة استخراج JSON من notes بعد [DATA]:
+                    if (preg_match('/\[DATA\]:(.+)/s', $approvalNotes, $matches)) {
+                        $jsonData = trim($matches[1]);
+                        $modificationData = json_decode($jsonData, true);
+                        if (json_last_error() !== JSON_ERROR_NONE) {
+                            error_log("Failed to decode JSON from approval notes: " . json_last_error_msg());
+                        }
+                    } else {
+                        // محاولة بديلة: استخراج من notes في جدول salaries
+                        $salaryNote = $db->queryOne("SELECT notes FROM salaries WHERE id = ?", [$salaryId]);
+                        if ($salaryNote && !empty($salaryNote['notes']) && preg_match('/\[تعديل معلق\]:\s*(.+)/s', $salaryNote['notes'], $matches)) {
+                            $jsonData = trim($matches[1]);
+                            $modificationData = json_decode($jsonData, true);
+                            if (json_last_error() !== JSON_ERROR_NONE) {
+                                error_log("Failed to decode JSON from salary notes: " . json_last_error_msg());
                             }
                         }
                     }
-                    
-                    if ($modificationData) {
-                        $bonus = $modificationData['bonus'] ?? 0;
-                        $deductions = $modificationData['deductions'] ?? 0;
-                        $notes = $modificationData['notes'] ?? '';
-                        
-                        // الحصول على الراتب الحالي
-                        $salary = $db->queryOne("SELECT * FROM salaries WHERE id = ?", [$salaryId]);
-                        if ($salary) {
-                            $newTotal = $salary['base_amount'] + $bonus - $deductions;
-                            
-                            // تحديث الراتب مع إزالة التعديل المعلق من notes
-                            $currentNotes = $salary['notes'] ?? '';
-                            $cleanedNotes = preg_replace('/\[تعديل معلق\]:\s*[^\n]+/s', '', $currentNotes);
-                            $cleanedNotes = trim($cleanedNotes);
-                            
-                            $db->execute(
-                                "UPDATE salaries SET 
-                                    bonus = ?,
-                                    deductions = ?,
-                                    total_amount = ?,
-                                    notes = CONCAT(?, '\n[تم التعديل]: ', ?),
-                                    updated_at = NOW()
-                                 WHERE id = ?",
-                                [$bonus, $deductions, $newTotal, $cleanedNotes, $notes, $salaryId]
-                            );
-                            
-                            // إرسال إشعار للمستخدم
-                            require_once __DIR__ . '/notifications.php';
-                            createNotification(
-                                $salary['user_id'],
-                                'تم تعديل راتبك',
-                                "تم الموافقة على تعديل راتبك. مكافأة: " . number_format($bonus, 2) . " جنيه, خصومات: " . number_format($deductions, 2) . " جنيه",
-                                'info',
-                                null,
-                                false
-                            );
-                        }
+                }
+                
+                if (!$modificationData) {
+                    throw new Exception('تعذر استخراج بيانات التعديل من طلب الموافقة');
+                }
+                
+                $bonus = floatval($modificationData['bonus'] ?? 0);
+                $deductions = floatval($modificationData['deductions'] ?? 0);
+                $notes = trim($modificationData['notes'] ?? '');
+                
+                // الحصول على الراتب الحالي
+                $salary = $db->queryOne("SELECT * FROM salaries WHERE id = ?", [$salaryId]);
+                if (!$salary) {
+                    throw new Exception('الراتب غير موجود');
+                }
+                
+                $baseAmount = floatval($salary['base_amount'] ?? 0);
+                $newTotal = round($baseAmount + $bonus - $deductions, 2);
+                
+                // تحديث الراتب مع إزالة التعديل المعلق من notes
+                $currentNotes = $salary['notes'] ?? '';
+                $cleanedNotes = preg_replace('/\[تعديل معلق\]:\s*[^\n]+/s', '', $currentNotes);
+                $cleanedNotes = trim($cleanedNotes);
+                
+                // بناء ملاحظة التعديل
+                $modificationNote = '[تم التعديل]: ' . date('Y-m-d H:i:s');
+                if ($notes) {
+                    $modificationNote .= ' - ' . $notes;
+                }
+                
+                // التحقق من وجود عمود bonus
+                $columns = $db->query("SHOW COLUMNS FROM salaries") ?? [];
+                $hasBonusColumn = false;
+                foreach ($columns as $column) {
+                    if (($column['Field'] ?? '') === 'bonus') {
+                        $hasBonusColumn = true;
+                        break;
                     }
+                }
+                
+                // تحديث الراتب
+                if ($hasBonusColumn) {
+                    $db->execute(
+                        "UPDATE salaries SET 
+                            bonus = ?,
+                            deductions = ?,
+                            total_amount = ?,
+                            notes = ?,
+                            updated_at = NOW()
+                         WHERE id = ?",
+                        [$bonus, $deductions, $newTotal, ($cleanedNotes ? $cleanedNotes . "\n" : '') . $modificationNote, $salaryId]
+                    );
+                } else {
+                    $db->execute(
+                        "UPDATE salaries SET 
+                            deductions = ?,
+                            total_amount = ?,
+                            notes = ?,
+                            updated_at = NOW()
+                         WHERE id = ?",
+                        [$deductions, $newTotal, ($cleanedNotes ? $cleanedNotes . "\n" : '') . $modificationNote, $salaryId]
+                    );
+                }
+                
+                // إرسال إشعار للمستخدم
+                try {
+                    require_once __DIR__ . '/notifications.php';
+                    createNotification(
+                        $salary['user_id'],
+                        'تم تعديل راتبك',
+                        "تم الموافقة على تعديل راتبك. مكافأة: " . number_format($bonus, 2) . " جنيه, خصومات: " . number_format($deductions, 2) . " جنيه",
+                        'info',
+                        null,
+                        false
+                    );
+                } catch (Exception $notifException) {
+                    // لا نسمح لفشل الإشعار بإلغاء نجاح التعديل
+                    error_log('Notification creation exception during salary modification: ' . $notifException->getMessage());
                 }
             }
             break;
