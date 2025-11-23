@@ -425,26 +425,37 @@ $lang = $translations;
             if (!splashScreen) return;
             
             let splashShown = false;
-            
-            // التحقق من sessionStorage
-            const splashShownInStorage = sessionStorage.getItem('pwaSplashShown');
+            let isPageFromCache = false;
             
             // استخدام pageshow event للتحقق من أن الصفحة تم تحميلها من جديد (وليس من cache)
             window.addEventListener('pageshow', function(event) {
                 // إذا كانت الصفحة من cache (back/forward)، لا تظهر splash screen
                 if (event.persisted) {
+                    isPageFromCache = true;
                     splashShown = true;
                     return;
                 }
                 
                 // إذا كانت الصفحة جديدة (ليست من cache)، امسح sessionStorage
+                isPageFromCache = false;
                 sessionStorage.removeItem('pwaSplashShown');
                 splashShown = false;
+                
+                // إظهار splash screen إذا كانت الصفحة جديدة
+                if (!splashShown && splashScreen) {
+                    splashScreen.classList.remove('hidden');
+                    splashScreen.style.display = 'flex';
+                    sessionStorage.setItem('pwaSplashShown', 'true');
+                    splashShown = true;
+                }
             });
             
-            // التحقق من sessionStorage عند تحميل الصفحة
-            if (splashShownInStorage === 'true') {
-                splashShown = true;
+            // التحقق من sessionStorage عند تحميل الصفحة (فقط إذا لم تكن من cache)
+            if (!isPageFromCache) {
+                const splashShownInStorage = sessionStorage.getItem('pwaSplashShown');
+                if (splashShownInStorage === 'true') {
+                    splashShown = true;
+                }
             }
             
             function hideSplashScreen() {
@@ -456,13 +467,14 @@ $lang = $translations;
                 }, 800); // تأخير 800ms لإظهار الشاشة
             }
             
-            if (!splashShown) {
+            if (!splashShown && !isPageFromCache) {
                 // إظهار الشاشة فوراً عند فتح التطبيق لأول مرة في هذه الجلسة
                 splashScreen.classList.remove('hidden');
                 splashScreen.style.display = 'flex';
                 
                 // تعيين علامة في sessionStorage أن الشاشة قد ظهرت
                 sessionStorage.setItem('pwaSplashShown', 'true');
+                splashShown = true;
                 
                 // إخفاء الشاشة بعد تحميل الصفحة بالكامل
                 if (document.readyState === 'complete') {
