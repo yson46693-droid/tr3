@@ -27,7 +27,7 @@ try {
     }
 
     $approvalId = intval($_POST['id'] ?? 0);
-    $rejectionReason = $_POST['reason'] ?? '';
+    $rejectionReason = trim($_POST['reason'] ?? '');
 
     if ($approvalId <= 0) {
         http_response_code(400);
@@ -47,15 +47,18 @@ try {
         echo json_encode(['success' => true, 'message' => 'تم رفض الطلب بنجاح'], JSON_UNESCAPED_UNICODE);
     } else {
         http_response_code(400);
-        echo json_encode(['success' => false, 'error' => $result['message'] ?? 'حدث خطأ في رفض الطلب'], JSON_UNESCAPED_UNICODE);
+        $errorMessage = $result['message'] ?? 'حدث خطأ في رفض الطلب';
+        echo json_encode(['success' => false, 'error' => $errorMessage], JSON_UNESCAPED_UNICODE);
     }
 } catch (Exception $e) {
     http_response_code(500);
     error_log('Error in reject.php: ' . $e->getMessage());
+    error_log('Error in reject.php - Stack trace: ' . $e->getTraceAsString());
     echo json_encode(['success' => false, 'error' => 'حدث خطأ في الخادم: ' . $e->getMessage()], JSON_UNESCAPED_UNICODE);
 } catch (Throwable $e) {
     http_response_code(500);
     error_log('Fatal error in reject.php: ' . $e->getMessage());
+    error_log('Fatal error in reject.php - Stack trace: ' . $e->getTraceAsString());
     echo json_encode(['success' => false, 'error' => 'حدث خطأ فادح في الخادم'], JSON_UNESCAPED_UNICODE);
 }
 

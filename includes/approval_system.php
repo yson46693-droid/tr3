@@ -382,22 +382,71 @@ function rejectRequest($approvalId, $approvedBy, $rejectionReason) {
             return ['success' => false, 'message' => 'تعذر تحديد الكيان المرتبط بطلب الموافقة.'];
         }
         
+        // التحقق من وجود عمود rejection_reason أو استخدام notes/approval_notes
+        $columns = $db->query("SHOW COLUMNS FROM approvals") ?? [];
+        $hasRejectionReason = false;
+        $hasNotesColumn = false;
+        $hasApprovalNotesColumn = false;
+        $rejectionColumn = 'rejection_reason';
+        $notesColumn = 'notes';
+        
+        foreach ($columns as $column) {
+            $fieldName = $column['Field'] ?? '';
+            if ($fieldName === 'rejection_reason') {
+                $hasRejectionReason = true;
+            } elseif ($fieldName === 'notes') {
+                $hasNotesColumn = true;
+            } elseif ($fieldName === 'approval_notes') {
+                $hasApprovalNotesColumn = true;
+                $notesColumn = 'approval_notes';
+            }
+        }
+        
         // تحديث حالة الموافقة
-        $db->execute(
-            "UPDATE approvals SET status = 'rejected', approved_by = ?, rejection_reason = ? 
-             WHERE id = ?",
-            [$approvedBy, $rejectionReason, $approvalId]
-        );
+        if ($hasRejectionReason) {
+            // استخدام عمود rejection_reason إذا كان موجوداً
+            $db->execute(
+                "UPDATE approvals SET status = 'rejected', approved_by = ?, rejection_reason = ? 
+                 WHERE id = ?",
+                [$approvedBy, $rejectionReason, $approvalId]
+            );
+        } elseif ($hasNotesColumn || $hasApprovalNotesColumn) {
+            // استخدام عمود notes أو approval_notes إذا كان rejection_reason غير موجود
+            $db->execute(
+                "UPDATE approvals SET status = 'rejected', approved_by = ?, {$notesColumn} = ? 
+                 WHERE id = ?",
+                [$approvedBy, $rejectionReason, $approvalId]
+            );
+        } else {
+            // إذا لم يكن هناك أي عمود للملاحظات، تحديث بدون سبب الرفض
+            $db->execute(
+                "UPDATE approvals SET status = 'rejected', approved_by = ? 
+                 WHERE id = ?",
+                [$approvedBy, $approvalId]
+            );
+        }
         
         // تحديث حالة الكيان
         try {
             updateEntityStatus($approval['type'], $entityIdentifier, 'rejected', $approvedBy);
         } catch (Exception $e) {
             // إرجاع حالة الرفض إلى pending عند الفشل
-            $db->execute(
-                "UPDATE approvals SET status = 'pending', approved_by = NULL, rejection_reason = NULL WHERE id = ?",
-                [$approvalId]
-            );
+            if ($hasRejectionReason) {
+                $db->execute(
+                    "UPDATE approvals SET status = 'pending', approved_by = NULL, rejection_reason = NULL WHERE id = ?",
+                    [$approvalId]
+                );
+            } elseif ($hasNotesColumn || $hasApprovalNotesColumn) {
+                $db->execute(
+                    "UPDATE approvals SET status = 'pending', approved_by = NULL, {$notesColumn} = NULL WHERE id = ?",
+                    [$approvalId]
+                );
+            } else {
+                $db->execute(
+                    "UPDATE approvals SET status = 'pending', approved_by = NULL WHERE id = ?",
+                    [$approvalId]
+                );
+            }
             error_log("Failed to update entity status during rejection: " . $e->getMessage());
             
             // التحقق من قاعدة البيانات للتأكد من أن الكيان لم يتم رفضه بالفعل
@@ -443,8 +492,13 @@ function rejectRequest($approvalId, $approvedBy, $rejectionReason) {
         return ['success' => true];
         
     } catch (Exception $e) {
-        error_log("Approval Error: " . $e->getMessage());
-        return ['success' => false, 'message' => 'حدث خطأ في الرفض'];
+        error_log("Approval Rejection Error: " . $e->getMessage());
+        error_log("Approval Rejection Error - Stack trace: " . $e->getTraceAsString());
+        return ['success' => false, 'message' => 'حدث خطأ في الرفض: ' . $e->getMessage()];
+    } catch (Throwable $e) {
+        error_log("Approval Rejection Fatal Error: " . $e->getMessage());
+        error_log("Approval Rejection Fatal Error - Stack trace: " . $e->getTraceAsString());
+        return ['success' => false, 'message' => 'حدث خطأ فادح في الرفض'];
     }
 }
 
