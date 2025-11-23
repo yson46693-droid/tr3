@@ -186,13 +186,26 @@ function requestApproval($type, $entityId, $requestedBy, $notes = null) {
                             $collectionsBonus = cleanFinancialValue($salary['collections_bonus'] ?? 0);
                             
                             // حساب الراتب الأساسي بناءً على نوع المستخدم (نفس كود بطاقة الموظف)
+                            // استخدم base_amount المحفوظ أولاً، وإذا لم يكن موجوداً أو كان 0، احسبه
+                            $savedBaseAmount = cleanFinancialValue($salary['base_amount'] ?? 0);
+                            
                             if ($userRole === 'sales') {
                                 // للمندوبين: الراتب الأساسي هو hourly_rate مباشرة (راتب شهري ثابت)
-                                $baseAmount = cleanFinancialValue($salary['base_amount'] ?? $hourlyRate);
+                                if ($savedBaseAmount > 0) {
+                                    $baseAmount = $savedBaseAmount;
+                                } else {
+                                    $baseAmount = cleanFinancialValue($hourlyRate);
+                                }
                             } else {
                                 // لعمال الإنتاج والمحاسبين: الراتب = عدد الساعات × سعر الساعة
-                                $actualHours = calculateMonthlyHours($userId, $month, $year);
-                                $baseAmount = round($actualHours * $hourlyRate, 2);
+                                if ($savedBaseAmount > 0 && $hourlyRate > 0) {
+                                    // استخدم القيمة المحفوظة إذا كانت موجودة وصحيحة
+                                    $baseAmount = $savedBaseAmount;
+                                } else {
+                                    // احسب من الساعات إذا لم تكن القيمة المحفوظة موجودة
+                                    $actualHours = calculateMonthlyHours($userId, $month, $year);
+                                    $baseAmount = round($actualHours * $hourlyRate, 2);
+                                }
                             }
                             
                             // إذا كان مندوب مبيعات، أعد حساب نسبة التحصيلات (نفس كود بطاقة الموظف)
