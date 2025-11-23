@@ -1222,7 +1222,7 @@ body {
 
 /* Modern Gradient Header */
 .salary-page-header {
-    background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+    background: linear-gradient(135deg,rgb(8, 69, 166) 0%,rgb(6, 104, 180) 100%);
     color: white;
     padding: 25px 30px;
     border-radius: 16px;
