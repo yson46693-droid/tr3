@@ -2267,6 +2267,7 @@ $pageTitle = ($view === 'advances') ? 'السلف' : (($view === 'pending') ? '�
                 // لضمان أن النموذج يعرض نفس القيمة المعروضة في البطاقة
                 $salary['calculated_base_amount'] = $baseAmount;
                 $salary['calculated_collections_bonus'] = $collectionsBonus;
+                $salary['calculated_total_amount'] = $totalAmount; // الراتب الإجمالي الحالي
                 
                 // إعادة حساب المبلغ التراكمي بدقة من جميع الرواتب السابقة
                 $salaryId = intval($salary['id'] ?? 0);
@@ -3183,6 +3184,8 @@ function openModifyModal(salaryId, salaryData) {
     baseAmountElement.value = formatCurrency(baseAmount);
     // حفظ القيمة الرقمية في data attribute لاستخدامها في الحساب
     baseAmountElement.setAttribute('data-numeric-value', baseAmount);
+    
+    // استخدام القيم الحالية من salaryData (نفس القيم المستخدمة في الإشعار)
     document.getElementById('modifyBonus').value = salaryData.bonus || 0;
     document.getElementById('modifyDeductions').value = salaryData.deductions || 0;
     
@@ -3190,6 +3193,9 @@ function openModifyModal(salaryId, salaryData) {
     const collectionsBonus = salaryData.calculated_collections_bonus !== undefined ? salaryData.calculated_collections_bonus : (salaryData.collections_bonus || 0);
     document.getElementById('modifyCollectionsBonus').value = collectionsBonus;
     
+    // حساب الراتب الجديد - سيتم حسابه في calculateNewTotal() بناءً على القيم الحالية
+    // الراتب الجديد = baseAmount + bonus + collectionsBonus - deductions
+    // حيث bonus و deductions هما القيم الحالية من salaryData (نفس القيم المستخدمة في الإشعار)
     calculateNewTotal();
 }
 
