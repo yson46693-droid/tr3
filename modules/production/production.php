@@ -2349,6 +2349,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 $templateIncludesPkg003 = false;
                 $templateIncludesPkg004 = false;
                 $templateIncludesPkg005 = false;
+                $templateIncludesPkg006 = false;
+                $templateIncludesPkg042 = false;
+                $templateIncludesPkg011 = false;
                 $packagingMaterialCodeCache = [];
                 $fetchPackagingMaterialByCode = static function (string $code) use (
                     $db,
@@ -2741,6 +2744,105 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                         error_log('PKG-005 detected in template (ID=' . $packagingMaterialId . '). Will trigger PKG-041 deduction if quantity >= 18');
                     }
 
+                    // اكتشاف PKG-006 بعدة طرق للتأكد
+                    $isPkg006 = false;
+                    if ($packagingMaterialCodeKey === 'PKG006') {
+                        $isPkg006 = true;
+                    } elseif ($packagingMaterialCodeNormalized !== null) {
+                        $normalizedCodeKey = $normalizePackagingCodeKey($packagingMaterialCodeNormalized);
+                        if ($normalizedCodeKey === 'PKG006') {
+                            $isPkg006 = true;
+                        }
+                    } elseif ($packagingMaterialId > 0 && $packagingTableExists) {
+                        // محاولة أخيرة: البحث المباشر في قاعدة البيانات
+                        try {
+                            $materialCodeCheck = $db->queryOne(
+                                "SELECT material_id FROM packaging_materials WHERE id = ?",
+                                [$packagingMaterialId]
+                            );
+                            if ($materialCodeCheck && !empty($materialCodeCheck['material_id'])) {
+                                $checkCodeKey = $normalizePackagingCodeKey($materialCodeCheck['material_id']);
+                                if ($checkCodeKey === 'PKG006') {
+                                    $isPkg006 = true;
+                                    $packagingMaterialCodeKey = 'PKG006';
+                                }
+                            }
+                        } catch (Throwable $checkError) {
+                            // تجاهل الخطأ
+                        }
+                    }
+                    
+                    if (!$templateIncludesPkg006 && $isPkg006) {
+                        $templateIncludesPkg006 = true;
+                        error_log('PKG-006 detected in template (ID=' . $packagingMaterialId . '). Will trigger PKG-041 deduction if quantity >= 18');
+                    }
+
+                    // اكتشاف PKG-042 بعدة طرق للتأكد
+                    $isPkg042 = false;
+                    if ($packagingMaterialCodeKey === 'PKG042') {
+                        $isPkg042 = true;
+                    } elseif ($packagingMaterialCodeNormalized !== null) {
+                        $normalizedCodeKey = $normalizePackagingCodeKey($packagingMaterialCodeNormalized);
+                        if ($normalizedCodeKey === 'PKG042') {
+                            $isPkg042 = true;
+                        }
+                    } elseif ($packagingMaterialId > 0 && $packagingTableExists) {
+                        // محاولة أخيرة: البحث المباشر في قاعدة البيانات
+                        try {
+                            $materialCodeCheck = $db->queryOne(
+                                "SELECT material_id FROM packaging_materials WHERE id = ?",
+                                [$packagingMaterialId]
+                            );
+                            if ($materialCodeCheck && !empty($materialCodeCheck['material_id'])) {
+                                $checkCodeKey = $normalizePackagingCodeKey($materialCodeCheck['material_id']);
+                                if ($checkCodeKey === 'PKG042') {
+                                    $isPkg042 = true;
+                                    $packagingMaterialCodeKey = 'PKG042';
+                                }
+                            }
+                        } catch (Throwable $checkError) {
+                            // تجاهل الخطأ
+                        }
+                    }
+                    
+                    if (!$templateIncludesPkg042 && $isPkg042) {
+                        $templateIncludesPkg042 = true;
+                        error_log('PKG-042 detected in template (ID=' . $packagingMaterialId . '). Will trigger PKG-001 deduction if quantity >= 12');
+                    }
+
+                    // اكتشاف PKG-011 بعدة طرق للتأكد
+                    $isPkg011 = false;
+                    if ($packagingMaterialCodeKey === 'PKG011') {
+                        $isPkg011 = true;
+                    } elseif ($packagingMaterialCodeNormalized !== null) {
+                        $normalizedCodeKey = $normalizePackagingCodeKey($packagingMaterialCodeNormalized);
+                        if ($normalizedCodeKey === 'PKG011') {
+                            $isPkg011 = true;
+                        }
+                    } elseif ($packagingMaterialId > 0 && $packagingTableExists) {
+                        // محاولة أخيرة: البحث المباشر في قاعدة البيانات
+                        try {
+                            $materialCodeCheck = $db->queryOne(
+                                "SELECT material_id FROM packaging_materials WHERE id = ?",
+                                [$packagingMaterialId]
+                            );
+                            if ($materialCodeCheck && !empty($materialCodeCheck['material_id'])) {
+                                $checkCodeKey = $normalizePackagingCodeKey($materialCodeCheck['material_id']);
+                                if ($checkCodeKey === 'PKG011') {
+                                    $isPkg011 = true;
+                                    $packagingMaterialCodeKey = 'PKG011';
+                                }
+                            }
+                        } catch (Throwable $checkError) {
+                            // تجاهل الخطأ
+                        }
+                    }
+                    
+                    if (!$templateIncludesPkg011 && $isPkg011) {
+                        $templateIncludesPkg011 = true;
+                        error_log('PKG-011 detected in template (ID=' . $packagingMaterialId . '). Will trigger PKG-001 deduction if quantity >= 12');
+                    }
+
                     $materialsConsumption['packaging'][] = [
                         'material_id' => $packagingMaterialId > 0 ? $packagingMaterialId : null,
                         'quantity' => (float)($pkg['quantity_per_unit'] ?? 1.0) * $quantity,
@@ -2989,6 +3091,120 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                         $packagingIdsMap[$pkg001Id] = true;
                     } elseif ($additionalPkg001Qty > 0 && $pkg001Id === null) {
                         error_log('PKG-001 automatic deduction skipped (from PKG-004): material_id is null. Quantity would have been: ' . $additionalPkg001Qty);
+                    }
+                }
+
+                if ($templateIncludesPkg042 && $quantity >= 12) {
+                    error_log('PKG-001 deduction logic triggered (from PKG-042): templateIncludesPkg042=' . ($templateIncludesPkg042 ? 'true' : 'false') . ', quantity=' . $quantity);
+                    // خصم تلقائي لـ PKG-001 عند وجود PKG-042 لكل 12 وحدة منتجة
+                    $pkg001CodeKey = 'PKG001';
+                    $pkg001DisplayCode = $formatPackagingCode($pkg001CodeKey) ?? 'PKG-001';
+                    
+                    // البحث المباشر في قاعدة البيانات أولاً - الحل الأكثر موثوقية
+                    $pkg001Id = null;
+                    $pkg001Name = 'مادة تعبئة PKG-001';
+                    $pkg001Unit = 'قطعة';
+                    
+                    if ($packagingTableExists) {
+                        try {
+                            // البحث المباشر - الأكثر موثوقية
+                            $directSearch = $db->queryOne(
+                                "SELECT id, name, unit, material_id FROM packaging_materials 
+                                 WHERE UPPER(REPLACE(REPLACE(REPLACE(REPLACE(COALESCE(material_id, ''), '-', ''), ' ', ''), '_', ''), '.', '')) = 'PKG001'
+                                    OR UPPER(REPLACE(REPLACE(REPLACE(REPLACE(COALESCE(material_id, ''), '-', ''), ' ', ''), '_', ''), '.', '')) LIKE 'PKG001%'
+                                    OR UPPER(REPLACE(REPLACE(REPLACE(REPLACE(COALESCE(name, ''), '-', ''), ' ', ''), '_', ''), '.', '')) LIKE '%PKG001%'
+                                 LIMIT 1"
+                            );
+                            if ($directSearch && !empty($directSearch['id'])) {
+                                $pkg001Id = (int)$directSearch['id'];
+                                if (!empty($directSearch['name'])) {
+                                    $pkg001Name = $directSearch['name'];
+                                }
+                                if (!empty($directSearch['unit'])) {
+                                    $pkg001Unit = $directSearch['unit'];
+                                }
+                                error_log('PKG-001 found by direct search (from PKG-042): ID=' . $pkg001Id . ', Name=' . $pkg001Name);
+                            } else {
+                                // محاولة البحث بالكود
+                                $pkg001Info = $fetchPackagingMaterialByCode($pkg001DisplayCode) ?? [];
+                                if (!empty($pkg001Info['id'])) {
+                                    $pkg001Id = (int)$pkg001Info['id'];
+                                    if (!empty($pkg001Info['name'])) {
+                                        $pkg001Name = $pkg001Info['name'];
+                                    }
+                                    if (!empty($pkg001Info['unit'])) {
+                                        $pkg001Unit = $pkg001Info['unit'];
+                                    }
+                                    error_log('PKG-001 found by code search (from PKG-042): ID=' . $pkg001Id);
+                                } else {
+                                    // محاولة البحث بالاسم
+                                    $pkg001ByName = $resolvePackagingByName('PKG-001');
+                                    if ($pkg001ByName && !empty($pkg001ByName['id'])) {
+                                        $pkg001Id = (int)$pkg001ByName['id'];
+                                        if (!empty($pkg001ByName['name'])) {
+                                            $pkg001Name = $pkg001ByName['name'];
+                                        }
+                                        if (!empty($pkg001ByName['unit'])) {
+                                            $pkg001Unit = $pkg001ByName['unit'];
+                                        }
+                                        error_log('PKG-001 found by name search (from PKG-042): ID=' . $pkg001Id);
+                                    }
+                                }
+                            }
+                        } catch (Throwable $searchError) {
+                            error_log('PKG-001 search error (from PKG-042): ' . $searchError->getMessage());
+                        }
+                    }
+                    
+                    if ($pkg001Id === null) {
+                        error_log('PKG-001 NOT FOUND in database (from PKG-042). Automatic deduction will be skipped.');
+                    }
+
+                    $quantityForBoxes = (int)floor((float)$quantity);
+                    $additionalPkg001Qty = intdiv(max($quantityForBoxes, 0), 12);  // 1 لكل 12 وحدة
+                    
+                    error_log('PKG-001 deduction check (from PKG-042): quantity=' . $quantity . ', additionalQty=' . $additionalPkg001Qty . ', pkg001Id=' . ($pkg001Id ?? 'NULL'));
+                    
+                    if ($additionalPkg001Qty > 0 && $pkg001Id !== null) {
+                        $pkg001Merged = false;
+                        foreach ($materialsConsumption['packaging'] as &$packItem) {
+                            $materialIdMatches = isset($packItem['material_id'])
+                                && (int)$packItem['material_id'] === $pkg001Id;
+                            $packItemCodeKey = isset($packItem['material_code'])
+                                ? $normalizePackagingCodeKey($packItem['material_code'])
+                                : null;
+                            $materialCodeMatches = $packItemCodeKey !== null && $packItemCodeKey === $pkg001CodeKey;
+
+                            if ($materialIdMatches || $materialCodeMatches) {
+                                $packItem['quantity'] += $additionalPkg001Qty;
+                                $packItem['material_code'] = $pkg001DisplayCode;
+                                $packItem['material_id'] = $pkg001Id; // تأكيد تعيين material_id
+                                $pkg001Merged = true;
+                                error_log('PKG-001 merged with existing item (from PKG-042). New quantity=' . $packItem['quantity']);
+                                break;
+                            }
+                        }
+                        unset($packItem);
+
+                        if (!$pkg001Merged) {
+                            $pkg001ProductId = ensureProductionMaterialProductId($pkg001Name, 'packaging', $pkg001Unit);
+
+                            $materialsConsumption['packaging'][] = [
+                                'material_id' => $pkg001Id, // تأكيد أن material_id ليس null
+                                'quantity' => $additionalPkg001Qty,
+                                'name' => $pkg001Name,
+                                'unit' => $pkg001Unit,
+                                'product_id' => $pkg001ProductId,
+                                'supplier_id' => null,
+                                'template_item_id' => null,
+                                'material_code' => $pkg001DisplayCode
+                            ];
+                            error_log('PKG-001 added as new item (from PKG-042). ID=' . $pkg001Id . ', Quantity=' . $additionalPkg001Qty);
+                        }
+
+                        $packagingIdsMap[$pkg001Id] = true;
+                    } elseif ($additionalPkg001Qty > 0 && $pkg001Id === null) {
+                        error_log('PKG-001 automatic deduction skipped (from PKG-042): material_id is null. Quantity would have been: ' . $additionalPkg001Qty);
                     }
                 }
 
@@ -3321,6 +3537,115 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                         $packagingIdsMap[$pkg041Id] = true;
                     } elseif ($additionalPkg041Qty > 0 && $pkg041Id === null) {
                         error_log('PKG-041 automatic deduction skipped (from PKG-005): material_id is null. Quantity would have been: ' . $additionalPkg041Qty);
+                    }
+                }
+
+                if ($templateIncludesPkg006 && $quantity >= 18) {
+                    error_log('PKG-041 deduction logic triggered (from PKG-006): templateIncludesPkg006=' . ($templateIncludesPkg006 ? 'true' : 'false') . ', quantity=' . $quantity);
+                    $pkg041CodeKey = 'PKG041';
+                    $pkg041DisplayCode = $formatPackagingCode($pkg041CodeKey) ?? 'PKG-041';
+
+                    $pkg041Id = null;
+                    $pkg041Name = 'مادة تعبئة PKG-041';
+                    $pkg041Unit = 'قطعة';
+
+                    if ($packagingTableExists) {
+                        try {
+                            $directSearch = $db->queryOne(
+                                "SELECT id, name, unit, material_id FROM packaging_materials 
+                                 WHERE UPPER(REPLACE(REPLACE(REPLACE(REPLACE(COALESCE(material_id, ''), '-', ''), ' ', ''), '_', ''), '.', '')) = 'PKG041'
+                                    OR UPPER(REPLACE(REPLACE(REPLACE(REPLACE(COALESCE(material_id, ''), '-', ''), ' ', ''), '_', ''), '.', '')) LIKE 'PKG041%'
+                                    OR UPPER(REPLACE(REPLACE(REPLACE(REPLACE(COALESCE(name, ''), '-', ''), ' ', ''), '_', ''), '.', '')) LIKE '%PKG041%'
+                                 LIMIT 1"
+                            );
+                            if ($directSearch && !empty($directSearch['id'])) {
+                                $pkg041Id = (int)$directSearch['id'];
+                                if (!empty($directSearch['name'])) {
+                                    $pkg041Name = $directSearch['name'];
+                                }
+                                if (!empty($directSearch['unit'])) {
+                                    $pkg041Unit = $directSearch['unit'];
+                                }
+                                error_log('PKG-041 found by direct search (from PKG-006): ID=' . $pkg041Id . ', Name=' . $pkg041Name);
+                            } else {
+                                $pkg041Info = $fetchPackagingMaterialByCode($pkg041DisplayCode) ?? [];
+                                if (!empty($pkg041Info['id'])) {
+                                    $pkg041Id = (int)$pkg041Info['id'];
+                                    if (!empty($pkg041Info['name'])) {
+                                        $pkg041Name = $pkg041Info['name'];
+                                    }
+                                    if (!empty($pkg041Info['unit'])) {
+                                        $pkg041Unit = $pkg041Info['unit'];
+                                    }
+                                    error_log('PKG-041 found by code search (from PKG-006): ID=' . $pkg041Id);
+                                } else {
+                                    $pkg041ByName = $resolvePackagingByName('PKG-041');
+                                    if ($pkg041ByName && !empty($pkg041ByName['id'])) {
+                                        $pkg041Id = (int)$pkg041ByName['id'];
+                                        if (!empty($pkg041ByName['name'])) {
+                                            $pkg041Name = $pkg041ByName['name'];
+                                        }
+                                        if (!empty($pkg041ByName['unit'])) {
+                                            $pkg041Unit = $pkg041ByName['unit'];
+                                        }
+                                        error_log('PKG-041 found by name search (from PKG-006): ID=' . $pkg041Id);
+                                    }
+                                }
+                            }
+                        } catch (Throwable $searchError) {
+                            error_log('PKG-041 search error (from PKG-006): ' . $searchError->getMessage());
+                        }
+                    }
+
+                    if ($pkg041Id === null) {
+                        error_log('PKG-041 NOT FOUND in database (from PKG-006). Automatic deduction will be skipped.');
+                    }
+
+                    $quantityForBoxes = (int)floor((float)$quantity);
+                    $additionalPkg041Qty = intdiv(max($quantityForBoxes, 0), 18);
+
+                    error_log('PKG-041 deduction check (from PKG-006): quantity=' . $quantity . ', additionalQty=' . $additionalPkg041Qty . ', pkg041Id=' . ($pkg041Id ?? 'NULL'));
+
+                    if ($additionalPkg041Qty > 0 && $pkg041Id !== null) {
+                        $pkg041Merged = false;
+                        foreach ($materialsConsumption['packaging'] as &$packItem) {
+                            $materialIdMatches = isset($packItem['material_id'])
+                                && (int)$packItem['material_id'] === $pkg041Id;
+                            $packItemCodeKey = isset($packItem['material_code'])
+                                ? $normalizePackagingCodeKey($packItem['material_code'])
+                                : null;
+                            $materialCodeMatches = $packItemCodeKey !== null && $packItemCodeKey === $pkg041CodeKey;
+
+                            if ($materialIdMatches || $materialCodeMatches) {
+                                $packItem['quantity'] += $additionalPkg041Qty;
+                                $packItem['material_code'] = $pkg041DisplayCode;
+                                $packItem['material_id'] = $pkg041Id;
+                                $pkg041Merged = true;
+                                error_log('PKG-041 merged with existing item (from PKG-006). New quantity=' . $packItem['quantity']);
+                                break;
+                            }
+                        }
+                        unset($packItem);
+
+                        if (!$pkg041Merged) {
+                            $pkg041ProductId = ensureProductionMaterialProductId($pkg041Name, 'packaging', $pkg041Unit);
+
+                            $materialsConsumption['packaging'][] = [
+                                'material_id' => $pkg041Id,
+                                'quantity' => $additionalPkg041Qty,
+                                'name' => $pkg041Name,
+                                'unit' => $pkg041Unit,
+                                'product_id' => $pkg041ProductId,
+                                'supplier_id' => null,
+                                'template_item_id' => null,
+                                'material_code' => $pkg041DisplayCode
+                            ];
+                            error_log('PKG-041 added as new item (from PKG-006). ID=' . $pkg041Id . ', Quantity=' . $additionalPkg041Qty);
+                        }
+
+                        $packagingIdsMap[$pkg041Id] = true;
+                    } elseif ($additionalPkg041Qty > 0 && $pkg041Id === null) {
+                        error_log('PKG-041 automatic deduction skipped (from PKG-006): material_id is null. Quantity would have been: ' . $additionalPkg041Qty);
                     }
                 }
 
@@ -3969,13 +4294,15 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
                 // خصم مواد التعبئة
                 // ملاحظة: إذا كان stock_deducted = true، فهذا يعني أن batchCreationCreate قد قام بالخصم بالفعل
-                // لذلك نتخطى الخصم هنا لتجنب الخصم المزدوج
-                try {
-                    // التحقق من أن batchCreationCreate لم يقم بالخصم بالفعل
-                    if (!empty($batchResult['stock_deducted'])) {
-                        error_log('Skipping packaging deduction - already deducted by batchCreationCreate (stock_deducted=true)');
-                        // batchCreationCreate قام بالخصم بالفعل، لا نكرر الخصم
-                    } else {
+                // لذلك نتخطى الخصم هنا تماماً لتجنب الخصم المزدوج
+                
+                // التحقق أولاً: إذا كان batchCreationCreate قد قام بالخصم، نتخطى كامل كتلة خصم مواد التعبئة
+                if (!empty($batchResult['stock_deducted'])) {
+                    error_log('Skipping packaging deduction - already deducted by batchCreationCreate (stock_deducted=true)');
+                    // batchCreationCreate قام بالخصم بالفعل، لا نكرر الخصم ولا ننفذ أي معالجة لمواد التعبئة
+                } else {
+                    // فقط عند عدم قيام batchCreationCreate بالخصم، ننفذ خصم مواد التعبئة هنا
+                    try {
                         // تتبع العناصر التي تم خصمها بالفعل لتجنب الخصم المكرر
                         // استخدام static لتتبع عبر جميع عمليات الإنتاج في نفس الطلب
                         static $globalDeductedPackagingIds = [];
@@ -4105,9 +4432,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
                                 // تسجيل في packaging_usage_logs باستخدام القيم الفعلية
                                 if ($packagingUsageLogsExists && $quantityBefore !== null && $quantityAfter !== null) {
-                                $quantityUsed = $quantityBefore - $quantityAfter;
+                                    $quantityUsed = $quantityBefore - $quantityAfter;
 
-                                if ($quantityUsed > 0) {
+                                    if ($quantityUsed > 0) {
                                     try {
                                         $db->execute(
                                             "INSERT INTO packaging_usage_logs 
@@ -4128,15 +4455,15 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                                     } catch (Exception $packagingUsageInsertError) {
                                         error_log('Production packaging usage log insert failed: ' . $packagingUsageInsertError->getMessage());
                                     }
+                                    }
                                 }
-                                }
-                            }
                         }
                         }
                     }
-                } catch (Exception $packagingDeductionError) {
+                    } catch (Exception $packagingDeductionError) {
                     error_log('Packaging deduction error: ' . $packagingDeductionError->getMessage());
                 }
+                } // نهاية else - فقط عند عدم قيام batchCreationCreate بالخصم
                 
                 // إنشاء أرقام باركود بعدد الكمية المنتجة
                 $batchNumbersToPrint = [];
