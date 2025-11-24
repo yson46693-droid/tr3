@@ -2051,20 +2051,15 @@ if ($isManager) {
                 return getRelativeUrl('production.php?' . http_build_query($params));
             };
             
-            if ($finishedProductsTotalPages > 1): ?>
-            <nav aria-label="صفحات جدول المنتجات">
-                <ul class="pagination justify-content-center mt-4 mb-0">
-                    <?php if ($finishedProductsPageNum > 1): ?>
-                        <li class="page-item">
-                            <a class="page-link" href="<?php echo htmlspecialchars($buildPageUrl($finishedProductsPageNum - 1)); ?>">
-                                <i class="bi bi-chevron-right"></i> السابق
-                            </a>
-                        </li>
-                    <?php else: ?>
-                        <li class="page-item disabled">
-                            <span class="page-link"><i class="bi bi-chevron-right"></i> السابق</span>
-                        </li>
-                    <?php endif; ?>
+            <?php if ($finishedProductsTotalPages > 1): ?>
+            <nav aria-label="صفحات جدول المنتجات" class="mt-4">
+                <ul class="pagination justify-content-center flex-wrap mb-0">
+                    <li class="page-item <?php echo $finishedProductsPageNum <= 1 ? 'disabled' : ''; ?>">
+                        <a class="page-link" href="<?php echo htmlspecialchars($buildPageUrl($finishedProductsPageNum - 1)); ?>" 
+                           <?php echo $finishedProductsPageNum <= 1 ? 'tabindex="-1" aria-disabled="true"' : ''; ?>>
+                            <i class="bi bi-chevron-right"></i> السابق
+                        </a>
+                    </li>
                     
                     <?php
                     // عرض أرقام الصفحات
@@ -2103,23 +2098,22 @@ if ($isManager) {
                         </li>
                     <?php endif; ?>
                     
-                    <?php if ($finishedProductsPageNum < $finishedProductsTotalPages): ?>
-                        <li class="page-item">
-                            <a class="page-link" href="<?php echo htmlspecialchars($buildPageUrl($finishedProductsPageNum + 1)); ?>">
-                                التالي <i class="bi bi-chevron-left"></i>
-                            </a>
-                        </li>
-                    <?php else: ?>
-                        <li class="page-item disabled">
-                            <span class="page-link">التالي <i class="bi bi-chevron-left"></i></span>
-                        </li>
-                    <?php endif; ?>
+                    <li class="page-item <?php echo $finishedProductsPageNum >= $finishedProductsTotalPages ? 'disabled' : ''; ?>">
+                        <a class="page-link" href="<?php echo htmlspecialchars($buildPageUrl($finishedProductsPageNum + 1)); ?>"
+                           <?php echo $finishedProductsPageNum >= $finishedProductsTotalPages ? 'tabindex="-1" aria-disabled="true"' : ''; ?>>
+                            التالي <i class="bi bi-chevron-left"></i>
+                        </a>
+                    </li>
                 </ul>
                 <div class="text-center text-muted small mt-2">
                     عرض <?php echo number_format($finishedProductsOffset + 1); ?> - <?php echo number_format(min($finishedProductsOffset + $finishedProductsPerPage, $finishedProductsCount)); ?> 
                     من أصل <?php echo number_format($finishedProductsCount); ?> منتج
                 </div>
             </nav>
+            <?php elseif ($finishedProductsCount > 0): ?>
+            <div class="text-center text-muted small mt-3">
+                عرض جميع <?php echo number_format($finishedProductsCount); ?> منتج
+            </div>
             <?php endif; ?>
         <?php else: ?>
             <div class="alert alert-info mb-0">
