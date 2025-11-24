@@ -1741,7 +1741,8 @@ if (!empty($finishedProductsTableExists)) {
             }
         }
         
-        $finishedProductsCount = is_array($finishedProductsRows) ? count($finishedProductsRows) : 0;
+        // لا تقم بتحديث $finishedProductsCount هنا - القيمة الصحيحة تم حسابها بالفعل في السطر 1623
+        // $finishedProductsCount = is_array($finishedProductsRows) ? count($finishedProductsRows) : 0;
     } catch (Exception $finishedProductsError) {
         error_log('Finished products query error: ' . $finishedProductsError->getMessage());
     }
