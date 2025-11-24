@@ -2386,6 +2386,39 @@ function approveWarehouseTransfer($transferId, $approvedBy = null) {
 
             // تحديث مخزون السيارة المصدر إن وجد
             if (($fromWarehouse['warehouse_type'] ?? '') === 'vehicle' && !empty($fromWarehouse['vehicle_id'])) {
+                // جلب finished_batch_id من vehicle_inventory قبل التحديث
+                $vehicleInventoryRow = $db->queryOne(
+                    "SELECT finished_batch_id FROM vehicle_inventory 
+                     WHERE vehicle_id = ? AND product_id = ?",
+                    [$fromWarehouse['vehicle_id'], $item['product_id']]
+                );
+                
+                // إذا كان batch_id غير موجود في item ولكن موجود في vehicle_inventory، استخدمه
+                if (!$batchId && !empty($vehicleInventoryRow['finished_batch_id'])) {
+                    $batchId = (int)$vehicleInventoryRow['finished_batch_id'];
+                    // جلب finishedMetadata من finished_products
+                    if ($batchId) {
+                        $finishedProd = $db->queryOne(
+                            "SELECT fp.*, p.unit_price, p.name as product_name
+                             FROM finished_products fp
+                             LEFT JOIN products p ON fp.product_id = p.id
+                             WHERE fp.id = ?",
+                            [$batchId]
+                        );
+                        if ($finishedProd) {
+                            $finishedMetadata = [
+                                'finished_batch_id' => $batchId,
+                                'finished_batch_number' => $batchNumber ?? $finishedProd['batch_number'] ?? null,
+                                'finished_production_date' => $finishedProd['production_date'] ?? null,
+                                'finished_quantity_produced' => $finishedProd['quantity_produced'] ?? null,
+                                'finished_workers' => $finishedProd['workers'] ?? null,
+                                'manager_unit_price' => $finishedProd['unit_price'] ?? null,
+                                'product_name' => $finishedProd['product_name'] ?? null
+                            ];
+                        }
+                    }
+                }
+                
                 $remainingQuantity = max(0.0, $availableQuantity - $requestedQuantity);
                 $updateVehicleResult = updateVehicleInventory($fromWarehouse['vehicle_id'], $item['product_id'], $remainingQuantity, $approvedBy);
                 if (empty($updateVehicleResult['success'])) {
@@ -2464,10 +2497,23 @@ function approveWarehouseTransfer($transferId, $approvedBy = null) {
             } else {
                 // إذا كان هناك batch_id وكان المخزن الوجهة رئيسياً، نعيد الكمية إلى finished_products
                 if ($batchId && ($toWarehouse['warehouse_type'] ?? '') === 'main') {
-                    $db->execute(
-                        "UPDATE finished_products SET quantity_produced = quantity_produced + ? WHERE id = ?",
-                        [$requestedQuantity, $batchId]
+                    // التحقق من وجود السجل في finished_products
+                    $existingFinishedProd = $db->queryOne(
+                        "SELECT id, quantity_produced FROM finished_products WHERE id = ?",
+                        [$batchId]
                     );
+                    
+                    if ($existingFinishedProd) {
+                        // تحديث السجل الموجود
+                        $db->execute(
+                            "UPDATE finished_products SET quantity_produced = quantity_produced + ? WHERE id = ?",
+                            [$requestedQuantity, $batchId]
+                        );
+                    } else {
+                        // إذا لم يكن السجل موجوداً، لا نقوم بإنشاء سجل جديد بدون بيانات صحيحة
+                        // فقط نسجل خطأ في السجل
+                        error_log("Warning: Attempted to update finished_products with batch_id $batchId but record does not exist. Transfer ID: $transferId");
+                    }
                 }
             }
             
