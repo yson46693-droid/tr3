@@ -2049,7 +2049,8 @@ if ($isManager) {
             $buildPageUrl = function($pageNum) use ($queryParams) {
                 $params = $queryParams;
                 $params['fp'] = $pageNum;
-                return getRelativeUrl('production.php?' . http_build_query($params));
+                // استخدام رابط نسبي يبدأ بـ ? لأننا في dashboard/production.php
+                return '?' . http_build_query($params);
             };
             ?>
             
