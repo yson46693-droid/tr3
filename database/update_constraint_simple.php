@@ -4,20 +4,30 @@
  * يمكن تعديل إعدادات قاعدة البيانات في أول السكريبت
  */
 
-// إعدادات قاعدة البيانات - عدّل هذه القيم حسب بيئتك
-$dbHost = 'localhost';
-$dbUser = 'root';
-$dbPass = '';
-$dbName = 'tr'; // اسم قاعدة البيانات
-
-echo "=== تحديث قيد UNIQUE في جدول vehicle_inventory ===\n\n";
-
 // تفعيل عرض الأخطاء
 error_reporting(E_ALL);
 ini_set('display_errors', 1);
+ini_set('log_errors', 1);
+
+// التحقق من توفر mysqli
+if (!extension_loaded('mysqli')) {
+    die("✗ خطأ: إضافة mysqli غير محملة. يرجى تفعيلها في ملف php.ini\n");
+}
+
+// إعدادات قاعدة البيانات - عدّل هذه القيم حسب بيئتك
+$dbHost = 'sql110.infinityfree.com';
+$dbUser = 'if0_40278066';
+$dbPass = 'Osama744';
+$dbName = 'if0_40278066_co_db'; // اسم قاعدة البيانات
+
+echo "=== تحديث قيد UNIQUE في جدول vehicle_inventory ===\n\n";
+if (ob_get_level() > 0) ob_flush();
+flush();
 
 // الاتصال بقاعدة البيانات
 echo "جاري الاتصال بقاعدة البيانات...\n";
+if (ob_get_level() > 0) ob_flush();
+flush();
 $conn = new mysqli($dbHost, $dbUser, $dbPass, $dbName);
 
 if ($conn->connect_error) {
@@ -201,6 +211,9 @@ if ($verifyResult && $verifyResult->num_rows > 0) {
     $verifyResult->free();
 }
 
-$conn->close();
+// إغلاق الاتصال
+if (isset($conn) && $conn instanceof mysqli) {
+    $conn->close();
+}
 echo "\n=== اكتمل التحديث بنجاح ===\n";
 
