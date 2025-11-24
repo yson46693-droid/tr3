@@ -4912,6 +4912,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 // خصم المواد المضافة تلقائياً (PKG-042, PKG-011, PKG-036) - يجب أن يتم دائماً بغض النظر عن stock_deducted
                 // هذه المواد إضافية ويجب خصمها دائماً حتى لو كان batchCreationCreate قد قام بخصم المواد الأخرى
                 try {
+                    error_log('=== Starting auto-deduction logic for PKG-042, PKG-011, PKG-036 ===');
                     $autoDeductionItems = [];
                     
                     // استخدام المتغيرات التي تم تعيينها أثناء معالجة مواد التعبئة من القالب
@@ -4919,6 +4920,10 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     $hasPkg042InConsumption = false;
                     $hasPkg011InConsumption = false;
                     $hasPkg036InConsumption = false;
+                    
+                    error_log('Initial state: templateIncludesPkg042=' . ($templateIncludesPkg042 ? 'true' : 'false') . ', templateIncludesPkg011=' . ($templateIncludesPkg011 ? 'true' : 'false') . ', templateIncludesPkg036=' . ($templateIncludesPkg036 ? 'true' : 'false'));
+                    error_log('materialsConsumption[packaging] exists: ' . (isset($materialsConsumption['packaging']) ? 'true' : 'false'));
+                    error_log('materialsConsumption[packaging] is empty: ' . (empty($materialsConsumption['packaging']) ? 'true' : 'false'));
                     
                     if (!empty($materialsConsumption['packaging'])) {
                         error_log('Checking materialsConsumption[packaging] for auto-deduction. Total items: ' . count($materialsConsumption['packaging']));

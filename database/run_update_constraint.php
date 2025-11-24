@@ -4,17 +4,46 @@
  * يعمل من CLI أو من المتصفح
  */
 
-// السماح بالوصول من CLI أو localhost
+// السماح بالوصول من CLI أو localhost أو مستخدم مسجل دخوله
 $isCLI = php_sapi_name() === 'cli';
 $isLocalhost = false;
+$isAuthenticated = false;
 
 if (!$isCLI && isset($_SERVER['HTTP_HOST'])) {
     $host = $_SERVER['HTTP_HOST'];
     $isLocalhost = (strpos($host, 'localhost') !== false || strpos($host, '127.0.0.1') !== false);
+    
+    // محاولة التحقق من المستخدم المسجل دخوله
+    if (!$isLocalhost) {
+        // بدء الجلسة إذا لم تكن بدأت
+        if (session_status() === PHP_SESSION_NONE) {
+            session_start();
+        }
+        
+        if (isset($_SESSION['user_id']) && !empty($_SESSION['user_id'])) {
+            // تحميل ملفات التحقق من المستخدم
+            if (!defined('ACCESS_ALLOWED')) {
+                define('ACCESS_ALLOWED', true);
+            }
+            try {
+                if (!function_exists('getCurrentUser')) {
+                    require_once __DIR__ . '/../includes/config.php';
+                    require_once __DIR__ . '/../includes/auth.php';
+                }
+                $currentUser = getCurrentUser();
+                if ($currentUser && isset($currentUser['id'])) {
+                    $isAuthenticated = true;
+                }
+            } catch (Throwable $e) {
+                // إذا فشل تحميل ملفات التحقق، نعتبر أن المستخدم غير مسجل دخوله
+                $isAuthenticated = false;
+            }
+        }
+    }
 }
 
-if (!$isCLI && !$isLocalhost) {
-    die('Access denied');
+if (!$isCLI && !$isLocalhost && !$isAuthenticated) {
+    die('Access denied. يجب أن تكون مسجل دخول أو الوصول من localhost.');
 }
 
 if (!$isCLI) {
@@ -101,10 +130,15 @@ try {
         $_SERVER['SERVER_NAME'] = 'localhost';
     }
     
-    // تحميل الإعدادات
-    define('ACCESS_ALLOWED', true);
-    require_once __DIR__ . '/../includes/config.php';
-    require_once __DIR__ . '/../includes/db.php';
+    // تحميل الإعدادات (إذا لم يتم تحميلها مسبقاً)
+    if (!defined('ACCESS_ALLOWED')) {
+        define('ACCESS_ALLOWED', true);
+    }
+    
+    if (!function_exists('db')) {
+        require_once __DIR__ . '/../includes/config.php';
+        require_once __DIR__ . '/../includes/db.php';
+    }
     
     $db = db();
     $conn = $db->getConnection();
