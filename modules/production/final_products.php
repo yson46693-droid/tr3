@@ -2033,24 +2033,30 @@ if ($isManager) {
             $finishedProductsTotalPages = max(1, (int) ceil($finishedProductsCount / $finishedProductsPerPage));
             
             // بناء رابط الصفحة الحالية مع الحفاظ على المعاملات الأخرى
-            $finishedProductsBaseUrl = $productionInventoryUrl;
             $queryParams = [];
             foreach ($_GET as $key => $value) {
                 if ($key !== 'fp') {
                     $queryParams[$key] = $value;
                 }
             }
-            $queryString = http_build_query($queryParams);
-            if (!empty($queryString)) {
-                $finishedProductsBaseUrl .= (strpos($finishedProductsBaseUrl, '?') !== false ? '&' : '?') . $queryString;
+            // التأكد من وجود page=inventory في المعاملات
+            if (!isset($queryParams['page'])) {
+                $queryParams['page'] = 'inventory';
             }
+            
+            // دالة مساعدة لبناء رابط الصفحة
+            $buildPageUrl = function($pageNum) use ($queryParams) {
+                $params = $queryParams;
+                $params['fp'] = $pageNum;
+                return getRelativeUrl('production.php?' . http_build_query($params));
+            };
             
             if ($finishedProductsTotalPages > 1): ?>
             <nav aria-label="صفحات جدول المنتجات">
                 <ul class="pagination justify-content-center mt-4 mb-0">
                     <?php if ($finishedProductsPageNum > 1): ?>
                         <li class="page-item">
-                            <a class="page-link" href="<?php echo htmlspecialchars($finishedProductsBaseUrl . '&fp=' . ($finishedProductsPageNum - 1)); ?>">
+                            <a class="page-link" href="<?php echo htmlspecialchars($buildPageUrl($finishedProductsPageNum - 1)); ?>">
                                 <i class="bi bi-chevron-right"></i> السابق
                             </a>
                         </li>
@@ -2067,7 +2073,7 @@ if ($isManager) {
                     
                     if ($startPage > 1): ?>
                         <li class="page-item">
-                            <a class="page-link" href="<?php echo htmlspecialchars($finishedProductsBaseUrl . '&fp=1'); ?>">1</a>
+                            <a class="page-link" href="<?php echo htmlspecialchars($buildPageUrl(1)); ?>">1</a>
                         </li>
                         <?php if ($startPage > 2): ?>
                             <li class="page-item disabled">
@@ -2078,7 +2084,7 @@ if ($isManager) {
                     
                     <?php for ($i = $startPage; $i <= $endPage; $i++): ?>
                         <li class="page-item <?php echo $i === $finishedProductsPageNum ? 'active' : ''; ?>">
-                            <a class="page-link" href="<?php echo htmlspecialchars($finishedProductsBaseUrl . '&fp=' . $i); ?>">
+                            <a class="page-link" href="<?php echo htmlspecialchars($buildPageUrl($i)); ?>">
                                 <?php echo $i; ?>
                             </a>
                         </li>
@@ -2091,7 +2097,7 @@ if ($isManager) {
                             </li>
                         <?php endif; ?>
                         <li class="page-item">
-                            <a class="page-link" href="<?php echo htmlspecialchars($finishedProductsBaseUrl . '&fp=' . $finishedProductsTotalPages); ?>">
+                            <a class="page-link" href="<?php echo htmlspecialchars($buildPageUrl($finishedProductsTotalPages)); ?>">
                                 <?php echo $finishedProductsTotalPages; ?>
                             </a>
                         </li>
@@ -2099,7 +2105,7 @@ if ($isManager) {
                     
                     <?php if ($finishedProductsPageNum < $finishedProductsTotalPages): ?>
                         <li class="page-item">
-                            <a class="page-link" href="<?php echo htmlspecialchars($finishedProductsBaseUrl . '&fp=' . ($finishedProductsPageNum + 1)); ?>">
+                            <a class="page-link" href="<?php echo htmlspecialchars($buildPageUrl($finishedProductsPageNum + 1)); ?>">
                                 التالي <i class="bi bi-chevron-left"></i>
                             </a>
                         </li>
