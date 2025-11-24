@@ -2321,42 +2321,72 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     $packagingSelectColumnsParts[] = 'material_id';
                 }
                 $packagingSelectColumns = implode(', ', $packagingSelectColumnsParts);
+
+                $normalizePackagingCodeKey = static function (?string $code): ?string {
+                    if ($code === null) {
+                        return null;
+                    }
+                    $code = strtoupper(trim((string)$code));
+                    if ($code === '') {
+                        return null;
+                    }
+                    $code = preg_replace('/[^A-Z0-9]/', '', $code);
+                    return $code !== '' ? $code : null;
+                };
+
+                $formatPackagingCode = static function (?string $codeKey): ?string {
+                    if ($codeKey === null) {
+                        return null;
+                    }
+                    if (preg_match('/^(PKG)(\d{1,})$/', $codeKey, $matches)) {
+                        return $matches[1] . '-' . str_pad($matches[2], 3, '0', STR_PAD_LEFT);
+                    }
+                    return $codeKey;
+                };
                 $templateIncludesPkg009 = false;
                 $packagingMaterialCodeCache = [];
-                $fetchPackagingMaterialByCode = static function (string $code) use ($db, $packagingTableExists, &$packagingMaterialCodeCache): ?array {
+                $fetchPackagingMaterialByCode = static function (string $code) use (
+                    $db,
+                    $packagingTableExists,
+                    &$packagingMaterialCodeCache,
+                    $normalizePackagingCodeKey,
+                    $formatPackagingCode
+                ): ?array {
                     if (!$packagingTableExists) {
                         return null;
                     }
-                    $normalizedCode = strtoupper(trim($code));
-                    if ($normalizedCode === '') {
+                    $codeKey = $normalizePackagingCodeKey($code);
+                    if ($codeKey === null) {
                         return null;
                     }
-                    if (array_key_exists($normalizedCode, $packagingMaterialCodeCache)) {
-                        return $packagingMaterialCodeCache[$normalizedCode];
+                    if (array_key_exists($codeKey, $packagingMaterialCodeCache)) {
+                        return $packagingMaterialCodeCache[$codeKey];
                     }
                     try {
                         $row = $db->queryOne(
                             "SELECT id, material_id, name, unit 
                              FROM packaging_materials 
-                             WHERE LOWER(material_id) = LOWER(?) 
+                             WHERE UPPER(REPLACE(REPLACE(REPLACE(REPLACE(material_id, '-', ''), ' ', ''), '_', ''), '.', '')) = ? 
                              LIMIT 1",
-                            [$normalizedCode]
+                            [$codeKey]
                         );
                         if ($row) {
-                            $packagingMaterialCodeCache[$normalizedCode] = [
+                            $rowCodeKey = $normalizePackagingCodeKey($row['material_id'] ?? '') ?? $codeKey;
+                            $packagingMaterialCodeCache[$codeKey] = [
                                 'id' => (int)($row['id'] ?? 0),
-                                'code' => strtoupper(trim((string)($row['material_id'] ?? $normalizedCode))),
+                                'code_key' => $rowCodeKey,
+                                'code' => $formatPackagingCode($rowCodeKey),
                                 'name' => $row['name'] ?? null,
                                 'unit' => $row['unit'] ?? null
                             ];
                         } else {
-                            $packagingMaterialCodeCache[$normalizedCode] = null;
+                            $packagingMaterialCodeCache[$codeKey] = null;
                         }
                     } catch (Throwable $e) {
-                        error_log('Packaging material lookup failed for code ' . $normalizedCode . ': ' . $e->getMessage());
-                        $packagingMaterialCodeCache[$normalizedCode] = null;
+                        error_log('Packaging material lookup failed for code ' . $codeKey . ': ' . $e->getMessage());
+                        $packagingMaterialCodeCache[$codeKey] = null;
                     }
-                    return $packagingMaterialCodeCache[$normalizedCode];
+                    return $packagingMaterialCodeCache[$codeKey];
                 };
                 $packagingNameCache = [];
                 $resolvePackagingByName = static function (string $name) use ($db, &$packagingNameCache, $packagingSelectColumns, $packagingAliasColumnExists) {
@@ -2449,6 +2479,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     }
 
                     $packagingMaterialCode = null;
+                    $packagingMaterialCodeKey = null;
                     if ($packagingRow) {
                         if ($packagingName === '' && !empty($packagingRow['name'])) {
                             $packagingName = (string)$packagingRow['name'];
@@ -2461,15 +2492,19 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                         }
                         if ($packagingMaterialCodeColumnExists && !empty($packagingRow['material_id'])) {
                             $packagingMaterialCode = (string)$packagingRow['material_id'];
+                            $packagingMaterialCodeKey = $normalizePackagingCodeKey($packagingMaterialCode);
                         }
                     }
 
                     $packagingMaterialCodeNormalized = null;
-                    if ($packagingMaterialCode !== null) {
-                        $packagingMaterialCodeNormalized = strtoupper(trim($packagingMaterialCode));
+                    if ($packagingMaterialCodeKey !== null) {
+                        $packagingMaterialCodeNormalized = $formatPackagingCode($packagingMaterialCodeKey);
                     } elseif ($packagingName !== '') {
-                        if (preg_match('/(PKG-\d{3,})/i', $packagingName, $codeMatches)) {
-                            $packagingMaterialCodeNormalized = strtoupper($codeMatches[1]);
+                        if (preg_match('/(PKG[\s-]*\d{3,})/i', $packagingName, $codeMatches)) {
+                            $packagingMaterialCodeKey = $normalizePackagingCodeKey($codeMatches[1]);
+                            if ($packagingMaterialCodeKey !== null) {
+                                $packagingMaterialCodeNormalized = $formatPackagingCode($packagingMaterialCodeKey);
+                            }
                         }
                     }
                     if ($packagingMaterialCodeNormalized === null && $packagingTableExists && $packagingMaterialId > 0) {
@@ -2479,7 +2514,12 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                                 [$packagingMaterialId]
                             );
                             if (!empty($codeLookup['material_id'])) {
-                                $packagingMaterialCodeNormalized = strtoupper(trim((string)$codeLookup['material_id']));
+                                $packagingMaterialCodeKey = $normalizePackagingCodeKey($codeLookup['material_id']);
+                                if ($packagingMaterialCodeKey !== null) {
+                                    $packagingMaterialCodeNormalized = $formatPackagingCode($packagingMaterialCodeKey);
+                                } else {
+                                    $packagingMaterialCodeNormalized = strtoupper(trim((string)$codeLookup['material_id']));
+                                }
                             }
                         } catch (Throwable $codeLookupError) {
                             error_log('Failed to fetch packaging material code for ID ' . $packagingMaterialId . ': ' . $codeLookupError->getMessage());
@@ -2500,7 +2540,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
                     if (
                         !$templateIncludesPkg009 &&
-                        $packagingMaterialCodeNormalized === 'PKG-009'
+                        $packagingMaterialCodeKey === 'PKG009'
                     ) {
                         $templateIncludesPkg009 = true;
                     }
@@ -2530,7 +2570,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
                 if ($templateIncludesPkg009 && $quantity >= 12) {
                     // خصم تلقائي لـ PKG-001 عند وجود PKG-009 لكل 12 وحدة منتجة
-                    $pkg001Info = $fetchPackagingMaterialByCode('PKG-001') ?? [];
+                    $pkg001CodeKey = 'PKG001';
+                    $pkg001DisplayCode = $formatPackagingCode($pkg001CodeKey) ?? 'PKG-001';
+                    $pkg001Info = $fetchPackagingMaterialByCode($pkg001DisplayCode) ?? [];
                     $pkg001Id = isset($pkg001Info['id']) ? (int)$pkg001Info['id'] : null;
                     $pkg001Name = $pkg001Info['name'] ?? 'مادة تعبئة PKG-001';
                     $pkg001Unit = $pkg001Info['unit'] ?? 'قطعة';
@@ -2546,12 +2588,14 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                             $materialIdMatches = $pkg001Id !== null
                                 && isset($packItem['material_id'])
                                 && (int)$packItem['material_id'] === $pkg001Id;
-                            $materialCodeMatches = isset($packItem['material_code'])
-                                && strtoupper((string)$packItem['material_code']) === 'PKG-001';
+                            $packItemCodeKey = isset($packItem['material_code'])
+                                ? $normalizePackagingCodeKey($packItem['material_code'])
+                                : null;
+                            $materialCodeMatches = $packItemCodeKey !== null && $packItemCodeKey === $pkg001CodeKey;
 
                             if ($materialIdMatches || $materialCodeMatches) {
                                 $packItem['quantity'] += $additionalPkg001Qty;
-                                $packItem['material_code'] = 'PKG-001';
+                                $packItem['material_code'] = $pkg001DisplayCode;
                                 if ($pkg001Id !== null) {
                                     $packItem['material_id'] = $pkg001Id;
                                 }
@@ -2572,7 +2616,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                                 'product_id' => $pkg001ProductId,
                                 'supplier_id' => null,
                                 'template_item_id' => null,
-                                'material_code' => 'PKG-001'
+                                'material_code' => $pkg001DisplayCode
                             ];
                         }
 
