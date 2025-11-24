@@ -168,6 +168,48 @@ if (!function_exists('ensureVehicleInventoryProductColumns')) {
                 // Don't stop lock file creation
             }
         }
+        
+        // التحقق من القيد الفريد وتحديثه إذا لزم الأمر
+        try {
+            $indexesResult = $db->query("SHOW INDEXES FROM vehicle_inventory");
+            $existingIndexes = [];
+            if ($indexesResult) {
+                foreach ($indexesResult as $index) {
+                    if (!empty($index['Key_name'])) {
+                        $existingIndexes[strtolower($index['Key_name'])] = true;
+                    }
+                }
+            }
+            
+            $hasOldConstraint = isset($existingIndexes['vehicle_product_unique']) || isset($existingIndexes['vehicle_product']);
+            $hasNewConstraint = isset($existingIndexes['vehicle_product_batch_unique']);
+            
+            // إذا كان القيد القديم موجوداً والقيد الجديد غير موجود، قم بتحديثه
+            if ($hasOldConstraint && !$hasNewConstraint) {
+                try {
+                    $conn = $db->getConnection();
+                    
+                    // حذف القيد القديم
+                    if (isset($existingIndexes['vehicle_product_unique'])) {
+                        $conn->query("ALTER TABLE vehicle_inventory DROP INDEX `vehicle_product_unique`");
+                    }
+                    if (isset($existingIndexes['vehicle_product'])) {
+                        $conn->query("ALTER TABLE vehicle_inventory DROP INDEX `vehicle_product`");
+                    }
+                    
+                    // إضافة القيد الجديد الذي يشمل finished_batch_id
+                    $conn->query("ALTER TABLE vehicle_inventory ADD UNIQUE KEY `vehicle_product_batch_unique` (`vehicle_id`, `product_id`, `finished_batch_id`)");
+                    
+                    error_log('VehicleInventory: Updated unique constraint to include finished_batch_id');
+                } catch (Throwable $constraintError) {
+                    error_log('VehicleInventory constraint update error: ' . $constraintError->getMessage());
+                    // لا نوقف العملية إذا فشل تحديث القيد
+                }
+            }
+        } catch (Throwable $indexError) {
+            error_log('VehicleInventory index check error: ' . $indexError->getMessage());
+            // لا نوقف العملية إذا فشل التحقق من الفهارس
+        }
 
         $ensured = true;
         if (!is_dir(dirname($flagFile))) {
@@ -1068,20 +1110,34 @@ function updateVehicleInventory($vehicleId, $productId, $quantity, $userId = nul
             $finishedBatchIdForSearch = $finishedProductData['batch_id'] ?? $finishedProductData['finished_batch_id'] ?? null;
         }
         
-        // التحقق من وجود السجل - أولاً نبحث عن أي سجل بنفس vehicle_id و product_id
-        // (بسبب القيد الفريد vehicle_product_unique على vehicle_id و product_id فقط)
-        // ثم نتحقق من finished_batch_id إذا كان متوفراً
-        $existing = $db->queryOne(
-            "SELECT id, quantity, product_name, product_category, product_unit, product_unit_price, product_snapshot,
-                    manager_unit_price, finished_batch_id, finished_batch_number, finished_production_date,
-                    finished_quantity_produced, finished_workers
-             FROM vehicle_inventory 
-             WHERE vehicle_id = ? AND product_id = ?",
-            [$vehicleId, $productId]
-        );
+        // التحقق من وجود السجل - البحث أولاً عن سجل بنفس vehicle_id و product_id و finished_batch_id
+        // للسماح بوجود عدة سجلات لنفس المنتج في نفس السيارة إذا كان رقم التشغيلة مختلف
+        $existing = null;
         
-        // إذا وجدنا سجل موجود ولكن finished_batch_id مختلف، سنقوم بتحديثه بدلاً من إدراج جديد
-        // لأن القيد الفريد يمنع وجود أكثر من سجل بنفس vehicle_id و product_id
+        if ($finishedBatchIdForSearch !== null && $finishedBatchIdForSearch > 0) {
+            // البحث عن سجل بنفس finished_batch_id
+            $existing = $db->queryOne(
+                "SELECT id, quantity, product_name, product_category, product_unit, product_unit_price, product_snapshot,
+                        manager_unit_price, finished_batch_id, finished_batch_number, finished_production_date,
+                        finished_quantity_produced, finished_workers
+                 FROM vehicle_inventory 
+                 WHERE vehicle_id = ? AND product_id = ? AND finished_batch_id = ?",
+                [$vehicleId, $productId, $finishedBatchIdForSearch]
+            );
+        } else {
+            // إذا لم يكن هناك finished_batch_id، البحث عن سجل بدون finished_batch_id
+            $existing = $db->queryOne(
+                "SELECT id, quantity, product_name, product_category, product_unit, product_unit_price, product_snapshot,
+                        manager_unit_price, finished_batch_id, finished_batch_number, finished_production_date,
+                        finished_quantity_produced, finished_workers
+                 FROM vehicle_inventory 
+                 WHERE vehicle_id = ? AND product_id = ? AND (finished_batch_id IS NULL OR finished_batch_id = 0)",
+                [$vehicleId, $productId]
+            );
+        }
+        
+        // إذا لم نجد سجل بنفس finished_batch_id، سنقوم بإنشاء سجل جديد
+        // هذا يسمح بوجود عدة سجلات لنفس المنتج في نفس السيارة بأرقام تشغيلة مختلفة
         
         // محاولة الحصول على unit_price من finished_products إذا كان هناك finished_batch_id
         if ($existing && !empty($existing['finished_batch_id'])) {
@@ -1215,33 +1271,84 @@ function updateVehicleInventory($vehicleId, $productId, $quantity, $userId = nul
                 ]
             );
         } else {
-            $db->execute(
-                "INSERT INTO vehicle_inventory (
-                    vehicle_id, warehouse_id, product_id, product_name, product_category,
-                    product_unit, product_unit_price, product_snapshot, manager_unit_price,
-                    finished_batch_id, finished_batch_number, finished_production_date,
-                    finished_quantity_produced, finished_workers,
-                    quantity, last_updated_by
-                 ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
-                [
-                    $vehicleId,
-                    $warehouseId,
-                    $productId,
-                    $productName,
-                    $productCategory,
-                    $productUnit,
-                    $productUnitPrice,
-                    $productSnapshot,
-                    $managerUnitPriceValue,
-                    $finishedBatchId,
-                    $finishedBatchNumber,
-                    $finishedProductionDate,
-                    $finishedQuantityProduced,
-                    $finishedWorkers,
-                    $quantity,
-                    $userId
-                ]
-            );
+            try {
+                $db->execute(
+                    "INSERT INTO vehicle_inventory (
+                        vehicle_id, warehouse_id, product_id, product_name, product_category,
+                        product_unit, product_unit_price, product_snapshot, manager_unit_price,
+                        finished_batch_id, finished_batch_number, finished_production_date,
+                        finished_quantity_produced, finished_workers,
+                        quantity, last_updated_by
+                     ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                    [
+                        $vehicleId,
+                        $warehouseId,
+                        $productId,
+                        $productName,
+                        $productCategory,
+                        $productUnit,
+                        $productUnitPrice,
+                        $productSnapshot,
+                        $managerUnitPriceValue,
+                        $finishedBatchId,
+                        $finishedBatchNumber,
+                        $finishedProductionDate,
+                        $finishedQuantityProduced,
+                        $finishedWorkers,
+                        $quantity,
+                        $userId
+                    ]
+                );
+            } catch (Exception $insertError) {
+                // إذا فشل الإدراج بسبب القيد الفريد (قد يكون القيد القديم لا يزال موجوداً)
+                // حاول البحث عن السجل الموجود وتحديثه
+                if (strpos($insertError->getMessage(), 'Duplicate entry') !== false || 
+                    strpos($insertError->getMessage(), 'vehicle_product') !== false) {
+                    
+                    // البحث عن أي سجل موجود بنفس vehicle_id و product_id
+                    $fallbackExisting = $db->queryOne(
+                        "SELECT id, quantity FROM vehicle_inventory 
+                         WHERE vehicle_id = ? AND product_id = ?",
+                        [$vehicleId, $productId]
+                    );
+                    
+                    if ($fallbackExisting) {
+                        // تحديث السجل الموجود - جمع الكميات إذا كان finished_batch_id مختلف
+                        $newQuantity = (float)($fallbackExisting['quantity'] ?? 0) + $quantity;
+                        $db->execute(
+                            "UPDATE vehicle_inventory 
+                             SET quantity = ?, last_updated_by = ?, last_updated_at = NOW(),
+                                 product_name = ?, product_category = ?, product_unit = ?, product_unit_price = ?, product_snapshot = ?,
+                                 manager_unit_price = ?, finished_batch_id = ?, finished_batch_number = ?, finished_production_date = ?,
+                                 finished_quantity_produced = ?, finished_workers = ?
+                             WHERE id = ?",
+                            [
+                                $newQuantity,
+                                $userId,
+                                $productName,
+                                $productCategory,
+                                $productUnit,
+                                $productUnitPrice,
+                                $productSnapshot,
+                                $managerUnitPriceValue,
+                                $finishedBatchId,
+                                $finishedBatchNumber,
+                                $finishedProductionDate,
+                                $finishedQuantityProduced,
+                                $finishedWorkers,
+                                $fallbackExisting['id']
+                            ]
+                        );
+                        error_log("VehicleInventory: Updated existing record due to unique constraint (batch_id may differ)");
+                    } else {
+                        // إذا لم نجد سجل موجود، أعد رمي الخطأ
+                        throw $insertError;
+                    }
+                } else {
+                    // إذا كان الخطأ ليس بسبب القيد الفريد، أعد رميه
+                    throw $insertError;
+                }
+            }
         }
         
         return ['success' => true];
