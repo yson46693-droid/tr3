@@ -1062,14 +1062,34 @@ function updateVehicleInventory($vehicleId, $productId, $quantity, $userId = nul
             $warehouseId = $warehouse['id'];
         }
         
-        // التحقق من وجود السجل
-        $existing = $db->queryOne(
-            "SELECT id, quantity, product_name, product_category, product_unit, product_unit_price, product_snapshot,
-                    manager_unit_price, finished_batch_id, finished_batch_number, finished_production_date,
-                    finished_quantity_produced, finished_workers
-             FROM vehicle_inventory WHERE vehicle_id = ? AND product_id = ?",
-            [$vehicleId, $productId]
-        );
+        // الحصول على finished_batch_id من finishedProductData للبحث الصحيح
+        $finishedBatchIdForSearch = null;
+        if (!empty($finishedProductData)) {
+            $finishedBatchIdForSearch = $finishedProductData['batch_id'] ?? $finishedProductData['finished_batch_id'] ?? null;
+        }
+        
+        // التحقق من وجود السجل - يجب أن يكون بنفس vehicle_id و product_id و finished_batch_id
+        // للتمييز بين أرقام التشغيلة المختلفة حتى لو كانت من نفس القالب
+        if ($finishedBatchIdForSearch !== null && $finishedBatchIdForSearch > 0) {
+            $existing = $db->queryOne(
+                "SELECT id, quantity, product_name, product_category, product_unit, product_unit_price, product_snapshot,
+                        manager_unit_price, finished_batch_id, finished_batch_number, finished_production_date,
+                        finished_quantity_produced, finished_workers
+                 FROM vehicle_inventory 
+                 WHERE vehicle_id = ? AND product_id = ? AND finished_batch_id = ?",
+                [$vehicleId, $productId, $finishedBatchIdForSearch]
+            );
+        } else {
+            // إذا لم يكن هناك batch_id، نبحث فقط عن vehicle_id و product_id بدون batch_id
+            $existing = $db->queryOne(
+                "SELECT id, quantity, product_name, product_category, product_unit, product_unit_price, product_snapshot,
+                        manager_unit_price, finished_batch_id, finished_batch_number, finished_production_date,
+                        finished_quantity_produced, finished_workers
+                 FROM vehicle_inventory 
+                 WHERE vehicle_id = ? AND product_id = ? AND (finished_batch_id IS NULL OR finished_batch_id = 0)",
+                [$vehicleId, $productId]
+            );
+        }
         
         // محاولة الحصول على unit_price من finished_products إذا كان هناك finished_batch_id
         if ($existing && !empty($existing['finished_batch_id'])) {
@@ -1161,19 +1181,19 @@ function updateVehicleInventory($vehicleId, $productId, $quantity, $userId = nul
             $finishedQuantityProduced = (float)$finishedQuantityProduced;
         }
 
-        if ($existing && $finishedBatchId === null) {
-            $finishedBatchId = $existing['finished_batch_id'] ?? null;
-        }
-        if ($existing && $finishedBatchNumber === null) {
+        // عدم الحصول على finishedBatchId من السجل الموجود - يجب أن يأتي من البيانات المرسلة فقط
+        // لتجنب خلط أرقام التشغيلة المختلفة
+        // استخدام القيم من السجل الموجود فقط للمعلومات الأخرى إذا لم تكن متوفرة
+        if ($existing && $finishedBatchNumber === null && empty($finishedBatchId)) {
             $finishedBatchNumber = $existing['finished_batch_number'] ?? null;
         }
-        if ($existing && $finishedProductionDate === null) {
+        if ($existing && $finishedProductionDate === null && empty($finishedBatchId)) {
             $finishedProductionDate = $existing['finished_production_date'] ?? null;
         }
-        if ($existing && $finishedQuantityProduced === null) {
+        if ($existing && $finishedQuantityProduced === null && empty($finishedBatchId)) {
             $finishedQuantityProduced = $existing['finished_quantity_produced'] ?? null;
         }
-        if ($existing && $finishedWorkers === null) {
+        if ($existing && $finishedWorkers === null && empty($finishedBatchId)) {
             $finishedWorkers = $existing['finished_workers'] ?? null;
         }
         
@@ -1844,14 +1864,29 @@ function executeWarehouseTransferDirectly($transferId, $executedBy = null) {
                     }
                 }
 
-                $currentInventory = $db->queryOne(
-                    "SELECT quantity FROM vehicle_inventory 
-                     WHERE vehicle_id = ? AND product_id = ?",
-                    [$toWarehouse['vehicle_id'], $item['product_id']]
-                );
+                // استخدام updateVehicleInventory مباشرة - ستقوم بالبحث الصحيح بناءً على finished_batch_id
+                // جلب الكمية الحالية من السجل الصحيح (مع مراعاة finished_batch_id)
+                $finishedBatchIdForSearch = $finishedMetadata['finished_batch_id'] ?? $finishedMetadata['batch_id'] ?? null;
+                $currentQuantity = 0.0;
+                
+                if ($finishedBatchIdForSearch !== null && $finishedBatchIdForSearch > 0) {
+                    $currentInventory = $db->queryOne(
+                        "SELECT quantity FROM vehicle_inventory 
+                         WHERE vehicle_id = ? AND product_id = ? AND finished_batch_id = ?",
+                        [$toWarehouse['vehicle_id'], $item['product_id'], $finishedBatchIdForSearch]
+                    );
+                    $currentQuantity = (float)($currentInventory['quantity'] ?? 0);
+                } else {
+                    $currentInventory = $db->queryOne(
+                        "SELECT quantity FROM vehicle_inventory 
+                         WHERE vehicle_id = ? AND product_id = ? AND (finished_batch_id IS NULL OR finished_batch_id = 0)",
+                        [$toWarehouse['vehicle_id'], $item['product_id']]
+                    );
+                    $currentQuantity = (float)($currentInventory['quantity'] ?? 0);
+                }
                 
                 // استخدام $requestedQuantity بدلاً من $item['quantity'] لتجنب أي مشاكل
-                $newQuantity = ($currentInventory['quantity'] ?? 0) + $requestedQuantity;
+                $newQuantity = $currentQuantity + $requestedQuantity;
                 $updateVehicleResult = updateVehicleInventory(
                     $toWarehouse['vehicle_id'],
                     $item['product_id'],
@@ -2292,14 +2327,29 @@ function approveWarehouseTransfer($transferId, $approvedBy = null) {
                     }
                 }
 
-                $currentInventory = $db->queryOne(
-                    "SELECT quantity FROM vehicle_inventory 
-                     WHERE vehicle_id = ? AND product_id = ?",
-                    [$toWarehouse['vehicle_id'], $item['product_id']]
-                );
+                // استخدام updateVehicleInventory مباشرة - ستقوم بالبحث الصحيح بناءً على finished_batch_id
+                // جلب الكمية الحالية من السجل الصحيح (مع مراعاة finished_batch_id)
+                $finishedBatchIdForSearch = $finishedMetadata['finished_batch_id'] ?? $finishedMetadata['batch_id'] ?? null;
+                $currentQuantity = 0.0;
+                
+                if ($finishedBatchIdForSearch !== null && $finishedBatchIdForSearch > 0) {
+                    $currentInventory = $db->queryOne(
+                        "SELECT quantity FROM vehicle_inventory 
+                         WHERE vehicle_id = ? AND product_id = ? AND finished_batch_id = ?",
+                        [$toWarehouse['vehicle_id'], $item['product_id'], $finishedBatchIdForSearch]
+                    );
+                    $currentQuantity = (float)($currentInventory['quantity'] ?? 0);
+                } else {
+                    $currentInventory = $db->queryOne(
+                        "SELECT quantity FROM vehicle_inventory 
+                         WHERE vehicle_id = ? AND product_id = ? AND (finished_batch_id IS NULL OR finished_batch_id = 0)",
+                        [$toWarehouse['vehicle_id'], $item['product_id']]
+                    );
+                    $currentQuantity = (float)($currentInventory['quantity'] ?? 0);
+                }
                 
                 // استخدام $requestedQuantity بدلاً من $item['quantity'] لتجنب أي مشاكل
-                $newQuantity = ($currentInventory['quantity'] ?? 0) + $requestedQuantity;
+                $newQuantity = $currentQuantity + $requestedQuantity;
                 $updateVehicleResult = updateVehicleInventory(
                     $toWarehouse['vehicle_id'],
                     $item['product_id'],
