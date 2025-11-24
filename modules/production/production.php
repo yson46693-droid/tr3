@@ -2583,14 +2583,13 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                         $packagingIdsMap[$packagingMaterialId] = true;
                     }
 
-                    // تسجيل معلومات المادة للتتبع (فقط للمواد المحتملة PKG-042, PKG-011, PKG-036)
+                    // تسجيل معلومات المادة للتتبع (لجميع المواد للتشخيص)
                     if ($packagingMaterialId > 0) {
                         $logMaterialCode = $packagingMaterialCodeKey ?? ($packagingMaterialCodeNormalized ?? 'NULL');
                         $logName = $packagingName ?? 'NULL';
-                        // تسجيل فقط إذا كان الكود يحتوي على PKG أو الاسم يحتوي على PKG
-                        if (stripos($logMaterialCode, 'PKG042') !== false || stripos($logMaterialCode, 'PKG011') !== false || stripos($logMaterialCode, 'PKG036') !== false ||
-                            stripos($logName, 'PKG-042') !== false || stripos($logName, 'PKG-011') !== false || stripos($logName, 'PKG-036') !== false) {
-                            error_log('Processing packaging item for auto-deduction: ID=' . $packagingMaterialId . ', CodeKey=' . ($packagingMaterialCodeKey ?? 'NULL') . ', CodeNormalized=' . ($packagingMaterialCodeNormalized ?? 'NULL') . ', Name=' . $logName);
+                        // تسجيل جميع المواد التي تحتوي على PKG في الكود أو الاسم
+                        if (stripos($logMaterialCode, 'PKG') !== false || stripos($logName, 'PKG') !== false) {
+                            error_log('Processing packaging item: ID=' . $packagingMaterialId . ', CodeKey=' . ($packagingMaterialCodeKey ?? 'NULL') . ', CodeNormalized=' . ($packagingMaterialCodeNormalized ?? 'NULL') . ', Name=' . $logName);
                         }
                     }
 
@@ -2797,12 +2796,14 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                         error_log('PKG-042 detected by codeKey match: packagingMaterialCodeKey=' . $packagingMaterialCodeKey);
                     } elseif ($packagingMaterialCodeNormalized !== null) {
                         $normalizedCodeKey = $normalizePackagingCodeKey($packagingMaterialCodeNormalized);
+                        error_log('PKG-042 check: packagingMaterialCodeNormalized=' . $packagingMaterialCodeNormalized . ', normalized=' . $normalizedCodeKey);
                         if ($normalizedCodeKey === 'PKG042') {
                             $isPkg042 = true;
                             error_log('PKG-042 detected by normalized code: packagingMaterialCodeNormalized=' . $packagingMaterialCodeNormalized . ', normalized=' . $normalizedCodeKey);
                         }
-                    } elseif ($packagingMaterialId > 0 && $packagingTableExists) {
-                        // محاولة أخيرة: البحث المباشر في قاعدة البيانات
+                    }
+                    // محاولة أخيرة: البحث المباشر في قاعدة البيانات (دائماً، حتى لو فشلت المحاولات السابقة)
+                    if (!$isPkg042 && $packagingMaterialId > 0 && $packagingTableExists) {
                         try {
                             $materialCodeCheck = $db->queryOne(
                                 "SELECT material_id FROM packaging_materials WHERE id = ?",
@@ -2810,11 +2811,14 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                             );
                             if ($materialCodeCheck && !empty($materialCodeCheck['material_id'])) {
                                 $checkCodeKey = $normalizePackagingCodeKey($materialCodeCheck['material_id']);
+                                error_log('PKG-042 database check: packagingMaterialId=' . $packagingMaterialId . ', material_id=' . $materialCodeCheck['material_id'] . ', normalized=' . $checkCodeKey);
                                 if ($checkCodeKey === 'PKG042') {
                                     $isPkg042 = true;
                                     $packagingMaterialCodeKey = 'PKG042';
                                     error_log('PKG-042 detected by database lookup: material_id=' . $materialCodeCheck['material_id'] . ', packagingMaterialId=' . $packagingMaterialId);
                                 }
+                            } else {
+                                error_log('PKG-042 database check: No material found for packagingMaterialId=' . $packagingMaterialId);
                             }
                         } catch (Throwable $checkError) {
                             error_log('PKG-042 database lookup error: ' . $checkError->getMessage());
@@ -2833,12 +2837,14 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                         error_log('PKG-011 detected by codeKey match: packagingMaterialCodeKey=' . $packagingMaterialCodeKey);
                     } elseif ($packagingMaterialCodeNormalized !== null) {
                         $normalizedCodeKey = $normalizePackagingCodeKey($packagingMaterialCodeNormalized);
+                        error_log('PKG-011 check: packagingMaterialCodeNormalized=' . $packagingMaterialCodeNormalized . ', normalized=' . $normalizedCodeKey);
                         if ($normalizedCodeKey === 'PKG011') {
                             $isPkg011 = true;
                             error_log('PKG-011 detected by normalized code: packagingMaterialCodeNormalized=' . $packagingMaterialCodeNormalized . ', normalized=' . $normalizedCodeKey);
                         }
-                    } elseif ($packagingMaterialId > 0 && $packagingTableExists) {
-                        // محاولة أخيرة: البحث المباشر في قاعدة البيانات
+                    }
+                    // محاولة أخيرة: البحث المباشر في قاعدة البيانات (دائماً، حتى لو فشلت المحاولات السابقة)
+                    if (!$isPkg011 && $packagingMaterialId > 0 && $packagingTableExists) {
                         try {
                             $materialCodeCheck = $db->queryOne(
                                 "SELECT material_id FROM packaging_materials WHERE id = ?",
@@ -2846,11 +2852,14 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                             );
                             if ($materialCodeCheck && !empty($materialCodeCheck['material_id'])) {
                                 $checkCodeKey = $normalizePackagingCodeKey($materialCodeCheck['material_id']);
+                                error_log('PKG-011 database check: packagingMaterialId=' . $packagingMaterialId . ', material_id=' . $materialCodeCheck['material_id'] . ', normalized=' . $checkCodeKey);
                                 if ($checkCodeKey === 'PKG011') {
                                     $isPkg011 = true;
                                     $packagingMaterialCodeKey = 'PKG011';
                                     error_log('PKG-011 detected by database lookup: material_id=' . $materialCodeCheck['material_id'] . ', packagingMaterialId=' . $packagingMaterialId);
                                 }
+                            } else {
+                                error_log('PKG-011 database check: No material found for packagingMaterialId=' . $packagingMaterialId);
                             }
                         } catch (Throwable $checkError) {
                             error_log('PKG-011 database lookup error: ' . $checkError->getMessage());
@@ -2902,12 +2911,14 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                         error_log('PKG-036 detected by codeKey match: packagingMaterialCodeKey=' . $packagingMaterialCodeKey);
                     } elseif ($packagingMaterialCodeNormalized !== null) {
                         $normalizedCodeKey = $normalizePackagingCodeKey($packagingMaterialCodeNormalized);
+                        error_log('PKG-036 check: packagingMaterialCodeNormalized=' . $packagingMaterialCodeNormalized . ', normalized=' . $normalizedCodeKey);
                         if ($normalizedCodeKey === 'PKG036') {
                             $isPkg036 = true;
                             error_log('PKG-036 detected by normalized code: packagingMaterialCodeNormalized=' . $packagingMaterialCodeNormalized . ', normalized=' . $normalizedCodeKey);
                         }
-                    } elseif ($packagingMaterialId > 0 && $packagingTableExists) {
-                        // محاولة أخيرة: البحث المباشر في قاعدة البيانات
+                    }
+                    // محاولة أخيرة: البحث المباشر في قاعدة البيانات (دائماً، حتى لو فشلت المحاولات السابقة)
+                    if (!$isPkg036 && $packagingMaterialId > 0 && $packagingTableExists) {
                         try {
                             $materialCodeCheck = $db->queryOne(
                                 "SELECT material_id FROM packaging_materials WHERE id = ?",
@@ -2915,11 +2926,14 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                             );
                             if ($materialCodeCheck && !empty($materialCodeCheck['material_id'])) {
                                 $checkCodeKey = $normalizePackagingCodeKey($materialCodeCheck['material_id']);
+                                error_log('PKG-036 database check: packagingMaterialId=' . $packagingMaterialId . ', material_id=' . $materialCodeCheck['material_id'] . ', normalized=' . $checkCodeKey);
                                 if ($checkCodeKey === 'PKG036') {
                                     $isPkg036 = true;
                                     $packagingMaterialCodeKey = 'PKG036';
                                     error_log('PKG-036 detected by database lookup: material_id=' . $materialCodeCheck['material_id'] . ', packagingMaterialId=' . $packagingMaterialId);
                                 }
+                            } else {
+                                error_log('PKG-036 database check: No material found for packagingMaterialId=' . $packagingMaterialId);
                             }
                         } catch (Throwable $checkError) {
                             error_log('PKG-036 database lookup error: ' . $checkError->getMessage());

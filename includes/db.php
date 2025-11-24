@@ -95,6 +95,9 @@ class Database {
 
             $this->ensureVehicleInventoryAutoUpgrade();
             
+            // تحديث قيد UNIQUE في vehicle_inventory تلقائياً
+            $this->updateVehicleInventoryUniqueConstraint();
+            
         } catch (Exception $e) {
             die("Database connection error: " . $e->getMessage());
         }
