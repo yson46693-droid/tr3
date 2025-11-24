@@ -4880,11 +4880,34 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 try {
                     $autoDeductionItems = [];
                     
-                    // حساب الكمية المضافة تلقائياً مباشرة من المتغيرات والكمية
+                    // التحقق من وجود PKG-042, PKG-011, PKG-036 في مواد التعبئة من القالب
+                    $hasPkg042 = false;
+                    $hasPkg011 = false;
+                    $hasPkg036 = false;
+                    
+                    if (!empty($materialsConsumption['packaging'])) {
+                        foreach ($materialsConsumption['packaging'] as $packItem) {
+                            $packItemCode = isset($packItem['material_code']) ? (string)$packItem['material_code'] : '';
+                            $packItemCodeKey = $packItemCode ? $normalizePackagingCodeKey($packItemCode) : null;
+                            
+                            if ($packItemCodeKey === 'PKG042') {
+                                $hasPkg042 = true;
+                            } elseif ($packItemCodeKey === 'PKG011') {
+                                $hasPkg011 = true;
+                            } elseif ($packItemCodeKey === 'PKG036') {
+                                $hasPkg036 = true;
+                            }
+                        }
+                    }
+                    
+                    error_log('Auto-deduction check: hasPkg042=' . ($hasPkg042 ? 'true' : 'false') . ', hasPkg011=' . ($hasPkg011 ? 'true' : 'false') . ', hasPkg036=' . ($hasPkg036 ? 'true' : 'false') . ', quantity=' . $quantity);
+                    
                     // PKG-001 من PKG-042 أو PKG-011
-                    if (($templateIncludesPkg042 || $templateIncludesPkg011) && $quantity >= 12) {
+                    if (($hasPkg042 || $hasPkg011) && $quantity >= 12) {
                         $quantityForBoxes = (int)floor((float)$quantity);
                         $additionalPkg001Qty = intdiv(max($quantityForBoxes, 0), 12);
+                        
+                        error_log('PKG-001 auto-deduction triggered: quantity=' . $quantity . ', additionalQty=' . $additionalPkg001Qty);
                         
                         if ($additionalPkg001Qty > 0) {
                             $pkg001CodeKey = 'PKG001';
@@ -4907,9 +4930,10 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                                         if (!empty($directSearch['name'])) {
                                             $pkg001Name = $directSearch['name'];
                                         }
+                                        error_log('PKG-001 found: ID=' . $pkg001Id . ', Name=' . $pkg001Name);
                                     }
                                 } catch (Throwable $searchError) {
-                                    // تجاهل الخطأ
+                                    error_log('PKG-001 search error: ' . $searchError->getMessage());
                                 }
                             }
                             
@@ -4920,14 +4944,19 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                                     'name' => $pkg001Name,
                                     'code' => $pkg001DisplayCode
                                 ];
+                                error_log('PKG-001 added to auto-deduction list: ID=' . $pkg001Id . ', Qty=' . $additionalPkg001Qty);
+                            } else {
+                                error_log('PKG-001 NOT FOUND - cannot add to auto-deduction list');
                             }
                         }
                     }
                     
                     // PKG-002 من PKG-036
-                    if ($templateIncludesPkg036 && $quantity >= 6) {
+                    if ($hasPkg036 && $quantity >= 6) {
                         $quantityForBoxes = (int)floor((float)$quantity);
                         $additionalPkg002Qty = intdiv(max($quantityForBoxes, 0), 6);
+                        
+                        error_log('PKG-002 auto-deduction triggered: quantity=' . $quantity . ', additionalQty=' . $additionalPkg002Qty);
                         
                         if ($additionalPkg002Qty > 0) {
                             $pkg002CodeKey = 'PKG002';
@@ -4950,9 +4979,10 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                                         if (!empty($directSearch['name'])) {
                                             $pkg002Name = $directSearch['name'];
                                         }
+                                        error_log('PKG-002 found: ID=' . $pkg002Id . ', Name=' . $pkg002Name);
                                     }
                                 } catch (Throwable $searchError) {
-                                    // تجاهل الخطأ
+                                    error_log('PKG-002 search error: ' . $searchError->getMessage());
                                 }
                             }
                             
@@ -4963,6 +4993,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                                     'name' => $pkg002Name,
                                     'code' => $pkg002DisplayCode
                                 ];
+                                error_log('PKG-002 added to auto-deduction list: ID=' . $pkg002Id . ', Qty=' . $additionalPkg002Qty);
+                            } else {
+                                error_log('PKG-002 NOT FOUND - cannot add to auto-deduction list');
                             }
                         }
                     }
