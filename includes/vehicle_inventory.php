@@ -1551,19 +1551,12 @@ function createWarehouseTransfer($fromWarehouseId, $toWarehouseId, $transferDate
                     $availableQuantity = max(0.0, $availableQuantity);
                 } else {
                     // استخدام quantity_produced من finished_products كمصدر للكمية عند المخازن غير السيارة
+                    // ملاحظة: quantity_produced يتم تحديثه عند النقل (يتم خصم الكمية المنقولة منه)
+                    // لذلك لا نحتاج لخصم الكميات المنقولة (approved أو completed) مرة أخرى
                     $availableQuantity = (float)($batchRow['quantity_produced'] ?? 0);
                     
-                    // خصم الكمية المنقولة بالفعل (approved أو completed) من نفس المخزن المصدر
-                    $transferred = $db->queryOne(
-                        "SELECT COALESCE(SUM(wti.quantity), 0) AS total_transferred
-                         FROM warehouse_transfer_items wti
-                         INNER JOIN warehouse_transfers wt ON wt.id = wti.transfer_id
-                         WHERE wti.batch_id = ? AND wt.status IN ('approved', 'completed') AND wt.from_warehouse_id = ?",
-                        [$batchId, $fromWarehouseId]
-                    );
-                    $availableQuantity -= (float)($transferred['total_transferred'] ?? 0);
-                    
-                    // خصم الكمية المحجوزة في طلبات النقل المعلقة (pending) من نفس المخزن فقط
+                    // خصم فقط الكمية المحجوزة في طلبات النقل المعلقة (pending) من نفس المخزن
+                    // لأن الكميات المنقولة (approved أو completed) تم خصمها بالفعل من quantity_produced
                     $pendingTransfers = $db->queryOne(
                         "SELECT COALESCE(SUM(wti.quantity), 0) AS pending_quantity
                          FROM warehouse_transfer_items wti
@@ -2278,31 +2271,28 @@ function approveWarehouseTransfer($transferId, $approvedBy = null) {
                     }
                 } else {
                     // إذا كان المخزن المصدر رئيسي، نستخدم quantity_produced من finished_products
+                    // ملاحظة: quantity_produced يتم تحديثه عند النقل (يتم خصم الكمية المنقولة منه)
+                    // لذلك لا نحتاج لخصم الكميات المنقولة (approved أو completed) مرة أخرى
                     $batchRow = $db->queryOne(
                         "SELECT quantity_produced FROM finished_products WHERE id = ?",
                         [$batchId]
                     );
                     
                     if ($batchRow) {
+                        // quantity_produced يحتوي بالفعل على الكمية المتبقية بعد خصم النقل السابق
                         $availableQuantity = (float)($batchRow['quantity_produced'] ?? 0);
                         
-                        // خصم الكمية المنقولة بالفعل (approved أو completed) - استثناء النقل الحالي
-                        $transferred = $db->queryOne(
-                            "SELECT COALESCE(SUM(wti.quantity), 0) AS total_transferred
-                             FROM warehouse_transfer_items wti
-                             INNER JOIN warehouse_transfers wt ON wt.id = wti.transfer_id
-                             WHERE wti.batch_id = ? AND wt.status IN ('approved', 'completed') AND wt.id != ?",
-                            [$batchId, $transferId]
-                        );
-                        $availableQuantity -= (float)($transferred['total_transferred'] ?? 0);
-                        
-                        // خصم الكمية المحجوزة في طلبات النقل المعلقة (pending) - استثناء النقل الحالي
+                        // خصم فقط الكمية المحجوزة في طلبات النقل المعلقة (pending) من نفس المخزن - استثناء النقل الحالي
+                        // لأن الكميات المنقولة (approved أو completed) تم خصمها بالفعل من quantity_produced
                         $pendingTransfers = $db->queryOne(
                             "SELECT COALESCE(SUM(wti.quantity), 0) AS pending_quantity
                              FROM warehouse_transfer_items wti
                              INNER JOIN warehouse_transfers wt ON wt.id = wti.transfer_id
-                             WHERE wti.batch_id = ? AND wt.status = 'pending' AND wt.id != ?",
-                            [$batchId, $transferId]
+                             WHERE wti.batch_id = ? 
+                               AND wt.from_warehouse_id = ?
+                               AND wt.status = 'pending' 
+                               AND wt.id != ?",
+                            [$batchId, $transfer['from_warehouse_id'], $transferId]
                         );
                         $availableQuantity -= (float)($pendingTransfers['pending_quantity'] ?? 0);
                         
