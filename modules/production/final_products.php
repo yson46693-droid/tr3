@@ -2050,6 +2050,7 @@ if ($isManager) {
                 $params['fp'] = $pageNum;
                 return getRelativeUrl('production.php?' . http_build_query($params));
             };
+            ?>
             
             <?php if ($finishedProductsTotalPages > 1): ?>
             <nav aria-label="صفحات جدول المنتجات" class="mt-4">
