@@ -2350,7 +2350,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     $packagingTableExists,
                     &$packagingMaterialCodeCache,
                     $normalizePackagingCodeKey,
-                    $formatPackagingCode
+                    $formatPackagingCode,
+                    $packagingProductColumnExists
                 ): ?array {
                     if (!$packagingTableExists) {
                         return null;
@@ -2363,8 +2364,12 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                         return $packagingMaterialCodeCache[$codeKey];
                     }
                     try {
+                        $selectCols = 'id, material_id, name, unit';
+                        if ($packagingProductColumnExists) {
+                            $selectCols .= ', product_id';
+                        }
                         $row = $db->queryOne(
-                            "SELECT id, material_id, name, unit 
+                            "SELECT {$selectCols} 
                              FROM packaging_materials 
                              WHERE UPPER(REPLACE(REPLACE(REPLACE(REPLACE(material_id, '-', ''), ' ', ''), '_', ''), '.', '')) = ? 
                              LIMIT 1",
@@ -2377,7 +2382,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                                 'code_key' => $rowCodeKey,
                                 'code' => $formatPackagingCode($rowCodeKey),
                                 'name' => $row['name'] ?? null,
-                                'unit' => $row['unit'] ?? null
+                                'unit' => $row['unit'] ?? null,
+                                'product_id' => isset($row['product_id']) ? (int)$row['product_id'] : null
                             ];
                         } else {
                             $packagingMaterialCodeCache[$codeKey] = null;
@@ -2504,6 +2510,35 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                             $packagingMaterialCodeKey = $normalizePackagingCodeKey($codeMatches[1]);
                             if ($packagingMaterialCodeKey !== null) {
                                 $packagingMaterialCodeNormalized = $formatPackagingCode($packagingMaterialCodeKey);
+                            }
+                        }
+                    }
+                    if (
+                        $packagingMaterialId <= 0 &&
+                        $packagingTableExists &&
+                        $packagingMaterialCodeKey !== null
+                    ) {
+                        $resolvedByCode = $fetchPackagingMaterialByCode(
+                            $packagingMaterialCodeNormalized ?? $formatPackagingCode($packagingMaterialCodeKey) ?? $packagingMaterialCodeKey
+                        );
+                        if ($resolvedByCode) {
+                            if (!empty($resolvedByCode['id'])) {
+                                $packagingMaterialId = (int)$resolvedByCode['id'];
+                            }
+                            if ($packagingName === '' && !empty($resolvedByCode['name'])) {
+                                $packagingName = (string)$resolvedByCode['name'];
+                            }
+                            if (!empty($resolvedByCode['unit'])) {
+                                $packagingUnit = (string)$resolvedByCode['unit'];
+                            }
+                            if (!$packagingProductId && !empty($resolvedByCode['product_id'])) {
+                                $packagingProductId = (int)$resolvedByCode['product_id'];
+                            }
+                            if (!empty($resolvedByCode['code_key'])) {
+                                $packagingMaterialCodeKey = $resolvedByCode['code_key'];
+                            }
+                            if (!empty($resolvedByCode['code'])) {
+                                $packagingMaterialCodeNormalized = $resolvedByCode['code'];
                             }
                         }
                     }
