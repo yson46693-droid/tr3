@@ -12,20 +12,31 @@ $dbName = 'tr'; // اسم قاعدة البيانات
 
 echo "=== تحديث قيد UNIQUE في جدول vehicle_inventory ===\n\n";
 
+// تفعيل عرض الأخطاء
+error_reporting(E_ALL);
+ini_set('display_errors', 1);
+
 // الاتصال بقاعدة البيانات
-$conn = @new mysqli($dbHost, $dbUser, $dbPass, $dbName);
+echo "جاري الاتصال بقاعدة البيانات...\n";
+$conn = new mysqli($dbHost, $dbUser, $dbPass, $dbName);
 
 if ($conn->connect_error) {
-    die("خطأ في الاتصال: " . $conn->connect_error . "\n");
+    die("✗ خطأ في الاتصال: " . $conn->connect_error . "\n");
 }
 
-$conn->set_charset("utf8mb4");
+if (!$conn->set_charset("utf8mb4")) {
+    echo "⚠ تحذير: فشل تعيين charset إلى utf8mb4: " . $conn->error . "\n";
+}
 
 echo "✓ تم الاتصال بقاعدة البيانات بنجاح\n\n";
 
 // التحقق من وجود الجدول
+echo "التحقق من وجود الجدول vehicle_inventory...\n";
 $result = $conn->query("SHOW TABLES LIKE 'vehicle_inventory'");
-if (!$result || $result->num_rows === 0) {
+if (!$result) {
+    die("✗ خطأ في الاستعلام: " . $conn->error . "\n");
+}
+if ($result->num_rows === 0) {
     echo "✗ الجدول vehicle_inventory غير موجود. لا يوجد شيء لتحديثه.\n";
     $conn->close();
     exit(0);
@@ -35,7 +46,11 @@ $result->free();
 echo "✓ الجدول vehicle_inventory موجود\n\n";
 
 // الحصول على الفهارس الموجودة
+echo "جاري فحص الفهارس الموجودة...\n";
 $indexesResult = $conn->query("SHOW INDEXES FROM vehicle_inventory");
+if (!$indexesResult) {
+    die("✗ خطأ في الاستعلام: " . $conn->error . "\n");
+}
 $existingIndexes = [];
 if ($indexesResult instanceof mysqli_result) {
     while ($index = $indexesResult->fetch_assoc()) {
