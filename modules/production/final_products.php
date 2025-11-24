@@ -1556,6 +1556,12 @@ $statusLabels = [
 $finishedProductsRows = [];
 $finishedProductsCount = 0;
 $finishedProductsTableExists = $db->queryOne("SHOW TABLES LIKE 'finished_products'");
+
+// Pagination لجدول finished_products
+$finishedProductsPageNum = isset($_GET['fp']) ? max(1, intval($_GET['fp'])) : 1;
+$finishedProductsPerPage = 20;
+$finishedProductsOffset = ($finishedProductsPageNum - 1) * $finishedProductsPerPage;
+
 if (!empty($finishedProductsTableExists)) {
     // حذف حقل manager_unit_price إذا كان موجوداً
     try {
@@ -1605,6 +1611,19 @@ if (!empty($finishedProductsTableExists)) {
         }
     } catch (Exception $e) {
         error_log('Failed to ensure unit_price column in product_templates: ' . $e->getMessage());
+    }
+    
+    // حساب العدد الإجمالي للمنتجات
+    try {
+        $finishedProductsCountResult = $db->queryOne("
+            SELECT COUNT(DISTINCT fp.id) as total
+            FROM finished_products fp
+            WHERE (fp.quantity_produced IS NULL OR fp.quantity_produced > 0)
+        ");
+        $finishedProductsCount = isset($finishedProductsCountResult['total']) ? (int)$finishedProductsCountResult['total'] : 0;
+    } catch (Exception $e) {
+        error_log('Failed to count finished products: ' . $e->getMessage());
+        $finishedProductsCount = 0;
     }
     
     try {
@@ -1671,8 +1690,8 @@ if (!empty($finishedProductsTableExists)) {
             WHERE (fp.quantity_produced IS NULL OR fp.quantity_produced > 0)
             GROUP BY fp.id
             ORDER BY fp.production_date DESC, fp.id DESC
-            LIMIT 150
-        ");
+            LIMIT ? OFFSET ?
+        ", [$finishedProductsPerPage, $finishedProductsOffset]);
         
         // تحديث الحقول unit_price و total_price للمنتجات التي لا تحتوي عليها
         if (is_array($finishedProductsRows)) {
@@ -2009,6 +2028,93 @@ if ($isManager) {
                     </tbody>
                 </table>
             </div>
+            <?php 
+            // حساب عدد الصفحات الإجمالي
+            $finishedProductsTotalPages = max(1, (int) ceil($finishedProductsCount / $finishedProductsPerPage));
+            
+            // بناء رابط الصفحة الحالية مع الحفاظ على المعاملات الأخرى
+            $finishedProductsBaseUrl = $productionInventoryUrl;
+            $queryParams = [];
+            foreach ($_GET as $key => $value) {
+                if ($key !== 'fp') {
+                    $queryParams[$key] = $value;
+                }
+            }
+            $queryString = http_build_query($queryParams);
+            if (!empty($queryString)) {
+                $finishedProductsBaseUrl .= (strpos($finishedProductsBaseUrl, '?') !== false ? '&' : '?') . $queryString;
+            }
+            
+            if ($finishedProductsTotalPages > 1): ?>
+            <nav aria-label="صفحات جدول المنتجات">
+                <ul class="pagination justify-content-center mt-4 mb-0">
+                    <?php if ($finishedProductsPageNum > 1): ?>
+                        <li class="page-item">
+                            <a class="page-link" href="<?php echo htmlspecialchars($finishedProductsBaseUrl . '&fp=' . ($finishedProductsPageNum - 1)); ?>">
+                                <i class="bi bi-chevron-right"></i> السابق
+                            </a>
+                        </li>
+                    <?php else: ?>
+                        <li class="page-item disabled">
+                            <span class="page-link"><i class="bi bi-chevron-right"></i> السابق</span>
+                        </li>
+                    <?php endif; ?>
+                    
+                    <?php
+                    // عرض أرقام الصفحات
+                    $startPage = max(1, $finishedProductsPageNum - 2);
+                    $endPage = min($finishedProductsTotalPages, $finishedProductsPageNum + 2);
+                    
+                    if ($startPage > 1): ?>
+                        <li class="page-item">
+                            <a class="page-link" href="<?php echo htmlspecialchars($finishedProductsBaseUrl . '&fp=1'); ?>">1</a>
+                        </li>
+                        <?php if ($startPage > 2): ?>
+                            <li class="page-item disabled">
+                                <span class="page-link">...</span>
+                            </li>
+                        <?php endif; ?>
+                    <?php endif; ?>
+                    
+                    <?php for ($i = $startPage; $i <= $endPage; $i++): ?>
+                        <li class="page-item <?php echo $i === $finishedProductsPageNum ? 'active' : ''; ?>">
+                            <a class="page-link" href="<?php echo htmlspecialchars($finishedProductsBaseUrl . '&fp=' . $i); ?>">
+                                <?php echo $i; ?>
+                            </a>
+                        </li>
+                    <?php endfor; ?>
+                    
+                    <?php if ($endPage < $finishedProductsTotalPages): ?>
+                        <?php if ($endPage < $finishedProductsTotalPages - 1): ?>
+                            <li class="page-item disabled">
+                                <span class="page-link">...</span>
+                            </li>
+                        <?php endif; ?>
+                        <li class="page-item">
+                            <a class="page-link" href="<?php echo htmlspecialchars($finishedProductsBaseUrl . '&fp=' . $finishedProductsTotalPages); ?>">
+                                <?php echo $finishedProductsTotalPages; ?>
+                            </a>
+                        </li>
+                    <?php endif; ?>
+                    
+                    <?php if ($finishedProductsPageNum < $finishedProductsTotalPages): ?>
+                        <li class="page-item">
+                            <a class="page-link" href="<?php echo htmlspecialchars($finishedProductsBaseUrl . '&fp=' . ($finishedProductsPageNum + 1)); ?>">
+                                التالي <i class="bi bi-chevron-left"></i>
+                            </a>
+                        </li>
+                    <?php else: ?>
+                        <li class="page-item disabled">
+                            <span class="page-link">التالي <i class="bi bi-chevron-left"></i></span>
+                        </li>
+                    <?php endif; ?>
+                </ul>
+                <div class="text-center text-muted small mt-2">
+                    عرض <?php echo number_format($finishedProductsOffset + 1); ?> - <?php echo number_format(min($finishedProductsOffset + $finishedProductsPerPage, $finishedProductsCount)); ?> 
+                    من أصل <?php echo number_format($finishedProductsCount); ?> منتج
+                </div>
+            </nav>
+            <?php endif; ?>
         <?php else: ?>
             <div class="alert alert-info mb-0">
                 <i class="bi bi-info-circle me-2"></i>

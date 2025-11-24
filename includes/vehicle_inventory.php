@@ -1553,24 +1553,6 @@ function createWarehouseTransfer($fromWarehouseId, $toWarehouseId, $transferDate
                 // لا نسمح لفشل التنفيذ بإلغاء نجاح إنشاء النقل
                 error_log('Manager warehouse transfer direct execution exception: ' . $executionException->getMessage());
             }
-        } else {
-            // إذا لم يكن المدير، إرسال إشعار للمديرين للموافقة (دون حفظ في approvals إذا كان موجوداً)
-            try {
-                require_once __DIR__ . '/approval_system.php';
-                $approvalNotes = sprintf(
-                    "طلب نقل منتجات من المخزن %s إلى المخزن %s بتاريخ %s",
-                    $fromWarehouse['name'] ?? ('#' . $fromWarehouseId),
-                    $toWarehouse['name'] ?? ('#' . $toWarehouseId),
-                    $transferDate
-                );
-                $approvalResult = requestApproval('warehouse_transfer', $transferId, $requestedBy, $approvalNotes);
-                if (!($approvalResult['success'] ?? false)) {
-                    error_log('Warehouse transfer approval request warning: ' . ($approvalResult['message'] ?? 'Unknown error'));
-                }
-            } catch (Exception $approvalException) {
-                // لا نسمح لفشل طلب الموافقة بإلغاء نجاح إنشاء النقل
-                error_log('Warehouse transfer approval request exception: ' . $approvalException->getMessage());
-            }
         }
         
         // تسجيل عملية التدقيق
