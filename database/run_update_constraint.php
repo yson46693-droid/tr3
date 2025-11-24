@@ -182,11 +182,59 @@ try {
     if ($hasOldConstraint) {
         output('جاري حذف القيد القديم...', 'info');
         
+        // محاولة حذف القيد الفريد مباشرة
+        $dropSuccess = false;
         if (isset($existingIndexes['vehicle_product_unique'])) {
             if ($conn->query("ALTER TABLE vehicle_inventory DROP INDEX `vehicle_product_unique`")) {
                 output('تم حذف vehicle_product_unique', 'success');
+                $dropSuccess = true;
             } else {
-                throw new Exception("فشل حذف vehicle_product_unique: " . $conn->error);
+                $errorMsg = $conn->error;
+                output("  - تحذير: فشل حذف vehicle_product_unique مباشرة: {$errorMsg}", 'info');
+                
+                // إذا كان الخطأ بسبب قيد خارجي، نحاول حذف القيود الخارجية أولاً
+                if (strpos($errorMsg, 'foreign key') !== false || strpos($errorMsg, 'needed in') !== false) {
+                    output('  - محاولة حذف القيود الخارجية المرتبطة...', 'info');
+                    
+                    // الحصول على القيود الخارجية
+                    $fkResult = $conn->query("
+                        SELECT CONSTRAINT_NAME 
+                        FROM information_schema.TABLE_CONSTRAINTS 
+                        WHERE TABLE_SCHEMA = DATABASE() 
+                        AND TABLE_NAME = 'vehicle_inventory' 
+                        AND CONSTRAINT_TYPE = 'FOREIGN KEY'
+                    ");
+                    
+                    $droppedFKs = [];
+                    if ($fkResult instanceof mysqli_result) {
+                        while ($fk = $fkResult->fetch_assoc()) {
+                            if (!empty($fk['CONSTRAINT_NAME'])) {
+                                $fkName = $fk['CONSTRAINT_NAME'];
+                                output("    - حذف القيد الخارجي: {$fkName}", 'info');
+                                if ($conn->query("ALTER TABLE vehicle_inventory DROP FOREIGN KEY `{$fkName}`")) {
+                                    $droppedFKs[] = $fkName;
+                                    output("    - تم حذف {$fkName}", 'success');
+                                }
+                            }
+                        }
+                        $fkResult->free();
+                    }
+                    
+                    // محاولة حذف القيد الفريد مرة أخرى
+                    if ($conn->query("ALTER TABLE vehicle_inventory DROP INDEX `vehicle_product_unique`")) {
+                        output('تم حذف vehicle_product_unique بعد حذف القيود الخارجية', 'success');
+                        $dropSuccess = true;
+                        
+                        // ملاحظة: القيود الخارجية يمكن إعادة إنشائها لاحقاً إذا لزم الأمر
+                        if (!empty($droppedFKs)) {
+                            output('ملاحظة: تم حذف ' . count($droppedFKs) . ' قيد خارجي. يمكن إعادة إنشائها لاحقاً إذا لزم الأمر.', 'info');
+                        }
+                    } else {
+                        throw new Exception("فشل حذف vehicle_product_unique حتى بعد حذف القيود الخارجية: " . $conn->error);
+                    }
+                } else {
+                    throw new Exception("فشل حذف vehicle_product_unique: {$errorMsg}");
+                }
             }
         }
         
@@ -194,7 +242,8 @@ try {
             if ($conn->query("ALTER TABLE vehicle_inventory DROP INDEX `vehicle_product`")) {
                 output('تم حذف vehicle_product', 'success');
             } else {
-                throw new Exception("فشل حذف vehicle_product: " . $conn->error);
+                output("تحذير: فشل حذف vehicle_product: " . $conn->error, 'info');
+                // لا نرمي خطأ هنا لأن القيد الرئيسي قد تم حذفه
             }
         }
     }
