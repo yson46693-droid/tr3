@@ -4921,17 +4921,23 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     $hasPkg036InConsumption = false;
                     
                     if (!empty($materialsConsumption['packaging'])) {
+                        error_log('Checking materialsConsumption[packaging] for auto-deduction. Total items: ' . count($materialsConsumption['packaging']));
                         foreach ($materialsConsumption['packaging'] as $packItem) {
                             $packItemCode = isset($packItem['material_code']) ? (string)$packItem['material_code'] : '';
                             $packItemCodeKey = $packItemCode ? $normalizePackagingCodeKey($packItemCode) : null;
                             $packItemId = isset($packItem['material_id']) ? (int)$packItem['material_id'] : 0;
                             
+                            error_log('Checking item in consumption: ID=' . $packItemId . ', Code=' . $packItemCode . ', CodeKey=' . ($packItemCodeKey ?? 'NULL'));
+                            
                             if ($packItemCodeKey === 'PKG042') {
                                 $hasPkg042InConsumption = true;
+                                error_log('PKG-042 found in consumption by codeKey');
                             } elseif ($packItemCodeKey === 'PKG011') {
                                 $hasPkg011InConsumption = true;
+                                error_log('PKG-011 found in consumption by codeKey');
                             } elseif ($packItemCodeKey === 'PKG036') {
                                 $hasPkg036InConsumption = true;
+                                error_log('PKG-036 found in consumption by codeKey');
                             }
                             
                             // البحث أيضاً باستخدام material_id إذا كان متاحاً
@@ -4943,19 +4949,25 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                                     );
                                     if ($materialCodeCheck && !empty($materialCodeCheck['material_id'])) {
                                         $checkCodeKey = $normalizePackagingCodeKey($materialCodeCheck['material_id']);
+                                        error_log('Checking item by material_id: ID=' . $packItemId . ', material_id=' . $materialCodeCheck['material_id'] . ', normalized=' . $checkCodeKey);
                                         if ($checkCodeKey === 'PKG042') {
                                             $hasPkg042InConsumption = true;
+                                            error_log('PKG-042 found in consumption by material_id lookup');
                                         } elseif ($checkCodeKey === 'PKG011') {
                                             $hasPkg011InConsumption = true;
+                                            error_log('PKG-011 found in consumption by material_id lookup');
                                         } elseif ($checkCodeKey === 'PKG036') {
                                             $hasPkg036InConsumption = true;
+                                            error_log('PKG-036 found in consumption by material_id lookup');
                                         }
                                     }
                                 } catch (Throwable $checkError) {
-                                    // تجاهل الخطأ
+                                    error_log('Error checking material_id in consumption: ' . $checkError->getMessage());
                                 }
                             }
                         }
+                    } else {
+                        error_log('materialsConsumption[packaging] is empty!');
                     }
                     
                     // استخدام المتغيرات أو النتائج من البحث المباشر
