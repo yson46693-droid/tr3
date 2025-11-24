@@ -2783,10 +2783,12 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     $isPkg042 = false;
                     if ($packagingMaterialCodeKey === 'PKG042') {
                         $isPkg042 = true;
+                        error_log('PKG-042 detected by codeKey match: packagingMaterialCodeKey=' . $packagingMaterialCodeKey);
                     } elseif ($packagingMaterialCodeNormalized !== null) {
                         $normalizedCodeKey = $normalizePackagingCodeKey($packagingMaterialCodeNormalized);
                         if ($normalizedCodeKey === 'PKG042') {
                             $isPkg042 = true;
+                            error_log('PKG-042 detected by normalized code: packagingMaterialCodeNormalized=' . $packagingMaterialCodeNormalized . ', normalized=' . $normalizedCodeKey);
                         }
                     } elseif ($packagingMaterialId > 0 && $packagingTableExists) {
                         // محاولة أخيرة: البحث المباشر في قاعدة البيانات
@@ -2800,10 +2802,11 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                                 if ($checkCodeKey === 'PKG042') {
                                     $isPkg042 = true;
                                     $packagingMaterialCodeKey = 'PKG042';
+                                    error_log('PKG-042 detected by database lookup: material_id=' . $materialCodeCheck['material_id'] . ', packagingMaterialId=' . $packagingMaterialId);
                                 }
                             }
                         } catch (Throwable $checkError) {
-                            // تجاهل الخطأ
+                            error_log('PKG-042 database lookup error: ' . $checkError->getMessage());
                         }
                     }
                     
@@ -2816,10 +2819,12 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     $isPkg011 = false;
                     if ($packagingMaterialCodeKey === 'PKG011') {
                         $isPkg011 = true;
+                        error_log('PKG-011 detected by codeKey match: packagingMaterialCodeKey=' . $packagingMaterialCodeKey);
                     } elseif ($packagingMaterialCodeNormalized !== null) {
                         $normalizedCodeKey = $normalizePackagingCodeKey($packagingMaterialCodeNormalized);
                         if ($normalizedCodeKey === 'PKG011') {
                             $isPkg011 = true;
+                            error_log('PKG-011 detected by normalized code: packagingMaterialCodeNormalized=' . $packagingMaterialCodeNormalized . ', normalized=' . $normalizedCodeKey);
                         }
                     } elseif ($packagingMaterialId > 0 && $packagingTableExists) {
                         // محاولة أخيرة: البحث المباشر في قاعدة البيانات
@@ -2833,10 +2838,11 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                                 if ($checkCodeKey === 'PKG011') {
                                     $isPkg011 = true;
                                     $packagingMaterialCodeKey = 'PKG011';
+                                    error_log('PKG-011 detected by database lookup: material_id=' . $materialCodeCheck['material_id'] . ', packagingMaterialId=' . $packagingMaterialId);
                                 }
                             }
                         } catch (Throwable $checkError) {
-                            // تجاهل الخطأ
+                            error_log('PKG-011 database lookup error: ' . $checkError->getMessage());
                         }
                     }
                     
@@ -2882,10 +2888,12 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     $isPkg036 = false;
                     if ($packagingMaterialCodeKey === 'PKG036') {
                         $isPkg036 = true;
+                        error_log('PKG-036 detected by codeKey match: packagingMaterialCodeKey=' . $packagingMaterialCodeKey);
                     } elseif ($packagingMaterialCodeNormalized !== null) {
                         $normalizedCodeKey = $normalizePackagingCodeKey($packagingMaterialCodeNormalized);
                         if ($normalizedCodeKey === 'PKG036') {
                             $isPkg036 = true;
+                            error_log('PKG-036 detected by normalized code: packagingMaterialCodeNormalized=' . $packagingMaterialCodeNormalized . ', normalized=' . $normalizedCodeKey);
                         }
                     } elseif ($packagingMaterialId > 0 && $packagingTableExists) {
                         // محاولة أخيرة: البحث المباشر في قاعدة البيانات
@@ -2899,10 +2907,11 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                                 if ($checkCodeKey === 'PKG036') {
                                     $isPkg036 = true;
                                     $packagingMaterialCodeKey = 'PKG036';
+                                    error_log('PKG-036 detected by database lookup: material_id=' . $materialCodeCheck['material_id'] . ', packagingMaterialId=' . $packagingMaterialId);
                                 }
                             }
                         } catch (Throwable $checkError) {
-                            // تجاهل الخطأ
+                            error_log('PKG-036 database lookup error: ' . $checkError->getMessage());
                         }
                     }
                     
@@ -4880,30 +4889,11 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 try {
                     $autoDeductionItems = [];
                     
-                    // التحقق من وجود PKG-042, PKG-011, PKG-036 في مواد التعبئة من القالب
-                    $hasPkg042 = false;
-                    $hasPkg011 = false;
-                    $hasPkg036 = false;
-                    
-                    if (!empty($materialsConsumption['packaging'])) {
-                        foreach ($materialsConsumption['packaging'] as $packItem) {
-                            $packItemCode = isset($packItem['material_code']) ? (string)$packItem['material_code'] : '';
-                            $packItemCodeKey = $packItemCode ? $normalizePackagingCodeKey($packItemCode) : null;
-                            
-                            if ($packItemCodeKey === 'PKG042') {
-                                $hasPkg042 = true;
-                            } elseif ($packItemCodeKey === 'PKG011') {
-                                $hasPkg011 = true;
-                            } elseif ($packItemCodeKey === 'PKG036') {
-                                $hasPkg036 = true;
-                            }
-                        }
-                    }
-                    
-                    error_log('Auto-deduction check: hasPkg042=' . ($hasPkg042 ? 'true' : 'false') . ', hasPkg011=' . ($hasPkg011 ? 'true' : 'false') . ', hasPkg036=' . ($hasPkg036 ? 'true' : 'false') . ', quantity=' . $quantity);
+                    // استخدام المتغيرات التي تم تعيينها أثناء معالجة مواد التعبئة من القالب
+                    error_log('Auto-deduction check: templateIncludesPkg042=' . ($templateIncludesPkg042 ? 'true' : 'false') . ', templateIncludesPkg011=' . ($templateIncludesPkg011 ? 'true' : 'false') . ', templateIncludesPkg036=' . ($templateIncludesPkg036 ? 'true' : 'false') . ', quantity=' . $quantity);
                     
                     // PKG-001 من PKG-042 أو PKG-011
-                    if (($hasPkg042 || $hasPkg011) && $quantity >= 12) {
+                    if (($templateIncludesPkg042 || $templateIncludesPkg011) && $quantity >= 12) {
                         $quantityForBoxes = (int)floor((float)$quantity);
                         $additionalPkg001Qty = intdiv(max($quantityForBoxes, 0), 12);
                         
@@ -4952,7 +4942,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     }
                     
                     // PKG-002 من PKG-036
-                    if ($hasPkg036 && $quantity >= 6) {
+                    if ($templateIncludesPkg036 && $quantity >= 6) {
                         $quantityForBoxes = (int)floor((float)$quantity);
                         $additionalPkg002Qty = intdiv(max($quantityForBoxes, 0), 6);
                         
