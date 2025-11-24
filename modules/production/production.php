@@ -2583,6 +2583,17 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                         $packagingIdsMap[$packagingMaterialId] = true;
                     }
 
+                    // تسجيل معلومات المادة للتتبع (فقط للمواد المحتملة PKG-042, PKG-011, PKG-036)
+                    if ($packagingMaterialId > 0) {
+                        $logMaterialCode = $packagingMaterialCodeKey ?? ($packagingMaterialCodeNormalized ?? 'NULL');
+                        $logName = $packagingName ?? 'NULL';
+                        // تسجيل فقط إذا كان الكود يحتوي على PKG أو الاسم يحتوي على PKG
+                        if (stripos($logMaterialCode, 'PKG042') !== false || stripos($logMaterialCode, 'PKG011') !== false || stripos($logMaterialCode, 'PKG036') !== false ||
+                            stripos($logName, 'PKG-042') !== false || stripos($logName, 'PKG-011') !== false || stripos($logName, 'PKG-036') !== false) {
+                            error_log('Processing packaging item for auto-deduction: ID=' . $packagingMaterialId . ', CodeKey=' . ($packagingMaterialCodeKey ?? 'NULL') . ', CodeNormalized=' . ($packagingMaterialCodeNormalized ?? 'NULL') . ', Name=' . $logName);
+                        }
+                    }
+
                     // اكتشاف PKG-009 بعدة طرق للتأكد
                     $isPkg009 = false;
                     if ($packagingMaterialCodeKey === 'PKG009') {
@@ -4890,10 +4901,60 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     $autoDeductionItems = [];
                     
                     // استخدام المتغيرات التي تم تعيينها أثناء معالجة مواد التعبئة من القالب
-                    error_log('Auto-deduction check: templateIncludesPkg042=' . ($templateIncludesPkg042 ? 'true' : 'false') . ', templateIncludesPkg011=' . ($templateIncludesPkg011 ? 'true' : 'false') . ', templateIncludesPkg036=' . ($templateIncludesPkg036 ? 'true' : 'false') . ', quantity=' . $quantity);
+                    // كحل احتياطي، البحث أيضاً في $materialsConsumption['packaging'] مباشرة
+                    $hasPkg042InConsumption = false;
+                    $hasPkg011InConsumption = false;
+                    $hasPkg036InConsumption = false;
+                    
+                    if (!empty($materialsConsumption['packaging'])) {
+                        foreach ($materialsConsumption['packaging'] as $packItem) {
+                            $packItemCode = isset($packItem['material_code']) ? (string)$packItem['material_code'] : '';
+                            $packItemCodeKey = $packItemCode ? $normalizePackagingCodeKey($packItemCode) : null;
+                            $packItemId = isset($packItem['material_id']) ? (int)$packItem['material_id'] : 0;
+                            
+                            if ($packItemCodeKey === 'PKG042') {
+                                $hasPkg042InConsumption = true;
+                            } elseif ($packItemCodeKey === 'PKG011') {
+                                $hasPkg011InConsumption = true;
+                            } elseif ($packItemCodeKey === 'PKG036') {
+                                $hasPkg036InConsumption = true;
+                            }
+                            
+                            // البحث أيضاً باستخدام material_id إذا كان متاحاً
+                            if ($packItemId > 0 && $packagingTableExists) {
+                                try {
+                                    $materialCodeCheck = $db->queryOne(
+                                        "SELECT material_id FROM packaging_materials WHERE id = ?",
+                                        [$packItemId]
+                                    );
+                                    if ($materialCodeCheck && !empty($materialCodeCheck['material_id'])) {
+                                        $checkCodeKey = $normalizePackagingCodeKey($materialCodeCheck['material_id']);
+                                        if ($checkCodeKey === 'PKG042') {
+                                            $hasPkg042InConsumption = true;
+                                        } elseif ($checkCodeKey === 'PKG011') {
+                                            $hasPkg011InConsumption = true;
+                                        } elseif ($checkCodeKey === 'PKG036') {
+                                            $hasPkg036InConsumption = true;
+                                        }
+                                    }
+                                } catch (Throwable $checkError) {
+                                    // تجاهل الخطأ
+                                }
+                            }
+                        }
+                    }
+                    
+                    // استخدام المتغيرات أو النتائج من البحث المباشر
+                    $finalHasPkg042 = $templateIncludesPkg042 || $hasPkg042InConsumption;
+                    $finalHasPkg011 = $templateIncludesPkg011 || $hasPkg011InConsumption;
+                    $finalHasPkg036 = $templateIncludesPkg036 || $hasPkg036InConsumption;
+                    
+                    error_log('Auto-deduction check: templateIncludesPkg042=' . ($templateIncludesPkg042 ? 'true' : 'false') . ', templateIncludesPkg011=' . ($templateIncludesPkg011 ? 'true' : 'false') . ', templateIncludesPkg036=' . ($templateIncludesPkg036 ? 'true' : 'false'));
+                    error_log('Auto-deduction check (from consumption): hasPkg042=' . ($hasPkg042InConsumption ? 'true' : 'false') . ', hasPkg011=' . ($hasPkg011InConsumption ? 'true' : 'false') . ', hasPkg036=' . ($hasPkg036InConsumption ? 'true' : 'false'));
+                    error_log('Auto-deduction final check: finalHasPkg042=' . ($finalHasPkg042 ? 'true' : 'false') . ', finalHasPkg011=' . ($finalHasPkg011 ? 'true' : 'false') . ', finalHasPkg036=' . ($finalHasPkg036 ? 'true' : 'false') . ', quantity=' . $quantity);
                     
                     // PKG-001 من PKG-042 أو PKG-011
-                    if (($templateIncludesPkg042 || $templateIncludesPkg011) && $quantity >= 12) {
+                    if (($finalHasPkg042 || $finalHasPkg011) && $quantity >= 12) {
                         $quantityForBoxes = (int)floor((float)$quantity);
                         $additionalPkg001Qty = intdiv(max($quantityForBoxes, 0), 12);
                         
@@ -4942,7 +5003,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     }
                     
                     // PKG-002 من PKG-036
-                    if ($templateIncludesPkg036 && $quantity >= 6) {
+                    if ($finalHasPkg036 && $quantity >= 6) {
                         $quantityForBoxes = (int)floor((float)$quantity);
                         $additionalPkg002Qty = intdiv(max($quantityForBoxes, 0), 6);
                         
