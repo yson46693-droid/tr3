@@ -1068,28 +1068,20 @@ function updateVehicleInventory($vehicleId, $productId, $quantity, $userId = nul
             $finishedBatchIdForSearch = $finishedProductData['batch_id'] ?? $finishedProductData['finished_batch_id'] ?? null;
         }
         
-        // التحقق من وجود السجل - يجب أن يكون بنفس vehicle_id و product_id و finished_batch_id
-        // للتمييز بين أرقام التشغيلة المختلفة حتى لو كانت من نفس القالب
-        if ($finishedBatchIdForSearch !== null && $finishedBatchIdForSearch > 0) {
-            $existing = $db->queryOne(
-                "SELECT id, quantity, product_name, product_category, product_unit, product_unit_price, product_snapshot,
-                        manager_unit_price, finished_batch_id, finished_batch_number, finished_production_date,
-                        finished_quantity_produced, finished_workers
-                 FROM vehicle_inventory 
-                 WHERE vehicle_id = ? AND product_id = ? AND finished_batch_id = ?",
-                [$vehicleId, $productId, $finishedBatchIdForSearch]
-            );
-        } else {
-            // إذا لم يكن هناك batch_id، نبحث فقط عن vehicle_id و product_id بدون batch_id
-            $existing = $db->queryOne(
-                "SELECT id, quantity, product_name, product_category, product_unit, product_unit_price, product_snapshot,
-                        manager_unit_price, finished_batch_id, finished_batch_number, finished_production_date,
-                        finished_quantity_produced, finished_workers
-                 FROM vehicle_inventory 
-                 WHERE vehicle_id = ? AND product_id = ? AND (finished_batch_id IS NULL OR finished_batch_id = 0)",
-                [$vehicleId, $productId]
-            );
-        }
+        // التحقق من وجود السجل - أولاً نبحث عن أي سجل بنفس vehicle_id و product_id
+        // (بسبب القيد الفريد vehicle_product_unique على vehicle_id و product_id فقط)
+        // ثم نتحقق من finished_batch_id إذا كان متوفراً
+        $existing = $db->queryOne(
+            "SELECT id, quantity, product_name, product_category, product_unit, product_unit_price, product_snapshot,
+                    manager_unit_price, finished_batch_id, finished_batch_number, finished_production_date,
+                    finished_quantity_produced, finished_workers
+             FROM vehicle_inventory 
+             WHERE vehicle_id = ? AND product_id = ?",
+            [$vehicleId, $productId]
+        );
+        
+        // إذا وجدنا سجل موجود ولكن finished_batch_id مختلف، سنقوم بتحديثه بدلاً من إدراج جديد
+        // لأن القيد الفريد يمنع وجود أكثر من سجل بنفس vehicle_id و product_id
         
         // محاولة الحصول على unit_price من finished_products إذا كان هناك finished_batch_id
         if ($existing && !empty($existing['finished_batch_id'])) {
@@ -2521,13 +2513,45 @@ function rejectWarehouseTransfer($transferId, $rejectionReason, $rejectedBy = nu
             [$rejectedBy, $rejectionReason, $transferId]
         );
 
-        // تحديث حالة الموافقة
-        $db->execute(
-            "UPDATE approvals 
-             SET status = 'rejected', approved_by = ?, rejection_reason = ? 
-             WHERE type = 'warehouse_transfer' AND `{$approvalsEntityColumn}` = ? AND status = 'pending'",
-            [$rejectedBy, $rejectionReason, $transferId]
-        );
+        // تحديث حالة الموافقة - التحقق من وجود عمود rejection_reason أولاً
+        $columns = $db->query("SHOW COLUMNS FROM approvals") ?? [];
+        $hasRejectionReasonColumn = false;
+        $hasApprovalNotesColumn = false;
+        
+        foreach ($columns as $column) {
+            $fieldName = $column['Field'] ?? '';
+            if ($fieldName === 'rejection_reason') {
+                $hasRejectionReasonColumn = true;
+            } elseif ($fieldName === 'approval_notes') {
+                $hasApprovalNotesColumn = true;
+            }
+        }
+        
+        // بناء استعلام التحديث بناءً على الأعمدة المتاحة
+        if ($hasRejectionReasonColumn) {
+            $db->execute(
+                "UPDATE approvals 
+                 SET status = 'rejected', approved_by = ?, rejection_reason = ? 
+                 WHERE type = 'warehouse_transfer' AND `{$approvalsEntityColumn}` = ? AND status = 'pending'",
+                [$rejectedBy, $rejectionReason, $transferId]
+            );
+        } elseif ($hasApprovalNotesColumn) {
+            // استخدام approval_notes كبديل إذا لم يكن rejection_reason موجوداً
+            $db->execute(
+                "UPDATE approvals 
+                 SET status = 'rejected', approved_by = ?, approval_notes = ? 
+                 WHERE type = 'warehouse_transfer' AND `{$approvalsEntityColumn}` = ? AND status = 'pending'",
+                [$rejectedBy, $rejectionReason, $transferId]
+            );
+        } else {
+            // إذا لم يكن هناك أي عمود للملاحظات، تحديث بدون سبب الرفض
+            $db->execute(
+                "UPDATE approvals 
+                 SET status = 'rejected', approved_by = ? 
+                 WHERE type = 'warehouse_transfer' AND `{$approvalsEntityColumn}` = ? AND status = 'pending'",
+                [$rejectedBy, $transferId]
+            );
+        }
         
         // تسجيل التدقيق (مع حماية من الأخطاء)
         try {
