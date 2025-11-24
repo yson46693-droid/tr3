@@ -95,9 +95,6 @@ class Database {
 
             $this->ensureVehicleInventoryAutoUpgrade();
             
-            // تحديث قيد UNIQUE في vehicle_inventory تلقائياً
-            $this->updateVehicleInventoryUniqueConstraint();
-            
         } catch (Exception $e) {
             die("Database connection error: " . $e->getMessage());
         }
@@ -436,6 +433,75 @@ class Database {
 
         } catch (Throwable $upgradeError) {
             error_log('Vehicle inventory auto upgrade error: ' . $upgradeError->getMessage());
+        }
+    }
+    
+    /**
+     * تحديث قيد UNIQUE في vehicle_inventory ليشمل finished_batch_id
+     * يتم استدعاؤها تلقائياً عند الاتصال بقاعدة البيانات
+     */
+    private function updateVehicleInventoryUniqueConstraint(): void
+    {
+        static $updated = false;
+        
+        if ($updated) {
+            return;
+        }
+        
+        try {
+            // التحقق من وجود الجدول
+            $tableExists = $this->connection->query("SHOW TABLES LIKE 'vehicle_inventory'");
+            if (!$tableExists instanceof mysqli_result || $tableExists->num_rows === 0) {
+                return;
+            }
+            $tableExists->free();
+            
+            // الحصول على الفهارس الموجودة
+            $indexesResult = $this->connection->query("SHOW INDEXES FROM vehicle_inventory");
+            $existingIndexes = [];
+            if ($indexesResult instanceof mysqli_result) {
+                while ($index = $indexesResult->fetch_assoc()) {
+                    if (!empty($index['Key_name'])) {
+                        $existingIndexes[strtolower($index['Key_name'])] = true;
+                    }
+                }
+                $indexesResult->free();
+            }
+            
+            $hasOldConstraint = isset($existingIndexes['vehicle_product_unique']) || isset($existingIndexes['vehicle_product']);
+            $hasNewConstraint = isset($existingIndexes['vehicle_product_batch_unique']);
+            
+            // إذا كان القيد الجديد موجود بالفعل، لا حاجة للتحديث
+            if ($hasNewConstraint) {
+                $updated = true;
+                return;
+            }
+            
+            // حذف القيد القديم وإضافة الجديد
+            if ($hasOldConstraint) {
+                try {
+                    if (isset($existingIndexes['vehicle_product_unique'])) {
+                        $this->connection->query("ALTER TABLE vehicle_inventory DROP INDEX `vehicle_product_unique`");
+                    }
+                    if (isset($existingIndexes['vehicle_product'])) {
+                        $this->connection->query("ALTER TABLE vehicle_inventory DROP INDEX `vehicle_product`");
+                    }
+                } catch (Throwable $dropError) {
+                    error_log("Error dropping old constraint: " . $dropError->getMessage());
+                }
+            }
+            
+            // إضافة القيد الجديد
+            try {
+                $this->connection->query("ALTER TABLE vehicle_inventory ADD UNIQUE KEY `vehicle_product_batch_unique` (`vehicle_id`, `product_id`, `finished_batch_id`)");
+                $updated = true;
+            } catch (Throwable $addError) {
+                // قد يكون القيد موجود بالفعل أو هناك مشكلة أخرى
+                error_log("Error adding new constraint: " . $addError->getMessage());
+            }
+            
+        } catch (Throwable $e) {
+            error_log("Error in updateVehicleInventoryUniqueConstraint: " . $e->getMessage());
         }
     }
 }
