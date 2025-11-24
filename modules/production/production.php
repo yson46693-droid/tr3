@@ -3623,38 +3623,32 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                             error_log('Processing aggregated packaging item: material_id=' . $packMaterialId . ', quantity=' . $packQuantity . ', name=' . $packItemName . ', code=' . $packItemCode);
                             
                             if ($packMaterialId > 0 && $packQuantity > 0) {
-                                $quantityBefore = null;
                                 $materialNameForLog = $packItemName;
                                 $materialUnitForLog = $deductionItem['unit'] ?? 'وحدة';
 
-                                if ($packagingUsageLogsExists) {
-                                    try {
-                                        $packagingRowForLog = $db->queryOne(
-                                            "SELECT name, unit, quantity FROM packaging_materials WHERE id = ?",
-                                            [$packMaterialId]
-                                        );
-                                        if ($packagingRowForLog) {
-                                            $quantityBefore = (float)($packagingRowForLog['quantity'] ?? 0);
-                                            if (!empty($packagingRowForLog['name'])) {
-                                                $materialNameForLog = $packagingRowForLog['name'];
-                                            }
-                                            if (!empty($packagingRowForLog['unit'])) {
-                                                $materialUnitForLog = $packagingRowForLog['unit'];
-                                            }
-                                        }
-                                    } catch (Exception $packagingLogFetchError) {
-                                        error_log('Production packaging usage fetch warning: ' . $packagingLogFetchError->getMessage());
-                                    }
-                                }
-
-                                // الحصول على الكمية الحالية قبل الخصم مباشرة
+                                // الحصول على الكمية الحالية قبل الخصم مباشرة مع FOR UPDATE لتجنب الخصم المزدوج
                                 $currentQuantityCheck = $db->queryOne(
-                                    "SELECT quantity FROM packaging_materials WHERE id = ? FOR UPDATE",
+                                    "SELECT name, unit, quantity FROM packaging_materials WHERE id = ? FOR UPDATE",
                                     [$packMaterialId]
                                 );
-                                $actualQuantityBefore = $currentQuantityCheck ? (float)($currentQuantityCheck['quantity'] ?? 0) : ($quantityBefore ?? 0);
                                 
-                                error_log('Deducting from packaging_materials: ID=' . $packMaterialId . ', Quantity=' . $packQuantity . ', Before=' . $actualQuantityBefore . ' (from DB: ' . ($quantityBefore ?? 'N/A') . ')');
+                                if (!$currentQuantityCheck) {
+                                    error_log('WARNING: Packaging material ID=' . $packMaterialId . ' not found! Skipping deduction.');
+                                    continue;
+                                }
+                                
+                                $actualQuantityBefore = (float)($currentQuantityCheck['quantity'] ?? 0);
+                                if (!empty($currentQuantityCheck['name'])) {
+                                    $materialNameForLog = $currentQuantityCheck['name'];
+                                }
+                                if (!empty($currentQuantityCheck['unit'])) {
+                                    $materialUnitForLog = $currentQuantityCheck['unit'];
+                                }
+                                
+                                // استخدام actualQuantityBefore للتوافق مع الكود السابق
+                                $quantityBefore = $actualQuantityBefore;
+                                
+                                error_log('Deducting from packaging_materials: ID=' . $packMaterialId . ', Quantity=' . $packQuantity . ', Before=' . $actualQuantityBefore);
                                 
                                 try {
                                     $db->execute(
@@ -3669,6 +3663,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                                         "SELECT quantity FROM packaging_materials WHERE id = ?",
                                         [$packMaterialId]
                                     );
+                                    $quantityAfter = null;
                                     if ($verifyDeduction) {
                                         $quantityAfter = (float)($verifyDeduction['quantity'] ?? 0);
                                         $expectedAfter = max($actualQuantityBefore - $packQuantity, 0);
@@ -3686,8 +3681,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                                     error_log('Packaging deduction ERROR: ' . $deductionError->getMessage() . ' | ID=' . $packMaterialId . ', Qty=' . $packQuantity);
                                 }
 
-                                if ($packagingUsageLogsExists && $quantityBefore !== null) {
-                                    $quantityAfter = max($quantityBefore - $packQuantity, 0);
+                                // تسجيل في packaging_usage_logs باستخدام القيم الفعلية
+                                if ($packagingUsageLogsExists && $quantityBefore !== null && $quantityAfter !== null) {
                                     $quantityUsed = $quantityBefore - $quantityAfter;
 
                                     if ($quantityUsed > 0) {
