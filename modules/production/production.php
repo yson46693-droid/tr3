@@ -3267,8 +3267,13 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                                 break;
                         }
                     }
+                    } catch (Exception $stockWarning) {
+                        error_log('Production stock deduction warning: ' . $stockWarning->getMessage());
+                    }
+                }
 
-                    // خصم مواد التعبئة
+                // خصم مواد التعبئة - يجب أن يتم دائماً بغض النظر عن stock_deducted
+                try {
                     $packagingItemsCount = count($materialsConsumption['packaging'] ?? []);
                     error_log('Starting packaging deduction loop. Total items: ' . $packagingItemsCount);
                     
@@ -3369,9 +3374,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                         }
                         unset($packItem);
                     }
-                    } catch (Exception $stockWarning) {
-                        error_log('Production stock deduction warning: ' . $stockWarning->getMessage());
-                    }
+                } catch (Exception $packagingDeductionError) {
+                    error_log('Packaging deduction error: ' . $packagingDeductionError->getMessage());
                 }
                 
                 // إنشاء أرقام باركود بعدد الكمية المنتجة
