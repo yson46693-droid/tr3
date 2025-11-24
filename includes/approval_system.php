@@ -358,17 +358,18 @@ function approveRequest($approvalId, $approvedBy, $notes = null) {
         try {
             updateEntityStatus($approval['type'], $entityIdentifier, 'approved', $approvedBy);
         } catch (Exception $updateException) {
-            error_log("Error updating entity status in approveRequest: " . $updateException->getMessage());
-            // في حالة warehouse_transfer، إذا تم تحديث الحالة بالفعل في approveWarehouseTransfer، لا نرمي استثناء
+            error_log("Error updating entity status in approveRequest (type: {$approval['type']}, id: {$entityIdentifier}): " . $updateException->getMessage());
+            // في حالة warehouse_transfer، التحقق من أن الطلب تم تحديثه بالفعل
             if ($approval['type'] === 'warehouse_transfer') {
-                // التحقق من أن الطلب تم تحديثه بالفعل
                 $transferCheck = $db->queryOne("SELECT status FROM warehouse_transfers WHERE id = ?", [$entityIdentifier]);
                 if ($transferCheck && in_array($transferCheck['status'], ['approved', 'completed'])) {
-                    // تم تحديث الحالة بالفعل - نجاح
-                    error_log("Transfer status already updated to: " . $transferCheck['status']);
+                    // تم تحديث الحالة بالفعل - نجاح (تم التنفيذ بالفعل)
+                    error_log("Transfer status already updated to: " . $transferCheck['status'] . ", ignoring error");
+                    // لا نرمي استثناء - العملية نجحت بالفعل
                 } else {
                     // لم يتم تحديث الحالة - خطأ فعلي
-                    throw new Exception('لم يتم تحديث حالة طلب النقل: ' . $updateException->getMessage());
+                    error_log("Transfer was NOT updated. Current status: " . ($transferCheck['status'] ?? 'null'));
+                    throw new Exception('لم يتم تحديث طلب النقل: ' . $updateException->getMessage());
                 }
             } else {
                 throw $updateException;
