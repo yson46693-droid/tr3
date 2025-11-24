@@ -2234,25 +2234,47 @@ function approveWarehouseTransfer($transferId, $approvedBy = null) {
                 // إذا كان المخزن المصدر سيارة، نفحص مخزون السيارة
                 if (($fromWarehouse['warehouse_type'] ?? '') === 'vehicle' && !empty($fromWarehouse['vehicle_id'])) {
                     // فحص الكمية من vehicle_inventory مع مراعاة finished_batch_id
-                    // يجب أن نفحص السجل الذي يحتوي على نفس finished_batch_id و product_id
-                    $vehicleStock = null;
-                    if ($batchId && $productId > 0) {
+                    // أولاً: نبحث عن finished_batch_id من vehicle_inventory بناءً على batch_id من item
+                    $vehicleInventoryCheck = null;
+                    if ($productId > 0) {
                         // البحث عن السجل الذي يحتوي على نفس finished_batch_id و product_id
-                        $vehicleStock = $db->queryOne(
-                            "SELECT quantity FROM vehicle_inventory 
+                        $vehicleInventoryCheck = $db->queryOne(
+                            "SELECT quantity, finished_batch_id FROM vehicle_inventory 
                              WHERE vehicle_id = ? AND product_id = ? AND finished_batch_id = ?",
                             [$fromWarehouse['vehicle_id'], $productId, $batchId]
                         );
                         
-                        // إذا لم نجد سجل، قد يكون هناك خطأ في البيانات أو batch_id غير صحيح
-                        if (!$vehicleStock) {
-                            error_log("Warning: No vehicle_inventory record found for batch_id=$batchId, product_id=$productId, vehicle_id={$fromWarehouse['vehicle_id']}");
-                            $availableQuantity = 0.0;
-                        } else {
-                            $availableQuantity = (float)($vehicleStock['quantity'] ?? 0);
+                        // إذا لم نجد سجل مع finished_batch_id = batchId، نبحث عن أي سجل بنفس product_id
+                        // (قد يكون batch_id في item مختلف عن finished_batch_id في vehicle_inventory)
+                        if (!$vehicleInventoryCheck) {
+                            $vehicleInventoryCheck = $db->queryOne(
+                                "SELECT quantity, finished_batch_id FROM vehicle_inventory 
+                                 WHERE vehicle_id = ? AND product_id = ? 
+                                 AND finished_batch_id IS NOT NULL AND finished_batch_id > 0
+                                 LIMIT 1",
+                                [$fromWarehouse['vehicle_id'], $productId]
+                            );
                             
-                            // خصم الكمية المحجوزة في طلبات النقل المعلقة (pending) من نفس المخزن
-                            // نفحص فقط الطلبات التي لها نفس batch_id و product_id
+                            // إذا وجدنا سجل، نستخدم finished_batch_id منه
+                            if ($vehicleInventoryCheck && !empty($vehicleInventoryCheck['finished_batch_id'])) {
+                                $actualBatchId = (int)$vehicleInventoryCheck['finished_batch_id'];
+                                if ($actualBatchId !== $batchId) {
+                                    error_log("Info: batch_id mismatch. Item batch_id=$batchId, vehicle_inventory finished_batch_id=$actualBatchId. Using vehicle_inventory batch_id.");
+                                    $batchId = $actualBatchId;
+                                }
+                            }
+                        }
+                    }
+                    
+                    if (!$vehicleInventoryCheck) {
+                        error_log("Warning: No vehicle_inventory record found for batch_id=$batchId, product_id=$productId, vehicle_id={$fromWarehouse['vehicle_id']}");
+                        $availableQuantity = 0.0;
+                    } else {
+                        $availableQuantity = (float)($vehicleInventoryCheck['quantity'] ?? 0);
+                        
+                        // خصم الكمية المحجوزة في طلبات النقل المعلقة (pending) من نفس المخزن
+                        // نفحص فقط الطلبات التي لها نفس batch_id و product_id
+                        if ($batchId && $productId > 0) {
                             $pendingTransfers = $db->queryOne(
                                 "SELECT COALESCE(SUM(wti.quantity), 0) AS pending_quantity
                                  FROM warehouse_transfer_items wti
@@ -2266,8 +2288,6 @@ function approveWarehouseTransfer($transferId, $approvedBy = null) {
                             );
                             $availableQuantity -= (float)($pendingTransfers['pending_quantity'] ?? 0);
                         }
-                    } else {
-                        $availableQuantity = 0.0;
                     }
                 } else {
                     // إذا كان المخزن المصدر رئيسي، نستخدم quantity_produced من finished_products
