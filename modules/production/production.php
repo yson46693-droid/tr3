@@ -3268,101 +3268,107 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                         }
                     }
 
+                    // خصم مواد التعبئة
+                    $packagingItemsCount = count($materialsConsumption['packaging'] ?? []);
+                    error_log('Starting packaging deduction loop. Total items: ' . $packagingItemsCount);
+                    
+                    if (!empty($materialsConsumption['packaging'])) {
                         foreach ($materialsConsumption['packaging'] as &$packItem) {
-                        $packMaterialId = isset($packItem['material_id']) ? (int)$packItem['material_id'] : 0;
-                        $packQuantity = (float)($packItem['quantity'] ?? 0);
-                        $packItemName = trim((string)($packItem['name'] ?? ''));
-                        $packItemCode = isset($packItem['material_code']) ? (string)$packItem['material_code'] : '';
-                        
-                        error_log('Processing packaging item: material_id=' . $packMaterialId . ', quantity=' . $packQuantity . ', name=' . $packItemName . ', code=' . $packItemCode);
-                        
-                        if ($packMaterialId <= 0 && $packQuantity > 0 && $packagingTableExists) {
-                            $lookupName = $packItemName;
-                            $resolvedRow = $resolvePackagingByName($lookupName);
-                            if ($resolvedRow) {
-                                $packMaterialId = (int)$resolvedRow['id'];
-                                $packItem['material_id'] = $packMaterialId;
-                                error_log('Resolved packaging by name: ' . $lookupName . ' -> ID=' . $packMaterialId);
+                            $packMaterialId = isset($packItem['material_id']) ? (int)$packItem['material_id'] : 0;
+                            $packQuantity = (float)($packItem['quantity'] ?? 0);
+                            $packItemName = trim((string)($packItem['name'] ?? ''));
+                            $packItemCode = isset($packItem['material_code']) ? (string)$packItem['material_code'] : '';
+                            
+                            error_log('Processing packaging item: material_id=' . $packMaterialId . ', quantity=' . $packQuantity . ', name=' . $packItemName . ', code=' . $packItemCode);
+                            
+                            if ($packMaterialId <= 0 && $packQuantity > 0 && $packagingTableExists) {
+                                $lookupName = $packItemName;
+                                $resolvedRow = $resolvePackagingByName($lookupName);
+                                if ($resolvedRow) {
+                                    $packMaterialId = (int)$resolvedRow['id'];
+                                    $packItem['material_id'] = $packMaterialId;
+                                    error_log('Resolved packaging by name: ' . $lookupName . ' -> ID=' . $packMaterialId);
+                                }
                             }
-                        }
-                        if ($packMaterialId > 0 && $packQuantity > 0) {
-                            $quantityBefore = null;
-                            $materialNameForLog = $packItemName;
-                            $materialUnitForLog = $packItem['unit'] ?? 'وحدة';
+                            if ($packMaterialId > 0 && $packQuantity > 0) {
+                                $quantityBefore = null;
+                                $materialNameForLog = $packItemName;
+                                $materialUnitForLog = $packItem['unit'] ?? 'وحدة';
 
-                            if ($packagingUsageLogsExists) {
+                                if ($packagingUsageLogsExists) {
+                                    try {
+                                        $packagingRowForLog = $db->queryOne(
+                                            "SELECT name, unit, quantity FROM packaging_materials WHERE id = ?",
+                                            [$packMaterialId]
+                                        );
+                                        if ($packagingRowForLog) {
+                                            $quantityBefore = (float)($packagingRowForLog['quantity'] ?? 0);
+                                            if (!empty($packagingRowForLog['name'])) {
+                                                $materialNameForLog = $packagingRowForLog['name'];
+                                            }
+                                            if (!empty($packagingRowForLog['unit'])) {
+                                                $materialUnitForLog = $packagingRowForLog['unit'];
+                                            }
+                                        }
+                                    } catch (Exception $packagingLogFetchError) {
+                                        error_log('Production packaging usage fetch warning: ' . $packagingLogFetchError->getMessage());
+                                    }
+                                }
+
+                                error_log('Deducting from packaging_materials: ID=' . $packMaterialId . ', Quantity=' . $packQuantity . ', Before=' . ($quantityBefore ?? 'N/A'));
+                                
                                 try {
-                                    $packagingRowForLog = $db->queryOne(
-                                        "SELECT name, unit, quantity FROM packaging_materials WHERE id = ?",
+                                    $db->execute(
+                                        "UPDATE packaging_materials 
+                                         SET quantity = GREATEST(quantity - ?, 0), updated_at = NOW() 
+                                         WHERE id = ?",
+                                        [$packQuantity, $packMaterialId]
+                                    );
+                                    
+                                    // التحقق من أن الخصم تم بنجاح
+                                    $verifyDeduction = $db->queryOne(
+                                        "SELECT quantity FROM packaging_materials WHERE id = ?",
                                         [$packMaterialId]
                                     );
-                                    if ($packagingRowForLog) {
-                                        $quantityBefore = (float)($packagingRowForLog['quantity'] ?? 0);
-                                        if (!empty($packagingRowForLog['name'])) {
-                                            $materialNameForLog = $packagingRowForLog['name'];
-                                        }
-                                        if (!empty($packagingRowForLog['unit'])) {
-                                            $materialUnitForLog = $packagingRowForLog['unit'];
-                                        }
+                                    if ($verifyDeduction) {
+                                        $quantityAfter = (float)($verifyDeduction['quantity'] ?? 0);
+                                        error_log('Deduction successful: ID=' . $packMaterialId . ', After=' . $quantityAfter);
                                     }
-                                } catch (Exception $packagingLogFetchError) {
-                                    error_log('Production packaging usage fetch warning: ' . $packagingLogFetchError->getMessage());
+                                } catch (Exception $deductionError) {
+                                    error_log('Packaging deduction ERROR: ' . $deductionError->getMessage() . ' | ID=' . $packMaterialId . ', Qty=' . $packQuantity);
                                 }
-                            }
 
-                            error_log('Deducting from packaging_materials: ID=' . $packMaterialId . ', Quantity=' . $packQuantity . ', Before=' . ($quantityBefore ?? 'N/A'));
-                            
-                            try {
-                                $db->execute(
-                                    "UPDATE packaging_materials 
-                                     SET quantity = GREATEST(quantity - ?, 0), updated_at = NOW() 
-                                     WHERE id = ?",
-                                    [$packQuantity, $packMaterialId]
-                                );
-                                
-                                // التحقق من أن الخصم تم بنجاح
-                                $verifyDeduction = $db->queryOne(
-                                    "SELECT quantity FROM packaging_materials WHERE id = ?",
-                                    [$packMaterialId]
-                                );
-                                if ($verifyDeduction) {
-                                    $quantityAfter = (float)($verifyDeduction['quantity'] ?? 0);
-                                    error_log('Deduction successful: ID=' . $packMaterialId . ', After=' . $quantityAfter);
-                                }
-                            } catch (Exception $deductionError) {
-                                error_log('Packaging deduction ERROR: ' . $deductionError->getMessage() . ' | ID=' . $packMaterialId . ', Qty=' . $packQuantity);
-                            }
+                                if ($packagingUsageLogsExists && $quantityBefore !== null) {
+                                    $quantityAfter = max($quantityBefore - $packQuantity, 0);
+                                    $quantityUsed = $quantityBefore - $quantityAfter;
 
-                            if ($packagingUsageLogsExists && $quantityBefore !== null) {
-                                $quantityAfter = max($quantityBefore - $packQuantity, 0);
-                                $quantityUsed = $quantityBefore - $quantityAfter;
-
-                                if ($quantityUsed > 0) {
-                                    try {
-                                        $db->execute(
-                                            "INSERT INTO packaging_usage_logs 
-                                             (material_id, material_name, material_code, source_table, quantity_before, quantity_used, quantity_after, unit, used_by) 
-                                             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
-                                            [
-                                                $packMaterialId,
-                                                $materialNameForLog,
-                                                null,
-                                                'packaging_materials',
-                                                $quantityBefore,
-                                                $quantityUsed,
-                                                $quantityAfter,
-                                                $materialUnitForLog ?: 'وحدة',
-                                                $currentUser['id'] ?? null
-                                            ]
-                                        );
-                                    } catch (Exception $packagingUsageInsertError) {
-                                        error_log('Production packaging usage log insert failed: ' . $packagingUsageInsertError->getMessage());
+                                    if ($quantityUsed > 0) {
+                                        try {
+                                            $db->execute(
+                                                "INSERT INTO packaging_usage_logs 
+                                                 (material_id, material_name, material_code, source_table, quantity_before, quantity_used, quantity_after, unit, used_by) 
+                                                 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                                                [
+                                                    $packMaterialId,
+                                                    $materialNameForLog,
+                                                    null,
+                                                    'packaging_materials',
+                                                    $quantityBefore,
+                                                    $quantityUsed,
+                                                    $quantityAfter,
+                                                    $materialUnitForLog ?: 'وحدة',
+                                                    $currentUser['id'] ?? null
+                                                ]
+                                            );
+                                        } catch (Exception $packagingUsageInsertError) {
+                                            error_log('Production packaging usage log insert failed: ' . $packagingUsageInsertError->getMessage());
+                                        }
                                     }
                                 }
                             }
-                        }
                         }
                         unset($packItem);
+                    }
                     } catch (Exception $stockWarning) {
                         error_log('Production stock deduction warning: ' . $stockWarning->getMessage());
                     }
