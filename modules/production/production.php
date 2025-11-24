@@ -2528,50 +2528,57 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     }
                 }
 
-                if (
-                    $templateIncludesPkg009 &&
-                    $quantity >= 12 &&
-                    $packagingTableExists
-                ) {
+                if ($templateIncludesPkg009 && $quantity >= 12) {
                     // خصم تلقائي لـ PKG-001 عند وجود PKG-009 لكل 12 وحدة منتجة
-                    $pkg001Info = $fetchPackagingMaterialByCode('PKG-001');
-                    if (!empty($pkg001Info['id'])) {
-                        $pkg001Id = (int)$pkg001Info['id'];
-                        $quantityForBoxes = (int)floor((float)$quantity);
-                        $additionalPkg001Qty = intdiv(max($quantityForBoxes, 0), 12);
-                        if ($additionalPkg001Qty > 0) {
-                            $pkg001Merged = false;
-                            foreach ($materialsConsumption['packaging'] as &$packItem) {
-                                if (isset($packItem['material_id']) && (int)$packItem['material_id'] === $pkg001Id) {
-                                    $packItem['quantity'] += $additionalPkg001Qty;
-                                    $packItem['material_code'] = 'PKG-001';
-                                    $pkg001Merged = true;
-                                    break;
+                    $pkg001Info = $fetchPackagingMaterialByCode('PKG-001') ?? [];
+                    $pkg001Id = isset($pkg001Info['id']) ? (int)$pkg001Info['id'] : null;
+                    $pkg001Name = $pkg001Info['name'] ?? 'مادة تعبئة PKG-001';
+                    $pkg001Unit = $pkg001Info['unit'] ?? 'قطعة';
+                    if ($pkg001Id === null) {
+                        error_log('Automatic PKG-001 deduction fallback: material code PKG-001 not found, using generic values.');
+                    }
+
+                    $quantityForBoxes = (int)floor((float)$quantity);
+                    $additionalPkg001Qty = intdiv(max($quantityForBoxes, 0), 12);
+                    if ($additionalPkg001Qty > 0) {
+                        $pkg001Merged = false;
+                        foreach ($materialsConsumption['packaging'] as &$packItem) {
+                            $materialIdMatches = $pkg001Id !== null
+                                && isset($packItem['material_id'])
+                                && (int)$packItem['material_id'] === $pkg001Id;
+                            $materialCodeMatches = isset($packItem['material_code'])
+                                && strtoupper((string)$packItem['material_code']) === 'PKG-001';
+
+                            if ($materialIdMatches || $materialCodeMatches) {
+                                $packItem['quantity'] += $additionalPkg001Qty;
+                                $packItem['material_code'] = 'PKG-001';
+                                if ($pkg001Id !== null) {
+                                    $packItem['material_id'] = $pkg001Id;
                                 }
+                                $pkg001Merged = true;
+                                break;
                             }
-                            unset($packItem);
+                        }
+                        unset($packItem);
 
-                            if (!$pkg001Merged) {
-                                $pkg001Name = $pkg001Info['name'] ?? 'مادة تعبئة PKG-001';
-                                $pkg001Unit = $pkg001Info['unit'] ?? 'قطعة';
-                                $pkg001ProductId = ensureProductionMaterialProductId($pkg001Name, 'packaging', $pkg001Unit);
+                        if (!$pkg001Merged) {
+                            $pkg001ProductId = ensureProductionMaterialProductId($pkg001Name, 'packaging', $pkg001Unit);
 
-                                $materialsConsumption['packaging'][] = [
-                                    'material_id' => $pkg001Id,
-                                    'quantity' => $additionalPkg001Qty,
-                                    'name' => $pkg001Name,
-                                    'unit' => $pkg001Unit,
-                                    'product_id' => $pkg001ProductId,
-                                    'supplier_id' => null,
-                                    'template_item_id' => null,
-                                    'material_code' => 'PKG-001'
-                                ];
-                            }
+                            $materialsConsumption['packaging'][] = [
+                                'material_id' => $pkg001Id,
+                                'quantity' => $additionalPkg001Qty,
+                                'name' => $pkg001Name,
+                                'unit' => $pkg001Unit,
+                                'product_id' => $pkg001ProductId,
+                                'supplier_id' => null,
+                                'template_item_id' => null,
+                                'material_code' => 'PKG-001'
+                            ];
+                        }
 
+                        if ($pkg001Id !== null) {
                             $packagingIdsMap[$pkg001Id] = true;
                         }
-                    } else {
-                        error_log('Automatic PKG-001 deduction skipped: material code PKG-001 not found.');
                     }
                 }
 
