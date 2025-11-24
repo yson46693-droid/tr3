@@ -376,9 +376,6 @@ class Database {
             if (!isset($existingIndexes['finished_batch_number'])) {
                 $indexAlterParts[] = "ADD KEY `finished_batch_number` (`finished_batch_number`)";
             }
-            if (!isset($existingIndexes['vehicle_product_unique']) && !isset($existingIndexes['vehicle_product'])) {
-                $indexAlterParts[] = "ADD UNIQUE KEY `vehicle_product_unique` (`vehicle_id`, `product_id`)";
-            }
             if (!isset($existingIndexes['warehouse_id'])) {
                 $indexAlterParts[] = "ADD KEY `warehouse_id` (`warehouse_id`)";
             }
@@ -391,6 +388,36 @@ class Database {
 
             if (!empty($indexAlterParts)) {
                 $this->connection->query("ALTER TABLE vehicle_inventory " . implode(', ', $indexAlterParts));
+            }
+
+            // تحديث القيد UNIQUE ليشمل finished_batch_id للسماح بمنتجات من نفس النوع برقم تشغيلة مختلف
+            // يجب تنفيذ DROP و ADD في أوامر منفصلة
+            $hasOldConstraint = isset($existingIndexes['vehicle_product_unique']) || isset($existingIndexes['vehicle_product']);
+            $hasNewConstraint = isset($existingIndexes['vehicle_product_batch_unique']);
+            
+            if ($hasOldConstraint && !$hasNewConstraint) {
+                try {
+                    // حذف القيد القديم
+                    if (isset($existingIndexes['vehicle_product_unique'])) {
+                        $this->connection->query("ALTER TABLE vehicle_inventory DROP INDEX `vehicle_product_unique`");
+                    }
+                    if (isset($existingIndexes['vehicle_product'])) {
+                        $this->connection->query("ALTER TABLE vehicle_inventory DROP INDEX `vehicle_product`");
+                    }
+                    // إضافة القيد الجديد الذي يشمل finished_batch_id
+                    // في MySQL، يمكن أن يكون هناك عدة صفوف بنفس (vehicle_id, product_id) إذا كان finished_batch_id NULL
+                    // ولكن يجب أن يكون هناك صف واحد فقط لكل (vehicle_id, product_id, finished_batch_id) حيث finished_batch_id NOT NULL
+                    $this->connection->query("ALTER TABLE vehicle_inventory ADD UNIQUE KEY `vehicle_product_batch_unique` (`vehicle_id`, `product_id`, `finished_batch_id`)");
+                } catch (Throwable $constraintError) {
+                    error_log("Error updating vehicle_inventory unique constraint: " . $constraintError->getMessage());
+                }
+            } elseif (!$hasNewConstraint && !$hasOldConstraint) {
+                // إضافة القيد الجديد مباشرة إذا لم يكن هناك قيد قديم
+                try {
+                    $this->connection->query("ALTER TABLE vehicle_inventory ADD UNIQUE KEY `vehicle_product_batch_unique` (`vehicle_id`, `product_id`, `finished_batch_id`)");
+                } catch (Throwable $constraintError) {
+                    error_log("Error adding vehicle_inventory unique constraint: " . $constraintError->getMessage());
+                }
             }
 
             $this->connection->query(
