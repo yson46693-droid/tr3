@@ -2241,7 +2241,7 @@ function approveWarehouseTransfer($transferId, $approvedBy = null) {
                 // إذا كان المخزن المصدر سيارة، نفحص مخزون السيارة
                 if (($fromWarehouse['warehouse_type'] ?? '') === 'vehicle' && !empty($fromWarehouse['vehicle_id'])) {
                     // فحص الكمية من vehicle_inventory مع مراعاة finished_batch_id
-                    // إذا كان هناك batch_id، يجب أن نفحص السجل الذي يحتوي على نفس finished_batch_id
+                    // يجب أن نفحص السجل الذي يحتوي على نفس finished_batch_id و product_id
                     $vehicleStock = null;
                     if ($batchId && $productId > 0) {
                         // البحث عن السجل الذي يحتوي على نفس finished_batch_id و product_id
@@ -2251,36 +2251,30 @@ function approveWarehouseTransfer($transferId, $approvedBy = null) {
                             [$fromWarehouse['vehicle_id'], $productId, $batchId]
                         );
                         
-                        // إذا لم نجد سجل، قد يكون هناك خطأ في البيانات
+                        // إذا لم نجد سجل، قد يكون هناك خطأ في البيانات أو batch_id غير صحيح
                         if (!$vehicleStock) {
                             error_log("Warning: No vehicle_inventory record found for batch_id=$batchId, product_id=$productId, vehicle_id={$fromWarehouse['vehicle_id']}");
+                            $availableQuantity = 0.0;
+                        } else {
+                            $availableQuantity = (float)($vehicleStock['quantity'] ?? 0);
+                            
+                            // خصم الكمية المحجوزة في طلبات النقل المعلقة (pending) من نفس المخزن
+                            // نفحص فقط الطلبات التي لها نفس batch_id و product_id
+                            $pendingTransfers = $db->queryOne(
+                                "SELECT COALESCE(SUM(wti.quantity), 0) AS pending_quantity
+                                 FROM warehouse_transfer_items wti
+                                 INNER JOIN warehouse_transfers wt ON wt.id = wti.transfer_id
+                                 WHERE wti.batch_id = ? 
+                                   AND wti.product_id = ?
+                                   AND wt.from_warehouse_id = ? 
+                                   AND wt.status = 'pending' 
+                                   AND wt.id != ?",
+                                [$batchId, $productId, $transfer['from_warehouse_id'], $transferId]
+                            );
+                            $availableQuantity -= (float)($pendingTransfers['pending_quantity'] ?? 0);
                         }
-                    }
-                    
-                    // إذا لم نجد سجل مع finished_batch_id، لا نبحث عن سجلات أخرى
-                    // لأن هذا يعني أن batch_id غير صحيح أو غير موجود في vehicle_inventory
-                    if (!$vehicleStock) {
-                        $availableQuantity = 0.0;
-                        error_log("Error: Cannot find vehicle_inventory record for batch_id=$batchId, product_id=$productId, vehicle_id={$fromWarehouse['vehicle_id']}");
                     } else {
-                        $availableQuantity = (float)($vehicleStock['quantity'] ?? 0);
-                    }
-                    
-                    // خصم الكمية المحجوزة في طلبات النقل المعلقة (pending) من نفس المخزن
-                    // نفحص فقط الطلبات التي لها نفس batch_id و product_id
-                    if ($batchId && $productId > 0) {
-                        $pendingTransfers = $db->queryOne(
-                            "SELECT COALESCE(SUM(wti.quantity), 0) AS pending_quantity
-                             FROM warehouse_transfer_items wti
-                             INNER JOIN warehouse_transfers wt ON wt.id = wti.transfer_id
-                             WHERE wti.batch_id = ? 
-                               AND wti.product_id = ?
-                               AND wt.from_warehouse_id = ? 
-                               AND wt.status = 'pending' 
-                               AND wt.id != ?",
-                            [$batchId, $productId, $transfer['from_warehouse_id'], $transferId]
-                        );
-                        $availableQuantity -= (float)($pendingTransfers['pending_quantity'] ?? 0);
+                        $availableQuantity = 0.0;
                     }
                 } else {
                     // إذا كان المخزن المصدر رئيسي، نستخدم quantity_produced من finished_products
