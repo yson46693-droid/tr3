@@ -2404,40 +2404,67 @@ function approveWarehouseTransfer($transferId, $approvedBy = null) {
             // تحديث مخزون السيارة المصدر إن وجد
             if (($fromWarehouse['warehouse_type'] ?? '') === 'vehicle' && !empty($fromWarehouse['vehicle_id'])) {
                 // جلب finished_batch_id من vehicle_inventory قبل التحديث
-                $vehicleInventoryRow = $db->queryOne(
-                    "SELECT finished_batch_id FROM vehicle_inventory 
-                     WHERE vehicle_id = ? AND product_id = ?",
-                    [$fromWarehouse['vehicle_id'], $item['product_id']]
-                );
+                // إذا كان batch_id موجوداً في item، نبحث عن السجل الذي يحتوي على نفس finished_batch_id
+                // إذا لم يكن batch_id موجوداً، نبحث عن أي سجل بنفس product_id
+                $vehicleInventoryRow = null;
+                if ($batchId) {
+                    // البحث عن السجل الذي يحتوي على نفس finished_batch_id و product_id
+                    $vehicleInventoryRow = $db->queryOne(
+                        "SELECT finished_batch_id FROM vehicle_inventory 
+                         WHERE vehicle_id = ? AND product_id = ? AND finished_batch_id = ?",
+                        [$fromWarehouse['vehicle_id'], $item['product_id'], $batchId]
+                    );
+                }
                 
-                // إذا كان batch_id غير موجود في item ولكن موجود في vehicle_inventory، استخدمه
-                if (!$batchId && !empty($vehicleInventoryRow['finished_batch_id'])) {
-                    $batchId = (int)$vehicleInventoryRow['finished_batch_id'];
+                // إذا لم نجد سجل مع batch_id، نبحث عن أي سجل بنفس product_id
+                if (!$vehicleInventoryRow) {
+                    $vehicleInventoryRow = $db->queryOne(
+                        "SELECT finished_batch_id FROM vehicle_inventory 
+                         WHERE vehicle_id = ? AND product_id = ? 
+                         AND (finished_batch_id IS NULL OR finished_batch_id = 0 OR finished_batch_id = ?)
+                         LIMIT 1",
+                        [$fromWarehouse['vehicle_id'], $item['product_id'], $batchId ?? 0]
+                    );
+                }
+                
+                // استخدام finished_batch_id من vehicle_inventory دائماً
+                if (!empty($vehicleInventoryRow['finished_batch_id'])) {
+                    $actualBatchId = (int)$vehicleInventoryRow['finished_batch_id'];
+                    // تحديث batchId إذا كان مختلفاً
+                    if ($actualBatchId !== $batchId) {
+                        $batchId = $actualBatchId;
+                    }
                     // جلب finishedMetadata من finished_products
-                    if ($batchId) {
-                        $finishedProd = $db->queryOne(
-                            "SELECT fp.*, p.unit_price, p.name as product_name
-                             FROM finished_products fp
-                             LEFT JOIN products p ON fp.product_id = p.id
-                             WHERE fp.id = ?",
-                            [$batchId]
-                        );
-                        if ($finishedProd) {
-                            $finishedMetadata = [
-                                'finished_batch_id' => $batchId,
-                                'finished_batch_number' => $batchNumber ?? $finishedProd['batch_number'] ?? null,
-                                'finished_production_date' => $finishedProd['production_date'] ?? null,
-                                'finished_quantity_produced' => $finishedProd['quantity_produced'] ?? null,
-                                'finished_workers' => $finishedProd['workers'] ?? null,
-                                'manager_unit_price' => $finishedProd['unit_price'] ?? null,
-                                'product_name' => $finishedProd['product_name'] ?? null
-                            ];
-                        }
+                    $finishedProd = $db->queryOne(
+                        "SELECT fp.*, p.unit_price, p.name as product_name
+                         FROM finished_products fp
+                         LEFT JOIN products p ON fp.product_id = p.id
+                         WHERE fp.id = ?",
+                        [$batchId]
+                    );
+                    if ($finishedProd) {
+                        $finishedMetadata = [
+                            'finished_batch_id' => $batchId,
+                            'finished_batch_number' => $batchNumber ?? $finishedProd['batch_number'] ?? null,
+                            'finished_production_date' => $finishedProd['production_date'] ?? null,
+                            'finished_quantity_produced' => $finishedProd['quantity_produced'] ?? null,
+                            'finished_workers' => $finishedProd['workers'] ?? null,
+                            'manager_unit_price' => $finishedProd['unit_price'] ?? null,
+                            'product_name' => $finishedProd['product_name'] ?? null
+                        ];
                     }
                 }
                 
                 $remainingQuantity = max(0.0, $availableQuantity - $requestedQuantity);
-                $updateVehicleResult = updateVehicleInventory($fromWarehouse['vehicle_id'], $item['product_id'], $remainingQuantity, $approvedBy);
+                // تمرير finishedMetadata إلى updateVehicleInventory لتحديث السجل الصحيح
+                $updateVehicleResult = updateVehicleInventory(
+                    $fromWarehouse['vehicle_id'], 
+                    $item['product_id'], 
+                    $remainingQuantity, 
+                    $approvedBy,
+                    null, // unitPriceOverride
+                    $finishedMetadata // تمرير finishedMetadata
+                );
                 if (empty($updateVehicleResult['success'])) {
                     $message = $updateVehicleResult['message'] ?? 'تعذر تحديث مخزون السيارة المصدر.';
                     throw new Exception($message);
