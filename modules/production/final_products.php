@@ -1689,7 +1689,7 @@ if (!empty($finishedProductsTableExists)) {
             LEFT JOIN users u ON bw.employee_id = u.id
             WHERE (fp.quantity_produced IS NULL OR fp.quantity_produced > 0)
             GROUP BY fp.id
-            ORDER BY fp.production_date DESC, fp.id DESC
+            ORDER BY fp.production_date ASC, fp.id ASC
             LIMIT ? OFFSET ?
         ", [$finishedProductsPerPage, $finishedProductsOffset]);
         
