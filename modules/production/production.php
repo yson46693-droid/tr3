@@ -3565,8 +3565,14 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 // خصم مواد التعبئة - يجب أن يتم دائماً بغض النظر عن stock_deducted
                 try {
                     // تتبع العناصر التي تم خصمها بالفعل لتجنب الخصم المكرر
-                    static $deductedPackagingIds = [];
-                    $deductedPackagingIds = []; // إعادة تعيين لكل عملية إنتاج جديدة
+                    // استخدام static لتتبع عبر جميع عمليات الإنتاج في نفس الطلب
+                    static $globalDeductedPackagingIds = [];
+                    $deductedPackagingIds = &$globalDeductedPackagingIds;
+                    
+                    // إعادة تعيين فقط عند بداية معاملة جديدة (عند عدم وجود transaction نشطة)
+                    if (!$db->inTransaction()) {
+                        $deductedPackagingIds = [];
+                    }
                     
                     $packagingItemsCount = count($materialsConsumption['packaging'] ?? []);
                     error_log('Starting packaging deduction loop. Total items: ' . $packagingItemsCount);
@@ -3614,9 +3620,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                             $packItemName = trim((string)$deductionItem['name']);
                             $packItemCode = isset($deductionItem['code']) ? (string)$deductionItem['code'] : '';
                             
-                            // التحقق من أن هذا العنصر لم يتم خصمه بالفعل
+                            // التحقق من أن هذا العنصر لم يتم خصمه بالفعل في هذه المعاملة
                             if (isset($deductedPackagingIds[$packMaterialId])) {
-                                error_log('WARNING: Packaging item ID=' . $packMaterialId . ' already deducted! Skipping duplicate deduction.');
+                                error_log('WARNING: Packaging item ID=' . $packMaterialId . ' already deducted in this transaction! Skipping duplicate deduction.');
                                 continue;
                             }
                             
@@ -3627,6 +3633,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                                 $materialUnitForLog = $deductionItem['unit'] ?? 'وحدة';
 
                                 // الحصول على الكمية الحالية قبل الخصم مباشرة مع FOR UPDATE لتجنب الخصم المزدوج
+                                // FOR UPDATE يضمن أن لا يمكن لأي معاملة أخرى خصم نفس المادة في نفس الوقت
                                 $currentQuantityCheck = $db->queryOne(
                                     "SELECT name, unit, quantity FROM packaging_materials WHERE id = ? FOR UPDATE",
                                     [$packMaterialId]
@@ -3643,6 +3650,12 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                                 }
                                 if (!empty($currentQuantityCheck['unit'])) {
                                     $materialUnitForLog = $currentQuantityCheck['unit'];
+                                }
+                                
+                                // التحقق من أن الكمية المتاحة كافية
+                                if ($actualQuantityBefore < $packQuantity) {
+                                    error_log('WARNING: Insufficient stock for packaging material ID=' . $packMaterialId . '. Available=' . $actualQuantityBefore . ', Required=' . $packQuantity);
+                                    // لا نوقف العملية، فقط نسجل تحذير
                                 }
                                 
                                 // استخدام actualQuantityBefore للتوافق مع الكود السابق
@@ -3672,10 +3685,10 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                                         // إذا كان الفرق غير متوقع، سجل تحذير
                                         if (abs($quantityAfter - $expectedAfter) > 0.001) {
                                             error_log('WARNING: Unexpected deduction result! ID=' . $packMaterialId . ', Expected=' . $expectedAfter . ', Actual=' . $quantityAfter . ', Difference=' . ($quantityAfter - $expectedAfter));
+                                        } else {
+                                            // تسجيل أن هذا العنصر تم خصمه بنجاح فقط عند نجاح الخصم
+                                            $deductedPackagingIds[$packMaterialId] = true;
                                         }
-                                        
-                                        // تسجيل أن هذا العنصر تم خصمه
-                                        $deductedPackagingIds[$packMaterialId] = true;
                                     }
                                 } catch (Exception $deductionError) {
                                     error_log('Packaging deduction ERROR: ' . $deductionError->getMessage() . ' | ID=' . $packMaterialId . ', Qty=' . $packQuantity);
