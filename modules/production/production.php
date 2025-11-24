@@ -3278,13 +3278,13 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     error_log('Starting packaging deduction loop. Total items: ' . $packagingItemsCount);
                     
                     if (!empty($materialsConsumption['packaging'])) {
+                        // تجميع العناصر المكررة بنفس material_id لتجنب الخصم المكرر
+                        $packagingDeductionMap = [];
                         foreach ($materialsConsumption['packaging'] as &$packItem) {
                             $packMaterialId = isset($packItem['material_id']) ? (int)$packItem['material_id'] : 0;
                             $packQuantity = (float)($packItem['quantity'] ?? 0);
                             $packItemName = trim((string)($packItem['name'] ?? ''));
                             $packItemCode = isset($packItem['material_code']) ? (string)$packItem['material_code'] : '';
-                            
-                            error_log('Processing packaging item: material_id=' . $packMaterialId . ', quantity=' . $packQuantity . ', name=' . $packItemName . ', code=' . $packItemCode);
                             
                             if ($packMaterialId <= 0 && $packQuantity > 0 && $packagingTableExists) {
                                 $lookupName = $packItemName;
@@ -3295,10 +3295,37 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                                     error_log('Resolved packaging by name: ' . $lookupName . ' -> ID=' . $packMaterialId);
                                 }
                             }
+                            
+                            if ($packMaterialId > 0 && $packQuantity > 0) {
+                                // تجميع الكميات للعناصر بنفس material_id
+                                if (!isset($packagingDeductionMap[$packMaterialId])) {
+                                    $packagingDeductionMap[$packMaterialId] = [
+                                        'material_id' => $packMaterialId,
+                                        'quantity' => 0,
+                                        'name' => $packItemName,
+                                        'code' => $packItemCode,
+                                        'unit' => $packItem['unit'] ?? 'وحدة'
+                                    ];
+                                }
+                                $packagingDeductionMap[$packMaterialId]['quantity'] += $packQuantity;
+                                error_log('Aggregating packaging item: material_id=' . $packMaterialId . ', quantity=' . $packQuantity . ' (total so far: ' . $packagingDeductionMap[$packMaterialId]['quantity'] . ')');
+                            }
+                        }
+                        unset($packItem);
+                        
+                        // الآن قم بالخصم للعناصر المجمعة فقط
+                        foreach ($packagingDeductionMap as $deductionItem) {
+                            $packMaterialId = (int)$deductionItem['material_id'];
+                            $packQuantity = (float)$deductionItem['quantity'];
+                            $packItemName = trim((string)$deductionItem['name']);
+                            $packItemCode = isset($deductionItem['code']) ? (string)$deductionItem['code'] : '';
+                            
+                            error_log('Processing aggregated packaging item: material_id=' . $packMaterialId . ', quantity=' . $packQuantity . ', name=' . $packItemName . ', code=' . $packItemCode);
+                            
                             if ($packMaterialId > 0 && $packQuantity > 0) {
                                 $quantityBefore = null;
                                 $materialNameForLog = $packItemName;
-                                $materialUnitForLog = $packItem['unit'] ?? 'وحدة';
+                                $materialUnitForLog = $deductionItem['unit'] ?? 'وحدة';
 
                                 if ($packagingUsageLogsExists) {
                                     try {
@@ -3372,7 +3399,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                                 }
                             }
                         }
-                        unset($packItem);
                     }
                 } catch (Exception $packagingDeductionError) {
                     error_log('Packaging deduction error: ' . $packagingDeductionError->getMessage());
