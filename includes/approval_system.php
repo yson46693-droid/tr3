@@ -355,7 +355,25 @@ function approveRequest($approvalId, $approvedBy, $notes = null) {
         }
         
         // تحديث حالة الكيان
-        updateEntityStatus($approval['type'], $entityIdentifier, 'approved', $approvedBy);
+        try {
+            updateEntityStatus($approval['type'], $entityIdentifier, 'approved', $approvedBy);
+        } catch (Exception $updateException) {
+            error_log("Error updating entity status in approveRequest: " . $updateException->getMessage());
+            // في حالة warehouse_transfer، إذا تم تحديث الحالة بالفعل في approveWarehouseTransfer، لا نرمي استثناء
+            if ($approval['type'] === 'warehouse_transfer') {
+                // التحقق من أن الطلب تم تحديثه بالفعل
+                $transferCheck = $db->queryOne("SELECT status FROM warehouse_transfers WHERE id = ?", [$entityIdentifier]);
+                if ($transferCheck && in_array($transferCheck['status'], ['approved', 'completed'])) {
+                    // تم تحديث الحالة بالفعل - نجاح
+                    error_log("Transfer status already updated to: " . $transferCheck['status']);
+                } else {
+                    // لم يتم تحديث الحالة - خطأ فعلي
+                    throw new Exception('لم يتم تحديث حالة طلب النقل: ' . $updateException->getMessage());
+                }
+            } else {
+                throw $updateException;
+            }
+        }
         
         // بناء رسالة الإشعار مع تفاصيل المنتجات المنقولة
         $notificationMessage = "تمت الموافقة على طلبك من نوع {$approval['type']}";
@@ -777,22 +795,50 @@ function updateEntityStatus($type, $entityId, $status, $approvedBy) {
         case 'warehouse_transfer':
             require_once __DIR__ . '/vehicle_inventory.php';
             if ($status === 'approved') {
-                $result = approveWarehouseTransfer($entityId, $approvedBy);
-                if (!($result['success'] ?? false)) {
-                    throw new Exception($result['message'] ?? 'تعذر الموافقة على طلب النقل.');
+                try {
+                    $result = approveWarehouseTransfer($entityId, $approvedBy);
+                    if (!($result['success'] ?? false)) {
+                        $errorMessage = $result['message'] ?? 'تعذر الموافقة على طلب النقل.';
+                        error_log("approveWarehouseTransfer failed: " . $errorMessage);
+                        throw new Exception('لم يتم تحديث طلب النقل: ' . $errorMessage);
+                    }
+                    // حفظ معلومات المنتجات المنقولة للاستخدام في الإشعار
+                    $_SESSION['warehouse_transfer_products'] = $result['transferred_products'] ?? [];
+                } catch (Exception $e) {
+                    error_log("Exception in updateEntityStatus for warehouse_transfer approval: " . $e->getMessage());
+                    // التحقق من أن الطلب تم تحديثه بالفعل
+                    $transferCheck = $db->queryOne("SELECT status FROM warehouse_transfers WHERE id = ?", [$entityId]);
+                    if ($transferCheck && in_array($transferCheck['status'], ['approved', 'completed'])) {
+                        // تم تحديث الحالة بالفعل - نجاح صامت
+                        error_log("Transfer status already updated to: " . $transferCheck['status'] . ", ignoring error");
+                        return; // لا نرمي استثناء إذا تم التحديث بالفعل
+                    }
+                    throw new Exception('لم يتم تحديث طلب النقل: ' . $e->getMessage());
                 }
-                // حفظ معلومات المنتجات المنقولة للاستخدام في الإشعار
-                $_SESSION['warehouse_transfer_products'] = $result['transferred_products'] ?? [];
             } elseif ($status === 'rejected') {
-                $entityColumnName = getApprovalsEntityColumn();
-                $approvalRow = $db->queryOne(
-                    "SELECT rejection_reason FROM approvals WHERE type = 'warehouse_transfer' AND `{$entityColumnName}` = ? ORDER BY updated_at DESC LIMIT 1",
-                    [$entityId]
-                );
-                $reason = $approvalRow['rejection_reason'] ?? 'تم رفض طلب النقل.';
-                $result = rejectWarehouseTransfer($entityId, $reason, $approvedBy);
-                if (!($result['success'] ?? false)) {
-                    throw new Exception($result['message'] ?? 'تعذر رفض طلب النقل.');
+                try {
+                    $entityColumnName = getApprovalsEntityColumn();
+                    $approvalRow = $db->queryOne(
+                        "SELECT rejection_reason FROM approvals WHERE type = 'warehouse_transfer' AND `{$entityColumnName}` = ? ORDER BY updated_at DESC LIMIT 1",
+                        [$entityId]
+                    );
+                    $reason = $approvalRow['rejection_reason'] ?? 'تم رفض طلب النقل.';
+                    $result = rejectWarehouseTransfer($entityId, $reason, $approvedBy);
+                    if (!($result['success'] ?? false)) {
+                        $errorMessage = $result['message'] ?? 'تعذر رفض طلب النقل.';
+                        error_log("rejectWarehouseTransfer failed: " . $errorMessage);
+                        throw new Exception('لم يتم تحديث طلب النقل: ' . $errorMessage);
+                    }
+                } catch (Exception $e) {
+                    error_log("Exception in updateEntityStatus for warehouse_transfer rejection: " . $e->getMessage());
+                    // التحقق من أن الطلب تم تحديثه بالفعل
+                    $transferCheck = $db->queryOne("SELECT status FROM warehouse_transfers WHERE id = ?", [$entityId]);
+                    if ($transferCheck && $transferCheck['status'] === 'rejected') {
+                        // تم تحديث الحالة بالفعل - نجاح صامت
+                        error_log("Transfer status already updated to rejected, ignoring error");
+                        return; // لا نرمي استثناء إذا تم التحديث بالفعل
+                    }
+                    throw new Exception('لم يتم تحديث طلب النقل: ' . $e->getMessage());
                 }
             }
             break;
