@@ -1810,7 +1810,9 @@ function executeWarehouseTransferDirectly($transferId, $executedBy = null) {
                 }
                 
                 // حساب الكمية المتاحة مباشرة من finished_products
-                // استخدام quantity_produced من finished_products كمصدر وحيد للحقيقة
+                // quantity_produced يحتوي بالفعل على الكمية الفعلية المتبقية بعد جميع النقلات والإرجاعات
+                // لأنه يتم تحديثه عند النقل (خصم) وعند الإرجاع (إضافة)
+                // لذلك نستخدمه مباشرة دون خصم النقلات المعتمدة
                 $batchRow = $db->queryOne(
                     "SELECT quantity_produced FROM finished_products WHERE id = ?",
                     [$batchId]
@@ -1819,23 +1821,15 @@ function executeWarehouseTransferDirectly($transferId, $executedBy = null) {
                 if ($batchRow) {
                     $availableQuantity = (float)($batchRow['quantity_produced'] ?? 0);
                     
-                    // خصم الكمية المنقولة بالفعل (approved أو completed)
-                    $transferred = $db->queryOne(
-                        "SELECT COALESCE(SUM(wti.quantity), 0) AS total_transferred
-                         FROM warehouse_transfer_items wti
-                         INNER JOIN warehouse_transfers wt ON wt.id = wti.transfer_id
-                         WHERE wti.batch_id = ? AND wt.status IN ('approved', 'completed') AND wt.id != ?",
-                        [$batchId, $transferId]
-                    );
-                    $availableQuantity -= (float)($transferred['total_transferred'] ?? 0);
-                    
-                    // خصم الكمية المحجوزة في طلبات النقل المعلقة (pending) - استثناء النقل الحالي
+                    // خصم فقط الكمية المحجوزة في طلبات النقل المعلقة (pending) من نفس المخزن - استثناء النقل الحالي
+                    // لأن الكميات المنقولة (approved أو completed) تم خصمها بالفعل من quantity_produced
+                    // والكميات المرجعة تم إضافتها بالفعل إلى quantity_produced
                     $pendingTransfers = $db->queryOne(
                         "SELECT COALESCE(SUM(wti.quantity), 0) AS pending_quantity
                          FROM warehouse_transfer_items wti
                          INNER JOIN warehouse_transfers wt ON wt.id = wti.transfer_id
-                         WHERE wti.batch_id = ? AND wt.status = 'pending' AND wt.id != ?",
-                        [$batchId, $transferId]
+                         WHERE wti.batch_id = ? AND wt.from_warehouse_id = ? AND wt.status = 'pending' AND wt.id != ?",
+                        [$batchId, $transfer['from_warehouse_id'], $transferId]
                     );
                     $availableQuantity -= (float)($pendingTransfers['pending_quantity'] ?? 0);
                     
