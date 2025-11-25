@@ -96,6 +96,17 @@ if (!defined('ACCESS_ALLOWED')) {
     <script src="<?php echo $assetsUrl; ?>js/pwa-install.js?v=<?php echo $cacheVersion; ?>"></script>
     <script src="<?php echo $assetsUrl; ?>js/modal-link-interceptor.js?v=<?php echo $cacheVersion; ?>"></script>
     <script src="<?php echo $assetsUrl; ?>js/keyboard-shortcuts-global.js?v=<?php echo $cacheVersion; ?>"></script>
+    <?php 
+    // ملف التشخيص لصفحة المبيعات والتحصيلات
+    // التحقق من $page من $_GET أيضاً كـ fallback
+    $currentPage = $page ?? ($_GET['page'] ?? '');
+    if ($currentPage === 'sales_collections' || in_array($currentPage, ['sales', 'collections', 'sales_collections'], true)): ?>
+        <script>
+            console.log('🔍 Debug in footer - Current Page:', '<?php echo $currentPage; ?>');
+            console.log('🔍 Debug in footer - $page variable:', '<?php echo isset($page) ? $page : 'not set'; ?>');
+        </script>
+        <script src="<?php echo $assetsUrl; ?>js/sales-collections-diagnostic.js?v=<?php echo $cacheVersion; ?>" onerror="console.error('❌ فشل تحميل ملف التشخيص');"></script>
+    <?php endif; ?>
     <script>
     // التحقق من تحميل ملفات JavaScript بشكل صحيح
     (function() {
