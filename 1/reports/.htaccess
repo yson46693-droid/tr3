@@ -1,0 +1,12 @@
+# منع الوصول المباشر لملفات التقارير المخزنة
+<FilesMatch "\.(html|pdf|json|txt)$">
+    Order Deny,Allow
+    Deny from all
+</FilesMatch>
+
+# السماح بالوصول إلى واجهة العرض
+<Files "view.php">
+    Order Allow,Deny
+    Allow from all
+</Files>
+

@@ -487,12 +487,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && trim($_P
                                 <span><?php echo isset($lang['collections']) ? $lang['collections'] : 'التحصيلات'; ?></span>
                             </button>
                         </li>
-                        <li class="nav-item" role="presentation">
-                            <button class="nav-link" id="returns-tab" data-bs-toggle="pill" data-bs-target="#returns-section" type="button" role="tab" aria-controls="returns-section" aria-selected="false">
-                                <i class="bi bi-arrow-return-left"></i>
-                                <span>المرتجعات</span>
-                            </button>
-                        </li>
                     </ul>
 
                     <div class="tab-content combined-tab-content" id="salesCollectionsTabContent">
@@ -557,23 +551,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && trim($_P
                                 <div class="empty-state-icon"><i class="bi bi-cash-coin"></i></div>
                                 <div class="empty-state-title"><?php echo isset($lang['collections']) ? $lang['collections'] : 'التحصيلات'; ?></div>
                                 <div class="empty-state-description"><?php echo isset($lang['collections_page_coming_soon']) ? $lang['collections_page_coming_soon'] : 'صفحة التحصيلات - سيتم إضافتها'; ?></div>
-                            </div>
-                            <?php } ?>
-                             </div>
-                        </div>
-
-                        <div class="tab-pane fade combined-tab-pane" id="returns-section" role="tabpanel" aria-labelledby="returns-tab">
-                             <div id="returns-section-content" class="printable-section">
-                            <?php 
-                            $returnsModulePath = __DIR__ . '/../modules/sales/new_returns.php';
-                            if (file_exists($returnsModulePath)) {
-                                include $returnsModulePath;
-                            } else {
-                            ?>
-                            <div class="empty-state-card">
-                                <div class="empty-state-icon"><i class="bi bi-arrow-return-left"></i></div>
-                                <div class="empty-state-title">المرتجعات</div>
-                                <div class="empty-state-description">صفحة المرتجعات - سيتم إضافتها قريباً</div>
                             </div>
                             <?php } ?>
                              </div>
@@ -721,345 +698,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && trim($_P
                     </div>
                 </div>
 
-            <?php elseif ($page === 'orders'): ?>
-                <!-- صفحة طلبات العملاء -->
-                <?php 
-                $modulePath = __DIR__ . '/../modules/sales/customer_orders.php';
-                if (file_exists($modulePath)) {
-                    include $modulePath;
-                }
-                ?>
-                
-            <?php elseif ($page === 'payment_schedules'): ?>
-                <!-- صفحة الجداول الزمنية للتحصيل -->
-                <?php 
-                $modulePath = __DIR__ . '/../modules/sales/payment_schedules.php';
-                if (file_exists($modulePath)) {
-                    include $modulePath;
-                }
-                ?>
-                
-            <?php elseif ($page === 'pos'): ?>
-                <!-- صفحة نقطة البيع للمندوب -->
-                <?php 
-                $modulePath = __DIR__ . '/../modules/sales/pos.php';
-                if (file_exists($modulePath)) {
-                    include $modulePath;
-                }
-                ?>
-                
-            <?php elseif ($page === 'vehicle_inventory'): ?>
-                <!-- صفحة مخازن سيارات المندوبين -->
-                <?php 
-                $modulePath = __DIR__ . '/../modules/sales/vehicle_inventory.php';
-                if (file_exists($modulePath)) {
-                    include $modulePath;
-                }
-                ?>
-                
-            <?php elseif ($page === 'warehouse_transfers'): ?>
-                <!-- صفحة نقل المخازن -->
-                <?php 
-                $modulePath = __DIR__ . '/../modules/manager/warehouse_transfers.php';
-                if (file_exists($modulePath)) {
-                    include $modulePath;
-                }
-                ?>
-                
-            <?php elseif ($page === 'exchanges'): ?>
-                <!-- صفحة الاستبدال -->
-                <?php 
-                $modulePath = __DIR__ . '/../modules/sales/exchanges.php';
-                if (file_exists($modulePath)) {
-                    include $modulePath;
-                }
-                ?>
-                
-            <?php elseif ($page === 'cash_register'): ?>
-                <!-- صفحة خزنة المندوب -->
-                <?php 
-                $modulePath = __DIR__ . '/../modules/sales/cash_register.php';
-                if (file_exists($modulePath)) {
-                    include $modulePath;
-                } else {
-                ?>
-                <div class="empty-state-card">
-                    <div class="empty-state-icon"><i class="bi bi-cash-stack"></i></div>
-                    <div class="empty-state-title">خزنة المندوب</div>
-                    <div class="empty-state-description">صفحة خزنة المندوب - غير متاحة حالياً</div>
-                </div>
-                <?php } ?>
-                
-            <?php elseif ($page === 'attendance'): ?>
-                <!-- صفحة تسجيل الحضور -->
-                <?php 
-                $modulePath = __DIR__ . '/../modules/sales/attendance.php';
-                if (file_exists($modulePath)) {
-                    include $modulePath;
-                } else {
-                ?>
-                <div class="empty-state-card">
-                    <div class="empty-state-icon"><i class="bi bi-clock-history"></i></div>
-                    <div class="empty-state-title">تسجيل الحضور</div>
-                    <div class="empty-state-description">صفحة تسجيل الحضور - سيتم إضافتها</div>
-                </div>
-                <?php } ?>
-                
-            <?php elseif ($page === 'my_salary'): ?>
-                <!-- صفحة مرتب المستخدم -->
-                <?php 
-                $modulePath = __DIR__ . '/../modules/user/my_salary.php';
-                if (file_exists($modulePath)) {
-                    include $modulePath;
-                }
-                ?>
-                
-            <?php elseif ($page === 'batch_reader'): ?>
-                <!-- صفحة قارئ أرقام التشغيلات -->
-                <div class="container-fluid p-0" style="height: 100vh; overflow: hidden;">
-                    <iframe src="<?php echo getRelativeUrl('reader/index.php'); ?>" 
-                            style="width: 100%; height: 100%; border: none; display: block;"></iframe>
-                </div>
-                
-            <?php endif; ?>
-
-<?php include __DIR__ . '/../templates/footer.php'; ?>
-
-<?php if ($page === 'sales_collections'): ?>
-<script>
-    // تمرير بيانات المستخدم للـ JavaScript
-    window.currentUser = {
-        id: <?php echo $currentUser['id']; ?>,
-        role: '<?php echo htmlspecialchars($currentUser['role']); ?>'
-    };
-
-    // JavaScript لإنشاء تقارير المبيعات والتحصيلات
-    // التأكد من تحميل Bootstrap قبل تشغيل الكود
-    (function() {
-        function initReportButtons() {
-            // التحقق من تحميل Bootstrap
-            if (typeof bootstrap === 'undefined') {
-                console.warn('Bootstrap not loaded, retrying...');
-                setTimeout(initReportButtons, 100);
-                return;
-            }
-            
-            const basePath = '<?php echo getBasePath(); ?>';
-            
-            // معالج إنشاء تقرير المبيعات
-            const generateSalesReportBtn = document.getElementById('generateSalesReportBtn');
-            const generateSalesReportForm = document.getElementById('generateSalesReportForm');
-            
-            if (generateSalesReportBtn && generateSalesReportForm) {
-                // إزالة أي معالجات سابقة
-                const newBtn = generateSalesReportBtn.cloneNode(true);
-                generateSalesReportBtn.parentNode.replaceChild(newBtn, generateSalesReportBtn);
-                
-                newBtn.addEventListener('click', function() {
-                const dateFrom = document.getElementById('salesReportDateFrom').value;
-                const dateTo = document.getElementById('salesReportDateTo').value;
-                
-                if (!dateFrom || !dateTo) {
-                    alert('يرجى اختيار الفترة المطلوبة');
-                    return;
-                }
-                
-                if (new Date(dateFrom) > new Date(dateTo)) {
-                    alert('تاريخ البداية يجب أن يكون قبل تاريخ النهاية');
-                    return;
-                }
-                
-                // تعطيل الزر أثناء المعالجة
-                newBtn.disabled = true;
-                newBtn.innerHTML = '<span class="spinner-border spinner-border-sm me-2"></span>جاري الإنشاء...';
-                
-                // إرسال الطلب
-                const url = basePath + '/api/generate_sales_report.php?date_from=' + encodeURIComponent(dateFrom) + '&date_to=' + encodeURIComponent(dateTo);
-                
-                // فتح التقرير في نافذة منبثقة
-                const reportWindow = window.open(url, 'salesReport', 'width=1000,height=800,scrollbars=yes,resizable=yes');
-                
-                if (reportWindow) {
-                    // إعادة تعيين الزر
-                    newBtn.disabled = false;
-                    newBtn.innerHTML = '<i class="bi bi-file-earmark-pdf me-2"></i>إنشاء التقرير';
-                    
-                    // إغلاق النموذج
-                    const modalElement = document.getElementById('generateSalesReportModal');
-                    if (modalElement && typeof bootstrap !== 'undefined') {
-                        const modal = bootstrap.Modal.getInstance(modalElement);
-                        if (modal) {
-                            modal.hide();
-                        }
-                    }
-                } else {
-                    alert('يرجى السماح للموقع بفتح النوافذ المنبثقة');
-                    newBtn.disabled = false;
-                    newBtn.innerHTML = '<i class="bi bi-file-earmark-pdf me-2"></i>إنشاء التقرير';
-                }
-                });
-            }
-            
-            // معالج إنشاء تقرير التحصيلات
-            const generateCollectionsReportBtn = document.getElementById('generateCollectionsReportBtn');
-            const generateCollectionsReportForm = document.getElementById('generateCollectionsReportForm');
-            
-            if (generateCollectionsReportBtn && generateCollectionsReportForm) {
-                // إزالة أي معالجات سابقة
-                const newCollectionsBtn = generateCollectionsReportBtn.cloneNode(true);
-                generateCollectionsReportBtn.parentNode.replaceChild(newCollectionsBtn, generateCollectionsReportBtn);
-                
-                newCollectionsBtn.addEventListener('click', function() {
-                const dateFrom = document.getElementById('collectionsReportDateFrom').value;
-                const dateTo = document.getElementById('collectionsReportDateTo').value;
-                
-                if (!dateFrom || !dateTo) {
-                    alert('يرجى اختيار الفترة المطلوبة');
-                    return;
-                }
-                
-                if (new Date(dateFrom) > new Date(dateTo)) {
-                    alert('تاريخ البداية يجب أن يكون قبل تاريخ النهاية');
-                    return;
-                }
-                
-                // تعطيل الزر أثناء المعالجة
-                newCollectionsBtn.disabled = true;
-                newCollectionsBtn.innerHTML = '<span class="spinner-border spinner-border-sm me-2"></span>جاري الإنشاء...';
-                
-                // إرسال الطلب
-                const url = basePath + '/api/generate_collections_report.php?date_from=' + encodeURIComponent(dateFrom) + '&date_to=' + encodeURIComponent(dateTo);
-                
-                // فتح التقرير في نافذة منبثقة
-                const reportWindow = window.open(url, 'collectionsReport', 'width=1000,height=800,scrollbars=yes,resizable=yes');
-                
-                if (reportWindow) {
-                    // إعادة تعيين الزر
-                    newCollectionsBtn.disabled = false;
-                    newCollectionsBtn.innerHTML = '<i class="bi bi-file-earmark-pdf me-2"></i>إنشاء التقرير';
-                    
-                    // إغلاق النموذج
-                    const modalElement = document.getElementById('generateCollectionsReportModal');
-                    if (modalElement && typeof bootstrap !== 'undefined') {
-                        const modal = bootstrap.Modal.getInstance(modalElement);
-                        if (modal) {
-                            modal.hide();
-                        }
-                    }
-                } else {
-                    alert('يرجى السماح للموقع بفتح النوافذ المنبثقة');
-                    newCollectionsBtn.disabled = false;
-                    newCollectionsBtn.innerHTML = '<i class="bi bi-file-earmark-pdf me-2"></i>إنشاء التقرير';
-                }
-                });
-            }
-            
-            // معالج إنشاء تقرير العميل - المبيعات
-            const generateCustomerSalesReportBtn = document.getElementById('generateCustomerSalesReportBtn');
-            
-            if (generateCustomerSalesReportBtn) {
-                const newCustomerSalesBtn = generateCustomerSalesReportBtn.cloneNode(true);
-                generateCustomerSalesReportBtn.parentNode.replaceChild(newCustomerSalesBtn, generateCustomerSalesReportBtn);
-                
-                newCustomerSalesBtn.addEventListener('click', function() {
-                    const customerId = document.getElementById('customerSalesReportCustomerId').value;
-                    
-                    if (!customerId) {
-                        alert('يرجى اختيار العميل');
-                        return;
-                    }
-                    
-                    // تعطيل الزر أثناء المعالجة
-                    newCustomerSalesBtn.disabled = true;
-                    newCustomerSalesBtn.innerHTML = '<span class="spinner-border spinner-border-sm me-2"></span>جاري الإنشاء...';
-                    
-                    // إرسال الطلب
-                    const url = basePath + '/api/generate_customer_sales_report.php?customer_id=' + encodeURIComponent(customerId);
-                    
-                    // فتح التقرير في نافذة منبثقة
-                    const reportWindow = window.open(url, 'customerSalesReport', 'width=1000,height=800,scrollbars=yes,resizable=yes');
-                    
-                    if (reportWindow) {
-                        // إعادة تعيين الزر
-                        newCustomerSalesBtn.disabled = false;
-                        newCustomerSalesBtn.innerHTML = '<i class="bi bi-file-earmark-pdf me-2"></i>إنشاء التقرير';
-                        
-                        // إغلاق النموذج
-                        const modalElement = document.getElementById('generateCustomerSalesReportModal');
-                        if (modalElement && typeof bootstrap !== 'undefined') {
-                            const modal = bootstrap.Modal.getInstance(modalElement);
-                            if (modal) {
-                                modal.hide();
-                            }
-                        }
-                    } else {
-                        alert('يرجى السماح للموقع بفتح النوافذ المنبثقة');
-                        newCustomerSalesBtn.disabled = false;
-                        newCustomerSalesBtn.innerHTML = '<i class="bi bi-file-earmark-pdf me-2"></i>إنشاء التقرير';
-                    }
-                });
-            }
-
-            // معالج إنشاء تقرير العميل - التحصيلات
-            const generateCustomerCollectionsReportBtn = document.getElementById('generateCustomerCollectionsReportBtn');
-            
-            if (generateCustomerCollectionsReportBtn) {
-                const newCustomerCollectionsBtn = generateCustomerCollectionsReportBtn.cloneNode(true);
-                generateCustomerCollectionsReportBtn.parentNode.replaceChild(newCustomerCollectionsBtn, generateCustomerCollectionsReportBtn);
-                
-                newCustomerCollectionsBtn.addEventListener('click', function() {
-                    const customerId = document.getElementById('customerCollectionsReportCustomerId').value;
-                    
-                    if (!customerId) {
-                        alert('يرجى اختيار العميل');
-                        return;
-                    }
-                    
-                    // تعطيل الزر أثناء المعالجة
-                    newCustomerCollectionsBtn.disabled = true;
-                    newCustomerCollectionsBtn.innerHTML = '<span class="spinner-border spinner-border-sm me-2"></span>جاري الإنشاء...';
-                    
-                    // إرسال الطلب
-                    const url = basePath + '/api/generate_customer_collections_report.php?customer_id=' + encodeURIComponent(customerId);
-                    
-                    // فتح التقرير في نافذة منبثقة
-                    const reportWindow = window.open(url, 'customerCollectionsReport', 'width=1000,height=800,scrollbars=yes,resizable=yes');
-                    
-                    if (reportWindow) {
-                        // إعادة تعيين الزر
-                        newCustomerCollectionsBtn.disabled = false;
-                        newCustomerCollectionsBtn.innerHTML = '<i class="bi bi-file-earmark-pdf me-2"></i>إنشاء التقرير';
-                        
-                        // إغلاق النموذج
-                        const modalElement = document.getElementById('generateCustomerCollectionsReportModal');
-                        if (modalElement && typeof bootstrap !== 'undefined') {
-                            const modal = bootstrap.Modal.getInstance(modalElement);
-                            if (modal) {
-                                modal.hide();
-                            }
-                        }
-                    } else {
-                        alert('يرجى السماح للموقع بفتح النوافذ المنبثقة');
-                        newCustomerCollectionsBtn.disabled = false;
-                        newCustomerCollectionsBtn.innerHTML = '<i class="bi bi-file-earmark-pdf me-2"></i>إنشاء التقرير';
-                    }
-                });
-            }
-        }
-        
-        // تشغيل الكود بعد تحميل الصفحة
-        if (document.readyState === 'loading') {
-            document.addEventListener('DOMContentLoaded', function() {
-                setTimeout(initReportButtons, 100);
-            });
-        } else {
-            setTimeout(initReportButtons, 100);
-        }
-
-    })();
-</script>
-<script>
-    // Scripts for printable reports (sales_collections page only)
+                <script>
                     (function () {
                         const assetsBaseUrl = '<?php echo rtrim(ASSETS_URL, '/'); ?>';
 
@@ -1081,11 +720,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && trim($_P
                             }
 
                             printableButtons.forEach(function (button) {
-                                // إزالة أي معالجات سابقة
-                                const newButton = button.cloneNode(true);
-                                button.parentNode.replaceChild(newButton, button);
-                                
-                                newButton.addEventListener('click', function () {
+                                button.addEventListener('click', function () {
                                     const targetId = this.getAttribute('data-report-target');
                                     const reportTitle = this.getAttribute('data-report-title') || '';
                                     openPrintableReport(targetId, reportTitle, assetsBaseUrl);
@@ -1098,23 +733,10 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && trim($_P
                             handlePrintableButtons();
                         }
 
-                        // التأكد من تحميل Bootstrap قبل تشغيل الكود
-                        function waitForBootstrap(callback) {
-            if (typeof bootstrap !== 'undefined' && typeof bootstrap.Tab !== 'undefined') {
-                                callback();
-                            } else {
-                                setTimeout(function() {
-                                    waitForBootstrap(callback);
-                                }, 100);
-                            }
-                        }
-
                         if (document.readyState === 'loading') {
-                            document.addEventListener('DOMContentLoaded', function() {
-                                waitForBootstrap(initPrintableReports);
-                            });
+                            document.addEventListener('DOMContentLoaded', initPrintableReports);
                         } else {
-                            waitForBootstrap(initPrintableReports);
+                            initPrintableReports();
                         }
 
                         window.openPrintableReport = openPrintableReport;
@@ -1448,112 +1070,306 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && trim($_P
                             .replace(/'/g, '&#039;');
                     }
                 </script>
+                
+            <?php elseif ($page === 'orders'): ?>
+                <!-- صفحة طلبات العملاء -->
+                <?php 
+                $modulePath = __DIR__ . '/../modules/sales/customer_orders.php';
+                if (file_exists($modulePath)) {
+                    include $modulePath;
+                }
+                ?>
+                
+            <?php elseif ($page === 'payment_schedules'): ?>
+                <!-- صفحة الجداول الزمنية للتحصيل -->
+                <?php 
+                $modulePath = __DIR__ . '/../modules/sales/payment_schedules.php';
+                if (file_exists($modulePath)) {
+                    include $modulePath;
+                }
+                ?>
+                
+            <?php elseif ($page === 'pos'): ?>
+                <!-- صفحة نقطة البيع للمندوب -->
+                <?php 
+                $modulePath = __DIR__ . '/../modules/sales/pos.php';
+                if (file_exists($modulePath)) {
+                    include $modulePath;
+                }
+                ?>
+                
+            <?php elseif ($page === 'vehicle_inventory'): ?>
+                <!-- صفحة مخازن سيارات المندوبين -->
+                <?php 
+                $modulePath = __DIR__ . '/../modules/sales/vehicle_inventory.php';
+                if (file_exists($modulePath)) {
+                    include $modulePath;
+                }
+                ?>
+                
+            <?php elseif ($page === 'warehouse_transfers'): ?>
+                <!-- صفحة نقل المخازن -->
+                <?php 
+                $modulePath = __DIR__ . '/../modules/manager/warehouse_transfers.php';
+                if (file_exists($modulePath)) {
+                    include $modulePath;
+                }
+                ?>
+                
+            <?php elseif ($page === 'returns'): ?>
+                <!-- صفحة المرتجعات -->
+                <?php 
+                $modulePath = __DIR__ . '/../modules/sales/returns.php';
+                if (file_exists($modulePath)) {
+                    include $modulePath;
+                }
+                ?>
+                
+            <?php elseif ($page === 'exchanges'): ?>
+                <!-- صفحة الاستبدال -->
+                <?php 
+                $modulePath = __DIR__ . '/../modules/sales/exchanges.php';
+                if (file_exists($modulePath)) {
+                    include $modulePath;
+                }
+                ?>
+                
+            <?php elseif ($page === 'cash_register'): ?>
+                <!-- صفحة خزنة المندوب -->
+                <?php 
+                $modulePath = __DIR__ . '/../modules/sales/cash_register.php';
+                if (file_exists($modulePath)) {
+                    include $modulePath;
+                } else {
+                ?>
+                <div class="empty-state-card">
+                    <div class="empty-state-icon"><i class="bi bi-cash-stack"></i></div>
+                    <div class="empty-state-title">خزنة المندوب</div>
+                    <div class="empty-state-description">صفحة خزنة المندوب - غير متاحة حالياً</div>
+                </div>
+                <?php } ?>
+                
+            <?php elseif ($page === 'attendance'): ?>
+                <!-- صفحة تسجيل الحضور -->
+                <?php 
+                $modulePath = __DIR__ . '/../modules/sales/attendance.php';
+                if (file_exists($modulePath)) {
+                    include $modulePath;
+                } else {
+                ?>
+                <div class="empty-state-card">
+                    <div class="empty-state-icon"><i class="bi bi-clock-history"></i></div>
+                    <div class="empty-state-title">تسجيل الحضور</div>
+                    <div class="empty-state-description">صفحة تسجيل الحضور - سيتم إضافتها</div>
+                </div>
+                <?php } ?>
+                
+            <?php elseif ($page === 'my_salary'): ?>
+                <!-- صفحة مرتب المستخدم -->
+                <?php 
+                $modulePath = __DIR__ . '/../modules/user/my_salary.php';
+                if (file_exists($modulePath)) {
+                    include $modulePath;
+                }
+                ?>
+                
+            <?php elseif ($page === 'batch_reader'): ?>
+                <!-- صفحة قارئ أرقام التشغيلات -->
+                <div class="container-fluid p-0" style="height: 100vh; overflow: hidden;">
+                    <iframe src="<?php echo getRelativeUrl('reader/index.php'); ?>" 
+                            style="width: 100%; height: 100%; border: none; display: block;"></iframe>
+                </div>
+                
+            <?php endif; ?>
+
 <script>
-    // التأكد من إخفاء pageLoader بعد تحميل الصفحة بالكامل وإصلاح مشكلة الأزرار
+    // تمرير بيانات المستخدم للـ JavaScript
+    window.currentUser = {
+        id: <?php echo $currentUser['id']; ?>,
+        role: '<?php echo htmlspecialchars($currentUser['role']); ?>'
+    };
+
+    // JavaScript لإنشاء تقارير المبيعات والتحصيلات
     (function() {
-        function ensurePageLoaderHidden() {
-            try {
-                const pageLoader = document.getElementById('pageLoader');
-                if (pageLoader && pageLoader.style) {
-                    // إخفاء pageLoader بشكل قاطع
-                    pageLoader.classList.add('hidden');
-                    pageLoader.style.display = 'none';
-                    pageLoader.style.visibility = 'hidden';
-                    pageLoader.style.pointerEvents = 'none';
-                    pageLoader.style.zIndex = '-1';
-                    pageLoader.style.opacity = '0';
-                }
-            } catch (error) {
-                // تجاهل الأخطاء بصمت
-                console.warn('Error hiding pageLoader:', error);
-            }
-        }
+        const basePath = '<?php echo getBasePath(); ?>';
         
-        // إصلاح مشكلة الأزرار - التأكد من أن الأزرار قابلة للنقر
-        function fixButtonsInteractivity() {
-            // إخفاء pageLoader أولاً
-            ensurePageLoaderHidden();
-            
-            try {
-                // التأكد من أن جميع الأزرار قابلة للنقر
-                const buttons = document.querySelectorAll('button, a.topbar-action, input[type="checkbox"]');
-                buttons.forEach(function(btn) {
-                    if (btn && btn.style) {
-                        btn.style.pointerEvents = 'auto';
-                        btn.style.zIndex = 'auto';
-                    }
-                });
+        // معالج إنشاء تقرير المبيعات
+        const generateSalesReportBtn = document.getElementById('generateSalesReportBtn');
+        const generateSalesReportForm = document.getElementById('generateSalesReportForm');
+        
+        if (generateSalesReportBtn && generateSalesReportForm) {
+            generateSalesReportBtn.addEventListener('click', function() {
+                const dateFrom = document.getElementById('salesReportDateFrom').value;
+                const dateTo = document.getElementById('salesReportDateTo').value;
                 
-                // التأكد من أن topbar قابلة للنقر
-                const topbar = document.querySelector('.homeline-topbar');
-                if (topbar && topbar.style) {
-                    topbar.style.pointerEvents = 'auto';
-                    topbar.style.zIndex = 'auto';
+                if (!dateFrom || !dateTo) {
+                    alert('يرجى اختيار الفترة المطلوبة');
+                    return;
                 }
                 
-                // التأكد من أن darkModeToggle يعمل
-                const darkModeToggle = document.getElementById('darkModeToggle');
-                if (darkModeToggle && darkModeToggle.style) {
-                    darkModeToggle.style.pointerEvents = 'auto';
-                    darkModeToggle.style.cursor = 'pointer';
+                if (new Date(dateFrom) > new Date(dateTo)) {
+                    alert('تاريخ البداية يجب أن يكون قبل تاريخ النهاية');
+                    return;
+                }
+                
+                // تعطيل الزر أثناء المعالجة
+                generateSalesReportBtn.disabled = true;
+                generateSalesReportBtn.innerHTML = '<span class="spinner-border spinner-border-sm me-2"></span>جاري الإنشاء...';
+                
+                // إرسال الطلب
+                const url = basePath + '/api/generate_sales_report.php?date_from=' + encodeURIComponent(dateFrom) + '&date_to=' + encodeURIComponent(dateTo);
+                
+                // فتح التقرير في نافذة منبثقة
+                const reportWindow = window.open(url, 'salesReport', 'width=1000,height=800,scrollbars=yes,resizable=yes');
+                
+                if (reportWindow) {
+                    // إعادة تعيين الزر
+                    generateSalesReportBtn.disabled = false;
+                    generateSalesReportBtn.innerHTML = '<i class="bi bi-file-earmark-pdf me-2"></i>إنشاء التقرير';
                     
-                    // إضافة event listener مباشرة إذا لم يكن موجوداً
-                    if (!darkModeToggle.hasAttribute('data-listener-added')) {
-                        darkModeToggle.setAttribute('data-listener-added', 'true');
-                        darkModeToggle.addEventListener('change', function() {
-                            if (typeof toggleDarkMode === 'function') {
-                                toggleDarkMode();
-                            }
-                        });
-                        darkModeToggle.addEventListener('click', function(e) {
-                            e.stopPropagation();
-                        });
+                    // إغلاق النموذج
+                    const modal = bootstrap.Modal.getInstance(document.getElementById('generateSalesReportModal'));
+                    if (modal) {
+                        modal.hide();
                     }
+                } else {
+                    alert('يرجى السماح للموقع بفتح النوافذ المنبثقة');
+                    generateSalesReportBtn.disabled = false;
+                    generateSalesReportBtn.innerHTML = '<i class="bi bi-file-earmark-pdf me-2"></i>إنشاء التقرير';
                 }
-            } catch (error) {
-                console.warn('Error fixing buttons interactivity:', error);
-            }
-        }
-        
-        // إخفاء pageLoader فوراً
-        if (document.readyState === 'loading') {
-            document.addEventListener('DOMContentLoaded', function() {
-                ensurePageLoaderHidden();
-                fixButtonsInteractivity();
             });
-        } else {
-            ensurePageLoaderHidden();
-            fixButtonsInteractivity();
         }
         
-        window.addEventListener('load', function() {
-            ensurePageLoaderHidden();
-            fixButtonsInteractivity();
-        });
+        // معالج إنشاء تقرير التحصيلات
+        const generateCollectionsReportBtn = document.getElementById('generateCollectionsReportBtn');
+        const generateCollectionsReportForm = document.getElementById('generateCollectionsReportForm');
         
-        // إخفاء pageLoader وإصلاح الأزرار بعد تأخيرات متعددة للتأكد
-        setTimeout(function() {
-            ensurePageLoaderHidden();
-            fixButtonsInteractivity();
-        }, 100);
+        if (generateCollectionsReportBtn && generateCollectionsReportForm) {
+            generateCollectionsReportBtn.addEventListener('click', function() {
+                const dateFrom = document.getElementById('collectionsReportDateFrom').value;
+                const dateTo = document.getElementById('collectionsReportDateTo').value;
+                
+                if (!dateFrom || !dateTo) {
+                    alert('يرجى اختيار الفترة المطلوبة');
+                    return;
+                }
+                
+                if (new Date(dateFrom) > new Date(dateTo)) {
+                    alert('تاريخ البداية يجب أن يكون قبل تاريخ النهاية');
+                    return;
+                }
+                
+                // تعطيل الزر أثناء المعالجة
+                generateCollectionsReportBtn.disabled = true;
+                generateCollectionsReportBtn.innerHTML = '<span class="spinner-border spinner-border-sm me-2"></span>جاري الإنشاء...';
+                
+                // إرسال الطلب
+                const url = basePath + '/api/generate_collections_report.php?date_from=' + encodeURIComponent(dateFrom) + '&date_to=' + encodeURIComponent(dateTo);
+                
+                // فتح التقرير في نافذة منبثقة
+                const reportWindow = window.open(url, 'collectionsReport', 'width=1000,height=800,scrollbars=yes,resizable=yes');
+                
+                if (reportWindow) {
+                    // إعادة تعيين الزر
+                    generateCollectionsReportBtn.disabled = false;
+                    generateCollectionsReportBtn.innerHTML = '<i class="bi bi-file-earmark-pdf me-2"></i>إنشاء التقرير';
+                    
+                    // إغلاق النموذج
+                    const modal = bootstrap.Modal.getInstance(document.getElementById('generateCollectionsReportModal'));
+                    if (modal) {
+                        modal.hide();
+                    }
+                } else {
+                    alert('يرجى السماح للموقع بفتح النوافذ المنبثقة');
+                    generateCollectionsReportBtn.disabled = false;
+                    generateCollectionsReportBtn.innerHTML = '<i class="bi bi-file-earmark-pdf me-2"></i>إنشاء التقرير';
+                }
+            });
+        }
+
+        // معالج إنشاء تقرير العميل - المبيعات
+        const generateCustomerSalesReportBtn = document.getElementById('generateCustomerSalesReportBtn');
         
-        setTimeout(function() {
-            ensurePageLoaderHidden();
-            fixButtonsInteractivity();
-        }, 500);
+        if (generateCustomerSalesReportBtn) {
+            generateCustomerSalesReportBtn.addEventListener('click', function() {
+                const customerId = document.getElementById('customerSalesReportCustomerId').value;
+                
+                if (!customerId) {
+                    alert('يرجى اختيار العميل');
+                    return;
+                }
+                
+                // تعطيل الزر أثناء المعالجة
+                generateCustomerSalesReportBtn.disabled = true;
+                generateCustomerSalesReportBtn.innerHTML = '<span class="spinner-border spinner-border-sm me-2"></span>جاري الإنشاء...';
+                
+                // إرسال الطلب
+                const url = basePath + '/api/generate_customer_sales_report.php?customer_id=' + encodeURIComponent(customerId);
+                
+                // فتح التقرير في نافذة منبثقة
+                const reportWindow = window.open(url, 'customerSalesReport', 'width=1000,height=800,scrollbars=yes,resizable=yes');
+                
+                if (reportWindow) {
+                    // إعادة تعيين الزر
+                    generateCustomerSalesReportBtn.disabled = false;
+                    generateCustomerSalesReportBtn.innerHTML = '<i class="bi bi-file-earmark-pdf me-2"></i>إنشاء التقرير';
+                    
+                    // إغلاق النموذج
+                    const modal = bootstrap.Modal.getInstance(document.getElementById('generateCustomerSalesReportModal'));
+                    if (modal) {
+                        modal.hide();
+                    }
+                } else {
+                    alert('يرجى السماح للموقع بفتح النوافذ المنبثقة');
+                    generateCustomerSalesReportBtn.disabled = false;
+                    generateCustomerSalesReportBtn.innerHTML = '<i class="bi bi-file-earmark-pdf me-2"></i>إنشاء التقرير';
+                }
+            });
+        }
+
+        // معالج إنشاء تقرير العميل - التحصيلات
+        const generateCustomerCollectionsReportBtn = document.getElementById('generateCustomerCollectionsReportBtn');
         
-        setTimeout(function() {
-            ensurePageLoaderHidden();
-            fixButtonsInteractivity();
-        }, 1000);
-        
-        setTimeout(function() {
-            ensurePageLoaderHidden();
-            fixButtonsInteractivity();
-        }, 2000);
+        if (generateCustomerCollectionsReportBtn) {
+            generateCustomerCollectionsReportBtn.addEventListener('click', function() {
+                const customerId = document.getElementById('customerCollectionsReportCustomerId').value;
+                
+                if (!customerId) {
+                    alert('يرجى اختيار العميل');
+                    return;
+                }
+                
+                // تعطيل الزر أثناء المعالجة
+                generateCustomerCollectionsReportBtn.disabled = true;
+                generateCustomerCollectionsReportBtn.innerHTML = '<span class="spinner-border spinner-border-sm me-2"></span>جاري الإنشاء...';
+                
+                // إرسال الطلب
+                const url = basePath + '/api/generate_customer_collections_report.php?customer_id=' + encodeURIComponent(customerId);
+                
+                // فتح التقرير في نافذة منبثقة
+                const reportWindow = window.open(url, 'customerCollectionsReport', 'width=1000,height=800,scrollbars=yes,resizable=yes');
+                
+                if (reportWindow) {
+                    // إعادة تعيين الزر
+                    generateCustomerCollectionsReportBtn.disabled = false;
+                    generateCustomerCollectionsReportBtn.innerHTML = '<i class="bi bi-file-earmark-pdf me-2"></i>إنشاء التقرير';
+                    
+                    // إغلاق النموذج
+                    const modal = bootstrap.Modal.getInstance(document.getElementById('generateCustomerCollectionsReportModal'));
+                    if (modal) {
+                        modal.hide();
+                    }
+                } else {
+                    alert('يرجى السماح للموقع بفتح النوافذ المنبثقة');
+                    generateCustomerCollectionsReportBtn.disabled = false;
+                    generateCustomerCollectionsReportBtn.innerHTML = '<i class="bi bi-file-earmark-pdf me-2"></i>إنشاء التقرير';
+                }
+            });
+        }
     })();
 </script>
-<?php endif; ?>
-
-<script src="<?php echo ASSETS_URL; ?>js/reports.js"></script>
 <script src="<?php echo ASSETS_URL; ?>js/attendance_notifications.js"></script>
+
+<?php include __DIR__ . '/../templates/footer.php'; ?>
+<script src="<?php echo ASSETS_URL; ?>js/reports.js"></script>
+

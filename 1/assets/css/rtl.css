@@ -1,0 +1,86 @@
+/**
+ * RTL (Right-to-Left) Styles
+ * تصميم RTL للغة العربية
+ */
+
+[dir="rtl"] {
+    direction: rtl;
+    text-align: right;
+}
+
+[dir="rtl"] .breadcrumb-nav {
+    direction: rtl;
+}
+
+[dir="rtl"] .topbar-right {
+    flex-direction: row-reverse;
+}
+
+[dir="rtl"] .sidebar-nav .nav-link {
+    text-align: right;
+}
+
+[dir="rtl"] .dropdown-menu {
+    text-align: right;
+}
+
+[dir="rtl"] .dropdown-item {
+    text-align: right;
+}
+
+[dir="rtl"] .stat-card-header {
+    flex-direction: row-reverse;
+}
+
+[dir="rtl"] .stat-card-footer {
+    flex-direction: row-reverse;
+}
+
+[dir="rtl"] .analytics-card-header {
+    flex-direction: row-reverse;
+}
+
+[dir="rtl"] .table-card-header {
+    flex-direction: row-reverse;
+}
+
+[dir="rtl"] .table-card-body table {
+    direction: rtl;
+}
+
+[dir="rtl"] .table-card-body th,
+[dir="rtl"] .table-card-body td {
+    text-align: right;
+}
+
+[dir="rtl"] .page-header h1,
+[dir="rtl"] .page-header h2 {
+    direction: rtl;
+}
+
+[dir="rtl"] .me-2 {
+    margin-left: 0.5rem !important;
+    margin-right: 0 !important;
+}
+
+[dir="rtl"] .ms-2 {
+    margin-right: 0.5rem !important;
+    margin-left: 0 !important;
+}
+
+[dir="rtl"] .text-start {
+    text-align: right !important;
+}
+
+[dir="rtl"] .text-end {
+    text-align: left !important;
+}
+
+[dir="rtl"] .float-start {
+    float: right !important;
+}
+
+[dir="rtl"] .float-end {
+    float: left !important;
+}
+

@@ -1,0 +1,84 @@
+/* Global modal for intercepting external navigation within the PWA */
+#pwa-modal-backdrop {
+    position: fixed;
+    inset: 0;
+    z-index: 2000;
+    display: none;
+    align-items: center;
+    justify-content: center;
+    background-color: rgba(0, 0, 0, 0.75);
+    padding: 1rem;
+    overscroll-behavior: contain;
+}
+
+#pwa-modal-backdrop.is-active {
+    display: flex;
+}
+
+#pwa-modal {
+    position: relative;
+    display: flex;
+    flex-direction: column;
+    width: min(960px, 100%);
+    height: min(90vh, 680px);
+    background-color: #0f0f0f;
+    border-radius: 16px;
+    box-shadow: 0 20px 50px rgba(0, 0, 0, 0.45);
+    overflow: hidden;
+}
+
+#pwa-modal iframe {
+    border: 0;
+    flex: 1 1 auto;
+    width: 100%;
+    height: 100%;
+    background-color: #111;
+}
+
+#pwa-modal button[data-modal-close] {
+    position: absolute;
+    top: 0.75rem;
+    right: 0.75rem;
+    border: 0;
+    border-radius: 999px;
+    padding: 0.45rem 0.9rem;
+    font-size: 0.95rem;
+    font-weight: 600;
+    letter-spacing: 0.02em;
+    color: #111;
+    background-color: #ffffff;
+    cursor: pointer;
+    transition: transform 0.2s ease, background-color 0.2s ease;
+    box-shadow: 0 6px 15px rgba(0, 0, 0, 0.25);
+}
+
+#pwa-modal button[data-modal-close]:hover,
+#pwa-modal button[data-modal-close]:focus-visible {
+    transform: scale(1.05);
+    background-color: #f1f1f1;
+    outline: none;
+}
+
+#pwa-modal button[data-modal-close]:focus-visible {
+    box-shadow: 0 0 0 3px rgba(255, 255, 255, 0.35);
+}
+
+@media (max-width: 768px) {
+    #pwa-modal {
+        border-radius: 12px;
+        height: 85vh;
+    }
+
+    #pwa-modal button[data-modal-close] {
+        font-size: 0.85rem;
+        padding: 0.4rem 0.8rem;
+    }
+}
+
+@media (prefers-reduced-motion: reduce) {
+    #pwa-modal-backdrop,
+    #pwa-modal button[data-modal-close] {
+        transition: none;
+    }
+}
+

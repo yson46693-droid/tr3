@@ -1,0 +1,253 @@
+/**
+ * Responsive Design - Mobile First
+ * تصميم متجاوب - أولوية للهاتف
+ */
+
+/* ===== Mobile First Base Styles ===== */
+@media (max-width: 576px) {
+    .dashboard-main {
+        padding: var(--spacing-md);
+        padding-top: calc(var(--topbar-height) + var(--spacing-md));
+        margin-left: 0 !important;
+        width: 100%;
+        max-width: 100%;
+    }
+    
+    .page-header {
+        margin-bottom: var(--spacing-md);
+    }
+    
+    .page-header h1,
+    .page-header h2 {
+        font-size: var(--font-size-xl);
+        margin-bottom: var(--spacing-sm);
+    }
+    
+    .cards-grid {
+        grid-template-columns: 1fr;
+        gap: var(--spacing-md);
+        width: 100%;
+    }
+    
+    .stat-card {
+        padding: var(--spacing-md);
+        width: 100%;
+        box-sizing: border-box;
+    }
+    
+    .stat-card-value {
+        font-size: var(--font-size-xl);
+    }
+    
+    .topbar-center {
+        display: none;
+    }
+    
+    .topbar-left {
+        flex: 1;
+        min-width: 0;
+    }
+    
+    .topbar-right {
+        gap: var(--spacing-xs);
+        flex-shrink: 0;
+        min-width: auto;
+    }
+    
+    .topbar-action {
+        width: 36px;
+        height: 36px;
+        font-size: 14px;
+    }
+    
+    .topbar-user {
+        width: 36px;
+        height: 36px;
+        font-size: 12px;
+    }
+    
+    /* إخفاء بعض العناصر غير الضرورية على الشاشات الصغيرة */
+    .topbar-search {
+        display: none;
+    }
+    
+    .breadcrumb-nav {
+        display: none;
+    }
+    
+    /* Ensure cards don't overflow */
+    .card {
+        width: 100%;
+        max-width: 100%;
+        box-sizing: border-box;
+        margin-left: 0;
+        margin-right: 0;
+    }
+    
+    /* Fix container padding */
+    .container-fluid {
+        padding-left: var(--spacing-md);
+        padding-right: var(--spacing-md);
+    }
+    
+    /* Ensure no horizontal scroll on body, but allow it for tables */
+    body {
+        overflow-x: hidden;
+        width: 100%;
+    }
+    
+    .dashboard-wrapper {
+        overflow-x: hidden;
+        width: 100%;
+    }
+    
+    /* السماح بالتمرير الأفقي للجداول داخل containers */
+    .table-responsive {
+        overflow-x: auto !important;
+        -webkit-overflow-scrolling: touch;
+        max-width: 100%;
+    }
+    
+    /* إزالة المسافات الزائدة من الجداول والحاويات */
+    .card {
+        padding: 0.5rem;
+    }
+    
+    .card-body {
+        padding: 0.75rem !important;
+    }
+    
+    .card-header {
+        padding: 0.5rem 0.75rem !important;
+    }
+    
+    /* إزالة المسافات من container */
+    .container,
+    .container-fluid {
+        padding-left: 0.5rem !important;
+        padding-right: 0.5rem !important;
+    }
+    
+    /* تحسين عرض الجداول داخل cards */
+    .card .table-responsive {
+        margin: -0.5rem;
+        padding: 0;
+        overflow-x: auto !important;
+    }
+    
+    #cameraModal .modal-dialog {
+        margin-top: 6vh;
+    }
+}
+
+/* ===== Tablet Styles ===== */
+@media (min-width: 577px) and (max-width: 768px) {
+    .cards-grid {
+        grid-template-columns: repeat(2, 1fr);
+    }
+    
+    .topbar-center {
+        flex: 1;
+        max-width: 300px;
+    }
+}
+
+/* ===== Desktop Styles ===== */
+@media (min-width: 769px) {
+    .homeline-sidebar {
+        transform: translateX(0);
+    }
+    
+    #cameraModal .modal-dialog {
+        margin-top: 8vh;
+    }
+    
+    .mobile-menu-toggle {
+        display: none !important;
+    }
+}
+
+/* ===== Large Desktop Styles ===== */
+@media (min-width: 1200px) {
+    .dashboard-main {
+        padding: var(--spacing-xl);
+        padding-top: calc(var(--topbar-height) + var(--spacing-xl));
+    }
+    
+    .cards-grid {
+        grid-template-columns: repeat(4, 1fr);
+    }
+}
+
+/* ===== Print Styles ===== */
+@media print {
+    .homeline-sidebar,
+    .homeline-topbar,
+    .mobile-menu-toggle {
+        display: none !important;
+    }
+    
+    .dashboard-main {
+        margin-left: 0 !important;
+        padding: 0 !important;
+    }
+    
+    .stat-card {
+        break-inside: avoid;
+        page-break-inside: avoid;
+    }
+}
+
+/* ===== Touch Device Optimizations ===== */
+@media (hover: none) and (pointer: coarse) {
+    .sidebar-toggle,
+    .mobile-menu-toggle,
+    .topbar-action {
+        min-width: 44px;
+        min-height: 44px;
+    }
+    
+    .sidebar-nav .nav-link {
+        padding: var(--spacing-md);
+    }
+    
+    .stat-card:hover {
+        transform: none;
+    }
+}
+
+/* ===== High DPI Displays ===== */
+@media (-webkit-min-device-pixel-ratio: 2), (min-resolution: 192dpi) {
+    .stat-card-icon,
+    .topbar-user {
+        border: 1px solid rgba(0, 0, 0, 0.1);
+    }
+}
+
+/* ===== Landscape Orientation ===== */
+@media (orientation: landscape) and (max-height: 600px) {
+    .homeline-topbar {
+        height: 56px;
+    }
+    
+    .dashboard-main {
+        padding-top: calc(56px + var(--spacing-md));
+    }
+}
+
+/* ===== RTL Responsive ===== */
+@media (max-width: 768px) {
+    [dir="rtl"] .homeline-sidebar {
+        transform: translateX(100%);
+    }
+    
+    [dir="rtl"] .dashboard-wrapper.sidebar-open .homeline-sidebar {
+        transform: translateX(0);
+    }
+    
+    [dir="rtl"] .dashboard-wrapper.sidebar-open::before {
+        left: 0;
+        right: 0;
+    }
+}
+

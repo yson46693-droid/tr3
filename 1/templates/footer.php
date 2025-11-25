@@ -54,24 +54,10 @@ if (!defined('ACCESS_ALLOWED')) {
     // استخدام timestamp لـ cache busting (نفس المستخدم في header.php)
     $cacheVersion = time();
     ?>
-    <!-- jQuery MUST be loaded FIRST -->
-    <script src="https://code.jquery.com/jquery-3.7.0.min.js"></script>
-    <script>
-        // التأكد من تحميل jQuery بشكل صحيح
-        if (typeof jQuery === 'undefined' && typeof $ === 'undefined') {
-            console.error('jQuery failed to load!');
-        } else {
-            // التأكد من أن jQuery متاح عالمياً
-            if (typeof window.jQuery === 'undefined') {
-                window.jQuery = typeof jQuery !== 'undefined' ? jQuery : (typeof $ !== 'undefined' ? $ : null);
-            }
-            if (typeof window.$ === 'undefined') {
-                window.$ = typeof $ !== 'undefined' ? $ : (typeof jQuery !== 'undefined' ? jQuery : null);
-            }
-        }
-    </script>
     <!-- Bootstrap 5 JS -->
     <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
+    <!-- jQuery (optional, for some features) -->
+    <script src="https://code.jquery.com/jquery-3.7.0.min.js"></script>
     <!-- Custom JS -->
     <?php
     // التأكد من أن ASSETS_URL صحيح
@@ -405,12 +391,6 @@ if (!defined('ACCESS_ALLOWED')) {
                 return;
             }
             
-            // التأكد من أن pageLoader.style موجود
-            if (!pageLoader.style) {
-                console.warn('pageLoader element found but style property is not available');
-                return;
-            }
-            
             // PWA Splash Screen - استخدام قاعدة البيانات لإدارة الجلسات
             let splashSessionToken = sessionStorage.getItem('pwaSplashToken');
             let inactivityTimer = null;
@@ -427,9 +407,7 @@ if (!defined('ACCESS_ALLOWED')) {
                     
                     // إزالة شاشة التحميل من DOM بعد انتهاء التأثير
                     setTimeout(function() {
-                        if (pageLoader && pageLoader.style) {
-                            pageLoader.style.display = 'none';
-                        }
+                        pageLoader.style.display = 'none';
                     }, 500);
                 }, 800); // تأخير 800ms لإظهار الشاشة
             }
@@ -514,10 +492,8 @@ if (!defined('ACCESS_ALLOWED')) {
             // استخدام pageshow event للتحقق من أن الصفحة تم تحميلها من جديد
             window.addEventListener('pageshow', function(event) {
                 // إذا كانت الصفحة من cache (back/forward)، لا تظهر splash screen
-                if (event.persisted && pageLoader) {
-                    if (pageLoader.style) {
-                        pageLoader.style.display = 'none';
-                    }
+                if (event.persisted) {
+                    pageLoader.style.display = 'none';
                     pageLoader.classList.add('hidden');
                     if (dashboardMain) {
                         dashboardMain.classList.add('content-fade-in');
@@ -532,11 +508,9 @@ if (!defined('ACCESS_ALLOWED')) {
                 
                 // إنشاء جلسة جديدة وإظهار splash screen
                 createSplashSession().then(function(token) {
-                    if (token && pageLoader) {
+                    if (token) {
                         pageLoader.classList.remove('hidden');
-                        if (pageLoader.style) {
-                            pageLoader.style.display = 'flex';
-                        }
+                        pageLoader.style.display = 'flex';
                         resetInactivityTimer();
                         
                         // إخفاء الشاشة بعد تحميل الصفحة
@@ -568,11 +542,9 @@ if (!defined('ACCESS_ALLOWED')) {
                 checkSplashSession(splashSessionToken).then(function(exists) {
                     clearTimeout(splashCheckTimeout);
                     
-                    if (exists && pageLoader) {
+                    if (exists) {
                         // الجلسة موجودة، لا تظهر splash screen
-                        if (pageLoader.style) {
-                            pageLoader.style.display = 'none';
-                        }
+                        pageLoader.style.display = 'none';
                         pageLoader.classList.add('hidden');
                         
                         if (dashboardMain) {
@@ -583,11 +555,9 @@ if (!defined('ACCESS_ALLOWED')) {
                     } else {
                         // الجلسة غير موجودة، أنشئ جلسة جديدة وأظهر splash screen
                         createSplashSession().then(function(token) {
-                            if (token && pageLoader) {
+                            if (token) {
                                 pageLoader.classList.remove('hidden');
-                                if (pageLoader.style) {
-                                    pageLoader.style.display = 'flex';
-                                }
+                                pageLoader.style.display = 'flex';
                                 resetInactivityTimer();
                                 
                                 if (document.readyState === 'complete') {
@@ -616,11 +586,9 @@ if (!defined('ACCESS_ALLOWED')) {
                 createSplashSession().then(function(token) {
                     clearTimeout(splashCheckTimeout);
                     
-                    if (token && pageLoader) {
+                    if (token) {
                         pageLoader.classList.remove('hidden');
-                        if (pageLoader.style) {
-                            pageLoader.style.display = 'flex';
-                        }
+                        pageLoader.style.display = 'flex';
                         resetInactivityTimer();
                         
                         if (document.readyState === 'complete') {
@@ -666,50 +634,14 @@ if (!defined('ACCESS_ALLOWED')) {
             
             // إخفاء شاشة التحميل عند فتح أي Modal
             document.addEventListener('show.bs.modal', function() {
-                if (pageLoader) {
-                    pageLoader.classList.add('hidden');
-                    if (pageLoader.style) {
-                        pageLoader.style.display = 'none';
-                    }
-                }
+                pageLoader.classList.add('hidden');
+                pageLoader.style.display = 'none';
             });
             
             // تعطيل شاشة التحميل عند التنقل بين الأقسام لتجنب التجميد
             // فقط للروابط الخارجية التي تغير الصفحة بالكامل
             let isNavigating = false;
             document.addEventListener('click', function(e) {
-                // تجاهل النقرات على الأزرار والعناصر التفاعلية
-                const target = e.target;
-                
-                // التحقق من العناصر التفاعلية أولاً - قبل أي معالجة أخرى
-                // قائمة شاملة بجميع العناصر التي يجب تجاهلها
-                const isInteractive = target.tagName === 'BUTTON' || 
-                                 target.tagName === 'INPUT' || 
-                                 target.closest('button') || 
-                                 target.closest('input') ||
-                                 target.closest('.topbar-action') ||
-                                 target.closest('[data-bs-toggle]') ||
-                                 target.closest('[data-bs-target]') ||
-                                 target.closest('.nav-link') ||
-                                 target.closest('.dropdown-item') ||
-                                 target.closest('.nav-pills') || // تجاهل التبويبات
-                                 target.closest('.nav-tabs') || // تجاهل التبويبات
-                                 target.closest('.combined-tabs') || // تجاهل التبويبات المدمجة
-                                 target.closest('.combined-actions') || // تجاهل أزرار الأقسام
-                                 target.closest('[role="tab"]') || // تجاهل التبويبات مباشرة
-                                 target.closest('[role="tabpanel"]') || // تجاهل محتوى التبويبات
-                                 target.closest('.modal') || // تجاهل النماذج
-                                 target.closest('.btn') || // تجاهل جميع الأزرار
-                                 target.closest('#salesCollectionsTabs') || // تجاهل حاوية التبويبات
-                                 target.closest('.nav-item') || // تجاهل عناصر التبويبات
-                                 target.closest('form'); // تجاهل النماذج
-                
-                if (isInteractive) {
-                    // التأكد من أن event يمكن أن ينتشر إلى Bootstrap
-                    // لا نستخدم stopPropagation أو preventDefault
-                    return; // تجاهل النقرات على الأزرار والعناصر التفاعلية
-                }
-                
                 const link = e.target.closest('a');
                 
                 // تحقق من أن الرابط يؤدي لتغيير الصفحة الكامل (ليس tabs أو sections)
@@ -728,38 +660,22 @@ if (!defined('ACCESS_ALLOWED')) {
                     !link.hasAttribute('data-bs-target') &&
                     !link.classList.contains('dropdown-item') &&
                     !link.closest('.nav-tabs') && // تجاهل روابط التبويبات
-                    !link.closest('.nav-pills') && // تجاهل التبويبات
-                    !link.closest('.combined-tabs') && // تجاهل التبويبات المدمجة
-                    !link.closest('.combined-actions') && // تجاهل أزرار الأقسام
                     !link.closest('.section-tabs') && // تجاهل روابط أقسام المخزن
-                    !link.closest('.topbar-action') && // تجاهل أزرار الـ topbar
-                    !link.closest('.modal') && // تجاهل النماذج
-                    !link.closest('[role="tab"]') && // تجاهل التبويبات مباشرة
-                    !link.closest('#salesCollectionsTabs') && // تجاهل حاوية التبويبات
-                    !link.closest('.nav-item') && // تجاهل عناصر التبويبات
                     !isNavigating) {
                     
                     isNavigating = true;
                     // إظهار شاشة التحميل فقط للتنقل بين الصفحات الرئيسية
-                    if (pageLoader) {
-                        pageLoader.classList.remove('hidden');
-                        if (pageLoader.style) {
-                            pageLoader.style.display = 'flex';
-                        }
-                    }
+                    pageLoader.classList.remove('hidden');
+                    pageLoader.style.display = 'flex';
                 }
-            }, { passive: true }); // إضافة passive: true لتجنب التداخل مع Bootstrap
+            });
             
             // إخفاء شاشة التحميل عند الرجوع للصفحة
             window.addEventListener('pageshow', function(event) {
                 isNavigating = false;
                 if (event.persisted || (window.performance && window.performance.navigation.type === 2)) {
-                    if (pageLoader) {
-                        pageLoader.classList.add('hidden');
-                        if (pageLoader.style) {
-                            pageLoader.style.display = 'none';
-                        }
-                    }
+                    pageLoader.classList.add('hidden');
+                    pageLoader.style.display = 'none';
                 }
             });
             
@@ -817,16 +733,12 @@ if (!defined('ACCESS_ALLOWED')) {
                 
                 if (data && data.success && typeof data.count === 'number') {
                     const count = Math.max(0, parseInt(data.count, 10));
-                    if (badge) {
-                        badge.textContent = count.toString();
-                        if (badge.style) {
-                            if (count > 0) {
-                                badge.style.display = 'inline-block';
-                                badge.classList.add('badge-danger', 'bg-danger');
-                            } else {
-                                badge.style.display = 'none';
-                            }
-                        }
+                    badge.textContent = count.toString();
+                    if (count > 0) {
+                        badge.style.display = 'inline-block';
+                        badge.classList.add('badge-danger', 'bg-danger');
+                    } else {
+                        badge.style.display = 'none';
                     }
                 }
             } catch (error) {

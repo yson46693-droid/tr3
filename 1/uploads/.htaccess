@@ -1,0 +1,4 @@
+# منع الوصول المباشر للملفات
+Order Deny,Allow
+Deny from all
+
