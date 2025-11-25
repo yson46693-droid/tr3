@@ -2516,7 +2516,40 @@ function approveWarehouseTransfer($transferId, $approvedBy = null) {
                     }
                 }
                 
-                $remainingQuantity = max(0.0, $availableQuantity - $requestedQuantity);
+                // الحصول على الكمية الفعلية من vehicle_inventory أولاً
+                $currentVehicleQuantity = 0.0;
+                if ($batchId) {
+                    $currentVehicleRow = $db->queryOne(
+                        "SELECT quantity, finished_batch_id, finished_batch_number, finished_production_date,
+                                finished_quantity_produced, finished_workers, manager_unit_price
+                         FROM vehicle_inventory 
+                         WHERE vehicle_id = ? AND product_id = ? AND finished_batch_id = ?",
+                        [$fromWarehouse['vehicle_id'], $item['product_id'], $batchId]
+                    );
+                    if ($currentVehicleRow) {
+                        $currentVehicleQuantity = (float)($currentVehicleRow['quantity'] ?? 0);
+                        // تحديث finishedMetadata من vehicle_inventory إذا لم يكن موجوداً
+                        if (empty($finishedMetadata) || empty($finishedMetadata['finished_batch_id'])) {
+                            $finishedMetadata = [
+                                'finished_batch_id' => (int)($currentVehicleRow['finished_batch_id'] ?? $batchId),
+                                'finished_batch_number' => $currentVehicleRow['finished_batch_number'] ?? $batchNumber,
+                                'finished_production_date' => $currentVehicleRow['finished_production_date'] ?? null,
+                                'finished_quantity_produced' => $currentVehicleRow['finished_quantity_produced'] ?? null,
+                                'finished_workers' => $currentVehicleRow['finished_workers'] ?? null,
+                                'unit_price' => $currentVehicleRow['manager_unit_price'] ?? null,
+                            ];
+                        }
+                    }
+                } else {
+                    $currentVehicleRow = $db->queryOne(
+                        "SELECT quantity FROM vehicle_inventory 
+                         WHERE vehicle_id = ? AND product_id = ? AND (finished_batch_id IS NULL OR finished_batch_id = 0)",
+                        [$fromWarehouse['vehicle_id'], $item['product_id']]
+                    );
+                    $currentVehicleQuantity = (float)($currentVehicleRow['quantity'] ?? 0);
+                }
+                
+                $remainingQuantity = max(0.0, $currentVehicleQuantity - $requestedQuantity);
                 // تمرير finishedMetadata إلى updateVehicleInventory لتحديث السجل الصحيح
                 $updateVehicleResult = updateVehicleInventory(
                     $fromWarehouse['vehicle_id'], 
