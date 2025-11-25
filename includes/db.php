@@ -95,7 +95,12 @@ class Database {
 
             // التحقق من وجود أعمدة created_from_pos و created_by_admin في جدول customers
             // استخدام flag file لتجنب تشغيل الهجرة أكثر من مرة
-            $this->ensureCustomerFlagsMigration();
+            try {
+                $this->ensureCustomerFlagsMigration();
+            } catch (Throwable $e) {
+                // لا نوقف الاتصال إذا فشلت الهجرة
+                error_log('Customer flags migration error (non-critical): ' . $e->getMessage());
+            }
 
             $this->ensureVehicleInventoryAutoUpgrade();
             
@@ -471,21 +476,24 @@ class Database {
             }
             $tableCheck->free();
 
-            // التحقق من وجود الأعمدة بسرعة باستخدام استعلام واحد
-            $columnsResult = $this->connection->query("SHOW COLUMNS FROM `customers`");
-            $existingColumns = [];
-            if ($columnsResult instanceof mysqli_result) {
-                while ($column = $columnsResult->fetch_assoc()) {
-                    if (!empty($column['Field'])) {
-                        $existingColumns[strtolower($column['Field'])] = true;
-                    }
-                }
-                $columnsResult->free();
+            // التحقق من وجود الأعمدة بسرعة باستخدام استعلامات سريعة
+            $createdFromPosCheck = $this->connection->query("SHOW COLUMNS FROM `customers` LIKE 'created_from_pos'");
+            $createdByAdminCheck = $this->connection->query("SHOW COLUMNS FROM `customers` LIKE 'created_by_admin'");
+            $repIdCheck = $this->connection->query("SHOW COLUMNS FROM `customers` LIKE 'rep_id'");
+            
+            $needsRepId = !($repIdCheck instanceof mysqli_result && $repIdCheck->num_rows > 0);
+            $needsCreatedFromPos = !($createdFromPosCheck instanceof mysqli_result && $createdFromPosCheck->num_rows > 0);
+            $needsCreatedByAdmin = !($createdByAdminCheck instanceof mysqli_result && $createdByAdminCheck->num_rows > 0);
+            
+            if ($repIdCheck instanceof mysqli_result) {
+                $repIdCheck->free();
             }
-
-            $needsRepId = !isset($existingColumns['rep_id']);
-            $needsCreatedFromPos = !isset($existingColumns['created_from_pos']);
-            $needsCreatedByAdmin = !isset($existingColumns['created_by_admin']);
+            if ($createdFromPosCheck instanceof mysqli_result) {
+                $createdFromPosCheck->free();
+            }
+            if ($createdByAdminCheck instanceof mysqli_result) {
+                $createdByAdminCheck->free();
+            }
 
             if (!$needsRepId && !$needsCreatedFromPos && !$needsCreatedByAdmin) {
                 // جميع الأعمدة موجودة، إنشاء flag file وتخطي
@@ -529,20 +537,17 @@ class Database {
                     error_log('Customers rep_id index migration error: ' . $indexError->getMessage());
                 }
 
-                // تحديث rep_id للعملاء الموجودين
-                // ملاحظة: إذا كان الجدول كبيراً جداً، قد يستغرق هذا وقتاً
-                // يمكن تأجيله أو تشغيله في cron job منفصل
-                try {
-                    $this->connection->query("
-                        UPDATE customers c
-                        INNER JOIN users u ON c.rep_id IS NULL AND c.created_by = u.id AND u.role = 'sales'
-                        SET c.rep_id = u.id
-                    ");
-                } catch (Throwable $updateError) {
-                    // لا نوقف العملية إذا فشل التحديث - يمكن تشغيله لاحقاً
-                    // الأعمدة تم إضافتها بنجاح، التحديث يمكن أن يتم لاحقاً
-                    error_log('Customers rep_id update error (non-critical): ' . $updateError->getMessage());
-                }
+                // تحديث rep_id للعملاء الموجودين - تم تعطيله لتجنب timeout
+                // يمكن تشغيله لاحقاً عبر cron job أو يدوياً
+                // try {
+                //     $this->connection->query("
+                //         UPDATE customers c
+                //         INNER JOIN users u ON c.rep_id IS NULL AND c.created_by = u.id AND u.role = 'sales'
+                //         SET c.rep_id = u.id
+                //     ");
+                // } catch (Throwable $updateError) {
+                //     error_log('Customers rep_id update error (non-critical): ' . $updateError->getMessage());
+                // }
             }
 
             // إنشاء flag file للإشارة إلى اكتمال الهجرة
