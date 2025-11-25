@@ -825,7 +825,31 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && trim($_P
 
 <?php if ($page === 'sales_collections'): ?>
     <!-- ملف التشخيص - احذفه بعد حل المشكلة -->
-    <script src="<?php echo ASSETS_URL; ?>js/sales-collections-diagnostic.js"></script>
+    <?php
+    // معالجة ASSETS_URL بنفس طريقة footer.php
+    $assetsUrl = ASSETS_URL;
+    if (strpos($assetsUrl, '//') === 0) {
+        $assetsUrl = '/' . ltrim($assetsUrl, '/');
+    }
+    if (strpos($assetsUrl, '/') !== 0) {
+        $assetsUrl = '/' . $assetsUrl;
+    }
+    $assetsUrl = rtrim($assetsUrl, '/') . '/';
+    $diagnosticUrl = $assetsUrl . 'js/sales-collections-diagnostic.js?v=' . time();
+    ?>
+    <!-- Debug: تحقق من تحميل الملف -->
+    <script>
+        console.log('🔍 Debug - Page:', '<?php echo $page; ?>');
+        console.log('🔍 Debug - ASSETS_URL:', '<?php echo ASSETS_URL; ?>');
+        console.log('🔍 Debug - Processed URL:', '<?php echo $diagnosticUrl; ?>');
+    </script>
+    <script src="<?php echo $diagnosticUrl; ?>" onerror="console.error('❌ فشل تحميل ملف التشخيص من:', '<?php echo $diagnosticUrl; ?>');"></script>
+<?php else: ?>
+    <!-- Debug: الصفحة ليست sales_collections -->
+    <script>
+        console.log('⚠️ Debug - Page is:', '<?php echo $page ?? 'undefined'; ?>');
+        console.log('⚠️ Debug - PageParam is:', '<?php echo $pageParam ?? 'undefined'; ?>');
+    </script>
 <?php endif; ?>
 
 <?php include __DIR__ . '/../templates/footer.php'; ?>
