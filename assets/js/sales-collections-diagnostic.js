@@ -111,12 +111,28 @@ console.log('%c⏳ سيبدأ التشخيص خلال ثانية واحدة...',
     async function checkButtonsAndTabs() {
         console.log('%c2️⃣ فحص الأزرار والتبويبات...', 'color: #0d6efd; font-weight: bold;');
         
-        // فحص التبويبات
-        const tabs = {
+        // انتظار إضافي للتأكد من تحميل DOM
+        await new Promise(resolve => setTimeout(resolve, 500));
+        
+        // البحث في جميع أنحاء الصفحة
+        let tabs = {
             sales: document.getElementById('sales-tab'),
             collections: document.getElementById('collections-tab'),
             returns: document.getElementById('returns-tab')
         };
+        
+        // إذا لم يتم العثور عليها، جرب البحث بطرق أخرى
+        if (!tabs.sales || !tabs.collections || !tabs.returns) {
+            console.log('⏳ البحث عن التبويبات بطرق بديلة...');
+            const allTabButtons = document.querySelectorAll('button[data-bs-toggle="tab"]');
+            console.log(`📊 عدد أزرار التبويبات في الصفحة: ${allTabButtons.length}`);
+            
+            allTabButtons.forEach(btn => {
+                if (btn.id === 'sales-tab') tabs.sales = btn;
+                if (btn.id === 'collections-tab') tabs.collections = btn;
+                if (btn.id === 'returns-tab') tabs.returns = btn;
+            });
+        }
         
         Object.keys(tabs).forEach(tabName => {
             const tab = tabs[tabName];

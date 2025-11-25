@@ -862,48 +862,94 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && trim($_P
         role: '<?php echo htmlspecialchars($currentUser['role']); ?>'
     };
     
-    // اختبار بسيط للتبويبات والأزرار
+    // اختبار شامل للتبويبات والأزرار
     (function() {
-        function testTabsAndButtons() {
-            console.log('%c🧪 اختبار التبويبات والأزرار', 'color: #0d6efd; font-weight: bold; font-size: 14px;');
+        async function testTabsAndButtons() {
+            console.log('%c🧪 اختبار شامل للتبويبات والأزرار', 'color: #0d6efd; font-weight: bold; font-size: 14px;');
             
-            // فحص التبويبات
-            const tabsContainer = document.getElementById('salesCollectionsTabs');
+            // انتظار تحميل DOM بالكامل
+            let attempts = 0;
+            let tabsContainer = null;
+            
+            while (!tabsContainer && attempts < 10) {
+                attempts++;
+                tabsContainer = document.getElementById('salesCollectionsTabs');
+                if (!tabsContainer) {
+                    console.log(`⏳ محاولة ${attempts}/10 - البحث عن #salesCollectionsTabs...`);
+                    await new Promise(resolve => setTimeout(resolve, 300));
+                }
+            }
+            
             if (tabsContainer) {
                 console.log('✅ #salesCollectionsTabs موجود');
                 const tabButtons = tabsContainer.querySelectorAll('button');
-                console.log(`📊 عدد الأزرار: ${tabButtons.length}`);
+                console.log(`📊 عدد الأزرار داخل #salesCollectionsTabs: ${tabButtons.length}`);
                 
-                tabButtons.forEach((btn, idx) => {
-                    const computedStyle = window.getComputedStyle(btn);
-                    console.log(`   ${idx + 1}. ${btn.id} - pointer-events: ${computedStyle.pointerEvents}, display: ${computedStyle.display}, visibility: ${computedStyle.visibility}`);
-                    
-                    // اختبار النقر مباشرة
-                    btn.addEventListener('click', function(e) {
-                        console.log(`✅ تم النقر على ${btn.id} - Event fired!`);
-                    }, { once: true });
-                });
+                if (tabButtons.length === 0) {
+                    console.warn('⚠️ لا توجد أزرار داخل #salesCollectionsTabs');
+                    console.log('📋 محتوى العنصر:', tabsContainer.innerHTML.substring(0, 500));
+                } else {
+                    tabButtons.forEach((btn, idx) => {
+                        const computedStyle = window.getComputedStyle(btn);
+                        const rect = btn.getBoundingClientRect();
+                        const isVisible = rect.width > 0 && rect.height > 0;
+                        
+                        console.log(`   ${idx + 1}. ${btn.id || 'no-id'}`);
+                        console.log(`      - pointer-events: ${computedStyle.pointerEvents}`);
+                        console.log(`      - display: ${computedStyle.display}`);
+                        console.log(`      - visibility: ${computedStyle.visibility}`);
+                        console.log(`      - visible: ${isVisible} (${rect.width}x${rect.height})`);
+                        console.log(`      - data-bs-toggle: ${btn.getAttribute('data-bs-toggle')}`);
+                        console.log(`      - data-bs-target: ${btn.getAttribute('data-bs-target')}`);
+                        
+                        // اختبار النقر مباشرة
+                        const testHandler = function(e) {
+                            console.log(`✅ تم النقر على ${btn.id || 'button'} - Event fired!`);
+                            console.log(`   - Event type: ${e.type}`);
+                            console.log(`   - Target: ${e.target.id || e.target.className}`);
+                            console.log(`   - Current target: ${e.currentTarget.id || e.currentTarget.className}`);
+                        };
+                        
+                        btn.addEventListener('click', testHandler, { once: false, capture: false });
+                        console.log(`      - تم إضافة click listener`);
+                    });
+                }
             } else {
-                console.error('❌ #salesCollectionsTabs غير موجود');
+                console.error('❌ #salesCollectionsTabs غير موجود بعد 10 محاولات');
+                
+                // البحث في جميع أنحاء الصفحة
+                const allTabButtons = document.querySelectorAll('button[data-bs-toggle="tab"]');
+                console.log(`📊 عدد أزرار التبويبات في الصفحة (جميعها): ${allTabButtons.length}`);
+                
+                if (allTabButtons.length > 0) {
+                    console.log('📍 مواقع الأزرار:');
+                    allTabButtons.forEach((btn, idx) => {
+                        const parent = btn.closest('ul, div, section');
+                        console.log(`   ${idx + 1}. ${btn.id || 'no-id'} - داخل: ${parent ? (parent.id || parent.className || 'unknown') : 'none'}`);
+                    });
+                }
             }
             
             // فحص الأزرار داخل الأقسام
             const actionButtons = document.querySelectorAll('.combined-actions button');
-            console.log(`📊 عدد أزرار الأقسام: ${actionButtons.length}`);
+            console.log(`📊 عدد أزرار الأقسام (.combined-actions): ${actionButtons.length}`);
             
             actionButtons.forEach((btn, idx) => {
                 const computedStyle = window.getComputedStyle(btn);
-                console.log(`   ${idx + 1}. ${btn.id || btn.className} - pointer-events: ${computedStyle.pointerEvents}`);
+                console.log(`   ${idx + 1}. ${btn.id || btn.className} - pointer-events: ${computedStyle.pointerEvents}, display: ${computedStyle.display}`);
             });
+            
+            // اختبار النقر على التبويبات
+            console.log('%c💡 جرب النقر على التبويبات الآن', 'color: #ffc107; font-weight: bold;');
         }
         
         // تشغيل الاختبار بعد تحميل الصفحة
         if (document.readyState === 'loading') {
             document.addEventListener('DOMContentLoaded', function() {
-                setTimeout(testTabsAndButtons, 1000);
+                setTimeout(testTabsAndButtons, 2000);
             });
         } else {
-            setTimeout(testTabsAndButtons, 1000);
+            setTimeout(testTabsAndButtons, 2000);
         }
     })();
 
