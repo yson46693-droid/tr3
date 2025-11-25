@@ -94,15 +94,15 @@ class Database {
             }
 
             // التحقق من وجود أعمدة created_from_pos و created_by_admin في جدول customers
-            // استخدام flag file لتجنب تشغيل الهجرة أكثر من مرة
-            try {
-                $this->ensureCustomerFlagsMigration();
-            } catch (Throwable $e) {
-                // لا نوقف الاتصال إذا فشلت الهجرة
-                error_log('Customer flags migration error (non-critical): ' . $e->getMessage());
-            }
+            // تم تعطيله مؤقتاً لتجنب timeout - يمكن تفعيله لاحقاً بعد إصلاح المشكلة
+            // try {
+            //     $this->ensureCustomerFlagsMigration();
+            // } catch (Throwable $e) {
+            //     error_log('Customer flags migration error (non-critical): ' . $e->getMessage());
+            // }
 
-            $this->ensureVehicleInventoryAutoUpgrade();
+            // تم تعطيله مؤقتاً لتجنب timeout
+            // $this->ensureVehicleInventoryAutoUpgrade();
             
         } catch (Exception $e) {
             die("Database connection error: " . $e->getMessage());
