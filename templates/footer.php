@@ -688,7 +688,10 @@ if (!defined('ACCESS_ALLOWED')) {
                                  target.closest('[data-bs-toggle]') ||
                                  target.closest('[data-bs-target]') ||
                                  target.closest('.nav-link') ||
-                                 target.closest('.dropdown-item');
+                                 target.closest('.dropdown-item') ||
+                                 target.closest('.nav-pills') || // تجاهل التبويبات
+                                 target.closest('.nav-tabs') || // تجاهل التبويبات
+                                 target.closest('.combined-tabs'); // تجاهل التبويبات المدمجة
                 
                 if (isButton) {
                     return; // تجاهل النقرات على الأزرار
@@ -712,6 +715,8 @@ if (!defined('ACCESS_ALLOWED')) {
                     !link.hasAttribute('data-bs-target') &&
                     !link.classList.contains('dropdown-item') &&
                     !link.closest('.nav-tabs') && // تجاهل روابط التبويبات
+                    !link.closest('.nav-pills') && // تجاهل التبويبات
+                    !link.closest('.combined-tabs') && // تجاهل التبويبات المدمجة
                     !link.closest('.section-tabs') && // تجاهل روابط أقسام المخزن
                     !link.closest('.topbar-action') && // تجاهل أزرار الـ topbar
                     !isNavigating) {
