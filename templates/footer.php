@@ -728,6 +728,7 @@ if (!defined('ACCESS_ALLOWED')) {
                 const target = e.target;
                 
                 // التحقق من العناصر التفاعلية أولاً - قبل أي معالجة أخرى
+                // قائمة شاملة بجميع العناصر التي يجب تجاهلها
                 const isInteractive = target.tagName === 'BUTTON' || 
                                  target.tagName === 'INPUT' || 
                                  target.closest('button') || 
@@ -744,9 +745,14 @@ if (!defined('ACCESS_ALLOWED')) {
                                  target.closest('[role="tab"]') || // تجاهل التبويبات مباشرة
                                  target.closest('[role="tabpanel"]') || // تجاهل محتوى التبويبات
                                  target.closest('.modal') || // تجاهل النماذج
-                                 target.closest('.btn'); // تجاهل جميع الأزرار
+                                 target.closest('.btn') || // تجاهل جميع الأزرار
+                                 target.closest('#salesCollectionsTabs') || // تجاهل حاوية التبويبات
+                                 target.closest('.nav-item') || // تجاهل عناصر التبويبات
+                                 target.closest('form'); // تجاهل النماذج
                 
                 if (isInteractive) {
+                    // التأكد من أن event يمكن أن ينتشر إلى Bootstrap
+                    // لا نستخدم stopPropagation أو preventDefault
                     return; // تجاهل النقرات على الأزرار والعناصر التفاعلية
                 }
                 
@@ -775,6 +781,8 @@ if (!defined('ACCESS_ALLOWED')) {
                     !link.closest('.topbar-action') && // تجاهل أزرار الـ topbar
                     !link.closest('.modal') && // تجاهل النماذج
                     !link.closest('[role="tab"]') && // تجاهل التبويبات مباشرة
+                    !link.closest('#salesCollectionsTabs') && // تجاهل حاوية التبويبات
+                    !link.closest('.nav-item') && // تجاهل عناصر التبويبات
                     !isNavigating) {
                     
                     isNavigating = true;
@@ -786,7 +794,7 @@ if (!defined('ACCESS_ALLOWED')) {
                         }
                     }
                 }
-            });
+            }, { passive: true }); // إضافة passive: true لتجنب التداخل مع Bootstrap
             
             // إخفاء شاشة التحميل عند الرجوع للصفحة
             window.addEventListener('pageshow', function(event) {

@@ -861,6 +861,51 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && trim($_P
         id: <?php echo $currentUser['id']; ?>,
         role: '<?php echo htmlspecialchars($currentUser['role']); ?>'
     };
+    
+    // اختبار بسيط للتبويبات والأزرار
+    (function() {
+        function testTabsAndButtons() {
+            console.log('%c🧪 اختبار التبويبات والأزرار', 'color: #0d6efd; font-weight: bold; font-size: 14px;');
+            
+            // فحص التبويبات
+            const tabsContainer = document.getElementById('salesCollectionsTabs');
+            if (tabsContainer) {
+                console.log('✅ #salesCollectionsTabs موجود');
+                const tabButtons = tabsContainer.querySelectorAll('button');
+                console.log(`📊 عدد الأزرار: ${tabButtons.length}`);
+                
+                tabButtons.forEach((btn, idx) => {
+                    const computedStyle = window.getComputedStyle(btn);
+                    console.log(`   ${idx + 1}. ${btn.id} - pointer-events: ${computedStyle.pointerEvents}, display: ${computedStyle.display}, visibility: ${computedStyle.visibility}`);
+                    
+                    // اختبار النقر مباشرة
+                    btn.addEventListener('click', function(e) {
+                        console.log(`✅ تم النقر على ${btn.id} - Event fired!`);
+                    }, { once: true });
+                });
+            } else {
+                console.error('❌ #salesCollectionsTabs غير موجود');
+            }
+            
+            // فحص الأزرار داخل الأقسام
+            const actionButtons = document.querySelectorAll('.combined-actions button');
+            console.log(`📊 عدد أزرار الأقسام: ${actionButtons.length}`);
+            
+            actionButtons.forEach((btn, idx) => {
+                const computedStyle = window.getComputedStyle(btn);
+                console.log(`   ${idx + 1}. ${btn.id || btn.className} - pointer-events: ${computedStyle.pointerEvents}`);
+            });
+        }
+        
+        // تشغيل الاختبار بعد تحميل الصفحة
+        if (document.readyState === 'loading') {
+            document.addEventListener('DOMContentLoaded', function() {
+                setTimeout(testTabsAndButtons, 1000);
+            });
+        } else {
+            setTimeout(testTabsAndButtons, 1000);
+        }
+    })();
 
     // JavaScript لإنشاء تقارير المبيعات والتحصيلات
     // التأكد من تحميل Bootstrap قبل تشغيل الكود
