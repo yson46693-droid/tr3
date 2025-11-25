@@ -94,81 +94,8 @@ class Database {
             }
 
             // التحقق من وجود أعمدة created_from_pos و created_by_admin في جدول customers
-            try {
-                $tableCheck = $this->connection->query("SHOW TABLES LIKE 'customers'");
-                if ($tableCheck instanceof mysqli_result && $tableCheck->num_rows > 0) {
-                    $createdFromPosCheck = $this->connection->query("SHOW COLUMNS FROM `customers` LIKE 'created_from_pos'");
-                    $createdByAdminCheck = $this->connection->query("SHOW COLUMNS FROM `customers` LIKE 'created_by_admin'");
-                    $repIdCheck = $this->connection->query("SHOW COLUMNS FROM `customers` LIKE 'rep_id'");
-                    
-                    $needsRepId = !($repIdCheck instanceof mysqli_result && $repIdCheck->num_rows > 0);
-                    $needsCreatedFromPos = !($createdFromPosCheck instanceof mysqli_result && $createdFromPosCheck->num_rows > 0);
-                    $needsCreatedByAdmin = !($createdByAdminCheck instanceof mysqli_result && $createdByAdminCheck->num_rows > 0);
-                    
-                    if ($repIdCheck instanceof mysqli_result) {
-                        $repIdCheck->free();
-                    }
-                    if ($createdFromPosCheck instanceof mysqli_result) {
-                        $createdFromPosCheck->free();
-                    }
-                    if ($createdByAdminCheck instanceof mysqli_result) {
-                        $createdByAdminCheck->free();
-                    }
-                    
-                    if ($needsRepId || $needsCreatedFromPos || $needsCreatedByAdmin) {
-                        // إضافة الأعمدة واحداً تلو الآخر بالترتيب الصحيح
-                        if ($needsRepId) {
-                            $this->connection->query("ALTER TABLE `customers` ADD COLUMN `rep_id` INT NULL AFTER `id`");
-                        }
-                        if ($needsCreatedFromPos) {
-                            // تحديد العمود الذي يجب أن يأتي بعده
-                            $afterColumn = $needsRepId ? 'rep_id' : 'id';
-                            $this->connection->query("ALTER TABLE `customers` ADD COLUMN `created_from_pos` TINYINT(1) NOT NULL DEFAULT 0 AFTER `{$afterColumn}`");
-                        }
-                        if ($needsCreatedByAdmin) {
-                            // تحديد العمود الذي يجب أن يأتي بعده
-                            if (!$needsCreatedFromPos) {
-                                $afterColumn = $needsRepId ? 'rep_id' : 'id';
-                            } else {
-                                $afterColumn = 'created_from_pos';
-                            }
-                            $this->connection->query("ALTER TABLE `customers` ADD COLUMN `created_by_admin` TINYINT(1) NOT NULL DEFAULT 0 AFTER `{$afterColumn}`");
-                        }
-                        
-                        // إضافة الأعمدة تمت، الآن نضيف المفاتيح والتحديثات
-                        if ($needsRepId) {
-                            // إضافة مفتاح rep_id إذا تم إضافته
-                            try {
-                                $indexCheck = $this->connection->query("SHOW INDEX FROM `customers` WHERE Key_name = 'rep_id'");
-                                if (!($indexCheck instanceof mysqli_result && $indexCheck->num_rows > 0)) {
-                                    $this->connection->query("ALTER TABLE `customers` ADD KEY `rep_id` (`rep_id`)");
-                                }
-                                if ($indexCheck instanceof mysqli_result) {
-                                    $indexCheck->free();
-                                }
-                            } catch (Throwable $indexError) {
-                                error_log('Customers rep_id index migration error: ' . $indexError->getMessage());
-                            }
-                            
-                            // تحديث rep_id للعملاء الموجودين
-                            try {
-                                $this->connection->query("
-                                    UPDATE customers c
-                                    INNER JOIN users u ON c.rep_id IS NULL AND c.created_by = u.id AND u.role = 'sales'
-                                    SET c.rep_id = u.id
-                                ");
-                            } catch (Throwable $updateError) {
-                                error_log('Customers rep_id update error: ' . $updateError->getMessage());
-                            }
-                        }
-                    }
-                }
-                if ($tableCheck instanceof mysqli_result) {
-                    $tableCheck->free();
-                }
-            } catch (Throwable $customerFlagsError) {
-                error_log('Customers flags migration error: ' . $customerFlagsError->getMessage());
-            }
+            // استخدام flag file لتجنب تشغيل الهجرة أكثر من مرة
+            $this->ensureCustomerFlagsMigration();
 
             $this->ensureVehicleInventoryAutoUpgrade();
             
@@ -510,6 +437,123 @@ class Database {
 
         } catch (Throwable $upgradeError) {
             error_log('Vehicle inventory auto upgrade error: ' . $upgradeError->getMessage());
+        }
+    }
+    
+    /**
+     * التحقق من وجود أعمدة created_from_pos و created_by_admin في جدول customers
+     * يتم تشغيلها تلقائياً مرة واحدة فقط
+     */
+    private function ensureCustomerFlagsMigration(): void
+    {
+        static $migrationEnsured = false;
+
+        if ($migrationEnsured) {
+            return;
+        }
+
+        $migrationEnsured = true;
+
+        try {
+            $flagFile = dirname(__DIR__) . '/runtime/customer_flags_migration.flag';
+
+            // إذا تم تشغيل الهجرة من قبل، تخطي
+            if (file_exists($flagFile)) {
+                return;
+            }
+
+            $tableCheck = $this->connection->query("SHOW TABLES LIKE 'customers'");
+            if (!$tableCheck instanceof mysqli_result || $tableCheck->num_rows === 0) {
+                if ($tableCheck instanceof mysqli_result) {
+                    $tableCheck->free();
+                }
+                return;
+            }
+            $tableCheck->free();
+
+            // التحقق من وجود الأعمدة بسرعة باستخدام استعلام واحد
+            $columnsResult = $this->connection->query("SHOW COLUMNS FROM `customers`");
+            $existingColumns = [];
+            if ($columnsResult instanceof mysqli_result) {
+                while ($column = $columnsResult->fetch_assoc()) {
+                    if (!empty($column['Field'])) {
+                        $existingColumns[strtolower($column['Field'])] = true;
+                    }
+                }
+                $columnsResult->free();
+            }
+
+            $needsRepId = !isset($existingColumns['rep_id']);
+            $needsCreatedFromPos = !isset($existingColumns['created_from_pos']);
+            $needsCreatedByAdmin = !isset($existingColumns['created_by_admin']);
+
+            if (!$needsRepId && !$needsCreatedFromPos && !$needsCreatedByAdmin) {
+                // جميع الأعمدة موجودة، إنشاء flag file وتخطي
+                $flagDir = dirname($flagFile);
+                if (!is_dir($flagDir)) {
+                    @mkdir($flagDir, 0775, true);
+                }
+                @file_put_contents($flagFile, date('c'));
+                return;
+            }
+
+            // إضافة الأعمدة واحداً تلو الآخر بالترتيب الصحيح
+            if ($needsRepId) {
+                $this->connection->query("ALTER TABLE `customers` ADD COLUMN `rep_id` INT NULL AFTER `id`");
+            }
+            if ($needsCreatedFromPos) {
+                $afterColumn = $needsRepId ? 'rep_id' : 'id';
+                $this->connection->query("ALTER TABLE `customers` ADD COLUMN `created_from_pos` TINYINT(1) NOT NULL DEFAULT 0 AFTER `{$afterColumn}`");
+            }
+            if ($needsCreatedByAdmin) {
+                if (!$needsCreatedFromPos) {
+                    $afterColumn = $needsRepId ? 'rep_id' : 'id';
+                } else {
+                    $afterColumn = 'created_from_pos';
+                }
+                $this->connection->query("ALTER TABLE `customers` ADD COLUMN `created_by_admin` TINYINT(1) NOT NULL DEFAULT 0 AFTER `{$afterColumn}`");
+            }
+
+            // إضافة مفتاح rep_id إذا تم إضافته
+            if ($needsRepId) {
+                try {
+                    $indexCheck = $this->connection->query("SHOW INDEX FROM `customers` WHERE Key_name = 'rep_id'");
+                    $hasIndex = ($indexCheck instanceof mysqli_result && $indexCheck->num_rows > 0);
+                    if ($indexCheck instanceof mysqli_result) {
+                        $indexCheck->free();
+                    }
+                    if (!$hasIndex) {
+                        $this->connection->query("ALTER TABLE `customers` ADD KEY `rep_id` (`rep_id`)");
+                    }
+                } catch (Throwable $indexError) {
+                    error_log('Customers rep_id index migration error: ' . $indexError->getMessage());
+                }
+
+                // تحديث rep_id للعملاء الموجودين
+                // ملاحظة: إذا كان الجدول كبيراً جداً، قد يستغرق هذا وقتاً
+                // يمكن تأجيله أو تشغيله في cron job منفصل
+                try {
+                    $this->connection->query("
+                        UPDATE customers c
+                        INNER JOIN users u ON c.rep_id IS NULL AND c.created_by = u.id AND u.role = 'sales'
+                        SET c.rep_id = u.id
+                    ");
+                } catch (Throwable $updateError) {
+                    // لا نوقف العملية إذا فشل التحديث - يمكن تشغيله لاحقاً
+                    // الأعمدة تم إضافتها بنجاح، التحديث يمكن أن يتم لاحقاً
+                    error_log('Customers rep_id update error (non-critical): ' . $updateError->getMessage());
+                }
+            }
+
+            // إنشاء flag file للإشارة إلى اكتمال الهجرة
+            $flagDir = dirname($flagFile);
+            if (!is_dir($flagDir)) {
+                @mkdir($flagDir, 0775, true);
+            }
+            @file_put_contents($flagFile, date('c'));
+
+        } catch (Throwable $customerFlagsError) {
+            error_log('Customers flags migration error: ' . $customerFlagsError->getMessage());
         }
     }
     
