@@ -56,6 +56,20 @@ if (!defined('ACCESS_ALLOWED')) {
     ?>
     <!-- jQuery MUST be loaded FIRST -->
     <script src="https://code.jquery.com/jquery-3.7.0.min.js"></script>
+    <script>
+        // التأكد من تحميل jQuery بشكل صحيح
+        if (typeof jQuery === 'undefined' && typeof $ === 'undefined') {
+            console.error('jQuery failed to load!');
+        } else {
+            // التأكد من أن jQuery متاح عالمياً
+            if (typeof window.jQuery === 'undefined') {
+                window.jQuery = typeof jQuery !== 'undefined' ? jQuery : (typeof $ !== 'undefined' ? $ : null);
+            }
+            if (typeof window.$ === 'undefined') {
+                window.$ = typeof $ !== 'undefined' ? $ : (typeof jQuery !== 'undefined' ? jQuery : null);
+            }
+        }
+    </script>
     <!-- Bootstrap 5 JS -->
     <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
     <!-- Custom JS -->
@@ -388,6 +402,12 @@ if (!defined('ACCESS_ALLOWED')) {
             const dashboardMain = document.querySelector('.dashboard-main');
             
             if (!pageLoader) {
+                return;
+            }
+            
+            // التأكد من أن pageLoader.style موجود
+            if (!pageLoader.style) {
+                console.warn('pageLoader element found but style property is not available');
                 return;
             }
             

@@ -1466,15 +1466,20 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && trim($_P
     // التأكد من إخفاء pageLoader بعد تحميل الصفحة بالكامل وإصلاح مشكلة الأزرار
     (function() {
         function ensurePageLoaderHidden() {
-            const pageLoader = document.getElementById('pageLoader');
-            if (pageLoader) {
-                // إخفاء pageLoader بشكل قاطع
-                pageLoader.classList.add('hidden');
-                pageLoader.style.display = 'none';
-                pageLoader.style.visibility = 'hidden';
-                pageLoader.style.pointerEvents = 'none';
-                pageLoader.style.zIndex = '-1';
-                pageLoader.style.opacity = '0';
+            try {
+                const pageLoader = document.getElementById('pageLoader');
+                if (pageLoader && pageLoader.style) {
+                    // إخفاء pageLoader بشكل قاطع
+                    pageLoader.classList.add('hidden');
+                    pageLoader.style.display = 'none';
+                    pageLoader.style.visibility = 'hidden';
+                    pageLoader.style.pointerEvents = 'none';
+                    pageLoader.style.zIndex = '-1';
+                    pageLoader.style.opacity = '0';
+                }
+            } catch (error) {
+                // تجاهل الأخطاء بصمت
+                console.warn('Error hiding pageLoader:', error);
             }
         }
         
@@ -1566,4 +1571,3 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && trim($_P
 
 <script src="<?php echo ASSETS_URL; ?>js/reports.js"></script>
 <script src="<?php echo ASSETS_URL; ?>js/attendance_notifications.js"></script>
-
