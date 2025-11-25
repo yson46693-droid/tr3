@@ -746,17 +746,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && trim($_P
                                 }
                             }
                             
-                            // التأكد من أن التبويبات تعمل بشكل صحيح
-                            const tabButtons = document.querySelectorAll('#salesCollectionsTabs button[data-bs-toggle="tab"]');
-                            tabButtons.forEach(function(button) {
-                                button.addEventListener('click', function(e) {
-                                    // التأكد من أن Bootstrap يعمل
-                                    if (typeof bootstrap === 'undefined') {
-                                        console.error('Bootstrap not loaded');
-                                        return;
-                                    }
-                                });
-                            });
+                            // Bootstrap يتولى إدارة التبويبات تلقائياً عبر data-bs-toggle="tab"
+                            // لا حاجة لإضافة event listeners يدوياً - هذا قد يتداخل مع عمل Bootstrap
                         }
 
                         function handlePrintableButtons() {
@@ -785,7 +776,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && trim($_P
 
                         // التأكد من تحميل Bootstrap قبل تشغيل الكود
                         function waitForBootstrap(callback) {
-                            if (typeof bootstrap !== 'undefined') {
+                            if (typeof bootstrap !== 'undefined' && typeof bootstrap.Tab !== 'undefined') {
                                 callback();
                             } else {
                                 setTimeout(function() {
