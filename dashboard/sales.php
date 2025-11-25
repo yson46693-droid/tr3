@@ -1460,7 +1460,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && trim($_P
     })();
 </script>
 <script>
-    // التأكد من إخفاء pageLoader بعد تحميل الصفحة بالكامل
+    // التأكد من إخفاء pageLoader بعد تحميل الصفحة بالكامل وإصلاح مشكلة الأزرار
     (function() {
         function ensurePageLoaderHidden() {
             const pageLoader = document.getElementById('pageLoader');
@@ -1471,23 +1471,88 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && trim($_P
                 pageLoader.style.visibility = 'hidden';
                 pageLoader.style.pointerEvents = 'none';
                 pageLoader.style.zIndex = '-1';
+                pageLoader.style.opacity = '0';
+            }
+        }
+        
+        // إصلاح مشكلة الأزرار - التأكد من أن الأزرار قابلة للنقر
+        function fixButtonsInteractivity() {
+            // إخفاء pageLoader أولاً
+            ensurePageLoaderHidden();
+            
+            // التأكد من أن جميع الأزرار قابلة للنقر
+            const buttons = document.querySelectorAll('button, a.topbar-action, input[type="checkbox"]');
+            buttons.forEach(function(btn) {
+                if (btn) {
+                    btn.style.pointerEvents = 'auto';
+                    btn.style.zIndex = 'auto';
+                }
+            });
+            
+            // التأكد من أن topbar قابلة للنقر
+            const topbar = document.querySelector('.homeline-topbar');
+            if (topbar) {
+                topbar.style.pointerEvents = 'auto';
+                topbar.style.zIndex = 'auto';
+            }
+            
+            // التأكد من أن darkModeToggle يعمل
+            const darkModeToggle = document.getElementById('darkModeToggle');
+            if (darkModeToggle) {
+                darkModeToggle.style.pointerEvents = 'auto';
+                darkModeToggle.style.cursor = 'pointer';
+                
+                // إضافة event listener مباشرة إذا لم يكن موجوداً
+                if (!darkModeToggle.hasAttribute('data-listener-added')) {
+                    darkModeToggle.setAttribute('data-listener-added', 'true');
+                    darkModeToggle.addEventListener('change', function() {
+                        if (typeof toggleDarkMode === 'function') {
+                            toggleDarkMode();
+                        }
+                    });
+                    darkModeToggle.addEventListener('click', function(e) {
+                        e.stopPropagation();
+                    });
+                }
             }
         }
         
         // إخفاء pageLoader فوراً
         if (document.readyState === 'loading') {
-            document.addEventListener('DOMContentLoaded', ensurePageLoaderHidden);
+            document.addEventListener('DOMContentLoaded', function() {
+                ensurePageLoaderHidden();
+                fixButtonsInteractivity();
+            });
         } else {
             ensurePageLoaderHidden();
+            fixButtonsInteractivity();
         }
         
-        window.addEventListener('load', ensurePageLoaderHidden);
+        window.addEventListener('load', function() {
+            ensurePageLoaderHidden();
+            fixButtonsInteractivity();
+        });
         
-        // إخفاء pageLoader بعد تأخيرات متعددة للتأكد
-        setTimeout(ensurePageLoaderHidden, 100);
-        setTimeout(ensurePageLoaderHidden, 500);
-        setTimeout(ensurePageLoaderHidden, 1000);
-        setTimeout(ensurePageLoaderHidden, 2000);
+        // إخفاء pageLoader وإصلاح الأزرار بعد تأخيرات متعددة للتأكد
+        setTimeout(function() {
+            ensurePageLoaderHidden();
+            fixButtonsInteractivity();
+        }, 100);
+        
+        setTimeout(function() {
+            ensurePageLoaderHidden();
+            fixButtonsInteractivity();
+        }, 500);
+        
+        setTimeout(function() {
+            ensurePageLoaderHidden();
+            fixButtonsInteractivity();
+        }, 1000);
+        
+        setTimeout(function() {
+            ensurePageLoaderHidden();
+            fixButtonsInteractivity();
+        }, 2000);
     })();
 </script>
 <script src="<?php echo ASSETS_URL; ?>js/attendance_notifications.js"></script>

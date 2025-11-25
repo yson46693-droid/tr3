@@ -642,6 +642,22 @@ if (!defined('ACCESS_ALLOWED')) {
             // فقط للروابط الخارجية التي تغير الصفحة بالكامل
             let isNavigating = false;
             document.addEventListener('click', function(e) {
+                // تجاهل النقرات على الأزرار والعناصر التفاعلية
+                const target = e.target;
+                const isButton = target.tagName === 'BUTTON' || 
+                                 target.tagName === 'INPUT' || 
+                                 target.closest('button') || 
+                                 target.closest('input') ||
+                                 target.closest('.topbar-action') ||
+                                 target.closest('[data-bs-toggle]') ||
+                                 target.closest('[data-bs-target]') ||
+                                 target.closest('.nav-link') ||
+                                 target.closest('.dropdown-item');
+                
+                if (isButton) {
+                    return; // تجاهل النقرات على الأزرار
+                }
+                
                 const link = e.target.closest('a');
                 
                 // تحقق من أن الرابط يؤدي لتغيير الصفحة الكامل (ليس tabs أو sections)
@@ -661,6 +677,7 @@ if (!defined('ACCESS_ALLOWED')) {
                     !link.classList.contains('dropdown-item') &&
                     !link.closest('.nav-tabs') && // تجاهل روابط التبويبات
                     !link.closest('.section-tabs') && // تجاهل روابط أقسام المخزن
+                    !link.closest('.topbar-action') && // تجاهل أزرار الـ topbar
                     !isNavigating) {
                     
                     isNavigating = true;
