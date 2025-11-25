@@ -726,14 +726,37 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && trim($_P
                         const assetsBaseUrl = '<?php echo rtrim(ASSETS_URL, '/'); ?>';
 
                         function initCombinedTabs() {
+                            // التحقق من تحميل Bootstrap
+                            if (typeof bootstrap === 'undefined') {
+                                console.warn('Bootstrap not loaded, retrying tabs initialization...');
+                                setTimeout(initCombinedTabs, 100);
+                                return;
+                            }
+                            
                             const defaultTab = '<?php echo $activeCombinedTab === 'collections' ? 'collections' : 'sales'; ?>';
                             if (defaultTab === 'collections') {
                                 const tabTrigger = document.getElementById('collections-tab');
-                                if (tabTrigger && window.bootstrap && typeof window.bootstrap.Tab === 'function') {
-                                    const tab = new bootstrap.Tab(tabTrigger);
-                                    tab.show();
+                                if (tabTrigger && typeof bootstrap !== 'undefined' && typeof bootstrap.Tab === 'function') {
+                                    try {
+                                        const tab = new bootstrap.Tab(tabTrigger);
+                                        tab.show();
+                                    } catch (e) {
+                                        console.error('Error showing collections tab:', e);
+                                    }
                                 }
                             }
+                            
+                            // التأكد من أن التبويبات تعمل بشكل صحيح
+                            const tabButtons = document.querySelectorAll('#salesCollectionsTabs button[data-bs-toggle="tab"]');
+                            tabButtons.forEach(function(button) {
+                                button.addEventListener('click', function(e) {
+                                    // التأكد من أن Bootstrap يعمل
+                                    if (typeof bootstrap === 'undefined') {
+                                        console.error('Bootstrap not loaded');
+                                        return;
+                                    }
+                                });
+                            });
                         }
 
                         function handlePrintableButtons() {
@@ -743,7 +766,11 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && trim($_P
                             }
 
                             printableButtons.forEach(function (button) {
-                                button.addEventListener('click', function () {
+                                // إزالة أي معالجات سابقة
+                                const newButton = button.cloneNode(true);
+                                button.parentNode.replaceChild(newButton, button);
+                                
+                                newButton.addEventListener('click', function () {
                                     const targetId = this.getAttribute('data-report-target');
                                     const reportTitle = this.getAttribute('data-report-title') || '';
                                     openPrintableReport(targetId, reportTitle, assetsBaseUrl);
@@ -756,10 +783,23 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && trim($_P
                             handlePrintableButtons();
                         }
 
+                        // التأكد من تحميل Bootstrap قبل تشغيل الكود
+                        function waitForBootstrap(callback) {
+                            if (typeof bootstrap !== 'undefined') {
+                                callback();
+                            } else {
+                                setTimeout(function() {
+                                    waitForBootstrap(callback);
+                                }, 100);
+                            }
+                        }
+
                         if (document.readyState === 'loading') {
-                            document.addEventListener('DOMContentLoaded', initPrintableReports);
+                            document.addEventListener('DOMContentLoaded', function() {
+                                waitForBootstrap(initPrintableReports);
+                            });
                         } else {
-                            initPrintableReports();
+                            waitForBootstrap(initPrintableReports);
                         }
 
                         window.openPrintableReport = openPrintableReport;
@@ -1323,8 +1363,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && trim($_P
                 }
                 });
             }
-        }
-        
+            
             // معالج إنشاء تقرير العميل - المبيعات
             const generateCustomerSalesReportBtn = document.getElementById('generateCustomerSalesReportBtn');
             
