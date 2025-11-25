@@ -54,10 +54,10 @@ if (!defined('ACCESS_ALLOWED')) {
     // استخدام timestamp لـ cache busting (نفس المستخدم في header.php)
     $cacheVersion = time();
     ?>
+    <!-- jQuery MUST be loaded FIRST -->
+    <script src="https://code.jquery.com/jquery-3.7.0.min.js"></script>
     <!-- Bootstrap 5 JS -->
     <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
-    <!-- jQuery (optional, for some features) -->
-    <script src="https://code.jquery.com/jquery-3.7.0.min.js"></script>
     <!-- Custom JS -->
     <?php
     // التأكد من أن ASSETS_URL صحيح
