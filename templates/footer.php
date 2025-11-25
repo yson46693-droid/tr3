@@ -99,13 +99,35 @@ if (!defined('ACCESS_ALLOWED')) {
     <?php 
     // ملف التشخيص لصفحة المبيعات والتحصيلات
     // التحقق من $page من $_GET أيضاً كـ fallback
-    $currentPage = $page ?? ($_GET['page'] ?? '');
-    if ($currentPage === 'sales_collections' || in_array($currentPage, ['sales', 'collections', 'sales_collections'], true)): ?>
+    $currentPage = isset($page) ? $page : (isset($_GET['page']) ? $_GET['page'] : '');
+    $shouldLoadDiagnostic = false;
+    
+    // تحقق شامل من جميع الحالات
+    if ($currentPage === 'sales_collections') {
+        $shouldLoadDiagnostic = true;
+    } elseif (in_array($currentPage, ['sales', 'collections'], true)) {
+        $shouldLoadDiagnostic = true;
+    } elseif (isset($_GET['page']) && in_array($_GET['page'], ['sales', 'collections', 'sales_collections'], true)) {
+        $shouldLoadDiagnostic = true;
+    }
+    
+    if ($shouldLoadDiagnostic): ?>
         <script>
-            console.log('🔍 Debug in footer - Current Page:', '<?php echo $currentPage; ?>');
-            console.log('🔍 Debug in footer - $page variable:', '<?php echo isset($page) ? $page : 'not set'; ?>');
+            console.log('🔍 Debug in footer - Current Page:', '<?php echo htmlspecialchars($currentPage, ENT_QUOTES, 'UTF-8'); ?>');
+            console.log('🔍 Debug in footer - $_GET[page]:', '<?php echo htmlspecialchars($_GET['page'] ?? 'not set', ENT_QUOTES, 'UTF-8'); ?>');
+            console.log('🔍 Debug in footer - $page variable:', '<?php echo isset($page) ? htmlspecialchars($page, ENT_QUOTES, 'UTF-8') : 'not set'; ?>');
+            console.log('🔍 Debug in footer - Should load diagnostic:', true);
+            console.log('🔍 Debug in footer - Assets URL:', '<?php echo htmlspecialchars($assetsUrl, ENT_QUOTES, 'UTF-8'); ?>');
         </script>
-        <script src="<?php echo $assetsUrl; ?>js/sales-collections-diagnostic.js?v=<?php echo $cacheVersion; ?>" onerror="console.error('❌ فشل تحميل ملف التشخيص');"></script>
+        <script src="<?php echo $assetsUrl; ?>js/sales-collections-diagnostic.js?v=<?php echo $cacheVersion; ?>" 
+                onerror="console.error('❌ فشل تحميل ملف التشخيص من:', '<?php echo htmlspecialchars($assetsUrl . 'js/sales-collections-diagnostic.js', ENT_QUOTES, 'UTF-8'); ?>');"
+                onload="console.log('✅ تم تحميل ملف التشخيص بنجاح');"></script>
+    <?php else: ?>
+        <script>
+            console.log('⚠️ Debug in footer - Diagnostic NOT loaded');
+            console.log('⚠️ Current Page:', '<?php echo htmlspecialchars($currentPage, ENT_QUOTES, 'UTF-8'); ?>');
+            console.log('⚠️ $_GET[page]:', '<?php echo htmlspecialchars($_GET['page'] ?? 'not set', ENT_QUOTES, 'UTF-8'); ?>');
+        </script>
     <?php endif; ?>
     <script>
     // التحقق من تحميل ملفات JavaScript بشكل صحيح
