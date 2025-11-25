@@ -2,16 +2,25 @@
  * ملف تشخيصي لمعرفة سبب مشكلة عدم استجابة الأزرار في صفحة المبيعات والتحصيلات
  * 
  * طريقة الاستخدام:
- * 1. أضف هذا السطر في dashboard/sales.php قبل </body>:
- *    <script src="<?php echo ASSETS_URL; ?>js/sales-collections-diagnostic.js"></script>
- * 2. افتح صفحة المبيعات والتحصيلات
- * 3. افتح Console (F12) وستجد تقرير مفصل عن المشكلة
+ * 1. افتح صفحة المبيعات والتحصيلات
+ * 2. افتح Console (F12)
+ * 3. ابحث عن رسالة "🔍 بدء التشخيص"
  */
+
+// رسالة فورية للتأكد من تحميل الملف
+console.log('%c🔍 ملف التشخيص تم تحميله!', 'color: #28a745; font-size: 18px; font-weight: bold; background: #d4edda; padding: 10px; border-radius: 5px;');
+console.log('%c⏳ سيبدأ التشخيص خلال ثانية واحدة...', 'color: #0d6efd; font-size: 14px;');
 
 (function() {
     'use strict';
     
-    console.log('%c🔍 بدء التشخيص - صفحة المبيعات والتحصيلات', 'color: #0d6efd; font-size: 16px; font-weight: bold;');
+    // التأكد من أن الكود يعمل
+    try {
+        console.log('%c✅ كود التشخيص يعمل', 'color: #28a745;');
+    } catch(e) {
+        console.error('❌ خطأ في كود التشخيص:', e);
+        return;
+    }
     
     const diagnosticReport = {
         timestamp: new Date().toLocaleString('ar-EG'),
@@ -24,30 +33,37 @@
     // انتظار تحميل الصفحة بالكامل
     function runDiagnostic() {
         console.log('%c═══════════════════════════════════════', 'color: #666;');
+        console.log('%c🔍 بدء التشخيص - صفحة المبيعات والتحصيلات', 'color: #0d6efd; font-size: 16px; font-weight: bold;');
+        console.log('%c═══════════════════════════════════════', 'color: #666;');
         
-        // 1. فحص Bootstrap
-        checkBootstrap();
-        
-        // 2. فحص الأزرار والتبويبات
-        checkButtonsAndTabs();
-        
-        // 3. فحص pageLoader
-        checkPageLoader();
-        
-        // 4. فحص Event Listeners
-        checkEventListeners();
-        
-        // 5. فحص CSS
-        checkCSS();
-        
-        // 6. فحص الأخطاء في Console
-        checkConsoleErrors();
-        
-        // 7. فحص التداخل في Event Listeners
-        checkEventConflicts();
-        
-        // طباعة التقرير النهائي
-        printReport();
+        try {
+            // 1. فحص Bootstrap
+            checkBootstrap();
+            
+            // 2. فحص الأزرار والتبويبات
+            checkButtonsAndTabs();
+            
+            // 3. فحص pageLoader
+            checkPageLoader();
+            
+            // 4. فحص Event Listeners
+            checkEventListeners();
+            
+            // 5. فحص CSS
+            checkCSS();
+            
+            // 6. فحص التداخل في Event Listeners
+            checkEventConflicts();
+            
+            // 7. فحص بسيط - محاولة النقر على زر
+            testButtonClick();
+            
+            // طباعة التقرير النهائي
+            printReport();
+        } catch(error) {
+            console.error('❌ خطأ أثناء التشخيص:', error);
+            console.log('%c💡 حاول إعادة تحميل الصفحة', 'color: #ffc107;');
+        }
     }
     
     function checkBootstrap() {
@@ -128,6 +144,16 @@
                     });
                     console.error(`❌ تبويب ${tabName} لديه pointer-events: none`);
                 }
+                
+                // فحص visibility
+                if (computedStyle.visibility === 'hidden') {
+                    diagnosticReport.issues.push({
+                        severity: 'HIGH',
+                        message: `تبويب ${tabName} مخفي (visibility: hidden)`,
+                        fix: 'أزل visibility: hidden من CSS'
+                    });
+                    console.error(`❌ تبويب ${tabName} مخفي`);
+                }
             }
         });
         
@@ -176,22 +202,14 @@
         const tabButtons = document.querySelectorAll('#salesCollectionsTabs button');
         console.log(`📊 عدد أزرار التبويبات: ${tabButtons.length}`);
         
-        tabButtons.forEach((btn, index) => {
-            const rect = btn.getBoundingClientRect();
-            const isVisible = rect.width > 0 && rect.height > 0;
-            const isInViewport = rect.top >= 0 && rect.left >= 0 && 
-                                rect.bottom <= window.innerHeight && 
-                                rect.right <= window.innerWidth;
-            
-            if (!isVisible) {
-                diagnosticReport.issues.push({
-                    severity: 'HIGH',
-                    message: `زر التبويب ${index + 1} غير مرئي (width: ${rect.width}, height: ${rect.height})`,
-                    fix: 'تحقق من CSS'
-                });
-                console.error(`❌ زر التبويب ${index + 1} غير مرئي`);
-            }
-        });
+        if (tabButtons.length === 0) {
+            diagnosticReport.issues.push({
+                severity: 'CRITICAL',
+                message: 'لم يتم العثور على أي أزرار تبويبات!',
+                fix: 'تحقق من وجود #salesCollectionsTabs في الصفحة'
+            });
+            console.error('❌ لم يتم العثور على أي أزرار تبويبات!');
+        }
     }
     
     function checkPageLoader() {
@@ -210,8 +228,9 @@
                         computedStyle.visibility === 'hidden';
         const zIndex = parseInt(computedStyle.zIndex) || 0;
         const pointerEvents = computedStyle.pointerEvents;
+        const opacity = parseFloat(computedStyle.opacity) || 1;
         
-        console.log(`📊 pageLoader - hidden: ${isHidden}, z-index: ${zIndex}, pointer-events: ${pointerEvents}`);
+        console.log(`📊 pageLoader - hidden: ${isHidden}, z-index: ${zIndex}, pointer-events: ${pointerEvents}, opacity: ${opacity}`);
         
         if (!isHidden && zIndex > 100) {
             diagnosticReport.issues.push({
@@ -259,35 +278,34 @@
         console.log('%c4️⃣ فحص Event Listeners...', 'color: #0d6efd; font-weight: bold;');
         
         // فحص عدد event listeners على document
-        const clickListeners = getEventListeners ? getEventListeners(document) : null;
-        if (clickListeners && clickListeners.click) {
-            console.log(`📊 عدد click listeners على document: ${clickListeners.click.length}`);
-            
-            if (clickListeners.click.length > 5) {
-                diagnosticReport.warnings.push({
-                    message: `عدد كبير من click listeners على document (${clickListeners.click.length})`,
-                    fix: 'قد يكون هناك تداخل في event listeners'
-                });
-                console.warn(`⚠️ عدد كبير من click listeners: ${clickListeners.click.length}`);
+        if (typeof getEventListeners !== 'undefined') {
+            const clickListeners = getEventListeners(document);
+            if (clickListeners && clickListeners.click) {
+                console.log(`📊 عدد click listeners على document: ${clickListeners.click.length}`);
+                
+                if (clickListeners.click.length > 5) {
+                    diagnosticReport.warnings.push({
+                        message: `عدد كبير من click listeners على document (${clickListeners.click.length})`,
+                        fix: 'قد يكون هناك تداخل في event listeners'
+                    });
+                    console.warn(`⚠️ عدد كبير من click listeners: ${clickListeners.click.length}`);
+                }
             }
         } else {
             console.log('ℹ️ لا يمكن فحص event listeners (يتطلب Chrome DevTools)');
+            console.log('💡 افتح Chrome DevTools وأعد تحميل الصفحة');
         }
-        
-        // فحص event listeners على التبويبات
-        const tabButtons = document.querySelectorAll('#salesCollectionsTabs button');
-        tabButtons.forEach((btn, index) => {
-            const listeners = getEventListeners ? getEventListeners(btn) : null;
-            if (listeners) {
-                console.log(`📊 زر التبويب ${index + 1} - click listeners: ${listeners.click ? listeners.click.length : 0}`);
-            }
-        });
     }
     
     function checkCSS() {
         console.log('%c5️⃣ فحص CSS...', 'color: #0d6efd; font-weight: bold;');
         
         const tabButtons = document.querySelectorAll('#salesCollectionsTabs button');
+        if (tabButtons.length === 0) {
+            console.warn('⚠️ لم يتم العثور على أزرار التبويبات');
+            return;
+        }
+        
         tabButtons.forEach((btn, index) => {
             const computedStyle = window.getComputedStyle(btn);
             
@@ -304,41 +322,20 @@
                     fix: 'أزل هذه القيم من CSS'
                 });
                 console.error(`❌ زر التبويب ${index + 1} - ${issues.join(', ')}`);
+            } else {
+                console.log(`✅ زر التبويب ${index + 1} - CSS سليم`);
             }
         });
     }
     
-    function checkConsoleErrors() {
-        console.log('%c6️⃣ فحص الأخطاء في Console...', 'color: #0d6efd; font-weight: bold;');
-        
-        // حفظ الأخطاء الحالية
-        const originalError = console.error;
-        const errors = [];
-        
-        console.error = function(...args) {
-            errors.push(args.join(' '));
-            originalError.apply(console, args);
-        };
-        
-        setTimeout(() => {
-            if (errors.length > 0) {
-                diagnosticReport.warnings.push({
-                    message: `تم اكتشاف ${errors.length} خطأ في Console`,
-                    fix: 'تحقق من Console للأخطاء'
-                });
-                console.warn(`⚠️ تم اكتشاف ${errors.length} خطأ`);
-            }
-        }, 1000);
-    }
-    
     function checkEventConflicts() {
-        console.log('%c7️⃣ فحص التداخل في Event Listeners...', 'color: #0d6efd; font-weight: bold;');
+        console.log('%c6️⃣ فحص التداخل في Event Listeners...', 'color: #0d6efd; font-weight: bold;');
         
         // محاولة إضافة test listener
-        let testEventFired = false;
         const testButton = document.getElementById('sales-tab');
         
         if (testButton) {
+            let testEventFired = false;
             const testHandler = function(e) {
                 testEventFired = true;
                 console.log('✅ Test event fired successfully');
@@ -348,14 +345,39 @@
             
             setTimeout(() => {
                 if (!testEventFired) {
-                    diagnosticReport.issues.push({
-                        severity: 'HIGH',
-                        message: 'Event listeners قد لا تعمل بشكل صحيح',
-                        fix: 'تحقق من event propagation و stopPropagation'
-                    });
-                    console.warn('⚠️ Test event لم يتم تشغيله');
+                    console.log('ℹ️ Test event لم يتم تشغيله بعد (هذا طبيعي - سيتم تشغيله عند النقر)');
                 }
-            }, 2000);
+            }, 100);
+        } else {
+            console.warn('⚠️ لم يتم العثور على زر sales-tab للاختبار');
+        }
+    }
+    
+    function testButtonClick() {
+        console.log('%c7️⃣ اختبار النقر على زر...', 'color: #0d6efd; font-weight: bold;');
+        
+        const testButton = document.getElementById('sales-tab');
+        if (testButton) {
+            console.log('💡 جرب النقر على زر "المبيعات" الآن');
+            console.log('💡 إذا لم يحدث شيء، فالمشكلة في event handling');
+            
+            // محاولة برمجية
+            try {
+                const clickEvent = new MouseEvent('click', {
+                    bubbles: true,
+                    cancelable: true,
+                    view: window
+                });
+                
+                console.log('✅ تم إنشاء click event بنجاح');
+                console.log('💡 يمكنك تجربة: testButton.click() في Console');
+                
+                window.testButtonClick = function() {
+                    testButton.click();
+                };
+            } catch(e) {
+                console.error('❌ خطأ في إنشاء click event:', e);
+            }
         }
     }
     
@@ -365,11 +387,12 @@
         console.log('%c═══════════════════════════════════════', 'color: #666;');
         
         if (diagnosticReport.issues.length === 0 && diagnosticReport.warnings.length === 0) {
-            console.log('%c✅ لا توجد مشاكل!', 'color: #28a745; font-size: 14px; font-weight: bold;');
-            console.log('%c💡 إذا كانت المشكلة لا تزال موجودة، قد تكون المشكلة في:', 'color: #ffc107;');
-            console.log('   - Network issues (Bootstrap لم يتم تحميله)');
-            console.log('   - JavaScript errors في ملفات أخرى');
-            console.log('   - Browser extensions تتداخل مع الصفحة');
+            console.log('%c✅ لا توجد مشاكل واضحة!', 'color: #28a745; font-size: 14px; font-weight: bold;');
+            console.log('%c💡 إذا كانت المشكلة لا تزال موجودة، جرب:', 'color: #ffc107;');
+            console.log('   1. افتح Network tab وتحقق من تحميل جميع الملفات');
+            console.log('   2. تحقق من عدم وجود أخطاء JavaScript حمراء');
+            console.log('   3. جرب في متصفح آخر');
+            console.log('   4. امسح cache المتصفح (Ctrl+Shift+Delete)');
         } else {
             // طباعة المشاكل الحرجة
             if (diagnosticReport.issues.length > 0) {
@@ -414,20 +437,23 @@
         
         // حفظ التقرير في window للوصول إليه لاحقاً
         window.salesCollectionsDiagnostic = diagnosticReport;
+        
+        console.log('%c💡 يمكنك الوصول للتقرير بكتابة: salesCollectionsDiagnostic', 'color: #0d6efd; font-style: italic;');
     }
     
     // تشغيل التشخيص بعد تحميل الصفحة
     if (document.readyState === 'loading') {
         document.addEventListener('DOMContentLoaded', function() {
-            setTimeout(runDiagnostic, 1000);
+            setTimeout(runDiagnostic, 1500);
         });
     } else {
-        setTimeout(runDiagnostic, 1000);
+        setTimeout(runDiagnostic, 1500);
     }
     
     // إضافة زر في الصفحة لإعادة التشغيل
     window.rerunDiagnostic = function() {
         console.clear();
+        console.log('%c🔄 إعادة تشغيل التشخيص...', 'color: #0d6efd; font-size: 16px; font-weight: bold;');
         runDiagnostic();
     };
     
