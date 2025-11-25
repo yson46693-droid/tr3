@@ -688,10 +688,21 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action'])) {
                     }
                 }
 
+                $repIdForCustomer = $isSalesUser ? (int)$currentUser['id'] : null;
+                $createdByAdminFlag = $isSalesUser ? 0 : 1;
+
                 $result = $db->execute(
-                    "INSERT INTO customers (name, phone, balance, address, status, created_by) 
-                     VALUES (?, ?, ?, ?, 'active', ?)",
-                    [$name, $phone ?: null, $balance, $address ?: null, $currentUser['id']]
+                    "INSERT INTO customers (name, phone, balance, address, status, created_by, rep_id, created_from_pos, created_by_admin) 
+                     VALUES (?, ?, ?, ?, 'active', ?, ?, 0, ?)",
+                    [
+                        $name,
+                        $phone ?: null,
+                        $balance,
+                        $address ?: null,
+                        $currentUser['id'],
+                        $repIdForCustomer,
+                        $createdByAdminFlag,
+                    ]
                 );
 
                 logAudit($currentUser['id'], 'add_customer', 'customer', $result['insert_id'], null, [

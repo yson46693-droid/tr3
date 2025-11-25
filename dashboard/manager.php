@@ -721,7 +721,7 @@ $pageTitle = isset($lang['manager_dashboard']) ? $lang['manager_dashboard'] : '�
                 
             <?php elseif ($page === 'customers'): ?>
                 <?php 
-                $modulePath = __DIR__ . '/../modules/sales/customers.php';
+                $modulePath = __DIR__ . '/../modules/manager/customers.php';
                 if (file_exists($modulePath)) {
                     try {
                         include $modulePath;
@@ -731,6 +731,21 @@ $pageTitle = isset($lang['manager_dashboard']) ? $lang['manager_dashboard'] : '�
                     }
                 } else {
                     echo '<div class="alert alert-warning">صفحة العملاء غير متاحة حالياً</div>';
+                }
+                ?>
+
+            <?php elseif ($page === 'rep_customers_view'): ?>
+                <?php 
+                $modulePath = __DIR__ . '/../modules/shared/rep_customers_view.php';
+                if (file_exists($modulePath)) {
+                    try {
+                        include $modulePath;
+                    } catch (Throwable $e) {
+                        error_log('Manager rep customers view error: ' . $e->getMessage());
+                        echo '<div class="alert alert-danger">تعذر تحميل صفحة عملاء المندوب: ' . htmlspecialchars($e->getMessage()) . '</div>';
+                    }
+                } else {
+                    echo '<div class="alert alert-warning">صفحة عرض عملاء المندوب غير متاحة حالياً</div>';
                 }
                 ?>
                 

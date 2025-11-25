@@ -519,7 +519,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     $dueAmount = $baseDueAmount;
                     $creditUsed = 0.0;
                     $db->execute(
-                        "INSERT INTO customers (name, phone, address, balance, status, created_by) VALUES (?, ?, ?, ?, 'active', ?)",
+                        "INSERT INTO customers (name, phone, address, balance, status, created_by, rep_id, created_from_pos, created_by_admin) 
+                         VALUES (?, ?, ?, ?, 'active', ?, NULL, 1, 0)",
                         [
                             $newCustomerName,
                             $newCustomerPhone !== '' ? $newCustomerPhone : null,

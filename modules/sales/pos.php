@@ -360,14 +360,20 @@ if (!$error && $_SERVER['REQUEST_METHOD'] === 'POST') {
                 if ($customerMode === 'new') {
                     $dueAmount = $baseDueAmount;
                     $creditUsed = 0.0;
+                    $repIdForCustomer = ($currentUser['role'] ?? '') === 'sales' ? $currentUser['id'] : null;
+                    $createdByAdminFlag = $repIdForCustomer ? 0 : 1;
+
                     $db->execute(
-                        "INSERT INTO customers (name, phone, address, balance, status, created_by) VALUES (?, ?, ?, ?, 'active', ?)",
+                        "INSERT INTO customers (name, phone, address, balance, status, created_by, rep_id, created_from_pos, created_by_admin) 
+                         VALUES (?, ?, ?, ?, 'active', ?, ?, 0, ?)",
                         [
                             $newCustomerName,
                             $newCustomerPhone !== '' ? $newCustomerPhone : null,
                             $newCustomerAddress !== '' ? $newCustomerAddress : null,
                             $dueAmount,
                             $currentUser['id'],
+                            $repIdForCustomer,
+                            $createdByAdminFlag,
                         ]
                     );
                     $customerId = (int) $db->getLastInsertId();

@@ -154,14 +154,20 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                             );
                         }
                     } else {
+                        $newCustomerCreator = $customerCreatorId ?? $currentUser['id'];
+                        $newCustomerRepId = $salesRepId ?? ($isSalesUser ? $currentUser['id'] : null);
+                        $createdByAdminFlag = ($isSalesUser && $newCustomerRepId) ? 0 : 1;
+
                         $db->execute(
-                            "INSERT INTO customers (name, phone, address, balance, status, created_by) 
-                             VALUES (?, ?, ?, 0, 'active', ?)",
+                            "INSERT INTO customers (name, phone, address, balance, status, created_by, rep_id, created_from_pos, created_by_admin) 
+                             VALUES (?, ?, ?, 0, 'active', ?, ?, 0, ?)",
                             [
                                 $newCustomerName,
                                 $newCustomerPhone !== '' ? $newCustomerPhone : null,
                                 $newCustomerAddress !== '' ? $newCustomerAddress : null,
-                                $customerCreatorId ?? $currentUser['id']
+                                $newCustomerCreator,
+                                $newCustomerRepId,
+                                $createdByAdminFlag,
                             ]
                         );
                         $customerId = (int)$db->getLastInsertId();
@@ -487,14 +493,20 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                                 );
                             }
                         } else {
+                            $newCustomerRepId = $salesRepId ?: ($isSalesUser ? $currentUser['id'] : null);
+                            $newCustomerCreator = $salesRepId ?: $currentUser['id'];
+                            $createdByAdminFlag = ($isSalesUser && $newCustomerRepId) ? 0 : 1;
+
                             $db->execute(
-                                "INSERT INTO customers (name, phone, address, balance, status, created_by) 
-                                 VALUES (?, ?, ?, 0, 'active', ?)",
+                                "INSERT INTO customers (name, phone, address, balance, status, created_by, rep_id, created_from_pos, created_by_admin) 
+                                 VALUES (?, ?, ?, 0, 'active', ?, ?, 0, ?)",
                                 [
                                     $customerName,
                                     $customerPhone !== '' ? $customerPhone : null,
                                     $customerAddress !== '' ? $customerAddress : null,
-                                    $salesRepId
+                                    $newCustomerCreator,
+                                    $newCustomerRepId,
+                                    $createdByAdminFlag,
                                 ]
                             );
                             $customerId = $db->getLastInsertId();
