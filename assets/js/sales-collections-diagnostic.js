@@ -111,27 +111,85 @@ console.log('%c⏳ سيبدأ التشخيص خلال ثانية واحدة...',
     async function checkButtonsAndTabs() {
         console.log('%c2️⃣ فحص الأزرار والتبويبات...', 'color: #0d6efd; font-weight: bold;');
         
+        // فحص #salesCollectionsTabs أولاً
+        let tabsContainer = null;
+        let attempts = 0;
+        const maxAttempts = 15;
+        
+        while (!tabsContainer && attempts < maxAttempts) {
+            attempts++;
+            tabsContainer = document.getElementById('salesCollectionsTabs');
+            if (!tabsContainer) {
+                console.log(`⏳ محاولة ${attempts}/${maxAttempts} - البحث عن #salesCollectionsTabs...`);
+                await new Promise(resolve => setTimeout(resolve, 300));
+            }
+        }
+        
+        if (tabsContainer) {
+            console.log('✅ #salesCollectionsTabs موجود');
+            const tabButtons = tabsContainer.querySelectorAll('button');
+            console.log(`📊 عدد أزرار التبويبات في #salesCollectionsTabs: ${tabButtons.length}`);
+            
+            if (tabButtons.length === 0) {
+                console.warn('⚠️ لا توجد أزرار داخل #salesCollectionsTabs');
+                console.log('📋 محتوى العنصر:', tabsContainer.innerHTML.substring(0, 500));
+            }
+        } else {
+            console.error('❌ #salesCollectionsTabs غير موجود بعد ' + maxAttempts + ' محاولة');
+        }
+        
         // انتظار إضافي للتأكد من تحميل DOM
         await new Promise(resolve => setTimeout(resolve, 500));
         
-        // البحث في جميع أنحاء الصفحة
+        // البحث في جميع أنحاء الصفحة - مع محاولات متعددة
         let tabs = {
-            sales: document.getElementById('sales-tab'),
-            collections: document.getElementById('collections-tab'),
-            returns: document.getElementById('returns-tab')
+            sales: null,
+            collections: null,
+            returns: null
         };
         
-        // إذا لم يتم العثور عليها، جرب البحث بطرق أخرى
-        if (!tabs.sales || !tabs.collections || !tabs.returns) {
-            console.log('⏳ البحث عن التبويبات بطرق بديلة...');
-            const allTabButtons = document.querySelectorAll('button[data-bs-toggle="tab"]');
-            console.log(`📊 عدد أزرار التبويبات في الصفحة: ${allTabButtons.length}`);
+        attempts = 0;
+        while ((!tabs.sales || !tabs.collections || !tabs.returns) && attempts < maxAttempts) {
+            attempts++;
             
-            allTabButtons.forEach(btn => {
-                if (btn.id === 'sales-tab') tabs.sales = btn;
-                if (btn.id === 'collections-tab') tabs.collections = btn;
-                if (btn.id === 'returns-tab') tabs.returns = btn;
-            });
+            // البحث المباشر
+            tabs.sales = document.getElementById('sales-tab');
+            tabs.collections = document.getElementById('collections-tab');
+            tabs.returns = document.getElementById('returns-tab');
+            
+            // إذا لم يتم العثور عليها، جرب البحث بطرق أخرى
+            if (!tabs.sales || !tabs.collections || !tabs.returns) {
+                if (attempts === 1) {
+                    console.log('⏳ البحث عن التبويبات بطرق بديلة...');
+                }
+                const allTabButtons = document.querySelectorAll('button[data-bs-toggle="tab"]');
+                if (attempts === 1) {
+                    console.log(`📊 عدد أزرار التبويبات في الصفحة: ${allTabButtons.length}`);
+                }
+                
+                allTabButtons.forEach(btn => {
+                    if (btn.id === 'sales-tab') tabs.sales = btn;
+                    if (btn.id === 'collections-tab') tabs.collections = btn;
+                    if (btn.id === 'returns-tab') tabs.returns = btn;
+                });
+                
+                // إذا لم يتم العثور عليها بعد، انتظر قليلاً
+                if (!tabs.sales || !tabs.collections || !tabs.returns) {
+                    await new Promise(resolve => setTimeout(resolve, 300));
+                }
+            } else {
+                break; // تم العثور على جميع التبويبات
+            }
+        }
+        
+        // تقرير النتائج
+        if (tabs.sales && tabs.collections && tabs.returns) {
+            console.log('✅ تم العثور على جميع التبويبات');
+        } else {
+            console.warn('⚠️ لم يتم العثور على بعض التبويبات بعد ' + attempts + ' محاولة');
+            if (!tabs.sales) console.warn('⚠️ لم يتم العثور على زر sales-tab للاختبار');
+            if (!tabs.collections) console.warn('⚠️ لم يتم العثور على زر collections-tab للاختبار');
+            if (!tabs.returns) console.warn('⚠️ لم يتم العثور على زر returns-tab للاختبار');
         }
         
         Object.keys(tabs).forEach(tabName => {

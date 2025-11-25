@@ -862,7 +862,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && trim($_P
         role: '<?php echo htmlspecialchars($currentUser['role']); ?>'
     };
     
-    // اختبار شامل للتبويبات والأزرار
+    // اختبار شامل للتبويبات والأزرار - مع إصلاح المشكلة
     (function() {
         async function testTabsAndButtons() {
             console.log('%c🧪 اختبار شامل للتبويبات والأزرار', 'color: #0d6efd; font-weight: bold; font-size: 14px;');
@@ -871,11 +871,11 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && trim($_P
             let attempts = 0;
             let tabsContainer = null;
             
-            while (!tabsContainer && attempts < 10) {
+            while (!tabsContainer && attempts < 15) {
                 attempts++;
                 tabsContainer = document.getElementById('salesCollectionsTabs');
                 if (!tabsContainer) {
-                    console.log(`⏳ محاولة ${attempts}/10 - البحث عن #salesCollectionsTabs...`);
+                    console.log(`⏳ محاولة ${attempts}/15 - البحث عن #salesCollectionsTabs...`);
                     await new Promise(resolve => setTimeout(resolve, 300));
                 }
             }
@@ -902,20 +902,39 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && trim($_P
                         console.log(`      - data-bs-toggle: ${btn.getAttribute('data-bs-toggle')}`);
                         console.log(`      - data-bs-target: ${btn.getAttribute('data-bs-target')}`);
                         
+                        // إصلاح pointer-events إذا كان none
+                        if (computedStyle.pointerEvents === 'none') {
+                            console.warn(`      ⚠️ إصلاح pointer-events للزر ${btn.id}`);
+                            btn.style.pointerEvents = 'auto';
+                        }
+                        
                         // اختبار النقر مباشرة
                         const testHandler = function(e) {
-                            console.log(`✅ تم النقر على ${btn.id || 'button'} - Event fired!`);
+                            console.log(`%c✅ تم النقر على ${btn.id || 'button'} - Event fired!`, 'color: #28a745; font-weight: bold;');
                             console.log(`   - Event type: ${e.type}`);
                             console.log(`   - Target: ${e.target.id || e.target.className}`);
                             console.log(`   - Current target: ${e.currentTarget.id || e.currentTarget.className}`);
+                            
+                            // محاولة تفعيل Bootstrap tab
+                            if (typeof bootstrap !== 'undefined' && bootstrap.Tab) {
+                                try {
+                                    const tab = new bootstrap.Tab(btn);
+                                    tab.show();
+                                    console.log(`   ✅ تم تفعيل التبويب باستخدام Bootstrap`);
+                                } catch(err) {
+                                    console.error(`   ❌ خطأ في تفعيل التبويب:`, err);
+                                }
+                            }
                         };
                         
+                        // إضافة listener في capture phase أيضاً
+                        btn.addEventListener('click', testHandler, { once: false, capture: true });
                         btn.addEventListener('click', testHandler, { once: false, capture: false });
-                        console.log(`      - تم إضافة click listener`);
+                        console.log(`      - تم إضافة click listeners (capture + bubble)`);
                     });
                 }
             } else {
-                console.error('❌ #salesCollectionsTabs غير موجود بعد 10 محاولات');
+                console.error('❌ #salesCollectionsTabs غير موجود بعد 15 محاولة');
                 
                 // البحث في جميع أنحاء الصفحة
                 const allTabButtons = document.querySelectorAll('button[data-bs-toggle="tab"]');
@@ -937,10 +956,17 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && trim($_P
             actionButtons.forEach((btn, idx) => {
                 const computedStyle = window.getComputedStyle(btn);
                 console.log(`   ${idx + 1}. ${btn.id || btn.className} - pointer-events: ${computedStyle.pointerEvents}, display: ${computedStyle.display}`);
+                
+                // إصلاح pointer-events إذا كان none
+                if (computedStyle.pointerEvents === 'none') {
+                    console.warn(`   ⚠️ إصلاح pointer-events للزر ${btn.id || btn.className}`);
+                    btn.style.pointerEvents = 'auto';
+                }
             });
             
             // اختبار النقر على التبويبات
             console.log('%c💡 جرب النقر على التبويبات الآن', 'color: #ffc107; font-weight: bold;');
+            console.log('%c💡 إذا لم يعمل، جرب في Console: document.getElementById("sales-tab").click()', 'color: #ffc107; font-style: italic;');
         }
         
         // تشغيل الاختبار بعد تحميل الصفحة
@@ -950,6 +976,87 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && trim($_P
             });
         } else {
             setTimeout(testTabsAndButtons, 2000);
+        }
+    })();
+
+    // إصلاح التبويبات - حل مباشر
+    (function() {
+        function initTabs() {
+            // التحقق من تحميل Bootstrap
+            if (typeof bootstrap === 'undefined') {
+                setTimeout(initTabs, 100);
+                return;
+            }
+            
+            // البحث عن التبويبات
+            const tabsContainer = document.getElementById('salesCollectionsTabs');
+            if (!tabsContainer) {
+                setTimeout(initTabs, 200);
+                return;
+            }
+            
+            const tabButtons = tabsContainer.querySelectorAll('button[data-bs-toggle="tab"]');
+            if (tabButtons.length === 0) {
+                setTimeout(initTabs, 200);
+                return;
+            }
+            
+            console.log('%c✅ تم العثور على التبويبات - تفعيلها...', 'color: #28a745; font-weight: bold;');
+            
+            // إضافة event listeners مباشرة للتبويبات
+            tabButtons.forEach(btn => {
+                // إزالة أي listeners سابقة
+                const newBtn = btn.cloneNode(true);
+                btn.parentNode.replaceChild(newBtn, btn);
+                
+                // إضافة listener جديد
+                newBtn.addEventListener('click', function(e) {
+                    e.preventDefault();
+                    e.stopPropagation();
+                    
+                    console.log(`%c✅ تم النقر على ${newBtn.id}`, 'color: #28a745; font-weight: bold;');
+                    
+                    // تفعيل التبويب باستخدام Bootstrap
+                    if (typeof bootstrap !== 'undefined' && bootstrap.Tab) {
+                        try {
+                            const tab = new bootstrap.Tab(newBtn);
+                            tab.show();
+                            console.log(`✅ تم تفعيل التبويب ${newBtn.id} بنجاح`);
+                        } catch(err) {
+                            console.error(`❌ خطأ في تفعيل التبويب:`, err);
+                            // محاولة بديلة
+                            const targetId = newBtn.getAttribute('data-bs-target');
+                            if (targetId) {
+                                const target = document.querySelector(targetId);
+                                if (target) {
+                                    // إخفاء جميع التبويبات
+                                    document.querySelectorAll('.tab-pane').forEach(pane => {
+                                        pane.classList.remove('show', 'active');
+                                    });
+                                    // إزالة active من جميع الأزرار
+                                    tabButtons.forEach(b => b.classList.remove('active'));
+                                    // إظهار التبويب المطلوب
+                                    target.classList.add('show', 'active');
+                                    newBtn.classList.add('active');
+                                    newBtn.setAttribute('aria-selected', 'true');
+                                    console.log(`✅ تم تفعيل التبويب ${newBtn.id} يدوياً`);
+                                }
+                            }
+                        }
+                    }
+                }, { capture: true });
+                
+                console.log(`✅ تم إضافة listener للتبويب ${newBtn.id}`);
+            });
+        }
+        
+        // تشغيل بعد تحميل الصفحة
+        if (document.readyState === 'loading') {
+            document.addEventListener('DOMContentLoaded', function() {
+                setTimeout(initTabs, 1000);
+            });
+        } else {
+            setTimeout(initTabs, 1000);
         }
     })();
 
