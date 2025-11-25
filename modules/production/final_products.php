@@ -636,6 +636,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                             );
                             
                             if ($finishedRow) {
+                                // quantity_produced يحتوي بالفعل على الكمية الفعلية المتبقية بعد جميع النقلات والإرجاعات
+                                // لأنه يتم تحديثه عند النقل (خصم) وعند الإرجاع (إضافة)
+                                // لذلك نستخدمه مباشرة دون خصم النقلات المعتمدة
                                 $availableQuantity = (float)($finishedRow['quantity_produced'] ?? 0);
                                 $productName = $finishedRow['product_name'] ?? 'منتج غير محدد';
                                 
@@ -644,23 +647,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                                     $productId = (int)$finishedRow['product_id'];
                                 }
                                 
-                                // خصم الكمية المنقولة بالفعل (approved أو completed) من هذا المخزن فقط
-                                // لا نخصم النقلات إلى هذا المخزن (مثل الإرجاع)
-                                $transferred = $db->queryOne(
-                                    "SELECT COALESCE(SUM(
-                                        CASE
-                                            WHEN wt.status IN ('approved', 'completed') AND wt.from_warehouse_id = ? THEN wti.quantity
-                                            ELSE 0
-                                        END
-                                    ), 0) AS transferred_quantity
-                                    FROM warehouse_transfer_items wti
-                                    LEFT JOIN warehouse_transfers wt ON wt.id = wti.transfer_id
-                                    WHERE wti.batch_id = ?",
-                                    [$fromWarehouseId, $batchId]
-                                );
-                                $availableQuantity -= (float)($transferred['transferred_quantity'] ?? 0);
-                                
-                                // خصم الكمية المحجوزة في طلبات النقل المعلقة (pending) من نفس المخزن
+                                // خصم فقط الكمية المحجوزة في طلبات النقل المعلقة (pending) من نفس المخزن
+                                // لأن الكميات المنقولة (approved أو completed) تم خصمها بالفعل من quantity_produced
+                                // والكميات المرجعة تم إضافتها بالفعل إلى quantity_produced
                                 $pendingTransfers = $db->queryOne(
                                     "SELECT COALESCE(SUM(wti.quantity), 0) AS pending_quantity
                                      FROM warehouse_transfer_items wti
