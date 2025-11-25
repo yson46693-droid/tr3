@@ -1204,15 +1204,28 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && trim($_P
     };
 
     // JavaScript لإنشاء تقارير المبيعات والتحصيلات
+    // التأكد من تحميل Bootstrap قبل تشغيل الكود
     (function() {
-        const basePath = '<?php echo getBasePath(); ?>';
-        
-        // معالج إنشاء تقرير المبيعات
-        const generateSalesReportBtn = document.getElementById('generateSalesReportBtn');
-        const generateSalesReportForm = document.getElementById('generateSalesReportForm');
-        
-        if (generateSalesReportBtn && generateSalesReportForm) {
-            generateSalesReportBtn.addEventListener('click', function() {
+        function initReportButtons() {
+            // التحقق من تحميل Bootstrap
+            if (typeof bootstrap === 'undefined') {
+                console.warn('Bootstrap not loaded, retrying...');
+                setTimeout(initReportButtons, 100);
+                return;
+            }
+            
+            const basePath = '<?php echo getBasePath(); ?>';
+            
+            // معالج إنشاء تقرير المبيعات
+            const generateSalesReportBtn = document.getElementById('generateSalesReportBtn');
+            const generateSalesReportForm = document.getElementById('generateSalesReportForm');
+            
+            if (generateSalesReportBtn && generateSalesReportForm) {
+                // إزالة أي معالجات سابقة
+                const newBtn = generateSalesReportBtn.cloneNode(true);
+                generateSalesReportBtn.parentNode.replaceChild(newBtn, generateSalesReportBtn);
+                
+                newBtn.addEventListener('click', function() {
                 const dateFrom = document.getElementById('salesReportDateFrom').value;
                 const dateTo = document.getElementById('salesReportDateTo').value;
                 
@@ -1242,24 +1255,31 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && trim($_P
                     generateSalesReportBtn.innerHTML = '<i class="bi bi-file-earmark-pdf me-2"></i>إنشاء التقرير';
                     
                     // إغلاق النموذج
-                    const modal = bootstrap.Modal.getInstance(document.getElementById('generateSalesReportModal'));
-                    if (modal) {
-                        modal.hide();
+                    const modalElement = document.getElementById('generateSalesReportModal');
+                    if (modalElement && typeof bootstrap !== 'undefined') {
+                        const modal = bootstrap.Modal.getInstance(modalElement);
+                        if (modal) {
+                            modal.hide();
+                        }
                     }
                 } else {
                     alert('يرجى السماح للموقع بفتح النوافذ المنبثقة');
-                    generateSalesReportBtn.disabled = false;
-                    generateSalesReportBtn.innerHTML = '<i class="bi bi-file-earmark-pdf me-2"></i>إنشاء التقرير';
+                    newBtn.disabled = false;
+                    newBtn.innerHTML = '<i class="bi bi-file-earmark-pdf me-2"></i>إنشاء التقرير';
                 }
-            });
-        }
-        
-        // معالج إنشاء تقرير التحصيلات
-        const generateCollectionsReportBtn = document.getElementById('generateCollectionsReportBtn');
-        const generateCollectionsReportForm = document.getElementById('generateCollectionsReportForm');
-        
-        if (generateCollectionsReportBtn && generateCollectionsReportForm) {
-            generateCollectionsReportBtn.addEventListener('click', function() {
+                });
+            }
+            
+            // معالج إنشاء تقرير التحصيلات
+            const generateCollectionsReportBtn = document.getElementById('generateCollectionsReportBtn');
+            const generateCollectionsReportForm = document.getElementById('generateCollectionsReportForm');
+            
+            if (generateCollectionsReportBtn && generateCollectionsReportForm) {
+                // إزالة أي معالجات سابقة
+                const newCollectionsBtn = generateCollectionsReportBtn.cloneNode(true);
+                generateCollectionsReportBtn.parentNode.replaceChild(newCollectionsBtn, generateCollectionsReportBtn);
+                
+                newCollectionsBtn.addEventListener('click', function() {
                 const dateFrom = document.getElementById('collectionsReportDateFrom').value;
                 const dateTo = document.getElementById('collectionsReportDateTo').value;
                 
@@ -1289,16 +1309,29 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && trim($_P
                     generateCollectionsReportBtn.innerHTML = '<i class="bi bi-file-earmark-pdf me-2"></i>إنشاء التقرير';
                     
                     // إغلاق النموذج
-                    const modal = bootstrap.Modal.getInstance(document.getElementById('generateCollectionsReportModal'));
-                    if (modal) {
-                        modal.hide();
+                    const modalElement = document.getElementById('generateCollectionsReportModal');
+                    if (modalElement && typeof bootstrap !== 'undefined') {
+                        const modal = bootstrap.Modal.getInstance(modalElement);
+                        if (modal) {
+                            modal.hide();
+                        }
                     }
                 } else {
                     alert('يرجى السماح للموقع بفتح النوافذ المنبثقة');
-                    generateCollectionsReportBtn.disabled = false;
-                    generateCollectionsReportBtn.innerHTML = '<i class="bi bi-file-earmark-pdf me-2"></i>إنشاء التقرير';
+                    newCollectionsBtn.disabled = false;
+                    newCollectionsBtn.innerHTML = '<i class="bi bi-file-earmark-pdf me-2"></i>إنشاء التقرير';
                 }
+                });
+            }
+        }
+        
+        // تشغيل الكود بعد تحميل الصفحة
+        if (document.readyState === 'loading') {
+            document.addEventListener('DOMContentLoaded', function() {
+                setTimeout(initReportButtons, 100);
             });
+        } else {
+            setTimeout(initReportButtons, 100);
         }
 
         // معالج إنشاء تقرير العميل - المبيعات
