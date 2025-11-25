@@ -252,11 +252,19 @@ if (ob_get_level() > 0) {
         #pageLoader.hidden {
             opacity: 0;
             visibility: hidden;
-            pointer-events: none;
+            pointer-events: none !important;
+            z-index: -1 !important;
         }
         
         #pageLoader:not(.hidden) {
             pointer-events: all;
+        }
+        
+        /* التأكد من أن pageLoader لا يمنع النقرات بعد إخفائه */
+        #pageLoader[style*="display: none"],
+        #pageLoader.hidden[style*="display: none"] {
+            pointer-events: none !important;
+            z-index: -1 !important;
         }
         
         /* إصلاح Modal - قيم z-index صحيحة */

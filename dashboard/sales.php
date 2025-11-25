@@ -1459,6 +1459,37 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && trim($_P
 
     })();
 </script>
+<script>
+    // التأكد من إخفاء pageLoader بعد تحميل الصفحة بالكامل
+    (function() {
+        function ensurePageLoaderHidden() {
+            const pageLoader = document.getElementById('pageLoader');
+            if (pageLoader) {
+                // إخفاء pageLoader بشكل قاطع
+                pageLoader.classList.add('hidden');
+                pageLoader.style.display = 'none';
+                pageLoader.style.visibility = 'hidden';
+                pageLoader.style.pointerEvents = 'none';
+                pageLoader.style.zIndex = '-1';
+            }
+        }
+        
+        // إخفاء pageLoader فوراً
+        if (document.readyState === 'loading') {
+            document.addEventListener('DOMContentLoaded', ensurePageLoaderHidden);
+        } else {
+            ensurePageLoaderHidden();
+        }
+        
+        window.addEventListener('load', ensurePageLoaderHidden);
+        
+        // إخفاء pageLoader بعد تأخيرات متعددة للتأكد
+        setTimeout(ensurePageLoaderHidden, 100);
+        setTimeout(ensurePageLoaderHidden, 500);
+        setTimeout(ensurePageLoaderHidden, 1000);
+        setTimeout(ensurePageLoaderHidden, 2000);
+    })();
+</script>
 <script src="<?php echo ASSETS_URL; ?>js/attendance_notifications.js"></script>
 
 <?php include __DIR__ . '/../templates/footer.php'; ?>
