@@ -31,17 +31,32 @@ console.log('%c⏳ سيبدأ التشخيص خلال ثانية واحدة...',
     };
     
     // انتظار تحميل الصفحة بالكامل
-    function runDiagnostic() {
+    async function runDiagnostic() {
         console.log('%c═══════════════════════════════════════', 'color: #666;');
         console.log('%c🔍 بدء التشخيص - صفحة المبيعات والتحصيلات', 'color: #0d6efd; font-size: 16px; font-weight: bold;');
         console.log('%c═══════════════════════════════════════', 'color: #666;');
         
         try {
+            // انتظار تحميل DOM بالكامل
+            if (document.readyState !== 'complete') {
+                console.log('⏳ انتظار تحميل الصفحة بالكامل...');
+                await new Promise(resolve => {
+                    if (document.readyState === 'complete') {
+                        resolve();
+                    } else {
+                        window.addEventListener('load', resolve);
+                    }
+                });
+            }
+            
+            // انتظار إضافي للتأكد من تحميل جميع العناصر
+            await new Promise(resolve => setTimeout(resolve, 500));
+            
             // 1. فحص Bootstrap
             checkBootstrap();
             
             // 2. فحص الأزرار والتبويبات
-            checkButtonsAndTabs();
+            await checkButtonsAndTabs();
             
             // 3. فحص pageLoader
             checkPageLoader();
@@ -93,7 +108,7 @@ console.log('%c⏳ سيبدأ التشخيص خلال ثانية واحدة...',
         }
     }
     
-    function checkButtonsAndTabs() {
+    async function checkButtonsAndTabs() {
         console.log('%c2️⃣ فحص الأزرار والتبويبات...', 'color: #0d6efd; font-weight: bold;');
         
         // فحص التبويبات
@@ -198,17 +213,78 @@ console.log('%c⏳ سيبدأ التشخيص خلال ثانية واحدة...',
             }
         });
         
-        // فحص أزرار التبويبات
-        const tabButtons = document.querySelectorAll('#salesCollectionsTabs button');
-        console.log(`📊 عدد أزرار التبويبات: ${tabButtons.length}`);
+        // فحص أزرار التبويبات - مع محاولات متعددة
+        let tabButtons = document.querySelectorAll('#salesCollectionsTabs button');
+        let attempts = 0;
+        const maxAttempts = 10;
+        
+        while (tabButtons.length === 0 && attempts < maxAttempts) {
+            attempts++;
+            console.log(`⏳ محاولة ${attempts}/${maxAttempts} - البحث عن التبويبات...`);
+            await new Promise(resolve => setTimeout(resolve, 300));
+            tabButtons = document.querySelectorAll('#salesCollectionsTabs button');
+        }
+        
+        console.log(`📊 عدد أزرار التبويبات في #salesCollectionsTabs: ${tabButtons.length}`);
         
         if (tabButtons.length === 0) {
-            diagnosticReport.issues.push({
-                severity: 'CRITICAL',
-                message: 'لم يتم العثور على أي أزرار تبويبات!',
-                fix: 'تحقق من وجود #salesCollectionsTabs في الصفحة'
+            // محاولة البحث في جميع أنحاء الصفحة
+            const allTabButtons = document.querySelectorAll('button[data-bs-toggle="tab"]');
+            console.log(`📊 عدد أزرار التبويبات في الصفحة (جميعها): ${allTabButtons.length}`);
+            
+            // البحث عن العنصر نفسه
+            const tabsContainer = document.getElementById('salesCollectionsTabs');
+            if (tabsContainer) {
+                console.log('✅ #salesCollectionsTabs موجود في DOM');
+                const buttonsInContainer = tabsContainer.querySelectorAll('button');
+                console.log(`📊 عدد الأزرار داخل #salesCollectionsTabs: ${buttonsInContainer.length}`);
+                
+                if (buttonsInContainer.length > 0) {
+                    console.log('✅ تم العثور على أزرار داخل #salesCollectionsTabs');
+                    buttonsInContainer.forEach((btn, idx) => {
+                        const computedStyle = window.getComputedStyle(btn);
+                        const isVisible = computedStyle.display !== 'none' && computedStyle.visibility !== 'hidden';
+                        console.log(`   ${idx + 1}. ${btn.id || 'no-id'} - مرئي: ${isVisible}, pointer-events: ${computedStyle.pointerEvents}`);
+                    });
+                } else {
+                    console.warn('⚠️ #salesCollectionsTabs موجود لكن بدون أزرار');
+                    console.log('📋 محتوى العنصر:', tabsContainer.innerHTML.substring(0, 300));
+                }
+            } else {
+                console.error('❌ #salesCollectionsTabs غير موجود في DOM');
+                
+                // البحث في جميع أنحاء الصفحة
+                const allTabsContainers = document.querySelectorAll('[id*="tab"], [class*="tab"]');
+                console.log(`📊 عدد العناصر التي تحتوي على "tab": ${allTabsContainers.length}`);
+            }
+            
+            if (allTabButtons.length > 0) {
+                console.log('✅ تم العثور على أزرار تبويبات في الصفحة');
+                console.log('📍 مواقع الأزرار:');
+                allTabButtons.forEach((btn, idx) => {
+                    const parent = btn.closest('ul, div, section');
+                    const computedStyle = window.getComputedStyle(btn);
+                    console.log(`   ${idx + 1}. ${btn.id || 'no-id'} - داخل: ${parent ? (parent.id || parent.className || 'unknown') : 'none'}, pointer-events: ${computedStyle.pointerEvents}`);
+                });
+                diagnosticReport.warnings.push({
+                    message: 'التبويبات موجودة لكن قد تكون في مكان آخر',
+                    fix: 'تحقق من أن #salesCollectionsTabs موجود في DOM'
+                });
+            } else {
+                diagnosticReport.issues.push({
+                    severity: 'CRITICAL',
+                    message: 'لم يتم العثور على أي أزرار تبويبات!',
+                    fix: 'تحقق من وجود #salesCollectionsTabs في الصفحة'
+                });
+                console.error('❌ لم يتم العثور على أي أزرار تبويبات!');
+            }
+        } else {
+            console.log('✅ تم العثور على أزرار التبويبات');
+            tabButtons.forEach((btn, idx) => {
+                const computedStyle = window.getComputedStyle(btn);
+                const isVisible = computedStyle.display !== 'none' && computedStyle.visibility !== 'hidden';
+                console.log(`   ${idx + 1}. ${btn.id} - ${btn.textContent.trim().substring(0, 30)} - مرئي: ${isVisible}, pointer-events: ${computedStyle.pointerEvents}`);
             });
-            console.error('❌ لم يتم العثور على أي أزرار تبويبات!');
         }
     }
     

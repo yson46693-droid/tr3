@@ -726,7 +726,9 @@ if (!defined('ACCESS_ALLOWED')) {
             document.addEventListener('click', function(e) {
                 // تجاهل النقرات على الأزرار والعناصر التفاعلية
                 const target = e.target;
-                const isButton = target.tagName === 'BUTTON' || 
+                
+                // التحقق من العناصر التفاعلية أولاً - قبل أي معالجة أخرى
+                const isInteractive = target.tagName === 'BUTTON' || 
                                  target.tagName === 'INPUT' || 
                                  target.closest('button') || 
                                  target.closest('input') ||
@@ -737,10 +739,15 @@ if (!defined('ACCESS_ALLOWED')) {
                                  target.closest('.dropdown-item') ||
                                  target.closest('.nav-pills') || // تجاهل التبويبات
                                  target.closest('.nav-tabs') || // تجاهل التبويبات
-                                 target.closest('.combined-tabs'); // تجاهل التبويبات المدمجة
+                                 target.closest('.combined-tabs') || // تجاهل التبويبات المدمجة
+                                 target.closest('.combined-actions') || // تجاهل أزرار الأقسام
+                                 target.closest('[role="tab"]') || // تجاهل التبويبات مباشرة
+                                 target.closest('[role="tabpanel"]') || // تجاهل محتوى التبويبات
+                                 target.closest('.modal') || // تجاهل النماذج
+                                 target.closest('.btn'); // تجاهل جميع الأزرار
                 
-                if (isButton) {
-                    return; // تجاهل النقرات على الأزرار
+                if (isInteractive) {
+                    return; // تجاهل النقرات على الأزرار والعناصر التفاعلية
                 }
                 
                 const link = e.target.closest('a');
@@ -763,8 +770,11 @@ if (!defined('ACCESS_ALLOWED')) {
                     !link.closest('.nav-tabs') && // تجاهل روابط التبويبات
                     !link.closest('.nav-pills') && // تجاهل التبويبات
                     !link.closest('.combined-tabs') && // تجاهل التبويبات المدمجة
+                    !link.closest('.combined-actions') && // تجاهل أزرار الأقسام
                     !link.closest('.section-tabs') && // تجاهل روابط أقسام المخزن
                     !link.closest('.topbar-action') && // تجاهل أزرار الـ topbar
+                    !link.closest('.modal') && // تجاهل النماذج
+                    !link.closest('[role="tab"]') && // تجاهل التبويبات مباشرة
                     !isNavigating) {
                     
                     isNavigating = true;
