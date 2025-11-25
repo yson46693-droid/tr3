@@ -11,3 +11,4 @@ requireRole(['accountant', 'manager']);
 
 include __DIR__ . '/../manager/customers.php';
 
+

@@ -50,28 +50,52 @@ $filters = array_filter($filters, function($value) {
 });
 
 // التحقق من وجود عمود status في جدول collections
-$statusColumnCheck = $db->queryOne("SHOW COLUMNS FROM collections LIKE 'status'");
-$hasStatusColumn = !empty($statusColumnCheck);
+$hasStatusColumn = false;
+try {
+    $statusColumnCheck = $db->queryOne("SHOW COLUMNS FROM collections LIKE 'status'");
+    $hasStatusColumn = !empty($statusColumnCheck);
+} catch (Throwable $e) {
+    error_log('Error checking status column in collections: ' . $e->getMessage());
+    $hasStatusColumn = false;
+}
 
 // التحقق من وجود عمود approved_by
-$approvedByColumnCheck = $db->queryOne("SHOW COLUMNS FROM collections LIKE 'approved_by'");
-$hasApprovedByColumn = !empty($approvedByColumnCheck);
+$hasApprovedByColumn = false;
+try {
+    $approvedByColumnCheck = $db->queryOne("SHOW COLUMNS FROM collections LIKE 'approved_by'");
+    $hasApprovedByColumn = !empty($approvedByColumnCheck);
+} catch (Throwable $e) {
+    error_log('Error checking approved_by column in collections: ' . $e->getMessage());
+    $hasApprovedByColumn = false;
+}
 
 // التحقق من وجود عمود collection_number وإضافته إذا لم يكن موجوداً
-$collectionNumberColumnCheck = $db->queryOne("SHOW COLUMNS FROM collections LIKE 'collection_number'");
-$hasCollectionNumberColumn = !empty($collectionNumberColumnCheck);
-if (!$hasCollectionNumberColumn) {
-    try {
-        $db->execute("ALTER TABLE collections ADD COLUMN collection_number VARCHAR(50) NULL AFTER id");
-        $hasCollectionNumberColumn = true;
-    } catch (Throwable $alterError) {
-        error_log('Failed to add collection_number column: ' . $alterError->getMessage());
+$hasCollectionNumberColumn = false;
+try {
+    $collectionNumberColumnCheck = $db->queryOne("SHOW COLUMNS FROM collections LIKE 'collection_number'");
+    $hasCollectionNumberColumn = !empty($collectionNumberColumnCheck);
+    if (!$hasCollectionNumberColumn) {
+        try {
+            $db->execute("ALTER TABLE collections ADD COLUMN collection_number VARCHAR(50) NULL AFTER id");
+            $hasCollectionNumberColumn = true;
+        } catch (Throwable $alterError) {
+            error_log('Failed to add collection_number column: ' . $alterError->getMessage());
+        }
     }
+} catch (Throwable $e) {
+    error_log('Error checking collection_number column in collections: ' . $e->getMessage());
+    $hasCollectionNumberColumn = false;
 }
 
 // التحقق من وجود عمود notes
-$notesColumnCheck = $db->queryOne("SHOW COLUMNS FROM collections LIKE 'notes'");
-$hasNotesColumn = !empty($notesColumnCheck);
+$hasNotesColumn = false;
+try {
+    $notesColumnCheck = $db->queryOne("SHOW COLUMNS FROM collections LIKE 'notes'");
+    $hasNotesColumn = !empty($notesColumnCheck);
+} catch (Throwable $e) {
+    error_log('Error checking notes column in collections: ' . $e->getMessage());
+    $hasNotesColumn = false;
+}
 
 // معالجة العمليات
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
@@ -91,19 +115,24 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             
             // توليد رقم تحصيل إذا كان العمود موجوداً
             if ($hasCollectionNumberColumn) {
-                $year = date('Y');
-                $month = date('m');
-                $lastCollection = $db->queryOne(
-                    "SELECT collection_number FROM collections WHERE collection_number LIKE ? ORDER BY collection_number DESC LIMIT 1",
-                    ["COL-{$year}{$month}-%"]
-                );
-                
-                $serial = 1;
-                if (!empty($lastCollection['collection_number'])) {
-                    $parts = explode('-', $lastCollection['collection_number']);
-                    $serial = intval($parts[2] ?? 0) + 1;
+                try {
+                    $year = date('Y');
+                    $month = date('m');
+                    $lastCollection = $db->queryOne(
+                        "SELECT collection_number FROM collections WHERE collection_number LIKE ? ORDER BY collection_number DESC LIMIT 1",
+                        ["COL-{$year}{$month}-%"]
+                    );
+                    
+                    $serial = 1;
+                    if (!empty($lastCollection['collection_number'])) {
+                        $parts = explode('-', $lastCollection['collection_number']);
+                        $serial = intval($parts[2] ?? 0) + 1;
+                    }
+                    $collectionNumber = sprintf("COL-%s%s-%04d", $year, $month, $serial);
+                } catch (Throwable $e) {
+                    error_log('Error generating collection number: ' . $e->getMessage());
+                    $collectionNumber = null;
                 }
-                $collectionNumber = sprintf("COL-%s%s-%04d", $year, $month, $serial);
             }
             
             // بناء الاستعلام بشكل ديناميكي
@@ -129,15 +158,27 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 $placeholders[] = '?';
             }
             
-            $sql = "INSERT INTO collections (" . implode(', ', $columns) . ") VALUES (" . implode(', ', $placeholders) . ")";
-            $db->execute($sql, $values);
+            try {
+                $sql = "INSERT INTO collections (" . implode(', ', $columns) . ") VALUES (" . implode(', ', $placeholders) . ")";
+                $db->execute($sql, $values);
+                
+                $collectionId = $db->getLastInsertId();
+                
+                try {
+                    logAudit($currentUser['id'], 'add_collection', 'collection', $collectionId, null, [
+                        'collection_number' => $collectionNumber,
+                        'amount' => $amount
+                    ]);
+                } catch (Throwable $auditError) {
+                    error_log('Error logging audit for collection: ' . $auditError->getMessage());
+                }
+            } catch (Throwable $insertError) {
+                error_log('Error inserting collection: ' . $insertError->getMessage());
+                $error = 'حدث خطأ في إضافة التحصيل. يرجى المحاولة لاحقاً.';
+                $collectionId = null;
+            }
             
-            $collectionId = $db->getLastInsertId();
-            
-            logAudit($currentUser['id'], 'add_collection', 'collection', $collectionId, null, [
-                'collection_number' => $collectionNumber,
-                'amount' => $amount
-            ]);
+            if (empty($error) && !empty($collectionId)) {
             
             // تحديث راتب المندوب المسؤول عن العميل (المستحق للعمولة)
             // وليس بالضرورة الشخص الذي قام بالتحصيل
@@ -191,6 +232,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             if ($instantRewardApplied) {
                 $success .= ' وتم إضافة مكافأة 2% إلى راتبك فوراً.';
             }
+            }
         }
     } elseif ($action === 'delete_collection') {
         $collectionId = intval($_POST['collection_id'] ?? 0);
@@ -199,20 +241,38 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             $error = 'معرّف التحصيل غير صحيح';
         } else {
             // التحقق من أن التحصيل يخص المستخدم الحالي (للمندوبين)
-            if ($currentUser['role'] === 'sales') {
-                $collection = $db->queryOne("SELECT * FROM collections WHERE id = ? AND collected_by = ?", [$collectionId, $currentUser['id']]);
-            } else {
-                $collection = $db->queryOne("SELECT * FROM collections WHERE id = ?", [$collectionId]);
+            $collection = null;
+            try {
+                if ($currentUser['role'] === 'sales') {
+                    $collection = $db->queryOne("SELECT * FROM collections WHERE id = ? AND collected_by = ?", [$collectionId, $currentUser['id']]);
+                } else {
+                    $collection = $db->queryOne("SELECT * FROM collections WHERE id = ?", [$collectionId]);
+                }
+            } catch (Throwable $e) {
+                error_log('Error fetching collection for deletion: ' . $e->getMessage());
+                $error = 'حدث خطأ في جلب بيانات التحصيل. يرجى المحاولة لاحقاً.';
             }
             
             if ($collection) {
                 $customerId = $collection['customer_id'] ?? 0;
                 $collectionDate = $collection['date'] ?? null;
                 
-                $db->execute("DELETE FROM collections WHERE id = ?", [$collectionId]);
+                try {
+                    $db->execute("DELETE FROM collections WHERE id = ?", [$collectionId]);
+                    
+                    try {
+                        logAudit($currentUser['id'], 'delete_collection', 'collection', $collectionId, 
+                                 json_encode($collection), null);
+                    } catch (Throwable $auditError) {
+                        error_log('Error logging audit for collection deletion: ' . $auditError->getMessage());
+                    }
+                } catch (Throwable $deleteError) {
+                    error_log('Error deleting collection: ' . $deleteError->getMessage());
+                    $error = 'حدث خطأ في حذف التحصيل. يرجى المحاولة لاحقاً.';
+                    $collection = null; // منع تنفيذ باقي الكود
+                }
                 
-                logAudit($currentUser['id'], 'delete_collection', 'collection', $collectionId, 
-                         json_encode($collection), null);
+                if (!empty($collection)) {
                 
                 // تحديث راتب المندوب المسؤول عن العميل (المستحق للعمولة)
                 try {
@@ -257,8 +317,11 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 }
                 
                 $success = 'تم حذف التحصيل بنجاح';
+                }
             } else {
-                $error = 'التحصيل غير موجود أو ليس لديك صلاحية لحذفه';
+                if (empty($error)) {
+                    $error = 'التحصيل غير موجود أو ليس لديك صلاحية لحذفه';
+                }
             }
         }
     }
@@ -345,18 +408,45 @@ if (!empty($filters['date_to'])) {
     $countParams[] = $filters['date_to'];
 }
 
-$totalResult = $db->queryOne($countSql, $countParams);
-$totalCollections = $totalResult['total'] ?? 0;
-$totalPages = ceil($totalCollections / $perPage);
+$totalCollections = 0;
+$totalPages = 0;
+try {
+    $totalResult = $db->queryOne($countSql, $countParams);
+    $totalCollections = $totalResult['total'] ?? 0;
+    $totalPages = ceil($totalCollections / $perPage);
+} catch (Throwable $e) {
+    error_log('Error counting collections: ' . $e->getMessage());
+    $error = 'حدث خطأ في الاتصال بقاعدة البيانات. يرجى المحاولة لاحقاً.';
+}
 
-$sql .= " ORDER BY c.date DESC, c.created_at DESC LIMIT ? OFFSET ?";
-$params[] = $perPage;
-$params[] = $offset;
-
-$collections = $db->query($sql, $params);
+$collections = [];
+try {
+    $sql .= " ORDER BY c.date DESC, c.created_at DESC LIMIT ? OFFSET ?";
+    $params[] = $perPage;
+    $params[] = $offset;
+    $collections = $db->query($sql, $params);
+    if (!is_array($collections)) {
+        $collections = [];
+    }
+} catch (Throwable $e) {
+    error_log('Error fetching collections: ' . $e->getMessage());
+    if (empty($error)) {
+        $error = 'حدث خطأ في جلب بيانات التحصيلات. يرجى المحاولة لاحقاً.';
+    }
+    $collections = [];
+}
 
 // الحصول على العملاء
-$customers = $db->query("SELECT id, name FROM customers WHERE status = 'active' ORDER BY name");
+$customers = [];
+try {
+    $customers = $db->query("SELECT id, name FROM customers WHERE status = 'active' ORDER BY name");
+    if (!is_array($customers)) {
+        $customers = [];
+    }
+} catch (Throwable $e) {
+    error_log('Error fetching customers: ' . $e->getMessage());
+    $customers = [];
+}
 ?>
 
 <div class="d-flex justify-content-between align-items-center mb-4">
