@@ -57,14 +57,41 @@
     }
 
     // Add event listeners to all dark mode toggles
-    document.addEventListener('DOMContentLoaded', function() {
+    function attachDarkModeListeners() {
         const darkModeToggles = document.querySelectorAll('#darkModeToggle');
         
         darkModeToggles.forEach(toggle => {
-            toggle.addEventListener('change', function() {
+            // إزالة أي event listeners سابقة لتجنب التكرار
+            const newToggle = toggle.cloneNode(true);
+            toggle.parentNode.replaceChild(newToggle, toggle);
+            
+            // إضافة event listener جديد
+            newToggle.addEventListener('change', function(e) {
+                e.stopPropagation();
                 toggleDarkMode();
             });
+            
+            // إضافة click listener أيضاً للتأكد
+            newToggle.addEventListener('click', function(e) {
+                e.stopPropagation();
+            });
+            
+            // التأكد من أن pointer-events مفعلة
+            newToggle.style.pointerEvents = 'auto';
+            newToggle.style.cursor = 'pointer';
         });
+    }
+    
+    // إضافة event listeners عند تحميل DOM
+    if (document.readyState === 'loading') {
+        document.addEventListener('DOMContentLoaded', attachDarkModeListeners);
+    } else {
+        attachDarkModeListeners();
+    }
+    
+    // إعادة إضافة event listeners بعد تحميل الصفحة بالكامل
+    window.addEventListener('load', function() {
+        setTimeout(attachDarkModeListeners, 100);
     });
 
     // Listen for theme changes from other tabs/windows
