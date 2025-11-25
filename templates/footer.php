@@ -109,24 +109,29 @@ if (!defined('ACCESS_ALLOWED')) {
         $shouldLoadDiagnostic = true;
     } elseif (isset($_GET['page']) && in_array($_GET['page'], ['sales', 'collections', 'sales_collections'], true)) {
         $shouldLoadDiagnostic = true;
+    } elseif (isset($_SERVER['REQUEST_URI']) && strpos($_SERVER['REQUEST_URI'], 'sales_collections') !== false) {
+        $shouldLoadDiagnostic = true;
+    } elseif (isset($_SERVER['REQUEST_URI']) && (strpos($_SERVER['REQUEST_URI'], 'page=sales') !== false || strpos($_SERVER['REQUEST_URI'], 'page=collections') !== false)) {
+        $shouldLoadDiagnostic = true;
     }
     
     if ($shouldLoadDiagnostic): ?>
         <script>
-            console.log('🔍 Debug in footer - Current Page:', '<?php echo htmlspecialchars($currentPage, ENT_QUOTES, 'UTF-8'); ?>');
-            console.log('🔍 Debug in footer - $_GET[page]:', '<?php echo htmlspecialchars($_GET['page'] ?? 'not set', ENT_QUOTES, 'UTF-8'); ?>');
-            console.log('🔍 Debug in footer - $page variable:', '<?php echo isset($page) ? htmlspecialchars($page, ENT_QUOTES, 'UTF-8') : 'not set'; ?>');
-            console.log('🔍 Debug in footer - Should load diagnostic:', true);
-            console.log('🔍 Debug in footer - Assets URL:', '<?php echo htmlspecialchars($assetsUrl, ENT_QUOTES, 'UTF-8'); ?>');
+            console.log('%c🔍 Debug in footer - Loading Diagnostic Script', 'color: #0d6efd; font-weight: bold; font-size: 14px;');
+            console.log('🔍 Current Page:', '<?php echo htmlspecialchars($currentPage, ENT_QUOTES, 'UTF-8'); ?>');
+            console.log('🔍 $_GET[page]:', '<?php echo htmlspecialchars($_GET['page'] ?? 'not set', ENT_QUOTES, 'UTF-8'); ?>');
+            console.log('🔍 Assets URL:', '<?php echo htmlspecialchars($assetsUrl, ENT_QUOTES, 'UTF-8'); ?>');
+            console.log('🔍 Full URL:', '<?php echo htmlspecialchars($assetsUrl . 'js/sales-collections-diagnostic.js', ENT_QUOTES, 'UTF-8'); ?>');
         </script>
         <script src="<?php echo $assetsUrl; ?>js/sales-collections-diagnostic.js?v=<?php echo $cacheVersion; ?>" 
-                onerror="console.error('❌ فشل تحميل ملف التشخيص من:', '<?php echo htmlspecialchars($assetsUrl . 'js/sales-collections-diagnostic.js', ENT_QUOTES, 'UTF-8'); ?>');"
-                onload="console.log('✅ تم تحميل ملف التشخيص بنجاح');"></script>
+                onerror="console.error('%c❌ فشل تحميل ملف التشخيص', 'color: #dc3545; font-weight: bold; font-size: 14px;'); console.error('URL:', '<?php echo htmlspecialchars($assetsUrl . 'js/sales-collections-diagnostic.js', ENT_QUOTES, 'UTF-8'); ?>');"
+                onload="console.log('%c✅ تم تحميل ملف التشخيص بنجاح', 'color: #28a745; font-weight: bold; font-size: 14px;');"></script>
     <?php else: ?>
         <script>
-            console.log('⚠️ Debug in footer - Diagnostic NOT loaded');
+            console.log('%c⚠️ Debug in footer - Diagnostic NOT loaded', 'color: #ffc107; font-weight: bold;');
             console.log('⚠️ Current Page:', '<?php echo htmlspecialchars($currentPage, ENT_QUOTES, 'UTF-8'); ?>');
             console.log('⚠️ $_GET[page]:', '<?php echo htmlspecialchars($_GET['page'] ?? 'not set', ENT_QUOTES, 'UTF-8'); ?>');
+            console.log('⚠️ REQUEST_URI:', '<?php echo htmlspecialchars($_SERVER['REQUEST_URI'] ?? 'not set', ENT_QUOTES, 'UTF-8'); ?>');
         </script>
     <?php endif; ?>
     <script>
