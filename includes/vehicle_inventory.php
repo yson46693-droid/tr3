@@ -1809,34 +1809,59 @@ function executeWarehouseTransferDirectly($transferId, $executedBy = null) {
                     }
                 }
                 
-                // حساب الكمية المتاحة مباشرة من finished_products
-                // quantity_produced يحتوي بالفعل على الكمية الفعلية المتبقية بعد جميع النقلات والإرجاعات
-                // لأنه يتم تحديثه عند النقل (خصم) وعند الإرجاع (إضافة)
-                // لذلك نستخدمه مباشرة دون خصم النقلات المعتمدة
-                $batchRow = $db->queryOne(
-                    "SELECT quantity_produced FROM finished_products WHERE id = ?",
-                    [$batchId]
-                );
-                
-                if ($batchRow) {
-                    $availableQuantity = (float)($batchRow['quantity_produced'] ?? 0);
-                    
-                    // خصم فقط الكمية المحجوزة في طلبات النقل المعلقة (pending) من نفس المخزن - استثناء النقل الحالي
-                    // لأن الكميات المنقولة (approved أو completed) تم خصمها بالفعل من quantity_produced
-                    // والكميات المرجعة تم إضافتها بالفعل إلى quantity_produced
-                    $pendingTransfers = $db->queryOne(
-                        "SELECT COALESCE(SUM(wti.quantity), 0) AS pending_quantity
-                         FROM warehouse_transfer_items wti
-                         INNER JOIN warehouse_transfers wt ON wt.id = wti.transfer_id
-                         WHERE wti.batch_id = ? AND wt.from_warehouse_id = ? AND wt.status = 'pending' AND wt.id != ?",
-                        [$batchId, $transfer['from_warehouse_id'], $transferId]
+                // إذا كان المخزن المصدر سيارة، نفحص مخزون السيارة مباشرة
+                if (($fromWarehouse['warehouse_type'] ?? '') === 'vehicle' && !empty($fromWarehouse['vehicle_id'])) {
+                    // البحث عن السجل في vehicle_inventory بنفس finished_batch_id
+                    $vehicleInventoryRow = $db->queryOne(
+                        "SELECT quantity, finished_batch_id, finished_batch_number, finished_production_date,
+                                finished_quantity_produced, finished_workers, manager_unit_price
+                         FROM vehicle_inventory 
+                         WHERE vehicle_id = ? AND product_id = ? AND finished_batch_id = ?",
+                        [$fromWarehouse['vehicle_id'], $productId, $batchId]
                     );
-                    $availableQuantity -= (float)($pendingTransfers['pending_quantity'] ?? 0);
                     
-                    // التأكد من أن الكمية المتاحة ليست سالبة
-                    $availableQuantity = max(0.0, $availableQuantity);
+                    if ($vehicleInventoryRow) {
+                        $availableQuantity = (float)($vehicleInventoryRow['quantity'] ?? 0);
+                        // تحديث finishedMetadata من vehicle_inventory إذا لم يكن موجوداً
+                        if (empty($finishedMetadata) || empty($finishedMetadata['finished_batch_id'])) {
+                            $finishedMetadata = [
+                                'finished_batch_id' => (int)($vehicleInventoryRow['finished_batch_id'] ?? $batchId),
+                                'finished_batch_number' => $vehicleInventoryRow['finished_batch_number'] ?? $batchNumber,
+                                'finished_production_date' => $vehicleInventoryRow['finished_production_date'] ?? null,
+                                'finished_quantity_produced' => $vehicleInventoryRow['finished_quantity_produced'] ?? null,
+                                'finished_workers' => $vehicleInventoryRow['finished_workers'] ?? null,
+                                'unit_price' => $vehicleInventoryRow['manager_unit_price'] ?? null,
+                            ];
+                        }
+                    } else {
+                        $availableQuantity = 0.0;
+                    }
                 } else {
-                    $availableQuantity = 0.0;
+                    // إذا كان المخزن المصدر رئيسي، نستخدم quantity_produced
+                    // quantity_produced يحتوي بالفعل على الكمية الفعلية المتبقية بعد جميع النقلات والإرجاعات
+                    $batchRow = $db->queryOne(
+                        "SELECT quantity_produced FROM finished_products WHERE id = ?",
+                        [$batchId]
+                    );
+                    
+                    if ($batchRow) {
+                        $availableQuantity = (float)($batchRow['quantity_produced'] ?? 0);
+                        
+                        // خصم فقط الكمية المحجوزة في طلبات النقل المعلقة (pending) من نفس المخزن - استثناء النقل الحالي
+                        $pendingTransfers = $db->queryOne(
+                            "SELECT COALESCE(SUM(wti.quantity), 0) AS pending_quantity
+                             FROM warehouse_transfer_items wti
+                             INNER JOIN warehouse_transfers wt ON wt.id = wti.transfer_id
+                             WHERE wti.batch_id = ? AND wt.from_warehouse_id = ? AND wt.status = 'pending' AND wt.id != ?",
+                            [$batchId, $transfer['from_warehouse_id'], $transferId]
+                        );
+                        $availableQuantity -= (float)($pendingTransfers['pending_quantity'] ?? 0);
+                        
+                        // التأكد من أن الكمية المتاحة ليست سالبة
+                        $availableQuantity = max(0.0, $availableQuantity);
+                    } else {
+                        $availableQuantity = 0.0;
+                    }
                 }
             } else if ($productId > 0) {
                 if (($fromWarehouse['warehouse_type'] ?? '') === 'vehicle' && !empty($fromWarehouse['vehicle_id'])) {
@@ -1891,8 +1916,35 @@ function executeWarehouseTransferDirectly($transferId, $executedBy = null) {
 
             // تحديث مخزون السيارة المصدر إن وجد
             if (($fromWarehouse['warehouse_type'] ?? '') === 'vehicle' && !empty($fromWarehouse['vehicle_id'])) {
-                $remainingQuantity = max(0.0, $availableQuantity - $requestedQuantity);
-                $updateVehicleResult = updateVehicleInventory($fromWarehouse['vehicle_id'], $item['product_id'], $remainingQuantity, $executedBy);
+                // الحصول على الكمية الفعلية من vehicle_inventory أولاً
+                $currentVehicleQuantity = 0.0;
+                if ($batchId) {
+                    $currentVehicleRow = $db->queryOne(
+                        "SELECT quantity FROM vehicle_inventory 
+                         WHERE vehicle_id = ? AND product_id = ? AND finished_batch_id = ?",
+                        [$fromWarehouse['vehicle_id'], $item['product_id'], $batchId]
+                    );
+                    $currentVehicleQuantity = (float)($currentVehicleRow['quantity'] ?? 0);
+                } else {
+                    $currentVehicleRow = $db->queryOne(
+                        "SELECT quantity FROM vehicle_inventory 
+                         WHERE vehicle_id = ? AND product_id = ? AND (finished_batch_id IS NULL OR finished_batch_id = 0)",
+                        [$fromWarehouse['vehicle_id'], $item['product_id']]
+                    );
+                    $currentVehicleQuantity = (float)($currentVehicleRow['quantity'] ?? 0);
+                }
+                
+                $remainingQuantity = max(0.0, $currentVehicleQuantity - $requestedQuantity);
+                
+                // تمرير finishedMetadata إلى updateVehicleInventory للحفاظ على معلومات التشغيلة والأسعار
+                $updateVehicleResult = updateVehicleInventory(
+                    $fromWarehouse['vehicle_id'], 
+                    $item['product_id'], 
+                    $remainingQuantity, 
+                    $executedBy,
+                    null, // unitPriceOverride
+                    $finishedMetadata // تمرير finishedMetadata
+                );
                 if (empty($updateVehicleResult['success'])) {
                     $message = $updateVehicleResult['message'] ?? 'تعذر تحديث مخزون السيارة المصدر.';
                     throw new Exception($message);
