@@ -1571,3 +1571,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && trim($_P
 
 <script src="<?php echo ASSETS_URL; ?>js/reports.js"></script>
 <script src="<?php echo ASSETS_URL; ?>js/attendance_notifications.js"></script>
+<?php if ($page === 'sales_collections'): ?>
+    <!-- ملف التشخيص - احذفه بعد حل المشكلة -->
+    <script src="<?php echo ASSETS_URL; ?>js/sales-collections-diagnostic.js"></script>
+<?php endif; ?>
