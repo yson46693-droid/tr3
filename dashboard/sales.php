@@ -476,19 +476,19 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && trim($_P
 
                     <ul class="nav nav-pills combined-tabs mb-4 flex-column flex-sm-row gap-2" id="salesCollectionsTabs" role="tablist">
                         <li class="nav-item" role="presentation">
-                            <button class="nav-link active" id="sales-tab" data-bs-toggle="pill" data-bs-target="#sales-section" type="button" role="tab" aria-controls="sales-section" aria-selected="true">
+                            <button class="nav-link active" id="sales-tab" data-bs-toggle="tab" data-bs-target="#sales-section" type="button" role="tab" aria-controls="sales-section" aria-selected="true">
                                 <i class="bi bi-receipt"></i>
                                 <span><?php echo isset($lang['sales']) ? $lang['sales'] : 'المبيعات'; ?></span>
                             </button>
                         </li>
                         <li class="nav-item" role="presentation">
-                            <button class="nav-link" id="collections-tab" data-bs-toggle="pill" data-bs-target="#collections-section" type="button" role="tab" aria-controls="collections-section" aria-selected="false">
+                            <button class="nav-link" id="collections-tab" data-bs-toggle="tab" data-bs-target="#collections-section" type="button" role="tab" aria-controls="collections-section" aria-selected="false">
                                 <i class="bi bi-cash-coin"></i>
                                 <span><?php echo isset($lang['collections']) ? $lang['collections'] : 'التحصيلات'; ?></span>
                             </button>
                         </li>
                         <li class="nav-item" role="presentation">
-                            <button class="nav-link" id="returns-tab" data-bs-toggle="pill" data-bs-target="#returns-section" type="button" role="tab" aria-controls="returns-section" aria-selected="false">
+                            <button class="nav-link" id="returns-tab" data-bs-toggle="tab" data-bs-target="#returns-section" type="button" role="tab" aria-controls="returns-section" aria-selected="false">
                                 <i class="bi bi-arrow-return-left"></i>
                                 <span>المرتجعات</span>
                             </button>
@@ -756,10 +756,55 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && trim($_P
                             handlePrintableButtons();
                         }
 
+                        function initTabs() {
+                            // تهيئة التبويبات باستخدام Bootstrap
+                            const tabButtons = document.querySelectorAll('#salesCollectionsTabs button[data-bs-toggle="tab"]');
+                            tabButtons.forEach(function(button) {
+                                button.addEventListener('click', function(e) {
+                                    e.preventDefault();
+                                    const targetId = this.getAttribute('data-bs-target');
+                                    if (targetId) {
+                                        // إخفاء جميع التبويبات
+                                        const allTabPanes = document.querySelectorAll('.tab-pane');
+                                        allTabPanes.forEach(function(pane) {
+                                            pane.classList.remove('show', 'active');
+                                        });
+                                        
+                                        // إزالة active من جميع الأزرار
+                                        tabButtons.forEach(function(btn) {
+                                            btn.classList.remove('active');
+                                            btn.setAttribute('aria-selected', 'false');
+                                        });
+                                        
+                                        // إظهار التبويب المحدد
+                                        const targetPane = document.querySelector(targetId);
+                                        if (targetPane) {
+                                            targetPane.classList.add('show', 'active');
+                                        }
+                                        
+                                        // تفعيل الزر المحدد
+                                        this.classList.add('active');
+                                        this.setAttribute('aria-selected', 'true');
+                                    }
+                                });
+                            });
+                        }
+
+                        function waitForBootstrap() {
+                            if (typeof bootstrap !== 'undefined' && typeof bootstrap.Tab !== 'undefined') {
+                                initTabs();
+                                initPrintableReports();
+                            } else {
+                                setTimeout(waitForBootstrap, 100);
+                            }
+                        }
+
                         if (document.readyState === 'loading') {
-                            document.addEventListener('DOMContentLoaded', initPrintableReports);
+                            document.addEventListener('DOMContentLoaded', function() {
+                                waitForBootstrap();
+                            });
                         } else {
-                            initPrintableReports();
+                            waitForBootstrap();
                         }
 
                         window.openPrintableReport = openPrintableReport;
@@ -1379,6 +1424,77 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && trim($_P
                     generateCustomerCollectionsReportBtn.innerHTML = '<i class="bi bi-file-earmark-pdf me-2"></i>إنشاء التقرير';
                 }
             });
+        }
+
+        // تهيئة جميع الأزرار والوظائف بعد تحميل الصفحة
+        function initAllButtons() {
+            // تهيئة أزرار Modals
+            const modalButtons = document.querySelectorAll('[data-bs-toggle="modal"]');
+            modalButtons.forEach(function(button) {
+                button.addEventListener('click', function(e) {
+                    const targetId = this.getAttribute('data-bs-target');
+                    if (targetId && typeof bootstrap !== 'undefined') {
+                        const modalElement = document.querySelector(targetId);
+                        if (modalElement) {
+                            const modal = new bootstrap.Modal(modalElement);
+                            modal.show();
+                        }
+                    }
+                });
+            });
+
+            // تهيئة أزرار التبويبات مرة أخرى للتأكد
+            const tabButtons = document.querySelectorAll('#salesCollectionsTabs button[data-bs-toggle="tab"]');
+            tabButtons.forEach(function(button) {
+                if (!button.hasAttribute('data-listener-attached')) {
+                    button.setAttribute('data-listener-attached', 'true');
+                    button.addEventListener('click', function(e) {
+                        e.preventDefault();
+                        const targetId = this.getAttribute('data-bs-target');
+                        if (targetId) {
+                            // استخدام Bootstrap Tab API إذا كان متاحاً
+                            if (typeof bootstrap !== 'undefined' && typeof bootstrap.Tab !== 'undefined') {
+                                const tab = new bootstrap.Tab(this);
+                                tab.show();
+                            } else {
+                                // Fallback: التبديل اليدوي
+                                const allTabPanes = document.querySelectorAll('.tab-pane');
+                                allTabPanes.forEach(function(pane) {
+                                    pane.classList.remove('show', 'active');
+                                });
+                                
+                                tabButtons.forEach(function(btn) {
+                                    btn.classList.remove('active');
+                                    btn.setAttribute('aria-selected', 'false');
+                                });
+                                
+                                const targetPane = document.querySelector(targetId);
+                                if (targetPane) {
+                                    targetPane.classList.add('show', 'active');
+                                }
+                                
+                                this.classList.add('active');
+                                this.setAttribute('aria-selected', 'true');
+                            }
+                        }
+                    });
+                }
+            });
+        }
+
+        // انتظار تحميل Bootstrap ثم تهيئة الأزرار
+        function waitAndInit() {
+            if (typeof bootstrap !== 'undefined') {
+                initAllButtons();
+            } else {
+                setTimeout(waitAndInit, 100);
+            }
+        }
+
+        if (document.readyState === 'loading') {
+            document.addEventListener('DOMContentLoaded', waitAndInit);
+        } else {
+            waitAndInit();
         }
     })();
 </script>
