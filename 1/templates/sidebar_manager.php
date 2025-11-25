@@ -3,13 +3,6 @@
  * القائمة الجانبية للمدير
  */
 
-// تعيين ترميز UTF-8
-if (!headers_sent()) {
-    header('Content-Type: text/html; charset=UTF-8');
-}
-mb_internal_encoding('UTF-8');
-mb_http_output('UTF-8');
-
 if (!defined('ACCESS_ALLOWED')) {
     die('Direct access not allowed');
 }
@@ -81,14 +74,6 @@ $baseUrl = getDashboardUrl();
                     <span><?php echo isset($lang['menu_reports']) ? $lang['menu_reports'] : 'التقارير'; ?></span>
                 </a>
             </li>
-            
-            <li class="nav-item">
-                <a class="nav-link <?php echo (isset($_GET['page']) && $_GET['page'] === 'company_cash') ? 'active' : ''; ?>"
-                   href="<?php echo $baseUrl; ?>manager.php?page=company_cash">
-                    <i class="bi bi-bank"></i>
-                    <span>خزنة الشركة</span>
-                </a>
-            </li>
 
             <div class="sidebar-section">
                 <div class="sidebar-section-title">Listing</div>
@@ -97,14 +82,6 @@ $baseUrl = getDashboardUrl();
                     <a class="nav-link" href="<?php echo $baseUrl; ?>manager.php?page=users">
                         <i class="bi bi-people"></i>
                         <span>المستخدمين</span>
-                    </a>
-                </li>
-                
-                <li class="nav-item">
-                    <a class="nav-link <?php echo (isset($_GET['page']) && $_GET['page'] === 'vehicles') ? 'active' : ''; ?>" 
-                       href="<?php echo $baseUrl; ?>manager.php?page=vehicles">
-                        <i class="bi bi-truck"></i>
-                        <span>السيارات</span>
                     </a>
                 </li>
                 

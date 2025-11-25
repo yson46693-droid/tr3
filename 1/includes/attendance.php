@@ -67,11 +67,8 @@ function getOfficialWorkTime($userId) {
     // مواعيد العمل الرسمية
     if ($role === 'accountant') {
         return ['start' => '10:00:00', 'end' => '19:00:00'];
-    } elseif ($role === 'sales') {
-        // المندوبين
-        return ['start' => '10:00:00', 'end' => '19:00:00'];
     } else {
-        // عمال الإنتاج
+        // عمال الإنتاج والمندوبين
         return ['start' => '09:00:00', 'end' => '19:00:00'];
     }
 }
@@ -651,31 +648,22 @@ function recordAttendanceCheckIn($userId, $photoBase64 = null) {
     
     $recordId = $result['insert_id'];
     
-    // التحقق من السجلات غير المكتملة في اليوم السابق وإرسال إشعارات
-    checkAndNotifyIncompleteAttendance($userId);
-    
     // التأكد من وجود عمود delay_count
     ensureDelayCountColumn();
     
     // معالجة منطق التأخير إذا كان هناك تأخير
     if ($delayMinutes > 0) {
-        // حساب عدد حالات التأخير الفعلية من جدول attendance_records للشهر الحالي
-        // نستخدم COUNT(DISTINCT date) لحساب عدد الأيام المختلفة التي سجل فيها المستخدم حضور متأخر
-        $currentMonth = date('Y-m');
-        $actualDelayCount = (int)$db->queryOne(
-            "SELECT COUNT(DISTINCT date) as delay_count
-             FROM attendance_records 
-             WHERE user_id = ? 
-             AND DATE_FORMAT(date, '%Y-%m') = ?
-             AND delay_minutes > 0
-             AND check_in_time IS NOT NULL",
-            [$userId, $currentMonth]
+        // الحصول على عداد التأخيرات الحالي
+        $currentDelayCount = (int)$db->queryOne(
+            "SELECT delay_count FROM users WHERE id = ?",
+            [$userId]
         )['delay_count'] ?? 0;
         
-        // تحديث عداد التأخيرات في جدول users (للاستخدام في التقارير)
+        // زيادة عداد التأخيرات بمقدار 1
+        $newDelayCount = $currentDelayCount + 1;
         $db->execute(
             "UPDATE users SET delay_count = ? WHERE id = ?",
-            [$actualDelayCount, $userId]
+            [$newDelayCount, $userId]
         );
         
         // الحصول على معلومات المستخدم
@@ -683,8 +671,8 @@ function recordAttendanceCheckIn($userId, $photoBase64 = null) {
         $userName = $user['full_name'] ?? $user['username'];
         $role = $user['role'] ?? 'unknown';
         
-        // إرسال إشعار للموظف بعدد التأخيرات الحالية (من الحساب الفعلي)
-        $delayMessage = "تم تسجيل حضورك مع تأخير {$delayMinutes} دقيقة. عدد حالات التأخير الحالية لهذا الشهر: {$actualDelayCount}";
+        // إرسال إشعار للموظف بعدد التأخيرات الحالية
+        $delayMessage = "تم تسجيل حضورك مع تأخير {$delayMinutes} دقيقة. عدد حالات التأخير الحالية لهذا الشهر: {$newDelayCount}";
         
         createNotification(
             $userId,
@@ -696,7 +684,7 @@ function recordAttendanceCheckIn($userId, $photoBase64 = null) {
         );
         
         // إذا وصل عداد التأخيرات إلى 3 أو أكثر، إرسال إشعار للمدير
-        if ($actualDelayCount >= 3) {
+        if ($newDelayCount >= 3) {
             // الحصول على جميع المديرين
             $managers = $db->query(
                 "SELECT id FROM users WHERE role = 'manager' AND status = 'active'"
@@ -704,7 +692,7 @@ function recordAttendanceCheckIn($userId, $photoBase64 = null) {
             
             foreach ($managers as $manager) {
                 $managerId = (int)$manager['id'];
-                $managerMessage = "تنبيه: الموظف {$userName} ({$role}) قد تجاوز 3 حالات حضور متأخر خلال الشهر الحالي. إجمالي حالات التأخير: {$actualDelayCount}";
+                $managerMessage = "تنبيه: الموظف {$userName} ({$role}) قد تجاوز 3 حالات حضور متأخر خلال الشهر الحالي. إجمالي حالات التأخير: {$newDelayCount}";
                 
                 createNotification(
                     $managerId,
@@ -716,10 +704,10 @@ function recordAttendanceCheckIn($userId, $photoBase64 = null) {
                 );
             }
             
-            error_log("Delay count alert sent to managers for user {$userId} with {$actualDelayCount} delays");
+            error_log("Delay count alert sent to managers for user {$userId} with {$newDelayCount} delays");
         }
         
-        error_log("User {$userId} check-in delay: {$delayMinutes} minutes, total delay count: {$actualDelayCount}");
+        error_log("User {$userId} check-in delay: {$delayMinutes} minutes, total delay count: {$newDelayCount}");
     } else {
         // الحصول على معلومات المستخدم (في حالة عدم وجود تأخير)
         $user = $db->queryOne("SELECT username, full_name, role FROM users WHERE id = ?", [$userId]);
@@ -913,307 +901,44 @@ function recordAttendanceCheckOut($userId, $photoBase64 = null) {
     $todayHours = calculateTodayHours($userId, $attendanceDateTime->format('Y-m-d'));
     $monthHours = calculateMonthHours($userId, $attendanceMonthKey);
     
-    // تحديث total_hours والراتب تلقائياً بعد تسجيل الانصراف
-    error_log("=== Starting salary update after checkout for user {$userId} ===");
-    error_log("Attendance date: {$attendanceDate}, Month: {$attendanceMonthNumber}, Year: {$attendanceYearNumber}");
-    
+    // حساب الراتب تلقائياً بعد تسجيل الانصراف
     try {
         // التحقق من وجود سعر ساعة للمستخدم
         $user = $db->queryOne("SELECT hourly_rate, role FROM users WHERE id = ?", [$userId]);
         
         if (!$user) {
-            error_log("ERROR: User not found for salary calculation: user_id={$userId}");
+            error_log("User not found for salary calculation: user_id={$userId}");
         } else {
             $hourlyRate = floatval($user['hourly_rate'] ?? 0);
-            $userRole = $user['role'] ?? 'production';
-            
-            error_log("User found: hourly_rate={$hourlyRate}, role={$userRole}");
             
             if ($hourlyRate > 0) {
-                // حساب الساعات الشهرية الفعلية من attendance_records
-                $actualMonthlyHours = calculateMonthlyHours($userId, $attendanceMonthNumber, $attendanceYearNumber);
-                error_log("Calculated monthly hours: {$actualMonthlyHours}");
-                
-                // التحقق من وجود الأعمدة في جدول salaries
-                $columns = $db->query("SHOW COLUMNS FROM salaries");
-                $columnNames = [];
-                foreach ($columns as $column) {
-                    $columnNames[] = $column['Field'] ?? '';
-                }
-                
-                $hasBonus = in_array('bonus', $columnNames, true);
-                $hasDeductions = in_array('deductions', $columnNames, true);
-                $hasCollectionsBonus = in_array('collections_bonus', $columnNames, true);
-                $hasUpdatedAt = in_array('updated_at', $columnNames, true);
-                $hasYear = in_array('year', $columnNames, true);
-                
-                // بناء استعلام SELECT بناءً على الأعمدة الموجودة
-                $selectFields = ['id', 'total_hours', 'base_amount', 'total_amount'];
-                if ($hasBonus) {
-                    $selectFields[] = 'bonus';
-                }
-                if ($hasDeductions) {
-                    $selectFields[] = 'deductions';
-                }
-                if ($hasCollectionsBonus) {
-                    $selectFields[] = 'collections_bonus';
-                }
-                
-                // بناء WHERE clause بناءً على وجود عمود year
-                if ($hasYear) {
-                    $selectSql = "SELECT " . implode(', ', $selectFields) . " FROM salaries WHERE user_id = ? AND month = ? AND year = ?";
-                    $selectParams = [$userId, $attendanceMonthNumber, $attendanceYearNumber];
-                } else {
-                    // إذا لم يكن year موجوداً، تحقق من نوع month
-                    $monthColumnCheck = $db->queryOne("SHOW COLUMNS FROM salaries WHERE Field = 'month'");
-                    $monthType = $monthColumnCheck['Type'] ?? '';
-                    
-                    if (stripos($monthType, 'date') !== false) {
-                        // إذا كان month من نوع DATE
-                        $targetDate = sprintf('%04d-%02d-01', $attendanceYearNumber, $attendanceMonthNumber);
-                        $selectSql = "SELECT " . implode(', ', $selectFields) . " FROM salaries WHERE user_id = ? AND DATE_FORMAT(month, '%Y-%m') = ?";
-                        $selectParams = [$userId, sprintf('%04d-%02d', $attendanceYearNumber, $attendanceMonthNumber)];
-                    } else {
-                        // إذا كان month من نوع INT فقط
-                        $selectSql = "SELECT " . implode(', ', $selectFields) . " FROM salaries WHERE user_id = ? AND month = ?";
-                        $selectParams = [$userId, $attendanceMonthNumber];
-                    }
-                }
-                
-                // البحث عن سجل الراتب الموجود
-                $existingSalary = $db->queryOne(
-                    $selectSql,
-                    $selectParams
+                // حساب الراتب تلقائياً للشهر الحالي
+                $salaryResult = createOrUpdateSalary(
+                    $userId,
+                    $attendanceMonthNumber,
+                    $attendanceYearNumber,
+                    0,
+                    0,
+                    'حساب تلقائي بعد تسجيل الانصراف'
                 );
                 
-                if ($existingSalary) {
-                    $oldTotalHours = floatval($existingSalary['total_hours'] ?? 0);
-                    $oldBaseAmount = floatval($existingSalary['base_amount'] ?? 0);
-                    $oldTotalAmount = floatval($existingSalary['total_amount'] ?? 0);
-                    
-                    error_log("Existing salary found: ID={$existingSalary['id']}, old_total_hours={$oldTotalHours}, old_base_amount={$oldBaseAmount}, old_total_amount={$oldTotalAmount}");
-                    
-                    // تحديث total_hours بشكل إجباري دائماً (حتى لو كانت القيمة متساوية)
-                    error_log("FORCE UPDATING total_hours: {$oldTotalHours} -> {$actualMonthlyHours}");
-                    
-                    // محاولة 1: استخدام db()->execute()
-                    try {
-                        $updateSql1 = $hasUpdatedAt 
-                            ? "UPDATE salaries SET total_hours = ?, updated_at = NOW() WHERE id = ?"
-                            : "UPDATE salaries SET total_hours = ? WHERE id = ?";
-                        
-                        $updateHoursResult = $db->execute(
-                            $updateSql1,
-                            [$actualMonthlyHours, $existingSalary['id']]
-                        );
-                        
-                        $hoursAffected = $updateHoursResult['affected_rows'] ?? 0;
-                        error_log("Method 1 (db->execute): affected_rows={$hoursAffected}");
-                        
-                        // التحقق من التحديث مباشرة
-                        usleep(100000); // انتظار 100ms للتأكد من أن التحديث تم
-                        $verifyHours = $db->queryOne(
-                            "SELECT total_hours FROM salaries WHERE id = ?",
-                            [$existingSalary['id']]
-                        );
-                        
-                        if ($verifyHours) {
-                            $verifiedHoursValue = floatval($verifyHours['total_hours'] ?? 0);
-                            error_log("Method 1 verification: {$verifiedHoursValue} (expected: {$actualMonthlyHours})");
-                            
-                            if (abs($verifiedHoursValue - $actualMonthlyHours) > 0.01) {
-                                error_log("Method 1 FAILED! Trying Method 2 (direct SQL)...");
-                                
-                                // محاولة 2: استخدام SQL مباشر
-                                try {
-                                    $conn = $db->getConnection();
-                                    $updateSql2 = $hasUpdatedAt 
-                                        ? "UPDATE salaries SET total_hours = ?, updated_at = NOW() WHERE id = ?"
-                                        : "UPDATE salaries SET total_hours = ? WHERE id = ?";
-                                    $stmt = $conn->prepare($updateSql2);
-                                    if (!$stmt) {
-                                        error_log("Method 2 prepare failed: " . $conn->error);
-                                    } else {
-                                        $stmt->bind_param("di", $actualMonthlyHours, $existingSalary['id']);
-                                        $execResult = $stmt->execute();
-                                        if (!$execResult) {
-                                            error_log("Method 2 execute failed: " . $stmt->error);
-                                        } else {
-                                            $directAffected = $stmt->affected_rows;
-                                            error_log("Method 2 (direct SQL): affected_rows={$directAffected}, executed={$execResult}");
-                                            $stmt->close();
-                                            
-                                            // التحقق مرة أخرى
-                                            usleep(100000);
-                                            $finalVerify = $db->queryOne(
-                                                "SELECT total_hours FROM salaries WHERE id = ?",
-                                                [$existingSalary['id']]
-                                            );
-                                            
-                                            if ($finalVerify) {
-                                                $finalHours = floatval($finalVerify['total_hours'] ?? 0);
-                                                error_log("Method 2 verification: {$finalHours} (expected: {$actualMonthlyHours})");
-                                                
-                                                if (abs($finalHours - $actualMonthlyHours) > 0.01) {
-                                                    error_log("Method 2 FAILED! Trying Method 3 (raw query)...");
-                                                    
-                                                    // محاولة 3: استخدام raw query
-                                                    try {
-                                                        $updatedAtPart = $hasUpdatedAt ? ", updated_at = NOW()" : "";
-                                                        $rawSql = "UPDATE salaries SET total_hours = " . floatval($actualMonthlyHours) . $updatedAtPart . " WHERE id = " . intval($existingSalary['id']);
-                                                        $rawResult = $conn->query($rawSql);
-                                                        if (!$rawResult) {
-                                                            error_log("Method 3 (raw query) failed: " . $conn->error);
-                                                        } else {
-                                                            $rawAffected = $conn->affected_rows;
-                                                            error_log("Method 3 (raw query): affected_rows={$rawAffected}");
-                                                            
-                                                            // التحقق النهائي
-                                                            usleep(100000);
-                                                            $rawVerify = $db->queryOne(
-                                                                "SELECT total_hours FROM salaries WHERE id = ?",
-                                                                [$existingSalary['id']]
-                                                            );
-                                                            
-                                                            if ($rawVerify) {
-                                                                $rawHours = floatval($rawVerify['total_hours'] ?? 0);
-                                                                error_log("Method 3 verification: {$rawHours} (expected: {$actualMonthlyHours})");
-                                                            }
-                                                        }
-                                                    } catch (Exception $rawError) {
-                                                        error_log("Method 3 (raw query) exception: " . $rawError->getMessage());
-                                                    }
-                                                }
-                                            }
-                                        }
-                                    }
-                                } catch (Exception $directError) {
-                                    error_log("Method 2 exception: " . $directError->getMessage());
-                                }
-                            } else {
-                                error_log("SUCCESS: Method 1 worked! total_hours updated correctly.");
-                            }
-                        } else {
-                            error_log("ERROR: Could not verify update - salary record not found!");
-                        }
-                    } catch (Exception $updateError) {
-                        error_log("Method 1 exception: " . $updateError->getMessage());
-                    }
-                    
-                    // إعادة حساب الراتب الأساسي بناءً على الساعات الجديدة
-                    if ($userRole === 'sales') {
-                        // للمندوبين: الراتب الأساسي هو hourly_rate مباشرة (راتب شهري ثابت)
-                        $newBaseAmount = $hourlyRate;
-                    } else {
-                        // لعمال الإنتاج والمحاسبين: الراتب = الساعات × سعر الساعة
-                        $newBaseAmount = round($actualMonthlyHours * $hourlyRate, 2);
-                    }
-                    
-                    // حساب نسبة التحصيلات للمندوبين
-                    $collectionsBonus = 0;
-                    $collectionsAmount = 0;
-                    if ($userRole === 'sales') {
-                        $collectionsAmount = calculateSalesCollections($userId, $attendanceMonthNumber, $attendanceYearNumber);
-                        $collectionsBonus = round($collectionsAmount * 0.02, 2);
-                        error_log("Sales collections: amount={$collectionsAmount}, bonus={$collectionsBonus}");
-                        
-                        // تحديث collections_bonus إذا كان موجوداً
-                        $collectionsBonusColumnCheck = $db->queryOne("SHOW COLUMNS FROM salaries LIKE 'collections_bonus'");
-                        if (!empty($collectionsBonusColumnCheck)) {
-                            $db->execute(
-                                "UPDATE salaries SET collections_bonus = ?, collections_amount = ? WHERE id = ?",
-                                [$collectionsBonus, $collectionsAmount, $existingSalary['id']]
-                            );
-                            error_log("Updated collections_bonus: {$collectionsBonus}");
-                        }
-                    }
-                    
-                    // حساب الراتب الإجمالي الجديد
-                    $currentBonus = $hasBonus ? floatval($existingSalary['bonus'] ?? 0) : 0;
-                    $currentDeductions = $hasDeductions ? floatval($existingSalary['deductions'] ?? 0) : 0;
-                    $newTotalAmount = round($newBaseAmount + $currentBonus + $collectionsBonus - $currentDeductions, 2);
-                    $newTotalAmount = max(0, $newTotalAmount);
-                    
-                    error_log("New calculations: base_amount={$newBaseAmount}, total_amount={$newTotalAmount}");
-                    
-                    // تحديث باقي الحقول - بناء الاستعلام بناءً على الأعمدة الموجودة
-                    $updateFields = ['base_amount = ?', 'total_amount = ?'];
-                    $updateParams = [$newBaseAmount, $newTotalAmount];
-                    
-                    if ($hasUpdatedAt) {
-                        $updateFields[] = 'updated_at = NOW()';
-                    }
-                    
-                    $updateSql = "UPDATE salaries SET " . implode(', ', $updateFields) . " WHERE id = ?";
-                    $updateParams[] = $existingSalary['id'];
-                    
-                    $updateResult = $db->execute($updateSql, $updateParams);
-                    
-                    $affectedRows = $updateResult['affected_rows'] ?? 0;
-                    error_log("Other fields UPDATE: affected_rows={$affectedRows}");
-                    
-                    // التحقق النهائي من جميع القيم
-                    $finalVerify = $db->queryOne(
-                        "SELECT total_hours, base_amount, total_amount FROM salaries WHERE id = ?",
-                        [$existingSalary['id']]
+                if ($salaryResult['success']) {
+                    // تم حساب الراتب بنجاح
+                    error_log(
+                        "Salary auto-calculated for user {$userId} after checkout: Month={$attendanceMonthNumber}/{$attendanceYearNumber}, Hours={$salaryResult['calculation']['total_hours']}, Total={$salaryResult['calculation']['total_amount']}"
                     );
-                    
-                    if ($finalVerify) {
-                        $finalHours = floatval($finalVerify['total_hours'] ?? 0);
-                        $finalBase = floatval($finalVerify['base_amount'] ?? 0);
-                        $finalTotal = floatval($finalVerify['total_amount'] ?? 0);
-                        
-                        error_log(
-                            "FINAL VERIFICATION for user {$userId}: " .
-                            "Month={$attendanceMonthNumber}/{$attendanceYearNumber}, " .
-                            "Hours: {$oldTotalHours} -> {$finalHours} (calculated: {$actualMonthlyHours}), " .
-                            "Base: {$oldBaseAmount} -> {$finalBase} (calculated: {$newBaseAmount}), " .
-                            "Total: {$oldTotalAmount} -> {$finalTotal} (calculated: {$newTotalAmount})"
-                        );
-                        
-                        if (abs($finalHours - $actualMonthlyHours) <= 0.01) {
-                            error_log("SUCCESS: total_hours updated correctly for user {$userId}");
-                        } else {
-                            error_log("ERROR: total_hours still incorrect after all attempts! Expected: {$actualMonthlyHours}, Got: {$finalHours}");
-                        }
-                    }
                 } else {
-                    error_log("No existing salary found, creating new one...");
-                    // إذا لم يكن هناك سجل راتب، قم بإنشائه
-                    $salaryResult = createOrUpdateSalary(
-                        $userId,
-                        $attendanceMonthNumber,
-                        $attendanceYearNumber,
-                        0,
-                        0,
-                        'حساب تلقائي بعد تسجيل الانصراف'
-                    );
-                    
-                    if ($salaryResult['success']) {
-                        error_log(
-                            "Salary CREATED for user {$userId} after checkout: " .
-                            "Month={$attendanceMonthNumber}/{$attendanceYearNumber}, " .
-                            "Hours={$salaryResult['calculation']['total_hours']}, " .
-                            "Total={$salaryResult['calculation']['total_amount']}"
-                        );
-                    } else {
-                        error_log("ERROR: Failed to create salary for user {$userId} after checkout: {$salaryResult['message']}");
-                    }
+                    error_log("Failed to calculate salary for user {$userId} after checkout: {$salaryResult['message']}");
                 }
             } else {
-                error_log("SKIPPED: User {$userId} has no hourly_rate set (value: {$hourlyRate})");
+                error_log("User {$userId} has no hourly_rate set (value: {$hourlyRate}), skipping salary calculation");
             }
         }
     } catch (Exception $e) {
         // في حالة حدوث خطأ في حساب الراتب، لا نمنع تسجيل الانصراف
-        error_log("EXCEPTION updating salary after checkout for user {$userId}: " . $e->getMessage());
-        error_log("Stack trace: " . $e->getTraceAsString());
-    } catch (Throwable $e) {
-        error_log("FATAL ERROR updating salary after checkout for user {$userId}: " . $e->getMessage());
+        error_log("Error auto-calculating salary after checkout for user {$userId}: " . $e->getMessage());
         error_log("Stack trace: " . $e->getTraceAsString());
     }
-    
-    error_log("=== Finished salary update after checkout for user {$userId} ===");
     
     // الحصول على معلومات المستخدم
     $user = $db->queryOne("SELECT username, full_name, role FROM users WHERE id = ?", [$userId]);
@@ -1386,14 +1111,14 @@ function calculateMonthHours($userId, $month) {
         return 0;
     }
     
-    // استخراج الشهر والسنة من monthKey (YYYY-MM)
-    $parts = explode('-', $month);
-    $year = isset($parts[0]) ? (int)$parts[0] : (int)date('Y');
-    $monthNum = isset($parts[1]) ? (int)$parts[1] : (int)date('m');
+    $result = $db->queryOne(
+        "SELECT COALESCE(SUM(work_hours), 0) as total_hours 
+         FROM attendance_records 
+         WHERE user_id = ? AND DATE_FORMAT(date, '%Y-%m') = ? AND check_out_time IS NOT NULL",
+        [$userId, $month]
+    );
     
-    // استخدام نفس الدالة calculateMonthlyHours لضمان التطابق
-    require_once __DIR__ . '/salary_calculator.php';
-    return calculateMonthlyHours($userId, $monthNum, $year);
+    return round($result['total_hours'] ?? 0, 2);
 }
 
 /**
@@ -1473,14 +1198,7 @@ function getAttendanceStatistics($userId, $month = null) {
     );
     
     $stats['present_days'] = $monthStats['present_days'] ?? 0;
-    
-    // حساب الساعات الإجمالية (بما في ذلك السجلات غير المكتملة) باستخدام calculateMonthlyHours
-    // لضمان التطابق مع حساب الراتب
-    $parts = explode('-', $month);
-    $year = isset($parts[0]) ? (int)$parts[0] : (int)date('Y');
-    $monthNum = isset($parts[1]) ? (int)$parts[1] : (int)date('m');
-    require_once __DIR__ . '/salary_calculator.php';
-    $stats['total_hours'] = calculateMonthlyHours($userId, $monthNum, $year);
+    $stats['total_hours'] = round($monthStats['total_hours'] ?? 0, 2);
     
     $delaySummary = calculateMonthlyDelaySummary($userId, $month);
     $stats['average_delay'] = $delaySummary['average_minutes'];
@@ -1784,7 +1502,7 @@ function sendMonthlyAttendanceReportToTelegram(int $month, int $year, array $opt
         "📊 <b>تقرير الحضور الشهري</b>",
         "📅 <b>الشهر:</b> {$monthName} {$report['year']}",
         "👥 <b>عدد الموظفين:</b> {$report['total_employees']}",
-        "⏱️ <b>إجمالي الساعات:</b> " . formatHours($report['total_hours']),
+        "⏱️ <b>إجمالي الساعات:</b> " . number_format($report['total_hours'], 2) . " ساعة",
         "⏳ <b>إجمالي التأخيرات:</b> " . number_format($report['total_delay_minutes'], 2) . " دقيقة",
         "⏳ <b>متوسط التأخير:</b> " . number_format($report['average_delay_minutes'], 2) . " دقيقة",
         "💰 <b>مجموع الرواتب المستحقة:</b> " . number_format($report['total_salary_amount'], 2)
@@ -1806,7 +1524,7 @@ function sendMonthlyAttendanceReportToTelegram(int $month, int $year, array $opt
                 formatRoleName($employee['role']),
                 number_format($employee['total_delay_minutes'], 2),
                 number_format($employee['average_delay_minutes'], 2),
-                formatHours($employee['total_hours'])
+                number_format($employee['total_hours'], 2)
             );
         }
     }
@@ -2140,198 +1858,10 @@ function processAutoCheckoutForMissingEmployees(): void
                 }
             }
             
-            // تحديث total_hours والراتب بعد الانصراف التلقائي
-            try {
-                $attendanceDateObj = new DateTime($attendanceDate);
-                $attendanceMonthNumber = (int)$attendanceDateObj->format('n');
-                $attendanceYearNumber = (int)$attendanceDateObj->format('Y');
-                
-                // التحقق من وجود الأعمدة في جدول salaries
-                $columns = $db->query("SHOW COLUMNS FROM salaries");
-                $columnNames = [];
-                foreach ($columns as $column) {
-                    $columnNames[] = $column['Field'] ?? '';
-                }
-                
-                $hasBonus = in_array('bonus', $columnNames, true);
-                $hasDeductions = in_array('deductions', $columnNames, true);
-                $hasCollectionsBonus = in_array('collections_bonus', $columnNames, true);
-                $hasUpdatedAt = in_array('updated_at', $columnNames, true);
-                $hasYear = in_array('year', $columnNames, true);
-                
-                $user = $db->queryOne("SELECT hourly_rate, role FROM users WHERE id = ?", [$userId]);
-                
-                if ($user) {
-                    $hourlyRate = floatval($user['hourly_rate'] ?? 0);
-                    $userRole = $user['role'] ?? 'production';
-                    
-                    if ($hourlyRate > 0) {
-                        // حساب الساعات الشهرية الفعلية من attendance_records
-                        $actualMonthlyHours = calculateMonthlyHours($userId, $attendanceMonthNumber, $attendanceYearNumber);
-                        
-                        // بناء استعلام SELECT بناءً على الأعمدة الموجودة
-                        $selectFields = ['id', 'total_hours', 'base_amount', 'total_amount'];
-                        if ($hasBonus) {
-                            $selectFields[] = 'bonus';
-                        }
-                        if ($hasDeductions) {
-                            $selectFields[] = 'deductions';
-                        }
-                        if ($hasCollectionsBonus) {
-                            $selectFields[] = 'collections_bonus';
-                        }
-                        
-                        // بناء WHERE clause بناءً على وجود عمود year
-                        if ($hasYear) {
-                            $selectSql = "SELECT " . implode(', ', $selectFields) . " FROM salaries WHERE user_id = ? AND month = ? AND year = ?";
-                            $selectParams = [$userId, $attendanceMonthNumber, $attendanceYearNumber];
-                        } else {
-                            // إذا لم يكن year موجوداً، تحقق من نوع month
-                            $monthColumnCheck = $db->queryOne("SHOW COLUMNS FROM salaries WHERE Field = 'month'");
-                            $monthType = $monthColumnCheck['Type'] ?? '';
-                            
-                            if (stripos($monthType, 'date') !== false) {
-                                // إذا كان month من نوع DATE
-                                $targetDate = sprintf('%04d-%02d-01', $attendanceYearNumber, $attendanceMonthNumber);
-                                $selectSql = "SELECT " . implode(', ', $selectFields) . " FROM salaries WHERE user_id = ? AND DATE_FORMAT(month, '%Y-%m') = ?";
-                                $selectParams = [$userId, sprintf('%04d-%02d', $attendanceYearNumber, $attendanceMonthNumber)];
-                            } else {
-                                // إذا كان month من نوع INT فقط
-                                $selectSql = "SELECT " . implode(', ', $selectFields) . " FROM salaries WHERE user_id = ? AND month = ?";
-                                $selectParams = [$userId, $attendanceMonthNumber];
-                            }
-                        }
-                        
-                        // البحث عن سجل الراتب الموجود
-                        $existingSalary = $db->queryOne(
-                            $selectSql,
-                            $selectParams
-                        );
-                        
-                        if ($existingSalary) {
-                            // تحديث total_hours مباشرة
-                            $updateHoursSql = $hasUpdatedAt 
-                                ? "UPDATE salaries SET total_hours = ?, updated_at = NOW() WHERE id = ?"
-                                : "UPDATE salaries SET total_hours = ? WHERE id = ?";
-                            
-                            $db->execute(
-                                $updateHoursSql,
-                                [$actualMonthlyHours, $existingSalary['id']]
-                            );
-                            
-                            // إعادة حساب الراتب الأساسي بناءً على الساعات الجديدة
-                            if ($userRole === 'sales') {
-                                $newBaseAmount = $hourlyRate;
-                            } else {
-                                $newBaseAmount = round($actualMonthlyHours * $hourlyRate, 2);
-                            }
-                            
-                            // حساب نسبة التحصيلات للمندوبين
-                            $collectionsBonus = 0;
-                            if ($userRole === 'sales') {
-                                $collectionsAmount = calculateSalesCollections($userId, $attendanceMonthNumber, $attendanceYearNumber);
-                                $collectionsBonus = round($collectionsAmount * 0.02, 2);
-                                
-                                $collectionsBonusColumnCheck = $db->queryOne("SHOW COLUMNS FROM salaries LIKE 'collections_bonus'");
-                                if (!empty($collectionsBonusColumnCheck)) {
-                                    $db->execute(
-                                        "UPDATE salaries SET collections_bonus = ?, collections_amount = ? WHERE id = ?",
-                                        [$collectionsBonus, $collectionsAmount, $existingSalary['id']]
-                                    );
-                                }
-                            }
-                            
-                            // حساب الراتب الإجمالي الجديد
-                            $currentBonus = $hasBonus ? floatval($existingSalary['bonus'] ?? 0) : 0;
-                            $currentDeductions = $hasDeductions ? floatval($existingSalary['deductions'] ?? 0) : 0;
-                            $newTotalAmount = round($newBaseAmount + $currentBonus + $collectionsBonus - $currentDeductions, 2);
-                            $newTotalAmount = max(0, $newTotalAmount);
-                            
-                            // تحديث الراتب في قاعدة البيانات - بناء الاستعلام بناءً على الأعمدة الموجودة
-                            $updateFields = ['total_hours = ?', 'base_amount = ?', 'total_amount = ?'];
-                            $updateParams = [$actualMonthlyHours, $newBaseAmount, $newTotalAmount];
-                            
-                            if ($hasUpdatedAt) {
-                                $updateFields[] = 'updated_at = NOW()';
-                            }
-                            
-                            $updateSql = "UPDATE salaries SET " . implode(', ', $updateFields) . " WHERE id = ?";
-                            $updateParams[] = $existingSalary['id'];
-                            
-                            $db->execute($updateSql, $updateParams);
-                            
-                            error_log(
-                                "Salary updated after auto checkout for user {$userId}: " .
-                                "Month={$attendanceMonthNumber}/{$attendanceYearNumber}, " .
-                                "Hours={$actualMonthlyHours}, Base={$newBaseAmount}, Total={$newTotalAmount}"
-                            );
-                        }
-                    }
-                }
-            } catch (Exception $e) {
-                error_log("Error updating salary after auto checkout for user {$userId}: " . $e->getMessage());
-            }
-            
             error_log("Auto checkout processed for user {$userId} at {$autoCheckoutTime}");
         }
     } catch (Exception $e) {
         error_log('Failed to process auto checkout: ' . $e->getMessage());
-    }
-}
-
-/**
- * التحقق من السجلات غير المكتملة في اليوم السابق وإرسال إشعارات
- * يتم استدعاؤها عند تسجيل الحضور في اليوم التالي
- */
-function checkAndNotifyIncompleteAttendance($userId) {
-    try {
-        $db = db();
-        $today = date('Y-m-d');
-        $yesterday = date('Y-m-d', strtotime('-1 day'));
-        
-        // التحقق من وجود سجلات غير مكتملة في اليوم السابق
-        $incompleteRecords = $db->query(
-            "SELECT id, date, check_in_time 
-             FROM attendance_records 
-             WHERE user_id = ? AND date = ? 
-             AND check_out_time IS NULL
-             AND check_in_time IS NOT NULL",
-            [$userId, $yesterday]
-        );
-        
-        if (empty($incompleteRecords)) {
-            return; // لا توجد سجلات غير مكتملة
-        }
-        
-        // الحصول على معلومات المستخدم
-        $user = $db->queryOne("SELECT full_name, username, role FROM users WHERE id = ?", [$userId]);
-        if (!$user) {
-            return;
-        }
-        
-        $userName = $user['full_name'] ?? $user['username'] ?? 'المستخدم';
-        $incompleteCount = count($incompleteRecords);
-        $calculatedHours = $incompleteCount * 5; // 5 ساعات لكل سجل غير مكتمل
-        
-        // إرسال إشعار للمستخدم
-        $title = 'تنبيه: نسيان تسجيل الانصراف';
-        $message = "تنبيه: لم تقم بتسجيل الانصراف في يوم {$yesterday}. تم احتساب {$calculatedHours} ساعة (5 ساعات لكل يوم) في حساب الراتب. يرجى عدم نسيان تسجيل الانصراف في المستقبل.";
-        
-        $attendanceLink = getAttendanceReminderLink($user['role']);
-        
-        createNotification(
-            $userId,
-            $title,
-            $message,
-            'warning',
-            $attendanceLink,
-            true // إرسال عبر Telegram
-        );
-        
-        error_log("Incomplete attendance notification sent to user {$userId} for date {$yesterday}, calculated hours: {$calculatedHours}");
-        
-    } catch (Exception $e) {
-        error_log('Failed to check and notify incomplete attendance: ' . $e->getMessage());
     }
 }
 

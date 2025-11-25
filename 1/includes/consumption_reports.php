@@ -170,30 +170,23 @@ function getConsumptionSummary($dateFrom, $dateTo)
     }
     $packagingMap = consumptionGetPackagingMap();
     $packagingMaterialsMeta = [];
-    $packagingMaterialsIds = []; // قائمة معرفات أدوات التعبئة من packaging_materials
     try {
         $packagingTableCheck = $db->queryOne("SHOW TABLES LIKE 'packaging_materials'");
         if (!empty($packagingTableCheck)) {
-            $packagingMetaRows = $db->query("SELECT id, name, unit, material_id FROM packaging_materials WHERE status = 'active'");
+            $packagingMetaRows = $db->query("SELECT id, name, unit FROM packaging_materials");
             foreach ($packagingMetaRows as $metaRow) {
                 $packagingId = (int)($metaRow['id'] ?? 0);
-                $materialId = (int)($metaRow['material_id'] ?? 0);
-                if ($packagingId > 0) {
-                    $packagingMaterialsIds[] = $packagingId;
-                    $packagingMaterialsMeta[$packagingId] = [
-                        'name' => trim((string)($metaRow['name'] ?? '')),
-                        'unit' => trim((string)($metaRow['unit'] ?? ''))
-                    ];
+                if ($packagingId <= 0) {
+                    continue;
                 }
-                // إضافة material_id أيضاً إذا كان موجوداً
-                if ($materialId > 0 && !in_array($materialId, $packagingMaterialsIds)) {
-                    $packagingMaterialsIds[] = $materialId;
-                }
+                $packagingMaterialsMeta[$packagingId] = [
+                    'name' => trim((string)($metaRow['name'] ?? '')),
+                    'unit' => trim((string)($metaRow['unit'] ?? ''))
+                ];
             }
         }
     } catch (Exception $packagingMetaError) {
         $packagingMaterialsMeta = [];
-        $packagingMaterialsIds = [];
         error_log('Consumption summary packaging meta error: ' . $packagingMetaError->getMessage());
     }
     $rawMaterialsMeta = [];
@@ -268,26 +261,11 @@ function getConsumptionSummary($dateFrom, $dateTo)
         if ($totalOut == 0 && $totalIn == 0) {
             continue;
         }
-        $productId = intval($row['product_id'] ?? 0);
-        
-        // التحقق من أن المنتج موجود في packaging_materials قبل تصنيفه كأداة تعبئة
-        $isPackagingMaterial = false;
-        if ($productId > 0 && !empty($packagingMaterialsIds)) {
-            $isPackagingMaterial = in_array($productId, $packagingMaterialsIds);
-        }
-        
         $classification = consumptionClassifyProduct($row, $packagingMap);
         if (!$classification) {
             continue;
         }
         [$category, $subKey, $subLabel] = $classification;
-        
-        // إذا كان التصنيف packaging لكن المنتج غير موجود في packaging_materials، تجاهله
-        if ($category === 'packaging' && !$isPackagingMaterial && !isset($packagingMap[$productId])) {
-            // التحقق مرة أخرى من الكلمات المفتاحية - إذا لم يكن في packaging_materials، تجاهله
-            continue;
-        }
-        
         $item = [
             'name' => $row['name'] ?? ('#' . $row['product_id']),
             'sub_category' => $subLabel,

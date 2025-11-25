@@ -11,62 +11,6 @@ if (!defined('ACCESS_ALLOWED')) {
 
 require_once __DIR__ . '/config.php';
 require_once __DIR__ . '/db.php';
-require_once __DIR__ . '/audit_log.php';
-
-/**
- * التأكد من وجود أعمدة مكافآت التحصيلات في جدول الرواتب.
- *
- * @return bool
- */
-function ensureCollectionsBonusColumn(): bool {
-    static $collectionsColumnsEnsured = null;
-    
-    if ($collectionsColumnsEnsured !== null) {
-        return $collectionsColumnsEnsured;
-    }
-    
-    try {
-        $db = db();
-        
-        // التحقق من وجود عمود bonus أو bonuses لتحديد موضع الإضافة
-        $bonusColumnCheck = $db->queryOne("SHOW COLUMNS FROM salaries WHERE Field IN ('bonus', 'bonuses')");
-        $afterColumn = 'deductions'; // افتراضي: بعد deductions
-        if (!empty($bonusColumnCheck)) {
-            $afterColumn = $bonusColumnCheck['Field'];
-        } else {
-            // التحقق من وجود deductions
-            $deductionsCheck = $db->queryOne("SHOW COLUMNS FROM salaries LIKE 'deductions'");
-            if (empty($deductionsCheck)) {
-                $afterColumn = 'base_amount'; // إذا لم يكن deductions موجوداً، استخدم base_amount
-            }
-        }
-        
-        $bonusColumnExists = $db->queryOne("SHOW COLUMNS FROM salaries LIKE 'collections_bonus'");
-        if (empty($bonusColumnExists)) {
-            $db->execute("
-                ALTER TABLE `salaries`
-                ADD COLUMN `collections_bonus` DECIMAL(10,2) DEFAULT 0.00 COMMENT 'مكافآت التحصيلات 2%' 
-                AFTER `{$afterColumn}`
-            ");
-        }
-        
-        $amountColumnExists = $db->queryOne("SHOW COLUMNS FROM salaries LIKE 'collections_amount'");
-        if (empty($amountColumnExists)) {
-            $db->execute("
-                ALTER TABLE `salaries`
-                ADD COLUMN `collections_amount` DECIMAL(10,2) DEFAULT 0.00 COMMENT 'إجمالي مبالغ التحصيلات للمندوب'
-                AFTER `collections_bonus`
-            ");
-        }
-        
-        $collectionsColumnsEnsured = true;
-    } catch (Throwable $columnError) {
-        error_log('Failed to ensure collections bonus columns: ' . $columnError->getMessage());
-        $collectionsColumnsEnsured = false;
-    }
-    
-    return $collectionsColumnsEnsured;
-}
 
 /**
  * حساب عدد الساعات الشهرية للمستخدم
@@ -74,66 +18,28 @@ function ensureCollectionsBonusColumn(): bool {
  */
 function calculateMonthlyHours($userId, $month, $year) {
     $db = db();
-    $hasCollectionsBonusColumn = ensureCollectionsBonusColumn();
     
     // التحقق من وجود جدول attendance_records
     $tableCheck = $db->queryOne("SHOW TABLES LIKE 'attendance_records'");
     
     if (!empty($tableCheck)) {
         // استخدام الجدول الجديد
-        $monthKey = sprintf('%04d-%02d', $year, $month);
-        
-        // 1. حساب الساعات من السجلات المكتملة (التي لديها check_out_time)
-        $completedResult = $db->queryOne(
+        // حساب الساعات من جميع السجلات التي تم إكمالها (check_out_time IS NOT NULL)
+        // حتى لو كانت الساعات قليلة (مثل ربع ساعة)
+        $result = $db->queryOne(
             "SELECT COALESCE(SUM(work_hours), 0) as total_hours 
              FROM attendance_records 
-             WHERE user_id = ? AND DATE_FORMAT(date, '%Y-%m') = ?
+             WHERE user_id = ? AND MONTH(date) = ? AND YEAR(date) = ?
              AND check_out_time IS NOT NULL
              AND work_hours IS NOT NULL
              AND work_hours > 0",
-            [$userId, $monthKey]
+            [$userId, $month, $year]
         );
         
-        $totalHours = round($completedResult['total_hours'] ?? 0, 2);
-        
-        // 2. حساب الساعات من السجلات غير المكتملة (حضور بدون انصراف)
-        $incompleteRecords = $db->query(
-            "SELECT id, date, check_in_time 
-             FROM attendance_records 
-             WHERE user_id = ? AND DATE_FORMAT(date, '%Y-%m') = ?
-             AND check_out_time IS NULL
-             AND check_in_time IS NOT NULL",
-            [$userId, $monthKey]
-        );
-        
-        // الحصول على موعد العمل الرسمي للمستخدم
-        // استخدام نفس المنطق الموجود في attendance.php
-        $user = $db->queryOne("SELECT role FROM users WHERE id = ?", [$userId]);
-        $workTime = null;
-        if ($user) {
-            $role = $user['role'];
-            if ($role === 'accountant') {
-                $workTime = ['start' => '10:00:00', 'end' => '19:00:00'];
-            } elseif ($role === 'sales') {
-                $workTime = ['start' => '10:00:00', 'end' => '19:00:00'];
-            } elseif ($role !== 'manager') {
-                // عمال الإنتاج
-                $workTime = ['start' => '09:00:00', 'end' => '19:00:00'];
-            }
-        }
-        
-        foreach ($incompleteRecords as $record) {
-            // إذا لم يسجل المستخدم الانصراف، يحتسب النظام 5 ساعات فقط
-            $totalHours += 5.0;
-        }
-        
-        $totalHours = round($totalHours, 2);
+        $totalHours = round($result['total_hours'] ?? 0, 2);
         
         // تسجيل للتأكد من أن الساعات تُحسب بشكل صحيح
-        $completedHours = isset($completedResult['total_hours']) ? $completedResult['total_hours'] : 0;
-        $incompleteCount = count($incompleteRecords);
-        $incompleteHours = $incompleteCount * 5;
-        error_log("calculateMonthlyHours: user_id={$userId}, month={$month}, year={$year}, month_key={$monthKey}, completed_hours={$completedHours}, incomplete_count={$incompleteCount}, incomplete_hours={$incompleteHours}, total_hours={$totalHours}");
+        error_log("calculateMonthlyHours: user_id={$userId}, month={$month}, year={$year}, total_hours={$totalHours}");
         
         return $totalHours;
     } else {
@@ -163,337 +69,45 @@ function calculateMonthlyHours($userId, $month, $year) {
 }
 
 /**
- * حساب مجموع المبالغ المستحقة للمكافأة 2% للمندوب خلال الشهر
- * الحالات:
- * 1. المبيعات بكامل: 2% على إجمالي الفاتورة
- * 2. التحصيلات الجزئية: 2% على المبلغ المحصل
- * 3. التحصيلات من عملاء المندوب: 2% على المبلغ المحصل
+ * حساب مجموع التحصيلات للمندوب خلال الشهر
  */
 function calculateSalesCollections($userId, $month, $year) {
     $db = db();
     
-    $totalCommissionBase = 0;
+    // التحقق من وجود جدول collections
+    $tableCheck = $db->queryOne("SHOW TABLES LIKE 'collections'");
+    if (empty($tableCheck)) {
+        return 0;
+    }
     
-    // الحالة 1: المبيعات بكامل - حساب 2% على إجمالي الفاتورة
-    // الفواتير المدفوعة بالكامل (status='paid' و paid_amount = total_amount)
-    $invoicesTableCheck = $db->queryOne("SHOW TABLES LIKE 'invoices'");
-    if (!empty($invoicesTableCheck)) {
-        $fullPaymentSales = $db->queryOne(
-            "SELECT COALESCE(SUM(total_amount), 0) as total 
-             FROM invoices 
-             WHERE sales_rep_id = ? 
+    // التحقق من وجود عمود status
+    $columnCheck = $db->queryOne("SHOW COLUMNS FROM collections LIKE 'status'");
+    $hasStatus = !empty($columnCheck);
+    
+    if ($hasStatus) {
+        // حساب مجموع التحصيلات المعتمدة فقط (approved)
+        $result = $db->queryOne(
+            "SELECT COALESCE(SUM(amount), 0) as total_collections 
+             FROM collections 
+             WHERE collected_by = ? 
              AND MONTH(date) = ? 
              AND YEAR(date) = ?
-             AND status = 'paid'
-             AND ABS(paid_amount - total_amount) < 0.01",
+             AND status = 'approved'",
             [$userId, $month, $year]
         );
-        $totalCommissionBase += floatval($fullPaymentSales['total'] ?? 0);
-    }
-    
-    // الحالة 2 و 3: التحصيلات الجزئية والتحصيلات من عملاء المندوب
-    // حساب 2% على المبلغ المحصل
-    $collectionsTableCheck = $db->queryOne("SHOW TABLES LIKE 'collections'");
-    if (!empty($collectionsTableCheck)) {
-        // التحقق من وجود عمود status في collections
-        $statusColumnCheck = $db->queryOne("SHOW COLUMNS FROM collections LIKE 'status'");
-        $hasStatus = !empty($statusColumnCheck);
-        
-        // التحقق من وجود جدول customers
-        $customersTableCheck = $db->queryOne("SHOW TABLES LIKE 'customers'");
-        $hasCustomers = !empty($customersTableCheck);
-        
-        if ($hasCustomers && !empty($invoicesTableCheck)) {
-            // الحالة 2: التحصيلات من الفواتير الجزئية
-            // التحصيلات التي تمت على فواتير بحالة partial للمندوب
-            // نستخدم subquery لتجنب العد المزدوج إذا كان هناك أكثر من فاتورة جزئية للعميل نفسه
-            $partialCollections = $db->queryOne(
-                "SELECT COALESCE(SUM(c.amount), 0) as total 
-                 FROM collections c
-                 WHERE c.customer_id IN (
-                     SELECT DISTINCT inv.customer_id 
-                     FROM invoices inv
-                     WHERE inv.sales_rep_id = ?
-                     AND inv.status = 'partial'
-                 )
-                 AND MONTH(c.date) = ?
-                 AND YEAR(c.date) = ?" . 
-                 ($hasStatus ? " AND c.status IN ('pending','approved')" : ""),
-                [$userId, $month, $year]
-            );
-            $partialAmount = floatval($partialCollections['total'] ?? 0);
-            
-            // الحالة 3: التحصيلات من عملاء المندوب (الذين أنشأهم المندوب)
-            // نحسب جميع التحصيلات من عملاء المندوب
-            // إذا كان التحصيل مؤهلاً للحالتين 2 و 3، سيتم احتسابه مرة واحدة فقط (في الحالة 2)
-            // لذلك نستثني التحصيلات التي تم احتسابها في الحالة 2 (من عملاء لديهم فواتير جزئية)
-            $customerCollections = $db->queryOne(
-                "SELECT COALESCE(SUM(c.amount), 0) as total 
-                 FROM collections c
-                 INNER JOIN customers cust ON c.customer_id = cust.id
-                 WHERE cust.created_by = ?
-                 AND MONTH(c.date) = ?
-                 AND YEAR(c.date) = ?
-                 AND c.customer_id NOT IN (
-                     SELECT DISTINCT inv.customer_id 
-                     FROM invoices inv
-                     WHERE inv.sales_rep_id = ?
-                     AND inv.status = 'partial'
-                 )" . 
-                 ($hasStatus ? " AND c.status IN ('pending','approved')" : ""),
-                [$userId, $month, $year, $userId]
-            );
-            $customerAmount = floatval($customerCollections['total'] ?? 0);
-            
-            // الحالة 4: التحصيلات التي قام بها المندوب مباشرة (collected_by)
-            // نستثني التحصيلات التي تم احتسابها في الحالتين 2 و 3 لتجنب العد المزدوج
-            $collectedByQuery = "
-                SELECT COALESCE(SUM(c.amount), 0) as total 
-                FROM collections c
-                WHERE c.collected_by = ?
-                AND MONTH(c.date) = ?
-                AND YEAR(c.date) = ?
-                AND c.customer_id NOT IN (
-                    SELECT DISTINCT inv.customer_id 
-                    FROM invoices inv
-                    WHERE inv.sales_rep_id = ?
-                    AND inv.status = 'partial'
-                )
-                AND (c.customer_id NOT IN (
-                    SELECT DISTINCT cust.id
-                    FROM customers cust
-                    WHERE cust.created_by = ?
-                ) OR c.customer_id IS NULL)" . 
-                ($hasStatus ? " AND c.status IN ('pending','approved')" : "");
-            
-            $collectedByResult = $db->queryOne($collectedByQuery, [$userId, $month, $year, $userId, $userId]);
-            $collectedByAmount = floatval($collectedByResult['total'] ?? 0);
-            
-            $totalCommissionBase += $partialAmount + $customerAmount + $collectedByAmount;
-        } elseif ($hasCustomers) {
-            // إذا لم يكن جدول invoices موجوداً، نحسب التحصيلات من عملاء المندوب
-            $customerCollections = $db->queryOne(
-                "SELECT COALESCE(SUM(c.amount), 0) as total 
-                 FROM collections c
-                 INNER JOIN customers cust ON c.customer_id = cust.id
-                 WHERE cust.created_by = ?
-                 AND MONTH(c.date) = ?
-                 AND YEAR(c.date) = ?" . 
-                 ($hasStatus ? " AND c.status IN ('pending','approved')" : ""),
-                [$userId, $month, $year]
-            );
-            $customerAmount = floatval($customerCollections['total'] ?? 0);
-            
-            // التحصيلات التي قام بها المندوب مباشرة (collected_by) من عملاء ليسوا من عملاء المندوب
-            $collectedByQuery = "
-                SELECT COALESCE(SUM(c.amount), 0) as total 
-                FROM collections c
-                WHERE c.collected_by = ?
-                AND MONTH(c.date) = ?
-                AND YEAR(c.date) = ?
-                AND (c.customer_id NOT IN (
-                    SELECT DISTINCT cust.id
-                    FROM customers cust
-                    WHERE cust.created_by = ?
-                ) OR c.customer_id IS NULL)" . 
-                ($hasStatus ? " AND c.status IN ('pending','approved')" : "");
-            
-            $collectedByResult = $db->queryOne($collectedByQuery, [$userId, $month, $year, $userId]);
-            $collectedByAmount = floatval($collectedByResult['total'] ?? 0);
-            
-            $totalCommissionBase += $customerAmount + $collectedByAmount;
-        } else {
-            // إذا لم يكن جدول customers موجوداً، نستخدم الطريقة القديمة
-            if ($hasStatus) {
-                $result = $db->queryOne(
-                    "SELECT COALESCE(SUM(amount), 0) as total_collections 
-                     FROM collections 
-                     WHERE collected_by = ? 
-                     AND MONTH(date) = ? 
-                     AND YEAR(date) = ?
-                     AND status IN ('pending','approved')",
-                    [$userId, $month, $year]
-                );
-            } else {
-                $result = $db->queryOne(
-                    "SELECT COALESCE(SUM(amount), 0) as total_collections 
-                     FROM collections 
-                     WHERE collected_by = ? 
-                     AND MONTH(date) = ? 
-                     AND YEAR(date) = ?",
-                    [$userId, $month, $year]
-                );
-            }
-            $totalCommissionBase += floatval($result['total_collections'] ?? 0);
-        }
-    }
-    
-    return round($totalCommissionBase, 2);
-}
-
-/**
- * إضافة (أو خصم) مكافأة فورية بنسبة 2% على تحصيل مندوب المبيعات
- *
- * @param int $salesUserId      معرف المندوب
- * @param float $collectionAmount قيمة التحصيل
- * @param string|null $collectionDate تاريخ التحصيل (يستخدم لتحديد الشهر/السنة)
- * @param int|null $collectionId  معرف عملية التحصيل (لأغراض السجل)
- * @param int|null $triggeredBy   معرف المستخدم الذي نفّذ العملية (للتدقيق)
- * @param bool $reverse           في حالة true يتم خصم المكافأة (مثلاً عند حذف التحصيل)
- * @return bool نجاح أو فشل العملية
- */
-function applyCollectionInstantReward($salesUserId, $collectionAmount, $collectionDate = null, $collectionId = null, $triggeredBy = null, $reverse = false) {
-    $salesUserId = (int)$salesUserId;
-    $collectionAmount = (float)$collectionAmount;
-    
-    if ($salesUserId <= 0 || $collectionAmount <= 0) {
-        return false;
-    }
-    
-    $collectionDate = $collectionDate ?: date('Y-m-d');
-    $timestamp = strtotime($collectionDate) ?: time();
-    $targetMonth = (int)date('n', $timestamp);
-    $targetYear = (int)date('Y', $timestamp);
-    
-    $rewardAmount = round($collectionAmount * 0.02, 2);
-    if ($reverse) {
-        $rewardAmount *= -1;
-    }
-    
-    if ($rewardAmount == 0.0) {
-        return true;
-    }
-    
-    $db = db();
-    
-    $summary = getSalarySummary($salesUserId, $targetMonth, $targetYear);
-    if (!$summary['exists']) {
-        $creation = createOrUpdateSalary($salesUserId, $targetMonth, $targetYear);
-        if (!($creation['success'] ?? false)) {
-            error_log('Instant reward: failed to ensure salary record for user ' . $salesUserId . ' (collection ' . ($collectionId ?? 'N/A') . ')');
-            return false;
-        }
-        $summary = getSalarySummary($salesUserId, $targetMonth, $targetYear);
-        if (!$summary['exists']) {
-            return false;
-        }
-    }
-    
-    $salary = $summary['salary'];
-    $salaryId = (int)($salary['id'] ?? 0);
-    if ($salaryId <= 0) {
-        return false;
-    }
-    
-    static $salaryRewardColumns = null;
-    if ($salaryRewardColumns === null) {
-        $salaryRewardColumns = [
-            'bonus' => null,
-            'collections_bonus' => null,
-            'collections_amount' => null,
-            'total_amount' => null,
-            'accumulated_amount' => null,
-            'updated_at' => null,
-        ];
-        
-        try {
-            $columns = $db->query("SHOW COLUMNS FROM salaries");
-            foreach ($columns as $column) {
-                $field = $column['Field'] ?? '';
-                if ($field === '') {
-                    continue;
-                }
-                
-                if ($salaryRewardColumns['bonus'] === null && in_array($field, ['bonus', 'total_bonus'], true)) {
-                    $salaryRewardColumns['bonus'] = $field;
-                } elseif ($salaryRewardColumns['collections_bonus'] === null && $field === 'collections_bonus') {
-                    $salaryRewardColumns['collections_bonus'] = $field;
-                } elseif ($salaryRewardColumns['collections_amount'] === null && $field === 'collections_amount') {
-                    $salaryRewardColumns['collections_amount'] = $field;
-                } elseif ($salaryRewardColumns['total_amount'] === null && in_array($field, ['total_amount', 'amount', 'net_total'], true)) {
-                    $salaryRewardColumns['total_amount'] = $field;
-                } elseif ($salaryRewardColumns['accumulated_amount'] === null && $field === 'accumulated_amount') {
-                    $salaryRewardColumns['accumulated_amount'] = $field;
-                } elseif ($salaryRewardColumns['updated_at'] === null && in_array($field, ['updated_at', 'modified_at', 'last_updated'], true)) {
-                    $salaryRewardColumns['updated_at'] = $field;
-                }
-            }
-        } catch (Throwable $columnError) {
-            error_log('Instant reward: failed to read salaries columns - ' . $columnError->getMessage());
-        }
-        
-        if ($salaryRewardColumns['collections_bonus'] === null && $hasCollectionsBonusColumn) {
-            $salaryRewardColumns['collections_bonus'] = 'collections_bonus';
-        }
-        if ($salaryRewardColumns['collections_amount'] === null && $hasCollectionsBonusColumn) {
-            $salaryRewardColumns['collections_amount'] = 'collections_amount';
-        }
-        
-        if ($salaryRewardColumns['total_amount'] === null) {
-            $salaryRewardColumns['total_amount'] = 'total_amount';
-        }
-    }
-    
-    $updateParts = [];
-    $params = [];
-    
-    if (!empty($salaryRewardColumns['bonus'])) {
-        $updateParts[] = "{$salaryRewardColumns['bonus']} = COALESCE({$salaryRewardColumns['bonus']}, 0) + ?";
-        $params[] = $rewardAmount;
-    }
-    
-    if (!empty($salaryRewardColumns['collections_bonus'])) {
-        $updateParts[] = "{$salaryRewardColumns['collections_bonus']} = COALESCE({$salaryRewardColumns['collections_bonus']}, 0) + ?";
-        $params[] = $rewardAmount;
-    }
-    
-    if (!empty($salaryRewardColumns['collections_amount'])) {
-        $updateParts[] = "{$salaryRewardColumns['collections_amount']} = COALESCE({$salaryRewardColumns['collections_amount']}, 0) + ?";
-        $params[] = $reverse ? -abs($collectionAmount) : abs($collectionAmount);
-    }
-    
-    if (!empty($salaryRewardColumns['total_amount'])) {
-        $updateParts[] = "{$salaryRewardColumns['total_amount']} = COALESCE({$salaryRewardColumns['total_amount']}, 0) + ?";
-        $params[] = $rewardAmount;
-    }
-    
-    if (!empty($salaryRewardColumns['accumulated_amount'])) {
-        $updateParts[] = "{$salaryRewardColumns['accumulated_amount']} = COALESCE({$salaryRewardColumns['accumulated_amount']}, 0) + ?";
-        $params[] = $rewardAmount;
-    }
-    
-    if (!empty($salaryRewardColumns['updated_at'])) {
-        $updateParts[] = "{$salaryRewardColumns['updated_at']} = NOW()";
-    }
-    
-    if (empty($updateParts)) {
-        return false;
-    }
-    
-    $params[] = $salaryId;
-    $db->execute(
-        "UPDATE salaries SET " . implode(', ', $updateParts) . " WHERE id = ?",
-        $params
-    );
-    
-    if (function_exists('logAudit')) {
-        logAudit(
-            $triggeredBy ?: $salesUserId,
-            $rewardAmount > 0 ? 'collection_reward_add' : 'collection_reward_remove',
-            'salary',
-            $salaryId,
-            null,
-            [
-                'collection_id' => $collectionId,
-                'collection_amount' => $collectionAmount,
-                'reward_amount' => $rewardAmount,
-                'month' => $targetMonth,
-                'year' => $targetYear
-            ]
+    } else {
+        // إذا لم يكن status موجوداً، احسب جميع التحصيلات
+        $result = $db->queryOne(
+            "SELECT COALESCE(SUM(amount), 0) as total_collections 
+             FROM collections 
+             WHERE collected_by = ? 
+             AND MONTH(date) = ? 
+             AND YEAR(date) = ?",
+            [$userId, $month, $year]
         );
     }
     
-    return true;
+    return round($result['total_collections'] ?? 0, 2);
 }
 
 /**
@@ -523,32 +137,20 @@ function calculateSalary($userId, $month, $year, $bonus = 0, $deductions = 0) {
     $hourlyRateStr = preg_replace('/[^0-9.]/', '', $hourlyRateStr);
     $hourlyRate = cleanFinancialValue($hourlyRateStr ?: 0);
     
-    $role = $user['role'];
-    
     if ($hourlyRate <= 0) {
-        $errorMessage = ($role === 'sales') 
-            ? 'لم يتم تحديد الراتب الشهري للمندوب'
-            : 'لم يتم تحديد سعر الساعة للمستخدم';
         return [
             'success' => false,
-            'message' => $errorMessage
+            'message' => 'لم يتم تحديد سعر الساعة للمستخدم'
         ];
     }
+    
+    $role = $user['role'];
     
     // حساب عدد الساعات
     $totalHours = calculateMonthlyHours($userId, $month, $year);
     
     // حساب الراتب الأساسي
-    // للمندوبين: hourly_rate هو راتب شهري ثابت وليس سعر ساعة
-    // للآخرين: الراتب = الساعات × سعر الساعة
-    if ($role === 'sales') {
-        // للمندوبين: الراتب الأساسي هو hourly_rate مباشرة (راتب شهري ثابت)
-        // لكن فقط إذا كان لديهم ساعات عمل (إذا لم يعملوا، الراتب = 0)
-        $baseAmount = ($totalHours > 0) ? $hourlyRate : 0;
-    } else {
-        // للآخرين: الراتب = الساعات × سعر الساعة
-        $baseAmount = $totalHours * $hourlyRate;
-    }
+    $baseAmount = $totalHours * $hourlyRate;
     
     // حساب نسبة التحصيلات للمندوبين (2%)
     $collectionsBonus = 0;
@@ -600,7 +202,6 @@ function calculateSalary($userId, $month, $year, $bonus = 0, $deductions = 0) {
  */
 function createOrUpdateSalary($userId, $month, $year, $bonus = 0, $deductions = 0, $notes = null) {
     $db = db();
-    $hasCollectionsBonusColumn = ensureCollectionsBonusColumn();
     
     // الحصول على المستخدم الحالي لاستخدامه في created_by
     $currentUser = getCurrentUser();
@@ -617,8 +218,6 @@ function createOrUpdateSalary($userId, $month, $year, $bonus = 0, $deductions = 
     
     // حساب الراتب
     $calculation = calculateSalary($userId, $month, $year, $bonus, $deductions);
-    $collectionsBonusCalc = cleanFinancialValue($calculation['collections_bonus'] ?? 0);
-    $collectionsAmountCalc = cleanFinancialValue($calculation['collections_amount'] ?? ($collectionsBonusCalc > 0 ? $collectionsBonusCalc / 0.02 : 0));
     
     if (!$calculation['success']) {
         return $calculation;
@@ -718,151 +317,32 @@ function createOrUpdateSalary($userId, $month, $year, $bonus = 0, $deductions = 
         }
     }
     
-    // التحقق من وجود عمود accumulated_amount
-    $accumulatedColumnCheck = $db->queryOne("SHOW COLUMNS FROM salaries LIKE 'accumulated_amount'");
-    $hasAccumulatedColumn = !empty($accumulatedColumnCheck);
-    
     if ($existingSalary) {
         // تحديث الراتب الموجود
-        // الحصول على المبلغ التراكمي الحالي والسلفات المخصومة
-        $currentAccumulated = 0.00;
-        $hasDeductedAdvances = false;
-        $currentTotalAmount = 0.00;
-        
-        if ($hasAccumulatedColumn) {
-            $currentSalary = $db->queryOne("SELECT accumulated_amount, total_amount, advances_deduction FROM salaries WHERE id = ?", [$existingSalary['id']]);
-            $currentAccumulated = floatval($currentSalary['accumulated_amount'] ?? 0);
-            $currentTotalAmount = floatval($currentSalary['total_amount'] ?? 0);
-            $currentAdvancesDeduction = floatval($currentSalary['advances_deduction'] ?? 0);
-            
-            // التحقق من وجود سلفات مخصومة بالفعل
-            if ($currentAdvancesDeduction > 0) {
-                $hasDeductedAdvances = true;
-            } else {
-                // التحقق من وجود سلفات مخصومة في جدول salary_advances
-                $deductedAdvancesCheck = $db->queryOne(
-                    "SELECT COUNT(*) as count FROM salary_advances 
-                     WHERE deducted_from_salary_id = ? AND status = 'manager_approved'",
-                    [$existingSalary['id']]
-                );
-                if (!empty($deductedAdvancesCheck) && intval($deductedAdvancesCheck['count'] ?? 0) > 0) {
-                    $hasDeductedAdvances = true;
-                }
-            }
-            
-            // إضافة المبلغ الجديد للتراكمي (إذا تغير total_amount ولم تكن هناك سلفات مخصومة)
-            if (!$hasDeductedAdvances) {
-                $oldTotalAmount = $currentTotalAmount;
-                $newTotalAmount = $calculation['total_amount'];
-                if (abs($newTotalAmount - $oldTotalAmount) > 0.01) {
-                    // إضافة الفرق للتراكمي
-                    $currentAccumulated += ($newTotalAmount - $oldTotalAmount);
-                }
-            }
-        } else {
-            // إذا لم يكن هناك عمود accumulated_amount، احصل على total_amount الحالي
-            $currentSalary = $db->queryOne("SELECT total_amount, advances_deduction FROM salaries WHERE id = ?", [$existingSalary['id']]);
-            $currentTotalAmount = floatval($currentSalary['total_amount'] ?? 0);
-            $currentAdvancesDeduction = floatval($currentSalary['advances_deduction'] ?? 0);
-            
-            // التحقق من وجود سلفات مخصومة بالفعل
-            if ($currentAdvancesDeduction > 0) {
-                $hasDeductedAdvances = true;
-            } else {
-                // التحقق من وجود سلفات مخصومة في جدول salary_advances
-                $deductedAdvancesCheck = $db->queryOne(
-                    "SELECT COUNT(*) as count FROM salary_advances 
-                     WHERE deducted_from_salary_id = ? AND status = 'manager_approved'",
-                    [$existingSalary['id']]
-                );
-                if (!empty($deductedAdvancesCheck) && intval($deductedAdvancesCheck['count'] ?? 0) > 0) {
-                    $hasDeductedAdvances = true;
-                }
-            }
-        }
-        
-        // إذا كانت هناك سلفات مخصومة، احسب total_amount بشكل صحيح
-        if ($hasDeductedAdvances) {
-            // الحصول على إجمالي السلفات المخصومة من هذا الراتب
-            $deductedAdvancesTotal = 0;
-            if ($currentAdvancesDeduction > 0) {
-                $deductedAdvancesTotal = $currentAdvancesDeduction;
-            } else {
-                $deductedAdvancesQuery = $db->queryOne(
-                    "SELECT COALESCE(SUM(amount), 0) as total FROM salary_advances 
-                     WHERE deducted_from_salary_id = ? AND status = 'manager_approved'",
-                    [$existingSalary['id']]
-                );
-                $deductedAdvancesTotal = floatval($deductedAdvancesQuery['total'] ?? 0);
-            }
-            
-            // حساب الراتب الإجمالي قبل خصم السلفات
-            // يجب طرح السلفة من deductions لأنها قد تكون مضمنة فيها
-            $baseAmount = $calculation['base_amount'];
-            $bonus = $calculation['total_bonus'];
-            $otherDeductions = max(0, $calculation['deductions'] - $deductedAdvancesTotal);
-            
-            // حساب total_amount = الراتب قبل الخصم - السلفات المخصومة
-            $totalBeforeAdvances = $baseAmount + $bonus - $otherDeductions;
-            $calculation['total_amount'] = max(0, $totalBeforeAdvances - $deductedAdvancesTotal);
-            
-            // تحديث deductions لاستبعاد السلفة (إذا كانت مضمنة)
-            if ($calculation['deductions'] >= $deductedAdvancesTotal) {
-                $calculation['deductions'] = $otherDeductions;
-            }
-        }
-        
         if ($hasBonusColumn) {
             if ($hasNotesColumn) {
-                if ($hasAccumulatedColumn) {
-                    $db->execute(
-                        "UPDATE salaries SET 
-                            hourly_rate = ?, 
-                            total_hours = ?, 
-                            base_amount = ?, 
-                            bonus = ?, 
-                            deductions = ?, 
-                            total_amount = ?,
-                            accumulated_amount = ?,
-                            notes = ?,
-                            updated_at = NOW()
-                         WHERE id = ?",
-                        [
-                            $calculation['hourly_rate'],
-                            $calculation['total_hours'],
-                            $calculation['base_amount'],
-                            $calculation['total_bonus'], // إجمالي المكافأة (بما في ذلك نسبة التحصيلات)
-                            $calculation['deductions'],
-                            $calculation['total_amount'],
-                            $currentAccumulated,
-                            $notes,
-                            $existingSalary['id']
-                        ]
-                    );
-                } else {
-                    $db->execute(
-                        "UPDATE salaries SET 
-                            hourly_rate = ?, 
-                            total_hours = ?, 
-                            base_amount = ?, 
-                            bonus = ?, 
-                            deductions = ?, 
-                            total_amount = ?,
-                            notes = ?,
-                            updated_at = NOW()
-                         WHERE id = ?",
-                        [
-                            $calculation['hourly_rate'],
-                            $calculation['total_hours'],
-                            $calculation['base_amount'],
-                            $calculation['total_bonus'], // إجمالي المكافأة (بما في ذلك نسبة التحصيلات)
-                            $calculation['deductions'],
-                            $calculation['total_amount'],
-                            $notes,
-                            $existingSalary['id']
-                        ]
-                    );
-                }
+                $db->execute(
+                    "UPDATE salaries SET 
+                        hourly_rate = ?, 
+                        total_hours = ?, 
+                        base_amount = ?, 
+                        bonus = ?, 
+                        deductions = ?, 
+                        total_amount = ?,
+                        notes = ?,
+                        updated_at = NOW()
+                     WHERE id = ?",
+                    [
+                        $calculation['hourly_rate'],
+                        $calculation['total_hours'],
+                        $calculation['base_amount'],
+                        $calculation['total_bonus'], // إجمالي المكافأة (بما في ذلك نسبة التحصيلات)
+                        $calculation['deductions'],
+                        $calculation['total_amount'],
+                        $notes,
+                        $existingSalary['id']
+                    ]
+                );
             } else {
                 $db->execute(
                     "UPDATE salaries SET 
@@ -929,17 +409,6 @@ function createOrUpdateSalary($userId, $month, $year, $bonus = 0, $deductions = 
             }
         }
         
-        if ($hasCollectionsBonusColumn) {
-            try {
-                $db->execute(
-                    "UPDATE salaries SET collections_bonus = ?, collections_amount = ? WHERE id = ?",
-                    [round($collectionsBonusCalc, 2), round($collectionsAmountCalc, 2), $existingSalary['id']]
-                );
-            } catch (Throwable $collectionsBonusError) {
-                error_log('Failed to update collections bonus columns (existing salary): ' . $collectionsBonusError->getMessage());
-            }
-        }
-        
         return [
             'success' => true,
             'message' => 'تم تحديث الراتب بنجاح',
@@ -948,8 +417,6 @@ function createOrUpdateSalary($userId, $month, $year, $bonus = 0, $deductions = 
         ];
     } else {
         // إنشاء راتب جديد
-        // عند إنشاء راتب جديد، نضيف total_amount للتراكمي
-        $newAccumulatedAmount = $calculation['total_amount'];
         if ($hasYearColumn) {
             // إذا كان عمود year موجوداً
             if ($hasBonusColumn) {
@@ -1381,43 +848,10 @@ function createOrUpdateSalary($userId, $month, $year, $bonus = 0, $deductions = 
             }
         }
         
-        $salaryId = $result['insert_id'] ?? null;
-        
-        // تحديث accumulated_amount بعد إنشاء الراتب
-        if ($hasAccumulatedColumn && $salaryId) {
-            // الحصول على المبلغ التراكمي الحالي للموظف من جميع الرواتب السابقة
-            $previousAccumulated = $db->queryOne(
-                "SELECT COALESCE(SUM(accumulated_amount), 0) as total 
-                 FROM salaries 
-                 WHERE user_id = ? AND id != ?",
-                [$userId, $salaryId]
-            );
-            $previousAccumulated = floatval($previousAccumulated['total'] ?? 0);
-            
-            // إضافة المبلغ الجديد للتراكمي
-            $newAccumulated = $previousAccumulated + $calculation['total_amount'];
-            
-            $db->execute(
-                "UPDATE salaries SET accumulated_amount = ? WHERE id = ?",
-                [$newAccumulated, $salaryId]
-            );
-        }
-        
-        if ($hasCollectionsBonusColumn && $salaryId) {
-            try {
-                $db->execute(
-                    "UPDATE salaries SET collections_bonus = ?, collections_amount = ? WHERE id = ?",
-                    [round($collectionsBonusCalc, 2), round($collectionsAmountCalc, 2), $salaryId]
-                );
-            } catch (Throwable $collectionsBonusError) {
-                error_log('Failed to update collections bonus columns (new salary): ' . $collectionsBonusError->getMessage());
-            }
-        }
-        
         return [
             'success' => true,
             'message' => 'تم إنشاء الراتب بنجاح',
-            'salary_id' => $salaryId,
+            'salary_id' => $result['insert_id'],
             'calculation' => $calculation
         ];
     }
@@ -1449,116 +883,6 @@ function calculateAllSalaries($month, $year) {
     }
     
     return $results;
-}
-
-/**
- * الحصول على معرف المندوب المستحق للعمولة من عميل معين
- * يبحث عن المندوب من خلال:
- * 1. created_by في جدول customers (المندوب الذي أنشأ العميل)
- * 2. sales_rep_id في جدول invoices (المندوب المرتبط بفواتير العميل)
- *
- * @param int $customerId معرف العميل
- * @return int|null معرف المندوب أو null إذا لم يتم العثور عليه
- */
-function getSalesRepForCustomer($customerId) {
-    $customerId = (int)$customerId;
-    if ($customerId <= 0) {
-        return null;
-    }
-    
-    try {
-        $db = db();
-        
-        // أولاً: البحث عن المندوب من خلال created_by في جدول customers
-        $customer = $db->queryOne("SELECT created_by FROM customers WHERE id = ?", [$customerId]);
-        if ($customer && !empty($customer['created_by'])) {
-            $salesRepId = intval($customer['created_by']);
-            // التحقق من أن المستخدم مندوب نشط
-            $salesRep = $db->queryOne(
-                "SELECT id FROM users WHERE id = ? AND role = 'sales' AND status = 'active'",
-                [$salesRepId]
-            );
-            if ($salesRep) {
-                return $salesRepId;
-            }
-        }
-        
-        // ثانياً: البحث عن المندوب من خلال sales_rep_id في جدول invoices
-        $invoicesTableCheck = $db->queryOne("SHOW TABLES LIKE 'invoices'");
-        if (!empty($invoicesTableCheck)) {
-            $invoice = $db->queryOne(
-                "SELECT sales_rep_id FROM invoices 
-                 WHERE customer_id = ? AND sales_rep_id IS NOT NULL 
-                 ORDER BY date DESC LIMIT 1",
-                [$customerId]
-            );
-            if ($invoice && !empty($invoice['sales_rep_id'])) {
-                $salesRepId = intval($invoice['sales_rep_id']);
-                // التحقق من أن المستخدم مندوب نشط
-                $salesRep = $db->queryOne(
-                    "SELECT id FROM users WHERE id = ? AND role = 'sales' AND status = 'active'",
-                    [$salesRepId]
-                );
-                if ($salesRep) {
-                    return $salesRepId;
-                }
-            }
-        }
-        
-        return null;
-    } catch (Throwable $e) {
-        error_log('Error getting sales rep for customer ' . $customerId . ': ' . $e->getMessage());
-        return null;
-    }
-}
-
-/**
- * إعادة احتساب راتب المندوب مباشرةً بعد حدوث عملية تؤثر على نسبة التحصيل.
- *
- * @param int $userId
- * @param string|null $referenceDate تاريخ العملية (يتم استخدام تاريخ اليوم إذا تُرك فارغاً)
- * @param string|null $reason ملاحظة يتم تمريرها لدالة الحساب (اختياري)
- * @return bool true عند نجاح إعادة الحساب أو false عند الفشل/تجاهل المستخدم
- */
-function refreshSalesCommissionForUser($userId, $referenceDate = null, $reason = null) {
-    $userId = (int)$userId;
-    if ($userId <= 0) {
-        return false;
-    }
-    
-    try {
-        $db = db();
-        $user = $db->queryOne("SELECT role FROM users WHERE id = ?", [$userId]);
-    } catch (Throwable $e) {
-        error_log('Failed to read user role while refreshing salary: ' . $e->getMessage());
-        return false;
-    }
-    
-    if (!$user || strtolower((string)($user['role'] ?? '')) !== 'sales') {
-        return false;
-    }
-    
-    $timestamp = $referenceDate ? strtotime($referenceDate) : time();
-    if ($timestamp === false) {
-        $timestamp = time();
-    }
-    
-    $month = (int)date('n', $timestamp);
-    $year = (int)date('Y', $timestamp);
-    
-    $note = $reason ?: 'تحديث تلقائي بعد عملية تحصيل';
-    
-    try {
-        $result = createOrUpdateSalary($userId, $month, $year, 0, 0, $note);
-        if (!($result['success'] ?? false)) {
-            error_log('Failed to refresh salary after collection for user ' . $userId . ': ' . ($result['message'] ?? 'unknown error'));
-            return false;
-        }
-        return true;
-    } catch (Throwable $e) {
-        error_log('Exception while refreshing salary after collection for user ' . $userId . ': ' . $e->getMessage());
-        return false;
-    }
 }
 
 /**
@@ -1609,8 +933,19 @@ function generateMonthlySalaryReport($month, $year) {
             $delaySummary = calculateMonthlyDelaySummary($user['id'], $month, $year);
         }
         
-        // عرض جميع المستخدمين النشطين من الأدوار المطلوبة (production, accountant, sales)
-        // حتى لو لم يكن لديهم حضور أو راتب مسجل في الشهر
+        // إضافة جميع المستخدمين الذين لديهم حضور (حتى لو لم يكن لديهم راتب)
+        // التحقق من وجود أي سجل حضور في الشهر
+        $hasRecords = $db->queryOne(
+            "SELECT COUNT(*) as cnt FROM attendance_records 
+             WHERE user_id = ? AND MONTH(date) = ? AND YEAR(date) = ?",
+            [$user['id'], $month, $year]
+        );
+        $hasAttendance = !empty($hasRecords) && ($hasRecords['cnt'] ?? 0) > 0;
+        
+        // إذا لم يكن لديهم حضور في الشهر، لا نضيفهم للتقرير
+        if (!$hasAttendance && $delaySummary['attendance_days'] === 0) {
+            continue;
+        }
         
         $salaryData = getSalarySummary($user['id'], $month, $year);
         
@@ -1802,12 +1137,6 @@ function getSalarySummary($userId, $month, $year) {
     }
     if (isset($salary['current_hourly_rate'])) {
         $salary['current_hourly_rate'] = cleanFinancialValue($salary['current_hourly_rate']);
-    }
-    if (isset($salary['collections_bonus'])) {
-        $salary['collections_bonus'] = cleanFinancialValue($salary['collections_bonus']);
-    }
-    if (isset($salary['collections_amount'])) {
-        $salary['collections_amount'] = cleanFinancialValue($salary['collections_amount']);
     }
     
     return [
@@ -2006,203 +1335,5 @@ function salaryAdvanceApplyDeduction(array $advance, array $salaryData, ?Databas
     }
 
     return ['success' => true];
-}
-
-/**
- * حساب الراتب الإجمالي بشكل صحيح مع نسبة التحصيلات
- * تستخدم نفس المنطق المستخدم في صفحة "مرتبي"
- */
-function calculateTotalSalaryWithCollections($salaryRecord, $userId, $month, $year, $role) {
-    $baseAmount = cleanFinancialValue($salaryRecord['base_amount'] ?? 0);
-    $bonus = cleanFinancialValue($salaryRecord['bonus'] ?? 0);
-    $deductions = cleanFinancialValue($salaryRecord['deductions'] ?? 0);
-    $totalSalaryBase = cleanFinancialValue($salaryRecord['total_amount'] ?? 0);
-    
-    // حساب نسبة التحصيلات للمندوبين
-    $collectionsBonus = 0;
-    if ($role === 'sales') {
-        $collectionsAmount = calculateSalesCollections($userId, $month, $year);
-        $collectionsBonus = round($collectionsAmount * 0.02, 2);
-        
-        // إذا كان الراتب محفوظاً، تحقق من وجود نسبة التحصيلات المحفوظة
-        if (isset($salaryRecord['collections_bonus'])) {
-            $savedCollectionsBonus = cleanFinancialValue($salaryRecord['collections_bonus'] ?? 0);
-            // استخدم القيمة المحسوبة حديثاً إذا كانت أكبر من القيمة المحفوظة
-            if ($collectionsBonus > $savedCollectionsBonus || $savedCollectionsBonus == 0) {
-                // استخدم القيمة المحسوبة حديثاً
-            } else {
-                $collectionsBonus = $savedCollectionsBonus;
-            }
-        }
-    }
-    
-    // حساب الراتب الإجمالي - دائماً احسبه من المكونات لضمان الدقة
-    // الراتب الإجمالي = الراتب الأساسي + المكافآت + نسبة التحصيلات - الخصومات
-    $totalSalary = $baseAmount + $bonus + $collectionsBonus - $deductions;
-    
-    // إذا كان الراتب الإجمالي المحفوظ ($totalSalaryBase) أكبر من الراتب المحسوب من المكونات
-    // فهذا يعني أن هناك مكونات إضافية (مثل سلفات مخصومة)، لذا استخدم القيمة المحفوظة
-    // لكن تأكد من تضمين نسبة التحصيلات إذا لم تكن مضمنة
-    if ($role === 'sales' && $collectionsBonus > 0) {
-        // حساب الراتب المتوقع بدون نسبة التحصيلات
-        $expectedTotalWithoutCollections = $baseAmount + $bonus - $deductions;
-        
-        // إذا كان الراتب الإجمالي المحفوظ يساوي الراتب المتوقع بدون نسبة التحصيلات
-        // فهذا يعني أن نسبة التحصيلات غير مضمنة، لذا أضفها
-        if (abs($totalSalaryBase - $expectedTotalWithoutCollections) < 0.01) {
-            // نسبة التحصيلات غير مضمنة، أضفها
-            $totalSalary = $totalSalaryBase + $collectionsBonus;
-        } else {
-            // نسبة التحصيلات مضمنة أو هناك خصومات إضافية (مثل سلفات)
-            // استخدم الراتب المحسوب من المكونات
-            $totalSalary = $baseAmount + $bonus + $collectionsBonus - $deductions;
-        }
-    } else {
-        // للمستخدمين الآخرين أو إذا لم تكن هناك نسبة تحصيلات
-        // استخدم الراتب المحسوب من المكونات
-        $totalSalary = $baseAmount + $bonus - $deductions;
-    }
-    
-    return [
-        'total_salary' => cleanFinancialValue($totalSalary),
-        'collections_bonus' => $collectionsBonus,
-        'base_amount' => $baseAmount,
-        'bonus' => $bonus,
-        'deductions' => $deductions
-    ];
-}
-
-/**
- * حساب وتحديث total_hours في جدول salaries من attendance_records
- * تستخدم استعلام SELECT * FROM attendance_records ORDER BY work_hours ASC
- * لحساب إجمالي ساعات العمل لكل موظف بشكل صحيح
- * 
- * @param int|null $userId معرّف المستخدم (اختياري - إذا كان null يتم تحديث جميع المستخدمين)
- * @param int|null $month الشهر (اختياري - إذا كان null يتم تحديث جميع الأشهر)
- * @param int|null $year السنة (اختياري - إذا كان null يتم تحديث جميع السنوات)
- * @return array نتيجة العملية
- */
-function updateTotalHoursFromAttendanceRecords($userId = null, $month = null, $year = null) {
-    try {
-        $db = db();
-        
-        // التحقق من وجود جدول attendance_records
-        $tableCheck = $db->queryOne("SHOW TABLES LIKE 'attendance_records'");
-        if (empty($tableCheck)) {
-            return [
-                'success' => false,
-                'message' => 'جدول attendance_records غير موجود'
-            ];
-        }
-        
-        // التحقق من وجود عمود total_hours في جدول salaries
-        $totalHoursColumnCheck = $db->queryOne("SHOW COLUMNS FROM salaries LIKE 'total_hours'");
-        if (empty($totalHoursColumnCheck)) {
-            return [
-                'success' => false,
-                'message' => 'عمود total_hours غير موجود في جدول salaries'
-            ];
-        }
-        
-        // استخدام الاستعلام المطلوب: SELECT * FROM attendance_records ORDER BY work_hours ASC
-        // ثم تجميع الساعات لكل موظف وشهر
-        // بناء شروط WHERE للاستعلام الداخلي
-        $innerWhereConditions = [];
-        $innerParams = [];
-        
-        if ($userId !== null) {
-            $innerWhereConditions[] = "user_id = ?";
-            $innerParams[] = $userId;
-        }
-        
-        if ($month !== null && $year !== null) {
-            $innerWhereConditions[] = "DATE_FORMAT(date, '%Y-%m') = ?";
-            $innerParams[] = sprintf('%04d-%02d', $year, $month);
-        }
-        
-        $innerWhereClause = !empty($innerWhereConditions) ? "WHERE " . implode(" AND ", $innerWhereConditions) : "";
-        
-        $query = "
-            SELECT 
-                ar.user_id,
-                DATE_FORMAT(ar.date, '%Y-%m') as month_year,
-                YEAR(ar.date) as year,
-                MONTH(ar.date) as month,
-                COALESCE(SUM(ar.work_hours), 0) as total_hours
-            FROM (
-                SELECT * 
-                FROM attendance_records 
-                {$innerWhereClause}
-                ORDER BY attendance_records.work_hours ASC
-            ) ar
-            WHERE ar.work_hours IS NOT NULL 
-              AND ar.work_hours > 0
-              AND ar.check_out_time IS NOT NULL
-            GROUP BY ar.user_id, DATE_FORMAT(ar.date, '%Y-%m')
-        ";
-        
-        // استخدام نفس المعاملات للاستعلام الداخلي
-        $params = $innerParams;
-        
-        // تنفيذ الاستعلام
-        $results = $db->query($query, $params);
-        
-        if (empty($results)) {
-            return [
-                'success' => true,
-                'message' => 'لا توجد سجلات حضور لتحديثها',
-                'updated_count' => 0
-            ];
-        }
-        
-        $updatedCount = 0;
-        $errors = [];
-        
-        // تحديث total_hours لكل سجل راتب
-        foreach ($results as $result) {
-            $userIdValue = intval($result['user_id']);
-            $monthValue = intval($result['month']);
-            $yearValue = intval($result['year']);
-            $totalHours = round(floatval($result['total_hours']), 2);
-            
-            try {
-                // البحث عن سجل الراتب المطابق
-                $salary = $db->queryOne(
-                    "SELECT id FROM salaries WHERE user_id = ? AND month = ? AND year = ?",
-                    [$userIdValue, $monthValue, $yearValue]
-                );
-                
-                if ($salary) {
-                    // تحديث total_hours
-                    $db->execute(
-                        "UPDATE salaries SET total_hours = ?, updated_at = NOW() WHERE id = ?",
-                        [$totalHours, $salary['id']]
-                    );
-                    $updatedCount++;
-                } else {
-                    // إذا لم يكن هناك سجل راتب، يمكن إنشاؤه (اختياري)
-                    // أو تسجيله كخطأ
-                    $errors[] = "لا يوجد سجل راتب للمستخدم #{$userIdValue} للشهر {$monthValue}/{$yearValue}";
-                }
-            } catch (Exception $e) {
-                $errors[] = "خطأ في تحديث راتب المستخدم #{$userIdValue} للشهر {$monthValue}/{$yearValue}: " . $e->getMessage();
-                error_log("Error updating total_hours for user {$userIdValue}, month {$monthValue}/{$yearValue}: " . $e->getMessage());
-            }
-        }
-        
-        return [
-            'success' => true,
-            'message' => "تم تحديث {$updatedCount} سجل راتب بنجاح",
-            'updated_count' => $updatedCount,
-            'errors' => $errors
-        ];
-        
-    } catch (Exception $e) {
-        error_log("Error in updateTotalHoursFromAttendanceRecords: " . $e->getMessage());
-        return [
-            'success' => false,
-            'message' => 'حدث خطأ أثناء تحديث total_hours: ' . $e->getMessage()
-        ];
-    }
 }
 

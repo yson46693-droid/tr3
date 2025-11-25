@@ -224,13 +224,6 @@ switch ($role) {
                 'badge' => null
             ],
             [
-                'title' => 'خزنة المندوب',
-                'icon' => 'bi-cash-stack',
-                'url' => $baseUrl . 'sales.php?page=cash_register',
-                'active' => (isset($_GET['page']) && $_GET['page'] === 'cash_register'),
-                'badge' => null
-            ],
-            [
                 'title' => 'المرتجعات',
                 'icon' => 'bi-arrow-return-left',
                 'url' => $baseUrl . 'sales.php?page=returns',

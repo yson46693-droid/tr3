@@ -316,7 +316,7 @@ $lang = isset($translations) ? $translations : [];
                                         <?php endif; ?>
                                     </td>
                                     <td data-label="ساعات العمل">
-                                        <?php echo isset($record['work_hours']) && $record['work_hours'] > 0 ? formatHours($record['work_hours']) : '-'; ?>
+                                        <?php echo isset($record['work_hours']) && $record['work_hours'] > 0 ? number_format($record['work_hours'], 2) . ' ساعة' : '-'; ?>
                                     </td>
                                     <td data-label="الحالة">
                                         <?php if ($record['check_out_time']): ?>
@@ -398,7 +398,7 @@ $lang = isset($translations) ? $translations : [];
                                         <span class="badge bg-info"><?php echo $record['records_count']; ?></span>
                                     </td>
                                     <td data-label="ساعات العمل">
-                                        <strong><?php echo formatHours($record['total_hours'] ?? 0); ?></strong>
+                                        <strong><?php echo number_format($record['total_hours'] ?? 0, 2); ?> ساعة</strong>
                                     </td>
                                     <td data-label="التأخير">
                                         <?php if ($dayDelay > 0): ?>

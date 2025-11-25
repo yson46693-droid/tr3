@@ -107,7 +107,6 @@ function customerHistorySyncForCustomer(int $customerId): array
     // حذف السجلات الأقدم من ستة أشهر
     customerHistoryPruneOlderThan($cutoffDate);
 
-    // جلب الفواتير للعميل خلال آخر 6 أشهر (فقط الفواتير الرسمية من جدول invoices)
     $invoiceRows = $db->query(
         "SELECT id, invoice_number, date, total_amount, paid_amount, status
          FROM invoices
@@ -115,28 +114,18 @@ function customerHistorySyncForCustomer(int $customerId): array
          ORDER BY date DESC",
         [$customerId, $cutoffDate]
     );
-    
-    // تسجيل عدد الفواتير للتشخيص
-    error_log("customerHistorySyncForCustomer: Found " . count($invoiceRows) . " invoices for customer_id=$customerId since $cutoffDate");
 
-    // استخدام الفواتير فقط (بدون المبيعات المباشرة)
-    $allInvoiceRows = $invoiceRows;
+    $invoiceIds = array_map(
+        static function ($row) {
+            return (int)($row['id'] ?? 0);
+        },
+        $invoiceRows
+    );
 
-    // إنشاء معرفات الفواتير
-    $invoiceIds = [];
-    
-    foreach ($allInvoiceRows as $row) {
-        $realId = (int)($row['id'] ?? 0);
-        if ($realId > 0) {
-            $invoiceIds[] = $realId;
-        }
-    }
-
-    // تجميع بيانات المرتجعات حسب الفاتورة (فقط للفواتير الحقيقية، ليس للمبيعات)
+    // تجميع بيانات المرتجعات حسب الفاتورة
     $returnsByInvoice = [];
-    $realInvoiceIds = array_filter($invoiceIds, function($id) { return $id > 0; });
-    if (!empty($realInvoiceIds)) {
-        $placeholders = implode(',', array_fill(0, count($realInvoiceIds), '?'));
+    if (!empty($invoiceIds)) {
+        $placeholders = implode(',', array_fill(0, count($invoiceIds), '?'));
         $returnRows = $db->query(
             "SELECT invoice_id, COUNT(*) as return_count, COALESCE(SUM(refund_amount), 0) as return_total
              FROM returns
@@ -144,7 +133,7 @@ function customerHistorySyncForCustomer(int $customerId): array
                AND invoice_id IN ($placeholders)
                AND return_date >= ?
              GROUP BY invoice_id",
-            array_merge([$customerId], $realInvoiceIds, [$cutoffDate])
+            array_merge([$customerId], $invoiceIds, [$cutoffDate])
         );
 
         foreach ($returnRows as $returnRow) {
@@ -159,10 +148,10 @@ function customerHistorySyncForCustomer(int $customerId): array
         }
     }
 
-    // تجميع بيانات الاستبدالات عبر المرتجعات المرتبطة بالفواتير (فقط للفواتير الحقيقية)
+    // تجميع بيانات الاستبدالات عبر المرتجعات المرتبطة بالفواتير
     $exchangesByInvoice = [];
-    if (!empty($realInvoiceIds)) {
-        $placeholders = implode(',', array_fill(0, count($realInvoiceIds), '?'));
+    if (!empty($invoiceIds)) {
+        $placeholders = implode(',', array_fill(0, count($invoiceIds), '?'));
         $exchangeRows = $db->query(
             "SELECT
                 e.id,
@@ -178,7 +167,7 @@ function customerHistorySyncForCustomer(int $customerId): array
                AND e.exchange_date >= ?
                AND r.invoice_id IS NOT NULL
                AND r.invoice_id IN ($placeholders)",
-            array_merge([$customerId, $cutoffDate], $realInvoiceIds)
+            array_merge([$customerId, $cutoffDate], $invoiceIds)
         );
 
         foreach ($exchangeRows as $exchangeRow) {
@@ -197,10 +186,9 @@ function customerHistorySyncForCustomer(int $customerId): array
         }
     }
 
-    // تحديث أو إنشاء السجلات في جدول التاريخ (فقط للفواتير الرسمية)
-    foreach ($allInvoiceRows as $invoiceRow) {
-        $invoiceId = (int)($invoiceRow['id'] ?? 0);
-        
+    // تحديث أو إنشاء السجلات في جدول التاريخ
+    foreach ($invoiceRows as $invoiceRow) {
+        $invoiceId = (int)$invoiceRow['id'];
         if ($invoiceId <= 0) {
             continue;
         }
@@ -209,12 +197,10 @@ function customerHistorySyncForCustomer(int $customerId): array
         $paidAmount = (float)($invoiceRow['paid_amount'] ?? 0.0);
         $status = (string)($invoiceRow['status'] ?? '');
 
-        // تجميع بيانات المرتجعات والاستبدالات للفواتير
         $returnsData = $returnsByInvoice[$invoiceId] ?? ['count' => 0, 'total' => 0.0];
         $exchangesData = $exchangesByInvoice[$invoiceId] ?? ['count' => 0, 'total' => 0.0];
 
         try {
-            // حفظ سجل الفاتورة في جدول التاريخ
             $db->execute(
                 "INSERT INTO customer_purchase_history
                     (customer_id, invoice_id, invoice_number, invoice_date, invoice_total, paid_amount, invoice_status,
@@ -251,22 +237,18 @@ function customerHistorySyncForCustomer(int $customerId): array
     }
 
     // إزالة السجلات الزائدة للعميل إذا لم يكن لديه فواتير ضمن النافذة الزمنية
-    // أيضاً إزالة أي سجلات SALE (المبيعات المباشرة) لأننا لا نعرضها بعد الآن
     try {
         if (!empty($invoiceIds)) {
             $placeholders = implode(',', array_fill(0, count($invoiceIds), '?'));
             $params = array_merge([$customerId], $invoiceIds);
             $db->execute(
                 "DELETE FROM customer_purchase_history
-                 WHERE customer_id = ? 
-                   AND (invoice_id NOT IN ($placeholders) OR invoice_number LIKE 'SALE-%' OR invoice_id < 0)",
+                 WHERE customer_id = ? AND invoice_id NOT IN ($placeholders)",
                 $params
             );
         } else {
-            // إذا لم تكن هناك فواتير، احذف جميع السجلات بما فيها SALE
             $db->execute(
-                "DELETE FROM customer_purchase_history 
-                 WHERE customer_id = ?",
+                "DELETE FROM customer_purchase_history WHERE customer_id = ?",
                 [$customerId]
             );
         }
@@ -282,9 +264,6 @@ function customerHistorySyncForCustomer(int $customerId): array
          ORDER BY invoice_date DESC",
         [$customerId]
     );
-    
-    // تسجيل عدد السجلات للتشخيص
-    error_log("customerHistorySyncForCustomer: Found " . count($historyRows) . " history records for customer_id=$customerId");
 
     $invoicesPayload = [];
     $summaryTotals = [

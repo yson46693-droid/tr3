@@ -14,35 +14,6 @@ require_once __DIR__ . '/simple_export.php';
 require_once __DIR__ . '/telegram_config.php';
 
 /**
- * التأكد من وجود عمود telegram_sent في جدول reports
- */
-function ensureReportsTelegramSentColumn() {
-    static $ensured = false;
-    if ($ensured) {
-        return;
-    }
-    
-    try {
-        $db = db();
-        // التحقق من وجود العمود
-        $columns = $db->query("SHOW COLUMNS FROM reports LIKE 'telegram_sent'");
-        if (empty($columns)) {
-            // إضافة العمود إذا لم يكن موجوداً
-            $db->execute("
-                ALTER TABLE reports 
-                ADD COLUMN telegram_sent tinyint(1) DEFAULT 0 
-                AFTER file_type
-            ");
-            error_log('Added telegram_sent column to reports table');
-        }
-        $ensured = true;
-    } catch (Throwable $e) {
-        error_log('Failed to ensure telegram_sent column: ' . $e->getMessage());
-        // لا نرمي الخطأ لأن هذا ليس ضرورياً لعمل النظام
-    }
-}
-
-/**
  * توليد تقرير PDF (HTML للطباعة)
  */
 function generatePDFReport($type, $data, $title, $filters = []) {
@@ -57,7 +28,6 @@ function generatePDFReport($type, $data, $title, $filters = []) {
         
         if ($userId) {
             try {
-                ensureReportsTelegramSentColumn();
                 $db->execute(
                     "INSERT INTO reports (user_id, type, file_path, file_type, telegram_sent) 
                      VALUES (?, ?, ?, 'pdf', 0)",
@@ -94,7 +64,6 @@ function generateExcelReport($type, $data, $title, $filters = []) {
         
         if ($userId) {
             try {
-                ensureReportsTelegramSentColumn();
                 $db->execute(
                     "INSERT INTO reports (user_id, type, file_path, file_type, telegram_sent) 
                      VALUES (?, ?, ?, 'excel', 0)",
@@ -164,7 +133,6 @@ function sendReportAndDelete($report, $reportType, $reportName) {
         if ($success) {
             try {
                 $db = db();
-                ensureReportsTelegramSentColumn();
                 if (!empty($report['relative_path'])) {
                     $db->execute(
                         "UPDATE reports SET telegram_sent = 1 WHERE file_path = ?",
@@ -196,7 +164,6 @@ function sendReportAndDelete($report, $reportType, $reportName) {
         // تحديث قاعدة البيانات
         try {
             $db = db();
-            ensureReportsTelegramSentColumn();
             $db->execute(
                 "UPDATE reports SET telegram_sent = 1 WHERE file_path = ?",
                 [$filePath]

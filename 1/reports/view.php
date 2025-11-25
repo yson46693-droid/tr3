@@ -178,25 +178,5 @@ header('X-Frame-Options: SAMEORIGIN');
 header('Cache-Control: no-store, no-cache, must-revalidate, max-age=0');
 header('Pragma: no-cache');
 
-$shouldPrint = isset($_GET['print']) && $_GET['print'] === '1';
-
-if ($shouldPrint) {
-    // إضافة سكريبت للطباعة التلقائية
-    $printScript = '<script>
-        window.onload = function() {
-            setTimeout(function() {
-                window.print();
-            }, 500);
-        };
-    </script>';
-    
-    // إدراج السكريبت قبل </body> أو في نهاية المحتوى
-    if (stripos($contents, '</body>') !== false) {
-        $contents = str_ireplace('</body>', $printScript . '</body>', $contents);
-    } else {
-        $contents .= $printScript;
-    }
-}
-
 echo $contents;
 

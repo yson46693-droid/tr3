@@ -12,46 +12,6 @@ require_once __DIR__ . '/config.php';
 require_once __DIR__ . '/db.php';
 
 /**
- * التأكد من وجود جدول سجل التدقيق وإنشائه إذا لم يكن موجوداً
- */
-function ensureAuditLogTable($db) {
-    static $tableChecked = false;
-
-    if ($tableChecked) {
-        return;
-    }
-
-    try {
-        $tableCheck = $db->queryOne("SHOW TABLES LIKE 'audit_logs'");
-        if (empty($tableCheck)) {
-            // إنشاء الجدول إذا لم يكن موجوداً
-            $db->execute("
-                CREATE TABLE IF NOT EXISTS `audit_logs` (
-                  `id` int(11) NOT NULL AUTO_INCREMENT,
-                  `user_id` int(11) DEFAULT NULL,
-                  `action` varchar(100) NOT NULL,
-                  `entity_type` varchar(50) NOT NULL,
-                  `entity_id` int(11) DEFAULT NULL,
-                  `old_value` text DEFAULT NULL,
-                  `new_value` text DEFAULT NULL,
-                  `ip_address` varchar(45) DEFAULT NULL,
-                  `user_agent` text DEFAULT NULL,
-                  `created_at` timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP,
-                  PRIMARY KEY (`id`),
-                  KEY `user_id` (`user_id`),
-                  KEY `entity_type_id` (`entity_type`,`entity_id`),
-                  KEY `created_at` (`created_at`),
-                  CONSTRAINT `audit_logs_ibfk_1` FOREIGN KEY (`user_id`) REFERENCES `users` (`id`) ON DELETE SET NULL
-                ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
-            ");
-        }
-        $tableChecked = true;
-    } catch (Exception $tableError) {
-        error_log('Audit table creation error: ' . $tableError->getMessage());
-    }
-}
-
-/**
  * التأكد من أن جدول سجل التدقيق يحتوي على الأعمدة المطلوبة
  */
 function ensureAuditLogSchema($db) {
@@ -62,9 +22,6 @@ function ensureAuditLogSchema($db) {
     }
 
     try {
-        // التأكد من وجود الجدول أولاً
-        ensureAuditLogTable($db);
-
         $columnsToEnsure = [
             'old_value' => "ALTER TABLE audit_logs ADD COLUMN old_value LONGTEXT NULL AFTER entity_id",
             'new_value' => "ALTER TABLE audit_logs ADD COLUMN new_value LONGTEXT NULL AFTER old_value",

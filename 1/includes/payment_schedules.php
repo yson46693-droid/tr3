@@ -179,22 +179,14 @@ function recordPayment($scheduleId, $paymentDate, $amount = null, $notes = null,
             [$paymentDate, $scheduleId]
         );
         
-        // تحديث المبيعات (إذا كانت الأعمدة موجودة)
-        if (!empty($schedule['sale_id'])) {
-            // التحقق من وجود أعمدة paid_amount و remaining_amount في جدول sales
-            $paidAmountColumnCheck = $db->queryOne("SHOW COLUMNS FROM sales LIKE 'paid_amount'");
-            $remainingAmountColumnCheck = $db->queryOne("SHOW COLUMNS FROM sales LIKE 'remaining_amount'");
-            
-            if (!empty($paidAmountColumnCheck) && !empty($remainingAmountColumnCheck)) {
-                $db->execute(
-                    "UPDATE sales 
-                     SET paid_amount = COALESCE(paid_amount, 0) + ?, 
-                         remaining_amount = COALESCE(remaining_amount, 0) - ? 
-                     WHERE id = ?",
-                    [$paymentAmount, $paymentAmount, $schedule['sale_id']]
-                );
-            }
-        }
+        // تحديث المبيعات
+        $db->execute(
+            "UPDATE sales 
+             SET paid_amount = COALESCE(paid_amount, 0) + ?, 
+                 remaining_amount = COALESCE(remaining_amount, 0) - ? 
+             WHERE id = ?",
+            [$paymentAmount, $paymentAmount, $schedule['sale_id']]
+        );
         
         logAudit($recordedBy, 'record_payment', 'payment_schedule', $scheduleId, 
                  ['old_status' => $schedule['status']], 

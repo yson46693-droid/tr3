@@ -1,8 +1,4 @@
 <?php
-/**
- * صفحة إدارة الاستبدالات - النظام الجديد
- * New Exchange Management Page
- */
 
 if (!defined('ACCESS_ALLOWED')) {
     die('Direct access not allowed');
@@ -11,7 +7,10 @@ if (!defined('ACCESS_ALLOWED')) {
 require_once __DIR__ . '/../../includes/config.php';
 require_once __DIR__ . '/../../includes/db.php';
 require_once __DIR__ . '/../../includes/auth.php';
-require_once __DIR__ . '/../../includes/path_helper.php';
+require_once __DIR__ . '/../../includes/exchanges.php';
+require_once __DIR__ . '/../../includes/audit_log.php';
+require_once __DIR__ . '/../../includes/notifications.php';
+
 require_once __DIR__ . '/table_styles.php';
 
 requireRole(['sales', 'accountant', 'manager']);
@@ -21,825 +20,563 @@ $db = db();
 $error = '';
 $success = '';
 
-// Get base path for API calls
-$basePath = getBasePath();
-?>
+ensureExchangeSchema();
 
-<div class="container-fluid">
-    <div class="row">
-        <div class="col-12">
-            <h2 class="mb-4">
-                <i class="bi bi-arrow-left-right me-2"></i>إنشاء استبدال
-            </h2>
-            
-            <?php if ($error): ?>
-                <div class="alert alert-danger alert-dismissible fade show" role="alert">
-                    <i class="bi bi-exclamation-triangle me-2"></i><?php echo htmlspecialchars($error); ?>
-                    <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close"></button>
+// Pagination
+$pageNum = isset($_GET['p']) ? max(1, intval($_GET['p'])) : 1;
+$perPage = 20;
+$offset = ($pageNum - 1) * $perPage;
+
+// البحث والفلترة
+$filters = [
+    'customer_id' => $_GET['customer_id'] ?? '',
+    'sales_rep_id' => $_GET['sales_rep_id'] ?? '',
+    'status' => $_GET['status'] ?? '',
+    'date_from' => $_GET['date_from'] ?? '',
+    'date_to' => $_GET['date_to'] ?? ''
+];
+
+if ($currentUser['role'] === 'sales') {
+    $filters['sales_rep_id'] = $currentUser['id'];
+}
+
+$filters = array_filter($filters, function($value) {
+    return $value !== '';
+});
+
+// معالجة العمليات
+if ($_SERVER['REQUEST_METHOD'] === 'POST') {
+    $action = $_POST['action'] ?? '';
+    
+    if ($action === 'create_exchange') {
+        $originalSaleId = intval($_POST['original_sale_id'] ?? 0);
+        $returnId = !empty($_POST['return_id']) ? intval($_POST['return_id']) : null;
+        $customerId = intval($_POST['customer_id'] ?? 0);
+        $salesRepId = !empty($_POST['sales_rep_id']) ? intval($_POST['sales_rep_id']) : $currentUser['id'];
+        $exchangeDate = $_POST['exchange_date'] ?? date('Y-m-d');
+        $exchangeType = $_POST['exchange_type'] ?? 'same_product';
+        $reason = trim($_POST['reason'] ?? '');
+        
+        // معالجة العناصر المرتجعة
+        $returnItems = [];
+        if (isset($_POST['return_items']) && is_array($_POST['return_items'])) {
+            foreach ($_POST['return_items'] as $item) {
+                if (!empty($item['product_id']) && $item['quantity'] > 0 && $item['unit_price'] > 0) {
+                    $returnItems[] = [
+                        'product_id' => intval($item['product_id']),
+                        'quantity' => floatval($item['quantity']),
+                        'unit_price' => floatval($item['unit_price'])
+                    ];
+                }
+            }
+        }
+        
+        // معالجة العناصر الجديدة
+        $newItems = [];
+        if (isset($_POST['new_items']) && is_array($_POST['new_items'])) {
+            foreach ($_POST['new_items'] as $item) {
+                if (!empty($item['product_id']) && $item['quantity'] > 0 && $item['unit_price'] > 0) {
+                    $newItems[] = [
+                        'product_id' => intval($item['product_id']),
+                        'quantity' => floatval($item['quantity']),
+                        'unit_price' => floatval($item['unit_price'])
+                    ];
+                }
+            }
+        }
+        
+        if ($originalSaleId <= 0 || $customerId <= 0 || empty($returnItems) || empty($newItems)) {
+            $error = 'يجب إدخال جميع البيانات المطلوبة';
+        } else {
+            $result = createExchange($originalSaleId, $returnId, $customerId, $salesRepId, $exchangeDate,
+                                    $exchangeType, $reason, $returnItems, $newItems);
+            if ($result['success']) {
+                $success = 'تم إنشاء الاستبدال بنجاح: ' . $result['exchange_number'];
+            } else {
+                $error = $result['message'];
+            }
+        }
+    } elseif ($action === 'approve_exchange') {
+        $exchangeId = intval($_POST['exchange_id'] ?? 0);
+        
+        if ($exchangeId > 0) {
+            $result = approveExchange($exchangeId);
+            if ($result['success']) {
+                $success = $result['message'];
+            } else {
+                $error = $result['message'];
+            }
+        }
+    }
+}
+
+// التحقق مرة أخرى من وجود جدول exchanges قبل الاستخدام
+$tableCheckAgain = $db->queryOne("SHOW TABLES LIKE 'exchanges'");
+if (empty($tableCheckAgain)) {
+    // إذا لم يكن الجدول موجوداً بعد، عرض رسالة خطأ
+    $error = 'جدول الاستبدالات غير موجود. يرجى التحقق من قاعدة البيانات.';
+    $exchanges = [];
+    $totalReturns = 0;
+    $totalPages = 0;
+} else {
+    // الحصول على البيانات - حساب العدد الإجمالي مع الفلترة
+    $countSql = "SELECT COUNT(*) as total FROM exchanges e WHERE 1=1";
+    $countParams = [];
+
+    if ($currentUser['role'] === 'sales') {
+        $countSql .= " AND e.sales_rep_id = ?";
+        $countParams[] = $currentUser['id'];
+    }
+
+    if (!empty($filters['customer_id'])) {
+        $countSql .= " AND e.customer_id = ?";
+        $countParams[] = $filters['customer_id'];
+    }
+
+    if (!empty($filters['sales_rep_id'])) {
+        $countSql .= " AND e.sales_rep_id = ?";
+        $countParams[] = $filters['sales_rep_id'];
+    }
+
+    if (!empty($filters['status'])) {
+        $countSql .= " AND e.status = ?";
+        $countParams[] = $filters['status'];
+    }
+
+    if (!empty($filters['date_from'])) {
+        $countSql .= " AND DATE(e.exchange_date) >= ?";
+        $countParams[] = $filters['date_from'];
+    }
+
+    if (!empty($filters['date_to'])) {
+        $countSql .= " AND DATE(e.exchange_date) <= ?";
+        $countParams[] = $filters['date_to'];
+    }
+
+    $totalResult = $db->queryOne($countSql, $countParams);
+    $totalExchanges = $totalResult['total'] ?? 0;
+    $totalPages = ceil($totalExchanges / $perPage);
+    $exchanges = getExchanges($filters, $perPage, $offset);
+}
+
+$customers = $db->query("SELECT id, name FROM customers WHERE status = 'active' ORDER BY name");
+
+// التحقق من وجود عمود sale_number في جدول sales
+$saleNumberColumnCheck = $db->queryOne("SHOW COLUMNS FROM sales LIKE 'sale_number'");
+$hasSaleNumberColumn = !empty($saleNumberColumnCheck);
+
+if ($hasSaleNumberColumn) {
+    $sales = $db->query(
+        "SELECT s.id, s.sale_number, c.name as customer_name 
+         FROM sales s
+         LEFT JOIN customers c ON s.customer_id = c.id
+         WHERE s.status = 'approved'
+         ORDER BY s.created_at DESC LIMIT 50"
+    );
+} else {
+    $sales = $db->query(
+        "SELECT s.id, s.id as sale_number, c.name as customer_name 
+         FROM sales s
+         LEFT JOIN customers c ON s.customer_id = c.id
+         WHERE s.status = 'approved'
+         ORDER BY s.created_at DESC LIMIT 50"
+    );
+}
+$products = $db->query("SELECT id, name, unit_price FROM products WHERE status = 'active' ORDER BY name");
+$returns = $db->query(
+    "SELECT r.id, r.return_number, c.name as customer_name 
+     FROM returns r
+     LEFT JOIN customers c ON r.customer_id = c.id
+     WHERE r.status = 'approved'
+     ORDER BY r.created_at DESC LIMIT 50"
+);
+
+// استبدال محدد للعرض
+$selectedExchange = null;
+if (isset($_GET['id'])) {
+    $exchangeId = intval($_GET['id']);
+    
+    // التحقق من وجود عمود sale_number
+    $saleNumberColumnCheck = $db->queryOne("SHOW COLUMNS FROM sales LIKE 'sale_number'");
+    $hasSaleNumberColumn = !empty($saleNumberColumnCheck);
+    
+    if ($hasSaleNumberColumn) {
+        $selectedExchange = $db->queryOne(
+            "SELECT e.*, s.sale_number, c.name as customer_name,
+                    u.full_name as sales_rep_name, u2.full_name as approved_by_name
+             FROM exchanges e
+             LEFT JOIN sales s ON e.original_sale_id = s.id
+             LEFT JOIN customers c ON e.customer_id = c.id
+             LEFT JOIN users u ON e.sales_rep_id = u.id
+             LEFT JOIN users u2 ON e.approved_by = u2.id
+             WHERE e.id = ?",
+            [$exchangeId]
+        );
+    } else {
+        $selectedExchange = $db->queryOne(
+            "SELECT e.*, s.id as sale_number, c.name as customer_name,
+                    u.full_name as sales_rep_name, u2.full_name as approved_by_name
+             FROM exchanges e
+             LEFT JOIN sales s ON e.original_sale_id = s.id
+             LEFT JOIN customers c ON e.customer_id = c.id
+             LEFT JOIN users u ON e.sales_rep_id = u.id
+             LEFT JOIN users u2 ON e.approved_by = u2.id
+             WHERE e.id = ?",
+            [$exchangeId]
+        );
+    }
+    
+    if ($selectedExchange) {
+        $selectedExchange['return_items'] = $db->query(
+            "SELECT eri.*, p.name as product_name
+             FROM exchange_return_items eri
+             LEFT JOIN products p ON eri.product_id = p.id
+             WHERE eri.exchange_id = ?
+             ORDER BY eri.id",
+            [$exchangeId]
+        );
+        
+        $selectedExchange['new_items'] = $db->query(
+            "SELECT eni.*, p.name as product_name
+             FROM exchange_new_items eni
+             LEFT JOIN products p ON eni.product_id = p.id
+             WHERE eni.exchange_id = ?
+             ORDER BY eni.id",
+            [$exchangeId]
+        );
+    }
+}
+?>
+<div class="d-flex justify-content-between align-items-center mb-4">
+    <h2><i class="bi bi-arrow-left-right me-2"></i>إدارة الاستبدال</h2>
+    <?php if (hasRole(['sales', 'accountant'])): ?>
+    <button class="btn btn-primary" data-bs-toggle="modal" data-bs-target="#addExchangeModal">
+        <i class="bi bi-plus-circle me-2"></i>إنشاء استبدال جديد
+    </button>
+    <?php endif; ?>
+</div>
+
+<?php if ($error): ?>
+    <div class="alert alert-danger alert-dismissible fade show">
+        <i class="bi bi-exclamation-triangle-fill me-2"></i>
+        <?php echo htmlspecialchars($error); ?>
+        <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
+    </div>
+<?php endif; ?>
+
+<?php if ($success): ?>
+    <div class="alert alert-success alert-dismissible fade show">
+        <i class="bi bi-check-circle-fill me-2"></i>
+        <?php echo htmlspecialchars($success); ?>
+        <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
+    </div>
+<?php endif; ?>
+
+<?php if ($selectedExchange): ?>
+    <!-- عرض استبدال محدد -->
+    <div class="card shadow-sm mb-4">
+        <div class="card-header bg-primary text-white d-flex justify-content-between align-items-center">
+            <h5 class="mb-0">استبدال رقم: <?php echo htmlspecialchars($selectedExchange['exchange_number']); ?></h5>
+            <a href="?page=exchanges" class="btn btn-light btn-sm">
+                <i class="bi bi-x"></i>
+            </a>
+        </div>
+        <div class="card-body">
+            <div class="row">
+                <div class="col-md-6">
+                    <table class="table dashboard-table-details">
+                        <tr>
+                            <th width="40%">العميل:</th>
+                            <td><?php echo htmlspecialchars($selectedExchange['customer_name'] ?? '-'); ?></td>
+                        </tr>
+                        <tr>
+                            <th>رقم البيع الأصلي:</th>
+                            <td><?php echo htmlspecialchars($selectedExchange['sale_number'] ?? '-'); ?></td>
+                        </tr>
+                        <tr>
+                            <th>تاريخ الاستبدال:</th>
+                            <td><?php echo formatDate($selectedExchange['exchange_date']); ?></td>
+                        </tr>
+                        <tr>
+                            <th>نوع الاستبدال:</th>
+                            <td>
+                                <?php 
+                                $types = [
+                                    'same_product' => 'نفس المنتج',
+                                    'different_product' => 'منتج مختلف',
+                                    'upgrade' => 'ترقية',
+                                    'downgrade' => 'تخفيض'
+                                ];
+                                echo $types[$selectedExchange['exchange_type']] ?? $selectedExchange['exchange_type'];
+                                ?>
+                            </td>
+                        </tr>
+                    </table>
                 </div>
-            <?php endif; ?>
-            
-            <?php if ($success): ?>
-                <div class="alert alert-success alert-dismissible fade show" role="alert">
-                    <i class="bi bi-check-circle me-2"></i><?php echo htmlspecialchars($success); ?>
-                    <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close"></button>
+                <div class="col-md-6">
+                    <table class="table dashboard-table-details">
+                        <tr>
+                            <th width="40%">الحالة:</th>
+                            <td>
+                                <span class="badge bg-<?php 
+                                    echo $selectedExchange['status'] === 'completed' ? 'success' : 
+                                        ($selectedExchange['status'] === 'rejected' ? 'danger' : 
+                                        ($selectedExchange['status'] === 'approved' ? 'info' : 'warning')); 
+                                ?>">
+                                    <?php 
+                                    $statuses = [
+                                        'pending' => 'معلق',
+                                        'approved' => 'موافق عليه',
+                                        'rejected' => 'مرفوض',
+                                        'completed' => 'مكتمل'
+                                    ];
+                                    echo $statuses[$selectedExchange['status']] ?? $selectedExchange['status'];
+                                    ?>
+                                </span>
+                            </td>
+                        </tr>
+                        <tr>
+                            <th>المبلغ الأصلي:</th>
+                            <td><?php echo formatCurrency($selectedExchange['original_total']); ?></td>
+                        </tr>
+                        <tr>
+                            <th>المبلغ الجديد:</th>
+                            <td><?php echo formatCurrency($selectedExchange['new_total']); ?></td>
+                        </tr>
+                        <tr>
+                            <th>الفرق:</th>
+                            <td>
+                                <strong class="<?php echo $selectedExchange['difference_amount'] >= 0 ? 'text-success' : 'text-danger'; ?>">
+                                    <?php echo formatCurrency($selectedExchange['difference_amount']); ?>
+                                </strong>
+                            </td>
+                        </tr>
+                    </table>
                 </div>
-            <?php endif; ?>
-            
-            <!-- Dynamic Success Message -->
-            <div id="dynamicSuccessAlert" class="alert alert-success alert-dismissible fade show" role="alert" style="display: none;">
-                <i class="bi bi-check-circle-fill me-2"></i>
-                <span id="successMessageText"></span>
-                <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close"></button>
             </div>
             
-            <div class="card shadow-sm">
-                <div class="card-header bg-primary text-white">
-                    <h5 class="mb-0"><i class="bi bi-arrow-left-right me-2"></i>نموذج إنشاء استبدال</h5>
+            <div class="row mt-3">
+                <div class="col-md-6">
+                    <h6>المنتجات المرتجعة:</h6>
+                    <div class="table-responsive dashboard-table-wrapper">
+                        <table class="table dashboard-table dashboard-table--compact align-middle">
+                            <thead>
+                                <tr>
+                                    <th>المنتج</th>
+                                    <th>الكمية</th>
+                                    <th>السعر</th>
+                                    <th>الإجمالي</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                <?php foreach ($selectedExchange['return_items'] as $item): ?>
+                                    <tr>
+                                        <td><?php echo htmlspecialchars($item['product_name'] ?? '-'); ?></td>
+                                        <td><?php echo number_format($item['quantity'], 2); ?></td>
+                                        <td><?php echo formatCurrency($item['unit_price']); ?></td>
+                                        <td><?php echo formatCurrency($item['total_price']); ?></td>
+                                    </tr>
+                                <?php endforeach; ?>
+                            </tbody>
+                        </table>
+                    </div>
                 </div>
-                <div class="card-body">
-                    <form id="exchangeRequestForm">
-                        <!-- Step 1: Customer Selection -->
-                        <div class="mb-4">
-                            <h5 class="mb-3"><i class="bi bi-person me-2"></i>اختيار العميل</h5>
-                            <div class="row">
-                                <div class="col-md-6">
-                                    <label for="customerSearch" class="form-label">البحث عن العميل</label>
-                                    <input type="text" 
-                                           class="form-control" 
-                                           id="customerSearch" 
-                                           placeholder="ابحث بالاسم أو رقم الهاتف..."
-                                           autocomplete="off">
-                                    <div id="customerDropdown" class="list-group mt-2" style="display: none; max-height: 300px; overflow-y: auto; position: absolute; z-index: 1000; width: 100%;"></div>
-                                </div>
-                                <div class="col-md-6">
-                                    <label class="form-label">العميل المحدد</label>
-                                    <div id="selectedCustomer" class="alert alert-info" style="display: none;">
-                                        <strong id="selectedCustomerName"></strong><br>
-                                        <small id="selectedCustomerInfo"></small>
-                                    </div>
-                                </div>
-                            </div>
-                            <input type="hidden" id="customerId" name="customer_id">
-                        </div>
-                        
-                        <!-- Step 2: Split View - Return Items and Replacement Items -->
-                        <div class="row mb-4" id="exchangeSections" style="display: none;">
-                            <!-- Left: Return Items (from purchase history) -->
-                            <div class="col-md-6">
-                                <div class="card border-primary">
-                                    <div class="card-header bg-primary text-white">
-                                        <h6 class="mb-0"><i class="bi bi-arrow-left me-2"></i>المنتجات المراد إرجاعها</h6>
-                                    </div>
-                                    <div class="card-body">
-                                        <div id="purchaseHistoryLoading" class="text-center" style="display: none;">
-                                            <div class="spinner-border text-primary" role="status">
-                                                <span class="visually-hidden">جاري التحميل...</span>
-                                            </div>
-                                        </div>
-                                        <div id="purchaseHistoryTable" class="table-responsive"></div>
-                                        
-                                        <div class="mt-3" id="selectedReturnItemsSection" style="display: none;">
-                                            <h6>المنتجات المحددة للإرجاع:</h6>
-                                            <div id="selectedReturnItemsList" class="list-group"></div>
-                                        </div>
-                                    </div>
-                                </div>
-                            </div>
-                            
-                            <!-- Right: Replacement Items (from car inventory) -->
-                            <div class="col-md-6">
-                                <div class="card border-success">
-                                    <div class="card-header bg-success text-white">
-                                        <h6 class="mb-0"><i class="bi bi-arrow-right me-2"></i>المنتجات البديلة (من مخزن السيارة)</h6>
-                                    </div>
-                                    <div class="card-body">
-                                        <div id="carInventoryLoading" class="text-center" style="display: none;">
-                                            <div class="spinner-border text-success" role="status">
-                                                <span class="visually-hidden">جاري التحميل...</span>
-                                            </div>
-                                        </div>
-                                        <div id="carInventoryTable" class="table-responsive"></div>
-                                        
-                                        <div class="mt-3" id="selectedReplacementItemsSection" style="display: none;">
-                                            <h6>المنتجات المحددة للاستبدال:</h6>
-                                            <div id="selectedReplacementItemsList" class="list-group"></div>
-                                        </div>
-                                    </div>
-                                </div>
-                            </div>
-                        </div>
-                        
-                        <!-- Step 3: Price Difference Summary -->
-                        <div class="mb-4" id="priceDifferenceSection" style="display: none;">
-                            <div class="card border-info">
-                                <div class="card-header bg-info text-white">
-                                    <h6 class="mb-0"><i class="bi bi-calculator me-2"></i>ملخص الفرق المالي</h6>
-                                </div>
-                                <div class="card-body">
-                                    <div class="row">
-                                        <div class="col-md-4">
-                                            <strong>قيمة المنتجات المرجعة:</strong>
-                                            <div class="h5 text-primary" id="oldValueDisplay">0.00 ج.م</div>
-                                        </div>
-                                        <div class="col-md-4">
-                                            <strong>قيمة المنتجات البديلة:</strong>
-                                            <div class="h5 text-success" id="newValueDisplay">0.00 ج.م</div>
-                                        </div>
-                                        <div class="col-md-4">
-                                            <strong>الفرق:</strong>
-                                            <div class="h5" id="differenceDisplay">0.00 ج.م</div>
-                                        </div>
-                                    </div>
-                                    <div id="differenceNote" class="alert alert-info mt-3" style="display: none;"></div>
-                                </div>
-                            </div>
-                        </div>
-                        
-                        <!-- Step 4: Notes -->
-                        <div class="mb-4">
-                            <label for="exchangeNotes" class="form-label">ملاحظات (اختياري)</label>
-                            <textarea class="form-control" 
-                                      id="exchangeNotes" 
-                                      name="notes" 
-                                      rows="3" 
-                                      placeholder="أضف أي ملاحظات إضافية..."></textarea>
-                        </div>
-                        
-                        <!-- Submit Button -->
-                        <div class="d-flex justify-content-end">
-                            <button type="button" 
-                                    class="btn btn-primary btn-lg" 
-                                    id="submitExchangeRequest"
-                                    disabled>
-                                <i class="bi bi-send me-2"></i>إرسال طلب الاستبدال
-                            </button>
-                        </div>
+                <div class="col-md-6">
+                    <h6>المنتجات الجديدة:</h6>
+                    <div class="table-responsive dashboard-table-wrapper">
+                        <table class="table dashboard-table dashboard-table--compact align-middle">
+                            <thead>
+                                <tr>
+                                    <th>المنتج</th>
+                                    <th>الكمية</th>
+                                    <th>السعر</th>
+                                    <th>الإجمالي</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                <?php foreach ($selectedExchange['new_items'] as $item): ?>
+                                    <tr>
+                                        <td><?php echo htmlspecialchars($item['product_name'] ?? '-'); ?></td>
+                                        <td><?php echo number_format($item['quantity'], 2); ?></td>
+                                        <td><?php echo formatCurrency($item['unit_price']); ?></td>
+                                        <td><?php echo formatCurrency($item['total_price']); ?></td>
+                                    </tr>
+                                <?php endforeach; ?>
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            </div>
+            
+            <?php if ($selectedExchange['status'] === 'pending' && hasRole('manager')): ?>
+                <div class="mt-3">
+                    <form method="POST" class="d-inline">
+                        <input type="hidden" name="action" value="approve_exchange">
+                        <input type="hidden" name="exchange_id" value="<?php echo $selectedExchange['id']; ?>">
+                        <button type="submit" class="btn btn-success">
+                            <i class="bi bi-check-circle me-2"></i>الموافقة على الاستبدال
+                        </button>
                     </form>
                 </div>
-            </div>
+            <?php endif; ?>
         </div>
     </div>
-    
-    <!-- Recent Requests Table -->
-    <div class="row mt-5">
-        <div class="col-12">
-            <div class="card shadow-sm">
-                <div class="card-header bg-info text-white">
-                    <h5 class="mb-0">
-                        <i class="bi bi-clock-history me-2"></i>طلبات المرتجع والاستبدال الأخيرة
-                    </h5>
-                </div>
-                <div class="card-body">
-                    <div id="recentRequestsLoading" class="text-center py-3">
-                        <div class="spinner-border text-primary" role="status">
-                            <span class="visually-hidden">جاري التحميل...</span>
-                        </div>
-                    </div>
-                    <div id="recentRequestsTable" class="table-responsive"></div>
-                </div>
+<?php endif; ?>
+
+<!-- البحث والفلترة -->
+<div class="card shadow-sm mb-4">
+    <div class="card-body">
+        <form method="GET" class="row g-3">
+            <input type="hidden" name="page" value="exchanges">
+            <div class="col-md-3">
+                <label class="form-label">العميل</label>
+                <select class="form-select" name="customer_id">
+                    <option value="">جميع العملاء</option>
+                    <?php 
+                    require_once __DIR__ . '/../../includes/path_helper.php';
+                    $selectedCustomerId = isset($filters['customer_id']) ? intval($filters['customer_id']) : 0;
+                    $customerValid = isValidSelectValue($selectedCustomerId, $customers, 'id');
+                    foreach ($customers as $customer): ?>
+                        <option value="<?php echo $customer['id']; ?>" 
+                                <?php echo $customerValid && $selectedCustomerId == $customer['id'] ? 'selected' : ''; ?>>
+                            <?php echo htmlspecialchars($customer['name']); ?>
+                        </option>
+                    <?php endforeach; ?>
+                </select>
             </div>
-        </div>
+            <div class="col-md-2">
+                <label class="form-label">الحالة</label>
+                <select class="form-select" name="status">
+                    <option value="">جميع الحالات</option>
+                    <option value="pending" <?php echo ($filters['status'] ?? '') === 'pending' ? 'selected' : ''; ?>>معلق</option>
+                    <option value="approved" <?php echo ($filters['status'] ?? '') === 'approved' ? 'selected' : ''; ?>>موافق عليه</option>
+                    <option value="rejected" <?php echo ($filters['status'] ?? '') === 'rejected' ? 'selected' : ''; ?>>مرفوض</option>
+                    <option value="completed" <?php echo ($filters['status'] ?? '') === 'completed' ? 'selected' : ''; ?>>مكتمل</option>
+                </select>
+            </div>
+            <div class="col-md-2">
+                <label class="form-label">من تاريخ</label>
+                <input type="date" class="form-control" name="date_from" 
+                       value="<?php echo htmlspecialchars($filters['date_from'] ?? ''); ?>">
+            </div>
+            <div class="col-md-2">
+                <label class="form-label">إلى تاريخ</label>
+                <input type="date" class="form-control" name="date_to" 
+                       value="<?php echo htmlspecialchars($filters['date_to'] ?? ''); ?>">
+            </div>
+            <div class="col-md-1">
+                <label class="form-label">&nbsp;</label>
+                <button type="submit" class="btn btn-primary w-100">
+                    <i class="bi bi-search"></i>
+                </button>
+            </div>
+        </form>
     </div>
 </div>
 
-<script>
-const basePath = '<?php echo $basePath; ?>';
-let selectedCustomerId = null;
-let selectedSalesRepId = null;
-let purchaseHistory = [];
-let carInventory = [];
-let selectedReturnItems = [];
-let selectedReplacementItems = [];
-
-// Customer Search (same as returns)
-let customerSearchTimeout;
-document.getElementById('customerSearch').addEventListener('input', function() {
-    clearTimeout(customerSearchTimeout);
-    const searchTerm = this.value.trim();
-    
-    if (searchTerm.length < 2) {
-        document.getElementById('customerDropdown').style.display = 'none';
-        return;
-    }
-    
-    customerSearchTimeout = setTimeout(() => {
-        fetchCustomers(searchTerm);
-    }, 300);
-});
-
-function fetchCustomers(search = '') {
-    const url = basePath + '/api/exchange_requests.php?action=get_customers' + (search ? '&search=' + encodeURIComponent(search) : '');
-    
-    fetch(url, {
-        credentials: 'same-origin',
-        headers: {
-            'Accept': 'application/json'
-        }
-    })
-    .then(response => response.json())
-    .then(data => {
-        if (data.success) {
-            displayCustomerDropdown(data.customers);
-        } else {
-            console.error('Error fetching customers:', data.message);
-        }
-    })
-    .catch(error => {
-        console.error('Error:', error);
-    });
-}
-
-function displayCustomerDropdown(customers) {
-    const dropdown = document.getElementById('customerDropdown');
-    
-    if (customers.length === 0) {
-        dropdown.innerHTML = '<div class="list-group-item">لا توجد نتائج</div>';
-        dropdown.style.display = 'block';
-        return;
-    }
-    
-    let html = '';
-    customers.forEach(customer => {
-        const balanceText = customer.debt > 0 
-            ? `دين: ${parseFloat(customer.debt).toFixed(2)} ج.م`
-            : customer.credit > 0 
-                ? `رصيد دائن: ${parseFloat(customer.credit).toFixed(2)} ج.م`
-                : 'صفر';
+<!-- قائمة الاستبدالات -->
+<div class="card shadow-sm">
+    <div class="card-header bg-primary text-white">
+        <h5 class="mb-0">قائمة الاستبدالات (<?php echo $totalExchanges; ?>)</h5>
+    </div>
+    <div class="card-body">
+        <div class="table-responsive dashboard-table-wrapper">
+            <table class="table dashboard-table align-middle">
+                <thead>
+                    <tr>
+                        <th>رقم الاستبدال</th>
+                        <th>العميل</th>
+                        <th>تاريخ الاستبدال</th>
+                        <th>المبلغ الأصلي</th>
+                        <th>المبلغ الجديد</th>
+                        <th>الفرق</th>
+                        <th>الحالة</th>
+                        <th>الإجراءات</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    <?php if (empty($exchanges)): ?>
+                        <tr>
+                            <td colspan="8" class="text-center text-muted">لا توجد استبدالات</td>
+                        </tr>
+                    <?php else: ?>
+                        <?php foreach ($exchanges as $exchange): ?>
+                            <tr>
+                                <td>
+                                    <a href="?page=exchanges&id=<?php echo $exchange['id']; ?>" class="text-decoration-none">
+                                        <strong><?php echo htmlspecialchars($exchange['exchange_number']); ?></strong>
+                                    </a>
+                                </td>
+                                <td><?php echo htmlspecialchars($exchange['customer_name'] ?? '-'); ?></td>
+                                <td><?php echo formatDate($exchange['exchange_date']); ?></td>
+                                <td><?php echo formatCurrency($exchange['original_total']); ?></td>
+                                <td><?php echo formatCurrency($exchange['new_total']); ?></td>
+                                <td>
+                                    <span class="<?php echo $exchange['difference_amount'] >= 0 ? 'text-success' : 'text-danger'; ?>">
+                                        <?php echo formatCurrency($exchange['difference_amount']); ?>
+                                    </span>
+                                </td>
+                                <td>
+                                    <span class="badge bg-<?php 
+                                        echo $exchange['status'] === 'completed' ? 'success' : 
+                                            ($exchange['status'] === 'rejected' ? 'danger' : 
+                                            ($exchange['status'] === 'approved' ? 'info' : 'warning')); 
+                                    ?>">
+                                        <?php 
+                                        $statuses = [
+                                            'pending' => 'معلق',
+                                            'approved' => 'موافق عليه',
+                                            'rejected' => 'مرفوض',
+                                            'completed' => 'مكتمل'
+                                        ];
+                                        echo $statuses[$exchange['status']] ?? $exchange['status'];
+                                        ?>
+                                    </span>
+                                </td>
+                                <td>
+                                    <a href="?page=exchanges&id=<?php echo $exchange['id']; ?>" 
+                                       class="btn btn-info btn-sm" title="عرض">
+                                        <i class="bi bi-eye"></i>
+                                    </a>
+                                </td>
+                            </tr>
+                        <?php endforeach; ?>
+                    <?php endif; ?>
+                </tbody>
+            </table>
+        </div>
         
-        html += `
-            <a href="#" class="list-group-item list-group-item-action" onclick="selectCustomer(${customer.id}, '${customer.name.replace(/'/g, "\\'")}', ${customer.debt}, ${customer.credit}); return false;">
-                <div class="d-flex w-100 justify-content-between">
-                    <h6 class="mb-1">${customer.name}</h6>
-                    <small>${balanceText}</small>
-                </div>
-                ${customer.phone ? '<p class="mb-1 small text-muted">' + customer.phone + '</p>' : ''}
-            </a>
-        `;
-    });
-    
-    dropdown.innerHTML = html;
-    dropdown.style.display = 'block';
-}
-
-function selectCustomer(customerId, customerName, debt, credit) {
-    selectedCustomerId = customerId;
-    document.getElementById('customerId').value = customerId;
-    document.getElementById('customerSearch').value = customerName;
-    document.getElementById('customerDropdown').style.display = 'none';
-    
-    const selectedDiv = document.getElementById('selectedCustomer');
-    const nameDiv = document.getElementById('selectedCustomerName');
-    const infoDiv = document.getElementById('selectedCustomerInfo');
-    
-    nameDiv.textContent = customerName;
-    const balanceText = debt > 0 
-        ? `دين: ${parseFloat(debt).toFixed(2)} ج.م`
-        : credit > 0 
-            ? `رصيد دائن: ${parseFloat(credit).toFixed(2)} ج.م`
-            : 'صفر';
-    infoDiv.textContent = balanceText;
-    
-    selectedDiv.style.display = 'block';
-    
-    // Load purchase history and car inventory
-    loadPurchaseHistory(customerId);
-    loadCarInventory();
-}
-
-function loadPurchaseHistory(customerId) {
-    const loadingDiv = document.getElementById('purchaseHistoryLoading');
-    const tableDiv = document.getElementById('purchaseHistoryTable');
-    const sectionDiv = document.getElementById('exchangeSections');
-    
-    loadingDiv.style.display = 'block';
-    tableDiv.innerHTML = '';
-    sectionDiv.style.display = 'block';
-    
-    fetch(basePath + '/api/exchange_requests.php?action=get_purchase_history&customer_id=' + customerId, {
-        credentials: 'same-origin',
-        headers: {
-            'Accept': 'application/json'
-        }
-    })
-    .then(response => response.json())
-    .then(data => {
-        loadingDiv.style.display = 'none';
-        
-        if (data.success) {
-            purchaseHistory = data.purchase_history;
-            displayPurchaseHistory(purchaseHistory);
-        } else {
-            tableDiv.innerHTML = '<div class="alert alert-warning">' + (data.message || 'لا توجد مشتريات') + '</div>';
-        }
-    })
-    .catch(error => {
-        loadingDiv.style.display = 'none';
-        tableDiv.innerHTML = '<div class="alert alert-danger">حدث خطأ أثناء تحميل سجل المشتريات</div>';
-        console.error('Error:', error);
-    });
-}
-
-function displayPurchaseHistory(history) {
-    const tableDiv = document.getElementById('purchaseHistoryTable');
-    
-    if (history.length === 0) {
-        tableDiv.innerHTML = '<div class="alert alert-info">لا توجد مشتريات متاحة</div>';
-        return;
-    }
-    
-    let html = `
-        <table class="table table-sm table-bordered">
-            <thead class="table-light">
-                <tr>
-                    <th>المنتج</th>
-                    <th>المتبقي</th>
-                    <th>السعر</th>
-                    <th>إجراء</th>
-                </tr>
-            </thead>
-            <tbody>
-    `;
-    
-    history.forEach(item => {
-        html += `
-            <tr>
-                <td>${item.product_name}</td>
-                <td>${parseFloat(item.quantity_remaining).toFixed(2)}</td>
-                <td>${parseFloat(item.unit_price).toFixed(2)} ج.م</td>
-                <td>
-                    <button class="btn btn-sm btn-primary" onclick="addToReturnItems(${item.invoice_item_id}, ${item.product_id}, '${item.product_name.replace(/'/g, "\\'")}', ${item.quantity_remaining}, ${item.unit_price}, '${(item.batch_numbers || '').replace(/'/g, "\\'")}')">
-                        <i class="bi bi-plus"></i>
-                    </button>
-                </td>
-            </tr>
-        `;
-    });
-    
-    html += `
-            </tbody>
-        </table>
-    `;
-    
-    tableDiv.innerHTML = html;
-}
-
-function loadCarInventory() {
-    const loadingDiv = document.getElementById('carInventoryLoading');
-    const tableDiv = document.getElementById('carInventoryTable');
-    
-    loadingDiv.style.display = 'block';
-    tableDiv.innerHTML = '';
-    
-    fetch(basePath + '/api/exchange_requests.php?action=get_car_inventory', {
-        credentials: 'same-origin',
-        headers: {
-            'Accept': 'application/json'
-        }
-    })
-    .then(response => response.json())
-    .then(data => {
-        loadingDiv.style.display = 'none';
-        
-        if (data.success) {
-            carInventory = data.inventory;
-            displayCarInventory(carInventory);
-            } else {
-            tableDiv.innerHTML = '<div class="alert alert-warning">' + (data.message || 'لا يوجد مخزون') + '</div>';
-        }
-    })
-    .catch(error => {
-        loadingDiv.style.display = 'none';
-        tableDiv.innerHTML = '<div class="alert alert-danger">حدث خطأ أثناء تحميل مخزون السيارة</div>';
-        console.error('Error:', error);
-    });
-}
-
-function displayCarInventory(inventory) {
-    const tableDiv = document.getElementById('carInventoryTable');
-    
-    if (inventory.length === 0) {
-        tableDiv.innerHTML = '<div class="alert alert-info">لا يوجد مخزون متاح</div>';
-        return;
-    }
-    
-    let html = `
-        <table class="table table-sm table-bordered">
-            <thead class="table-light">
-                <tr>
-                    <th>المنتج</th>
-                    <th>الكمية</th>
-                    <th>السعر</th>
-                    <th>إجراء</th>
-                </tr>
-            </thead>
-            <tbody>
-    `;
-    
-    inventory.forEach(item => {
-        html += `
-            <tr>
-                <td>${item.product_name}</td>
-                <td>${parseFloat(item.quantity).toFixed(2)}</td>
-                <td>${parseFloat(item.unit_price).toFixed(2)} ج.م</td>
-                <td>
-                    <button class="btn btn-sm btn-success" onclick="addToReplacementItems(${item.product_id}, '${item.product_name.replace(/'/g, "\\'")}', ${item.quantity}, ${item.unit_price}, '${(item.batch_number || '').replace(/'/g, "\\'")}')">
-                        <i class="bi bi-plus"></i>
-                    </button>
-                </td>
-            </tr>
-        `;
-    });
-    
-    html += `
-            </tbody>
-        </table>
-    `;
-    
-    tableDiv.innerHTML = html;
-}
-
-function addToReturnItems(invoiceItemId, productId, productName, maxQuantity, unitPrice, batchNumbers) {
-    const existing = selectedReturnItems.find(item => item.invoice_item_id === invoiceItemId);
-    if (existing) {
-        alert('هذا المنتج مضاف بالفعل');
-        return;
-    }
-    
-    const quantity = prompt(`أدخل الكمية المراد إرجاعها (الحد الأقصى: ${parseFloat(maxQuantity).toFixed(2)})`);
-    if (!quantity || parseFloat(quantity) <= 0) {
-        return;
-    }
-    
-    const qty = parseFloat(quantity);
-    if (qty > maxQuantity + 0.0001) {
-        alert(`الكمية المدخلة (${qty.toFixed(2)}) تتجاوز الكمية المتاحة (${parseFloat(maxQuantity).toFixed(2)})`);
-        return;
-    }
-    
-    const total = qty * unitPrice;
-    
-    const item = {
-        invoice_item_id: invoiceItemId,
-        product_id: productId,
-        product_name: productName,
-        quantity: qty,
-        unit_price: unitPrice,
-        total_price: total,
-        batch_numbers: batchNumbers
-    };
-    
-    selectedReturnItems.push(item);
-    updateSelectedItems();
-    calculatePriceDifference();
-}
-
-function addToReplacementItems(productId, productName, maxQuantity, unitPrice, batchNumber) {
-    const existing = selectedReplacementItems.find(item => item.product_id === productId);
-    if (existing) {
-        alert('هذا المنتج مضاف بالفعل');
-        return;
-    }
-    
-    const quantity = prompt(`أدخل الكمية (الحد الأقصى: ${parseFloat(maxQuantity).toFixed(2)})`);
-    if (!quantity || parseFloat(quantity) <= 0) {
-        return;
-    }
-    
-    const qty = parseFloat(quantity);
-    if (qty > maxQuantity + 0.0001) {
-        alert(`الكمية المدخلة (${qty.toFixed(2)}) تتجاوز الكمية المتاحة (${parseFloat(maxQuantity).toFixed(2)})`);
-        return;
-    }
-    
-    const total = qty * unitPrice;
-    
-    const item = {
-        product_id: productId,
-        product_name: productName,
-        quantity: qty,
-        unit_price: unitPrice,
-        total_price: total,
-        batch_number: batchNumber
-    };
-    
-    selectedReplacementItems.push(item);
-    updateSelectedItems();
-    calculatePriceDifference();
-}
-
-function updateSelectedItems() {
-    // Update return items list
-    const returnListDiv = document.getElementById('selectedReturnItemsList');
-    const returnSection = document.getElementById('selectedReturnItemsSection');
-    
-    if (selectedReturnItems.length === 0) {
-        returnSection.style.display = 'none';
-        returnListDiv.innerHTML = '';
-    } else {
-        returnSection.style.display = 'block';
-        let html = '';
-        selectedReturnItems.forEach((item, index) => {
-            html += `
-                <div class="list-group-item d-flex justify-content-between align-items-center">
-                    <div>
-                        <strong>${item.product_name}</strong><br>
-                        <small>الكمية: ${item.quantity.toFixed(2)} | السعر: ${item.unit_price.toFixed(2)} ج.م | الإجمالي: ${item.total_price.toFixed(2)} ج.م</small>
-                    </div>
-                    <button class="btn btn-sm btn-danger" onclick="removeReturnItem(${index})">
-                        <i class="bi bi-trash"></i>
-                    </button>
-                </div>
-            `;
-        });
-        returnListDiv.innerHTML = html;
-    }
-    
-    // Update replacement items list
-    const replacementListDiv = document.getElementById('selectedReplacementItemsList');
-    const replacementSection = document.getElementById('selectedReplacementItemsSection');
-    
-    if (selectedReplacementItems.length === 0) {
-        replacementSection.style.display = 'none';
-        replacementListDiv.innerHTML = '';
-    } else {
-        replacementSection.style.display = 'block';
-        let html = '';
-        selectedReplacementItems.forEach((item, index) => {
-            html += `
-                <div class="list-group-item d-flex justify-content-between align-items-center">
-                    <div>
-                        <strong>${item.product_name}</strong><br>
-                        <small>الكمية: ${item.quantity.toFixed(2)} | السعر: ${item.unit_price.toFixed(2)} ج.م | الإجمالي: ${item.total_price.toFixed(2)} ج.م</small>
-                    </div>
-                    <button class="btn btn-sm btn-danger" onclick="removeReplacementItem(${index})">
-                        <i class="bi bi-trash"></i>
-                    </button>
-                </div>
-            `;
-        });
-        replacementListDiv.innerHTML = html;
-    }
-}
-
-function removeReturnItem(index) {
-    selectedReturnItems.splice(index, 1);
-    updateSelectedItems();
-    calculatePriceDifference();
-}
-
-function removeReplacementItem(index) {
-    selectedReplacementItems.splice(index, 1);
-    updateSelectedItems();
-    calculatePriceDifference();
-}
-
-function calculatePriceDifference() {
-    const oldValue = selectedReturnItems.reduce((sum, item) => sum + item.total_price, 0);
-    const newValue = selectedReplacementItems.reduce((sum, item) => sum + item.total_price, 0);
-    const difference = newValue - oldValue;
-    
-    document.getElementById('oldValueDisplay').textContent = oldValue.toFixed(2) + ' ج.م';
-    document.getElementById('newValueDisplay').textContent = newValue.toFixed(2) + ' ج.م';
-    
-    const differenceDiv = document.getElementById('differenceDisplay');
-    const noteDiv = document.getElementById('differenceNote');
-    const priceSection = document.getElementById('priceDifferenceSection');
-    const submitBtn = document.getElementById('submitExchangeRequest');
-    
-    if (selectedReturnItems.length > 0 && selectedReplacementItems.length > 0) {
-        priceSection.style.display = 'block';
-        submitBtn.disabled = false;
-        
-        if (difference > 0) {
-            differenceDiv.textContent = '+' + difference.toFixed(2) + ' ج.م';
-            differenceDiv.className = 'h5 text-danger';
-            noteDiv.textContent = 'المنتج البديل أغلى - سيتم إضافة ' + difference.toFixed(2) + ' ج.م لدين العميل';
-            noteDiv.className = 'alert alert-warning mt-3';
-        } else if (difference < 0) {
-            differenceDiv.textContent = difference.toFixed(2) + ' ج.م';
-            differenceDiv.className = 'h5 text-success';
-            noteDiv.textContent = 'المنتج البديل أرخص - سيتم إضافة ' + Math.abs(difference).toFixed(2) + ' ج.م لرصيد العميل الدائن';
-            noteDiv.className = 'alert alert-success mt-3';
-        } else {
-            differenceDiv.textContent = '0.00 ج.م';
-            differenceDiv.className = 'h5 text-secondary';
-            noteDiv.textContent = 'لا يوجد فرق مالي';
-            noteDiv.className = 'alert alert-info mt-3';
-        }
-        noteDiv.style.display = 'block';
-    } else {
-        priceSection.style.display = 'none';
-        submitBtn.disabled = true;
-    }
-}
-
-// Submit Exchange Request
-document.getElementById('submitExchangeRequest').addEventListener('click', function() {
-    if (!selectedCustomerId || selectedReturnItems.length === 0 || selectedReplacementItems.length === 0) {
-        alert('يرجى اختيار عميل ومنتجات للإرجاع والاستبدال');
-        return;
-    }
-    
-    if (!confirm('هل أنت متأكد من إرسال طلب الاستبدال؟')) {
-        return;
-    }
-    
-    const btn = this;
-    const originalHTML = btn.innerHTML;
-    btn.disabled = true;
-    btn.innerHTML = '<span class="spinner-border spinner-border-sm me-2"></span>جاري الإرسال...';
-    
-    const notes = document.getElementById('exchangeNotes').value.trim();
-    
-    fetch(basePath + '/api/exchange_requests.php', {
-        method: 'POST',
-        headers: {
-            'Content-Type': 'application/json',
-        },
-        credentials: 'same-origin',
-        body: JSON.stringify({
-            action: 'create',
-            customer_id: selectedCustomerId,
-            return_items: selectedReturnItems,
-            replacement_items: selectedReplacementItems,
-            notes: notes
-        })
-    })
-    .then(response => response.json())
-    .then(data => {
-        if (data.success) {
-            // إظهار رسالة النجاح
-            const successMessage = 'تم إنشاء طلب الاستبدال بنجاح!<br>رقم الاستبدال: <strong>' + data.exchange_number + '</strong>' + (data.balance_note ? '<br>' + data.balance_note : '') + '<br>تم إرساله للموافقة';
-            const successAlert = document.getElementById('dynamicSuccessAlert');
-            const successText = document.getElementById('successMessageText');
-            
-            if (successAlert && successText) {
-                successText.innerHTML = successMessage;
-                successAlert.style.display = 'block';
+        <!-- Pagination -->
+        <?php if ($totalPages > 1): ?>
+        <nav aria-label="Page navigation" class="mt-3">
+            <ul class="pagination justify-content-center flex-wrap">
+                <li class="page-item <?php echo $pageNum <= 1 ? 'disabled' : ''; ?>">
+                    <a class="page-link" href="?page=exchanges&p=<?php echo $pageNum - 1; ?>&<?php echo http_build_query($filters); ?>">
+                        <i class="bi bi-chevron-right"></i>
+                    </a>
+                </li>
                 
-                // التمرير إلى أعلى الصفحة لرؤية الرسالة
-                window.scrollTo({ top: 0, behavior: 'smooth' });
+                <?php for ($i = max(1, $pageNum - 2); $i <= min($totalPages, $pageNum + 2); $i++): ?>
+                    <li class="page-item <?php echo $i == $pageNum ? 'active' : ''; ?>">
+                        <a class="page-link" href="?page=exchanges&p=<?php echo $i; ?>&<?php echo http_build_query($filters); ?>">
+                            <?php echo $i; ?>
+                        </a>
+                    </li>
+                <?php endfor; ?>
                 
-                // الانتظار 3 ثوانٍ ثم إعادة تحميل الصفحة
-                setTimeout(function() {
-                    location.reload();
-                }, 3000);
-            } else {
-                // Fallback: استخدام alert إذا لم يتم العثور على العناصر
-                alert('تم إنشاء الاستبدال بنجاح!\nرقم الاستبدال: ' + data.exchange_number + '\n' + (data.balance_note || ''));
-                setTimeout(function() {
-                    location.reload();
-                }, 2000);
-            }
-        } else {
-            btn.disabled = false;
-            btn.innerHTML = originalHTML;
-            alert('خطأ: ' + (data.message || 'حدث خطأ غير معروف'));
-        }
-    })
-    .catch(error => {
-        console.error('Error:', error);
-        btn.disabled = false;
-        btn.innerHTML = originalHTML;
-        alert('حدث خطأ في الاتصال بالخادم. يرجى المحاولة مرة أخرى.');
-    });
-});
+                <li class="page-item <?php echo $pageNum >= $totalPages ? 'disabled' : ''; ?>">
+                    <a class="page-link" href="?page=exchanges&p=<?php echo $pageNum + 1; ?>&<?php echo http_build_query($filters); ?>">
+                        <i class="bi bi-chevron-left"></i>
+                    </a>
+                </li>
+            </ul>
+        </nav>
+        <?php endif; ?>
+    </div>
+</div>
 
-// Close dropdown when clicking outside
-document.addEventListener('click', function(event) {
-    const dropdown = document.getElementById('customerDropdown');
-    const searchInput = document.getElementById('customerSearch');
-    
-    if (dropdown && searchInput && !dropdown.contains(event.target) && event.target !== searchInput) {
-        dropdown.style.display = 'none';
-    }
-});
+<!-- Modal إنشاء استبدال (سيتم إضافته لاحقاً) -->
+<?php if (hasRole(['sales', 'accountant'])): ?>
+<!-- Modal سيتم إضافته -->
+<?php endif; ?>
 
-// Load recent requests on page load
-document.addEventListener('DOMContentLoaded', function() {
-    loadRecentRequests();
-});
-
-function loadRecentRequests() {
-    const loadingDiv = document.getElementById('recentRequestsLoading');
-    const tableDiv = document.getElementById('recentRequestsTable');
-    
-    if (!loadingDiv || !tableDiv) {
-        return;
-    }
-    
-    loadingDiv.style.display = 'block';
-    tableDiv.innerHTML = '';
-    
-    fetch(basePath + '/api/return_requests.php?action=get_recent_requests&limit=20', {
-        credentials: 'same-origin',
-        headers: {
-            'Accept': 'application/json'
-        }
-    })
-    .then(response => response.json())
-    .then(data => {
-        loadingDiv.style.display = 'none';
-        
-        if (data.success && data.data) {
-            displayRecentRequests(data.data);
-        } else {
-            tableDiv.innerHTML = '<div class="alert alert-warning">لا توجد طلبات</div>';
-        }
-    })
-    .catch(error => {
-        loadingDiv.style.display = 'none';
-        tableDiv.innerHTML = '<div class="alert alert-danger">حدث خطأ أثناء تحميل الطلبات</div>';
-        console.error('Error:', error);
-    });
-}
-
-function displayRecentRequests(data) {
-    const tableDiv = document.getElementById('recentRequestsTable');
-    
-    const allRequests = [];
-    
-    // Add return requests
-    if (data.returns && data.returns.length > 0) {
-        data.returns.forEach(req => {
-            allRequests.push(req);
-        });
-    }
-    
-    // Add exchange requests
-    if (data.exchanges && data.exchanges.length > 0) {
-        data.exchanges.forEach(req => {
-            allRequests.push(req);
-        });
-    }
-    
-    // Sort by created_at descending
-    allRequests.sort((a, b) => {
-        return new Date(b.created_at) - new Date(a.created_at);
-    });
-    
-    if (allRequests.length === 0) {
-        tableDiv.innerHTML = '<div class="alert alert-info">لا توجد طلبات حتى الآن</div>';
-        return;
-    }
-    
-    let html = `
-        <table class="table table-bordered table-hover table-striped">
-            <thead class="table-light">
-                <tr>
-                    <th>نوع الطلب</th>
-                    <th>رقم الطلب</th>
-                    <th>التاريخ</th>
-                    <th>العميل</th>
-                    <th>المبلغ</th>
-                    <th>الحالة</th>
-                    <th>الملاحظات</th>
-                </tr>
-            </thead>
-            <tbody>
-    `;
-    
-    allRequests.forEach(req => {
-        const isReturn = req.type === 'return';
-        const requestNumber = isReturn ? req.return_number : req.exchange_number;
-        const requestDate = isReturn ? req.return_date : req.exchange_date;
-        const amount = isReturn ? req.refund_amount : req.difference_amount;
-        
-        const statusBadge = getStatusBadge(req.status, req.status_label);
-        const typeLabel = isReturn ? '<span class="badge bg-warning text-dark"><i class="bi bi-arrow-counterclockwise"></i> مرتجع</span>' : '<span class="badge bg-info"><i class="bi bi-arrow-left-right"></i> استبدال</span>';
-        
-        html += `
-            <tr>
-                <td>${typeLabel}</td>
-                <td><strong>${requestNumber}</strong></td>
-                <td>${requestDate}</td>
-                <td>${req.customer_name || 'غير معروف'}</td>
-                <td>${parseFloat(amount).toFixed(2)} ج.م</td>
-                <td>${statusBadge}</td>
-                <td><small class="text-muted">${req.notes || '-'}</small></td>
-            </tr>
-        `;
-    });
-    
-    html += `
-            </tbody>
-        </table>
-    `;
-    
-    tableDiv.innerHTML = html;
-}
-
-function getStatusBadge(status, label) {
-    const statusColors = {
-        'pending': 'warning',
-        'approved': 'success',
-        'rejected': 'danger',
-        'completed': 'primary',
-        'processed': 'info'
-    };
-    
-    const color = statusColors[status] || 'secondary';
-    return `<span class="badge bg-${color}">${label || status}</span>`;
-}
-</script>

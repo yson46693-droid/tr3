@@ -1,0 +1,1543 @@
+{
+    "description": "DO NOT DELETE THIS FILE. This file is used to keep track of which files have been synced in the most recent deployment. If you delete this file a resync will need to be done (which can take a while) - read more: https://github.com/SamKirkland/FTP-Deploy-Action",
+    "version": "1.0.0",
+    "generatedTime": 1763265936752,
+    "data": [
+        {
+            "type": "folder",
+            "name": ".cursor"
+        },
+        {
+            "type": "file",
+            "name": ".htaccess",
+            "size": 3764,
+            "hash": "26d0d6dece78ad0e49e596c42b55e6303ad69a581ace723645729eebcc89df72"
+        },
+        {
+            "type": "file",
+            "name": "CONSOLE_DEBUG_CODE.js",
+            "size": 12396,
+            "hash": "be23250420f46c55d40669f33255e603278f25e15274290ea22e6fbd07889a60"
+        },
+        {
+            "type": "file",
+            "name": "README_COMPLETE_SYSTEM.md",
+            "size": 8907,
+            "hash": "f62f3441ef77abfa1301a08f270dab62d7bae46efa9bf9654ad4f6dc6aea8d31"
+        },
+        {
+            "type": "folder",
+            "name": "api"
+        },
+        {
+            "type": "folder",
+            "name": "assets"
+        },
+        {
+            "type": "file",
+            "name": "attendance.php",
+            "size": 24423,
+            "hash": "606f0f6b7e32aa577cdece2520c5a33d78519f8e9178f1e56241fb3d815d87a9"
+        },
+        {
+            "type": "file",
+            "name": "create_batch.php",
+            "size": 1952,
+            "hash": "22a5d106101ea7690ba6676921dc8ad2763c301f719cc3c2d62919a692bd3aaf"
+        },
+        {
+            "type": "folder",
+            "name": "cron"
+        },
+        {
+            "type": "folder",
+            "name": "dashboard"
+        },
+        {
+            "type": "folder",
+            "name": "database"
+        },
+        {
+            "type": "file",
+            "name": "debug_telegram_attendance.php",
+            "size": 13997,
+            "hash": "ed619cd29ad1fa2386784f44fc2456c49d97536f13cadf24d24f96a3e8c694f5"
+        },
+        {
+            "type": "file",
+            "name": "favicon.ico",
+            "size": 2151,
+            "hash": "555c589a8c0dde2f50fe01c842e28fd080808653b1b94f813b5b390aa16548cb"
+        },
+        {
+            "type": "folder",
+            "name": "includes"
+        },
+        {
+            "type": "file",
+            "name": "index.php",
+            "size": 18311,
+            "hash": "8c2d86ea2459607d21b9a794b7c6c5e0b0f4a09a6e80f45e1eb99c6b8a0dc4a8"
+        },
+        {
+            "type": "file",
+            "name": "logout.php",
+            "size": 7258,
+            "hash": "254425f2a7aa3722ff6fccc3ccaac949350f2474e14de7ee05b55b31d9d69c2b"
+        },
+        {
+            "type": "file",
+            "name": "manifest.json",
+            "size": 3457,
+            "hash": "3bc9a03c0e7a1528a4ba80890ec1735bbe0b2e02aa278bd08e066b344936a65d"
+        },
+        {
+            "type": "file",
+            "name": "manifest.php",
+            "size": 3357,
+            "hash": "05b7b69ec5a484f41a8893e76ed71f4a44c7e28b22393e0e0de8179922140d15"
+        },
+        {
+            "type": "folder",
+            "name": "modules"
+        },
+        {
+            "type": "file",
+            "name": "print_barcode.php",
+            "size": 7345,
+            "hash": "e8485b0f1632c3e63ecc6da0b40739f409a4af0c90bfc50a0d968a9a43ae18fa"
+        },
+        {
+            "type": "file",
+            "name": "print_invoice.php",
+            "size": 2680,
+            "hash": "e92b8789870abb0f7137962db29c6512dae4fc18a164f2f854157813a970cead"
+        },
+        {
+            "type": "file",
+            "name": "print_transfer_invoice.php",
+            "size": 14154,
+            "hash": "fc3403d32e1385f42bb9829b1ca8736e26e9e14a0127515e4d14351dc8da8c1a"
+        },
+        {
+            "type": "file",
+            "name": "profile.php",
+            "size": 40943,
+            "hash": "08411d88b300a7a6147ae0800fc3c52f52a82f82cb664e33bd372524db487e8e"
+        },
+        {
+            "type": "folder",
+            "name": "reader"
+        },
+        {
+            "type": "folder",
+            "name": "reports"
+        },
+        {
+            "type": "file",
+            "name": "service-worker.js",
+            "size": 10474,
+            "hash": "53adcfe3670c84b2a4202103b2775a7d5d13045f3615a94e2e179b22e5be7ae4"
+        },
+        {
+            "type": "folder",
+            "name": "telegram_bot"
+        },
+        {
+            "type": "folder",
+            "name": "templates"
+        },
+        {
+            "type": "file",
+            "name": "test_telegram_photo.php",
+            "size": 3539,
+            "hash": "9a82449c232df0ac8687aa9ffb11d40f69fe307506f4e04a1b0f66e6ebf6219b"
+        },
+        {
+            "type": "folder",
+            "name": "uploads"
+        },
+        {
+            "type": "file",
+            "name": "version.json",
+            "size": 92,
+            "hash": "947cd5556b2f2802cf144223ef3ea26a1bebf38ad6969995151fb3f2bcff8057"
+        },
+        {
+            "type": "file",
+            "name": "view_batch.php",
+            "size": 12356,
+            "hash": "31838b5c0052e1c82c26e6edccab17cb986178d8d392015c2d24c3b2d1721067"
+        },
+        {
+            "type": "file",
+            "name": ".cursor/environment.json",
+            "size": 36,
+            "hash": "47ef399c99375a8e6deea4886cdf0dbb3d38648536b91fc8647336c449d17552"
+        },
+        {
+            "type": "file",
+            "name": ".cursor/worktrees.json",
+            "size": 48,
+            "hash": "bcbb830af87909a7acfdbf2d8b7638df77c8b2d97baf692d6193d3b1f13b437c"
+        },
+        {
+            "type": "file",
+            "name": "api/approvals.php",
+            "size": 1879,
+            "hash": "2c071b4e7392e4bfaa68ba852b13406b46a9062a15e66b75bd0d0e6fdd252cb5"
+        },
+        {
+            "type": "file",
+            "name": "api/approve.php",
+            "size": 1026,
+            "hash": "62053cf561d482df31197ba1312a4727b971efb6f9c3e3350720489af5e346aa"
+        },
+        {
+            "type": "file",
+            "name": "api/attendance.php",
+            "size": 7160,
+            "hash": "c57604e05b7da74cfba895d4854d976caa71c3259f756475dd179d9450f98d44"
+        },
+        {
+            "type": "file",
+            "name": "api/backup.php",
+            "size": 5727,
+            "hash": "84fd9ea2b67664460f7e5336c49facb8c372040e5a25fdde785f83d7fc6583d6"
+        },
+        {
+            "type": "file",
+            "name": "api/batch_barcode.php",
+            "size": 1776,
+            "hash": "9320575a4f2b4ac61a53c2c44b8650c66ad8436f8b777ee723c6f4b074b27053"
+        },
+        {
+            "type": "folder",
+            "name": "api/chat"
+        },
+        {
+            "type": "file",
+            "name": "api/check_update.php",
+            "size": 1858,
+            "hash": "f8bfb43ad7dc36837fe912585c9b477e21a141b9490fef67fe3e86aa492aa5aa"
+        },
+        {
+            "type": "file",
+            "name": "api/cleanup_login_attempts.php",
+            "size": 5136,
+            "hash": "7259999735eda96f34fa6816b3776211b69db400c99d664d4c00aff95887131c"
+        },
+        {
+            "type": "file",
+            "name": "api/delete_login_attempt.php",
+            "size": 3298,
+            "hash": "834cbc700964b1b24cc6a49667a2c9a638309dbc61f491f662f08d9666c351e2"
+        },
+        {
+            "type": "file",
+            "name": "api/generate_report.php",
+            "size": 23465,
+            "hash": "7ba35c0b07d0d96a91a1fb3c349d52393167d585de18b74b63b4cfe6af3dd8cf"
+        },
+        {
+            "type": "file",
+            "name": "api/get_collection.php",
+            "size": 1338,
+            "hash": "2fb4ff3502db5ce6af654c4220b60e264a4852a092a1f659a929ac2e8c81de82"
+        },
+        {
+            "type": "file",
+            "name": "api/import_packaging.php",
+            "size": 5365,
+            "hash": "247a7d4b625f6ce95ee0c90f488d1e98c3bcb939823c79cd8762f54b802507f7"
+        },
+        {
+            "type": "file",
+            "name": "api/install.php",
+            "size": 1389,
+            "hash": "7b89b5f6db47063b6e727457ceabaa56c48475911a39c464fa32bcce48b3bde1"
+        },
+        {
+            "type": "file",
+            "name": "api/language.php",
+            "size": 617,
+            "hash": "3c0ce060c0ff53dfcf911fb8c76d2dc53091bda295f4d6331dc621596262da1d"
+        },
+        {
+            "type": "file",
+            "name": "api/notifications.php",
+            "size": 4694,
+            "hash": "67aa577ecd275f279652adbc361bd9d539c5216d533780b7b7d36d48192ba4d5"
+        },
+        {
+            "type": "folder",
+            "name": "api/production"
+        },
+        {
+            "type": "file",
+            "name": "api/reject.php",
+            "size": 1173,
+            "hash": "3296fa5c597b2a8bc7d040733a00b2300351eca7f71e889780c0d42489004b62"
+        },
+        {
+            "type": "file",
+            "name": "api/salary_stats.php",
+            "size": 2611,
+            "hash": "e01e8c81ffe2d25eab3089ff2e0f30bc367bfe3bc0449711ca137e069df162b9"
+        },
+        {
+            "type": "file",
+            "name": "api/unblock_ip.php",
+            "size": 1363,
+            "hash": "bce4f07312a16f446b699a7547043ee55f78090138c3d492c62f28bb0820c663"
+        },
+        {
+            "type": "file",
+            "name": "api/update_packaging_alias.php",
+            "size": 3296,
+            "hash": "676f38477c97961a9f80c847ece9ec6ba1303d8849322bb762685bd2a03c527a"
+        },
+        {
+            "type": "file",
+            "name": "api/update_profile.php",
+            "size": 6105,
+            "hash": "ca7db726506bbddc4a865598b2fb8ce419a100c84517caae55f77eee7af1cd24"
+        },
+        {
+            "type": "file",
+            "name": "api/webauthn_credentials.php",
+            "size": 4532,
+            "hash": "d40fc3da54bdee6d60d85571b84b3e9d16fb313aca19442250fecdb6e5d51e99"
+        },
+        {
+            "type": "file",
+            "name": "api/webauthn_login.php",
+            "size": 4564,
+            "hash": "e2c43802783e66386cb87f009938854bff433d7c9cb81a135c8d057d3d175aa5"
+        },
+        {
+            "type": "file",
+            "name": "api/webauthn_register.php",
+            "size": 3221,
+            "hash": "4d48a4c24fc6ec9472877779b2c08840351e5acc0dc129cbd9b85795f6083de0"
+        },
+        {
+            "type": "folder",
+            "name": "assets/css"
+        },
+        {
+            "type": "folder",
+            "name": "assets/icons"
+        },
+        {
+            "type": "folder",
+            "name": "assets/js"
+        },
+        {
+            "type": "file",
+            "name": "cron/auto_backup.php",
+            "size": 1281,
+            "hash": "dd61448170ee608e84abf33cf9ff61f165388697dc2ceb6d702494d834edb831"
+        },
+        {
+            "type": "file",
+            "name": "cron/backup_daily.php",
+            "size": 872,
+            "hash": "93719860dc910f6a4d45db6305b6fe418dac17520f6b9ff36bc0105696ee0660"
+        },
+        {
+            "type": "file",
+            "name": "cron/cleanup_attendance_photos.php",
+            "size": 8004,
+            "hash": "62b6b1780d26ad5d9e5cf719d9c9590e151a6269b2c65a414cbb95a9b8c00bbe"
+        },
+        {
+            "type": "file",
+            "name": "cron/cleanup_login_attempts.php",
+            "size": 2837,
+            "hash": "333f673fb5d8a22cbf5b64afe09e359d5c6366a2be3d81cf8bc8d5f6f137eead"
+        },
+        {
+            "type": "file",
+            "name": "cron/daily_consumption_report.php",
+            "size": 609,
+            "hash": "a9c32696e58a5fc33886b109330797edad787f94dc454ab1af9845ac3310689d"
+        },
+        {
+            "type": "file",
+            "name": "cron/payment_reminders.php",
+            "size": 1102,
+            "hash": "e6b6c6dedd4236541b220de66ac151d1f1e8a0f9a59895def8a7daeb6fbea393"
+        },
+        {
+            "type": "file",
+            "name": "dashboard/accountant.php",
+            "size": 58907,
+            "hash": "fb3717a057ecf11c8c1c8d557d2cf982a2eb3973953865bad28797cf4d68bc33"
+        },
+        {
+            "type": "file",
+            "name": "dashboard/manager.php",
+            "size": 54822,
+            "hash": "ebeb26b96b859414501fbda14bb6cb28c110dad94d9402a2ef4beda709743a97"
+        },
+        {
+            "type": "file",
+            "name": "dashboard/production.php",
+            "size": 54473,
+            "hash": "aa433374a034bb89a64b9bb25236d0881187401999b7bb437ddbaf44cab967f2"
+        },
+        {
+            "type": "file",
+            "name": "dashboard/sales.php",
+            "size": 44175,
+            "hash": "ea7546bdb115b5dcacc7ac687a88a860dc9412d52e58f674c690772d19154efb"
+        },
+        {
+            "type": "file",
+            "name": "database/complete_database.sql",
+            "size": 52186,
+            "hash": "237c4977d73d8f4f45ce84bedd4848bcbde45c1eadac9bfd4ce34ab6f4df1201"
+        },
+        {
+            "type": "file",
+            "name": "database/fix_columns.sql",
+            "size": 1684,
+            "hash": "9cf01ac0138eb90125384c83f1f7b335d78b0639f8a5afea4aa98876deda7d2e"
+        },
+        {
+            "type": "file",
+            "name": "database/import_packaging.php",
+            "size": 2394,
+            "hash": "a570312485822046aba3732aea733082481c8f019a8d3f51ea0d50d94cddd1b7"
+        },
+        {
+            "type": "folder",
+            "name": "database/migrations"
+        },
+        {
+            "type": "file",
+            "name": "database/run_vehicle_inventory_upgrade.php",
+            "size": 4350,
+            "hash": "09441adec4e46f917701f727fca824aaac0da2b5f12d99fd61f672366a9d67e8"
+        },
+        {
+            "type": "file",
+            "name": "database/schema.sql",
+            "size": 17051,
+            "hash": "6f22ce06b8de2736e3febd28ea8b6968318d2a986786559c25d70a86d49f2150"
+        },
+        {
+            "type": "file",
+            "name": "includes/activity_summary.php",
+            "size": 8189,
+            "hash": "4cd17ee151de9d3e6d0e0019d93d0481cf402a42d926251010b30795fc8161c9"
+        },
+        {
+            "type": "file",
+            "name": "includes/approval_system.php",
+            "size": 25005,
+            "hash": "9624fd79504f3b65fa315129fb7080c46900295fd27ae841d35c4562d7d87ff9"
+        },
+        {
+            "type": "file",
+            "name": "includes/attendance.php",
+            "size": 75125,
+            "hash": "4a52ad079c9b24ec8e29ae2fba7e468de72e383981edf25eca69e0ca032daf9f"
+        },
+        {
+            "type": "file",
+            "name": "includes/audit_log.php",
+            "size": 4960,
+            "hash": "4ed69bec9566d7aba866a15709a329510e9a4c976ac8f1a3384b34b87804864a"
+        },
+        {
+            "type": "file",
+            "name": "includes/auth.php",
+            "size": 25137,
+            "hash": "0e34c331a9130356ac9d9cfdc89b6b7bdb785cfedc06afaebef51a8f21dc0241"
+        },
+        {
+            "type": "file",
+            "name": "includes/backup.php",
+            "size": 20875,
+            "hash": "26d7ab3ff499adc17fe4b2196d0ddb9e87b0abb158ea15cc708f287551772421"
+        },
+        {
+            "type": "file",
+            "name": "includes/batch_creation.php",
+            "size": 90238,
+            "hash": "cba00c4e6dec25157732a29f123385a46fb3ecd449f75960d619fac1511c2e9b"
+        },
+        {
+            "type": "file",
+            "name": "includes/batch_numbers.php",
+            "size": 29251,
+            "hash": "e7748e6c8e88f1261d8099616e2cbbe57a2d039a8c69af6cf11ea066be9b7e2a"
+        },
+        {
+            "type": "file",
+            "name": "includes/chat.php",
+            "size": 11957,
+            "hash": "63355d67ee647321f50c5fd8ad37f144182e2ce9b97bcf18040636a26a87fa73"
+        },
+        {
+            "type": "file",
+            "name": "includes/config.php",
+            "size": 23706,
+            "hash": "4b945b77bd87fe7c2d5d2fed84efece7fa2bb499f2c78587f86c99dabd358db2"
+        },
+        {
+            "type": "file",
+            "name": "includes/consumption_reports.php",
+            "size": 47898,
+            "hash": "bc520e668f3e1069febeaab4ef4c7569097889f07e1f5eb8bffcae1c15a80094"
+        },
+        {
+            "type": "file",
+            "name": "includes/customer_history.php",
+            "size": 13504,
+            "hash": "5a3019d20040c3567511d85369ae36f47e08df33576518ffe53f7bf6d96cb93c"
+        },
+        {
+            "type": "file",
+            "name": "includes/daily_backup_sender.php",
+            "size": 24528,
+            "hash": "28eb1569c59d7e35ba64f98f2b117ba6359df983de900b732d47e4f2cfd868d8"
+        },
+        {
+            "type": "file",
+            "name": "includes/daily_consumption_sender.php",
+            "size": 17046,
+            "hash": "0eca5eaf9711e7a178896584b38d8fbe9778b246624e0df805bcc7e56d7449da"
+        },
+        {
+            "type": "file",
+            "name": "includes/daily_low_stock_report.php",
+            "size": 32265,
+            "hash": "724a306efce803e2dbb47086bb83785c3604051a0a827f3cfe1722edb2315169"
+        },
+        {
+            "type": "file",
+            "name": "includes/db.php",
+            "size": 14116,
+            "hash": "ac0d4b643f745d68aafebdb53ec9f7ac23fec62fd479e7f31d0684f1cc1761ef"
+        },
+        {
+            "type": "file",
+            "name": "includes/exchanges.php",
+            "size": 15729,
+            "hash": "2fe83064b86d158250ac4f0adaadde469bc80070cd0b35c5615a48edbbc4d153"
+        },
+        {
+            "type": "file",
+            "name": "includes/honey_varieties.php",
+            "size": 1745,
+            "hash": "ad3e19f9f5254e547a10030ed56337a0cbf660961495a57b40cb7704897632e7"
+        },
+        {
+            "type": "file",
+            "name": "includes/install.php",
+            "size": 8188,
+            "hash": "f82245ed7e251496fb5207dc2800d59eead7344f07ec51f50e5cad96643c9c0d"
+        },
+        {
+            "type": "file",
+            "name": "includes/inventory_movements.php",
+            "size": 12867,
+            "hash": "f0cff232b6bdd1623e58f0bbf437ac8a3bae6e088b74d64729cc6200190c067a"
+        },
+        {
+            "type": "file",
+            "name": "includes/invoices.php",
+            "size": 11633,
+            "hash": "690f94aa5fbfb496a32fc02e619d637b468d7764fbde6dc4ecfac18e3b090582"
+        },
+        {
+            "type": "folder",
+            "name": "includes/lang"
+        },
+        {
+            "type": "file",
+            "name": "includes/notifications.php",
+            "size": 19252,
+            "hash": "cb890e7e5eb06fb7105705c32f62987a69075a31df9def10463ff110a083741f"
+        },
+        {
+            "type": "file",
+            "name": "includes/packaging_alerts.php",
+            "size": 23369,
+            "hash": "68539c966579ef9e6cc1ad04cbbd503b84ef4da0e0417017dab76403cb71e8fd"
+        },
+        {
+            "type": "file",
+            "name": "includes/pagination.php",
+            "size": 2708,
+            "hash": "c96484c3a9aac33ec700f200d0d32c7bc0723ae058a1847c5f233fb1cbafdd43"
+        },
+        {
+            "type": "file",
+            "name": "includes/path_helper.php",
+            "size": 9666,
+            "hash": "6ecf00905fbe9407e59566e00eea8eefed830436377670bedcd5c0930f98f3a8"
+        },
+        {
+            "type": "file",
+            "name": "includes/payment_schedules.php",
+            "size": 16648,
+            "hash": "f0136236a393274688091cdb20b55464094a6917381d7d8012e95dc2343848c7"
+        },
+        {
+            "type": "file",
+            "name": "includes/pdf_helper.php",
+            "size": 6062,
+            "hash": "05e91e5e50ff116b0c15846ed562aa6e7e5d55976f2669cdd3462657cda347c8"
+        },
+        {
+            "type": "file",
+            "name": "includes/permissions.php",
+            "size": 8315,
+            "hash": "e09f01c027078026612914a1c92efb21a23021e34657b43bfa0d242ce45165c0"
+        },
+        {
+            "type": "file",
+            "name": "includes/production_helper.php",
+            "size": 35304,
+            "hash": "fe20b872d6594efc68e67a44092b28283f5fb4a928699dd43b50ace0ef833fc8"
+        },
+        {
+            "type": "file",
+            "name": "includes/production_reports.php",
+            "size": 36529,
+            "hash": "1ee7b686a41e7cffc135792be736680921f9152e0b0e7b1fbcf9de0ab46d9554"
+        },
+        {
+            "type": "file",
+            "name": "includes/reports.php",
+            "size": 6768,
+            "hash": "b6b7927d55f27f229a046a4ea733d1ee66b4d3e5986249c2266be6c40c77589a"
+        },
+        {
+            "type": "file",
+            "name": "includes/request_monitor.php",
+            "size": 15299,
+            "hash": "0876558bf3950bba4d7b1de5be9962385ea2ef52ba3d086455ca9245da2a2bf9"
+        },
+        {
+            "type": "file",
+            "name": "includes/returns.php",
+            "size": 8373,
+            "hash": "b7e0192bff993b21e2aedbb63998872bd97c289cc1598d12267387d86d413148"
+        },
+        {
+            "type": "file",
+            "name": "includes/salary_calculator.php",
+            "size": 57760,
+            "hash": "3666ee6c7d5431c0da0dc0d0b27eb5149a564432b1d5becb98e9b70deae118b0"
+        },
+        {
+            "type": "file",
+            "name": "includes/security.php",
+            "size": 11575,
+            "hash": "42b14326e71203b12e6b19ab4ba6cca83e0b7bfa2c93f83912a13f6d97f686cc"
+        },
+        {
+            "type": "file",
+            "name": "includes/simple_barcode.php",
+            "size": 5012,
+            "hash": "72d9a85a5a66172277736262d6510475d233125e5ed76b7f3384fa9db36f456b"
+        },
+        {
+            "type": "file",
+            "name": "includes/simple_export.php",
+            "size": 14778,
+            "hash": "fb727948474369385ea711eb80030b19024dfa296958fc642819052ba4a2730f"
+        },
+        {
+            "type": "file",
+            "name": "includes/simple_telegram.php",
+            "size": 15569,
+            "hash": "101c100ceeb021f3380ce9852895b722b13ecb7a1df488b232a108368b7e4728"
+        },
+        {
+            "type": "file",
+            "name": "includes/table_styles.php",
+            "size": 8000,
+            "hash": "b2dad26c3df41c0d82117008f97fffd6ee2b64c7f7a1472fda95d7f69fd6debb"
+        },
+        {
+            "type": "file",
+            "name": "includes/telegram_config.php",
+            "size": 513,
+            "hash": "88e4d48ec0f4a267dabb5dbc5bae4777102d54edf89fbeca05a95f0183479931"
+        },
+        {
+            "type": "file",
+            "name": "includes/telegram_notifications.php",
+            "size": 4433,
+            "hash": "8912294351ae98120f042c23cc5189196b05450ee4f84bc84bd8cfc69216154e"
+        },
+        {
+            "type": "file",
+            "name": "includes/vehicle_inventory.php",
+            "size": 103155,
+            "hash": "7c95103f91a79abcc661ce279ffc13e42b70ea1440bfab7b7de09ac6dd19a648"
+        },
+        {
+            "type": "file",
+            "name": "includes/webauthn.php",
+            "size": 37812,
+            "hash": "c9b4debe348476d3d51be627b28bb514284643b0878565baed0126de903a86ca"
+        },
+        {
+            "type": "folder",
+            "name": "modules/accountant"
+        },
+        {
+            "type": "folder",
+            "name": "modules/chat"
+        },
+        {
+            "type": "folder",
+            "name": "modules/manager"
+        },
+        {
+            "type": "folder",
+            "name": "modules/production"
+        },
+        {
+            "type": "folder",
+            "name": "modules/sales"
+        },
+        {
+            "type": "folder",
+            "name": "modules/user"
+        },
+        {
+            "type": "file",
+            "name": "reader/api.php",
+            "size": 0,
+            "hash": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        {
+            "type": "folder",
+            "name": "reader/assets"
+        },
+        {
+            "type": "file",
+            "name": "reader/index.php",
+            "size": 56811,
+            "hash": "1fb9baeff41a26b0eda257c408d9c1447ec08cd7ac9178bd4637f3845af68bf6"
+        },
+        {
+            "type": "file",
+            "name": "reader/manifest.json",
+            "size": 789,
+            "hash": "86820c2ae3dd0010c08cad214f86f5f17283719a10e15f363abbc3b6dcefc2a7"
+        },
+        {
+            "type": "file",
+            "name": "reader/manifest.php",
+            "size": 1161,
+            "hash": "e42d0b1078917d73f90413122fa7485750df5786cc39357551c2d0b53ffe563c"
+        },
+        {
+            "type": "file",
+            "name": "reader/service-worker.js",
+            "size": 4502,
+            "hash": "2a1e2693340df5a35ee8c20fe99c52445d36a29b2986557ae8f017f5d80cc2ac"
+        },
+        {
+            "type": "file",
+            "name": "reports/.htaccess",
+            "size": 302,
+            "hash": "3258ff16f66a6122be162e4cbcaac7d548b061c954240f270f26c80075d1b292"
+        },
+        {
+            "type": "file",
+            "name": "reports/view.php",
+            "size": 6527,
+            "hash": "d9709fb7730e2f7dabe70ce17949f6e6d1e1ececc16bbde2c5622a911f3448d8"
+        },
+        {
+            "type": "file",
+            "name": "telegram_bot/send_message.php",
+            "size": 1416,
+            "hash": "fdac101100ad507b98f10f880803d5705f723ca843abfd3de39ddbafd1b10346"
+        },
+        {
+            "type": "file",
+            "name": "templates/footer.php",
+            "size": 24991,
+            "hash": "6e9bc2069972561636f74570f8258779224cf819e30d2d498bc58e1e5009e4b9"
+        },
+        {
+            "type": "file",
+            "name": "templates/header.php",
+            "size": 35853,
+            "hash": "e4512ddfa2dc15050de11c28a5f7304a9f9a41ba4dd283a291e57e2f15620021"
+        },
+        {
+            "type": "file",
+            "name": "templates/homeline_sidebar.php",
+            "size": 23508,
+            "hash": "cad4172d42d6280731f1a70a16b6500b05251aa88d235115121751076dd1ec3d"
+        },
+        {
+            "type": "file",
+            "name": "templates/navbar_menu.php",
+            "size": 14776,
+            "hash": "9b10bc5a93218347ceb6e89cccf29f1da1ac4d957a38dca4acb1998910873480"
+        },
+        {
+            "type": "file",
+            "name": "templates/sidebar_accountant.php",
+            "size": 5485,
+            "hash": "c16feab5400d4167bed8eb7fc6e23f579531a68aac683df608f2348b79a32cfc"
+        },
+        {
+            "type": "file",
+            "name": "templates/sidebar_manager.php",
+            "size": 6407,
+            "hash": "60127193a94d66c3de89dd6c1d1274bb325ea0be291e5304512a7d00e825e36f"
+        },
+        {
+            "type": "file",
+            "name": "templates/sidebar_production.php",
+            "size": 4141,
+            "hash": "07db570756207e0b472f69e7145748913f3651c766675b92dc9cbae7933d8fae"
+        },
+        {
+            "type": "file",
+            "name": "templates/sidebar_sales.php",
+            "size": 5843,
+            "hash": "352b38040a6e656e7e72ceef95b05fbbd7e35301ba0ef533c95b25bf518c0e2f"
+        },
+        {
+            "type": "file",
+            "name": "uploads/.htaccess",
+            "size": 84,
+            "hash": "256a5da150f1ca4294399f5bada467a4d926b0f2351260ec271c085ceae04b08"
+        },
+        {
+            "type": "file",
+            "name": "api/chat/delete_message.php",
+            "size": 2141,
+            "hash": "4c9ac71e72c6064dee8a6a06983adc10605b2300981aa0a48ecee6c8e9f6a349"
+        },
+        {
+            "type": "file",
+            "name": "api/chat/get_messages.php",
+            "size": 2635,
+            "hash": "1a6843bdce1dd54df1eff912e9e5620286325dc70cbb5202c420142eaa442595"
+        },
+        {
+            "type": "file",
+            "name": "api/chat/send_message.php",
+            "size": 2355,
+            "hash": "cc28ce2c9fdccbc799a1197324430efb17710460ae1af87b22eeef2d0dca614e"
+        },
+        {
+            "type": "file",
+            "name": "api/chat/update_message.php",
+            "size": 2224,
+            "hash": "18c4656e121409db1cb2488e88e77120a44354aa2d23e8d1548b335cdb0021de"
+        },
+        {
+            "type": "file",
+            "name": "api/chat/user_status.php",
+            "size": 2093,
+            "hash": "2b25d0ba01c6f6825d2d708617e057d6158e676a7139103eeac85ea44c463b6b"
+        },
+        {
+            "type": "file",
+            "name": "api/production/get_batch_details.php",
+            "size": 36800,
+            "hash": "2230641891a2b0137e26f445756c859ac4a1d0dba2f4d96430379688852d5129"
+        },
+        {
+            "type": "file",
+            "name": "api/production/send_barcode_link.php",
+            "size": 18351,
+            "hash": "2a2cb27614de42ace5f61d32e9215f458cddb153c73a428592b3246df43bff72"
+        },
+        {
+            "type": "file",
+            "name": "assets/css/.htaccess",
+            "size": 328,
+            "hash": "dcec3f57f39106d6cdbb8b72e266d24f5458e4e7d6274fd5a2c9840030cba3b5"
+        },
+        {
+            "type": "file",
+            "name": "assets/css/cards.css",
+            "size": 6789,
+            "hash": "3e4649baaf7c823fcdff9082c6f01e034ce5185a5d7187e7352f2f748ecf99af"
+        },
+        {
+            "type": "file",
+            "name": "assets/css/chat.css",
+            "size": 15169,
+            "hash": "ac90ed945b0f3517ced1c9e045990b7fd005f9e53d2485f823aaafbf3be0dc11"
+        },
+        {
+            "type": "file",
+            "name": "assets/css/dark-mode.css",
+            "size": 1979,
+            "hash": "d88ffcf24c0b3e024d440f1bb6093c3ef837e26198ec06527ce2f08501045ce7"
+        },
+        {
+            "type": "file",
+            "name": "assets/css/homeline-dashboard.css",
+            "size": 11441,
+            "hash": "e0a205d9c873ba0c6e1d9062f545d5377cea9a84196b590f91ca310191c23898"
+        },
+        {
+            "type": "file",
+            "name": "assets/css/mobile-tables.css",
+            "size": 4660,
+            "hash": "cd52dab2fac9b7cc3d5b18273eee878f386b9db7aca5803b6421d7c6d5b7ddb0"
+        },
+        {
+            "type": "file",
+            "name": "assets/css/modal-iframe.css",
+            "size": 1838,
+            "hash": "eb26ef61390480ff3ac6329657e7e830e2ce66113f2049a0d3d51e055f4d6a48"
+        },
+        {
+            "type": "file",
+            "name": "assets/css/production-page.css",
+            "size": 25468,
+            "hash": "caed682bc647ff7c5c69d84d132a3b29a1580ae52e83d1caa2e5efdeb8874cee"
+        },
+        {
+            "type": "file",
+            "name": "assets/css/pwa.css",
+            "size": 3032,
+            "hash": "51aa4ce51ee1b128d833033cd2b3773c365a56fcd79fa935074a5666297fb043"
+        },
+        {
+            "type": "file",
+            "name": "assets/css/responsive.css",
+            "size": 5343,
+            "hash": "2bc45ae52e4e0cd4abf03f500957c236f59dd37a974e1e6894d56367000282d6"
+        },
+        {
+            "type": "file",
+            "name": "assets/css/rtl.css",
+            "size": 1364,
+            "hash": "a019de2fc61f38a51d03160ae3cdfb6bc49d7177c0a52b29b988f6481f904083"
+        },
+        {
+            "type": "file",
+            "name": "assets/css/sidebar.css",
+            "size": 7083,
+            "hash": "bd795a80bf954c3d3812df6eae02e4524cc5cd51a55d783bad6afe6d665df0a0"
+        },
+        {
+            "type": "file",
+            "name": "assets/css/style.css",
+            "size": 3313,
+            "hash": "330b08fd98f4892563384b02505ff6a887087bfd3cc61c374d4d484b22dbf6a4"
+        },
+        {
+            "type": "file",
+            "name": "assets/css/tables.css",
+            "size": 8974,
+            "hash": "8720c1849d64205676695c52aa444f1b3989d7dc33c7c2faf15e89e66a305ef7"
+        },
+        {
+            "type": "file",
+            "name": "assets/css/topbar.css",
+            "size": 11590,
+            "hash": "1d50f7fa4534ea4a92d4862ff0b208d0cc0d4359665b26d1c9b67440982daa70"
+        },
+        {
+            "type": "file",
+            "name": "assets/icons/.htaccess",
+            "size": 952,
+            "hash": "dc44b08cf8c10fed2a7c2fbd9ae585055dab6d43f76b097365a575a99c72c099"
+        },
+        {
+            "type": "file",
+            "name": "assets/icons/apple-touch-icon.svg",
+            "size": 2932,
+            "hash": "2f07edc24e557a1368f8fc77a9661efca4a65c2d891f5ec0cebce4cdeadfa8dc"
+        },
+        {
+            "type": "file",
+            "name": "assets/icons/favicon.svg",
+            "size": 2151,
+            "hash": "555c589a8c0dde2f50fe01c842e28fd080808653b1b94f813b5b390aa16548cb"
+        },
+        {
+            "type": "file",
+            "name": "assets/icons/generate_icons.html",
+            "size": 2841,
+            "hash": "a96863f66d7435c60e35ba4715d8bf4265af537658284627c4ba74a1f72ce413"
+        },
+        {
+            "type": "file",
+            "name": "assets/icons/generate_icons.php",
+            "size": 4483,
+            "hash": "e2c14559cc24accdc0aedf695088078993c2e9336b7a21ba65bc744d32d35f43"
+        },
+        {
+            "type": "file",
+            "name": "assets/icons/icon-128x128.svg",
+            "size": 2932,
+            "hash": "2f07edc24e557a1368f8fc77a9661efca4a65c2d891f5ec0cebce4cdeadfa8dc"
+        },
+        {
+            "type": "file",
+            "name": "assets/icons/icon-144x144.svg",
+            "size": 2932,
+            "hash": "2f07edc24e557a1368f8fc77a9661efca4a65c2d891f5ec0cebce4cdeadfa8dc"
+        },
+        {
+            "type": "file",
+            "name": "assets/icons/icon-152x152.svg",
+            "size": 2932,
+            "hash": "2f07edc24e557a1368f8fc77a9661efca4a65c2d891f5ec0cebce4cdeadfa8dc"
+        },
+        {
+            "type": "file",
+            "name": "assets/icons/icon-16x16.svg",
+            "size": 2932,
+            "hash": "2f07edc24e557a1368f8fc77a9661efca4a65c2d891f5ec0cebce4cdeadfa8dc"
+        },
+        {
+            "type": "file",
+            "name": "assets/icons/icon-180x180.svg",
+            "size": 2932,
+            "hash": "2f07edc24e557a1368f8fc77a9661efca4a65c2d891f5ec0cebce4cdeadfa8dc"
+        },
+        {
+            "type": "file",
+            "name": "assets/icons/icon-192x192.svg",
+            "size": 2932,
+            "hash": "2f07edc24e557a1368f8fc77a9661efca4a65c2d891f5ec0cebce4cdeadfa8dc"
+        },
+        {
+            "type": "file",
+            "name": "assets/icons/icon-32x32.svg",
+            "size": 2932,
+            "hash": "2f07edc24e557a1368f8fc77a9661efca4a65c2d891f5ec0cebce4cdeadfa8dc"
+        },
+        {
+            "type": "file",
+            "name": "assets/icons/icon-384x384.svg",
+            "size": 2932,
+            "hash": "2f07edc24e557a1368f8fc77a9661efca4a65c2d891f5ec0cebce4cdeadfa8dc"
+        },
+        {
+            "type": "file",
+            "name": "assets/icons/icon-512x512.svg",
+            "size": 2932,
+            "hash": "2f07edc24e557a1368f8fc77a9661efca4a65c2d891f5ec0cebce4cdeadfa8dc"
+        },
+        {
+            "type": "file",
+            "name": "assets/icons/icon-72x72.svg",
+            "size": 2932,
+            "hash": "2f07edc24e557a1368f8fc77a9661efca4a65c2d891f5ec0cebce4cdeadfa8dc"
+        },
+        {
+            "type": "file",
+            "name": "assets/icons/icon-96x96.svg",
+            "size": 2932,
+            "hash": "2f07edc24e557a1368f8fc77a9661efca4a65c2d891f5ec0cebce4cdeadfa8dc"
+        },
+        {
+            "type": "file",
+            "name": "assets/icons/icon-placeholder.svg",
+            "size": 292,
+            "hash": "2ec4cc3865b2281e7ce9aa4f82d8a50bab0110f0ad28d691c2feb0bc561cfd57"
+        },
+        {
+            "type": "file",
+            "name": "assets/icons/icon-template.svg",
+            "size": 2932,
+            "hash": "2f07edc24e557a1368f8fc77a9661efca4a65c2d891f5ec0cebce4cdeadfa8dc"
+        },
+        {
+            "type": "file",
+            "name": "assets/js/attendance.js",
+            "size": 20690,
+            "hash": "2b50a27e4f22965c740a38646eff82b7f4e8d3498577352779603f3f6a7fb910"
+        },
+        {
+            "type": "file",
+            "name": "assets/js/attendance_debug.js",
+            "size": 8706,
+            "hash": "282169b6e6cd05ef54344aec854a36839ae57aae570fff1d280245105183fcdf"
+        },
+        {
+            "type": "file",
+            "name": "assets/js/attendance_notifications.js",
+            "size": 22457,
+            "hash": "cf838e9585f1b32299f3233669b9a24194d5c4e980d5a75886e6b2e6bfc3a4e1"
+        },
+        {
+            "type": "file",
+            "name": "assets/js/chat.js",
+            "size": 25652,
+            "hash": "623aef7378ae4b255e945148a491620da889405b3b5dfc887aa86be31cddaf42"
+        },
+        {
+            "type": "file",
+            "name": "assets/js/dark-mode.js",
+            "size": 2710,
+            "hash": "b591e2b10063de1e4b6487375471f698e9d28edb75325e846970fa0be3d49107"
+        },
+        {
+            "type": "file",
+            "name": "assets/js/fix-modal-interaction.js",
+            "size": 1284,
+            "hash": "3f6eb3551cbe13b8f143b7d80d1a3c20d104e80302188def823b03ba48adc55b"
+        },
+        {
+            "type": "file",
+            "name": "assets/js/keyboard-shortcuts-global.js",
+            "size": 21668,
+            "hash": "593f876b716d4b031b8afa28fcfbfbc2799361f3a15dce5322499996e6774d7c"
+        },
+        {
+            "type": "file",
+            "name": "assets/js/language.js",
+            "size": 2495,
+            "hash": "0a449d16a6247b69c8d996cfa65fe8571b8477ec6df15942ea04d4e8d5e89922"
+        },
+        {
+            "type": "file",
+            "name": "assets/js/main.js",
+            "size": 20551,
+            "hash": "c2a32e77f5818222f1752d3f440bc28823540fb59a3f06c5a48ef8f161b0f0d9"
+        },
+        {
+            "type": "file",
+            "name": "assets/js/modal-link-interceptor.js",
+            "size": 5254,
+            "hash": "0657c2f27d98840d1500451caf1841e5e6c20e823e8395a66b7ce68266c8a100"
+        },
+        {
+            "type": "file",
+            "name": "assets/js/notifications.js",
+            "size": 26003,
+            "hash": "25ca00741e2a98afd741995718128c6230f6b9f4ba775a13778dbf158a1159a6"
+        },
+        {
+            "type": "file",
+            "name": "assets/js/pwa-install.js",
+            "size": 14138,
+            "hash": "b349da101e1e7699b08e1e5e8dec2e8f28c23605b85d85078bd8f16c6c1a26ef"
+        },
+        {
+            "type": "file",
+            "name": "assets/js/reports.js",
+            "size": 14449,
+            "hash": "37c4de3f7f491643e450e95ffd5731f73d8eef80c68b7a72d8183e9a7de00683"
+        },
+        {
+            "type": "file",
+            "name": "assets/js/sidebar.js",
+            "size": 9242,
+            "hash": "eebb21b2fe492af1d629c480df5dc39c8475948fa74e3442a906959221afad00"
+        },
+        {
+            "type": "file",
+            "name": "assets/js/tables.js",
+            "size": 2980,
+            "hash": "75d7df41f11c048bc8cba8731ccd92bb6be064ef6cbfa4d1bf875fe59f9b0c10"
+        },
+        {
+            "type": "file",
+            "name": "assets/js/webauthn.js",
+            "size": 22786,
+            "hash": "0a1fe197abb8bd56cb30fed87929e0c333e52322d94ee81e873c050070b9f892"
+        },
+        {
+            "type": "file",
+            "name": "database/migrations/2025_11_13_create_group_chat.sql",
+            "size": 2290,
+            "hash": "61c5d0d6645c7a3b9630f036b72ea3068c71569cd17ec86514709e215c88c355"
+        },
+        {
+            "type": "file",
+            "name": "database/migrations/add_advance_requests.sql",
+            "size": 1271,
+            "hash": "95b48b74b6f476c447cfd5b36558be5293ee46a8a9041634c669207791e0ade9"
+        },
+        {
+            "type": "file",
+            "name": "database/migrations/add_attendance_records.sql",
+            "size": 1164,
+            "hash": "4e145c4c63f86537e6750f5f9c92cff7204f43853d66ea20506e80d68440a979"
+        },
+        {
+            "type": "file",
+            "name": "database/migrations/add_batch_system.sql",
+            "size": 3646,
+            "hash": "acb90e6927e0649c71534d51dbaf79d21f6d82a4279fcb0e0995bb88427a6145"
+        },
+        {
+            "type": "file",
+            "name": "database/migrations/add_credit_sales_returns.sql",
+            "size": 10209,
+            "hash": "63e5406d5f413feac6cb675d9b5c84b9c1868abc0f32ce205798f10dce3f5401"
+        },
+        {
+            "type": "file",
+            "name": "database/migrations/add_inventory_improvements.sql",
+            "size": 7489,
+            "hash": "30a4febd2a53239ac22e319008774bd3be37cdba9fda1f8927c87be9282a7dfd"
+        },
+        {
+            "type": "file",
+            "name": "database/migrations/add_profile_photo.sql",
+            "size": 77,
+            "hash": "6b0c063fa1bcc5c3190287294f65481ad8010fc4e2f78de030bd01ef960e52e9"
+        },
+        {
+            "type": "file",
+            "name": "database/migrations/add_remember_me.sql",
+            "size": 993,
+            "hash": "324f7b9b85bf44b1909f05d652ff0e6a58d7342cca4bef438bb1bc6b54928302"
+        },
+        {
+            "type": "file",
+            "name": "database/migrations/add_security_permissions.sql",
+            "size": 6388,
+            "hash": "c4d5329b6c0c8314484b03883603be7383152c8e576e1c8e97b293ccfdc0a389"
+        },
+        {
+            "type": "file",
+            "name": "database/migrations/add_vehicle_inventory.sql",
+            "size": 7197,
+            "hash": "0a3cad791399dc2cd2b7ba6acf1228e904d8f8f94f279db8d12d5134fc2710d8"
+        },
+        {
+            "type": "file",
+            "name": "database/migrations/create_product_templates.sql",
+            "size": 4082,
+            "hash": "ab5c687f05214c7fab7b7cc2ad3a593cf86dcd488c0c040e441f04076afd4f36"
+        },
+        {
+            "type": "file",
+            "name": "includes/lang/ar.php",
+            "size": 15905,
+            "hash": "991fb059ed4542d27505b316c566ca54196bb8298b74fd8a3bdf0627554e46a7"
+        },
+        {
+            "type": "file",
+            "name": "includes/lang/en.php",
+            "size": 11501,
+            "hash": "b5bebaf580540120f650e77a4808998bbf69263b21960f11004074d7a2314288"
+        },
+        {
+            "type": "file",
+            "name": "modules/accountant/advance_requests.php",
+            "size": 30248,
+            "hash": "8fa2ebe801620d2a3769a158e9f1ef5c6787c2800476cf7ee5bc9f175e8b8da5"
+        },
+        {
+            "type": "file",
+            "name": "modules/accountant/attendance.php",
+            "size": 30635,
+            "hash": "d4f129bad95ff9a5d08087122f210cf7112fff8fabee7fd74e3379e9e381f3e5"
+        },
+        {
+            "type": "file",
+            "name": "modules/accountant/attendance_management.php",
+            "size": 22095,
+            "hash": "22058053bb433c08e7585614d4e730b9da2436e7bad5ff033ebd3485aa1122fc"
+        },
+        {
+            "type": "file",
+            "name": "modules/accountant/collections.php",
+            "size": 35219,
+            "hash": "16ccb45c860ef4b00116296bc6a14827127c47d12a8913b45a737ce0cf4cdf62"
+        },
+        {
+            "type": "file",
+            "name": "modules/accountant/inventory.php",
+            "size": 26974,
+            "hash": "503c5f12fb3f3d5fb58dcf66c23c6ec9f5933e0a47809dda775b748b41e40eee"
+        },
+        {
+            "type": "file",
+            "name": "modules/accountant/inventory_movements.php",
+            "size": 31425,
+            "hash": "3a445a125ce4b1667343c324c74c7c3dea263eabd7c20ef4e9f661447217168a"
+        },
+        {
+            "type": "file",
+            "name": "modules/accountant/invoice_print.php",
+            "size": 16813,
+            "hash": "76817434a76dc67690387ae7456e9181fba079346840d31fb8619a9ae86abdff"
+        },
+        {
+            "type": "file",
+            "name": "modules/accountant/invoices.php",
+            "size": 36793,
+            "hash": "346805d87f77140175c624bfb2730a8b028d7350cbf5e434405c56b543e895c7"
+        },
+        {
+            "type": "file",
+            "name": "modules/accountant/pos.php",
+            "size": 53002,
+            "hash": "3cbab46c1aadd45f26bbf28b41ee70dfc655181800e344142fbadc7d9cd751c7"
+        },
+        {
+            "type": "file",
+            "name": "modules/accountant/salaries.php",
+            "size": 87652,
+            "hash": "000c6ab7496c26add35b963bb806c38d2196d52beab1b9db2a33a3ea3011a283"
+        },
+        {
+            "type": "file",
+            "name": "modules/accountant/suppliers.php",
+            "size": 70744,
+            "hash": "b94176ad137a26a9cb1926369deb758de0ac0e544ae27c4ddaa877ecd981f676"
+        },
+        {
+            "type": "file",
+            "name": "modules/chat/group_chat.php",
+            "size": 4981,
+            "hash": "9508eb80beb4c5699a8251b241ea2be0d5ca1d9a65cdb583daf22c55474c7ef5"
+        },
+        {
+            "type": "file",
+            "name": "modules/manager/backups.php",
+            "size": 27509,
+            "hash": "2e63d41bded592971e7c84607682f4e9e15be9c4b2fe61d8d1b9151bb1c0271c"
+        },
+        {
+            "type": "file",
+            "name": "modules/manager/company_products.php",
+            "size": 30486,
+            "hash": "40decf1bbda0e11a48481eb366f74c07c8e61ef9751338f26f74c27fe79ab0e6"
+        },
+        {
+            "type": "file",
+            "name": "modules/manager/honey_warehouse.php",
+            "size": 18979,
+            "hash": "f120ce93e2944d704c9114d10381544fc643ec5609a2979ef18cd7421ec218b8"
+        },
+        {
+            "type": "file",
+            "name": "modules/manager/import_packaging.php",
+            "size": 12715,
+            "hash": "7b83359aba37665408efaf5762c895c34e7d260af8cfecc4a185f8e9cb3473c2"
+        },
+        {
+            "type": "file",
+            "name": "modules/manager/permissions.php",
+            "size": 19455,
+            "hash": "f8ebf9b9ee18c9d9efc63b455a5a7be67c96ac1d2eca655c6b3ec48984d0b96d"
+        },
+        {
+            "type": "file",
+            "name": "modules/manager/pos.php",
+            "size": 7589,
+            "hash": "a025b8acbd3313ee3d94d36bbe75d8c3706a589ed80472ec5d35b84d37553ffa"
+        },
+        {
+            "type": "file",
+            "name": "modules/manager/product_specifications.php",
+            "size": 23681,
+            "hash": "f545d8caaa3da130af7dda83680cd0db7a9949c70ef9679c59b9af3ea994858a"
+        },
+        {
+            "type": "file",
+            "name": "modules/manager/production_reports.php",
+            "size": 1227,
+            "hash": "b685cdbd28cc9fe69218bbce9296bfedf47ba60776762e88d93c9bb7406d389d"
+        },
+        {
+            "type": "file",
+            "name": "modules/manager/production_tasks.php",
+            "size": 34509,
+            "hash": "6da595f4b694a1666e1d3a58da4d762d841da0ee76c5c306054459f323471b7c"
+        },
+        {
+            "type": "file",
+            "name": "modules/manager/raw_materials_warehouse.php",
+            "size": 484,
+            "hash": "794b7510245cb7465c66ec8be8b163dcb8d53d20350f480260c989118e363e08"
+        },
+        {
+            "type": "file",
+            "name": "modules/manager/security.php",
+            "size": 98616,
+            "hash": "59c88527868be9b4c8733fbb50fd7f13d1d3a822c05757be5b27eaa64ec2853d"
+        },
+        {
+            "type": "file",
+            "name": "modules/manager/shipping_orders.php",
+            "size": 56446,
+            "hash": "8d3ebae3b3b0dd5ebc7cbe22f25047569467b91fbe87139fc21d26f5c8b3296c"
+        },
+        {
+            "type": "file",
+            "name": "modules/manager/users.php",
+            "size": 40615,
+            "hash": "f3644a0d7f78f460cf1fd4056bd5e6e9ad97666aaad8b5dfe627c45b810483a3"
+        },
+        {
+            "type": "file",
+            "name": "modules/manager/vehicles.php",
+            "size": 17944,
+            "hash": "e6c8a873a90d021b4bc4adbca47fd84f6723e6f11a4a6b9935805839abee37e3"
+        },
+        {
+            "type": "file",
+            "name": "modules/manager/warehouse_transfers.php",
+            "size": 74372,
+            "hash": "07e65efc909933dece2d85c2969b61313d5b50bbedd2cef8b080644ea8d80152"
+        },
+        {
+            "type": "file",
+            "name": "modules/production/batch_numbers.php",
+            "size": 32941,
+            "hash": "18a55d84f816ff663e30715eed5576717a10f863cf898092c28efa942bfd419b"
+        },
+        {
+            "type": "file",
+            "name": "modules/production/final_products.php",
+            "size": 166571,
+            "hash": "0ebbfd99a2050b9cead90700682ca9d5bbfdcb9dda5074d5ccef4bae51b7cb0f"
+        },
+        {
+            "type": "file",
+            "name": "modules/production/honey_warehouse.php",
+            "size": 50036,
+            "hash": "79641a47e19440c28b64c3c0d7d50248a50741ade0da249694931eaed2a646ac"
+        },
+        {
+            "type": "file",
+            "name": "modules/production/packaging_warehouse.php",
+            "size": 168350,
+            "hash": "63a6a94bd9dee3e41d3bfbc9d9c3893324daf0fe5642059ae8a4e5f16492f09d"
+        },
+        {
+            "type": "file",
+            "name": "modules/production/product_templates.php",
+            "size": 163868,
+            "hash": "023783e844bf6f8fbabd44286832728f590cccdae2d0d9ce529f6c1f229de8d8"
+        },
+        {
+            "type": "file",
+            "name": "modules/production/production.php",
+            "size": 357303,
+            "hash": "d38c8f09a97e1c9f2da93591964a0253c6871da193bd08563f43482af770fd78"
+        },
+        {
+            "type": "file",
+            "name": "modules/production/productivity_reports.php",
+            "size": 26678,
+            "hash": "e9eda8510e6de47ed6c0411f7be1e9810a379762d86b08aca348819e26b6ec7f"
+        },
+        {
+            "type": "file",
+            "name": "modules/production/raw_materials_warehouse.php",
+            "size": 238454,
+            "hash": "2f59aacf2594f75cc616b478a761702b60f754f0d709aa1753987de7ee98f616"
+        },
+        {
+            "type": "file",
+            "name": "modules/production/tasks.php",
+            "size": 50151,
+            "hash": "acd59a1617a44f8ba512506ee0cc10af4d283c40eb53aadba7a995858a0d39c9"
+        },
+        {
+            "type": "file",
+            "name": "modules/sales/attendance.php",
+            "size": 18806,
+            "hash": "49dd4fd4d242849a37ab12fd5b3df3c530386e530c150ce1d66d21f06c6cc7ab"
+        },
+        {
+            "type": "file",
+            "name": "modules/sales/collections.php",
+            "size": 20580,
+            "hash": "047eee3c6e5b509d74ca1cb4fc4954ee5fffb3a296b065a3d4d91143bd33a0e3"
+        },
+        {
+            "type": "file",
+            "name": "modules/sales/customer_orders.php",
+            "size": 70396,
+            "hash": "e74fb945147a84049cdca72eea0915e7157d785558a0b5fb8c65f5097d457339"
+        },
+        {
+            "type": "file",
+            "name": "modules/sales/customers.php",
+            "size": 105717,
+            "hash": "b649e56606b3ca9b76148a4b5c16d6fc91d3e1033ea9b2e84ecd4d0214552730"
+        },
+        {
+            "type": "file",
+            "name": "modules/sales/exchanges.php",
+            "size": 26979,
+            "hash": "b3ce0a9e1b834fbdbe7f9b7b78fe34e43feea17644cbdbe7a4b2bfc30af510f5"
+        },
+        {
+            "type": "file",
+            "name": "modules/sales/payment_schedules.php",
+            "size": 43362,
+            "hash": "3ff1e8b8478ac7244d37567f78ef2ae233373f1b3f3cbad4bb1df4deaae725f9"
+        },
+        {
+            "type": "file",
+            "name": "modules/sales/pos.php",
+            "size": 88823,
+            "hash": "ecc43837255b618a89ba65b9a989bb0a595394e8e3aef01c6fbff457e569cc3f"
+        },
+        {
+            "type": "file",
+            "name": "modules/sales/returns.php",
+            "size": 65483,
+            "hash": "35a6b5fc4f8b10dc8f742f94d9a2ee03d24cf52faffde425a0e4b90e1bc7be91"
+        },
+        {
+            "type": "file",
+            "name": "modules/sales/sales.php",
+            "size": 13051,
+            "hash": "b1fabeeafbf77a77d00708ff4d795d01e0c3aedc9328cb3f6ee4af9ce23c12bb"
+        },
+        {
+            "type": "file",
+            "name": "modules/sales/table_styles.php",
+            "size": 66,
+            "hash": "dc3258fa775be1ebefb5620ba798a1b0a6f2e0ff88bc4919e394a84bd6765a32"
+        },
+        {
+            "type": "file",
+            "name": "modules/sales/vehicle_inventory.php",
+            "size": 55316,
+            "hash": "df91346d474cd46d30e0d0f9720268c8a83bc56a22b55ddbda84c0cae3e47d97"
+        },
+        {
+            "type": "file",
+            "name": "modules/user/my_salary.php",
+            "size": 80931,
+            "hash": "3179a7956ef97deb890cfb0d164a3d436fa75284e6f3b991dbb8da8116bf31e0"
+        },
+        {
+            "type": "file",
+            "name": "reader/assets/icon-192.png",
+            "size": 3683,
+            "hash": "aa59be51b6cbf058c09e78f7feec792cf4771632bc56b2940b4b9877e347ab07"
+        },
+        {
+            "type": "file",
+            "name": "reader/assets/icon-512.png",
+            "size": 100285,
+            "hash": "6d9a89208149fcec61264ceeeae15d80187d6ed428845051c558a0a93b5adce7"
+        },
+        {
+            "type": "file",
+            "name": "reader/assets/icon.svg",
+            "size": 1577,
+            "hash": "e9af5a35bd2c2a32e801918a44395ca344b77bb327d72bba1b16250b8261dfbc"
+        }
+    ]
+}

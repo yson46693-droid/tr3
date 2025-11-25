@@ -8,7 +8,6 @@ require_once __DIR__ . '/includes/config.php';
 require_once __DIR__ . '/includes/db.php';
 require_once __DIR__ . '/includes/auth.php';
 require_once __DIR__ . '/includes/invoices.php';
-require_once __DIR__ . '/includes/path_helper.php';
 
 requireRole(['accountant', 'sales', 'manager']);
 
@@ -23,10 +22,6 @@ $invoice = getInvoice($invoiceId);
 if (!$invoice) {
     die('الفاتورة غير موجودة');
 }
-
-// تمرير المتغيرات المطلوبة لـ invoice_print.php
-$selectedInvoice = $invoice;
-$invoiceData = $invoice;
 
 $companyName = COMPANY_NAME;
 ?>
@@ -69,16 +64,13 @@ $companyName = COMPANY_NAME;
                     <button class="btn btn-primary" onclick="window.print()">
                         <i class="bi bi-printer me-2"></i>طباعة
                     </button>
-                    <a href="<?php echo getRelativeUrl('dashboard/accountant.php?page=invoices'); ?>" class="btn btn-secondary">
+                    <a href="dashboard/accountant.php?page=invoices" class="btn btn-secondary">
                         <i class="bi bi-arrow-left me-2"></i>رجوع
                     </a>
                 </div>
             </div>
             
-            <?php 
-            require_once __DIR__ . '/includes/path_helper.php';
-            include __DIR__ . '/modules/accountant/invoice_print.php'; 
-            ?>
+            <?php include __DIR__ . '/modules/accountant/invoice_print.php'; ?>
         </div>
     </div>
     

@@ -1,4 +1,4 @@
-﻿<?php
+<?php
 /**
  * لوحة التحكم للمدير
  */
@@ -174,6 +174,65 @@ $pageTitle = isset($lang['manager_dashboard']) ? $lang['manager_dashboard'] : '�
                 $activitySummary = getManagerActivitySummary();
                 ?>
 
+                <!-- ملخص الأنشطة السريع -->
+                <div class="analytics-card mb-4">
+                    <div class="analytics-card-header">
+                        <h3 class="analytics-card-title"><i class="bi bi-activity me-2"></i>ملخص الأنشطة السريع</h3>
+                        <div>
+                            <button class="btn btn-sm btn-link" data-bs-toggle="tooltip" title="معلومات">
+                                <i class="bi bi-info-circle"></i>
+                            </button>
+                            <button class="btn btn-sm btn-link" data-bs-toggle="dropdown">
+                                <i class="bi bi-three-dots-vertical"></i>
+                            </button>
+                        </div>
+                    </div>
+                    <div class="analytics-card-content">
+                        <div class="cards-grid">
+                            <div class="stat-card">
+                                <div class="stat-card-header">
+                                    <div class="stat-card-icon orange">
+                                        <i class="bi bi-hourglass-split"></i>
+                                    </div>
+                                </div>
+                                <div class="stat-card-title">موافقات معلقة</div>
+                                <div class="stat-card-value"><?php echo $activitySummary['pending_approvals'] ?? 0; ?></div>
+                            </div>
+                            
+                            <div class="stat-card">
+                                <div class="stat-card-header">
+                                    <div class="stat-card-icon red">
+                                        <i class="bi bi-exclamation-triangle"></i>
+                                    </div>
+                                </div>
+                                <div class="stat-card-title">منتجات منخفضة المخزون</div>
+                                <div class="stat-card-value"><?php echo $activitySummary['low_stock_products'] ?? 0; ?></div>
+                            </div>
+                            
+                            <div class="stat-card">
+                                <div class="stat-card-header">
+                                    <div class="stat-card-icon blue">
+                                        <i class="bi bi-box-seam"></i>
+                                    </div>
+                                </div>
+                                <div class="stat-card-title">إنتاج معلق</div>
+                                <div class="stat-card-value"><?php echo $activitySummary['pending_production'] ?? 0; ?></div>
+                            </div>
+                            
+                            <div class="stat-card">
+                                <div class="stat-card-header">
+                                    <div class="stat-card-icon green">
+                                        <i class="bi bi-cart-check"></i>
+                                    </div>
+                                </div>
+                                <div class="stat-card-title">مبيعات معلقة</div>
+                                <div class="stat-card-value"><?php echo $activitySummary['pending_sales'] ?? 0; ?></div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                
+                <!-- بطاقات ملخص إضافية -->
                 <div class="cards-grid mt-4">
                     <?php
                     $lastBackup = $db->queryOne(
@@ -250,21 +309,10 @@ $pageTitle = isset($lang['manager_dashboard']) ? $lang['manager_dashboard'] : '�
                 <?php
                 $pendingApprovalsCount = getPendingApprovalsCount();
                 $approvalsSection = $_GET['section'] ?? 'pending';
-                $validApprovalSections = ['pending', 'warehouse_transfers', 'returns'];
+                $validApprovalSections = ['pending', 'warehouse_transfers'];
                 if (!in_array($approvalsSection, $validApprovalSections, true)) {
                     $approvalsSection = 'pending';
                 }
-                
-                // Get pending returns count
-                require_once __DIR__ . '/../includes/approval_system.php';
-                $entityColumn = getApprovalsEntityColumn();
-                $pendingReturnsCount = $db->queryOne(
-                    "SELECT COUNT(*) as total
-                     FROM returns r
-                     INNER JOIN approvals a ON a.type = 'return_request' AND a.{$entityColumn} = r.id
-                     WHERE r.status = 'pending' AND a.status = 'pending'"
-                );
-                $pendingReturnsCount = (int)($pendingReturnsCount['total'] ?? 0);
                 ?>
 
                 <h2><i class="bi bi-check-circle me-2"></i><?php echo isset($lang['approvals']) ? $lang['approvals'] : 'الموافقات'; ?></h2>
@@ -278,13 +326,6 @@ $pageTitle = isset($lang['manager_dashboard']) ? $lang['manager_dashboard'] : '�
                     <a href="?page=approvals&section=warehouse_transfers"
                        class="btn <?php echo $approvalsSection === 'warehouse_transfers' ? 'btn-primary' : 'btn-outline-primary'; ?>">
                         طلبات النقل بين المخازن
-                    </a>
-                    <a href="?page=approvals&section=returns"
-                       class="btn <?php echo $approvalsSection === 'returns' ? 'btn-primary' : 'btn-outline-primary'; ?>">
-                        طلبات المرتجعات
-                        <?php if ($pendingReturnsCount > 0): ?>
-                            <span class="badge bg-light text-dark ms-1"><?php echo $pendingReturnsCount; ?></span>
-                        <?php endif; ?>
                     </a>
                 </div>
 
@@ -332,29 +373,23 @@ $pageTitle = isset($lang['manager_dashboard']) ? $lang['manager_dashboard'] : '�
                                                     <td><?php echo htmlspecialchars($approval['requested_by_full_name'] ?? $approval['requested_by_name']); ?></td>
                                                     <td><?php echo formatDateTime($approval['created_at']); ?></td>
                                                     <td>
-                                                        <?php
-                                                        // استخدام دالة getEntityName لعرض تفاصيل الكيان
-                                                        require_once __DIR__ . '/../includes/approval_system.php';
-                                                        $entityColumn = getApprovalsEntityColumn();
-                                                        $entityId = $approval[$entityColumn] ?? null;
-                                                        
-                                                        if ($entityId) {
-                                                            $entityName = getEntityName($approval['type'], $entityId);
-                                                            
-                                                            // عرض تفاصيل خاصة حسب نوع الموافقة
-                                                            if ($approval['type'] === 'warehouse_transfer') {
-                                                                // جلب تفاصيل طلب النقل
+                                                        <?php if ($approval['type'] === 'warehouse_transfer'): ?>
+                                                            <?php
+                                                            // جلب تفاصيل طلب النقل
+                                                            require_once __DIR__ . '/../includes/approval_system.php';
+                                                            $entityColumn = getApprovalsEntityColumn();
+                                                            $transferId = $approval[$entityColumn] ?? null;
+                                                            if ($transferId) {
                                                                 $transferItems = $db->query(
                                                                     "SELECT wti.*, p.name as product_name 
                                                                      FROM warehouse_transfer_items wti
                                                                      LEFT JOIN products p ON wti.product_id = p.id
                                                                      WHERE wti.transfer_id = ?
                                                                      ORDER BY wti.id",
-                                                                    [$entityId]
+                                                                    [$transferId]
                                                                 );
                                                                 if (!empty($transferItems)) {
                                                                     echo '<div class="small">';
-                                                                    echo '<strong>' . htmlspecialchars($entityName) . '</strong><br>';
                                                                     foreach ($transferItems as $item) {
                                                                         $batchInfo = !empty($item['batch_number']) ? ' - تشغيلة ' . htmlspecialchars($item['batch_number']) : '';
                                                                         echo '<span class="badge bg-info me-1 mb-1">';
@@ -365,67 +400,11 @@ $pageTitle = isset($lang['manager_dashboard']) ? $lang['manager_dashboard'] : '�
                                                                     }
                                                                     echo '</div>';
                                                                 } else {
-                                                                    echo '<span class="text-muted small">' . htmlspecialchars($entityName) . '</span>';
-                                                                }
-                                                            } elseif ($approval['type'] === 'salary_modification') {
-                                                                // عرض تفاصيل تعديل الراتب
-                                                                $salary = $db->queryOne(
-                                                                    "SELECT s.*, u.full_name, u.username 
-                                                                     FROM salaries s 
-                                                                     LEFT JOIN users u ON s.user_id = u.id 
-                                                                     WHERE s.id = ?",
-                                                                    [$entityId]
-                                                                );
-                                                                if ($salary) {
-                                                                    $employeeName = $salary['full_name'] ?? $salary['username'] ?? 'غير محدد';
-                                                                    echo '<div class="small">';
-                                                                    echo '<strong>تعديل راتب:</strong> ' . htmlspecialchars($employeeName) . '<br>';
-                                                                    
-                                                                    // محاولة استخراج بيانات التعديل من notes
-                                                                    $approvalNotes = $approval['notes'] ?? $approval['approval_notes'] ?? '';
-                                                                    if (preg_match('/\[DATA\]:(.+)/s', $approvalNotes, $matches)) {
-                                                                        $modificationData = json_decode(trim($matches[1]), true);
-                                                                        if ($modificationData) {
-                                                                            $bonus = floatval($modificationData['bonus'] ?? 0);
-                                                                            $deductions = floatval($modificationData['deductions'] ?? 0);
-                                                                            $notes = trim($modificationData['notes'] ?? '');
-                                                                            
-                                                                            if ($bonus > 0) {
-                                                                                echo '<span class="badge bg-success me-1">مكافأة: ' . number_format($bonus, 2) . ' ج.م</span>';
-                                                                            }
-                                                                            if ($deductions > 0) {
-                                                                                echo '<span class="badge bg-danger me-1">خصومات: ' . number_format($deductions, 2) . ' ج.م</span>';
-                                                                            }
-                                                                            if ($notes) {
-                                                                                echo '<br><small class="text-muted">' . htmlspecialchars($notes) . '</small>';
-                                                                            }
-                                                                        }
-                                                                    } else {
-                                                                        echo '<span class="text-muted">' . htmlspecialchars($entityName) . '</span>';
-                                                                    }
-                                                                    echo '</div>';
-                                                                } else {
-                                                                    echo '<span class="text-muted small">' . htmlspecialchars($entityName) . '</span>';
-                                                                }
-                                                            } else {
-                                                                // للأنواع الأخرى، عرض اسم الكيان فقط
-                                                                echo '<span class="text-muted small">' . htmlspecialchars($entityName) . '</span>';
-                                                                
-                                                                // عرض الملاحظات إن وجدت
-                                                                $approvalNotes = $approval['notes'] ?? $approval['approval_notes'] ?? '';
-                                                                if ($approvalNotes && strlen($approvalNotes) > 0) {
-                                                                    // إزالة [DATA]: من الملاحظات للعرض
-                                                                    $displayNotes = preg_replace('/\[DATA\]:.*/s', '', $approvalNotes);
-                                                                    $displayNotes = trim($displayNotes);
-                                                                    if ($displayNotes) {
-                                                                        echo '<br><small class="text-muted">' . htmlspecialchars(mb_substr($displayNotes, 0, 100)) . '</small>';
-                                                                    }
+                                                                    echo '<span class="text-muted small">لا توجد منتجات</span>';
                                                                 }
                                                             }
-                                                        } else {
-                                                            echo '<span class="text-muted small">لا توجد تفاصيل</span>';
-                                                        }
-                                                        ?>
+                                                            ?>
+                                                        <?php endif; ?>
                                                     </td>
                                                     <td>
                                                         <div class="btn-group btn-group-sm" role="group">
@@ -493,10 +472,6 @@ $pageTitle = isset($lang['manager_dashboard']) ? $lang['manager_dashboard'] : '�
                     $warehouseTransfersSectionParam = 'warehouse_transfers';
                     $warehouseTransfersShowHeading = false;
                     include __DIR__ . '/../modules/manager/warehouse_transfers.php';
-                    ?>
-                <?php elseif ($approvalsSection === 'returns'): ?>
-                    <?php
-                    include __DIR__ . '/../modules/manager/return_approvals.php';
                     ?>
                 <?php endif; ?>
 
@@ -786,25 +761,12 @@ $pageTitle = isset($lang['manager_dashboard']) ? $lang['manager_dashboard'] : '�
                 }
                 ?>
                 
-            <?php elseif ($page === 'shipping_orders'): ?>
-                <!-- صفحة طلبات شركات الشحن -->
-                <?php 
-                $modulePath = __DIR__ . '/../modules/manager/shipping_orders.php';
-                if (file_exists($modulePath)) {
-                    include $modulePath;
-                } else {
-                    echo '<div class="alert alert-warning">صفحة طلبات شركات الشحن غير متاحة حالياً</div>';
-                }
-                ?>
-                
             <?php elseif ($page === 'returns'): ?>
-                <!-- صفحة المرتجعات والاستبدال - حساب المدير -->
+                <!-- صفحة المرتجعات والاستبدال -->
                 <?php 
-                $modulePath = __DIR__ . '/../modules/manager/returns.php';
+                $modulePath = __DIR__ . '/../modules/sales/returns.php';
                 if (file_exists($modulePath)) {
                     include $modulePath;
-                } else {
-                    echo '<div class="alert alert-warning">صفحة المرتجعات غير متاحة حالياً</div>';
                 }
                 ?>
                 
@@ -920,10 +882,7 @@ $pageTitle = isset($lang['manager_dashboard']) ? $lang['manager_dashboard'] : '�
 <?php include __DIR__ . '/../templates/footer.php'; ?>
 <script src="<?php echo ASSETS_URL; ?>js/reports.js"></script>
 <script>
-function approveRequest(id, event) {
-    // استخدام event الممرر أو window.event
-    const evt = event || window.event;
-    
+function approveRequest(id) {
     if (!id) {
         console.error('approveRequest: Missing ID');
         alert('خطأ: معرّف الطلب غير موجود');
@@ -934,7 +893,7 @@ function approveRequest(id, event) {
         return;
     }
     
-    const btn = evt?.target?.closest('button');
+    const btn = event?.target?.closest('button');
     const originalHTML = btn ? btn.innerHTML : '';
     
     if (btn) {
@@ -942,7 +901,7 @@ function approveRequest(id, event) {
         btn.innerHTML = '<span class="spinner-border spinner-border-sm me-2"></span>جاري المعالجة...';
     }
     
-    fetch('<?php echo getRelativeUrl("api/approve.php"); ?>', {
+    fetch('api/approve.php', {
         method: 'POST',
         headers: {
             'Content-Type': 'application/x-www-form-urlencoded',
@@ -952,23 +911,10 @@ function approveRequest(id, event) {
         })
     })
     .then(response => {
-        // قراءة النص أولاً لمعرفة ما إذا كان JSON صالح
-        return response.text().then(text => {
-            let data;
-            try {
-                data = JSON.parse(text);
-            } catch (e) {
-                // إذا لم يكن JSON صالحاً، عرض النص كخطأ
-                throw new Error(text || 'خطأ غير معروف من الخادم');
-            }
-            
-            // إذا كان status code غير 200، اعرض الخطأ
-            if (!response.ok) {
-                throw new Error(data.error || data.message || 'خطأ في الاستجابة من الخادم');
-            }
-            
-            return data;
-        });
+        if (!response.ok) {
+            throw new Error('Network response was not ok');
+        }
+        return response.json();
     })
     .then(data => {
         if (data.success) {
@@ -994,7 +940,7 @@ function approveRequest(id, event) {
             btn.disabled = false;
             btn.innerHTML = originalHTML;
         }
-        alert('خطأ في الاتصال بالخادم: ' + (error.message || 'يرجى المحاولة مرة أخرى.'));
+        alert('خطأ في الاتصال بالخادم. يرجى المحاولة مرة أخرى.');
     });
 }
 
@@ -1025,7 +971,7 @@ function rejectRequest(id, evt) {
         btn.innerHTML = '<span class="spinner-border spinner-border-sm me-2"></span>جاري المعالجة...';
     }
     
-    fetch('<?php echo getRelativeUrl("api/reject.php"); ?>', {
+    fetch('api/reject.php', {
         method: 'POST',
         headers: {
             'Content-Type': 'application/x-www-form-urlencoded',
@@ -1036,23 +982,10 @@ function rejectRequest(id, evt) {
         })
     })
     .then(response => {
-        // قراءة النص أولاً لمعرفة ما إذا كان JSON صالح
-        return response.text().then(text => {
-            let data;
-            try {
-                data = JSON.parse(text);
-            } catch (e) {
-                // إذا لم يكن JSON صالحاً، عرض النص كخطأ
-                throw new Error(text || 'خطأ غير معروف من الخادم');
-            }
-            
-            // إذا كان status code غير 200، اعرض الخطأ
-            if (!response.ok) {
-                throw new Error(data.error || data.message || 'خطأ في الاستجابة من الخادم');
-            }
-            
-            return data;
-        });
+        if (!response.ok) {
+            throw new Error('Network response was not ok');
+        }
+        return response.json();
     })
     .then(data => {
         if (data.success) {
@@ -1078,7 +1011,7 @@ function rejectRequest(id, evt) {
             btn.disabled = false;
             btn.innerHTML = originalHTML;
         }
-        alert('خطأ في الاتصال بالخادم: ' + (error.message || 'يرجى المحاولة مرة أخرى.'));
+        alert('خطأ في الاتصال بالخادم. يرجى المحاولة مرة أخرى.');
     });
 }
 
@@ -1091,38 +1024,14 @@ async function updateApprovalBadge() {
         const apiPath = basePath + '/api/approvals.php';
         const response = await fetch(apiPath, {
             credentials: 'same-origin',
-            cache: 'no-cache',
-            headers: {
-                'Accept': 'application/json',
-                'X-Requested-With': 'XMLHttpRequest'
-            }
+            cache: 'no-cache'
         });
         
         if (!response.ok) {
             return;
         }
         
-        // التحقق من content-type قبل parse JSON
-        const contentType = response.headers.get('content-type');
-        if (!contentType || !contentType.includes('application/json')) {
-            console.warn('updateApprovalBadge: Expected JSON but got', contentType);
-            return;
-        }
-        
-        const text = await response.text();
-        if (!text || text.trim().startsWith('<')) {
-            console.warn('updateApprovalBadge: Received HTML instead of JSON');
-            return;
-        }
-        
-        let data;
-        try {
-            data = JSON.parse(text);
-        } catch (parseError) {
-            console.warn('updateApprovalBadge: Failed to parse JSON:', parseError);
-            return;
-        }
-        
+        const data = await response.json();
         if (data && data.success && typeof data.count === 'number') {
             const badge = document.getElementById('approvalBadge');
             if (badge) {
@@ -1137,10 +1046,7 @@ async function updateApprovalBadge() {
             }
         }
     } catch (error) {
-        // تجاهل الأخطاء بصمت لتجنب إزعاج المستخدم
-        if (error.name !== 'SyntaxError') {
-            console.error('Error updating approval badge:', error);
-        }
+        console.error('Error updating approval badge:', error);
     }
 }
 

@@ -164,14 +164,8 @@ class AttendanceNotificationManager {
                 start: '10:00:00',
                 end: '19:00:00'
             };
-        } else if (this.userRole === 'sales') {
-            // المندوبين
-            return {
-                start: '10:00:00',
-                end: '19:00:00'
-            };
         } else {
-            // عمال الإنتاج
+            // عمال الإنتاج والمندوبين
             return {
                 start: '09:00:00',
                 end: '19:00:00'

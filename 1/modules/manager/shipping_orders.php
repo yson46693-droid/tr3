@@ -140,7 +140,7 @@ function generateShippingOrderNumber(Database $db): string
     return sprintf('%s%04d', $prefix, $serial);
 }
 
-$shippingPosUrl = getRelativeUrl('manager.php?page=shipping_orders');
+$shippingPosUrl = getRelativeUrl('manager.php?page=pos&section=shipping');
 
 $mainWarehouse = $db->queryOne("SELECT id, name FROM warehouses WHERE warehouse_type = 'main' AND status = 'active' LIMIT 1");
 if (!$mainWarehouse) {
@@ -673,7 +673,7 @@ $hasShippingCompanies = !empty($shippingCompanies);
 ?>
 
 <?php if ($error): ?>
-    <div class="alert alert-danger alert-dismissible fade show" id="errorAlert" data-auto-refresh="true">
+    <div class="alert alert-danger alert-dismissible fade show">
         <i class="bi bi-exclamation-triangle-fill me-2"></i>
         <?php echo htmlspecialchars($error); ?>
         <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close"></button>
@@ -681,7 +681,7 @@ $hasShippingCompanies = !empty($shippingCompanies);
 <?php endif; ?>
 
 <?php if ($success): ?>
-    <div class="alert alert-success alert-dismissible fade show" id="successAlert" data-auto-refresh="true">
+    <div class="alert alert-success alert-dismissible fade show">
         <i class="bi bi-check-circle-fill me-2"></i>
         <?php echo htmlspecialchars($success); ?>
         <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close"></button>

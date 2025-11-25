@@ -19,69 +19,6 @@ $currentUser = getCurrentUser();
 $db = db();
 $page = $_GET['page'] ?? 'dashboard';
 
-$customersModulePath = __DIR__ . '/../modules/sales/customers.php';
-if (
-    isset($_GET['ajax'], $_GET['action']) &&
-    $_GET['ajax'] === 'purchase_history' &&
-    $_GET['action'] === 'purchase_history'
-) {
-    if (!defined('CUSTOMERS_PURCHASE_HISTORY_AJAX')) {
-        define('CUSTOMERS_PURCHASE_HISTORY_AJAX', true);
-    }
-    if (file_exists($customersModulePath)) {
-        include $customersModulePath;
-    } else {
-        header('Content-Type: application/json; charset=utf-8');
-        echo json_encode([
-            'success' => false,
-            'message' => 'وحدة العملاء غير متاحة.'
-        ], JSON_UNESCAPED_UNICODE);
-    }
-    exit;
-}
-
-// معالجة طلب update_location قبل إرسال أي HTML
-if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && trim($_POST['action']) === 'update_location') {
-    $pageParam = $_GET['page'] ?? 'dashboard';
-    if ($pageParam === 'customers') {
-        // تنظيف أي output buffer
-        while (ob_get_level() > 0) {
-            ob_end_clean();
-        }
-        
-        // تحميل الملفات الأساسية
-        if (!defined('CUSTOMERS_MODULE_BOOTSTRAPPED')) {
-            require_once __DIR__ . '/../includes/config.php';
-            require_once __DIR__ . '/../includes/db.php';
-            require_once __DIR__ . '/../includes/auth.php';
-            require_once __DIR__ . '/../includes/audit_log.php';
-            require_once __DIR__ . '/../includes/path_helper.php';
-            require_once __DIR__ . '/../includes/customer_history.php';
-            require_once __DIR__ . '/../includes/invoices.php';
-            require_once __DIR__ . '/../includes/salary_calculator.php';
-            
-            requireRole(['sales', 'accountant', 'manager']);
-        }
-        
-        // تضمين وحدة customers التي تحتوي على معالج update_location
-        if (file_exists($customersModulePath)) {
-            define('CUSTOMERS_MODULE_BOOTSTRAPPED', true);
-            if (!defined('CUSTOMERS_PURCHASE_HISTORY_AJAX')) {
-                define('CUSTOMERS_PURCHASE_HISTORY_AJAX', true);
-            }
-            include $customersModulePath;
-        } else {
-            http_response_code(404);
-            header('Content-Type: application/json; charset=utf-8');
-            echo json_encode([
-                'success' => false,
-                'message' => 'وحدة العملاء غير متاحة.'
-            ], JSON_UNESCAPED_UNICODE);
-        }
-        exit;
-    }
-}
-
 $financialSuccess = '';
 $financialError = '';
 $financialFormData = [];
@@ -935,16 +872,6 @@ $pageTitle = isset($lang['accountant_dashboard']) ? $lang['accountant_dashboard'
                 </div>
             </div>
                 
-            <?php elseif ($page === 'accountant_cash'): ?>
-                <?php 
-                $modulePath = __DIR__ . '/../modules/accountant/cash_register.php';
-                if (file_exists($modulePath)) {
-                    include $modulePath;
-                } else {
-                    echo '<div class="alert alert-warning">صفحة خزنة المحاسب غير متاحة حالياً</div>';
-                }
-                ?>
-                
             <?php elseif ($page === 'suppliers'): ?>
                 <!-- صفحة الموردين -->
                 <?php 
@@ -1016,22 +943,6 @@ $pageTitle = isset($lang['accountant_dashboard']) ? $lang['accountant_dashboard'
                     include $modulePath;
                 } else {
                     include __DIR__ . '/../modules/accountant/salaries.php';
-                }
-                ?>
-                
-            <?php elseif ($page === 'customers'): ?>
-                <!-- صفحة العملاء -->
-                <?php 
-                $modulePath = __DIR__ . '/../modules/sales/customers.php';
-                if (file_exists($modulePath)) {
-                    try {
-                        include $modulePath;
-                    } catch (Throwable $e) {
-                        error_log('Accountant customers module error: ' . $e->getMessage());
-                        echo '<div class="alert alert-danger">حدث خطأ أثناء تحميل صفحة العملاء: ' . htmlspecialchars($e->getMessage()) . '</div>';
-                    }
-                } else {
-                    echo '<div class="alert alert-warning">صفحة العملاء غير متاحة حالياً</div>';
                 }
                 ?>
                 

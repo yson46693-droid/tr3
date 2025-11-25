@@ -36,20 +36,7 @@ try {
     
     $supplierTypeCheck = $db->queryOne("SHOW COLUMNS FROM suppliers LIKE 'type'");
     if (empty($supplierTypeCheck)) {
-        $db->execute("ALTER TABLE suppliers ADD COLUMN type ENUM('honey', 'packaging', 'nuts', 'olive_oil', 'derivatives', 'beeswax', 'sesame') NULL DEFAULT NULL AFTER supplier_code");
-    } else {
-        // التحقق من وجود 'sesame' في ENUM وتحديثه إذا لم يكن موجوداً
-        $typeColumn = $db->queryOne("SHOW COLUMNS FROM suppliers WHERE Field = 'type'");
-        if ($typeColumn) {
-            $typeEnum = $typeColumn['Type'];
-            if (stripos($typeEnum, 'sesame') === false) {
-                try {
-                    $db->execute("ALTER TABLE suppliers MODIFY COLUMN type ENUM('honey', 'packaging', 'nuts', 'olive_oil', 'derivatives', 'beeswax', 'sesame') NULL DEFAULT NULL");
-                } catch (Exception $e) {
-                    error_log("Error adding 'sesame' to supplier type enum: " . $e->getMessage());
-                }
-            }
-        }
+        $db->execute("ALTER TABLE suppliers ADD COLUMN type ENUM('honey', 'packaging', 'nuts', 'olive_oil', 'derivatives', 'beeswax') NULL DEFAULT NULL AFTER supplier_code");
     }
     
     // توليد كود للموردين الموجودين الذين لا يملكون كود
@@ -141,8 +128,7 @@ function generateSupplierCode($type, $db) {
         'nuts' => 'NUT',        // مكسرات
         'olive_oil' => 'OIL',   // زيت زيتون
         'derivatives' => 'DRV', // مشتقات
-        'beeswax' => 'WAX',     // شمع عسل
-        'sesame' => 'SES'       // مورد سمسم
+        'beeswax' => 'WAX'      // شمع عسل
     ];
     
     $prefix = $typeCodes[$type] ?? 'SUP';
@@ -441,7 +427,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                                 $currentUser['id']
                             ]
                         );
-                        $historyId = $db->getLastInsertId();
+                        $historyId = $db->lastInsertId();
                         
                         $db->execute(
                             "INSERT INTO financial_transactions (type, amount, supplier_id, description, reference_number, status, approved_by, created_by, approved_at)
@@ -456,7 +442,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                                 $currentUser['id']
                             ]
                         );
-                        $transactionId = $db->getLastInsertId();
+                        $transactionId = $db->lastInsertId();
                         
                         $db->execute(
                             "UPDATE supplier_balance_history SET reference_id = ? WHERE id = ?",
@@ -531,25 +517,20 @@ if (isset($_GET['edit'])) {
 <div class="card shadow-sm">
     <div class="card-header d-flex justify-content-between align-items-center">
         <h5 class="mb-0"><i class="bi bi-truck me-2"></i><?php echo (isset($lang) && isset($lang['suppliers'])) ? $lang['suppliers'] : 'الموردين'; ?> (<?php echo $totalCount; ?>)</h5>
-        <div class="d-flex gap-2">
-            <button class="btn btn-success" data-bs-toggle="modal" data-bs-target="#printSupplierReportModal">
-                <i class="bi bi-printer me-2"></i>طباعة تقرير التوريدات
-            </button>
-            <button class="btn btn-primary" data-bs-toggle="modal" data-bs-target="#addSupplierModal">
-                <i class="bi bi-plus-circle me-2"></i><?php echo isset($lang['add']) ? $lang['add'] : 'إضافة'; ?>
-            </button>
-        </div>
+        <button class="btn btn-primary" data-bs-toggle="modal" data-bs-target="#addSupplierModal">
+            <i class="bi bi-plus-circle me-2"></i><?php echo isset($lang['add']) ? $lang['add'] : 'إضافة'; ?>
+        </button>
     </div>
     <div class="card-body">
         <?php if ($error): ?>
-            <div class="alert alert-danger alert-dismissible fade show" id="errorAlert" data-auto-refresh="true">
+            <div class="alert alert-danger alert-dismissible fade show">
                 <i class="bi bi-exclamation-triangle me-2"></i><?php echo htmlspecialchars($error); ?>
                 <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
             </div>
         <?php endif; ?>
         
         <?php if ($success): ?>
-            <div class="alert alert-success alert-dismissible fade show" id="successAlert" data-auto-refresh="true">
+            <div class="alert alert-success alert-dismissible fade show">
                 <i class="bi bi-check-circle me-2"></i><?php echo htmlspecialchars($success); ?>
                 <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
             </div>
@@ -613,8 +594,7 @@ if (isset($_GET['edit'])) {
                             'nuts' => 'مكسرات',
                             'olive_oil' => 'زيت زيتون',
                             'derivatives' => 'مشتقات',
-                            'beeswax' => 'شمع عسل',
-                            'sesame' => 'مورد سمسم'
+                            'beeswax' => 'شمع عسل'
                         ];
                         foreach ($suppliers as $index => $supplier):
                             $supplierId = isset($supplier['id']) ? (int)$supplier['id'] : 0;
@@ -943,35 +923,9 @@ $historyTypeLabels = [
     </div>
 </div>
 
-<style>
-#addSupplierModal .modal-body {
-    max-height: 70vh;
-    overflow-y: auto;
-    padding-right: 15px;
-}
-
-#addSupplierModal .modal-body::-webkit-scrollbar {
-    width: 8px;
-}
-
-#addSupplierModal .modal-body::-webkit-scrollbar-track {
-    background: #f1f1f1;
-    border-radius: 10px;
-}
-
-#addSupplierModal .modal-body::-webkit-scrollbar-thumb {
-    background: #888;
-    border-radius: 10px;
-}
-
-#addSupplierModal .modal-body::-webkit-scrollbar-thumb:hover {
-    background: #555;
-}
-</style>
-
 <!-- Add Supplier Modal -->
 <div class="modal fade" id="addSupplierModal" tabindex="-1">
-    <div class="modal-dialog modal-dialog-scrollable modal-lg">
+    <div class="modal-dialog modal-dialog-scrollable">
         <div class="modal-content">
             <form method="POST" action="">
                 <input type="hidden" name="action" value="add">
@@ -991,7 +945,6 @@ $historyTypeLabels = [
                             <option value="honey">مورد عسل</option>
                             <option value="packaging">أدوات تعبئة</option>
                             <option value="nuts">مكسرات</option>
-                            <option value="sesame">مورد سمسم</option>
                             <option value="olive_oil">زيت زيتون</option>
                             <option value="derivatives">مشتقات</option>
                             <option value="beeswax">شمع عسل</option>
@@ -1065,7 +1018,6 @@ $historyTypeLabels = [
                             <option value="olive_oil" <?php echo ($editSupplier['type'] ?? '') === 'olive_oil' ? 'selected' : ''; ?>>زيت زيتون</option>
                             <option value="derivatives" <?php echo ($editSupplier['type'] ?? '') === 'derivatives' ? 'selected' : ''; ?>>مشتقات</option>
                             <option value="beeswax" <?php echo ($editSupplier['type'] ?? '') === 'beeswax' ? 'selected' : ''; ?>>شمع عسل</option>
-                            <option value="sesame" <?php echo ($editSupplier['type'] ?? '') === 'sesame' ? 'selected' : ''; ?>>مورد سمسم</option>
                         </select>
                         <small class="text-muted">سيتم توليد كود جديد إذا تم تغيير النوع</small>
                     </div>
@@ -1248,82 +1200,5 @@ document.addEventListener('DOMContentLoaded', function() {
         });
     });
 });
-</script>
-
-<!-- Print Supplier Report Modal -->
-<div class="modal fade" id="printSupplierReportModal" tabindex="-1">
-    <div class="modal-dialog modal-dialog-scrollable">
-        <div class="modal-content">
-            <form method="GET" action="print_supplier_report.php" target="_blank">
-                <div class="modal-header">
-                    <h5 class="modal-title"><i class="bi bi-printer me-2"></i>طباعة تقرير التوريدات</h5>
-                    <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
-                </div>
-                <div class="modal-body">
-                    <div class="mb-3">
-                        <label class="form-label">المورد <span class="text-danger">*</span></label>
-                        <select class="form-select" name="supplier_id" required id="reportSupplierId">
-                            <option value="">اختر المورد</option>
-                            <?php 
-                            $allSuppliers = $db->query("SELECT id, name, supplier_code FROM suppliers WHERE status = 'active' ORDER BY name ASC");
-                            foreach ($allSuppliers as $supp): ?>
-                                <option value="<?php echo $supp['id']; ?>">
-                                    <?php echo htmlspecialchars($supp['name']); ?> 
-                                    <?php if (!empty($supp['supplier_code'])): ?>
-                                        (<?php echo htmlspecialchars($supp['supplier_code']); ?>)
-                                    <?php endif; ?>
-                                </option>
-                            <?php endforeach; ?>
-                        </select>
-                    </div>
-                    <div class="row">
-                        <div class="col-md-6 mb-3">
-                            <label class="form-label">من تاريخ</label>
-                            <input type="date" class="form-control" name="date_from" id="reportDateFrom" value="<?php echo date('Y-m-01'); ?>">
-                        </div>
-                        <div class="col-md-6 mb-3">
-                            <label class="form-label">إلى تاريخ</label>
-                            <input type="date" class="form-control" name="date_to" id="reportDateTo" value="<?php echo date('Y-m-d'); ?>">
-                        </div>
-                    </div>
-                    <div class="alert alert-info">
-                        <i class="bi bi-info-circle me-2"></i>
-                        سيتم فتح التقرير في نافذة جديدة للطباعة
-                    </div>
-                </div>
-                <div class="modal-footer">
-                    <button type="button" class="btn btn-outline" data-bs-dismiss="modal">إلغاء</button>
-                    <button type="submit" class="btn btn-success">
-                        <i class="bi bi-printer me-2"></i>طباعة التقرير
-                    </button>
-                </div>
-            </form>
-        </div>
-    </div>
-</div>
-
-<!-- إعادة تحميل الصفحة تلقائياً بعد أي رسالة (نجاح أو خطأ) لمنع تكرار الطلبات -->
-<script>
-// إعادة تحميل الصفحة تلقائياً بعد أي رسالة (نجاح أو خطأ) لمنع تكرار الطلبات
-(function() {
-    const successAlert = document.getElementById('successAlert');
-    const errorAlert = document.getElementById('errorAlert');
-    
-    // التحقق من وجود رسالة نجاح أو خطأ
-    const alertElement = successAlert || errorAlert;
-    
-    if (alertElement && alertElement.dataset.autoRefresh === 'true') {
-        // انتظار 3 ثوانٍ لإعطاء المستخدم وقتاً لرؤية الرسالة
-        setTimeout(function() {
-            // إعادة تحميل الصفحة بدون معاملات GET لمنع تكرار الطلبات
-            const currentUrl = new URL(window.location.href);
-            // إزالة معاملات success و error من URL
-            currentUrl.searchParams.delete('success');
-            currentUrl.searchParams.delete('error');
-            // إعادة تحميل الصفحة
-            window.location.href = currentUrl.toString();
-        }, 3000);
-    }
-})();
 </script>
 

@@ -1,4 +1,9 @@
 <?php
+/**
+ * صفحة تسجيل الخروج
+ */
+
+// تعطيل عرض الأخطاء
 error_reporting(0);
 ini_set('display_errors', 0);
 
@@ -9,19 +14,23 @@ if (!ob_get_level()) {
 
 define('ACCESS_ALLOWED', true);
 
+// بدء الجلسة قبل تحميل أي ملفات
 if (session_status() === PHP_SESSION_NONE) {
     @session_start();
 }
 
+// محاولة تحميل الملفات المطلوبة
 try {
     require_once __DIR__ . '/includes/config.php';
     
+    // تحميل path_helper إذا كان متاحاً
     if (file_exists(__DIR__ . '/includes/path_helper.php')) {
         require_once __DIR__ . '/includes/path_helper.php';
     }
     
     require_once __DIR__ . '/includes/auth.php';
     
+    // محاولة تسجيل الخروج
     if (function_exists('logout')) {
         try {
             logout();
@@ -33,32 +42,39 @@ try {
     error_log("Logout Page Error: " . $e->getMessage());
 }
 
+// حذف جميع cookies المتعلقة بالجلسة
 if (isset($_COOKIE['remember_token'])) {
     @setcookie('remember_token', '', time() - 3600, '/', '', isset($_SERVER['HTTPS']) && $_SERVER['HTTPS'] !== 'off', true);
 }
 
+// حذف جميع cookies المتعلقة بالجلسة بشكل شامل
 if (session_status() === PHP_SESSION_ACTIVE) {
     $cookieParams = session_get_cookie_params();
     @setcookie(session_name(), '', time() - 3600, $cookieParams['path'], $cookieParams['domain'], $cookieParams['secure'], $cookieParams['httponly']);
     
+    // حذف الجلسة نهائياً
     $_SESSION = [];
     @session_unset();
     @session_destroy();
 }
 
+// تنظيف جميع output buffers
 while (ob_get_level()) {
     @ob_end_clean();
 }
 
-$redirectUrl = '/index.php';
+// حساب المسار الصحيح لـ index.php ديناميكياً
+$redirectUrl = '/index.php'; // المسار الافتراضي
 
 try {
+    // استخدام getRelativeUrl إذا كان متاحاً (الأفضل)
     if (function_exists('getRelativeUrl')) {
         $tempUrl = getRelativeUrl('index.php');
         if (!empty($tempUrl)) {
             $redirectUrl = $tempUrl;
         }
     } else {
+        // حساب المسار من SCRIPT_NAME مباشرة
         $scriptName = $_SERVER['SCRIPT_NAME'] ?? '';
         $scriptDir = dirname($scriptName);
         
@@ -66,6 +82,7 @@ try {
         $scriptDir = str_replace('\\', '/', $scriptDir);
         $scriptDir = rtrim($scriptDir, '/');
         
+        // إذا كان في مجلد فرعي، استخدم المسار النسبي
         if ($scriptDir && $scriptDir !== '/' && $scriptDir !== '.') {
             $redirectUrl = $scriptDir . '/index.php';
         } else {
@@ -73,11 +90,13 @@ try {
         }
     }
     
+    // تنظيف المسار
     $redirectUrl = str_replace('//', '/', $redirectUrl);
     if (empty($redirectUrl) || $redirectUrl === '/') {
         $redirectUrl = '/index.php';
     }
     
+    // التأكد من أن المسار يبدأ بـ /
     if (strpos($redirectUrl, '/') !== 0) {
         $redirectUrl = '/' . $redirectUrl;
     }
@@ -87,6 +106,7 @@ try {
     $redirectUrl = '/index.php';
 }
 
+// إرسال HTML بسيط مع JavaScript redirect مباشرة
 ?>
 <!DOCTYPE html>
 <html lang="ar" dir="rtl">
@@ -95,10 +115,13 @@ try {
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>تسجيل الخروج</title>
     <script>
+        // تنفيذ redirect فوراً باستخدام عدة طرق
         (function() {
             var redirectUrl = <?php echo json_encode($redirectUrl, JSON_UNESCAPED_UNICODE); ?>;
             
+            // محاولة redirect فورية
             try {
+                // الطريقة الأولى: window.location.replace (الأفضل)
                 if (typeof window !== 'undefined' && window.location && window.location.replace) {
                     window.location.replace(redirectUrl);
                     return;
@@ -106,12 +129,14 @@ try {
             } catch(e) {}
             
             try {
+                // الطريقة الثانية: window.location.href
                 if (typeof window !== 'undefined' && window.location && window.location.href) {
                     window.location.href = redirectUrl;
                     return;
                 }
             } catch(e) {}
             
+            // الطريقة الثالثة: بعد تحميل الصفحة
             if (typeof document !== 'undefined') {
                 if (document.readyState === 'complete' || document.readyState === 'interactive') {
                     setTimeout(function() {
@@ -153,6 +178,7 @@ try {
         }
     </style>
     <script>
+        // Fallback إضافي بعد تحميل الصفحة بالكامل
         window.addEventListener('load', function() {
             setTimeout(function() {
                 var redirectUrl = <?php echo json_encode($redirectUrl, JSON_UNESCAPED_UNICODE); ?>;

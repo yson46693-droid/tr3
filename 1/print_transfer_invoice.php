@@ -41,22 +41,11 @@ if (!$transfer) {
 
 // جلب عناصر النقل
 $transferItems = $db->query(
-    "SELECT 
-        wti.*, 
-        COALESCE(
-            NULLIF(TRIM(fp.product_name), ''),
-            NULLIF(TRIM(p_fp.name), ''),
-            NULLIF(TRIM(p.name), ''),
-            'منتج غير معروف'
-        ) AS product_name,
-        COALESCE(p.unit, p_fp.unit, 'قطعة') AS unit,
-        p.unit_price,
-        fp.batch_number as finished_batch_number, 
-        fp.production_date
+    "SELECT wti.*, p.name as product_name, p.unit, p.unit_price,
+            fp.batch_number as finished_batch_number, fp.production_date
      FROM warehouse_transfer_items wti
      LEFT JOIN products p ON wti.product_id = p.id
      LEFT JOIN finished_products fp ON wti.batch_id = fp.id
-     LEFT JOIN products p_fp ON fp.product_id = p_fp.id
      WHERE wti.transfer_id = ?
      ORDER BY wti.id",
     [$transferId]
@@ -138,51 +127,13 @@ $statusColors = [
             border-bottom: 3px solid #3b82f6;
         }
         
-        .company-info {
-            display: flex;
-            align-items: center;
-            gap: 18px;
-        }
-        
-        .logo-placeholder {
-            width: 74px;
-            height: 74px;
-            border-radius: 20px;
-            background: linear-gradient(135deg, #0f4c81, #0a2d4a);
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            box-shadow: 0 12px 24px rgba(15, 76, 129, 0.25);
-            overflow: hidden;
-            position: relative;
-            flex-shrink: 0;
-        }
-        
-        .company-logo-img {
-            width: 100%;
-            height: 100%;
-            object-fit: contain;
-            padding: 8px;
-        }
-        
-        .logo-letter {
-            transform: translateY(2px);
-            color: #fff;
-            font-size: 30px;
-            font-weight: 700;
-        }
-        
-        .company-info-text {
-            flex: 1;
-        }
-        
-        .company-info-text h1 {
+        .company-info h1 {
             font-size: 28px;
             color: #1e40af;
             margin-bottom: 8px;
         }
         
-        .company-info-text p {
+        .company-info p {
             color: #6b7280;
             font-size: 14px;
         }
@@ -335,14 +286,8 @@ $statusColors = [
         
         <div class="invoice-header">
             <div class="company-info">
-                <div class="logo-placeholder">
-                    <img src="<?php echo getRelativeUrl('assets/icons/icon-192x192.svg'); ?>" alt="Logo" class="company-logo-img" onerror="this.onerror=null; this.src='<?php echo getRelativeUrl('assets/icons/icon-192x192.png'); ?>'; this.onerror=function(){this.style.display='none'; this.nextElementSibling.style.display='flex';};">
-                    <span class="logo-letter" style="display:none;"><?php echo mb_substr($companyName, 0, 1); ?></span>
-                </div>
-                <div class="company-info-text">
-                    <h1><?php echo htmlspecialchars($companyName); ?></h1>
-                    <p>فاتورة نقل المنتجات</p>
-                </div>
+                <h1><?php echo htmlspecialchars($companyName); ?></h1>
+                <p>فاتورة نقل المنتجات</p>
             </div>
             <div class="invoice-title">
                 <h2>فاتورة نقل <span class="transfer-number"><?php echo htmlspecialchars($transfer['transfer_number']); ?></span></h2>

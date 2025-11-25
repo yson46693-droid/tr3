@@ -74,8 +74,7 @@ if (!function_exists('storeSalesInvoiceDocument')) {
 
             $token = bin2hex(random_bytes(8));
             $normalizedNumber = preg_replace('/[^A-Za-z0-9_-]+/', '-', (string) ($invoice['invoice_number'] ?? 'INV'));
-            // تضمين الـ token في اسم الملف للتحقق من الأمان في reports/view.php
-            $filename = sprintf('pos-invoice-%s-%s-%s.html', date('Ymd-His'), $normalizedNumber, $token);
+            $filename = sprintf('pos-invoice-%s-%s.html', date('Ymd-His'), $normalizedNumber);
             $fullPath = $salesDir . DIRECTORY_SEPARATOR . $filename;
 
             if (@file_put_contents($fullPath, $document) === false) {
@@ -228,11 +227,6 @@ if (!$error && $_SERVER['REQUEST_METHOD'] === 'POST') {
         $prepaidAmount = cleanFinancialValue($_POST['prepaid_amount'] ?? 0);
         $paidAmountInput = cleanFinancialValue($_POST['paid_amount'] ?? 0);
         $notes = trim($_POST['notes'] ?? '');
-        $dueDateInput = trim($_POST['due_date'] ?? '');
-        $dueDate = null;
-        if (!empty($dueDateInput) && preg_match('/^\d{4}-\d{2}-\d{2}$/', $dueDateInput)) {
-            $dueDate = $dueDateInput;
-        }
 
         if (!preg_match('/^\d{4}-\d{2}-\d{2}$/', $saleDate)) {
             $saleDate = date('Y-m-d');
@@ -390,17 +384,12 @@ if (!$error && $_SERVER['REQUEST_METHOD'] === 'POST') {
 
                     $currentBalance = (float) ($customer['balance'] ?? 0);
                     if ($currentBalance < 0 && $dueAmount > 0) {
-                        // إذا كان للعميل رصيد دائن (سالب)، يتم استخدامه لخفض الدين
                         $creditUsed = min(abs($currentBalance), $dueAmount);
                         $dueAmount = round($dueAmount - $creditUsed, 2);
-                        // إضافة الرصيد المستخدم إلى المبلغ المدفوع
-                        $effectivePaidAmount += $creditUsed;
                     } else {
                         $creditUsed = 0.0;
                     }
 
-                    // حساب الرصيد الجديد: الرصيد الحالي + الرصيد المستخدم + الدين المتبقي
-                    // إذا كان الرصيد سالباً واستخدمناه بالكامل، يصبح الرصيد الجديد = الرصيد الحالي + creditUsed
                     $newBalance = round($currentBalance + $creditUsed + $dueAmount, 2);
                     if (abs($newBalance - $currentBalance) > 0.0001) {
                         $db->execute("UPDATE customers SET balance = ? WHERE id = ?", [$newBalance, $customerId]);
@@ -426,8 +415,7 @@ if (!$error && $_SERVER['REQUEST_METHOD'] === 'POST') {
                     0,
                     $prepaidAmount,
                     $notes,
-                    $currentUser['id'],
-                    $dueDate
+                    $currentUser['id']
                 );
 
                 if (empty($invoiceResult['success'])) {
@@ -437,20 +425,13 @@ if (!$error && $_SERVER['REQUEST_METHOD'] === 'POST') {
                 $invoiceId = (int) $invoiceResult['invoice_id'];
                 $invoiceNumber = $invoiceResult['invoice_number'] ?? '';
 
-                // تحديد حالة الفاتورة
-                // إذا كان الدين = 0 (إما دفعة كاملة نقداً أو استخدام الرصيد الدائن بالكامل)، تكون الفاتورة مدفوعة
                 $invoiceStatus = 'sent';
                 if ($dueAmount <= 0.0001) {
                     $invoiceStatus = 'paid';
-                    // عند استخدام الرصيد الدائن بالكامل، المبلغ المدفوع = إجمالي الفاتورة
-                    if ($creditUsed > 0 && $effectivePaidAmount < $netTotal) {
-                        $effectivePaidAmount = $netTotal;
-                    }
                 } elseif ($effectivePaidAmount > 0) {
                     $invoiceStatus = 'partial';
                 }
 
-                // تحديث الفاتورة بالمبلغ المدفوع والمبلغ المتبقي
                 $db->execute(
                     "UPDATE invoices SET paid_amount = ?, remaining_amount = ?, status = ?, updated_at = NOW() WHERE id = ?",
                     [$effectivePaidAmount, $dueAmount, $invoiceStatus, $invoiceId]
@@ -464,27 +445,19 @@ if (!$error && $_SERVER['REQUEST_METHOD'] === 'POST') {
                     $unitPrice = $item['unit_price'];
                     $lineTotal = $item['line_total'];
 
-                    // التحقق من الكمية مرة أخرى باستخدام FOR UPDATE لتجنب race conditions
-                    $vehicleInventoryItem = $db->queryOne(
-                        "SELECT quantity, finished_batch_id FROM vehicle_inventory WHERE vehicle_id = ? AND product_id = ? FOR UPDATE",
-                        [$vehicle['id'], $productId]
-                    );
+                    $product = $inventoryByProduct[$productId] ?? null;
+                    $available = $product ? (float) ($product['quantity'] ?? 0) : 0;
 
-                    if (!$vehicleInventoryItem) {
-                        throw new RuntimeException('المنتج ' . $item['name'] . ' غير موجود في مخزون السيارة.');
+                    if ($product === null || $quantity > $available) {
+                        throw new RuntimeException('الكمية المتاحة للمنتج ' . $item['name'] . ' تغيرت أثناء المعالجة.');
                     }
 
-                    $available = (float)($vehicleInventoryItem['quantity'] ?? 0);
-
-                    if ($quantity > $available) {
-                        throw new RuntimeException('الكمية المتاحة للمنتج ' . $item['name'] . ' غير كافية. المتاح: ' . $available . '، المطلوب: ' . $quantity);
+                    $newQuantity = max(0, $available - $quantity);
+                    $updateResult = updateVehicleInventory($vehicle['id'], $productId, $newQuantity, $currentUser['id']);
+                    if (empty($updateResult['success'])) {
+                        throw new RuntimeException($updateResult['message'] ?? 'تعذر تحديث مخزون السيارة.');
                     }
 
-                    // الحصول على batch_id من vehicle_inventory إذا كان متوفراً
-                    $batchId = !empty($vehicleInventoryItem['finished_batch_id']) ? (int)$vehicleInventoryItem['finished_batch_id'] : null;
-
-                    // تسجيل حركة المخزون أولاً (قبل تحديث vehicle_inventory)
-                    // لأن recordInventoryMovement تتحقق من الكمية من vehicle_inventory
                     $movementResult = recordInventoryMovement(
                         $productId,
                         $vehicleWarehouseId,
@@ -493,19 +466,11 @@ if (!$error && $_SERVER['REQUEST_METHOD'] === 'POST') {
                         'sales',
                         $invoiceId,
                         'بيع من نقطة بيع المندوب - فاتورة ' . $invoiceNumber,
-                        $currentUser['id'],
-                        $batchId  // تمرير batchId إذا كان متوفراً
+                        $currentUser['id']
                     );
 
                     if (empty($movementResult['success'])) {
                         throw new RuntimeException($movementResult['message'] ?? 'تعذر تسجيل حركة المخزون.');
-                    }
-
-                    // تحديث vehicle_inventory بعد تسجيل الحركة
-                    $newQuantity = max(0, $available - $quantity);
-                    $updateResult = updateVehicleInventory($vehicle['id'], $productId, $newQuantity, $currentUser['id']);
-                    if (empty($updateResult['success'])) {
-                        throw new RuntimeException($updateResult['message'] ?? 'تعذر تحديث مخزون السيارة.');
                     }
 
                     $db->execute(
@@ -618,7 +583,7 @@ if (!$error) {
 </div>
 
 <?php if ($error): ?>
-    <div class="alert alert-danger alert-dismissible fade show" id="errorAlert" data-auto-refresh="true" role="alert">
+    <div class="alert alert-danger alert-dismissible fade show" role="alert">
         <i class="bi bi-exclamation-triangle-fill me-2"></i>
         <?php echo $error; ?>
         <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close"></button>
@@ -626,44 +591,21 @@ if (!$error) {
 <?php endif; ?>
 
 <?php if ($success): ?>
-    <div class="alert alert-success alert-dismissible fade show" id="successAlert" role="alert">
+    <div class="alert alert-success alert-dismissible fade show" role="alert">
         <i class="bi bi-check-circle-fill me-2"></i>
         <?php echo htmlspecialchars($success); ?>
+        <?php if (!empty($posInvoiceLinks['absolute_report_url'])): ?>
+            <div class="mt-3 d-flex flex-wrap gap-2">
+                <a href="<?php echo htmlspecialchars($posInvoiceLinks['absolute_report_url']); ?>" target="_blank" class="btn btn-light btn-sm">
+                    <i class="bi bi-eye me-1"></i>عرض الفاتورة
+                </a>
+                <a href="<?php echo htmlspecialchars($posInvoiceLinks['absolute_print_url'] ?? $posInvoiceLinks['absolute_report_url']); ?>" target="_blank" class="btn btn-primary btn-sm">
+                    <i class="bi bi-printer me-1"></i>طباعة الفاتورة
+                </a>
+            </div>
+        <?php endif; ?>
         <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close"></button>
     </div>
-<?php endif; ?>
-
-<?php if (!empty($posInvoiceLinks['absolute_report_url'])): ?>
-<!-- Modal عرض الفاتورة بعد البيع -->
-<div class="modal fade" id="posInvoiceModal" tabindex="-1" aria-labelledby="posInvoiceModalLabel" aria-hidden="true" data-bs-backdrop="static" data-bs-keyboard="false">
-    <div class="modal-dialog modal-fullscreen">
-        <div class="modal-content">
-            <div class="modal-header bg-primary text-white">
-                <h5 class="modal-title" id="posInvoiceModalLabel">
-                    <i class="bi bi-receipt-cutoff me-2"></i>
-                    فاتورة البيع
-                </h5>
-                <div class="d-flex gap-2">
-                    <button type="button" class="btn btn-light btn-sm" onclick="printInvoice()">
-                        <i class="bi bi-printer me-1"></i>طباعة
-                    </button>
-                    <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal" aria-label="إغلاق"></button>
-                </div>
-            </div>
-            <div class="modal-body p-0" style="height: calc(100vh - 120px);">
-                <iframe id="posInvoiceFrame" src="<?php echo htmlspecialchars($posInvoiceLinks['absolute_report_url']); ?>" style="width: 100%; height: 100%; border: none;"></iframe>
-            </div>
-            <div class="modal-footer">
-                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">
-                    <i class="bi bi-x-circle me-1"></i>إغلاق
-                </button>
-                <button type="button" class="btn btn-primary" onclick="printInvoice()">
-                    <i class="bi bi-printer me-1"></i>طباعة الفاتورة
-                </button>
-            </div>
-        </div>
-    </div>
-</div>
 <?php endif; ?>
 
 <?php if (!$error && !$vehicle): ?>
@@ -1611,11 +1553,6 @@ if (!$error) {
                                     <label class="form-label">مبلغ التحصيل الجزئي</label>
                                     <input type="number" step="0.01" min="0" value="0" class="form-control" id="posPartialAmount">
                                 </div>
-                                <div class="mt-3 d-none" id="posDueDateWrapper">
-                                    <label class="form-label">تاريخ الاستحقاق <span class="text-muted">(اختياري)</span></label>
-                                    <input type="date" class="form-control" name="due_date" id="posDueDate">
-                                    <small class="text-muted">اتركه فارغاً لطباعة "أجل غير مسمى"</small>
-                                </div>
                             </div>
 
                             <div class="mb-3">
@@ -1727,8 +1664,6 @@ if (!$error) {
         paymentRadios: document.querySelectorAll('input[name="payment_type"]'),
         partialWrapper: document.getElementById('posPartialWrapper'),
         partialInput: document.getElementById('posPartialAmount'),
-        dueDateWrapper: document.getElementById('posDueDateWrapper'),
-        dueDateInput: document.getElementById('posDueDate'),
         submitBtn: document.getElementById('posSubmitBtn'),
         customerModeRadios: document.querySelectorAll('input[name="customer_mode"]'),
         existingCustomerWrap: document.getElementById('posExistingCustomerWrap'),
@@ -1828,8 +1763,14 @@ if (!$error) {
     }
 
     function sanitizeSummaryDisplays() {
-        // لا حاجة لإعادة التنسيق لأن updateSummary() تقوم بذلك بالفعل
-        // هذه الدالة محفوظة للتوافق مع الكود القديم
+        if (elements.netTotal) {
+            const current = elements.netTotal.textContent || '';
+            elements.netTotal.textContent = formatCurrency(current);
+        }
+        if (elements.dueAmount) {
+            const current = elements.dueAmount.textContent || '';
+            elements.dueAmount.textContent = formatCurrency(current);
+        }
     }
 
     function updateSummary() {
@@ -1838,20 +1779,16 @@ if (!$error) {
             const price = sanitizeNumber(item.unit_price);
             return total + (qty * price);
         }, 0);
-        // الحصول على المبلغ المدفوع مسبقاً
-        let prepaid = sanitizeNumber(elements.prepaidInput ? elements.prepaidInput.value : '0');
+        let prepaid = sanitizeNumber(elements.prepaidInput.value);
         let sanitizedSubtotal = sanitizeNumber(subtotal);
 
-        // التأكد من أن المبلغ المدفوع مسبقاً لا يتجاوز المجموع الفرعي
         if (prepaid < 0) {
             prepaid = 0;
         }
         if (prepaid > sanitizedSubtotal) {
             prepaid = sanitizedSubtotal;
         }
-        if (elements.prepaidInput) {
-            elements.prepaidInput.value = prepaid.toFixed(2);
-        }
+        elements.prepaidInput.value = prepaid.toFixed(2);
 
         const netTotal = sanitizeNumber(sanitizedSubtotal - prepaid);
         let paidAmount = 0;
@@ -1861,14 +1798,8 @@ if (!$error) {
             paidAmount = netTotal;
             elements.partialWrapper.classList.add('d-none');
             elements.partialInput.value = '0.00';
-            if (elements.dueDateWrapper) {
-                elements.dueDateWrapper.classList.add('d-none');
-            }
         } else if (paymentType === 'partial') {
             elements.partialWrapper.classList.remove('d-none');
-            if (elements.dueDateWrapper) {
-                elements.dueDateWrapper.classList.remove('d-none');
-            }
             let partialValue = sanitizeNumber(elements.partialInput.value);
             if (partialValue < 0) {
                 partialValue = 0;
@@ -1881,15 +1812,11 @@ if (!$error) {
         } else {
             elements.partialWrapper.classList.add('d-none');
             elements.partialInput.value = '0.00';
-            if (elements.dueDateWrapper) {
-                elements.dueDateWrapper.classList.remove('d-none');
-            }
             paidAmount = 0;
         }
 
         const dueAmount = sanitizeNumber(Math.max(0, netTotal - paidAmount));
 
-        // تحديث العناصر في الواجهة بشكل فوري
         if (elements.netTotal) {
             elements.netTotal.textContent = formatCurrency(netTotal);
         }
@@ -1897,23 +1824,11 @@ if (!$error) {
             elements.dueAmount.textContent = formatCurrency(dueAmount);
         }
 
-        if (elements.paidField) {
-            elements.paidField.value = paidAmount.toFixed(2);
-        }
-        if (elements.submitBtn) {
-            const hasCartItems = cart.length > 0;
-            const hasValidCustomer = (() => {
-                const customerMode = Array.from(elements.customerModeRadios).find((radio) => radio.checked)?.value || 'existing';
-                if (customerMode === 'existing') {
-                    return elements.customerSelect && elements.customerSelect.value && elements.customerSelect.value !== '';
-                } else {
-                    return elements.newCustomerName && elements.newCustomerName.value && elements.newCustomerName.value.trim() !== '';
-                }
-            })();
-            elements.submitBtn.disabled = !hasCartItems || !hasValidCustomer;
-        }
+        elements.paidField.value = paidAmount.toFixed(2);
+        elements.submitBtn.disabled = cart.length === 0;
         syncCartData();
         refreshPaymentOptionStates();
+        sanitizeSummaryDisplays();
     }
 
     function renderCart() {
@@ -2020,7 +1935,7 @@ if (!$error) {
             newQuantity = maxQty;
         }
         item.quantity = newQuantity;
-        renderCart(); // renderCart() تستدعي updateSummary() تلقائياً
+        renderCart();
     }
 
     function updateQuantity(productId, value) {
@@ -2039,7 +1954,7 @@ if (!$error) {
             qty = maxQty;
         }
         item.quantity = qty;
-        renderCart(); // renderCart() تستدعي updateSummary() تلقائياً
+        renderCart();
     }
 
     function updateUnitPrice(productId, value) {
@@ -2052,7 +1967,7 @@ if (!$error) {
             price = 0;
         }
         item.unit_price = price;
-        renderCart(); // renderCart() تستدعي updateSummary() تلقائياً
+        renderCart();
     }
 
     elements.inventoryButtons.forEach((button) => {
@@ -2110,11 +2025,9 @@ if (!$error) {
             const productId = parseInt(event.target.dataset.productId || '0', 10);
             if (qtyInput) {
                 updateQuantity(productId, qtyInput.value);
-                // renderCart() تستدعي updateSummary() تلقائياً
             }
             if (priceInput) {
                 updateUnitPrice(productId, priceInput.value);
-                // renderCart() تستدعي updateSummary() تلقائياً
             }
         });
     }
@@ -2138,12 +2051,7 @@ if (!$error) {
     }
 
     if (elements.prepaidInput) {
-        elements.prepaidInput.addEventListener('input', function() {
-            updateSummary(); // تحديث فوري عند تغيير المبلغ المدفوع مسبقاً
-        });
-        elements.prepaidInput.addEventListener('change', function() {
-            updateSummary(); // تحديث عند تغيير المبلغ المدفوع مسبقاً
-        });
+        elements.prepaidInput.addEventListener('input', updateSummary);
     }
 
     if (elements.partialInput) {
@@ -2168,19 +2076,8 @@ if (!$error) {
                 elements.newCustomerWrap?.classList.remove('d-none');
                 elements.newCustomerName?.setAttribute('required', 'required');
             }
-            updateSummary(); // تحديث حالة الزر عند تغيير وضع العميل
         });
     });
-
-    // إضافة مستمعين لحقول العميل لتحديث حالة الزر
-    if (elements.customerSelect) {
-        elements.customerSelect.addEventListener('change', updateSummary);
-        elements.customerSelect.addEventListener('input', updateSummary);
-    }
-    if (elements.newCustomerName) {
-        elements.newCustomerName.addEventListener('input', updateSummary);
-        elements.newCustomerName.addEventListener('change', updateSummary);
-    }
 
     if (elements.form) {
         elements.form.addEventListener('submit', function (event) {
@@ -2219,105 +2116,5 @@ if (!$error) {
     });
 })();
 </script>
-
 <?php endif; ?>
-
-<!-- إدارة Modal الفاتورة ومنع Refresh -->
-<script>
-(function() {
-    <?php if (!empty($posInvoiceLinks['absolute_report_url'])): ?>
-    const invoiceUrl = <?php echo json_encode($posInvoiceLinks['absolute_report_url'], JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES); ?>;
-    const invoicePrintUrl = <?php echo !empty($posInvoiceLinks['absolute_print_url']) ? json_encode($posInvoiceLinks['absolute_print_url'], JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES) : 'null'; ?>;
-    <?php else: ?>
-    const invoiceUrl = null;
-    const invoicePrintUrl = null;
-    <?php endif; ?>
-    
-    // الانتظار حتى يتم تحميل DOM بالكامل
-    function initInvoiceModal() {
-        const invoiceModal = document.getElementById('posInvoiceModal');
-        
-        if (invoiceModal && invoiceUrl) {
-            // الانتظار حتى يتم تحميل Bootstrap
-            if (typeof bootstrap !== 'undefined' && bootstrap.Modal) {
-                // فتح Modal تلقائياً
-                try {
-                    const modal = new bootstrap.Modal(invoiceModal, {
-                        backdrop: 'static',
-                        keyboard: false
-                    });
-                    modal.show();
-                    
-                    console.log('[POS Invoice] Modal opened successfully');
-                    
-                    // عند إغلاق Modal، تنظيف URL لمنع refresh
-                    invoiceModal.addEventListener('hidden.bs.modal', function() {
-                        const currentUrl = new URL(window.location.href);
-                        currentUrl.searchParams.delete('success');
-                        currentUrl.searchParams.delete('error');
-                        window.history.replaceState({}, '', currentUrl.toString());
-                    });
-                } catch (error) {
-                    console.error('[POS Invoice] Error opening modal:', error);
-                    // محاولة مرة أخرى بعد قليل
-                    setTimeout(initInvoiceModal, 200);
-                }
-            } else {
-                // إذا لم يكن Bootstrap جاهزاً، ننتظر قليلاً ثم نحاول مرة أخرى
-                console.log('[POS Invoice] Waiting for Bootstrap...');
-                setTimeout(initInvoiceModal, 100);
-            }
-        }
-        
-        // دالة الطباعة
-        window.printInvoice = function() {
-            if (invoicePrintUrl) {
-                const printWindow = window.open(invoicePrintUrl, '_blank');
-                if (printWindow) {
-                    printWindow.onload = function() {
-                        setTimeout(function() {
-                            printWindow.print();
-                        }, 500);
-                    };
-                }
-            } else if (invoiceUrl) {
-                const printUrl = invoiceUrl + (invoiceUrl.includes('?') ? '&' : '?') + 'print=1';
-                const printWindow = window.open(printUrl, '_blank');
-                if (printWindow) {
-                    printWindow.onload = function() {
-                        setTimeout(function() {
-                            printWindow.print();
-                        }, 500);
-                    };
-                }
-            }
-        };
-        
-        // منع refresh تلقائي عند وجود فاتورة
-        const successAlert = document.getElementById('successAlert');
-        const errorAlert = document.getElementById('errorAlert');
-        
-        // فقط إذا لم تكن هناك فاتورة، نفعل auto-refresh
-        if (!invoiceModal && (successAlert || errorAlert)) {
-            const alertElement = successAlert || errorAlert;
-            if (alertElement && alertElement.dataset.autoRefresh === 'true') {
-                setTimeout(function() {
-                    const currentUrl = new URL(window.location.href);
-                    currentUrl.searchParams.delete('success');
-                    currentUrl.searchParams.delete('error');
-                    window.location.href = currentUrl.toString();
-                }, 3000);
-            }
-        }
-    }
-    
-    // تشغيل الكود عند تحميل الصفحة
-    if (document.readyState === 'loading') {
-        document.addEventListener('DOMContentLoaded', initInvoiceModal);
-    } else {
-        // DOM محمّل بالفعل
-        initInvoiceModal();
-    }
-})();
-</script>
 

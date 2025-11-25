@@ -288,8 +288,6 @@ function getProductionSupplyLogs(string $dateFrom, string $dateTo, ?string $cate
                quantity, unit, details, recorded_by, recorded_at
         FROM production_supply_logs
         WHERE recorded_at BETWEEN ? AND ?
-          AND (details IS NULL OR (details NOT LIKE '%تم تحويل%من السمسم إلى%طحينة%' 
-                                   AND details NOT LIKE '%إضافة باقي عملية التحويل%'))
     ";
     $params = [$start, $end];
 

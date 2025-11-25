@@ -621,11 +621,7 @@ if ($isAjaxRequest) {
 
     if ($page === 'packaging_warehouse' && isset($_GET['ajax']) && $_GET['ajax'] == '1' && isset($_GET['material_id'])) {
         $ajaxModulePath = __DIR__ . '/../modules/production/packaging_warehouse.php';
-    } elseif ($page === 'my_salary' && $_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['action'] === 'request_advance') {
-        // تنظيف أي output buffer قبل تضمين الملف
-        while (ob_get_level() > 0) {
-            ob_end_clean();
-        }
+    } elseif ($page === 'my_salary' && $_SERVER['REQUEST_METHOD'] === 'POST') {
         $ajaxModulePath = __DIR__ . '/../modules/user/my_salary.php';
     }
 

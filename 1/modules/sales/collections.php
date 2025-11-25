@@ -13,8 +13,6 @@ require_once __DIR__ . '/../../includes/auth.php';
 require_once __DIR__ . '/../../includes/audit_log.php';
 require_once __DIR__ . '/../../includes/notifications.php';
 require_once __DIR__ . '/../../includes/path_helper.php';
-require_once __DIR__ . '/../../includes/invoices.php';
-require_once __DIR__ . '/../../includes/salary_calculator.php';
 
 require_once __DIR__ . '/table_styles.php';
 
@@ -57,22 +55,6 @@ $hasStatusColumn = !empty($statusColumnCheck);
 $approvedByColumnCheck = $db->queryOne("SHOW COLUMNS FROM collections LIKE 'approved_by'");
 $hasApprovedByColumn = !empty($approvedByColumnCheck);
 
-// التحقق من وجود عمود collection_number وإضافته إذا لم يكن موجوداً
-$collectionNumberColumnCheck = $db->queryOne("SHOW COLUMNS FROM collections LIKE 'collection_number'");
-$hasCollectionNumberColumn = !empty($collectionNumberColumnCheck);
-if (!$hasCollectionNumberColumn) {
-    try {
-        $db->execute("ALTER TABLE collections ADD COLUMN collection_number VARCHAR(50) NULL AFTER id");
-        $hasCollectionNumberColumn = true;
-    } catch (Throwable $alterError) {
-        error_log('Failed to add collection_number column: ' . $alterError->getMessage());
-    }
-}
-
-// التحقق من وجود عمود notes
-$notesColumnCheck = $db->queryOne("SHOW COLUMNS FROM collections LIKE 'notes'");
-$hasNotesColumn = !empty($notesColumnCheck);
-
 // معالجة العمليات
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     $action = $_POST['action'] ?? '';
@@ -87,41 +69,25 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         if ($customerId <= 0 || $amount <= 0) {
             $error = 'يجب إدخال العميل والمبلغ';
         } else {
-            $collectionNumber = null;
+            // توليد رقم تحصيل
+            $year = date('Y');
+            $month = date('m');
+            $lastCollection = $db->queryOne(
+                "SELECT collection_number FROM collections WHERE collection_number LIKE ? ORDER BY collection_number DESC LIMIT 1",
+                ["COL-{$year}{$month}-%"]
+            );
             
-            // توليد رقم تحصيل إذا كان العمود موجوداً
-            if ($hasCollectionNumberColumn) {
-                $year = date('Y');
-                $month = date('m');
-                $lastCollection = $db->queryOne(
-                    "SELECT collection_number FROM collections WHERE collection_number LIKE ? ORDER BY collection_number DESC LIMIT 1",
-                    ["COL-{$year}{$month}-%"]
-                );
-                
-                $serial = 1;
-                if (!empty($lastCollection['collection_number'])) {
-                    $parts = explode('-', $lastCollection['collection_number']);
-                    $serial = intval($parts[2] ?? 0) + 1;
-                }
-                $collectionNumber = sprintf("COL-%s%s-%04d", $year, $month, $serial);
+            $serial = 1;
+            if ($lastCollection) {
+                $parts = explode('-', $lastCollection['collection_number']);
+                $serial = intval($parts[2] ?? 0) + 1;
             }
+            $collectionNumber = sprintf("COL-%s%s-%04d", $year, $month, $serial);
             
             // بناء الاستعلام بشكل ديناميكي
-            $columns = ['customer_id', 'amount', 'date', 'payment_method', 'collected_by'];
-            $values = [$customerId, $amount, $date, $paymentMethod, $currentUser['id']];
-            $placeholders = ['?', '?', '?', '?', '?'];
-            
-            if ($hasCollectionNumberColumn && $collectionNumber !== null) {
-                array_unshift($columns, 'collection_number');
-                array_unshift($values, $collectionNumber);
-                array_unshift($placeholders, '?');
-            }
-            
-            if ($hasNotesColumn) {
-                $columns[] = 'notes';
-                $values[] = $notes;
-                $placeholders[] = '?';
-            }
+            $columns = ['collection_number', 'customer_id', 'amount', 'date', 'payment_method', 'collected_by', 'notes'];
+            $values = [$collectionNumber, $customerId, $amount, $date, $paymentMethod, $currentUser['id'], $notes];
+            $placeholders = ['?', '?', '?', '?', '?', '?', '?'];
             
             if ($hasStatusColumn) {
                 $columns[] = 'status';
@@ -139,133 +105,12 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 'amount' => $amount
             ]);
             
-            // تحديث راتب المندوب المسؤول عن العميل (المستحق للعمولة)
-            // وليس بالضرورة الشخص الذي قام بالتحصيل
-            try {
-                $salesRepId = getSalesRepForCustomer($customerId);
-                if ($salesRepId && $salesRepId > 0) {
-                    refreshSalesCommissionForUser(
-                        $salesRepId,
-                        $date,
-                        'تحديث تلقائي بعد تسجيل تحصيل جديد'
-                    );
-                }
-            } catch (Throwable $e) {
-                // لا نوقف العملية إذا فشل تحديث الراتب
-                error_log('Error updating sales commission after collection: ' . $e->getMessage());
-            }
-            
-            // توزيع التحصيل على فواتير العميل وتحديثها
-            $distributionResult = distributeCollectionToInvoices($customerId, $amount, $currentUser['id']);
-            
-            $instantRewardApplied = false;
-            
-            if ($distributionResult['success']) {
-                $updatedCount = count($distributionResult['updated_invoices'] ?? []);
-                $collectionNumberText = $collectionNumber !== null ? $collectionNumber : '#' . $collectionId;
-                if ($updatedCount > 0) {
-                    $success = 'تم إضافة التحصيل بنجاح: ' . $collectionNumberText . ' وتم تحديث ' . $updatedCount . ' فاتورة';
-                } else {
-                    $success = 'تم إضافة التحصيل بنجاح: ' . $collectionNumberText;
-                }
-            } else {
-                $collectionNumberText = $collectionNumber !== null ? $collectionNumber : '#' . $collectionId;
-                $success = 'تم إضافة التحصيل بنجاح: ' . $collectionNumberText . ' (ملاحظة: ' . ($distributionResult['message'] ?? 'لم يتم تحديث الفواتير') . ')';
-            }
-            
-            // مكافأة فورية بنسبة 2% للمندوب الذي قام بالتحصيل
-            if (($currentUser['role'] ?? '') === 'sales') {
-                try {
-                    $instantRewardApplied = applyCollectionInstantReward(
-                        $currentUser['id'],
-                        $amount,
-                        $date,
-                        $collectionId,
-                        $currentUser['id']
-                    );
-                } catch (Throwable $instantRewardError) {
-                    error_log('Instant collection reward error: ' . $instantRewardError->getMessage());
-                }
-            }
-            
-            if ($instantRewardApplied) {
-                $success .= ' وتم إضافة مكافأة 2% إلى راتبك فوراً.';
-            }
-        }
-    } elseif ($action === 'delete_collection') {
-        $collectionId = intval($_POST['collection_id'] ?? 0);
-        
-        if ($collectionId <= 0) {
-            $error = 'معرّف التحصيل غير صحيح';
-        } else {
-            // التحقق من أن التحصيل يخص المستخدم الحالي (للمندوبين)
-            if ($currentUser['role'] === 'sales') {
-                $collection = $db->queryOne("SELECT * FROM collections WHERE id = ? AND collected_by = ?", [$collectionId, $currentUser['id']]);
-            } else {
-                $collection = $db->queryOne("SELECT * FROM collections WHERE id = ?", [$collectionId]);
-            }
-            
-            if ($collection) {
-                $customerId = $collection['customer_id'] ?? 0;
-                $collectionDate = $collection['date'] ?? null;
-                
-                $db->execute("DELETE FROM collections WHERE id = ?", [$collectionId]);
-                
-                logAudit($currentUser['id'], 'delete_collection', 'collection', $collectionId, 
-                         json_encode($collection), null);
-                
-                // تحديث راتب المندوب المسؤول عن العميل (المستحق للعمولة)
-                try {
-                    $salesRepId = getSalesRepForCustomer($customerId);
-                    if ($salesRepId && $salesRepId > 0) {
-                        refreshSalesCommissionForUser(
-                            $salesRepId,
-                            $collectionDate,
-                            'تحديث تلقائي بعد حذف تحصيل'
-                        );
-                    }
-                } catch (Throwable $e) {
-                    // لا نوقف العملية إذا فشل تحديث الراتب
-                    error_log('Error updating sales commission after collection deletion: ' . $e->getMessage());
-                }
-                
-                // إلغاء المكافأة الفورية إذا كان التحصيل لمندوب مبيعات
-                $collectorId = intval($collection['collected_by'] ?? 0);
-                $shouldReverseReward = false;
-                if ($collectorId > 0) {
-                    if ($collectorId === ($currentUser['id'] ?? 0) && ($currentUser['role'] ?? '') === 'sales') {
-                        $shouldReverseReward = true;
-                    } else {
-                        $collectorInfo = $db->queryOne("SELECT role FROM users WHERE id = ?", [$collectorId]);
-                        $shouldReverseReward = ($collectorInfo['role'] ?? '') === 'sales';
-                    }
-                }
-                
-                if ($shouldReverseReward) {
-                    try {
-                        applyCollectionInstantReward(
-                            $collectorId,
-                            floatval($collection['amount'] ?? 0),
-                            $collectionDate,
-                            $collectionId,
-                            $currentUser['id'],
-                            true
-                        );
-                    } catch (Throwable $instantRewardError) {
-                        error_log('Instant collection reward reversal error: ' . $instantRewardError->getMessage());
-                    }
-                }
-                
-                $success = 'تم حذف التحصيل بنجاح';
-            } else {
-                $error = 'التحصيل غير موجود أو ليس لديك صلاحية لحذفه';
-            }
+            $success = 'تم إضافة التحصيل بنجاح: ' . $collectionNumber;
         }
     }
 }
 
 // بناء استعلام SQL
-// استخدام c.* آمن الآن لأننا أضفنا collection_number إذا لم يكن موجوداً
 $sql = "SELECT c.*, cust.name as customer_name, cust.phone as customer_phone, u.full_name as collected_by_name";
 if ($hasApprovedByColumn) {
     $sql .= ", u2.full_name as approved_by_name";
@@ -369,7 +214,7 @@ $customers = $db->query("SELECT id, name FROM customers WHERE status = 'active' 
 </div>
 
 <?php if ($error): ?>
-    <div class="alert alert-danger alert-dismissible fade show" id="errorAlert" data-auto-refresh="true">
+    <div class="alert alert-danger alert-dismissible fade show">
         <i class="bi bi-exclamation-triangle-fill me-2"></i>
         <?php echo htmlspecialchars($error); ?>
         <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
@@ -377,51 +222,11 @@ $customers = $db->query("SELECT id, name FROM customers WHERE status = 'active' 
 <?php endif; ?>
 
 <?php if ($success): ?>
-    <div class="alert alert-success alert-dismissible fade show" id="successAlert" data-auto-refresh="true">
+    <div class="alert alert-success alert-dismissible fade show">
         <i class="bi bi-check-circle-fill me-2"></i>
         <?php echo htmlspecialchars($success); ?>
         <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
     </div>
-    <script>
-    // إعادة تحميل الصفحة تلقائياً بعد أي رسالة (نجاح أو خطأ) لمنع تكرار الطلبات
-    (function() {
-        const successAlert = document.getElementById('successAlert');
-        const errorAlert = document.getElementById('errorAlert');
-        
-        // التحقق من وجود رسالة نجاح أو خطأ
-        const alertElement = successAlert || errorAlert;
-        
-        if (alertElement && alertElement.dataset.autoRefresh === 'true') {
-            // انتظار 3 ثوانٍ لإعطاء المستخدم وقتاً لرؤية الرسالة
-            setTimeout(function() {
-                // إعادة تحميل الصفحة بدون معاملات GET لمنع تكرار الطلبات
-                const currentUrl = new URL(window.location.href);
-                // إزالة معاملات success و error من URL
-                currentUrl.searchParams.delete('success');
-                currentUrl.searchParams.delete('error');
-                // إعادة تحميل الصفحة
-                window.location.href = currentUrl.toString();
-            }, 3000);
-        }
-    })();
-    </script>
-<?php endif; ?>
-
-<?php if ($error): ?>
-    <script>
-    // إعادة تحميل الصفحة تلقائياً بعد رسالة الخطأ
-    (function() {
-        const errorAlert = document.getElementById('errorAlert');
-        if (errorAlert && errorAlert.dataset.autoRefresh === 'true') {
-            setTimeout(function() {
-                const currentUrl = new URL(window.location.href);
-                currentUrl.searchParams.delete('success');
-                currentUrl.searchParams.delete('error');
-                window.location.href = currentUrl.toString();
-            }, 3000);
-        }
-    })();
-    </script>
 <?php endif; ?>
 
 <!-- الفلاتر -->
@@ -503,12 +308,13 @@ $customers = $db->query("SELECT id, name FROM customers WHERE status = 'active' 
                         <th>الحالة</th>
                         <?php endif; ?>
                         <th>المحصل</th>
+                        <th>الإجراءات</th>
                     </tr>
                 </thead>
                 <tbody>
                     <?php if (empty($collections)): ?>
                         <tr>
-                            <td colspan="<?php echo $hasStatusColumn ? '7' : '6'; ?>" class="text-center text-muted">لا توجد تحصيلات</td>
+                            <td colspan="<?php echo $hasStatusColumn ? '8' : '7'; ?>" class="text-center text-muted">لا توجد تحصيلات</td>
                         </tr>
                     <?php else: ?>
                         <?php foreach ($collections as $collection): ?>
@@ -545,6 +351,11 @@ $customers = $db->query("SELECT id, name FROM customers WHERE status = 'active' 
                                 </td>
                                 <?php endif; ?>
                                 <td><?php echo htmlspecialchars($collection['collected_by_name'] ?? '-'); ?></td>
+                                <td>
+                                    <a href="?page=sales_collections&id=<?php echo $collection['id']; ?>" class="btn btn-sm btn-info">
+                                        <i class="bi bi-eye"></i>
+                                    </a>
+                                </td>
                             </tr>
                         <?php endforeach; ?>
                     <?php endif; ?>
@@ -650,5 +461,4 @@ $customers = $db->query("SELECT id, name FROM customers WHERE status = 'active' 
     </div>
 </div>
 <?php endif; ?>
-
 

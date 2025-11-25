@@ -1,34 +1,15 @@
 <?php
 session_start();
 define('ACCESS_ALLOWED', true);
-
-// معالجة طلب manifest.json من المسار /v1/manifest.json
-$requestUri = $_SERVER['REQUEST_URI'] ?? '';
-if (preg_match('#^/v1/manifest\.json$#', $requestUri) || preg_match('#^/[^/]+/v1/manifest\.json$#', $requestUri)) {
-    // إعادة التوجيه إلى manifest.php أو manifest.json
-    $manifestPath = __DIR__ . '/manifest.php';
-    if (file_exists($manifestPath)) {
-        require_once $manifestPath;
-        exit;
-    }
-    $manifestPath = __DIR__ . '/manifest.json';
-    if (file_exists($manifestPath)) {
-        header('Content-Type: application/manifest+json; charset=utf-8');
-        readfile($manifestPath);
-        exit;
-    }
-    http_response_code(404);
-    header('Content-Type: application/json');
-    echo json_encode(['error' => 'Manifest not found']);
-    exit;
-}
-
 require_once __DIR__ . '/includes/config.php';
 require_once __DIR__ . '/includes/install.php';
 
+// تهيئة قاعدة البيانات تلقائياً في الخلفية
 if (needsInstallation()) {
+    // تنفيذ التهيئة في الخلفية
     $installResult = initializeDatabase();
     
+    // إذا فشلت التهيئة، عرض رسالة خطأ
     if (!$installResult['success']) {
         die('<!DOCTYPE html>
         <html lang="ar" dir="rtl">
@@ -61,7 +42,10 @@ require_once __DIR__ . '/includes/db.php';
 require_once __DIR__ . '/includes/auth.php';
 require_once __DIR__ . '/includes/path_helper.php';
 
+// تعريف ASSETS_URL إذا لم يكن معرّفاً
+// (يجب أن يكون معرّفاً بالفعل من config.php، لكن للتأكد)
 if (!defined('ASSETS_URL')) {
+    // استخدام نفس الطريقة من config.php
     $requestUri = $_SERVER['REQUEST_URI'] ?? '';
     $basePath = '';
     
@@ -92,20 +76,25 @@ if (!defined('ASSETS_URL')) {
     }
 }
 
+// إذا كان المستخدم مسجلاً بالفعل، إعادة توجيه
 if (isLoggedIn()) {
     $userRole = $_SESSION['role'] ?? 'accountant';
     $dashboardUrl = getDashboardUrl($userRole);
     
+    // تنظيف شامل للمسار لضمان عدم تكرار الخطأ
     // 1. إزالة أي بروتوكول
     $dashboardUrl = preg_replace('/^https?:\/\//', '', $dashboardUrl);
     $dashboardUrl = preg_replace('/^\/\//', '/', $dashboardUrl);
     
+    // 2. التأكد من أن المسار يبدأ بـ /
     if (strpos($dashboardUrl, '/') !== 0) {
         $dashboardUrl = '/' . $dashboardUrl;
     }
     
+    // 3. تنظيف المسار (إزالة // المكررة)
     $dashboardUrl = preg_replace('/\/+/', '/', $dashboardUrl);
     
+    // 4. إزالة أي hostname إذا كان موجوداً
     if (preg_match('/^\/[^\/]+\.[a-z]/i', $dashboardUrl)) {
         $parts = explode('/', $dashboardUrl);
         $dashboardIndex = array_search('dashboard', $parts);
@@ -116,29 +105,36 @@ if (isLoggedIn()) {
         }
     }
     
+    // 5. التحقق النهائي: إذا كان المسار لا يحتوي على 'dashboard'، أضفه
     if (strpos($dashboardUrl, '/dashboard') === false) {
         $dashboardUrl = '/dashboard/' . $userRole . '.php';
     }
     
+    // 6. التأكد من أن المسار لا يحتوي على http:// أو https:// مرة أخرى
     if (strpos($dashboardUrl, 'http://') === 0 || strpos($dashboardUrl, 'https://') === 0) {
         $parsed = parse_url($dashboardUrl);
         $dashboardUrl = $parsed['path'] ?? '/dashboard/' . $userRole . '.php';
     }
     
+    // 7. تنظيف نهائي
     $dashboardUrl = trim($dashboardUrl);
     if (empty($dashboardUrl) || $dashboardUrl === '/') {
         $dashboardUrl = '/dashboard/' . $userRole . '.php';
     }
     
+    // منع حلقة إعادة التوجيه - التحقق من أننا لسنا في dashboard بالفعل
     $currentScript = basename($_SERVER['PHP_SELF']);
     if ($currentScript !== 'index.php') {
+        // إذا كنا في صفحة أخرى، لا نعيد التوجيه
         return;
     }
     
+    // استخدام header redirect إذا كان متاحاً
     if (!headers_sent()) {
         header('Location: ' . $dashboardUrl);
         exit;
     } else {
+        // استخدام JavaScript redirect كبديل
         echo '<script>window.location.href = "' . htmlspecialchars($dashboardUrl) . '";</script>';
         echo '<noscript><meta http-equiv="refresh" content="0;url=' . htmlspecialchars($dashboardUrl) . '"></noscript>';
         exit;
@@ -148,12 +144,15 @@ if (isLoggedIn()) {
 $error = '';
 $success = '';
 
+// معالجة تسجيل الدخول
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     $username = $_POST['username'] ?? '';
     $password = $_POST['password'] ?? '';
     $login_method = $_POST['login_method'] ?? 'password';
     
     if ($login_method === 'webauthn') {
+        // سيتم التعامل مع WebAuthn عبر JavaScript
+        // لا حاجة لمعالجة هنا
     } else {
         if (empty($username) || empty($password)) {
             $error = 'يرجى إدخال اسم المستخدم وكلمة المرور';
@@ -162,18 +161,24 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             $result = login($username, $password, $rememberMe);
             
             if ($result['success']) {
+                // إعادة توجيه إلى لوحة التحكم المناسبة
                 $userRole = $result['user']['role'] ?? 'accountant';
                 $dashboardUrl = getDashboardUrl($userRole);
                 
+                // تنظيف شامل للمسار لضمان عدم تكرار الخطأ
+                // 1. إزالة أي بروتوكول
                 $dashboardUrl = preg_replace('/^https?:\/\//', '', $dashboardUrl);
                 $dashboardUrl = preg_replace('/^\/\//', '/', $dashboardUrl);
                 
+                // 2. التأكد من أن المسار يبدأ بـ /
                 if (strpos($dashboardUrl, '/') !== 0) {
                     $dashboardUrl = '/' . $dashboardUrl;
                 }
                 
+                // 3. تنظيف المسار (إزالة // المكررة)
                 $dashboardUrl = preg_replace('/\/+/', '/', $dashboardUrl);
                 
+                // 4. إزالة أي hostname إذا كان موجوداً
                 if (preg_match('/^\/[^\/]+\.[a-z]/i', $dashboardUrl)) {
                     $parts = explode('/', $dashboardUrl);
                     $dashboardIndex = array_search('dashboard', $parts);
@@ -184,15 +189,18 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     }
                 }
                 
+                // 5. التحقق النهائي: إذا كان المسار لا يحتوي على 'dashboard'، أضفه
                 if (strpos($dashboardUrl, '/dashboard') === false) {
                     $dashboardUrl = '/dashboard/' . $userRole . '.php';
                 }
                 
+                // 6. التأكد من أن المسار لا يحتوي على http:// أو https:// مرة أخرى
                 if (strpos($dashboardUrl, 'http://') === 0 || strpos($dashboardUrl, 'https://') === 0) {
                     $parsed = parse_url($dashboardUrl);
                     $dashboardUrl = $parsed['path'] ?? '/dashboard/' . $userRole . '.php';
                 }
                 
+                // 7. تنظيف نهائي
                 $dashboardUrl = trim($dashboardUrl);
                 if (empty($dashboardUrl) || $dashboardUrl === '/') {
                     $dashboardUrl = '/dashboard/' . $userRole . '.php';
@@ -202,6 +210,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     header('Location: ' . $dashboardUrl);
                     exit;
                 } else {
+                    // استخدام window.location.pathname للتأكد من المسار المطلق
                     echo '<script>window.location.href = "' . htmlspecialchars($dashboardUrl) . '";</script>';
                     echo '<noscript><meta http-equiv="refresh" content="0;url=' . htmlspecialchars($dashboardUrl) . '"></noscript>';
                     exit;
@@ -221,101 +230,17 @@ $lang = $translations;
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <meta name="theme-color" content="#f1c40f">
     <title><?php echo $lang['login_title']; ?> - <?php echo APP_NAME; ?></title>
     
-    <!-- PWA Manifest -->
-    <link rel="manifest" href="/manifest.json">
-    
+    <!-- Bootstrap 5 CSS -->
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+    <!-- Bootstrap Icons -->
     <link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.0/font/bootstrap-icons.css" rel="stylesheet">
+    <!-- Custom CSS -->
     <link href="<?php echo ASSETS_URL; ?>css/style.css" rel="stylesheet">
     <link href="<?php echo ASSETS_URL; ?>css/rtl.css" rel="stylesheet">
-    
-    <!-- PWA Splash Screen CSS -->
-    <style>
-        /* شاشة التحميل الرئيسية - ألوان التطبيق */
-        #pwaSplashScreen {
-            position: fixed;
-            top: 0;
-            left: 0;
-            width: 100%;
-            height: 100%;
-            background: linear-gradient(135deg, #f4d03f 0%, #f1c40f 50%, #f4d03f 100%);
-            background-size: 400% 400%;
-            animation: gradientShift 8s ease infinite;
-            display: flex;
-            flex-direction: column;
-            justify-content: center;
-            align-items: center;
-            z-index: 9999;
-            transition: opacity 0.5s ease, visibility 0.5s ease;
-        }
-        
-        @keyframes gradientShift {
-            0% { background-position: 0% 50%; }
-            50% { background-position: 100% 50%; }
-            100% { background-position: 0% 50%; }
-        }
-        
-        #pwaSplashScreen.hidden {
-            opacity: 0;
-            visibility: hidden;
-            pointer-events: none;
-        }
-        
-        .splash-logo {
-            width: 180px;
-            height: 180px;
-            margin-bottom: 2rem;
-            animation: logoFadeIn 0.8s ease-out, logoFloat 3s ease-in-out infinite 0.8s;
-            filter: drop-shadow(0 8px 25px rgba(0, 0, 0, 0.3));
-        }
-        
-        @keyframes logoFadeIn {
-            from {
-                opacity: 0;
-                transform: scale(0.8);
-            }
-            to {
-                opacity: 1;
-                transform: scale(1);
-            }
-        }
-        
-        @keyframes logoFloat {
-            0%, 100% { transform: translateY(0px); }
-            50% { transform: translateY(-10px); }
-        }
-        
-        .splash-title {
-            color: white;
-            font-size: 2rem;
-            font-weight: 700;
-            margin-bottom: 1rem;
-            letter-spacing: 2px;
-            text-shadow: 0 4px 20px rgba(0, 0, 0, 0.3);
-            animation: titleFadeIn 1s ease-out 0.3s both;
-        }
-        
-        @keyframes titleFadeIn {
-            from {
-                opacity: 0;
-                transform: translateY(20px);
-            }
-            to {
-                opacity: 1;
-                transform: translateY(0);
-            }
-        }
-    </style>
 </head>
 <body class="login-page">
-    <!-- PWA Splash Screen -->
-    <div id="pwaSplashScreen">
-        <img src="<?php echo ASSETS_URL; ?>icons/icon-192x192.png" alt="<?php echo APP_NAME; ?>" class="splash-logo">
-        <div class="splash-title"><?php echo APP_NAME; ?></div>
-    </div>
     <div class="container-fluid py-4 py-md-5">
         <div class="row justify-content-center align-items-center min-vh-100">
             <div class="col-11 col-sm-10 col-md-8 col-lg-6 col-xl-5 col-xxl-4">
@@ -419,261 +344,6 @@ $lang = $translations;
     <script src="<?php echo ASSETS_URL; ?>js/main.js"></script>
     
     <script>
-        // PWA Splash Screen - استخدام قاعدة البيانات لإدارة الجلسات
-        (function() {
-            const splashScreen = document.getElementById('pwaSplashScreen');
-            if (!splashScreen) return;
-            
-            let splashSessionToken = sessionStorage.getItem('pwaSplashToken');
-            let inactivityTimer = null;
-            let deleteSessionOnUnload = false;
-            
-            function hideSplashScreen() {
-                setTimeout(function() {
-                    splashScreen.classList.add('hidden');
-                    setTimeout(function() {
-                        splashScreen.style.display = 'none';
-                    }, 500);
-                }, 800); // تأخير 800ms لإظهار الشاشة
-            }
-            
-            // حذف الجلسة من قاعدة البيانات
-            function deleteSplashSession(token) {
-                if (!token) return;
-                
-                const apiUrl = '<?php 
-                    if (function_exists("getRelativeUrl")) {
-                        echo getRelativeUrl("api/pwa_splash_session.php");
-                    } else {
-                        echo "/api/pwa_splash_session.php";
-                    }
-                ?>';
-                
-                fetch(apiUrl + '?action=delete&token=' + encodeURIComponent(token), {
-                    method: 'GET',
-                    credentials: 'same-origin'
-                }).catch(function(err) {
-                    console.log('Failed to delete splash session:', err);
-                });
-                
-                sessionStorage.removeItem('pwaSplashToken');
-                splashSessionToken = null;
-            }
-            
-            // إنشاء جلسة جديدة في قاعدة البيانات
-            function createSplashSession() {
-                const apiUrl = '<?php 
-                    if (function_exists("getRelativeUrl")) {
-                        echo getRelativeUrl("api/pwa_splash_session.php");
-                    } else {
-                        echo "/api/pwa_splash_session.php";
-                    }
-                ?>';
-                
-                return fetch(apiUrl + '?action=create', {
-                    method: 'GET',
-                    credentials: 'same-origin'
-                })
-                .then(function(response) {
-                    return response.json();
-                })
-                .then(function(data) {
-                    if (data.success && data.token) {
-                        splashSessionToken = data.token;
-                        sessionStorage.setItem('pwaSplashToken', data.token);
-                        return data.token;
-                    }
-                    return null;
-                })
-                .catch(function(err) {
-                    console.log('Failed to create splash session:', err);
-                    return null;
-                });
-            }
-            
-            // التحقق من وجود جلسة نشطة
-            function checkSplashSession(token) {
-                if (!token) return Promise.resolve(false);
-                
-                const apiUrl = '<?php 
-                    if (function_exists("getRelativeUrl")) {
-                        echo getRelativeUrl("api/pwa_splash_session.php");
-                    } else {
-                        echo "/api/pwa_splash_session.php";
-                    }
-                ?>';
-                
-                return fetch(apiUrl + '?action=check&token=' + encodeURIComponent(token), {
-                    method: 'GET',
-                    credentials: 'same-origin'
-                })
-                .then(function(response) {
-                    return response.json();
-                })
-                .then(function(data) {
-                    return data.exists === true;
-                })
-                .catch(function(err) {
-                    console.log('Failed to check splash session:', err);
-                    return false;
-                });
-            }
-            
-            // إعادة تعيين مؤقت الخمول
-            function resetInactivityTimer() {
-                if (inactivityTimer) {
-                    clearTimeout(inactivityTimer);
-                }
-                
-                // حذف الجلسة بعد 3 ثواني من الخمول
-                inactivityTimer = setTimeout(function() {
-                    if (splashSessionToken) {
-                        deleteSplashSession(splashSessionToken);
-                    }
-                }, 3000);
-            }
-            
-            // مراقبة النشاط
-            ['mousedown', 'mousemove', 'keypress', 'scroll', 'touchstart'].forEach(function(event) {
-                document.addEventListener(event, resetInactivityTimer, true);
-            });
-            
-            // استخدام pageshow event للتحقق من أن الصفحة تم تحميلها من جديد
-            window.addEventListener('pageshow', function(event) {
-                // إذا كانت الصفحة من cache (back/forward)، لا تظهر splash screen
-                if (event.persisted) {
-                    splashScreen.style.display = 'none';
-                    splashScreen.classList.add('hidden');
-                    return;
-                }
-                
-                // إذا كانت الصفحة جديدة (ليست من cache)، امسح الجلسة وأظهر splash screen
-                if (splashSessionToken) {
-                    deleteSplashSession(splashSessionToken);
-                }
-                
-                // إنشاء جلسة جديدة وإظهار splash screen
-                createSplashSession().then(function(token) {
-                    if (token) {
-                        splashScreen.classList.remove('hidden');
-                        splashScreen.style.display = 'flex';
-                        resetInactivityTimer();
-                        
-                        // إخفاء الشاشة بعد تحميل الصفحة
-                        if (document.readyState === 'complete') {
-                            hideSplashScreen();
-                        } else {
-                            window.addEventListener('load', hideSplashScreen);
-                        }
-                    } else {
-                        // إذا فشل إنشاء الجلسة، أخفي splash screen
-                        hideSplashScreen();
-                    }
-                }).catch(function() {
-                    // إذا فشل API، أخفي splash screen
-                    hideSplashScreen();
-                });
-            });
-            
-            // التحقق من الجلسة عند تحميل الصفحة لأول مرة
-            // استخدام timeout لضمان إخفاء splash screen حتى لو فشل API
-            let splashCheckTimeout = setTimeout(function() {
-                // إذا استغرق التحقق أكثر من 2 ثانية، أخفي splash screen تلقائياً
-                if (splashScreen && !splashScreen.classList.contains('hidden')) {
-                    hideSplashScreen();
-                }
-            }, 2000);
-            
-            if (splashSessionToken) {
-                checkSplashSession(splashSessionToken).then(function(exists) {
-                    clearTimeout(splashCheckTimeout);
-                    
-                    if (exists) {
-                        // الجلسة موجودة، لا تظهر splash screen
-                        splashScreen.style.display = 'none';
-                        splashScreen.classList.add('hidden');
-                        resetInactivityTimer();
-                    } else {
-                        // الجلسة غير موجودة، أنشئ جلسة جديدة وأظهر splash screen
-                        createSplashSession().then(function(token) {
-                            if (token) {
-                                splashScreen.classList.remove('hidden');
-                                splashScreen.style.display = 'flex';
-                                resetInactivityTimer();
-                                
-                                if (document.readyState === 'complete') {
-                                    hideSplashScreen();
-                                } else if (document.readyState === 'interactive') {
-                                    window.addEventListener('load', hideSplashScreen);
-                                } else {
-                                    window.addEventListener('load', hideSplashScreen);
-                                }
-                            } else {
-                                // إذا فشل إنشاء الجلسة، أخفي splash screen
-                                hideSplashScreen();
-                            }
-                        }).catch(function() {
-                            // إذا فشل API، أخفي splash screen
-                            hideSplashScreen();
-                        });
-                    }
-                }).catch(function() {
-                    // إذا فشل API، أخفي splash screen
-                    clearTimeout(splashCheckTimeout);
-                    hideSplashScreen();
-                });
-            } else {
-                // لا توجد جلسة، أنشئ جلسة جديدة وأظهر splash screen
-                createSplashSession().then(function(token) {
-                    clearTimeout(splashCheckTimeout);
-                    
-                    if (token) {
-                        splashScreen.classList.remove('hidden');
-                        splashScreen.style.display = 'flex';
-                        resetInactivityTimer();
-                        
-                        if (document.readyState === 'complete') {
-                            hideSplashScreen();
-                        } else if (document.readyState === 'interactive') {
-                            window.addEventListener('load', hideSplashScreen);
-                        } else {
-                            window.addEventListener('load', hideSplashScreen);
-                        }
-                    } else {
-                        // إذا فشل إنشاء الجلسة، أخفي splash screen
-                        hideSplashScreen();
-                    }
-                }).catch(function() {
-                    // إذا فشل API، أخفي splash screen
-                    clearTimeout(splashCheckTimeout);
-                    hideSplashScreen();
-                });
-            }
-            
-            // حذف الجلسة عند إغلاق التطبيق
-            window.addEventListener('beforeunload', function() {
-                if (splashSessionToken) {
-                    deleteSplashSession(splashSessionToken);
-                }
-            });
-            
-            // حذف الجلسة عند فقدان التركيز (إغلاق التطبيق)
-            document.addEventListener('visibilitychange', function() {
-                if (document.hidden) {
-                    deleteSessionOnUnload = true;
-                    // حذف الجلسة بعد 3 ثواني من فقدان التركيز
-                    setTimeout(function() {
-                        if (deleteSessionOnUnload && splashSessionToken) {
-                            deleteSplashSession(splashSessionToken);
-                        }
-                    }, 3000);
-                } else {
-                    deleteSessionOnUnload = false;
-                    resetInactivityTimer();
-                }
-            });
-        })();
-        
         // إظهار/إخفاء كلمة المرور
         document.getElementById('togglePassword')?.addEventListener('click', function() {
             const passwordInput = document.getElementById('password');

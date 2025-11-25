@@ -311,7 +311,7 @@ $backUrl = '?page=attendance_management&month=' . urlencode($selectedMonth);
                                         <?php endif; ?>
                                     </td>
                                     <td data-label="ساعات العمل">
-                                        <?php echo isset($record['work_hours']) && $record['work_hours'] > 0 ? formatHours($record['work_hours']) : '-'; ?>
+                                        <?php echo isset($record['work_hours']) && $record['work_hours'] > 0 ? number_format($record['work_hours'], 2) . ' ساعة' : '-'; ?>
                                     </td>
                                     <td data-label="الحالة">
                                         <?php if ($record['check_out_time']): ?>
@@ -369,7 +369,7 @@ $backUrl = '?page=attendance_management&month=' . urlencode($selectedMonth);
                                         <strong><?php echo $data['stats']['present_days']; ?></strong>
                                     </td>
                                     <td data-label="ساعات العمل">
-                                        <strong class="text-success"><?php echo formatHours($data['stats']['total_hours']); ?></strong>
+                                        <strong class="text-success"><?php echo $data['stats']['total_hours']; ?> ساعة</strong>
                                     </td>
                                     <td data-label="متوسط التأخير">
                                         <?php if (($data['delay']['average_minutes'] ?? 0) > 0): ?>

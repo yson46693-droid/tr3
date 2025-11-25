@@ -14,7 +14,6 @@ require_once __DIR__ . '/../../includes/audit_log.php';
 require_once __DIR__ . '/../../includes/notifications.php';
 require_once __DIR__ . '/../../includes/approval_system.php';
 require_once __DIR__ . '/../../includes/table_styles.php';
-require_once __DIR__ . '/../../includes/salary_calculator.php';
 
 requireRole(['accountant', 'manager']);
 
@@ -84,41 +83,12 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 'amount' => $amount
             ]);
             
-            // تحديث راتب المندوب المسؤول عن العميل (المستحق للعمولة)
-            try {
-                $salesRepId = getSalesRepForCustomer($customerId);
-                if ($salesRepId && $salesRepId > 0) {
-                    refreshSalesCommissionForUser(
-                        $salesRepId,
-                        $date,
-                        'تحديث تلقائي بعد تسجيل تحصيل جديد من المحاسب'
-                    );
-                }
-            } catch (Throwable $e) {
-                // لا نوقف العملية إذا فشل تحديث الراتب
-                error_log('Error updating sales commission after collection: ' . $e->getMessage());
-            }
-            
             // إرسال إشعار للمدير للموافقة
             if ($hasStatus) {
                 notifyManagers('تحصيل جديد', "تم إضافة تحصيل جديد بقيمة " . formatCurrency($amount), 'info');
             }
             
             $success = 'تم إضافة التحصيل بنجاح';
-            
-            if (($currentUser['role'] ?? '') === 'sales') {
-                try {
-                    applyCollectionInstantReward(
-                        $currentUser['id'],
-                        $amount,
-                        $date,
-                        $result['insert_id'] ?? null,
-                        $currentUser['id']
-                    );
-                } catch (Throwable $instantRewardError) {
-                    error_log('Instant collection reward error (accountant add): ' . $instantRewardError->getMessage());
-                }
-            }
         }
     } elseif ($action === 'update_collection') {
         $collectionId = intval($_POST['collection_id'] ?? 0);
@@ -134,8 +104,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             $error = 'يجب إدخال مبلغ صحيح أكبر من الصفر';
         } else {
             $oldCollection = $db->queryOne("SELECT * FROM collections WHERE id = ?", [$collectionId]);
-            $oldCollectedBy = is_array($oldCollection) && isset($oldCollection['collected_by']) ? $oldCollection['collected_by'] : null;
-            $oldCollectionDate = is_array($oldCollection) && isset($oldCollection['date']) ? $oldCollection['date'] : null;
             
             // التحقق من وجود عمود notes
             $notesColumnCheck = $db->queryOne("SHOW COLUMNS FROM collections LIKE 'notes'");
@@ -157,69 +125,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                      json_encode($oldCollection), ['amount' => $amount]);
             
             $success = 'تم تحديث التحصيل بنجاح';
-            
-            $collectorId = intval($oldCollection['collected_by'] ?? 0);
-            $shouldAdjustReward = false;
-            if ($collectorId > 0) {
-                if ($collectorId === ($currentUser['id'] ?? 0) && ($currentUser['role'] ?? '') === 'sales') {
-                    $shouldAdjustReward = true;
-                } else {
-                    $collectorInfo = $db->queryOne("SELECT role FROM users WHERE id = ?", [$collectorId]);
-                    $shouldAdjustReward = ($collectorInfo['role'] ?? '') === 'sales';
-                }
-            }
-            
-            if ($shouldAdjustReward) {
-                try {
-                    $oldAmount = floatval($oldCollection['amount'] ?? 0);
-                    if ($oldAmount > 0) {
-                        applyCollectionInstantReward(
-                            $collectorId,
-                            $oldAmount,
-                            $oldCollectionDate,
-                            $collectionId,
-                            $currentUser['id'],
-                            true
-                        );
-                    }
-                    applyCollectionInstantReward(
-                        $collectorId,
-                        $amount,
-                        $date,
-                        $collectionId,
-                        $currentUser['id']
-                    );
-                } catch (Throwable $instantRewardError) {
-                    error_log('Instant collection reward adjustment error: ' . $instantRewardError->getMessage());
-                }
-            }
-            
-            // تحديث راتب المندوب المسؤول عن العميل (المستحق للعمولة)
-            // نحدث للتاريخ القديم والجديد للتأكد من الحساب الصحيح
-            $customerId = $oldCollection['customer_id'] ?? 0;
-            if ($customerId > 0) {
-                try {
-                    $salesRepId = getSalesRepForCustomer($customerId);
-                    if ($salesRepId && $salesRepId > 0) {
-                        // تحديث للتاريخ القديم (لإزالة التأثير السابق)
-                        if ($oldCollectionDate) {
-                            refreshSalesCommissionForUser(
-                                $salesRepId,
-                                $oldCollectionDate,
-                                'تحديث تلقائي بعد تعديل تحصيل'
-                            );
-                        }
-                        // تحديث للتاريخ الجديد
-                        refreshSalesCommissionForUser(
-                            $salesRepId,
-                            $date,
-                            'تحديث تلقائي بعد تعديل تحصيل'
-                        );
-                    }
-                } catch (Throwable $e) {
-                    error_log('Error updating sales commission after collection update: ' . $e->getMessage());
-                }
-            }
         }
     } elseif ($action === 'delete_collection') {
         $collectionId = intval($_POST['collection_id'] ?? 0);
@@ -228,8 +133,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             $error = 'معرّف التحصيل غير صحيح';
         } else {
             $collection = $db->queryOne("SELECT * FROM collections WHERE id = ?", [$collectionId]);
-            $deletedCustomerId = is_array($collection) && isset($collection['customer_id']) ? $collection['customer_id'] : 0;
-            $deletedCollectionDate = is_array($collection) && isset($collection['date']) ? $collection['date'] : null;
             
             if ($collection) {
                 $db->execute("DELETE FROM collections WHERE id = ?", [$collectionId]);
@@ -238,48 +141,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                          json_encode($collection), null);
                 
                 $success = 'تم حذف التحصيل بنجاح';
-                
-                $collectorId = intval($collection['collected_by'] ?? 0);
-                $shouldReverseReward = false;
-                if ($collectorId > 0) {
-                    if ($collectorId === ($currentUser['id'] ?? 0) && ($currentUser['role'] ?? '') === 'sales') {
-                        $shouldReverseReward = true;
-                    } else {
-                        $collectorInfo = $db->queryOne("SELECT role FROM users WHERE id = ?", [$collectorId]);
-                        $shouldReverseReward = ($collectorInfo['role'] ?? '') === 'sales';
-                    }
-                }
-                
-                if ($shouldReverseReward) {
-                    try {
-                        applyCollectionInstantReward(
-                            $collectorId,
-                            floatval($collection['amount'] ?? 0),
-                            $deletedCollectionDate,
-                            $collectionId,
-                            $currentUser['id'],
-                            true
-                        );
-                    } catch (Throwable $instantRewardError) {
-                        error_log('Instant collection reward reversal error: ' . $instantRewardError->getMessage());
-                    }
-                }
-                
-                // تحديث راتب المندوب المسؤول عن العميل (المستحق للعمولة)
-                if ($deletedCustomerId > 0) {
-                    try {
-                        $salesRepId = getSalesRepForCustomer($deletedCustomerId);
-                        if ($salesRepId && $salesRepId > 0) {
-                            refreshSalesCommissionForUser(
-                                $salesRepId,
-                                $deletedCollectionDate,
-                                'تحديث تلقائي بعد حذف تحصيل'
-                            );
-                        }
-                    } catch (Throwable $e) {
-                        error_log('Error updating sales commission after collection deletion: ' . $e->getMessage());
-                    }
-                }
             } else {
                 $error = 'التحصيل غير موجود';
             }
@@ -290,7 +151,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         if ($collectionId <= 0) {
             $error = 'معرّف التحصيل غير صحيح';
         } else {
-            $collectionData = $db->queryOne("SELECT customer_id, date FROM collections WHERE id = ?", [$collectionId]);
             $statusColumnCheck = $db->queryOne("SHOW COLUMNS FROM collections LIKE 'status'");
             $approvedByColumnCheck = $db->queryOne("SHOW COLUMNS FROM collections LIKE 'approved_by'");
             
@@ -310,22 +170,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 logAudit($currentUser['id'], 'approve_collection', 'collection', $collectionId, null, null);
                 
                 $success = 'تم الموافقة على التحصيل بنجاح';
-                
-                // تحديث راتب المندوب المسؤول عن العميل (المستحق للعمولة)
-                if ($collectionData && !empty($collectionData['customer_id'])) {
-                    try {
-                        $salesRepId = getSalesRepForCustomer($collectionData['customer_id']);
-                        if ($salesRepId && $salesRepId > 0) {
-                            refreshSalesCommissionForUser(
-                                $salesRepId,
-                                $collectionData['date'] ?? null,
-                                'تحديث تلقائي بعد موافقة التحصيل'
-                            );
-                        }
-                    } catch (Throwable $e) {
-                        error_log('Error updating sales commission after collection approval: ' . $e->getMessage());
-                    }
-                }
             } else {
                 $error = 'نظام الموافقات غير متاح';
             }
@@ -336,7 +180,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         if ($collectionId <= 0) {
             $error = 'معرّف التحصيل غير صحيح';
         } else {
-            $collectionData = $db->queryOne("SELECT customer_id, date FROM collections WHERE id = ?", [$collectionId]);
             $statusColumnCheck = $db->queryOne("SHOW COLUMNS FROM collections LIKE 'status'");
             $approvedByColumnCheck = $db->queryOne("SHOW COLUMNS FROM collections LIKE 'approved_by'");
             
@@ -356,22 +199,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 logAudit($currentUser['id'], 'reject_collection', 'collection', $collectionId, null, null);
                 
                 $success = 'تم رفض التحصيل';
-                
-                // تحديث راتب المندوب المسؤول عن العميل (المستحق للعمولة)
-                if ($collectionData && !empty($collectionData['customer_id'])) {
-                    try {
-                        $salesRepId = getSalesRepForCustomer($collectionData['customer_id']);
-                        if ($salesRepId && $salesRepId > 0) {
-                            refreshSalesCommissionForUser(
-                                $salesRepId,
-                                $collectionData['date'] ?? null,
-                                'تحديث تلقائي بعد رفض التحصيل'
-                            );
-                        }
-                    } catch (Throwable $e) {
-                        error_log('Error updating sales commission after collection rejection: ' . $e->getMessage());
-                    }
-                }
             } else {
                 $error = 'نظام الموافقات غير متاح';
             }
@@ -480,7 +307,7 @@ $hasStatusColumn = !empty($statusColumnCheck);
 </div>
 
 <?php if ($error): ?>
-    <div class="alert alert-danger alert-dismissible fade show" id="errorAlert" data-auto-refresh="true">
+    <div class="alert alert-danger alert-dismissible fade show">
         <i class="bi bi-exclamation-triangle-fill me-2"></i>
         <?php echo htmlspecialchars($error); ?>
         <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
@@ -488,7 +315,7 @@ $hasStatusColumn = !empty($statusColumnCheck);
 <?php endif; ?>
 
 <?php if ($success): ?>
-    <div class="alert alert-success alert-dismissible fade show" id="successAlert" data-auto-refresh="true">
+    <div class="alert alert-success alert-dismissible fade show">
         <i class="bi bi-check-circle-fill me-2"></i>
         <?php echo htmlspecialchars($success); ?>
         <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
@@ -898,30 +725,5 @@ function deleteCollection(id) {
     document.body.appendChild(form);
     form.submit();
 }
-</script>
-
-<!-- إعادة تحميل الصفحة تلقائياً بعد أي رسالة (نجاح أو خطأ) لمنع تكرار الطلبات -->
-<script>
-// إعادة تحميل الصفحة تلقائياً بعد أي رسالة (نجاح أو خطأ) لمنع تكرار الطلبات
-(function() {
-    const successAlert = document.getElementById('successAlert');
-    const errorAlert = document.getElementById('errorAlert');
-    
-    // التحقق من وجود رسالة نجاح أو خطأ
-    const alertElement = successAlert || errorAlert;
-    
-    if (alertElement && alertElement.dataset.autoRefresh === 'true') {
-        // انتظار 3 ثوانٍ لإعطاء المستخدم وقتاً لرؤية الرسالة
-        setTimeout(function() {
-            // إعادة تحميل الصفحة بدون معاملات GET لمنع تكرار الطلبات
-            const currentUrl = new URL(window.location.href);
-            // إزالة معاملات success و error من URL
-            currentUrl.searchParams.delete('success');
-            currentUrl.searchParams.delete('error');
-            // إعادة تحميل الصفحة
-            window.location.href = currentUrl.toString();
-        }, 3000);
-    }
-})();
 </script>
 

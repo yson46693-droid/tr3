@@ -527,7 +527,7 @@ $_SESSION['reader_session_id'] = $_SESSION['reader_session_id'] ?? bin2hex(rando
         <form id="scannerForm" autocomplete="off">
             <label for="batchInput">رقم التشغيلة أو الباركود</label>
             <div class="input-group">
-                <input type="text" id="batchInput" name="batch" placeholder="قم بمسح الباركود أو إدخال رقم التشغيلة (مثال: 251111-151656)" required autofocus pattern="\d{6}-\d{6}">
+                <input type="text" id="batchInput" name="batch" placeholder="قم بمسح الباركود أو إدخال رقم التشغيلة يدويًا" required autofocus>
                 <button type="submit" id="scanButton">
                     <span>قراءة التفاصيل</span>
                 </button>
@@ -922,7 +922,6 @@ $_SESSION['reader_session_id'] = $_SESSION['reader_session_id'] ?? bin2hex(rando
 
         function stopAdvancedDetection() {
             stopZxingDetection();
-            // تم تعطيل OCR - لا نحتاج لإيقافه
             if (ocrInterval) {
                 clearInterval(ocrInterval);
                 ocrInterval = null;
@@ -1015,29 +1014,8 @@ $_SESSION['reader_session_id'] = $_SESSION['reader_session_id'] ?? bin2hex(rando
         }
 
         function normalizeBarcodeValue(value) {
-            if (!value) {
-                return '';
-            }
-            
-            // التحقق من تنسيق رقم التشغيلة: XXXXXX-XXXXXX (6 أرقام-6 أرقام مع شرطة)
-            // مثال: 251111-151656
-            const batchNumberPattern = /^(\d{6})-(\d{6})$/;
-            const match = value.trim().match(batchNumberPattern);
-            
-            if (match) {
-                // إذا كان التنسيق صحيحاً، نعيده كما هو
-                return match[0];
-            }
-            
-            // محاولة استخراج التنسيق من نص قد يحتوي على مسافات أو أحرف إضافية
-            // البحث عن نمط 6 أرقام-6 أرقام في النص
-            const extractedMatch = value.match(/(\d{6})-(\d{6})/);
-            if (extractedMatch) {
-                return extractedMatch[0];
-            }
-            
-            // إذا لم يكن التنسيق صحيحاً، نعيد قيمة فارغة
-            return '';
+            const cleaned = (value || '').replace(/[^0-9A-Z\-]/gi, '').trim();
+            return cleaned.length >= 4 ? cleaned.toUpperCase() : '';
         }
 
         function completeDetection(candidate) {
@@ -1307,9 +1285,8 @@ $_SESSION['reader_session_id'] = $_SESSION['reader_session_id'] ?? bin2hex(rando
                 return lastAdvancedDetectionResult;
             }
             advancedDetectionActive = true;
-            // استخدام ZXing فقط لقراءة الباركودات (لا نستخدم OCR لأنه يقرأ النصوص)
             const zxingReady = await startZxingDetection();
-            const ocrReady = false; // تم تعطيل OCR لأنه يقرأ النصوص وليس فقط الباركودات
+            const ocrReady = await startOcrDetection();
             lastAdvancedDetectionResult = { zxingReady, ocrReady };
             return lastAdvancedDetectionResult;
         }
@@ -1327,7 +1304,7 @@ $_SESSION['reader_session_id'] = $_SESSION['reader_session_id'] ?? bin2hex(rando
                 }
             }
             const advancedResults = await startAdvancedDetection();
-            if (advancedResults.zxingReady) {
+            if (advancedResults.zxingReady || advancedResults.ocrReady) {
                 cameraError.style.display = 'none';
             }
             return advancedResults;
@@ -1384,8 +1361,8 @@ $_SESSION['reader_session_id'] = $_SESSION['reader_session_id'] ?? bin2hex(rando
                     stopAdvancedDetection();
                 }
 
-                if (!barcodeReady && !zxingReady) {
-                    cameraError.textContent = 'تعذر تشغيل آلية قراءة الباركود. يرجى التأكد من اتصالك بالإنترنت أو استخدام الإدخال اليدوي.';
+                if (!barcodeReady && !zxingReady && !ocrReady) {
+                    cameraError.textContent = 'تعذر تشغيل آلية قراءة الباركود أو التعرف على النص. يرجى التأكد من اتصالك بالإنترنت أو استخدام الإدخال اليدوي.';
                     cameraError.style.display = 'block';
                 }
 
@@ -1403,82 +1380,12 @@ $_SESSION['reader_session_id'] = $_SESSION['reader_session_id'] ?? bin2hex(rando
             }
         }
 
-        // التحقق من أن الإدخال يطابق تنسيق رقم التشغيلة: XXXXXX-XXXXXX
-        if (batchInput) {
-            batchInput.addEventListener('input', (e) => {
-                let value = e.target.value;
-                // السماح فقط بالأرقام والشرطة
-                value = value.replace(/[^0-9-]/g, '');
-                
-                // التأكد من وجود شرطة واحدة فقط
-                const dashCount = (value.match(/-/g) || []).length;
-                if (dashCount > 1) {
-                    // إذا كان هناك أكثر من شرطة، نأخذ فقط الأولى
-                    const parts = value.split('-');
-                    value = parts[0] + '-' + parts.slice(1).join('');
-                }
-                
-                // التأكد من أن الشرطة في المكان الصحيح (بعد 6 أرقام)
-                if (value.includes('-')) {
-                    const parts = value.split('-');
-                    // الجزء الأول: 6 أرقام كحد أقصى
-                    parts[0] = parts[0].slice(0, 6);
-                    // الجزء الثاني: 6 أرقام كحد أقصى
-                    if (parts[1]) {
-                        parts[1] = parts[1].slice(0, 6);
-                    }
-                    value = parts.join('-');
-                } else if (value.length > 6) {
-                    // إذا تجاوزت 6 أرقام بدون شرطة، نضيف الشرطة تلقائياً
-                    value = value.slice(0, 6) + '-' + value.slice(6, 12);
-                }
-                
-                e.target.value = value;
-            });
-            
-            batchInput.addEventListener('paste', (e) => {
-                e.preventDefault();
-                const pastedText = (e.clipboardData || window.clipboardData).getData('text');
-                // محاولة استخراج تنسيق رقم التشغيلة
-                const match = pastedText.match(/(\d{6})-(\d{6})/);
-                if (match) {
-                    e.target.value = match[0];
-                } else {
-                    // إذا لم يكن التنسيق صحيحاً، نأخذ الأرقام فقط ونحاول تنسيقها
-                    const numbersOnly = pastedText.replace(/[^0-9]/g, '');
-                    if (numbersOnly.length >= 6) {
-                        e.target.value = numbersOnly.slice(0, 6) + '-' + numbersOnly.slice(6, 12);
-                    } else {
-                        e.target.value = numbersOnly;
-                    }
-                }
-            });
-        }
-
         form.addEventListener('submit', async (event) => {
             event.preventDefault();
-            let batchNumber = batchInput.value.trim();
-            
-            // التحقق من تنسيق رقم التشغيلة: XXXXXX-XXXXXX
-            const batchNumberPattern = /^(\d{6})-(\d{6})$/;
-            
+            const batchNumber = batchInput.value.trim();
             if (!batchNumber) {
-                renderError('يرجى إدخال رقم التشغيلة أو مسح الباركود بالتنسيق: XXXXXX-XXXXXX');
+                renderError('يرجى إدخال رقم التشغيلة أو مسح الباركود.');
                 return;
-            }
-            
-            // محاولة استخراج التنسيق الصحيح
-            const match = batchNumber.match(batchNumberPattern);
-            if (!match) {
-                // محاولة إصلاح التنسيق إذا كان يحتوي على أرقام فقط
-                const numbersOnly = batchNumber.replace(/[^0-9]/g, '');
-                if (numbersOnly.length === 12) {
-                    batchNumber = numbersOnly.slice(0, 6) + '-' + numbersOnly.slice(6, 12);
-                    batchInput.value = batchNumber;
-                } else {
-                    renderError('رقم التشغيلة يجب أن يكون بالتنسيق: XXXXXX-XXXXXX (مثال: 251111-151656)');
-                    return;
-                }
             }
 
             setLoading(true);
@@ -1551,7 +1458,7 @@ $_SESSION['reader_session_id'] = $_SESSION['reader_session_id'] ?? bin2hex(rando
 
                 if (scanning) {
                     const advancedResults = await startAdvancedDetection();
-                    if (!advancedResults.zxingReady) {
+                    if (!advancedResults.zxingReady && !advancedResults.ocrReady) {
                         cameraError.textContent = 'تعذر تشغيل وضع الدقة العالية. تأكد من اتصال الإنترنت ثم حاول مرة أخرى.';
                         cameraError.style.display = 'block';
                     } else {

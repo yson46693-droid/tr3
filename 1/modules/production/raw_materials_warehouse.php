@@ -517,7 +517,7 @@ if ($sessionSuccess) {
 
 // الحصول على القسم المطلوب (افتراضياً: العسل)
 $section = $_GET['section'] ?? 'honey';
-$validSections = ['honey', 'olive_oil', 'beeswax', 'derivatives', 'nuts', 'sesame'];
+$validSections = ['honey', 'olive_oil', 'beeswax', 'derivatives', 'nuts'];
 if (!in_array($section, $validSections)) {
     $section = 'honey';
 }
@@ -704,254 +704,6 @@ $derivativeMaterialOptions = array_map(static function ($type, $data) {
     ];
 }, array_keys($derivativeMaterialAggregates), $derivativeMaterialAggregates);
 
-// تعريف دالة إنشاء جدول السمسم قبل استخدامها
-if (!function_exists('ensureSesameStockTable')) {
-    function ensureSesameStockTable(bool $forceRetry = false): bool
-    {
-        static $checked = false;
-        static $ready = false;
-        
-        if ($forceRetry) {
-            $checked = false;
-            $ready = false;
-        }
-        
-        if ($checked) {
-            return $ready;
-        }
-        
-        $checked = true;
-        
-        try {
-            $db = db();
-            if (!$db) {
-                error_log("ensureSesameStockTable: Database connection failed");
-                return false;
-            }
-            
-            // التحقق من وجود الجدول
-            $sesameStockCheck = $db->queryOne("SHOW TABLES LIKE 'sesame_stock'");
-            if (!empty($sesameStockCheck)) {
-                $ready = true;
-                return $ready;
-            }
-            
-            // التحقق من وجود جدول suppliers أولاً
-            $suppliersCheck = $db->queryOne("SHOW TABLES LIKE 'suppliers'");
-            if (empty($suppliersCheck)) {
-                error_log("ensureSesameStockTable: suppliers table does not exist. Cannot create sesame_stock table.");
-                $ready = false;
-                return false;
-            }
-            
-            // محاولة إنشاء الجدول مع Foreign Key constraint
-            try {
-                $db->execute("
-                    CREATE TABLE IF NOT EXISTS `sesame_stock` (
-                      `id` int(11) NOT NULL AUTO_INCREMENT,
-                      `supplier_id` int(11) NOT NULL,
-                      `quantity` decimal(10,3) NOT NULL DEFAULT 0.000 COMMENT 'الكمية بالكيلوجرام',
-                      `converted_to_tahini_quantity` decimal(10,3) NOT NULL DEFAULT 0.000 COMMENT 'إجمالي كمية التحويل إلى طحينة بالكيلوجرام',
-                      `notes` text DEFAULT NULL,
-                      `created_at` timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP,
-                      `updated_at` timestamp NULL DEFAULT NULL ON UPDATE CURRENT_TIMESTAMP,
-                      PRIMARY KEY (`id`),
-                      KEY `supplier_id_idx` (`supplier_id`),
-                      CONSTRAINT `sesame_stock_ibfk_1` FOREIGN KEY (`supplier_id`) REFERENCES `suppliers` (`id`) ON DELETE CASCADE
-                    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
-                ");
-            } catch (Exception $createError) {
-                error_log("ensureSesameStockTable: Failed to create table with FK constraint: " . $createError->getMessage());
-                // محاولة إنشاء الجدول بدون Foreign Key constraint
-                try {
-                    $db->execute("
-                        CREATE TABLE IF NOT EXISTS `sesame_stock` (
-                          `id` int(11) NOT NULL AUTO_INCREMENT,
-                          `supplier_id` int(11) NOT NULL,
-                          `quantity` decimal(10,3) NOT NULL DEFAULT 0.000 COMMENT 'الكمية بالكيلوجرام',
-                          `converted_to_tahini_quantity` decimal(10,3) NOT NULL DEFAULT 0.000 COMMENT 'إجمالي كمية التحويل إلى طحينة بالكيلوجرام',
-                          `notes` text DEFAULT NULL,
-                          `created_at` timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP,
-                          `updated_at` timestamp NULL DEFAULT NULL ON UPDATE CURRENT_TIMESTAMP,
-                          PRIMARY KEY (`id`),
-                          KEY `supplier_id_idx` (`supplier_id`)
-                        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
-                    ");
-                    error_log("ensureSesameStockTable: Created table without FK constraint");
-                } catch (Exception $createError2) {
-                    error_log("ensureSesameStockTable: Failed to create table without FK constraint: " . $createError2->getMessage());
-                    throw $createError2;
-                }
-            }
-            
-            // التحقق مرة أخرى من أن الجدول تم إنشاؤه ويمكن الوصول إليه
-            $verifyCheck = $db->queryOne("SHOW TABLES LIKE 'sesame_stock'");
-            if (!empty($verifyCheck)) {
-                    // التحقق من أن الأعمدة الأساسية موجودة
-                    try {
-                        $columnsCheck = $db->queryOne("SHOW COLUMNS FROM sesame_stock LIKE 'supplier_id'");
-                        if (!empty($columnsCheck)) {
-                            // إزالة عمود unit_price إذا كان موجوداً
-                            $unitPriceColumnCheck = $db->queryOne("SHOW COLUMNS FROM sesame_stock LIKE 'unit_price'");
-                            if (!empty($unitPriceColumnCheck)) {
-                                try {
-                                    $db->execute("ALTER TABLE sesame_stock DROP COLUMN unit_price");
-                                    error_log("ensureSesameStockTable: Removed unit_price column");
-                                } catch (Exception $dropError) {
-                                    error_log("ensureSesameStockTable: Failed to remove unit_price column: " . $dropError->getMessage());
-                                }
-                            }
-                            
-                            // التحقق من وجود عمود converted_to_tahini_quantity وإضافته إذا لم يكن موجوداً
-                            $convertedColumnCheck = $db->queryOne("SHOW COLUMNS FROM sesame_stock LIKE 'converted_to_tahini_quantity'");
-                            if (empty($convertedColumnCheck)) {
-                                try {
-                                    $db->execute("ALTER TABLE sesame_stock ADD COLUMN converted_to_tahini_quantity decimal(10,3) NOT NULL DEFAULT 0.000 COMMENT 'إجمالي كمية التحويل إلى طحينة بالكيلوجرام' AFTER quantity");
-                                    error_log("ensureSesameStockTable: Added converted_to_tahini_quantity column");
-                                } catch (Exception $alterError) {
-                                    error_log("ensureSesameStockTable: Failed to add converted_to_tahini_quantity column: " . $alterError->getMessage());
-                                }
-                            }
-                            $ready = true;
-                            error_log("ensureSesameStockTable: sesame_stock table created and verified successfully");
-                    } else {
-                        error_log("ensureSesameStockTable: Table exists but required columns are missing");
-                        $ready = false;
-                    }
-                } catch (Exception $colError) {
-                    error_log("ensureSesameStockTable: Error checking table columns: " . $colError->getMessage());
-                    $ready = false;
-                }
-            } else {
-                error_log("ensureSesameStockTable: Failed to verify sesame_stock table creation");
-                $ready = false;
-            }
-        } catch (Exception $e) {
-            error_log("Error ensuring sesame_stock table: " . $e->getMessage());
-            error_log("Error stack trace: " . $e->getTraceAsString());
-            $ready = false;
-        }
-        
-        return $ready;
-    }
-}
-
-// السمسم المتاح للاستخدام في القوالب
-$availableSesameForTemplates = [];
-if (!isset($sesameStockTableReady)) {
-    $sesameStockTableReady = ensureSesameStockTable();
-}
-if ($sesameStockTableReady) {
-    try {
-        $availableSesameForTemplates = $db->query(
-            "SELECT ss.quantity, s.name AS supplier_name
-             FROM sesame_stock ss
-             INNER JOIN suppliers s ON ss.supplier_id = s.id
-             WHERE ss.quantity > 0
-             ORDER BY s.name"
-        );
-    } catch (Exception $e) {
-        error_log('Failed to load sesame stock for templates: ' . $e->getMessage());
-        $availableSesameForTemplates = [];
-    }
-}
-
-$sesameMaterialAggregates = [];
-$totalSesameQuantity = 0.0;
-$sesameSuppliers = [];
-foreach ($availableSesameForTemplates as $sesameRow) {
-    $totalSesameQuantity += (float)($sesameRow['quantity'] ?? 0);
-    $supplierName = trim((string)($sesameRow['supplier_name'] ?? ''));
-    if ($supplierName !== '' && !in_array($supplierName, $sesameSuppliers, true)) {
-        $sesameSuppliers[] = $supplierName;
-    }
-}
-
-if ($totalSesameQuantity > 0) {
-    $sesameMaterialAggregates['سمسم'] = [
-        'value' => 'سمسم',
-        'quantity' => $totalSesameQuantity,
-        'suppliers' => $sesameSuppliers,
-    ];
-}
-
-$sesameMaterialOptions = array_map(static function ($type, $data) {
-    $quantityLabel = number_format($data['quantity'], 3);
-    $suppliersLabel = '';
-    if (!empty($data['suppliers'])) {
-        $firstSupplier = $data['suppliers'][0];
-        $additionalSuppliers = count($data['suppliers']) - 1;
-        if ($additionalSuppliers > 0) {
-            $suppliersLabel = sprintf(' - مورد: %s (+%d)', $firstSupplier, $additionalSuppliers);
-        } else {
-            $suppliersLabel = sprintf(' - المورد: %s', $firstSupplier);
-        }
-    }
-
-    return [
-        'value' => $type,
-        'label' => sprintf('%s - متاح: %s كجم%s', $type, $quantityLabel, $suppliersLabel),
-    ];
-}, array_keys($sesameMaterialAggregates), $sesameMaterialAggregates);
-
-// الطحينة المتاحة للاستخدام في القوالب
-$availableTahiniForTemplates = [];
-if (!isset($tahiniStockTableReady)) {
-    $tahiniStockTableReady = function_exists('ensureTahiniStockTable') ? ensureTahiniStockTable() : false;
-}
-if ($tahiniStockTableReady) {
-    try {
-        $availableTahiniForTemplates = $db->query(
-            "SELECT ts.quantity, s.name AS supplier_name
-             FROM tahini_stock ts
-             INNER JOIN suppliers s ON ts.supplier_id = s.id
-             WHERE ts.quantity > 0
-             ORDER BY s.name"
-        );
-    } catch (Exception $e) {
-        error_log('Failed to load tahini stock for templates: ' . $e->getMessage());
-        $availableTahiniForTemplates = [];
-    }
-}
-
-$tahiniMaterialAggregates = [];
-$totalTahiniQuantity = 0.0;
-$tahiniSuppliers = [];
-foreach ($availableTahiniForTemplates as $tahiniRow) {
-    $totalTahiniQuantity += (float)($tahiniRow['quantity'] ?? 0);
-    $supplierName = trim((string)($tahiniRow['supplier_name'] ?? ''));
-    if ($supplierName !== '' && !in_array($supplierName, $tahiniSuppliers, true)) {
-        $tahiniSuppliers[] = $supplierName;
-    }
-}
-
-if ($totalTahiniQuantity > 0) {
-    $tahiniMaterialAggregates['طحينة'] = [
-        'value' => 'طحينة',
-        'quantity' => $totalTahiniQuantity,
-        'suppliers' => $tahiniSuppliers,
-    ];
-}
-
-$tahiniMaterialOptions = array_map(static function ($type, $data) {
-    $quantityLabel = number_format($data['quantity'], 3);
-    $suppliersLabel = '';
-    if (!empty($data['suppliers'])) {
-        $firstSupplier = $data['suppliers'][0];
-        $additionalSuppliers = count($data['suppliers']) - 1;
-        if ($additionalSuppliers > 0) {
-            $suppliersLabel = sprintf(' - مورد: %s (+%d)', $firstSupplier, $additionalSuppliers);
-        } else {
-            $suppliersLabel = sprintf(' - المورد: %s', $firstSupplier);
-        }
-    }
-
-    return [
-        'value' => $type,
-        'label' => sprintf('%s - متاح: %s كجم%s', $type, $quantityLabel, $suppliersLabel),
-    ];
-}, array_keys($tahiniMaterialAggregates), $tahiniMaterialAggregates);
-
 $rawWarehouseReport = [
     'generated_at' => date('Y-m-d H:i'),
     'generated_by' => $currentUser['full_name'] ?? ($currentUser['username'] ?? 'مستخدم'),
@@ -966,7 +718,7 @@ $rawWarehouseReport['total_suppliers'] = (int)($rawReportQueryOne($db, "
     SELECT COUNT(*) AS total 
     FROM suppliers 
     WHERE status = 'active' 
-      AND type IN ('honey', 'olive_oil', 'beeswax', 'derivatives', 'nuts', 'sesame')
+      AND type IN ('honey', 'olive_oil', 'beeswax', 'derivatives', 'nuts')
 ")['total'] ?? 0);
 
 // Honey summary
@@ -1297,50 +1049,6 @@ if ($nutsSummary || $mixedNutsSummary) {
     $rawWarehouseReport['zero_items'] += (int)($nutsSummary['zero_items'] ?? 0);
 }
 
-// Sesame summary
-$sesameSummary = null;
-if ($sesameStockTableReady) {
-    $sesameSummary = $rawReportQueryOne($db, "
-        SELECT 
-            COALESCE(SUM(quantity), 0) AS total_quantity,
-            COUNT(*) AS records,
-            COUNT(DISTINCT supplier_id) AS suppliers,
-            SUM(CASE WHEN COALESCE(quantity,0) <= 0 THEN 1 ELSE 0 END) AS zero_items
-        FROM sesame_stock
-    ");
-}
-if ($sesameSummary) {
-    $sectionKey = 'sesame';
-    $rawWarehouseReport['sections_order'][] = $sectionKey;
-    $rawWarehouseReport['sections'][$sectionKey] = [
-        'title' => 'السمسم',
-        'records' => (int)($sesameSummary['records'] ?? 0),
-        'metrics' => [
-            [
-                'label' => 'إجمالي المخزون',
-                'value' => (float)($sesameSummary['total_quantity'] ?? 0),
-                'unit' => 'كجم',
-                'decimals' => 3
-            ],
-            [
-                'label' => 'عدد السجلات',
-                'value' => (int)($sesameSummary['records'] ?? 0),
-                'unit' => null,
-                'decimals' => 0
-            ],
-            [
-                'label' => 'عدد الموردين',
-                'value' => (int)($sesameSummary['suppliers'] ?? 0),
-                'unit' => null,
-                'decimals' => 0
-            ]
-        ],
-        'top_items' => []
-    ];
-    $rawWarehouseReport['total_records'] += (int)($sesameSummary['records'] ?? 0);
-    $rawWarehouseReport['zero_items'] += (int)($sesameSummary['zero_items'] ?? 0);
-}
-
 $rawWarehouseReport['sections_count'] = count($rawWarehouseReport['sections']);
 
 // ======= معالجة العمليات (تم تعطيل كود إنشاء الجداول القديم) =======
@@ -1571,145 +1279,6 @@ if (empty($mixedNutsIngredientsCheck)) {
     }
 }
 
-// تم نقل تعريف ensureSesameStockTable() إلى أعلى الملف قبل استخدامها
-// استدعاء الدالة لإنشاء الجدول إذا لم يكن موجوداً
-if (!isset($sesameStockTableReady)) {
-    $sesameStockTableReady = ensureSesameStockTable();
-}
-
-if (!function_exists('ensureTahiniStockTable')) {
-    function ensureTahiniStockTable(bool $forceRetry = false): bool
-    {
-        static $checked = false;
-        static $ready = false;
-        
-        if ($forceRetry) {
-            $checked = false;
-            $ready = false;
-        }
-        
-        if ($checked) {
-            return $ready;
-        }
-        
-        $checked = true;
-        
-        try {
-            $db = db();
-            if (!$db) {
-                error_log("ensureTahiniStockTable: Database connection failed");
-                return false;
-            }
-            
-            // التحقق من وجود الجدول والأعمدة المطلوبة
-            $tahiniStockCheck = $db->queryOne("SHOW TABLES LIKE 'tahini_stock'");
-            if (!empty($tahiniStockCheck)) {
-                // التحقق من وجود الأعمدة الأساسية
-                try {
-                    $columnsCheck = $db->queryOne("SHOW COLUMNS FROM tahini_stock LIKE 'supplier_id'");
-                    if (!empty($columnsCheck)) {
-                        // التحقق من وجود عمود quantity أيضاً
-                        $quantityCheck = $db->queryOne("SHOW COLUMNS FROM tahini_stock LIKE 'quantity'");
-                        if (!empty($quantityCheck)) {
-                            $ready = true;
-                            return $ready;
-                        } else {
-                            error_log("ensureTahiniStockTable: Table exists but quantity column is missing");
-                            // سنحاول إعادة إنشاء الجدول
-                        }
-                    } else {
-                        error_log("ensureTahiniStockTable: Table exists but supplier_id column is missing");
-                        // سنحاول إعادة إنشاء الجدول
-                    }
-                } catch (Exception $colError) {
-                    error_log("ensureTahiniStockTable: Error checking existing table columns: " . $colError->getMessage());
-                    // سنحاول إعادة إنشاء الجدول
-                }
-            }
-            
-            // التحقق من وجود جدول suppliers أولاً
-            $suppliersCheck = $db->queryOne("SHOW TABLES LIKE 'suppliers'");
-            if (empty($suppliersCheck)) {
-                error_log("ensureTahiniStockTable: suppliers table does not exist. Cannot create tahini_stock table.");
-                $ready = false;
-                return false;
-            }
-            
-            // محاولة إنشاء الجدول مع Foreign Key constraint
-            try {
-                $db->execute("
-                    CREATE TABLE IF NOT EXISTS `tahini_stock` (
-                      `id` int(11) NOT NULL AUTO_INCREMENT,
-                      `supplier_id` int(11) NOT NULL,
-                      `quantity` decimal(10,3) NOT NULL DEFAULT 0.000 COMMENT 'الكمية بالكيلوجرام',
-                      `unit_price` decimal(10,2) DEFAULT NULL COMMENT 'سعر الكيلو',
-                      `notes` text DEFAULT NULL,
-                      `created_at` timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP,
-                      `updated_at` timestamp NULL DEFAULT NULL ON UPDATE CURRENT_TIMESTAMP,
-                      PRIMARY KEY (`id`),
-                      KEY `supplier_id_idx` (`supplier_id`),
-                      CONSTRAINT `tahini_stock_ibfk_1` FOREIGN KEY (`supplier_id`) REFERENCES `suppliers` (`id`) ON DELETE CASCADE
-                    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
-                ");
-            } catch (Exception $createError) {
-                error_log("ensureTahiniStockTable: Failed to create table with FK constraint: " . $createError->getMessage());
-                // محاولة إنشاء الجدول بدون Foreign Key constraint
-                try {
-                    $db->execute("
-                        CREATE TABLE IF NOT EXISTS `tahini_stock` (
-                          `id` int(11) NOT NULL AUTO_INCREMENT,
-                          `supplier_id` int(11) NOT NULL,
-                          `quantity` decimal(10,3) NOT NULL DEFAULT 0.000 COMMENT 'الكمية بالكيلوجرام',
-                          `unit_price` decimal(10,2) DEFAULT NULL COMMENT 'سعر الكيلو',
-                          `notes` text DEFAULT NULL,
-                          `created_at` timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP,
-                          `updated_at` timestamp NULL DEFAULT NULL ON UPDATE CURRENT_TIMESTAMP,
-                          PRIMARY KEY (`id`),
-                          KEY `supplier_id_idx` (`supplier_id`)
-                        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
-                    ");
-                    error_log("ensureTahiniStockTable: Created table without FK constraint");
-                } catch (Exception $createError2) {
-                    error_log("ensureTahiniStockTable: Failed to create table without FK constraint: " . $createError2->getMessage());
-                    throw $createError2;
-                }
-            }
-            
-            // التحقق مرة أخرى من أن الجدول تم إنشاؤه ويمكن الوصول إليه
-            $verifyCheck = $db->queryOne("SHOW TABLES LIKE 'tahini_stock'");
-            if (!empty($verifyCheck)) {
-                // التحقق من أن الأعمدة الأساسية موجودة
-                try {
-                    $columnsCheck = $db->queryOne("SHOW COLUMNS FROM tahini_stock LIKE 'supplier_id'");
-                    $quantityCheck = $db->queryOne("SHOW COLUMNS FROM tahini_stock LIKE 'quantity'");
-                    if (!empty($columnsCheck) && !empty($quantityCheck)) {
-                        $ready = true;
-                        error_log("ensureTahiniStockTable: tahini_stock table created and verified successfully");
-                        return $ready;
-                    } else {
-                        error_log("ensureTahiniStockTable: Table exists but required columns are missing (supplier_id: " . (!empty($columnsCheck) ? 'exists' : 'missing') . ", quantity: " . (!empty($quantityCheck) ? 'exists' : 'missing') . ")");
-                        $ready = false;
-                    }
-                } catch (Exception $colError) {
-                    error_log("ensureTahiniStockTable: Error checking table columns: " . $colError->getMessage());
-                    $ready = false;
-                }
-            } else {
-                error_log("ensureTahiniStockTable: Failed to verify tahini_stock table creation");
-                $ready = false;
-            }
-        } catch (Exception $e) {
-            error_log("Error ensuring tahini_stock table: " . $e->getMessage());
-            error_log("Error stack trace: " . $e->getTraceAsString());
-            $ready = false;
-        }
-        
-        return $ready;
-    }
-}
-
-$tahiniStockTableReady = ensureTahiniStockTable();
-
 if (!ensureRawMaterialDamageLogsTable()) {
     error_log("Unable to ensure raw_material_damage_logs table exists.");
 }
@@ -1806,7 +1375,7 @@ if (empty($templateRawMaterialsCheck)) {
             CREATE TABLE IF NOT EXISTS `template_raw_materials` (
               `id` int(11) NOT NULL AUTO_INCREMENT,
               `template_id` int(11) NOT NULL,
-              `material_type` enum('honey_raw','honey_filtered','olive_oil','beeswax','derivatives','nuts','sesame','other') NOT NULL COMMENT 'نوع المادة الخام',
+              `material_type` enum('honey_raw','honey_filtered','olive_oil','beeswax','derivatives','nuts','other') NOT NULL COMMENT 'نوع المادة الخام',
               `material_name` varchar(255) NOT NULL COMMENT 'اسم المادة (للمواد الأخرى)',
               `supplier_id` int(11) DEFAULT NULL COMMENT 'المورد الخاص بالمادة',
               `honey_variety` varchar(50) DEFAULT NULL COMMENT 'نوع العسل (سدر، جبلي، إلخ)',
@@ -1835,22 +1404,6 @@ if (empty($templateRawMaterialsCheck)) {
                 error_log("Error adding honey_variety to template_raw_materials: " . $e->getMessage());
             }
         }
-        
-        // تحديث enum material_type لإضافة 'sesame' إذا لم يكن موجوداً
-        try {
-            $materialTypeColumn = $db->queryOne("SHOW COLUMNS FROM template_raw_materials WHERE Field = 'material_type'");
-            if ($materialTypeColumn) {
-                $typeEnum = $materialTypeColumn['Type'];
-                if (strpos($typeEnum, 'sesame') === false) {
-                    $db->execute("
-                        ALTER TABLE `template_raw_materials` 
-                        MODIFY COLUMN `material_type` enum('honey_raw','honey_filtered','olive_oil','beeswax','derivatives','nuts','sesame','other') NOT NULL COMMENT 'نوع المادة الخام'
-                    ");
-                }
-            }
-        } catch (Exception $e) {
-            error_log("Error updating template_raw_materials material_type enum: " . $e->getMessage());
-        }
     } catch (Exception $e) {
         error_log("Error creating template_raw_materials table: " . $e->getMessage());
     }
@@ -1878,22 +1431,15 @@ if (empty($templatePackagingCheck)) {
     }
 }
 
-// إضافة نوع المكسرات والسمسم إلى عمود type في جدول suppliers إذا لم يكن موجوداً
+// إضافة نوع المكسرات إلى عمود type في جدول suppliers إذا لم يكن موجوداً
 try {
     $supplierTypeColumn = $db->queryOne("SHOW COLUMNS FROM suppliers WHERE Field = 'type'");
     if ($supplierTypeColumn) {
         $typeEnum = $supplierTypeColumn['Type'];
-        $needsUpdate = false;
-        $newEnum = "enum('honey','olive_oil','beeswax','derivatives','packaging','nuts','sesame')";
-        
-        if (strpos($typeEnum, 'nuts') === false || strpos($typeEnum, 'sesame') === false) {
-            $needsUpdate = true;
-        }
-        
-        if ($needsUpdate) {
+        if (strpos($typeEnum, 'nuts') === false) {
             $db->execute("
                 ALTER TABLE `suppliers` 
-                MODIFY COLUMN `type` {$newEnum} DEFAULT NULL 
+                MODIFY COLUMN `type` enum('honey','olive_oil','beeswax','derivatives','packaging','nuts') DEFAULT NULL 
                 COMMENT 'نوع المورد'
             ");
         }
@@ -1908,8 +1454,7 @@ $supplierTypeMap = [
     'olive_oil' => 'olive_oil',
     'beeswax' => 'beeswax',
     'derivatives' => 'derivatives',
-    'nuts' => 'nuts',
-    'sesame' => 'sesame'
+    'nuts' => 'nuts'
 ];
 
 $currentSupplierType = $supplierTypeMap[$section] ?? null;
@@ -2123,7 +1668,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             $sectionRedirect = $_POST['redirect_section'] ?? $materialCategory;
             $stockSource = $_POST['stock_source'] ?? 'single';
             
-            $validCategories = ['honey', 'olive_oil', 'beeswax', 'derivatives', 'nuts', 'sesame', 'tahini'];
+            $validCategories = ['honey', 'olive_oil', 'beeswax', 'derivatives', 'nuts'];
             if (!in_array($sectionRedirect, $validCategories, true)) {
                 $sectionRedirect = $materialCategory;
             }
@@ -2264,65 +1809,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                                 $logDetails['supplier_id'] = $stock['supplier_id'];
                                 $logDetails['item_label'] = 'مكسرات';
                                 $logDetails['variety'] = $stock['nut_type'] ?? null;
-                            }
-                        }
-                    } elseif ($materialCategory === 'sesame') {
-                        if (!$sesameStockTableReady) {
-                            $sesameStockTableReady = ensureSesameStockTable(true);
-                        }
-                        if (!$sesameStockTableReady) {
-                            $error = 'جدول مخزون السمسم غير متوفر.';
-                        } else {
-                            $stock = $db->queryOne("
-                                SELECT ss.*, s.name AS supplier_name
-                                FROM sesame_stock ss
-                                LEFT JOIN suppliers s ON ss.supplier_id = s.id
-                                WHERE ss.id = ?", [$stockId]);
-                            
-                            if (!$stock) {
-                                $error = 'سجل السمسم غير موجود';
-                            } elseif (floatval($stock['quantity']) < $quantity) {
-                                $error = 'الكمية المدخلة أكبر من الكمية المتاحة';
-                            } else {
-                                $db->execute("UPDATE sesame_stock SET quantity = quantity - ?, updated_at = NOW() WHERE id = ?", [$quantity, $stockId]);
-                                $logDetails['supplier_id'] = $stock['supplier_id'];
-                                $logDetails['item_label'] = 'سمسم';
-                            }
-                        }
-                    } elseif ($materialCategory === 'tahini') {
-                        if (function_exists('ensureTahiniStockTable')) {
-                            $tahiniTableReady = ensureTahiniStockTable(true);
-                        } else {
-                            $tahiniTableReady = false;
-                        }
-                        
-                        if (!$tahiniTableReady) {
-                            // محاولة التحقق مباشرة
-                            try {
-                                $tableCheck = $db->queryOne("SHOW TABLES LIKE 'tahini_stock'");
-                                $tahiniTableReady = !empty($tableCheck);
-                            } catch (Exception $e) {
-                                $tahiniTableReady = false;
-                            }
-                        }
-                        
-                        if (!$tahiniTableReady) {
-                            $error = 'جدول مخزون الطحينة غير متوفر.';
-                        } else {
-                            $stock = $db->queryOne("
-                                SELECT ts.*, s.name AS supplier_name
-                                FROM tahini_stock ts
-                                LEFT JOIN suppliers s ON ts.supplier_id = s.id
-                                WHERE ts.id = ?", [$stockId]);
-                            
-                            if (!$stock) {
-                                $error = 'سجل الطحينة غير موجود';
-                            } elseif (floatval($stock['quantity']) < $quantity) {
-                                $error = 'الكمية المدخلة أكبر من الكمية المتاحة';
-                            } else {
-                                $db->execute("UPDATE tahini_stock SET quantity = quantity - ?, updated_at = NOW() WHERE id = ?", [$quantity, $stockId]);
-                                $logDetails['supplier_id'] = $stock['supplier_id'];
-                                $logDetails['item_label'] = 'طحينة';
                             }
                         }
                     }
@@ -2540,90 +2026,12 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             }
         }
         
-        // إضافة كمية إلى مشتق موجود
-        elseif ($action === 'add_derivative_quantity') {
-            $stockId = intval($_POST['stock_id'] ?? 0);
-            $weight = floatval($_POST['weight'] ?? 0);
-            $notes = trim($_POST['notes'] ?? '');
-            
-            if ($stockId <= 0) {
-                $error = 'معرف السجل غير صحيح';
-            } elseif ($weight <= 0) {
-                $error = 'يجب إدخال وزن صحيح';
-            } else {
-                try {
-                    // جلب بيانات السجل الحالي
-                    $stock = $db->queryOne("
-                        SELECT ds.*, s.name as supplier_name
-                        FROM derivatives_stock ds
-                        LEFT JOIN suppliers s ON ds.supplier_id = s.id
-                        WHERE ds.id = ?", [$stockId]);
-                    
-                    if (!$stock) {
-                        $error = 'سجل المشتق غير موجود';
-                    } else {
-                        // إضافة الكمية إلى الوزن الحالي
-                        $newWeight = floatval($stock['weight']) + $weight;
-                        $db->execute("UPDATE derivatives_stock SET weight = ?, updated_at = NOW() WHERE id = ?", [$newWeight, $stockId]);
-                        
-                        $supplierId = (int)($stock['supplier_id'] ?? 0);
-                        $derivativeType = $stock['derivative_type'] ?? '';
-                        $supplierName = $stock['supplier_name'] ?? null;
-                        
-                        // تسجيل في سجل التدقيق
-                        logAudit($currentUser['id'], 'add_derivative_quantity', 'derivatives_stock', $stockId, null, [
-                            'type' => $derivativeType,
-                            'added_weight' => $weight,
-                            'new_total_weight' => $newWeight
-                        ]);
-                        
-                        // تسجيل في سجل التوريدات
-                        $additionDetails = sprintf('إضافة %.2f كجم إلى المشتق الموجود (نوع: %s)', $weight, $derivativeType);
-                        if ($notes !== '') {
-                            $additionDetails .= ' | ' . $notes;
-                        }
-                        
-                        recordProductionSupplyLog([
-                            'material_category' => 'derivatives',
-                            'material_label' => 'مشتق - ' . $derivativeType,
-                            'stock_source' => 'derivatives_stock',
-                            'stock_id' => $stockId,
-                            'supplier_id' => $supplierId,
-                            'supplier_name' => $supplierName,
-                            'quantity' => $weight,
-                            'unit' => 'كجم',
-                            'details' => $additionDetails,
-                            'recorded_by' => $currentUser['id'] ?? null,
-                        ]);
-                        
-                        preventDuplicateSubmission(
-                            sprintf('تم إضافة %.2f كجم بنجاح. الوزن الإجمالي: %.2f كجم', $weight, $newWeight),
-                            ['page' => 'raw_materials_warehouse', 'section' => 'derivatives'],
-                            null,
-                            $dashboardSlug
-                        );
-                    }
-                } catch (Exception $e) {
-                    error_log('Error adding derivative quantity: ' . $e->getMessage());
-                    $error = 'حدث خطأ أثناء إضافة الكمية: ' . $e->getMessage();
-                }
-            }
-        }
-        
         // عمليات المشتقات
         elseif ($action === 'add_derivative') {
             $supplierId = intval($_POST['supplier_id'] ?? 0);
             $derivativeType = trim($_POST['derivative_type'] ?? '');
-            $derivativeTypeNew = trim($_POST['derivative_type_new'] ?? '');
             $weight = floatval($_POST['weight'] ?? 0);
             $supplyStockId = null;
-            
-            // إذا تم اختيار "إضافة نوع جديد"، استخدم القيمة من الحقل النصي
-            if ($derivativeType === '__new__' || $derivativeType === '') {
-                if (!empty($derivativeTypeNew)) {
-                    $derivativeType = $derivativeTypeNew;
-                }
-            }
             
             if ($supplierId <= 0) {
                 $error = 'يجب اختيار المورد';
@@ -2749,348 +2157,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     null,
                     $dashboardSlug
                 );
-            }
-        }
-        
-        // عمليات السمسم
-        elseif ($action === 'add_single_sesame') {
-            if (!$sesameStockTableReady) {
-                $sesameStockTableReady = ensureSesameStockTable(true);
-            }
-            if (!$sesameStockTableReady) {
-                $error = 'لا يمكن الوصول إلى جدول مخزون السمسم. يرجى المحاولة لاحقاً أو التواصل مع الدعم.';
-            }
-            
-            $supplierId = intval($_POST['supplier_id'] ?? 0);
-            $quantity = floatval($_POST['quantity'] ?? 0);
-            $notes = trim($_POST['notes'] ?? '');
-            $supplyStockId = null;
-            
-            if (!empty($error)) {
-                // keep $error as is
-            } elseif ($supplierId <= 0) {
-                $error = 'يجب اختيار المورد';
-            } elseif ($quantity <= 0) {
-                $error = 'يجب إدخال كمية صحيحة';
-            } else {
-                $existing = $db->queryOne("SELECT * FROM sesame_stock WHERE supplier_id = ?", [$supplierId]);
-                
-                if ($existing) {
-                    $db->execute("UPDATE sesame_stock SET quantity = quantity + ?, notes = ?, updated_at = NOW() WHERE supplier_id = ?", [$quantity, $notes ?: $existing['notes'], $supplierId]);
-                    if (isset($existing['id'])) {
-                        $supplyStockId = (int)$existing['id'];
-                    }
-                } else {
-                    $insertResult = $db->execute("INSERT INTO sesame_stock (supplier_id, quantity, notes) VALUES (?, ?, ?)", [$supplierId, $quantity, $notes ?: null]);
-                    if (!empty($insertResult['insert_id'])) {
-                        $supplyStockId = (int)$insertResult['insert_id'];
-                    }
-                }
-                
-                logAudit($currentUser['id'], 'add_single_sesame', 'sesame_stock', $supplierId, null, ['quantity' => $quantity]);
-
-                $supplierRow = $db->queryOne("SELECT name FROM suppliers WHERE id = ? LIMIT 1", [$supplierId]);
-                $supplierName = $supplierRow['name'] ?? null;
-                $detailsParts = ['إضافة سمسم خام'];
-                if ($notes !== '') {
-                    $detailsParts[] = 'ملاحظات: ' . mb_substr($notes, 0, 120, 'UTF-8');
-                }
-                recordProductionSupplyLog([
-                    'material_category' => 'sesame',
-                    'material_label' => 'سمسم',
-                    'stock_source' => 'sesame_stock',
-                    'stock_id' => $supplyStockId,
-                    'supplier_id' => $supplierId,
-                    'supplier_name' => $supplierName,
-                    'quantity' => $quantity,
-                    'unit' => 'كجم',
-                    'details' => implode(' | ', $detailsParts),
-                    'recorded_by' => $currentUser['id'] ?? null,
-                ]);
-                
-                preventDuplicateSubmission(
-                    'تم إضافة السمسم بنجاح',
-                    ['page' => 'raw_materials_warehouse', 'section' => 'sesame'],
-                    null,
-                    $dashboardSlug
-                );
-            }
-        }
-        
-        // تحويل السمسم إلى طحينة
-        elseif ($action === 'convert_sesame_to_tahini') {
-            if (!$sesameStockTableReady) {
-                $sesameStockTableReady = ensureSesameStockTable(true);
-            }
-            // إعادة محاولة إنشاء/التحقق من جدول الطحينة عند التحويل
-            if (function_exists('ensureTahiniStockTable')) {
-                $tahiniStockTableReady = ensureTahiniStockTable(true);
-            } else {
-                // محاولة التحقق مباشرة من وجود الجدول
-                try {
-                    $tableCheck = $db->queryOne("SHOW TABLES LIKE 'tahini_stock'");
-                    if (!empty($tableCheck)) {
-                        $columnCheck = $db->queryOne("SHOW COLUMNS FROM tahini_stock LIKE 'supplier_id'");
-                        $tahiniStockTableReady = !empty($columnCheck);
-                    } else {
-                        $tahiniStockTableReady = false;
-                    }
-                } catch (Exception $e) {
-                    error_log("Direct tahini_stock table check failed: " . $e->getMessage());
-                    $tahiniStockTableReady = false;
-                }
-            }
-            
-            if (!$sesameStockTableReady) {
-                $error = 'لا يمكن الوصول إلى جدول مخزون السمسم. يرجى المحاولة لاحقاً أو التواصل مع الدعم.';
-            } elseif (!$tahiniStockTableReady) {
-                // محاولة إنشاء الجدول مباشرة إذا فشلت الدالة
-                try {
-                    $suppliersCheck = $db->queryOne("SHOW TABLES LIKE 'suppliers'");
-                    if (!empty($suppliersCheck)) {
-                        try {
-                            $db->execute("
-                                CREATE TABLE IF NOT EXISTS `tahini_stock` (
-                                  `id` int(11) NOT NULL AUTO_INCREMENT,
-                                  `supplier_id` int(11) NOT NULL,
-                                  `quantity` decimal(10,3) NOT NULL DEFAULT 0.000 COMMENT 'الكمية بالكيلوجرام',
-                                  `unit_price` decimal(10,2) DEFAULT NULL COMMENT 'سعر الكيلو',
-                                  `notes` text DEFAULT NULL,
-                                  `created_at` timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP,
-                                  `updated_at` timestamp NULL DEFAULT NULL ON UPDATE CURRENT_TIMESTAMP,
-                                  PRIMARY KEY (`id`),
-                                  KEY `supplier_id_idx` (`supplier_id`)
-                                ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
-                            ");
-                            $verifyCheck = $db->queryOne("SHOW TABLES LIKE 'tahini_stock'");
-                            if (!empty($verifyCheck)) {
-                                $tahiniStockTableReady = true;
-                            }
-                        } catch (Exception $createError) {
-                            error_log("Failed to create tahini_stock table directly: " . $createError->getMessage());
-                        }
-                    }
-                } catch (Exception $e) {
-                    error_log("Error checking/creating tahini_stock table: " . $e->getMessage());
-                }
-                
-                if (!$tahiniStockTableReady) {
-                    $error = 'لا يمكن الوصول إلى جدول مخزون الطحينة. يرجى المحاولة لاحقاً أو التواصل مع الدعم.';
-                }
-            }
-            
-            $sesameStockId = intval($_POST['sesame_stock_id'] ?? 0);
-            $quantity = floatval($_POST['quantity'] ?? 0);
-            $notes = trim($_POST['notes'] ?? '');
-            
-            if (!empty($error)) {
-                // keep $error as is
-            } elseif ($sesameStockId <= 0) {
-                $error = 'يجب اختيار سجل السمسم';
-            } elseif ($quantity <= 0) {
-                $error = 'يجب إدخال كمية صحيحة';
-            } else {
-                try {
-                    $db->beginTransaction();
-                    
-                    // التحقق من وجود السجل والكمية المتاحة
-                    $sesameStock = $db->queryOne("SELECT * FROM sesame_stock WHERE id = ?", [$sesameStockId]);
-                    
-                    if (!$sesameStock) {
-                        throw new Exception('سجل السمسم غير موجود');
-                    }
-                    
-                    $availableQuantity = (float)($sesameStock['quantity'] ?? 0);
-                    if ($quantity > $availableQuantity) {
-                        throw new Exception(sprintf('الكمية المطلوبة (%.3f كجم) تتجاوز المتاح (%.3f كجم)', $quantity, $availableQuantity));
-                    }
-                    
-                    // التحقق من وجود عمود converted_to_tahini_quantity وإضافته إذا لم يكن موجوداً
-                    try {
-                        $convertedColumnCheck = $db->queryOne("SHOW COLUMNS FROM sesame_stock LIKE 'converted_to_tahini_quantity'");
-                        if (empty($convertedColumnCheck)) {
-                            $db->execute("ALTER TABLE sesame_stock ADD COLUMN converted_to_tahini_quantity decimal(10,3) NOT NULL DEFAULT 0.000 COMMENT 'إجمالي كمية التحويل إلى طحينة بالكيلوجرام' AFTER quantity");
-                            error_log("Added converted_to_tahini_quantity column to sesame_stock during conversion");
-                        }
-                    } catch (Exception $colError) {
-                        error_log("Error checking/adding converted_to_tahini_quantity column: " . $colError->getMessage());
-                        throw new Exception('فشل في التحقق من بنية جدول السمسم. يرجى المحاولة لاحقاً.');
-                    }
-                    
-                    // حساب كمية الطحينة بعد خصم نسبة الإهلاك 0.2%
-                    $wastageRate = 0.002; // 0.2%
-                    $tahiniQuantity = $quantity * (1 - $wastageRate);
-                    
-                    // خصم الكمية من السمسم وإضافة كمية التحويل
-                    $newSesameQuantity = $availableQuantity - $quantity;
-                    $db->execute(
-                        "UPDATE sesame_stock SET quantity = ?, converted_to_tahini_quantity = converted_to_tahini_quantity + ?, updated_at = NOW() WHERE id = ?",
-                        [$newSesameQuantity, $quantity, $sesameStockId]
-                    );
-                    
-                    // إضافة الطحينة إلى tahini_stock
-                    $supplierId = (int)($sesameStock['supplier_id'] ?? 0);
-                    $existingTahini = $db->queryOne("SELECT * FROM tahini_stock WHERE supplier_id = ?", [$supplierId]);
-                    
-                    $conversionNotes = sprintf('تم تحويل %.3f كجم من السمسم إلى %.3f كجم طحينة (نسبة إهلاك: %.2f%%)', 
-                        $quantity, $tahiniQuantity, $wastageRate * 100);
-                    if ($notes !== '') {
-                        $conversionNotes .= ' | ' . $notes;
-                    }
-                    
-                    if ($existingTahini) {
-                        $db->execute(
-                            "UPDATE tahini_stock SET quantity = quantity + ?, notes = ?, updated_at = NOW() WHERE supplier_id = ?",
-                            [$tahiniQuantity, $conversionNotes ?: $existingTahini['notes'], $supplierId]
-                        );
-                        $tahiniStockId = (int)$existingTahini['id'];
-                    } else {
-                        $insertResult = $db->execute(
-                            "INSERT INTO tahini_stock (supplier_id, quantity, notes) VALUES (?, ?, ?)",
-                            [$supplierId, $tahiniQuantity, $conversionNotes]
-                        );
-                        $tahiniStockId = (int)($insertResult['insert_id'] ?? 0);
-                    }
-                    
-                    // تسجيل في سجل التدقيق
-                    logAudit($currentUser['id'], 'convert_sesame_to_tahini', 'sesame_stock', $sesameStockId, null, [
-                        'quantity_sesame' => $quantity,
-                        'quantity_tahini' => $tahiniQuantity,
-                        'wastage_rate' => $wastageRate,
-                        'tahini_stock_id' => $tahiniStockId
-                    ]);
-                    
-                    // تسجيل في سجل الإنتاج
-                    $supplierRow = $db->queryOne("SELECT name FROM suppliers WHERE id = ? LIMIT 1", [$supplierId]);
-                    $supplierName = $supplierRow['name'] ?? null;
-                    
-                    recordProductionSupplyLog([
-                        'material_category' => 'tahini',
-                        'material_label' => 'طحينة',
-                        'stock_source' => 'tahini_stock',
-                        'stock_id' => $tahiniStockId,
-                        'supplier_id' => $supplierId,
-                        'supplier_name' => $supplierName,
-                        'quantity' => $tahiniQuantity,
-                        'unit' => 'كجم',
-                        'details' => $conversionNotes,
-                        'recorded_by' => $currentUser['id'] ?? null,
-                    ]);
-                    
-                    $db->commit();
-                    
-                    preventDuplicateSubmission(
-                        sprintf('تم تحويل %.3f كجم من السمسم إلى %.3f كجم طحينة بنجاح', $quantity, $tahiniQuantity),
-                        ['page' => 'raw_materials_warehouse', 'section' => 'sesame'],
-                        null,
-                        $dashboardSlug
-                    );
-                } catch (Exception $e) {
-                    $db->rollBack();
-                    error_log('Error converting sesame to tahini: ' . $e->getMessage());
-                    $error = 'حدث خطأ أثناء التحويل: ' . $e->getMessage();
-                }
-            }
-        }
-        
-        // إضافة باقي عملية التحويل (إضافة كمية طحينة مباشرة)
-        elseif ($action === 'add_tahini_remainder') {
-            if (function_exists('ensureTahiniStockTable')) {
-                $tahiniStockTableReady = ensureTahiniStockTable(true);
-            } else {
-                $tahiniStockTableReady = false;
-            }
-            
-            if (!$tahiniStockTableReady) {
-                // محاولة التحقق مباشرة
-                try {
-                    $tableCheck = $db->queryOne("SHOW TABLES LIKE 'tahini_stock'");
-                    $tahiniStockTableReady = !empty($tableCheck);
-                } catch (Exception $e) {
-                    $tahiniStockTableReady = false;
-                }
-            }
-            
-            if (!$tahiniStockTableReady) {
-                $error = 'لا يمكن الوصول إلى جدول مخزون الطحينة. يرجى المحاولة لاحقاً أو التواصل مع الدعم.';
-            }
-            
-            $supplierId = intval($_POST['supplier_id'] ?? 0);
-            $quantity = floatval($_POST['quantity'] ?? 0);
-            $notes = trim($_POST['notes'] ?? '');
-            
-            if (!empty($error)) {
-                // keep $error as is
-            } elseif ($supplierId <= 0) {
-                $error = 'يجب اختيار المورد';
-            } elseif ($quantity <= 0) {
-                $error = 'يجب إدخال كمية صحيحة';
-            } else {
-                try {
-                    $db->beginTransaction();
-                    
-                    // التحقق من وجود المورد
-                    $supplierRow = $db->queryOne("SELECT name FROM suppliers WHERE id = ? LIMIT 1", [$supplierId]);
-                    if (!$supplierRow) {
-                        throw new Exception('المورد غير موجود');
-                    }
-                    $supplierName = $supplierRow['name'] ?? null;
-                    
-                    // البحث عن سجل الطحينة للمورد
-                    $existingTahini = $db->queryOne("SELECT * FROM tahini_stock WHERE supplier_id = ?", [$supplierId]);
-                    
-                    $additionNotes = sprintf('إضافة باقي عملية التحويل: %.3f كجم', $quantity);
-                    if ($notes !== '') {
-                        $additionNotes .= ' | ' . $notes;
-                    }
-                    
-                    if ($existingTahini) {
-                        $db->execute(
-                            "UPDATE tahini_stock SET quantity = quantity + ?, notes = ?, updated_at = NOW() WHERE supplier_id = ?",
-                            [$quantity, $additionNotes ?: $existingTahini['notes'], $supplierId]
-                        );
-                        $tahiniStockId = (int)$existingTahini['id'];
-                    } else {
-                        $insertResult = $db->execute(
-                            "INSERT INTO tahini_stock (supplier_id, quantity, notes) VALUES (?, ?, ?)",
-                            [$supplierId, $quantity, $additionNotes]
-                        );
-                        $tahiniStockId = (int)($insertResult['insert_id'] ?? 0);
-                    }
-                    
-                    // تسجيل في سجل التدقيق
-                    logAudit($currentUser['id'], 'add_tahini_remainder', 'tahini_stock', $tahiniStockId, null, [
-                        'quantity' => $quantity,
-                        'supplier_id' => $supplierId
-                    ]);
-                    
-                    // تسجيل في سجل الإنتاج
-                    recordProductionSupplyLog([
-                        'material_category' => 'tahini',
-                        'material_label' => 'طحينة',
-                        'stock_source' => 'tahini_stock',
-                        'stock_id' => $tahiniStockId,
-                        'supplier_id' => $supplierId,
-                        'supplier_name' => $supplierName,
-                        'quantity' => $quantity,
-                        'unit' => 'كجم',
-                        'details' => $additionNotes,
-                        'recorded_by' => $currentUser['id'] ?? null,
-                    ]);
-                    
-                    $db->commit();
-                    
-                    preventDuplicateSubmission(
-                        sprintf('تم إضافة %.3f كجم طحينة بنجاح', $quantity),
-                        ['page' => 'raw_materials_warehouse', 'section' => 'sesame'],
-                        null,
-                        $dashboardSlug
-                    );
-                } catch (Exception $e) {
-                    $db->rollBack();
-                    error_log('Error adding tahini remainder: ' . $e->getMessage());
-                    $error = 'حدث خطأ أثناء إضافة الطحينة: ' . $e->getMessage();
-                }
             }
         }
         
@@ -3227,7 +2293,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 'beeswax'        => 'شمع عسل',
                 'derivatives'    => 'مشتق',
                 'nuts'           => 'مكسرات',
-                'sesame'         => 'سمسم',
                 'other'          => 'مادة أخرى'
             ];
 
@@ -3602,10 +2667,6 @@ $rawMaterialsReportGeneratedAt = $rawWarehouseReport['generated_at'] ?? date('Y-
     background: linear-gradient(135deg, #d4a574 0%, #8b6f47 100%);
 }
 
-.section-tabs .nav-link.active[href*="sesame"] {
-    background: linear-gradient(135deg, #f4d03f 0%, #f39c12 100%);
-}
-
 #createMixedNutsModal .modal-dialog {
     max-width: 920px;
 }
@@ -3868,7 +2929,7 @@ $rawMaterialsReportGeneratedAt = $rawWarehouseReport['generated_at'] ?? date('Y-
 </div>
 
 <?php if ($error): ?>
-    <div class="alert alert-danger alert-dismissible fade show" id="errorAlert" data-auto-refresh="true">
+    <div class="alert alert-danger alert-dismissible fade show">
         <i class="bi bi-exclamation-triangle-fill me-2"></i>
         <?php echo $error; ?>
         <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
@@ -3876,7 +2937,7 @@ $rawMaterialsReportGeneratedAt = $rawWarehouseReport['generated_at'] ?? date('Y-
 <?php endif; ?>
 
 <?php if ($success): ?>
-    <div class="alert alert-success alert-dismissible fade show" id="successAlert" data-auto-refresh="true">
+    <div class="alert alert-success alert-dismissible fade show">
         <i class="bi bi-check-circle-fill me-2"></i>
         <?php echo htmlspecialchars($success); ?>
         <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
@@ -3914,12 +2975,6 @@ $rawMaterialsReportGeneratedAt = $rawWarehouseReport['generated_at'] ?? date('Y-
             <a class="nav-link <?php echo $section === 'nuts' ? 'active' : ''; ?>" 
                href="?page=raw_materials_warehouse&section=nuts">
                 <i class="bi bi-nut-fill"></i>المكسرات
-            </a>
-        </li>
-        <li class="nav-item">
-            <a class="nav-link <?php echo $section === 'sesame' ? 'active' : ''; ?>" 
-               href="?page=raw_materials_warehouse&section=sesame">
-                <i class="bi bi-circle-fill"></i>السمسم
             </a>
         </li>
     </ul>
@@ -4964,19 +4019,11 @@ if ($section === 'honey') {
                                             </td>
                                             <td class="text-center"><strong class="text-info"><?php echo number_format($stock['weight'], 2); ?></strong></td>
                                             <td class="text-center">
-                                                <div class="btn-group" role="group">
-                                                    <button class="btn btn-sm btn-success"
-                                                            onclick="openAddDerivativeQuantityModal(<?php echo $stock['id']; ?>, '<?php echo htmlspecialchars($stock['supplier_name'], ENT_QUOTES); ?>', '<?php echo htmlspecialchars($stock['derivative_type'], ENT_QUOTES); ?>', <?php echo $stock['weight']; ?>)"
-                                                            title="إضافة كمية">
-                                                        <i class="bi bi-plus-circle"></i> إضافة
-                                                    </button>
-                                                    <button class="btn btn-sm btn-danger"
-                                                            onclick="openDerivativeDamageModal(<?php echo $stock['id']; ?>, '<?php echo htmlspecialchars($stock['supplier_name'], ENT_QUOTES); ?>', '<?php echo htmlspecialchars($stock['derivative_type'], ENT_QUOTES); ?>', <?php echo $stock['weight']; ?>)"
-                                                            <?php echo $stock['weight'] <= 0 ? 'disabled' : ''; ?>
-                                                            title="تسجيل تالف">
-                                                        <i class="bi bi-exclamation-triangle"></i> تالف
-                                                    </button>
-                                                </div>
+                                                <button class="btn btn-sm btn-danger"
+                                                        onclick="openDerivativeDamageModal(<?php echo $stock['id']; ?>, '<?php echo htmlspecialchars($stock['supplier_name']); ?>', '<?php echo htmlspecialchars($stock['derivative_type']); ?>', <?php echo $stock['weight']; ?>)"
+                                                        <?php echo $stock['weight'] <= 0 ? 'disabled' : ''; ?>>
+                                                    <i class="bi bi-exclamation-triangle"></i> تسجيل تالف
+                                                </button>
                                             </td>
                                         </tr>
                                     <?php endforeach; ?>
@@ -4997,7 +4044,7 @@ if ($section === 'honey') {
                     <h5 class="modal-title">إضافة مشتق</h5>
                     <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
                 </div>
-                <form method="POST" id="addDerivativeForm">
+                <form method="POST">
                     <input type="hidden" name="action" value="add_derivative">
                     <input type="hidden" name="submit_token" value="">
                     <div class="modal-body scrollable-modal-body">
@@ -5012,23 +4059,7 @@ if ($section === 'honey') {
                         </div>
                         <div class="mb-3">
                             <label class="form-label">نوع المشتق <span class="text-danger">*</span></label>
-                            <select class="form-select" name="derivative_type" id="derivative_type_select" required>
-                                <option value="">اختر نوع المشتق</option>
-                                <?php if (!empty($derivTypes)): ?>
-                                    <?php foreach ($derivTypes as $type): ?>
-                                        <?php $typeName = trim($type['derivative_type'] ?? ''); ?>
-                                        <?php if ($typeName !== ''): ?>
-                                            <option value="<?php echo htmlspecialchars($typeName, ENT_QUOTES, 'UTF-8'); ?>">
-                                                <?php echo htmlspecialchars($typeName); ?>
-                                            </option>
-                                        <?php endif; ?>
-                                    <?php endforeach; ?>
-                                <?php endif; ?>
-                                <option value="__new__" style="font-style: italic; color: #6c757d;">+ إضافة نوع جديد</option>
-                            </select>
-                            <input type="text" class="form-control mt-2" name="derivative_type_new" id="derivative_type_new" 
-                                   placeholder="أدخل نوع المشتق الجديد..." style="display: none;">
-                            <small class="text-muted">اختر من القائمة أو أضف نوعاً جديداً</small>
+                            <input type="text" class="form-control" name="derivative_type" placeholder="مثال: غذاء ملكات، حبوب لقاح..." required>
                         </div>
                         <div class="mb-3">
                             <label class="form-label">الوزن (كجم)</label>
@@ -5044,51 +4075,6 @@ if ($section === 'honey') {
         </div>
     </div>
     
-<!-- Modal إضافة كمية إلى مشتق موجود -->
-<div class="modal fade" id="addDerivativeQuantityModal" tabindex="-1">
-    <div class="modal-dialog modal-dialog-scrollable">
-        <div class="modal-content">
-            <div class="modal-header bg-success text-white">
-                <h5 class="modal-title"><i class="bi bi-plus-circle me-2"></i>إضافة كمية إلى المشتق</h5>
-                <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
-            </div>
-            <form method="POST">
-                <input type="hidden" name="action" value="add_derivative_quantity">
-                <input type="hidden" name="stock_id" id="add_derivative_stock_id">
-                <input type="hidden" name="submit_token" value="<?php echo uniqid('tok_', true); ?>">
-                <div class="modal-body scrollable-modal-body">
-                    <div class="mb-3">
-                        <label class="form-label">المورد</label>
-                        <input type="text" class="form-control" id="add_derivative_supplier" readonly>
-                    </div>
-                    <div class="mb-3">
-                        <label class="form-label">نوع المشتق</label>
-                        <input type="text" class="form-control" id="add_derivative_type" readonly>
-                    </div>
-                    <div class="mb-3">
-                        <label class="form-label">الكمية الحالية</label>
-                        <input type="text" class="form-control" id="add_derivative_current" readonly>
-                    </div>
-                    <div class="mb-3">
-                        <label class="form-label">الكمية المضافة (كجم) <span class="text-danger">*</span></label>
-                        <input type="number" class="form-control" name="weight" id="add_derivative_weight" step="0.01" min="0.01" required>
-                    </div>
-                    <div class="mb-3">
-                        <label class="form-label">ملاحظات</label>
-                        <textarea class="form-control" name="notes" rows="3" placeholder="ملاحظات إضافية (اختياري)"></textarea>
-                    </div>
-                </div>
-                <div class="modal-footer">
-                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">إلغاء</button>
-                    <button type="submit" class="btn btn-success">
-                        <i class="bi bi-check-circle me-1"></i>إضافة
-                    </button>
-                </div>
-            </form>
-        </div>
-    </div>
-</div>
-
 <!-- Modal تسجيل تالف للمشتقات -->
 <div class="modal fade" id="damageDerivativeModal" tabindex="-1">
     <div class="modal-dialog modal-dialog-scrollable">
@@ -5138,17 +4124,6 @@ if ($section === 'honey') {
 </div>
 
 <script>
-    function openAddDerivativeQuantityModal(id, supplier, derivativeType, currentWeight) {
-        const weight = parseFloat(currentWeight) || 0;
-        document.getElementById('add_derivative_stock_id').value = id;
-        document.getElementById('add_derivative_supplier').value = supplier;
-        document.getElementById('add_derivative_type').value = derivativeType;
-        document.getElementById('add_derivative_current').value = weight.toFixed(2) + ' كجم';
-        document.getElementById('add_derivative_weight').value = '';
-        document.getElementById('add_derivative_weight').focus();
-        new bootstrap.Modal(document.getElementById('addDerivativeQuantityModal')).show();
-    }
-    
     function openDerivativeDamageModal(id, supplier, derivativeType, quantity) {
         const qty = parseFloat(quantity) || 0;
         document.getElementById('damage_derivative_stock_id').value = id;
@@ -5163,69 +4138,6 @@ if ($section === 'honey') {
         document.getElementById('damage_derivative_submit').disabled = qty <= 0;
         new bootstrap.Modal(document.getElementById('damageDerivativeModal')).show();
     }
-    
-    // إدارة حقل إضافة نوع مشتق جديد
-    document.addEventListener('DOMContentLoaded', function() {
-        const derivativeTypeSelect = document.getElementById('derivative_type_select');
-        const derivativeTypeNew = document.getElementById('derivative_type_new');
-        const addDerivativeModal = document.getElementById('addDerivativeModal');
-        
-        // دالة لإعادة تعيين الحالة
-        function resetDerivativeForm() {
-            if (derivativeTypeSelect) {
-                derivativeTypeSelect.value = '';
-                derivativeTypeSelect.setAttribute('required', 'required');
-            }
-            if (derivativeTypeNew) {
-                derivativeTypeNew.style.display = 'none';
-                derivativeTypeNew.value = '';
-                derivativeTypeNew.removeAttribute('required');
-            }
-        }
-        
-        // إعادة تعيين النموذج عند فتح النافذة
-        if (addDerivativeModal) {
-            addDerivativeModal.addEventListener('show.bs.modal', function() {
-                resetDerivativeForm();
-            });
-        }
-        
-        if (derivativeTypeSelect && derivativeTypeNew) {
-            derivativeTypeSelect.addEventListener('change', function() {
-                if (this.value === '__new__') {
-                    derivativeTypeNew.style.display = 'block';
-                    derivativeTypeNew.setAttribute('required', 'required');
-                    derivativeTypeNew.focus();
-                } else {
-                    derivativeTypeNew.style.display = 'none';
-                    derivativeTypeNew.removeAttribute('required');
-                    derivativeTypeNew.value = '';
-                }
-            });
-            
-            // عند إرسال النموذج، استخدم القيمة من الحقل النصي إذا تم اختيار "إضافة نوع جديد"
-            const addDerivativeForm = document.getElementById('addDerivativeForm');
-            if (addDerivativeForm) {
-                addDerivativeForm.addEventListener('submit', function(e) {
-                    if (derivativeTypeSelect.value === '__new__') {
-                        const newTypeValue = derivativeTypeNew.value.trim();
-                        if (newTypeValue === '') {
-                            e.preventDefault();
-                            alert('يرجى إدخال نوع المشتق الجديد');
-                            derivativeTypeNew.focus();
-                            return false;
-                        }
-                        // التأكد من أن القيمة في select هي __new__ حتى يقرأ PHP من الحقل النصي
-                        derivativeTypeSelect.value = '__new__';
-                    } else {
-                        // إذا تم اختيار نوع موجود، تأكد من تعطيل الحقل النصي
-                        derivativeTypeNew.removeAttribute('required');
-                        derivativeTypeNew.value = '';
-                    }
-                });
-            }
-        }
-    });
 </script>
 
     <?php
@@ -5234,10 +4146,8 @@ if ($section === 'honey') {
 $nutsSuppliers = $db->query("SELECT id, name, phone FROM suppliers WHERE status = 'active' AND type = 'nuts' ORDER BY name");
     
     // قسم المكسرات
-    $nutsStockTotal = $db->queryOne("SELECT COALESCE(SUM(quantity), 0) as total FROM nuts_stock")['total'] ?? 0;
-    $mixedNutsTotal = $db->queryOne("SELECT COALESCE(SUM(total_quantity), 0) as total FROM mixed_nuts")['total'] ?? 0;
     $nutsStats = [
-        'total_quantity' => (float)$nutsStockTotal + (float)$mixedNutsTotal,
+        'total_quantity' => $db->queryOne("SELECT COALESCE(SUM(quantity), 0) as total FROM nuts_stock")['total'] ?? 0,
         'suppliers_count' => $db->queryOne("SELECT COUNT(DISTINCT supplier_id) as total FROM nuts_stock")['total'] ?? 0,
         'types_count' => $db->queryOne("SELECT COUNT(DISTINCT nut_type) as total FROM nuts_stock")['total'] ?? 0,
         'mixed_batches' => count($mixedNuts)
@@ -5724,510 +4634,6 @@ $nutsSuppliers = $db->query("SELECT id, name, phone FROM suppliers WHERE status 
     </script>
     
     <?php
-} elseif ($section === 'sesame') {
-    // جلب موردي السمسم
-    $sesameSuppliers = [];
-    try {
-        $sesameSuppliers = $db->query("SELECT id, name, phone FROM suppliers WHERE status = 'active' AND type = 'sesame' ORDER BY name");
-    } catch (Exception $e) {
-        error_log('Failed to load sesame suppliers: ' . $e->getMessage());
-        $sesameSuppliers = [];
-    }
-    
-    $sesameSectionTableError = !$sesameStockTableReady;
-    $sesameStock = [];
-    $sesameStats = [
-        'total_quantity' => 0,
-        'suppliers_count' => 0
-    ];
-    
-    // جلب بيانات مخزون الطحينة
-    $tahiniStockTableReady = false;
-    if (function_exists('ensureTahiniStockTable')) {
-        $tahiniStockTableReady = ensureTahiniStockTable(true);
-    } else {
-        try {
-            $tableCheck = $db->queryOne("SHOW TABLES LIKE 'tahini_stock'");
-            $tahiniStockTableReady = !empty($tableCheck);
-        } catch (Exception $e) {
-            $tahiniStockTableReady = false;
-        }
-    }
-    
-    $tahiniStock = [];
-    $tahiniStats = [
-        'total_quantity' => 0,
-        'suppliers_count' => 0
-    ];
-    
-    if ($tahiniStockTableReady) {
-        try {
-            $tahiniStock = $db->query("
-                SELECT ts.*, s.name as supplier_name, s.phone as supplier_phone 
-                FROM tahini_stock ts
-                INNER JOIN suppliers s ON ts.supplier_id = s.id
-                WHERE ts.quantity > 0
-                ORDER BY s.name
-            ");
-        } catch (Exception $e) {
-            error_log('Failed to load tahini stock: ' . $e->getMessage());
-            $tahiniStock = [];
-        }
-        
-        try {
-            $tahiniStats = [
-                'total_quantity' => $db->queryOne("SELECT COALESCE(SUM(quantity), 0) as total FROM tahini_stock")['total'] ?? 0,
-                'suppliers_count' => $db->queryOne("SELECT COUNT(DISTINCT supplier_id) as total FROM tahini_stock")['total'] ?? 0
-            ];
-        } catch (Exception $e) {
-            error_log('Failed to load tahini stats: ' . $e->getMessage());
-            $tahiniStats = [
-                'total_quantity' => 0,
-                'suppliers_count' => 0
-            ];
-        }
-    }
-    
-    if (!$sesameSectionTableError) {
-        try {
-            $sesameStock = $db->query("
-                SELECT ss.*, s.name as supplier_name, s.phone as supplier_phone 
-                FROM sesame_stock ss
-                INNER JOIN suppliers s ON ss.supplier_id = s.id
-                WHERE ss.quantity > 0
-                ORDER BY s.name
-            ");
-        } catch (Exception $e) {
-            error_log('Failed to load sesame stock: ' . $e->getMessage());
-            $sesameStock = [];
-            $sesameSectionTableError = true;
-        }
-        
-        if (!$sesameSectionTableError) {
-            try {
-                $sesameStats = [
-                    'total_quantity' => $db->queryOne("SELECT COALESCE(SUM(quantity), 0) as total FROM sesame_stock")['total'] ?? 0,
-                    'suppliers_count' => $db->queryOne("SELECT COUNT(DISTINCT supplier_id) as total FROM sesame_stock")['total'] ?? 0
-                ];
-            } catch (Exception $e) {
-                error_log('Failed to load sesame stats: ' . $e->getMessage());
-                $sesameStats = [
-                    'total_quantity' => 0,
-                    'suppliers_count' => 0
-                ];
-                $sesameSectionTableError = true;
-            }
-        }
-    }
-    ?>
-    
-    <?php $sesameActionsDisabledAttr = $sesameSectionTableError ? 'disabled' : ''; ?>
-    
-    <!-- إحصائيات السمسم -->
-    <div class="row mb-4">
-        <div class="col-md-6">
-            <div class="stats-card">
-                <div class="d-flex justify-content-between align-items-center">
-                    <div>
-                        <div class="text-muted small mb-1">إجمالي الكمية</div>
-                        <div class="h4 mb-0"><?php echo number_format($sesameStats['total_quantity'], 2); ?> <small>كجم</small></div>
-                    </div>
-                    <div class="stat-icon" style="background: linear-gradient(135deg, #f4d03f 0%, #f39c12 100%);">
-                        <i class="bi bi-circle-fill"></i>
-                    </div>
-                </div>
-            </div>
-        </div>
-        <div class="col-md-6">
-            <div class="stats-card">
-                <div class="d-flex justify-content-between align-items-center">
-                    <div>
-                        <div class="text-muted small mb-1">عدد الموردين</div>
-                        <div class="h4 mb-0"><?php echo $sesameStats['suppliers_count']; ?></div>
-                    </div>
-                    <div class="stat-icon" style="background: linear-gradient(135deg, #f4d03f 0%, #f39c12 100%);">
-                        <i class="bi bi-people"></i>
-                    </div>
-                </div>
-            </div>
-        </div>
-    </div>
-    
-    <?php if ($sesameSectionTableError): ?>
-        <div class="alert alert-warning">
-            <i class="bi bi-info-circle me-2"></i>
-            لا يمكن الوصول إلى جدول مخزون السمسم حالياً. لن يعمل هذا القسم حتى يتم إنشاء الجدول في قاعدة البيانات.
-        </div>
-    <?php endif; ?>
-    
-    <div class="row">
-        <div class="col-12">
-            <div class="card shadow-sm">
-                <div class="card-header text-white d-flex justify-content-between align-items-center" style="background: linear-gradient(135deg, #f4d03f 0%, #f39c12 100%);">
-                    <h5 class="mb-0"><i class="bi bi-circle-fill me-2"></i>مخزون السمسم</h5>
-                    <button class="btn btn-light btn-sm" data-bs-toggle="modal" data-bs-target="#addSesameModal" <?php echo $sesameActionsDisabledAttr; ?>>
-                        <i class="bi bi-plus-circle me-1"></i>إضافة
-                    </button>
-                </div>
-                <div class="card-body">
-                    <?php if ($sesameSectionTableError): ?>
-                        <div class="text-center text-muted py-4">
-                            <i class="bi bi-exclamation-circle fs-1 d-block mb-3 text-warning"></i>
-                            يرجى التأكد من إعداد قاعدة البيانات بشكل صحيح.
-                        </div>
-                    <?php elseif (empty($sesameStock)): ?>
-                        <div class="text-center text-muted py-4">
-                            <i class="bi bi-inbox fs-1 d-block mb-3"></i>
-                            لا يوجد مخزون سمسم
-                        </div>
-                    <?php else: ?>
-                        <div class="table-responsive">
-                            <table class="table table-sm table-hover">
-                                <thead>
-                                    <tr>
-                                        <th>المورد</th>
-                                        <th class="text-center">الكمية (كجم)</th>
-                                        <th class="text-center">الإجراءات</th>
-                                    </tr>
-                                </thead>
-                                <tbody>
-                                    <?php foreach ($sesameStock as $stock): ?>
-                                        <tr>
-                                            <td>
-                                                <strong><?php echo htmlspecialchars($stock['supplier_name']); ?></strong>
-                                                <?php if ($stock['supplier_phone']): ?>
-                                                    <br><small class="text-muted"><?php echo htmlspecialchars($stock['supplier_phone']); ?></small>
-                                                <?php endif; ?>
-                                            </td>
-                                            <td class="text-center"><strong style="color: #f39c12;"><?php echo number_format($stock['quantity'], 3); ?></strong></td>
-                                            <td class="text-center">
-                                                <div class="btn-group" role="group">
-                                                    <button class="btn btn-sm btn-success"
-                                                            onclick="openConvertToTahiniModal(<?php echo $stock['id']; ?>, '<?php echo htmlspecialchars($stock['supplier_name'], ENT_QUOTES); ?>', <?php echo $stock['quantity']; ?>)"
-                                                            <?php echo ($stock['quantity'] <= 0 || $sesameSectionTableError) ? 'disabled' : ''; ?>
-                                                            title="تحويل إلى طحينة">
-                                                        <i class="bi bi-arrow-repeat"></i> تحويل
-                                                    </button>
-                                                    <button class="btn btn-sm btn-danger"
-                                                            onclick="openDamageModal('sesame', <?php echo $stock['id']; ?>, 'سمسم', '<?php echo htmlspecialchars($stock['supplier_name'], ENT_QUOTES); ?>', <?php echo $stock['quantity']; ?>)"
-                                                            <?php echo ($stock['quantity'] <= 0 || $sesameSectionTableError) ? 'disabled' : ''; ?>>
-                                                        <i class="bi bi-exclamation-triangle"></i> تالف
-                                                    </button>
-                                                </div>
-                                            </td>
-                                        </tr>
-                                    <?php endforeach; ?>
-                                </tbody>
-                            </table>
-                        </div>
-                    <?php endif; ?>
-                </div>
-            </div>
-        </div>
-    </div>
-    
-    <!-- Modal إضافة سمسم -->
-    <div class="modal fade" id="addSesameModal" tabindex="-1">
-        <div class="modal-dialog modal-dialog-scrollable">
-            <div class="modal-content">
-                <div class="modal-header text-white" style="background: linear-gradient(135deg, #f4d03f 0%, #f39c12 100%);">
-                    <h5 class="modal-title"><i class="bi bi-plus-circle me-2"></i>إضافة سمسم</h5>
-                    <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
-                </div>
-                <form method="POST">
-                    <input type="hidden" name="action" value="add_single_sesame">
-                    <input type="hidden" name="submit_token" value="">
-                    <div class="modal-body scrollable-modal-body">
-                        <?php if ($sesameSectionTableError): ?>
-                            <div class="alert alert-warning">
-                                لا يمكن إضافة سمسم جديد قبل إنشاء جدول المخزون في قاعدة البيانات.
-                            </div>
-                        <?php endif; ?>
-                        <div class="mb-3">
-                            <label class="form-label">المورد <span class="text-danger">*</span></label>
-                            <select name="supplier_id" class="form-select" required>
-                                <option value="">اختر المورد</option>
-                                <?php foreach ($sesameSuppliers as $supplier): ?>
-                                    <option value="<?php echo $supplier['id']; ?>"><?php echo htmlspecialchars($supplier['name']); ?></option>
-                                <?php endforeach; ?>
-                            </select>
-                        </div>
-                        <div class="mb-3">
-                            <label class="form-label">الكمية (كجم) <span class="text-danger">*</span></label>
-                            <input type="number" step="0.001" min="0.001" name="quantity" class="form-control" required>
-                        </div>
-                        <div class="mb-3">
-                            <label class="form-label">ملاحظات</label>
-                            <textarea name="notes" class="form-control" rows="3"></textarea>
-                        </div>
-                    </div>
-                    <div class="modal-footer">
-                        <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">إلغاء</button>
-                        <button type="submit" class="btn text-white" style="background: linear-gradient(135deg, #f4d03f 0%, #f39c12 100%);" <?php echo $sesameActionsDisabledAttr; ?>>
-                            <i class="bi bi-check-circle me-1"></i>إضافة
-                        </button>
-                    </div>
-                </form>
-            </div>
-        </div>
-    </div>
-    
-    <!-- Modal تسجيل تالف (سمسم أو طحينة) -->
-    <div class="modal fade" id="damageSesameTahiniModal" tabindex="-1">
-        <div class="modal-dialog modal-dialog-scrollable">
-            <div class="modal-content">
-                <div class="modal-header bg-danger text-white">
-                    <h5 class="modal-title"><i class="bi bi-exclamation-diamond me-2"></i>تسجيل تالف</h5>
-                    <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
-                </div>
-                <form method="POST">
-                    <input type="hidden" name="action" value="record_damage">
-                    <input type="hidden" name="material_category" id="damage_material_category">
-                    <input type="hidden" name="redirect_section" value="sesame">
-                    <input type="hidden" name="stock_id" id="damage_stock_id">
-                    <input type="hidden" name="damage_unit" value="كجم">
-                    <input type="hidden" name="submit_token" value="<?php echo uniqid('tok_', true); ?>">
-                    <div class="modal-body scrollable-modal-body">
-                        <div class="mb-3">
-                            <label class="form-label">نوع المادة</label>
-                            <input type="text" class="form-control" id="damage_material_type" readonly>
-                        </div>
-                        <div class="mb-3">
-                            <label class="form-label">المورد</label>
-                            <input type="text" class="form-control" id="damage_supplier" readonly>
-                        </div>
-                        <div class="mb-3">
-                            <label class="form-label">الكمية المتاحة</label>
-                            <input type="text" class="form-control" id="damage_available" readonly>
-                        </div>
-                        <div class="mb-3">
-                            <label class="form-label">الكمية التالفة (كجم)</label>
-                            <input type="number" class="form-control" name="damage_quantity" id="damage_quantity" step="0.001" min="0.001" required>
-                        </div>
-                        <div class="mb-3">
-                            <label class="form-label">سبب التلف <span class="text-danger">*</span></label>
-                            <textarea class="form-control" name="damage_reason" id="damage_reason" rows="3" required></textarea>
-                        </div>
-                    </div>
-                    <div class="modal-footer">
-                        <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">إلغاء</button>
-                        <button type="submit" class="btn btn-danger" id="damage_submit">
-                            <i class="bi bi-check-circle me-1"></i>تسجيل
-                        </button>
-                    </div>
-                </form>
-            </div>
-        </div>
-    </div>
-    
-    <!-- Modal إضافة باقي عملية التحويل -->
-    <div class="modal fade" id="addTahiniRemainderModal" tabindex="-1">
-        <div class="modal-dialog modal-dialog-scrollable">
-            <div class="modal-content">
-                <div class="modal-header bg-info text-white">
-                    <h5 class="modal-title"><i class="bi bi-plus-circle me-2"></i>إضافة باقي عملية التحويل</h5>
-                    <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
-                </div>
-                <form method="POST">
-                    <input type="hidden" name="action" value="add_tahini_remainder">
-                    <input type="hidden" name="submit_token" value="<?php echo uniqid('tok_', true); ?>">
-                    <div class="modal-body scrollable-modal-body">
-                        <div class="alert alert-info">
-                            <i class="bi bi-info-circle me-2"></i>
-                            استخدم هذا النموذج لإضافة كمية طحينة إضافية من عملية تحويل سابقة.
-                        </div>
-                        <div class="mb-3">
-                            <label class="form-label">المورد <span class="text-danger">*</span></label>
-                            <select name="supplier_id" class="form-select" required id="remainder_supplier_id">
-                                <option value="">اختر المورد</option>
-                                <?php foreach ($sesameSuppliers as $supplier): ?>
-                                    <option value="<?php echo $supplier['id']; ?>"><?php echo htmlspecialchars($supplier['name']); ?></option>
-                                <?php endforeach; ?>
-                            </select>
-                        </div>
-                        <div class="mb-3">
-                            <label class="form-label">الكمية (كجم) <span class="text-danger">*</span></label>
-                            <input type="number" step="0.001" min="0.001" name="quantity" class="form-control" required>
-                        </div>
-                        <div class="mb-3">
-                            <label class="form-label">ملاحظات</label>
-                            <textarea name="notes" class="form-control" rows="3" placeholder="ملاحظات إضافية (اختياري)"></textarea>
-                        </div>
-                    </div>
-                    <div class="modal-footer">
-                        <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">إلغاء</button>
-                        <button type="submit" class="btn btn-info text-white">
-                            <i class="bi bi-check-circle me-1"></i>إضافة
-                        </button>
-                    </div>
-                </form>
-            </div>
-        </div>
-    </div>
-    
-    <!-- Modal تحويل السمسم إلى طحينة -->
-    <div class="modal fade" id="convertToTahiniModal" tabindex="-1">
-        <div class="modal-dialog modal-dialog-scrollable">
-            <div class="modal-content">
-                <div class="modal-header bg-success text-white">
-                    <h5 class="modal-title"><i class="bi bi-arrow-repeat me-2"></i>تحويل السمسم إلى طحينة</h5>
-                    <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
-                </div>
-                <form method="POST">
-                    <input type="hidden" name="action" value="convert_sesame_to_tahini">
-                    <input type="hidden" name="sesame_stock_id" id="convert_sesame_stock_id">
-                    <input type="hidden" name="submit_token" value="<?php echo uniqid('tok_', true); ?>">
-                    <div class="modal-body scrollable-modal-body">
-                        <?php if ($sesameSectionTableError): ?>
-                            <div class="alert alert-warning">
-                                لا يمكن تحويل السمسم حالياً لعدم توفر جدول السمسم.
-                            </div>
-                        <?php endif; ?>
-                        <div class="alert alert-info">
-                            <i class="bi bi-info-circle me-2"></i>
-                            سيتم خصم نسبة إهلاك 0.2% من الكمية المدخلة عند التحويل إلى طحينة.
-                        </div>
-                        <div class="mb-3">
-                            <label class="form-label">المورد</label>
-                            <input type="text" class="form-control" id="convert_sesame_supplier" readonly>
-                        </div>
-                        <div class="mb-3">
-                            <label class="form-label">الكمية المتاحة</label>
-                            <input type="text" class="form-control" id="convert_sesame_available" readonly>
-                        </div>
-                        <div class="mb-3">
-                            <label class="form-label">الكمية المراد تحويلها (كجم) <span class="text-danger">*</span></label>
-                            <input type="number" class="form-control" name="quantity" id="convert_sesame_quantity" step="0.001" min="0.001" required>
-                            <small class="text-muted">الكمية المتاحة: <span id="convert_sesame_max_qty">0</span> كجم</small>
-                        </div>
-                        <div class="mb-3">
-                            <label class="form-label">الكمية المتوقعة من الطحينة (كجم)</label>
-                            <input type="text" class="form-control" id="convert_tahini_expected" readonly style="background-color: #e9ecef;">
-                            <small class="text-muted">بعد خصم نسبة الإهلاك 0.2%</small>
-                        </div>
-                        <div class="mb-3">
-                            <label class="form-label">ملاحظات</label>
-                            <textarea class="form-control" name="notes" rows="3" placeholder="ملاحظات إضافية (اختياري)"></textarea>
-                        </div>
-                    </div>
-                    <div class="modal-footer">
-                        <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">إلغاء</button>
-                        <button type="submit" class="btn btn-success" id="convert_tahini_submit" <?php echo $sesameActionsDisabledAttr; ?>>
-                            <i class="bi bi-check-circle me-1"></i>تحويل
-                        </button>
-                    </div>
-                </form>
-            </div>
-        </div>
-    </div>
-    
-    <!-- قسم مخزون الطحينة -->
-    <div class="row mt-4">
-        <div class="col-12">
-            <div class="card shadow-sm">
-                <div class="card-header text-white d-flex justify-content-between align-items-center" style="background: linear-gradient(135deg, #28a745 0%, #20c997 100%);">
-                    <h5 class="mb-0"><i class="bi bi-droplet me-2"></i>مخزون الطحينة</h5>
-                    <button class="btn btn-light btn-sm" data-bs-toggle="modal" data-bs-target="#addTahiniRemainderModal">
-                        <i class="bi bi-plus-circle me-1"></i>إضافة باقي عملية التحويل
-                    </button>
-                </div>
-                <div class="card-body">
-                    <?php if (empty($tahiniStock)): ?>
-                        <div class="text-center text-muted py-4">
-                            <i class="bi bi-inbox fs-1 d-block mb-3"></i>
-                            لا يوجد مخزون طحينة
-                        </div>
-                    <?php else: ?>
-                        <div class="table-responsive">
-                            <table class="table table-sm table-hover">
-                                <thead>
-                                    <tr>
-                                        <th>المورد</th>
-                                        <th class="text-center">الكمية (كجم)</th>
-                                        <th class="text-center">الإجراءات</th>
-                                    </tr>
-                                </thead>
-                                <tbody>
-                                    <?php foreach ($tahiniStock as $stock): ?>
-                                        <tr>
-                                            <td>
-                                                <strong><?php echo htmlspecialchars($stock['supplier_name']); ?></strong>
-                                                <?php if ($stock['supplier_phone']): ?>
-                                                    <br><small class="text-muted"><?php echo htmlspecialchars($stock['supplier_phone']); ?></small>
-                                                <?php endif; ?>
-                                            </td>
-                                            <td class="text-center"><strong style="color: #28a745;"><?php echo number_format($stock['quantity'], 3); ?></strong></td>
-                                            <td class="text-center">
-                                                <button class="btn btn-sm btn-danger"
-                                                        onclick="openDamageModal('tahini', <?php echo $stock['id']; ?>, 'طحينة', '<?php echo htmlspecialchars($stock['supplier_name'], ENT_QUOTES); ?>', <?php echo $stock['quantity']; ?>)"
-                                                        <?php echo ($stock['quantity'] <= 0) ? 'disabled' : ''; ?>>
-                                                    <i class="bi bi-exclamation-triangle"></i> تالف
-                                                </button>
-                                            </td>
-                                        </tr>
-                                    <?php endforeach; ?>
-                                </tbody>
-                            </table>
-                        </div>
-                    <?php endif; ?>
-                </div>
-            </div>
-        </div>
-    </div>
-    
-    <script>
-    const sesameActionsDisabled = <?php echo $sesameSectionTableError ? 'true' : 'false'; ?>;
-
-    function openConvertToTahiniModal(id, supplier, quantity) {
-        if (sesameActionsDisabled) {
-            alert('لا يمكن تحويل السمسم حالياً لعدم توفر جدول السمسم.');
-            return;
-        }
-        const qty = parseFloat(quantity) || 0;
-        document.getElementById('convert_sesame_stock_id').value = id;
-        document.getElementById('convert_sesame_supplier').value = supplier;
-        document.getElementById('convert_sesame_available').value = qty.toFixed(3) + ' كجم';
-        document.getElementById('convert_sesame_max_qty').textContent = qty.toFixed(3);
-        const qtyInput = document.getElementById('convert_sesame_quantity');
-        qtyInput.value = '';
-        qtyInput.max = qty > 0 ? qty.toFixed(3) : null;
-        qtyInput.disabled = qty <= 0;
-        document.getElementById('convert_tahini_expected').value = '0.000';
-        
-        // حساب الكمية المتوقعة عند تغيير الكمية
-        qtyInput.addEventListener('input', function() {
-            const inputQty = parseFloat(this.value) || 0;
-            if (inputQty > 0 && inputQty <= qty) {
-                const wastageRate = 0.002; // 0.2%
-                const tahiniQty = inputQty * (1 - wastageRate);
-                document.getElementById('convert_tahini_expected').value = tahiniQty.toFixed(3);
-            } else {
-                document.getElementById('convert_tahini_expected').value = '0.000';
-            }
-        });
-        
-        const modal = new bootstrap.Modal(document.getElementById('convertToTahiniModal'));
-        modal.show();
-    }
-
-    function openDamageModal(category, id, materialType, supplier, quantity) {
-        const qty = parseFloat(quantity) || 0;
-        document.getElementById('damage_material_category').value = category;
-        document.getElementById('damage_stock_id').value = id;
-        document.getElementById('damage_material_type').value = materialType;
-        document.getElementById('damage_supplier').value = supplier;
-        document.getElementById('damage_available').value = qty.toFixed(3) + ' كجم';
-        const qtyInput = document.getElementById('damage_quantity');
-        qtyInput.value = '';
-        qtyInput.max = qty > 0 ? qty.toFixed(3) : null;
-        qtyInput.disabled = qty <= 0;
-        document.getElementById('damage_reason').value = '';
-        document.getElementById('damage_submit').disabled = qty <= 0;
-        new bootstrap.Modal(document.getElementById('damageSesameTahiniModal')).show();
-    }
-    </script>
-    
-    <?php
 }
 ?>
 <?php
@@ -6315,8 +4721,6 @@ const honeyVarietyOptionsMarkup = <?php echo json_encode($honeyVarietyOptionsMar
 const materialOptions = <?php echo json_encode([
     'nuts' => $nutMaterialOptions,
     'derivatives' => $derivativeMaterialOptions,
-    'sesame' => $sesameMaterialOptions,
-    'tahini' => $tahiniMaterialOptions,
 ], JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES); ?>;
 function addMaterialRow() {
     materialRowCount++;
@@ -6546,30 +4950,5 @@ observer.observe(document.body, {
     childList: true,
     subtree: true
 });
-</script>
-
-<!-- إعادة تحميل الصفحة تلقائياً بعد أي رسالة (نجاح أو خطأ) لمنع تكرار الطلبات -->
-<script>
-// إعادة تحميل الصفحة تلقائياً بعد أي رسالة (نجاح أو خطأ) لمنع تكرار الطلبات
-(function() {
-    const successAlert = document.getElementById('successAlert');
-    const errorAlert = document.getElementById('errorAlert');
-    
-    // التحقق من وجود رسالة نجاح أو خطأ
-    const alertElement = successAlert || errorAlert;
-    
-    if (alertElement && alertElement.dataset.autoRefresh === 'true') {
-        // انتظار 3 ثوانٍ لإعطاء المستخدم وقتاً لرؤية الرسالة
-        setTimeout(function() {
-            // إعادة تحميل الصفحة بدون معاملات GET لمنع تكرار الطلبات
-            const currentUrl = new URL(window.location.href);
-            // إزالة معاملات success و error من URL
-            currentUrl.searchParams.delete('success');
-            currentUrl.searchParams.delete('error');
-            // إعادة تحميل الصفحة
-            window.location.href = currentUrl.toString();
-        }, 3000);
-    }
-})();
 </script>
 

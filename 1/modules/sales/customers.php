@@ -1,3 +1,4 @@
+
 <?php
 /**
  * صفحة إدارة العملاء للمندوب
@@ -7,136 +8,20 @@ if (!defined('ACCESS_ALLOWED')) {
     die('Direct access not allowed');
 }
 
-if (!defined('CUSTOMERS_MODULE_BOOTSTRAPPED')) {
-    define('CUSTOMERS_MODULE_BOOTSTRAPPED', true);
+require_once __DIR__ . '/../../includes/config.php';
+require_once __DIR__ . '/../../includes/db.php';
+require_once __DIR__ . '/../../includes/auth.php';
+require_once __DIR__ . '/../../includes/audit_log.php';
+require_once __DIR__ . '/../../includes/path_helper.php';
+require_once __DIR__ . '/../../includes/customer_history.php';
 
-    require_once __DIR__ . '/../../includes/config.php';
-    require_once __DIR__ . '/../../includes/db.php';
-    require_once __DIR__ . '/../../includes/auth.php';
-    require_once __DIR__ . '/../../includes/audit_log.php';
-    require_once __DIR__ . '/../../includes/path_helper.php';
-    require_once __DIR__ . '/../../includes/customer_history.php';
-    require_once __DIR__ . '/../../includes/invoices.php';
-    require_once __DIR__ . '/../../includes/salary_calculator.php';
+requireRole(['sales', 'accountant', 'manager']);
 
-    requireRole(['sales', 'accountant', 'manager']);
-}
-
-if (!defined('CUSTOMERS_PURCHASE_HISTORY_AJAX')) {
-    require_once __DIR__ . '/table_styles.php';
-}
+require_once __DIR__ . '/table_styles.php';
 
 $currentUser = getCurrentUser();
 $isSalesUser = isset($currentUser['role']) && $currentUser['role'] === 'sales';
 $db = db();
-
-// معالجة update_location قبل أي شيء آخر لمنع أي output
-if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && trim($_POST['action']) === 'update_location') {
-    // تنظيف أي output سابق بشكل كامل
-    while (ob_get_level() > 0) {
-        ob_end_clean();
-    }
-    
-    // التأكد من أن الطلب AJAX
-    $isAjaxRequest = (
-        (isset($_SERVER['HTTP_X_REQUESTED_WITH']) && strtolower($_SERVER['HTTP_X_REQUESTED_WITH']) === 'xmlhttprequest') ||
-        (isset($_SERVER['HTTP_ACCEPT']) && stripos($_SERVER['HTTP_ACCEPT'], 'application/json') !== false)
-    );
-    
-    if (!$isAjaxRequest) {
-        http_response_code(400);
-        header('Content-Type: application/json; charset=utf-8');
-        echo json_encode([
-            'success' => false,
-            'message' => 'طلب غير صالح.',
-        ], JSON_UNESCAPED_UNICODE);
-        exit;
-    }
-    
-    header('Content-Type: application/json; charset=utf-8');
-    header('Cache-Control: no-cache, must-revalidate');
-    header('Expires: Mon, 26 Jul 1997 05:00:00 GMT');
-
-    $customerId = isset($_POST['customer_id']) ? (int)$_POST['customer_id'] : 0;
-    $latitude = $_POST['latitude'] ?? null;
-    $longitude = $_POST['longitude'] ?? null;
-
-    if ($customerId <= 0 || $latitude === null || $longitude === null) {
-        echo json_encode([
-            'success' => false,
-            'message' => 'بيانات الموقع غير مكتملة.',
-        ], JSON_UNESCAPED_UNICODE);
-        exit;
-    }
-
-    if (!is_numeric($latitude) || !is_numeric($longitude)) {
-        echo json_encode([
-            'success' => false,
-            'message' => 'إحداثيات الموقع غير صالحة.',
-        ], JSON_UNESCAPED_UNICODE);
-        exit;
-    }
-
-    $latitude = (float)$latitude;
-    $longitude = (float)$longitude;
-
-    if ($latitude < -90 || $latitude > 90 || $longitude < -180 || $longitude > 180) {
-        echo json_encode([
-            'success' => false,
-            'message' => 'نطاق الإحداثيات غير صحيح.',
-        ], JSON_UNESCAPED_UNICODE);
-        exit;
-    }
-
-    try {
-        $customer = $db->queryOne("SELECT id, created_by FROM customers WHERE id = ?", [$customerId]);
-        if (!$customer) {
-            throw new InvalidArgumentException('العميل المطلوب غير موجود.');
-        }
-
-        if ($isSalesUser && (int)($customer['created_by'] ?? 0) !== (int)$currentUser['id']) {
-            throw new InvalidArgumentException('غير مصرح لك بتحديث موقع هذا العميل.');
-        }
-
-        $db->execute(
-            "UPDATE customers SET latitude = ?, longitude = ?, location_captured_at = NOW() WHERE id = ?",
-            [$latitude, $longitude, $customerId]
-        );
-
-        logAudit(
-            $currentUser['id'],
-            'update_customer_location',
-            'customer',
-            $customerId,
-            null,
-            [
-                'latitude' => $latitude,
-                'longitude' => $longitude,
-            ]
-        );
-
-        echo json_encode([
-            'success' => true,
-            'message' => 'تم تحديث موقع العميل بنجاح.',
-        ], JSON_UNESCAPED_UNICODE);
-    } catch (InvalidArgumentException $invalidLocation) {
-        http_response_code(400);
-        echo json_encode([
-            'success' => false,
-            'message' => $invalidLocation->getMessage(),
-        ], JSON_UNESCAPED_UNICODE);
-    } catch (Throwable $updateLocationError) {
-        error_log('Update customer location error: ' . $updateLocationError->getMessage());
-        http_response_code(500);
-        echo json_encode([
-            'success' => false,
-            'message' => 'حدث خطأ أثناء حفظ الموقع. حاول مرة أخرى.',
-        ], JSON_UNESCAPED_UNICODE);
-    }
-
-    exit;
-}
-
 $error = '';
 $success = '';
 
@@ -175,22 +60,14 @@ if ($currentRole === 'manager') {
 $customersPageBase = $customersBaseScript . '?page=customers';
 $customersPageBaseWithSection = $customersPageBase . '&section=' . urlencode($section);
 
-// معالجة طلبات سجل مشتريات العميل (للمدير والمندوب)
-// ملاحظة: يجب أن يكون هذا قبل أي output HTML
+// معالجة طلبات سجل مشتريات العميل (للمدير فقط)
 if (
-    in_array($currentRole, ['manager', 'sales'], true) &&
+    $currentRole === 'manager' &&
     isset($_GET['ajax'], $_GET['action']) &&
     $_GET['ajax'] === 'purchase_history' &&
     $_GET['action'] === 'purchase_history'
 ) {
-    // تنظيف أي output قبل إرسال JSON
-    while (ob_get_level() > 0) {
-        ob_end_clean();
-    }
-    
     header('Content-Type: application/json; charset=utf-8');
-    header('Cache-Control: no-cache, must-revalidate');
-    header('Expires: Mon, 26 Jul 1997 05:00:00 GMT');
 
     $customerId = isset($_GET['customer_id']) ? (int)$_GET['customer_id'] : 0;
     if ($customerId <= 0) {
@@ -202,86 +79,13 @@ if (
     }
 
     try {
-        // التحقق من ملكية العميل للمندوب (إذا كان المستخدم مندوب)
-        if ($isSalesUser) {
-            $customer = $db->queryOne("SELECT id, created_by FROM customers WHERE id = ?", [$customerId]);
-            if (!$customer) {
-                echo json_encode([
-                    'success' => false,
-                    'message' => 'العميل غير موجود.'
-                ], JSON_UNESCAPED_UNICODE);
-                exit;
-            }
-            
-            // التحقق من أن العميل ينتمي للمندوب
-            if ((int)($customer['created_by'] ?? 0) !== (int)$currentUser['id']) {
-                echo json_encode([
-                    'success' => false,
-                    'message' => 'غير مصرح لك بعرض سجل مشتريات هذا العميل.'
-                ], JSON_UNESCAPED_UNICODE);
-                exit;
-            }
-        }
-        
         $historyPayload = customerHistoryGetHistory($customerId);
-        
-        // التأكد من أن النتيجة في التنسيق الصحيح
-        if (!isset($historyPayload['success'])) {
-            $historyPayload = [
-                'success' => true,
-                'customer' => $historyPayload['customer'] ?? null,
-                'history' => $historyPayload['history'] ?? $historyPayload
-            ];
-        }
-        
-        // التأكد من أن history موجود وبه البيانات المطلوبة
-        if (!isset($historyPayload['history'])) {
-            $historyPayload['history'] = [
-                'window_start' => date('Y-m-d', strtotime('-6 months')),
-                'invoices' => [],
-                'totals' => [
-                    'invoice_count' => 0,
-                    'total_invoiced' => 0.0,
-                    'total_paid' => 0.0,
-                    'total_returns' => 0.0,
-                    'total_exchanges' => 0.0,
-                    'net_total' => 0.0,
-                ],
-                'returns' => [],
-                'exchanges' => [],
-            ];
-        }
-        
-        // التأكد من أن totals موجود
-        if (!isset($historyPayload['history']['totals'])) {
-            $historyPayload['history']['totals'] = [
-                'invoice_count' => 0,
-                'total_invoiced' => 0.0,
-                'total_paid' => 0.0,
-                'total_returns' => 0.0,
-                'total_exchanges' => 0.0,
-                'net_total' => 0.0,
-            ];
-        }
-        
-        // التأكد من أن المصفوفات موجودة
-        if (!isset($historyPayload['history']['invoices']) || !is_array($historyPayload['history']['invoices'])) {
-            $historyPayload['history']['invoices'] = [];
-        }
-        if (!isset($historyPayload['history']['returns']) || !is_array($historyPayload['history']['returns'])) {
-            $historyPayload['history']['returns'] = [];
-        }
-        if (!isset($historyPayload['history']['exchanges']) || !is_array($historyPayload['history']['exchanges'])) {
-            $historyPayload['history']['exchanges'] = [];
-        }
-        
         echo json_encode($historyPayload, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
     } catch (Throwable $historyError) {
         error_log('customers purchase history ajax error: ' . $historyError->getMessage());
-        error_log('customers purchase history ajax error trace: ' . $historyError->getTraceAsString());
         echo json_encode([
             'success' => false,
-            'message' => 'تعذر تحميل سجل مشتريات العميل: ' . $historyError->getMessage()
+            'message' => 'تعذر تحميل سجل مشتريات العميل.'
         ], JSON_UNESCAPED_UNICODE);
     }
     exit;
@@ -318,7 +122,6 @@ if ($section === 'delegates' && !$isSalesUser) {
     }
 
     try {
-        // بناء الاستعلام بشكل آمن
         $delegatesQuery = "
             SELECT 
                 u.id,
@@ -328,10 +131,10 @@ if ($section === 'delegates' && !$isSalesUser) {
                 u.phone,
                 u.status,
                 u.last_login_at,
-                COALESCE(COUNT(DISTINCT c.id), 0) AS customer_count,
+                COALESCE(COUNT(c.id), 0) AS customer_count,
                 COALESCE(SUM(CASE WHEN c.balance > 0 THEN 1 ELSE 0 END), 0) AS debtor_count,
                 COALESCE(SUM(CASE WHEN c.balance > 0 THEN c.balance ELSE 0 END), 0) AS total_debt,
-                COALESCE(GREATEST(MAX(c.updated_at), MAX(c.created_at)), NULL) AS last_activity_at
+                COALESCE(MAX(c.updated_at), MAX(c.created_at)) AS last_activity_at
             FROM users u
             LEFT JOIN customers c ON c.created_by = u.id
             WHERE u.role = 'sales'
@@ -340,15 +143,7 @@ if ($section === 'delegates' && !$isSalesUser) {
             ORDER BY customer_count DESC, u.full_name ASC
         ";
 
-        // تنفيذ الاستعلام مع معالجة الأخطاء
-        try {
-            $delegates = $db->query($delegatesQuery, $searchParams);
-        } catch (Throwable $queryError) {
-            error_log('Delegates query error: ' . $queryError->getMessage());
-            error_log('Delegates query SQL: ' . $delegatesQuery);
-            error_log('Delegates query params: ' . json_encode($searchParams));
-            throw $queryError;
-        }
+        $delegates = $db->query($delegatesQuery, $searchParams);
 
         if (!empty($delegates)) {
             $delegateIds = array_map(static function ($delegate) {
@@ -406,7 +201,7 @@ if ($section === 'delegates' && !$isSalesUser) {
                         'phone'                => (string)($customerRow['phone'] ?? ''),
                         'address'              => (string)($customerRow['address'] ?? ''),
                         'balance'              => (float)($customerRow['balance'] ?? 0.0),
-                        'balance_formatted'    => formatCurrency(abs((float)($customerRow['balance'] ?? 0.0))),
+                        'balance_formatted'    => formatCurrency((float)($customerRow['balance'] ?? 0.0)),
                         'status'               => (string)($customerRow['status'] ?? ''),
                         'latitude'             => $customerRow['latitude'] !== null ? (float)$customerRow['latitude'] : null,
                         'longitude'            => $customerRow['longitude'] !== null ? (float)$customerRow['longitude'] : null,
@@ -420,7 +215,6 @@ if ($section === 'delegates' && !$isSalesUser) {
         }
     } catch (Throwable $delegatesError) {
         error_log('Delegates customers section error: ' . $delegatesError->getMessage());
-        error_log('Delegates customers section error trace: ' . $delegatesError->getTraceAsString());
         $delegates = [];
         $delegateCustomersMap = [];
         $delegateSummary = [
@@ -433,25 +227,116 @@ if ($section === 'delegates' && !$isSalesUser) {
         ];
         $error = $error ?: 'تعذر تحميل بيانات مناديب المبيعات في الوقت الحالي. يرجى المحاولة لاحقاً.';
     }
-} else {
-    // إذا لم يكن القسم 'delegates' أو كان المستخدم مندوب، تأكد من تهيئة المتغيرات
-    if ($section !== 'delegates' || $isSalesUser) {
-        $delegates = [];
-        $delegateCustomersMap = [];
-        $delegateSummary = [
-            'total_delegates'      => 0,
-            'total_customers'      => 0,
-            'debtor_customers'     => 0,
-            'total_debt'           => 0.0,
-            'active_delegates'     => 0,
-            'inactive_delegates'   => 0,
-        ];
-    }
 }
 
 // معالجة طلبات AJAX أولاً قبل أي output
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action'])) {
     $action = trim($_POST['action']);
+    
+    // معالجة update_location قبل أي شيء آخر
+    if ($action === 'update_location') {
+        // تنظيف أي output سابق
+        while (ob_get_level() > 0) {
+            ob_end_clean();
+        }
+        
+        // التأكد من أن الطلب AJAX
+        $isAjaxRequest = (
+            (isset($_SERVER['HTTP_X_REQUESTED_WITH']) && strtolower($_SERVER['HTTP_X_REQUESTED_WITH']) === 'xmlhttprequest') ||
+            (isset($_SERVER['HTTP_ACCEPT']) && stripos($_SERVER['HTTP_ACCEPT'], 'application/json') !== false)
+        );
+        
+        if (!$isAjaxRequest) {
+            http_response_code(400);
+            header('Content-Type: application/json; charset=utf-8');
+            echo json_encode([
+                'success' => false,
+                'message' => 'طلب غير صالح.',
+            ], JSON_UNESCAPED_UNICODE);
+            exit;
+        }
+        
+        header('Content-Type: application/json; charset=utf-8');
+        header('Cache-Control: no-cache, must-revalidate');
+        header('Expires: Mon, 26 Jul 1997 05:00:00 GMT');
+
+        $customerId = isset($_POST['customer_id']) ? (int)$_POST['customer_id'] : 0;
+        $latitude = $_POST['latitude'] ?? null;
+        $longitude = $_POST['longitude'] ?? null;
+
+        if ($customerId <= 0 || $latitude === null || $longitude === null) {
+            echo json_encode([
+                'success' => false,
+                'message' => 'بيانات الموقع غير مكتملة.',
+            ], JSON_UNESCAPED_UNICODE);
+            exit;
+        }
+
+        if (!is_numeric($latitude) || !is_numeric($longitude)) {
+            echo json_encode([
+                'success' => false,
+                'message' => 'إحداثيات الموقع غير صالحة.',
+            ], JSON_UNESCAPED_UNICODE);
+            exit;
+        }
+
+        $latitude = (float)$latitude;
+        $longitude = (float)$longitude;
+
+        if ($latitude < -90 || $latitude > 90 || $longitude < -180 || $longitude > 180) {
+            echo json_encode([
+                'success' => false,
+                'message' => 'نطاق الإحداثيات غير صحيح.',
+            ], JSON_UNESCAPED_UNICODE);
+            exit;
+        }
+
+        try {
+            $customer = $db->queryOne("SELECT id, created_by FROM customers WHERE id = ?", [$customerId]);
+            if (!$customer) {
+                throw new InvalidArgumentException('العميل المطلوب غير موجود.');
+            }
+
+            if ($isSalesUser && (int)($customer['created_by'] ?? 0) !== (int)$currentUser['id']) {
+                throw new InvalidArgumentException('غير مصرح لك بتحديث موقع هذا العميل.');
+            }
+
+            $db->execute(
+                "UPDATE customers SET latitude = ?, longitude = ?, location_captured_at = NOW() WHERE id = ?",
+                [$latitude, $longitude, $customerId]
+            );
+
+            logAudit(
+                $currentUser['id'],
+                'update_customer_location',
+                'customer',
+                $customerId,
+                null,
+                [
+                    'latitude' => $latitude,
+                    'longitude' => $longitude,
+                ]
+            );
+
+            echo json_encode([
+                'success' => true,
+                'message' => 'تم تحديث موقع العميل بنجاح.',
+            ], JSON_UNESCAPED_UNICODE);
+        } catch (InvalidArgumentException $invalidLocation) {
+            echo json_encode([
+                'success' => false,
+                'message' => $invalidLocation->getMessage(),
+            ], JSON_UNESCAPED_UNICODE);
+        } catch (Throwable $updateLocationError) {
+            error_log('Update customer location error: ' . $updateLocationError->getMessage());
+            echo json_encode([
+                'success' => false,
+                'message' => 'حدث خطأ أثناء حفظ الموقع. حاول مرة أخرى.',
+            ], JSON_UNESCAPED_UNICODE);
+        }
+
+        exit;
+    }
 
     if ($action === 'collect_debt') {
         $customerId = isset($_POST['customer_id']) ? (int)$_POST['customer_id'] : 0;
@@ -511,126 +396,10 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action'])) {
                     ]
                 );
 
-                $collectionNumber = null;
-                $collectionId = null;
-                $distributionResult = null;
-
-                // حفظ التحصيل في جدول collections ليظهر في صفحات التحصيلات وخزنة المندوب
-                $collectionsTableExists = $db->queryOne("SHOW TABLES LIKE 'collections'");
-                if (!empty($collectionsTableExists)) {
-                    // التحقق من وجود الأعمدة
-                    $hasStatusColumn = !empty($db->queryOne("SHOW COLUMNS FROM collections LIKE 'status'"));
-                    $hasCollectionNumberColumn = !empty($db->queryOne("SHOW COLUMNS FROM collections LIKE 'collection_number'"));
-                    $hasNotesColumn = !empty($db->queryOne("SHOW COLUMNS FROM collections LIKE 'notes'"));
-
-                    // إضافة عمود collection_number إذا لم يكن موجوداً
-                    if (!$hasCollectionNumberColumn) {
-                        try {
-                            $db->execute("ALTER TABLE collections ADD COLUMN collection_number VARCHAR(50) NULL AFTER id");
-                            $hasCollectionNumberColumn = true;
-                        } catch (Throwable $alterError) {
-                            error_log('Failed to add collection_number column: ' . $alterError->getMessage());
-                        }
-                    }
-
-                    // توليد رقم التحصيل إذا كان العمود موجوداً
-                    if ($hasCollectionNumberColumn) {
-                        $year = date('Y');
-                        $month = date('m');
-                        $lastCollection = $db->queryOne(
-                            "SELECT collection_number FROM collections WHERE collection_number LIKE ? ORDER BY collection_number DESC LIMIT 1 FOR UPDATE",
-                            ["COL-{$year}{$month}-%"]
-                        );
-
-                        $serial = 1;
-                        if (!empty($lastCollection['collection_number'])) {
-                            $parts = explode('-', $lastCollection['collection_number']);
-                            $serial = intval($parts[2] ?? 0) + 1;
-                        }
-
-                        $collectionNumber = sprintf("COL-%s%s-%04d", $year, $month, $serial);
-                    }
-
-                    // بناء قائمة الأعمدة والقيم
-                    $collectionDate = date('Y-m-d');
-                    $collectionColumns = ['customer_id', 'amount', 'date', 'payment_method', 'collected_by'];
-                    $collectionValues = [$customerId, $amount, $collectionDate, 'cash', $currentUser['id']];
-                    $collectionPlaceholders = array_fill(0, count($collectionColumns), '?');
-
-                    if ($hasCollectionNumberColumn && $collectionNumber !== null) {
-                        array_unshift($collectionColumns, 'collection_number');
-                        array_unshift($collectionValues, $collectionNumber);
-                        array_unshift($collectionPlaceholders, '?');
-                    }
-
-                    if ($hasNotesColumn) {
-                        $collectionColumns[] = 'notes';
-                        $collectionValues[] = 'تحصيل من صفحة العملاء';
-                        $collectionPlaceholders[] = '?';
-                    }
-
-                    if ($hasStatusColumn) {
-                        $collectionColumns[] = 'status';
-                        $collectionValues[] = 'pending';
-                        $collectionPlaceholders[] = '?';
-                    }
-
-                    $db->execute(
-                        "INSERT INTO collections (" . implode(', ', $collectionColumns) . ") VALUES (" . implode(', ', $collectionPlaceholders) . ")",
-                        $collectionValues
-                    );
-
-                    $collectionId = $db->getLastInsertId();
-
-                    logAudit(
-                        $currentUser['id'],
-                        'add_collection_from_customers_page',
-                        'collection',
-                        $collectionId,
-                        null,
-                        [
-                            'collection_number' => $collectionNumber,
-                            'customer_id' => $customerId,
-                            'amount' => $amount,
-                        ]
-                    );
-                    
-                    // تحديث راتب المندوب المسؤول عن العميل (المستحق للعمولة)
-                    // وليس بالضرورة الشخص الذي قام بالتحصيل
-                    try {
-                        $salesRepId = getSalesRepForCustomer($customerId);
-                        if ($salesRepId && $salesRepId > 0) {
-                            refreshSalesCommissionForUser(
-                                $salesRepId,
-                                $collectionDate,
-                                'تحديث تلقائي بعد تحصيل من صفحة العملاء'
-                            );
-                        }
-                    } catch (Throwable $e) {
-                        // لا نوقف العملية إذا فشل تحديث الراتب
-                        error_log('Error updating sales commission after collection from customers page: ' . $e->getMessage());
-                    }
-                } else {
-                    error_log('collect_debt: collections table not found, skipping collection record.');
-                }
-
-                $distributionResult = distributeCollectionToInvoices($customerId, $amount, $currentUser['id']);
-
                 $db->commit();
                 $transactionStarted = false;
 
-                $messageParts = ['تم تحصيل المبلغ بنجاح.'];
-                if ($collectionNumber !== null) {
-                    $messageParts[] = 'رقم التحصيل: ' . $collectionNumber . '.';
-                }
-
-                if (!empty($distributionResult['updated_invoices'])) {
-                    $messageParts[] = 'تم تحديث ' . count($distributionResult['updated_invoices']) . ' فاتورة.';
-                } elseif (!empty($distributionResult['message'])) {
-                    $messageParts[] = 'ملاحظة: ' . $distributionResult['message'];
-                }
-
-                $_SESSION['success_message'] = implode(' ', array_filter($messageParts));
+                $_SESSION['success_message'] = 'تم تحصيل المبلغ بنجاح.';
 
                 $redirectFilters = [];
                 if (!empty($section)) {
@@ -675,7 +444,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action'])) {
         $name = trim($_POST['name'] ?? '');
         $phone = trim($_POST['phone'] ?? '');
         $address = trim($_POST['address'] ?? '');
-        $balance = isset($_POST['balance']) ? cleanFinancialValue($_POST['balance'], true) : 0;
+        $balance = isset($_POST['balance']) ? cleanFinancialValue($_POST['balance']) : 0;
 
         if (empty($name)) {
             $error = 'يجب إدخال اسم العميل';
@@ -983,7 +752,7 @@ $collectionsLabel = $isSalesUser ? 'تحصيلاتي' : 'إجمالي التحص
     </div>
 </div>
 
-<?php if (in_array($currentRole, ['manager', 'sales'], true)): ?>
+<?php if ($currentRole === 'manager'): ?>
 <!-- Modal سجل مشتريات العميل -->
 <div class="modal fade" id="customerHistoryModal" tabindex="-1" aria-hidden="true">
     <div class="modal-dialog modal-xl modal-dialog-scrollable">
@@ -1105,7 +874,7 @@ $collectionsLabel = $isSalesUser ? 'تحصيلاتي' : 'إجمالي التحص
 </div>
 <?php endif; ?>
 
-<?php if (in_array($currentRole, ['manager', 'sales'], true)): ?>
+<?php if ($currentRole === 'manager'): ?>
 <script>
 document.addEventListener('DOMContentLoaded', function () {
     var historyModal = document.getElementById('customerHistoryModal');
@@ -1296,31 +1065,18 @@ document.addEventListener('DOMContentLoaded', function () {
             })
                 .then(function (response) {
                     if (!response.ok) {
-                        throw new Error('تعذر تحميل البيانات. حالة الخادم: ' + response.status);
-                    }
-                    // التحقق من نوع المحتوى
-                    const contentType = response.headers.get('content-type') || '';
-                    if (!contentType.includes('application/json')) {
-                        return response.text().then(function(text) {
-                            console.error('Expected JSON but got:', contentType, text);
-                            throw new Error('استجابة غير صحيحة من الخادم.');
-                        });
+                        throw new Error('تعذر تحميل البيانات.');
                     }
                     return response.json();
                 })
                 .then(function (payload) {
-                    if (!payload) {
-                        throw new Error('لم يتم استلام أي بيانات من الخادم.');
-                    }
-                    
-                    if (!payload.success) {
-                        throw new Error(payload.message || 'فشل تحميل بيانات السجل.');
+                    if (!payload || !payload.success) {
+                        throw new Error(payload && payload.message ? payload.message : 'فشل تحميل بيانات السجل.');
                     }
 
                     var history = payload.history || {};
                     var totals = history.totals || {};
 
-                    // تحديث الإحصائيات
                     if (totalInvoicesEl) {
                         totalInvoicesEl.textContent = Number(totals.invoice_count || 0).toLocaleString('ar-EG');
                     }
@@ -1334,21 +1090,15 @@ document.addEventListener('DOMContentLoaded', function () {
                         netTotalEl.textContent = formatCurrency(totals.net_total || 0);
                     }
 
-                    // عرض البيانات (حتى لو كانت فارغة)
-                    renderInvoices(Array.isArray(history.invoices) ? history.invoices : []);
-                    renderReturns(Array.isArray(history.returns) ? history.returns : []);
-                    renderExchanges(Array.isArray(history.exchanges) ? history.exchanges : []);
+                    renderInvoices(history.invoices || []);
+                    renderReturns(history.returns || []);
+                    renderExchanges(history.exchanges || []);
 
-                    // إخفاء مؤشر التحميل وإظهار المحتوى دائماً
                     if (loadingIndicator) {
                         loadingIndicator.classList.add('d-none');
                     }
                     if (contentWrapper) {
                         contentWrapper.classList.remove('d-none');
-                    }
-                    // إخفاء رسالة الخطأ إذا كانت موجودة
-                    if (errorAlert) {
-                        errorAlert.classList.add('d-none');
                     }
                 })
                 .catch(function (error) {
@@ -1368,7 +1118,7 @@ document.addEventListener('DOMContentLoaded', function () {
 </script>
 <?php endif; ?>
 
-<?php endif; // end if ($section === 'company') from line 738 ?>
+<?php endif; ?>
 
 <?php if ($section === 'delegates' && !$isSalesUser): ?>
 
@@ -2237,39 +1987,15 @@ document.addEventListener('DOMContentLoaded', function () {
                     },
                     body: formData.toString()
                 }).then(function (response) {
-                    // التحقق من نوع المحتوى
-                    var contentType = response.headers.get('content-type');
-                    if (!contentType || !contentType.includes('application/json')) {
-                        return response.text().then(function(text) {
-                            console.error('Invalid content type. Response:', text.substring(0, 200));
-                            throw new Error('استجابة غير صالحة من الخادم: الخادم لم يعد JSON');
-                        });
-                    }
-                    
                     if (!response.ok) {
-                        return response.text().then(function(text) {
-                            try {
-                                var errorData = JSON.parse(text);
-                                throw new Error(errorData.message || 'خطأ في الطلب: ' + response.status);
-                            } catch (e) {
-                                throw new Error('خطأ في الطلب: ' + response.status);
-                            }
-                        });
+                        throw new Error('HTTP error! status: ' + response.status);
                     }
-                    
                     return response.text().then(function(text) {
-                        // تنظيف النص من أي مسافات بيضاء في البداية أو النهاية
-                        text = text.trim();
-                        
-                        if (!text) {
-                            throw new Error('استجابة فارغة من الخادم');
-                        }
-                        
                         try {
                             return JSON.parse(text);
                         } catch (e) {
-                            console.error('JSON parse error. Response text:', text.substring(0, 500));
-                            throw new Error('استجابة غير صالحة من الخادم: ' + (text.substring(0, 50) || 'لا يمكن تحليل الاستجابة'));
+                            console.error('JSON parse error:', text);
+                            throw new Error('استجابة غير صالحة من الخادم');
                         }
                     });
                 }).then(function (data) {
@@ -2285,13 +2011,7 @@ document.addEventListener('DOMContentLoaded', function () {
                 }).catch(function (error) {
                     setButtonLoading(button, false);
                     console.error('Location update error:', error);
-                    var errorMessage = 'حدث خطأ أثناء الاتصال بالخادم';
-                    if (error.message) {
-                        errorMessage += ': ' + error.message;
-                    } else if (error.name) {
-                        errorMessage += ': ' + error.name;
-                    }
-                    showAlert(errorMessage);
+                    showAlert('حدث خطأ أثناء الاتصال بالخادم: ' + (error.message || 'خطأ غير معروف'));
                 });
             }, function (error) {
                 setButtonLoading(button, false);
@@ -2362,7 +2082,7 @@ document.addEventListener('DOMContentLoaded', function () {
 </script>
 
 <?php if ($error): ?>
-    <div class="alert alert-danger alert-dismissible fade show" id="errorAlert" data-auto-refresh="true">
+    <div class="alert alert-danger alert-dismissible fade show">
         <i class="bi bi-exclamation-triangle-fill me-2"></i>
         <?php echo htmlspecialchars($error); ?>
         <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
@@ -2370,7 +2090,7 @@ document.addEventListener('DOMContentLoaded', function () {
 <?php endif; ?>
 
 <?php if ($success): ?>
-    <div class="alert alert-success alert-dismissible fade show" id="successAlert" data-auto-refresh="true">
+    <div class="alert alert-success alert-dismissible fade show">
         <i class="bi bi-check-circle-fill me-2"></i>
         <?php echo htmlspecialchars($success); ?>
         <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
@@ -2458,13 +2178,11 @@ document.addEventListener('DOMContentLoaded', function () {
                                         $balanceBadgeClass = $customerBalanceValue > 0
                                             ? 'bg-warning-subtle text-warning'
                                             : ($customerBalanceValue < 0 ? 'bg-info-subtle text-info' : 'bg-secondary-subtle text-secondary');
-                                        // عند عرض الرصيد الدائن، نعرض القيمة المطلقة
-                                        $displayBalanceValue = $customerBalanceValue < 0 ? abs($customerBalanceValue) : $customerBalanceValue;
                                     ?>
-                                    <strong><?php echo formatCurrency($displayBalanceValue); ?></strong>
+                                    <strong><?php echo formatCurrency($customerBalanceValue); ?></strong>
                                     <?php if ($customerBalanceValue !== 0.0): ?>
                                         <span class="badge <?php echo $balanceBadgeClass; ?> ms-1">
-                                            <?php echo $customerBalanceValue > 0 ? 'رصيد مدين' : 'رصيد دائن'; ?>
+                                            <?php echo $customerBalanceValue > 0 ? 'رصيد مستحق' : 'رصيد دائن'; ?>
                                         </span>
                                     <?php endif; ?>
                                 </td>
@@ -2506,9 +2224,7 @@ document.addEventListener('DOMContentLoaded', function () {
                                 <td>
                                     <?php
                                     $customerBalance = isset($customer['balance']) ? (float)$customer['balance'] : 0.0;
-                                    // عند عرض الرصيد الدائن، نعرض القيمة المطلقة
-                                    $displayBalanceForButton = $customerBalance < 0 ? abs($customerBalance) : $customerBalance;
-                                    $formattedBalance = formatCurrency($displayBalanceForButton);
+                                    $formattedBalance = formatCurrency($customerBalance);
                                     $rawBalance = number_format($customerBalance, 2, '.', '');
                                     ?>
                                     <div class="d-flex flex-wrap align-items-center gap-2">
@@ -2525,7 +2241,7 @@ document.addEventListener('DOMContentLoaded', function () {
                                         >
                                             <i class="bi bi-cash-coin me-1"></i>تحصيل
                                         </button>
-                                        <?php if (in_array($currentRole, ['manager', 'sales'], true)): ?>
+                                        <?php if ($currentRole === 'manager'): ?>
                                         <button
                                             type="button"
                                             class="btn btn-sm btn-outline-dark js-customer-history"
@@ -2690,12 +2406,9 @@ document.addEventListener('DOMContentLoaded', function () {
                         <input type="text" class="form-control" name="phone" placeholder="مثال: 01234567890">
                     </div>
                     <div class="mb-3">
-                        <label class="form-label">ديون العميل / رصيد العميل</label>
+                        <label class="form-label">ديون العميل</label>
                         <input type="number" class="form-control" name="balance" step="0.01" value="0" placeholder="مثال: 0 أو -500">
-                        <small class="text-muted">
-                            <strong>إدخال قيمة سالبة:</strong> يتم اعتبارها رصيد دائن للعميل (مبلغ متاح للعميل). 
-                            لا يتم تحصيل هذا الرصيد، ويمكن للعميل استخدامه عند شراء فواتير حيث يتم خصم قيمة الفاتورة من الرصيد تلقائياً دون تسجيلها كدين.
-                        </small>
+                        <small class="text-muted">يمكن إدخال قيمة سالبة لتمثل رصيداً دائنًا لصالح العميل.</small>
                     </div>
                     <div class="mb-3">
                         <label class="form-label">العنوان</label>
@@ -2711,29 +2424,4 @@ document.addEventListener('DOMContentLoaded', function () {
     </div>
 </div>
 
-<?php endif; // end if ($section === 'company') ?>
-
-<!-- إعادة تحميل الصفحة تلقائياً بعد أي رسالة (نجاح أو خطأ) لمنع تكرار الطلبات -->
-<script>
-// إعادة تحميل الصفحة تلقائياً بعد أي رسالة (نجاح أو خطأ) لمنع تكرار الطلبات
-(function() {
-    const successAlert = document.getElementById('successAlert');
-    const errorAlert = document.getElementById('errorAlert');
-    
-    // التحقق من وجود رسالة نجاح أو خطأ
-    const alertElement = successAlert || errorAlert;
-    
-    if (alertElement && alertElement.dataset.autoRefresh === 'true') {
-        // انتظار 3 ثوانٍ لإعطاء المستخدم وقتاً لرؤية الرسالة
-        setTimeout(function() {
-            // إعادة تحميل الصفحة بدون معاملات GET لمنع تكرار الطلبات
-            const currentUrl = new URL(window.location.href);
-            // إزالة معاملات success و error من URL
-            currentUrl.searchParams.delete('success');
-            currentUrl.searchParams.delete('error');
-            // إعادة تحميل الصفحة
-            window.location.href = currentUrl.toString();
-        }, 3000);
-    }
-})();
-</script>
+<?php endif; ?>

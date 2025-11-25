@@ -7,112 +7,21 @@ if (!defined('ACCESS_ALLOWED')) {
     die('Direct access not allowed');
 }
 
-// التأكد من تضمين config.php إذا لم يكن متضمناً بالفعل
-if (!function_exists('formatDate') || !function_exists('formatCurrency')) {
-    $configPath = __DIR__ . '/../../includes/config.php';
-    if (file_exists($configPath)) {
-        require_once $configPath;
-    }
-}
-
-$isReturnDocument = isset($returnDetails) && is_array($returnDetails);
-$returnMetadata = null;
-
-if ($isReturnDocument) {
-    $returnSummary = $returnDetails['summary'] ?? ($returnDetails['return'] ?? null);
-    if (!$returnSummary) {
-        die('المرتجع غير موجود');
-    }
-
-    $returnItems = $returnDetails['items'] ?? [];
-    
-    // التأكد من أن returnItems هو مصفوفة
-    if (!is_array($returnItems)) {
-        $returnItems = [];
-    }
-    
-    $normalizedItems = array_map(function ($item) {
-        if (!is_array($item)) {
-            return null;
-        }
-        
-        $quantity = isset($item['quantity']) ? (float)$item['quantity'] : 0;
-        $unitPrice = isset($item['unit_price']) ? (float)$item['unit_price'] : 0;
-        $notes = trim((string)($item['notes'] ?? ''));
-        $batchNumber = $item['batch_number'] ?? null;
-        $condition = $item['condition'] ?? null;
-        
-        return [
-            'product_name' => $item['product_name'] ?? $item['description'] ?? 'منتج',
-            'description'  => $notes, // الوصف يحتوي فقط على الملاحظات
-            'quantity'     => $quantity,
-            'unit_price'   => $unitPrice,
-            'total_price'  => $item['total_price'] ?? ($quantity * $unitPrice),
-            'batch_number' => $batchNumber,
-            'condition'    => $condition,
-            'notes'        => $notes,
-        ];
-    }, $returnItems);
-    
-    // إزالة العناصر null
-    $normalizedItems = array_filter($normalizedItems, function($item) {
-        return $item !== null;
-    });
-
-    $invoiceData = [
-        'invoice_number'    => $returnSummary['return_number'] ?? ('RET-' . str_pad($returnSummary['id'] ?? 0, 4, '0', STR_PAD_LEFT)),
-        'date'              => $returnSummary['return_date'] ?? ($returnSummary['created_at'] ?? date('Y-m-d')),
-        'due_date'          => $returnSummary['return_date'] ?? ($returnSummary['created_at'] ?? date('Y-m-d')),
-        'status'            => $returnSummary['status'] ?? 'pending',
-        'customer_name'     => $returnSummary['customer_name'] ?? 'عميل',
-        'customer_phone'    => $returnSummary['customer_phone'] ?? '',
-        'customer_address'  => $returnSummary['customer_address'] ?? '',
-        'sales_rep_name'    => $returnSummary['sales_rep_name'] ?? null,
-        'subtotal'          => $returnSummary['refund_amount'] ?? 0,
-        'discount_amount'   => 0,
-        'total_amount'      => $returnSummary['refund_amount'] ?? 0,
-        'paid_amount'       => $returnSummary['refund_amount'] ?? 0,
-        'notes'             => trim(
-            implode(
-                "\n",
-                array_filter([
-                    !empty($returnSummary['reason']) ? 'سبب الإرجاع: ' . $returnSummary['reason'] : null,
-                    !empty($returnSummary['reason_description']) ? $returnSummary['reason_description'] : null,
-                    $returnSummary['notes'] ?? ''
-                ])
-            )
-        ),
-        'items'             => $normalizedItems,
-        'company_address'   => $returnSummary['company_address'] ?? null,
-        'company_phone'     => $returnSummary['company_phone'] ?? null,
-        'company_email'     => $returnSummary['company_email'] ?? null,
-        'company_tax_number'=> $returnSummary['company_tax_number'] ?? null,
-    ];
-
-    $returnMetadata = [
-        'invoice_reference' => $returnSummary['invoice_number'] ?? null,
-        'refund_method'     => $returnSummary['refund_method'] ?? null,
-        'return_type'       => $returnSummary['return_type'] ?? null,
-        'refund_amount'     => $returnSummary['refund_amount'] ?? 0,
-    ];
-} else {
-    $invoiceData = $selectedInvoice ?? $invoice ?? null;
-}
+$invoiceData = $selectedInvoice ?? $invoice ?? null;
 
 if (!$invoiceData) {
-    die($isReturnDocument ? 'المرتجع غير موجود' : 'الفاتورة غير موجودة');
+    die('الفاتورة غير موجودة');
 }
 
 $companyName      = COMPANY_NAME;
 $companySubtitle  = 'نظام إدارة المبيعات';
 $companyAddress   = $invoiceData['company_address'] ?? 'الفرع الرئيسي - العنوان: ابو يوسف الرئيسي';
 $companyPhone     = $invoiceData['company_phone']   ?? 'الهاتف: 0000000000';
-$companyEmail     = $invoiceData['company_email']   ?? ' info@example.com : البريد الإلكتروني  ';
+$companyEmail     = $invoiceData['company_email']   ?? 'البريد الإلكتروني: info@example.com';
 $companyTaxNumber = $invoiceData['company_tax_number'] ?? 'الرقم الضريبي: غير متوفر';
 
 $issueDate = formatDate($invoiceData['date']);
-$dueDateRaw = $invoiceData['due_date'] ?? null;
-$dueDate = !empty($dueDateRaw) ? formatDate($dueDateRaw) : 'أجل غير مسمى';
+$dueDate   = formatDate($invoiceData['due_date']);
 $status    = $invoiceData['status'] ?? 'draft';
 
 $customerName    = $invoiceData['customer_name']    ?? 'عميل نقدي';
@@ -129,53 +38,30 @@ $notes           = trim((string)($invoiceData['notes'] ?? ''));
 
 $currencyLabel   = CURRENCY . ' ' . CURRENCY_SYMBOL;
 
-// باركود فيسبوك - يمكن تعديل الرابط حسب صفحة الشركة على فيسبوك
-$facebookPageUrl = 'https://www.facebook.com/yourpage'; // يرجى تعديل هذا الرابط
-$qrUrl = 'https://api.qrserver.com/v1/create-qr-code/?size=180x180&data=' . urlencode($facebookPageUrl);
+$qrPayload = sprintf(
+    "فاتورة:%s\nالإجمالي:%s\nالعميل:%s\nالتاريخ:%s",
+    $invoiceData['invoice_number'],
+    formatCurrency($total),
+    $customerName,
+    $issueDate
+);
+$qrUrl = 'https://api.qrserver.com/v1/create-qr-code/?size=180x180&data=' . urlencode($qrPayload);
 
-$statusLabelsMap = [
-    'draft'     => 'مسودة',
-    'approved'  => 'معتمدة',
-    'paid'      => 'مدفوعة',
-    'partial'   => 'مدفوع جزئياً',
-    'cancelled' => 'ملغاة',
-    'pending'   => 'قيد المراجعة',
-    'processed' => 'تمت المعالجة',
-    'completed' => 'مكتمل',
-    'rejected'  => 'مرفوض'
-];
+$statusLabel = [
+    'draft'    => 'مسودة',
+    'approved' => 'معتمدة',
+    'paid'     => 'مدفوعة',
+    'partial'  => 'مدفوع جزئياً',
+    'cancelled'=> 'ملغاة'
+][$status] ?? 'مسودة';
 
-$statusClassesMap = [
-    'draft'     => 'status-draft',
-    'approved'  => 'status-approved',
-    'paid'      => 'status-paid',
-    'partial'   => 'status-partial',
-    'cancelled' => 'status-cancelled',
-    'pending'   => 'status-draft',
-    'processed' => 'status-approved',
-    'completed' => 'status-paid',
-    'rejected'  => 'status-cancelled'
-];
-
-$statusLabel = $statusLabelsMap[$status] ?? 'مسودة';
-$statusClass = $statusClassesMap[$status] ?? 'status-draft';
-
-$documentTitleText = $isReturnDocument ? 'فاتورة مرتجع' : 'فاتورة مبيعات';
-$documentNumberLabel = $isReturnDocument ? 'رقم المرتجع' : 'رقم الفاتورة';
-$summaryTitleText = $isReturnDocument ? 'ملخص المرتجع' : 'ملخص الفاتورة';
-
-$returnRefundLabels = [
-    'cash'             => 'إرجاع نقداً',
-    'credit'           => 'إضافة لرصيد العميل',
-    'exchange'         => 'استبدال منتجات',
-    'company_request'  => 'طلب المبلغ من الشركة'
-];
-$returnTypeLabels = [
-    'full'    => 'مرتجع كامل',
-    'partial' => 'مرتجع جزئي'
-];
-$returnRefundLabel = $isReturnDocument ? ($returnRefundLabels[$returnMetadata['refund_method'] ?? ''] ?? 'غير محدد') : '';
-$returnTypeLabel = $isReturnDocument ? ($returnTypeLabels[$returnMetadata['return_type'] ?? ''] ?? 'غير محدد') : '';
+$statusClass = [
+    'draft'    => 'status-draft',
+    'approved' => 'status-approved',
+    'paid'     => 'status-paid',
+    'partial'  => 'status-partial',
+    'cancelled'=> 'status-cancelled'
+][$status] ?? 'status-draft';
 ?>
 
 <div class="invoice-wrapper" id="invoicePrint">
@@ -183,8 +69,7 @@ $returnTypeLabel = $isReturnDocument ? ($returnTypeLabels[$returnMetadata['retur
         <header class="invoice-header">
             <div class="brand-block">
                 <div class="logo-placeholder">
-                    <img src="<?php echo getRelativeUrl('assets/icons/icon-192x192.svg'); ?>" alt="Logo" class="company-logo-img" onerror="this.onerror=null; this.src='<?php echo getRelativeUrl('assets/icons/icon-192x192.png'); ?>'; this.onerror=function(){this.style.display='none'; this.nextElementSibling.style.display='flex';};">
-                    <span class="logo-letter" style="display:none;"><?php echo mb_substr($companyName, 0, 1); ?></span>
+                    <span class="logo-letter"><?php echo mb_substr($companyName, 0, 1); ?></span>
                 </div>
                 <div>
                     <h1 class="company-name"><?php echo htmlspecialchars($companyName); ?></h1>
@@ -192,8 +77,8 @@ $returnTypeLabel = $isReturnDocument ? ($returnTypeLabels[$returnMetadata['retur
                 </div>
             </div>
             <div class="invoice-meta">
-                <div class="invoice-title"><?php echo htmlspecialchars($documentTitleText); ?></div>
-                <div class="invoice-number"><?php echo htmlspecialchars($documentNumberLabel); ?><span><?php echo htmlspecialchars($invoiceData['invoice_number']); ?></span></div>
+                <div class="invoice-title">فاتورة مبيعات</div>
+                <div class="invoice-number">رقم الفاتورة<span><?php echo htmlspecialchars($invoiceData['invoice_number']); ?></span></div>
                 <div class="invoice-meta-grid">
                     <div class="meta-item">
                         <span>تاريخ الإصدار</span>
@@ -238,116 +123,51 @@ $returnTypeLabel = $isReturnDocument ? ($returnTypeLabels[$returnMetadata['retur
             <table>
                 <thead>
                     <tr>
-                        <th style="width: 30%;">المنتج</th>
-                        <?php if ($isReturnDocument): ?>
-                            <th style="width: 15%; text-align: center;">الحالة</th>
-                        <?php else: ?>
-                            <th style="width: 20%;">الوصف</th>
-                        <?php endif; ?>
-                        <?php if ($isReturnDocument && !empty($invoiceData['items']) && !empty(array_filter(array_column($invoiceData['items'], 'batch_number')))): ?>
-                            <th style="width: 15%; text-align: center;">رقم التشغيلة</th>
-                        <?php endif; ?>
-                        <th style="width: 12%; text-align: center;">الكمية</th>
-                        <th style="width: 15%; text-align: end;">سعر الوحدة</th>
-                        <th style="width: 15%; text-align: end;">الإجمالي</th>
+                        <th style="width: 60px;">#</th>
+                        <th>المنتج</th>
+                        <th>الوصف</th>
+                        <th style="width: 120px;">الكمية</th>
+                        <th style="width: 150px;">سعر الوحدة</th>
+                        <th style="width: 160px;">الإجمالي</th>
                     </tr>
                 </thead>
                 <tbody>
                     <?php 
-                    // حساب عدد الأعمدة
-                    $colspan = 5; // المنتج، الوصف/الحالة، الكمية، سعر الوحدة، الإجمالي
-                    if ($isReturnDocument) {
-                        $colspan = 5; // المنتج، الحالة، الكمية، سعر الوحدة، الإجمالي
-                        if (!empty($invoiceData['items']) && !empty(array_filter(array_column($invoiceData['items'], 'batch_number')))) {
-                            $colspan = 6; // إضافة عمود رقم التشغيلة
-                        }
-                    }
-                    
-                    if (empty($invoiceData['items']) || !is_array($invoiceData['items'])) {
-                        echo '<tr><td colspan="' . $colspan . '" style="text-align: center; padding: 20px; color: #64748b;">لا توجد منتجات في هذا المرتجع</td></tr>';
-                    } else {
-                        foreach ($invoiceData['items'] as $item): 
-                            $quantity   = isset($item['quantity']) ? number_format($item['quantity'], 2) : '0.00';
-                            $unitPrice  = isset($item['unit_price']) ? formatCurrency($item['unit_price']) : formatCurrency(0);
-                            $totalPrice = isset($item['total_price']) ? formatCurrency($item['total_price']) : formatCurrency(0);
-                            $description = trim((string)($item['description'] ?? ''));
-                            $batchNumber = $item['batch_number'] ?? null;
-                            $condition = $item['condition'] ?? null;
-                            $notes = trim((string)($item['notes'] ?? ''));
+                    $itemNumber = 1;
+                    foreach ($invoiceData['items'] as $item): 
+                        $quantity   = isset($item['quantity']) ? number_format($item['quantity'], 2) : '0.00';
+                        $unitPrice  = isset($item['unit_price']) ? formatCurrency($item['unit_price']) : formatCurrency(0);
+                        $totalPrice = isset($item['total_price']) ? formatCurrency($item['total_price']) : formatCurrency(0);
+                        $unitLabel  = $item['unit'] ?? '';
+                        $description = trim((string)($item['description'] ?? ''));
                     ?>
                     <tr>
+                        <td><?php echo $itemNumber++; ?></td>
                         <td>
-                            <div class="product-name" style="font-weight: 600; margin-bottom: 4px;">
-                                <?php echo htmlspecialchars($item['product_name'] ?? 'منتج'); ?>
-                            </div>
-                            <?php if ($notes && !$isReturnDocument): ?>
-                                <div style="font-size: 12px; color: #64748b; margin-top: 4px;">
-                                    <?php echo nl2br(htmlspecialchars($notes)); ?>
-                                </div>
+                            <div class="product-name"><?php echo htmlspecialchars($item['product_name'] ?? 'منتج'); ?></div>
+                            <?php if (!empty($unitLabel)): ?>
+                                <div class="product-unit">الوحدة: <?php echo htmlspecialchars($unitLabel); ?></div>
                             <?php endif; ?>
                         </td>
-                        <?php if ($isReturnDocument): ?>
-                            <td style="text-align: center; vertical-align: middle;">
-                                <?php if (!empty($condition)): ?>
-                                    <?php
-                                    $conditionLabels = [
-                                        'new' => ['label' => 'جديد', 'color' => '#10b981', 'bg' => '#d1fae5'],
-                                        'used' => ['label' => 'مستعمل', 'color' => '#f59e0b', 'bg' => '#fef3c7'],
-                                        'damaged' => ['label' => 'تالف', 'color' => '#ef4444', 'bg' => '#fee2e2'],
-                                        'defective' => ['label' => 'معيب', 'color' => '#dc2626', 'bg' => '#fecaca']
-                                    ];
-                                    $conditionInfo = $conditionLabels[$condition] ?? ['label' => $condition, 'color' => '#64748b', 'bg' => '#f1f5f9'];
-                                    ?>
-                                    <span style="display: inline-block; padding: 4px 12px; border-radius: 12px; font-size: 12px; font-weight: 600; color: <?php echo $conditionInfo['color']; ?>; background: <?php echo $conditionInfo['bg']; ?>;">
-                                        <?php echo htmlspecialchars($conditionInfo['label']); ?>
-                                    </span>
-                                <?php else: ?>
-                                    <span style="color: #9ca3af;">-</span>
-                                <?php endif; ?>
-                            </td>
-                        <?php else: ?>
-                            <td>
-                                <?php if ($description): ?>
-                                    <div style="font-size: 13px; color: #475569; line-height: 1.5;">
-                                        <?php echo nl2br(htmlspecialchars($description)); ?>
-                                    </div>
-                                <?php else: ?>
-                                    <span class="muted" style="color: #9ca3af; font-size: 13px;">لا يوجد وصف</span>
-                                <?php endif; ?>
-                            </td>
-                        <?php endif; ?>
-                        <?php if ($isReturnDocument && !empty($invoiceData['items']) && !empty(array_filter(array_column($invoiceData['items'], 'batch_number')))): ?>
-                            <td style="text-align: center; vertical-align: middle;">
-                                <?php if (!empty($batchNumber)): ?>
-                                    <span style="font-size: 12px; color: #0f4c81; font-weight: 600; background: #e0f2fe; padding: 4px 8px; border-radius: 6px; display: inline-block;">
-                                        <?php echo htmlspecialchars($batchNumber); ?>
-                                    </span>
-                                <?php else: ?>
-                                    <span style="color: #9ca3af;">-</span>
-                                <?php endif; ?>
-                            </td>
-                        <?php endif; ?>
-                        <td style="text-align: center; vertical-align: middle; font-weight: 600;">
-                            <?php echo $quantity; ?>
+                        <td>
+                            <?php if ($description): ?>
+                                <?php echo nl2br(htmlspecialchars($description)); ?>
+                            <?php else: ?>
+                                <span class="muted">لا يوجد وصف</span>
+                            <?php endif; ?>
                         </td>
-                        <td style="text-align: end; vertical-align: middle;">
-                            <?php echo $unitPrice; ?>
-                        </td>
-                        <td style="text-align: end; vertical-align: middle; font-weight: 600; color: #0f4c81;">
-                            <?php echo $totalPrice; ?>
-                        </td>
+                        <td class="text-center"><?php echo $quantity; ?></td>
+                        <td class="text-end"><?php echo $unitPrice; ?></td>
+                        <td class="text-end"><?php echo $totalPrice; ?></td>
                     </tr>
-                    <?php 
-                        endforeach;
-                    }
-                    ?>
+                    <?php endforeach; ?>
                 </tbody>
             </table>
         </section>
 
         <section class="summary-grid">
             <div class="summary-card">
-                <div class="summary-title"><?php echo htmlspecialchars($summaryTitleText); ?></div>
+                <div class="summary-title">ملخص الفاتورة</div>
                 <div class="summary-row">
                     <span>المجموع الفرعي</span>
                     <strong><?php echo formatCurrency($subtotal); ?></strong>
@@ -373,35 +193,12 @@ $returnTypeLabel = $isReturnDocument ? ($returnTypeLabels[$returnMetadata['retur
                     </strong>
                 </div>
             </div>
-            <?php if ($isReturnDocument): ?>
-                <div class="summary-card">
-                    <div class="summary-title">تفاصيل الإرجاع</div>
-                    <?php if (!empty($returnMetadata['invoice_reference'])): ?>
-                        <div class="summary-row">
-                            <span>فاتورة مرتبطة</span>
-                            <strong><?php echo htmlspecialchars($returnMetadata['invoice_reference']); ?></strong>
-                        </div>
-                    <?php endif; ?>
-                    <div class="summary-row">
-                        <span>طريقة الإرجاع</span>
-                        <strong><?php echo htmlspecialchars($returnRefundLabel); ?></strong>
-                    </div>
-                    <div class="summary-row">
-                        <span>نوع المرتجع</span>
-                        <strong><?php echo htmlspecialchars($returnTypeLabel); ?></strong>
-                    </div>
-                    <div class="summary-row">
-                        <span>القيمة المرتجعة</span>
-                        <strong><?php echo formatCurrency($returnMetadata['refund_amount'] ?? 0); ?></strong>
-                    </div>
-                </div>
-            <?php endif; ?>
             <div class="summary-card qr-card">
-                <div class="summary-title">تابعنا على فيسبوك</div>
+                <div class="summary-title">رمز QR للفاتورة</div>
                 <div class="qr-wrapper">
-                    <img src="<?php echo htmlspecialchars($qrUrl); ?>" alt="Facebook QR Code">
+                    <img src="<?php echo htmlspecialchars($qrUrl); ?>" alt="QR Code">
                 </div>
-                <div class="qr-note">امسح الرمز لمتابعة صفحتنا على فيسبوك</div>
+                <div class="qr-note">امسح الرمز لاستعراض بيانات الفاتورة</div>
             </div>
             <?php if ($notes): ?>
                 <div class="summary-card notes-card">
@@ -479,15 +276,6 @@ $returnTypeLabel = $isReturnDocument ? ($returnTypeLabels[$returnMetadata['retur
     font-size: 30px;
     font-weight: 700;
     box-shadow: 0 12px 24px rgba(15, 76, 129, 0.25);
-    overflow: hidden;
-    position: relative;
-}
-
-.company-logo-img {
-    width: 100%;
-    height: 100%;
-    object-fit: contain;
-    padding: 8px;
 }
 
 .logo-letter {
@@ -613,39 +401,27 @@ $returnTypeLabel = $isReturnDocument ? ($returnTypeLabels[$returnMetadata['retur
 }
 
 .items-table th {
-    padding: 14px 12px;
+    padding: 14px;
     font-size: 13px;
     color: #0f4c81;
-    text-align: right;
+    text-align: center;
     border-bottom: 1px solid rgba(15, 76, 129, 0.12);
-    font-weight: 600;
-}
-
-.items-table th:first-child {
-    text-align: right;
 }
 
 .items-table td {
-    padding: 16px 12px;
+    padding: 16px 14px;
     font-size: 14px;
     color: #1f2937;
     border-bottom: 1px solid rgba(148, 163, 184, 0.25);
-    text-align: right;
-    vertical-align: middle;
 }
 
 .items-table tbody tr:last-child td {
     border-bottom: none;
 }
 
-.items-table tbody tr:hover {
-    background-color: rgba(15, 76, 129, 0.02);
-}
-
 .items-table .product-name {
     font-weight: 600;
     margin-bottom: 6px;
-    color: #0f172a;
 }
 
 .items-table .product-unit {

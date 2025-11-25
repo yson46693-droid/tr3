@@ -299,10 +299,9 @@ function getCurrencySymbol() {
 }
 
 // دالة مساعدة لتنسيق الأرقام
-function formatCurrency($amount, $allowNegative = true) {
+function formatCurrency($amount) {
     // تنظيف القيمة باستخدام cleanFinancialValue
-    // السماح بالقيم السالبة افتراضياً لأنها تستخدم للرصيد الدائن للعملاء
-    $amount = cleanFinancialValue($amount, $allowNegative);
+    $amount = cleanFinancialValue($amount);
     
     // استخدام getCurrencySymbol للحصول على رمز العملة المنظف
     $currencySymbol = function_exists('getCurrencySymbol') ? getCurrencySymbol() : (defined('CURRENCY_SYMBOL') ? CURRENCY_SYMBOL : 'ج.م');
@@ -320,10 +319,8 @@ function formatCurrency($amount, $allowNegative = true) {
 /**
  * دالة لتنظيف القيم المالية وضمان صحتها
  * Validate and clean financial values
- * @param mixed $value القيمة المراد تنظيفها
- * @param bool $allowNegative السماح بالقيم السالبة (للرصيد الدائن)
  */
-function cleanFinancialValue($value, $allowNegative = false) {
+function cleanFinancialValue($value) {
     // إذا كانت القيمة null أو فارغة، إرجاع 0
     if ($value === null || $value === '' || $value === false) {
         return 0;
@@ -354,17 +351,9 @@ function cleanFinancialValue($value, $allowNegative = false) {
     }
     
     // التحقق من القيم الكبيرة جداً أو السالبة
-    if ($allowNegative) {
-        // إذا كان مسموحاً بالقيم السالبة (للرصيد الدائن)، فقط التحقق من الحد الأقصى
-        // القيم المقبولة: من -1000000 إلى 1000000
-        if ($value > 1000000 || $value < -1000000) {
-            return 0;
-        }
-    } else {
-        // القيم المقبولة: من 0 إلى 10000 جنيه/ساعة (للأجور والمدفوعات)
-        if ($value > 10000 || $value < 0) {
-            return 0;
-        }
+    // القيم المقبولة: من 0 إلى 10000 جنيه/ساعة
+    if ($value > 10000 || $value < 0) {
+        return 0;
     }
     
     // تقريب إلى منزلتين عشريتين
@@ -390,44 +379,6 @@ function formatDateTime($datetime, $format = DATETIME_FORMAT) {
     if (empty($datetime)) return '';
     $timestamp = is_numeric($datetime) ? $datetime : strtotime($datetime);
     return date($format, $timestamp);
-}
-
-// دالة مساعدة لتنسيق الساعات من الصيغة العشرية إلى ساعات ودقائق
-// مثال: 2.30 ساعة → "2 ساعة و 30 دقيقة"
-function formatHours($decimalHours) {
-    if (empty($decimalHours) || $decimalHours == 0) {
-        return '0 ساعة';
-    }
-    
-    $decimalHours = floatval($decimalHours);
-    
-    // استخراج الساعات الكاملة
-    $hours = floor($decimalHours);
-    
-    // استخراج الدقائق من الجزء العشري
-    $decimalPart = $decimalHours - $hours;
-    $minutes = round($decimalPart * 60);
-    
-    // إذا كانت الدقائق 60، أضف ساعة واحدة
-    if ($minutes >= 60) {
-        $hours += 1;
-        $minutes = 0;
-    }
-    
-    // بناء النص
-    $parts = [];
-    if ($hours > 0) {
-        $parts[] = $hours . ' ساعة';
-    }
-    if ($minutes > 0) {
-        $parts[] = $minutes . ' دقيقة';
-    }
-    
-    if (empty($parts)) {
-        return '0 ساعة';
-    }
-    
-    return implode(' و ', $parts);
 }
 
 // دالة مساعدة للحصول على الاتجاه (RTL/LTR)

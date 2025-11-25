@@ -263,9 +263,8 @@ if (!function_exists('buildPackagingReportHtmlDocument')) {
      * إنشاء مستند HTML لتقرير مخزن أدوات التعبئة.
      *
      * @param array<string, mixed> $report
-     * @param bool $lowStockOnly إذا كان true، يعرض فقط الأدوات ذات المخزون القليل أو المعدوم
      */
-    function buildPackagingReportHtmlDocument(array $report, bool $lowStockOnly = false): string
+    function buildPackagingReportHtmlDocument(array $report): string
     {
         $generatedAt = htmlspecialchars((string)($report['generated_at'] ?? ''), ENT_QUOTES, 'UTF-8');
         $generatedBy = htmlspecialchars((string)($report['generated_by'] ?? ''), ENT_QUOTES, 'UTF-8');
@@ -285,59 +284,6 @@ if (!function_exists('buildPackagingReportHtmlDocument')) {
         $topItems = $report['top_items'] ?? [];
         if (!is_array($topItems)) {
             $topItems = [];
-        }
-
-        // عند الطباعة، نعرض فقط الأدوات ذات المخزون القليل أو المعدوم
-        if ($lowStockOnly) {
-            // تصفية top_items لعرض فقط الأدوات التي quantity <= 0 أو قليل (أقل من 10)
-            $topItems = array_filter($topItems, static function ($item) {
-                $quantity = isset($item['quantity']) ? (float)$item['quantity'] : 0.0;
-                return $quantity <= 0 || $quantity < 10;
-            });
-            
-            // إعادة ترتيب top_items حسب الكمية (الأقل أولاً للطباعة)
-            usort($topItems, static function ($a, $b) {
-                $qtyA = isset($a['quantity']) ? (float)$a['quantity'] : 0.0;
-                $qtyB = isset($b['quantity']) ? (float)$b['quantity'] : 0.0;
-                return $qtyA <=> $qtyB;
-            });
-            
-            // عند الطباعة، نعرض جميع الأدوات ذات المخزون القليل (وليس فقط 8)
-            
-            // إعادة حساب type_breakdown بناءً على الأدوات المفلترة فقط
-            $filteredTypeBreakdown = [];
-            foreach ($topItems as $item) {
-                $typeLabel = isset($item['type']) ? (string)$item['type'] : 'غير مصنف';
-                $quantity = isset($item['quantity']) ? (float)$item['quantity'] : 0.0;
-                $unit = isset($item['unit']) ? (string)$item['unit'] : 'وحدة';
-                
-                if (!isset($filteredTypeBreakdown[$typeLabel])) {
-                    $filteredTypeBreakdown[$typeLabel] = [
-                        'count' => 0,
-                        'total_quantity' => 0.0,
-                        'units' => []
-                    ];
-                }
-                
-                $filteredTypeBreakdown[$typeLabel]['count']++;
-                $filteredTypeBreakdown[$typeLabel]['total_quantity'] += $quantity;
-                if (!isset($filteredTypeBreakdown[$typeLabel]['units'][$unit])) {
-                    $filteredTypeBreakdown[$typeLabel]['units'][$unit] = 0.0;
-                }
-                $filteredTypeBreakdown[$typeLabel]['units'][$unit] += $quantity;
-            }
-            
-            // حساب المتوسط لكل فئة
-            foreach ($filteredTypeBreakdown as $typeLabel => &$breakdownEntry) {
-                $count = max(1, (int)$breakdownEntry['count']);
-                $breakdownEntry['average_quantity'] = $breakdownEntry['total_quantity'] / $count;
-            }
-            unset($breakdownEntry);
-            
-            $typeBreakdown = $filteredTypeBreakdown;
-        } else {
-            // في العرض العادي، نعرض فقط أعلى 8 أدوات من حيث الكمية
-            $topItems = array_slice($topItems, 0, 8);
         }
 
         ob_start();
@@ -531,16 +477,56 @@ if (!function_exists('buildPackagingReportHtmlDocument')) {
             <span class="value"><?php echo number_format($zeroQuantity); ?></span>
         </div>
         <div class="summary-card">
-            <span class="label">عمليات الإنتاج </span>
+            <span class="label">عمليات الإنتاج المرتبطة</span>
             <span class="value"><?php echo number_format($totalProductions); ?></span>
         </div>
     </section>
 
+    <section class="table-section">
+        <h2>التوزيع حسب النوع</h2>
+        <?php if (empty($typeBreakdown)): ?>
+            <div class="empty-state">لا توجد بيانات كافية لعرض التوزيع حسب النوع.</div>
+        <?php else: ?>
+            <table>
+                <thead>
+                <tr>
+                    <th>الفئة</th>
+                    <th>عدد الأصناف</th>
+                    <th>إجمالي الكمية</th>
+                    <th>تفاصيل الوحدات</th>
+                    <th>متوسط الكمية</th>
+                </tr>
+                </thead>
+                <tbody>
+                <?php foreach ($typeBreakdown as $typeLabel => $info): ?>
+                    <?php
+                    $count = isset($info['count']) ? (int)$info['count'] : 0;
+                    $total = isset($info['total_quantity']) ? (float)$info['total_quantity'] : 0.0;
+                    $average = isset($info['average_quantity']) ? (float)$info['average_quantity'] : 0.0;
+                    $units = isset($info['units']) && is_array($info['units']) ? $info['units'] : [];
+                    $unitBreakdown = [];
+                    foreach ($units as $unitName => $unitQuantity) {
+                        $unitBreakdown[] = number_format((float)$unitQuantity, 2) . ' ' . htmlspecialchars((string)$unitName, ENT_QUOTES, 'UTF-8');
+                    }
+                    $typeLabelSafe = htmlspecialchars((string)$typeLabel, ENT_QUOTES, 'UTF-8');
+                    ?>
+                    <tr>
+                        <td class="fw-semibold"><?php echo $typeLabelSafe; ?></td>
+                        <td><?php echo number_format($count); ?></td>
+                        <td><?php echo number_format($total, 2); ?></td>
+                        <td><?php echo $unitBreakdown ? implode(' • ', $unitBreakdown) : '-'; ?></td>
+                        <td><?php echo number_format($average, 2); ?></td>
+                    </tr>
+                <?php endforeach; ?>
+                </tbody>
+            </table>
+        <?php endif; ?>
+    </section>
 
     <section class="table-section">
-        <h2><?php echo $lowStockOnly ? 'الأدوات ذات المخزون القليل أو المعدوم' : 'أعلى الأدوات من حيث الكمية'; ?></h2>
+        <h2>أعلى الأدوات من حيث الكمية</h2>
         <?php if (empty($topItems)): ?>
-            <div class="empty-state"><?php echo $lowStockOnly ? 'لا توجد أدوات بمخزون قليل أو معدوم حالياً.' : 'لا توجد بيانات لعرض أفضل الأدوات حالياً.'; ?></div>
+            <div class="empty-state">لا توجد بيانات لعرض أفضل الأدوات حالياً.</div>
         <?php else: ?>
             <table>
                 <thead>
@@ -582,6 +568,14 @@ if (!function_exists('buildPackagingReportHtmlDocument')) {
                 </tbody>
             </table>
         <?php endif; ?>
+    </section>
+
+    <section class="notes">
+        <h3>ملاحظات سريعة</h3>
+        <ul>
+            <li>عدد الأدوات بدون مخزون حالياً: <strong><?php echo number_format($zeroQuantity); ?></strong>. يُنصح بمراجعة إجراءات إعادة التوريد.</li>
+            <li>إجمالي الاستخدام: <strong><?php echo number_format($totalUsed, 2); ?></strong> وحدة عبر <strong><?php echo number_format($totalProductions); ?></strong> عملية إنتاج.</li>
+        </ul>
     </section>
 </div>
 </body>
@@ -627,42 +621,26 @@ if (!function_exists('storePackagingReportDocument')) {
                 return null;
             }
 
-            // إنشاء تقريرين: واحد للعرض العادي وواحد للطباعة (مخزون قليل فقط)
-            $document = buildPackagingReportHtmlDocument($report, false);
-            $printDocument = buildPackagingReportHtmlDocument($report, true);
+            $document = buildPackagingReportHtmlDocument($report);
 
-            // حذف الملفات القديمة (العادية وملفات الطباعة)
-            $patterns = [
-                $reportDir . DIRECTORY_SEPARATOR . 'packaging-report-*.html',
-                $reportDir . DIRECTORY_SEPARATOR . 'packaging-report-print-*.html'
-            ];
-            foreach ($patterns as $pattern) {
-                foreach (glob($pattern) ?: [] as $file) {
-                    if (is_string($file)) {
-                        @unlink($file);
-                    }
+            $pattern = $reportDir . DIRECTORY_SEPARATOR . 'packaging-report-*.html';
+            foreach (glob($pattern) ?: [] as $file) {
+                if (is_string($file)) {
+                    @unlink($file);
                 }
             }
 
             $token = bin2hex(random_bytes(8));
             $filename = sprintf('packaging-report-%s-%s.html', date('Ymd-His'), $token);
-            $printFilename = sprintf('packaging-report-print-%s-%s.html', date('Ymd-His'), $token);
-            
             $fullPath = $reportDir . DIRECTORY_SEPARATOR . $filename;
-            $printFullPath = $reportDir . DIRECTORY_SEPARATOR . $printFilename;
 
             if (@file_put_contents($fullPath, $document) === false) {
                 return null;
             }
-            
-            if (@file_put_contents($printFullPath, $printDocument) === false) {
-                error_log('Failed to create print version of packaging report');
-            }
 
             $relativePath = 'exports/packaging/' . $filename;
-            $printRelativePath = 'exports/packaging/' . $printFilename;
             $viewerPath = '/reports/view.php?type=export&file=' . rawurlencode($relativePath) . '&token=' . $token;
-            $printPath = '/reports/view.php?type=export&file=' . rawurlencode($printRelativePath) . '&token=' . $token . '&print=1';
+            $printPath = $viewerPath . '&print=1';
 
             $absoluteViewer = function_exists('getAbsoluteUrl')
                 ? getAbsoluteUrl(ltrim($viewerPath, '/'))
@@ -1828,7 +1806,7 @@ if ($hasPackagingUsageLogs) {
 
             $usageData[$materialId] = [
                 'total_used' => max(0.0, (float)($logRow['total_used'] ?? 0)),
-                'production_count' => 0, // سيتم تحديثه من production_materials
+                'production_count' => max(0, (int)($logRow['usage_count'] ?? 0)),
                 'first_used' => $logRow['first_used'] ?? null,
                 'last_used' => $logRow['last_used'] ?? null
             ];
@@ -1879,13 +1857,12 @@ if ($materialColumn) {
             $mappedId = $pkgMaterial ? (int) $pkgMaterial['id'] : $materialId;
 
             if (isset($usageData[$mappedId])) {
-                // تحديث production_count دائماً من production_materials (الحساب الصحيح)
-                $usageData[$mappedId]['production_count'] = max(0, (int)($usage['production_count'] ?? 0));
-                
-                // تحديث total_used فقط إذا لم تكن هناك سجلات (لأن السجلات قد تكون أكثر دقة)
-                if (!$usageDataHasLogs) {
-                    $usageData[$mappedId]['total_used'] += (float)($usage['total_used'] ?? 0);
+                if ($usageDataHasLogs) {
+                    continue;
                 }
+
+                $usageData[$mappedId]['total_used'] += (float)($usage['total_used'] ?? 0);
+                $usageData[$mappedId]['production_count'] += (int)($usage['production_count'] ?? 0);
 
                 $firstUsed = $usage['first_used'] ?? null;
                 $lastUsed = $usage['last_used'] ?? null;
@@ -1930,13 +1907,12 @@ if ($materialColumn) {
             }
 
             if (isset($usageData[$materialId])) {
-                // تحديث production_count دائماً من production_materials (الحساب الصحيح)
-                $usageData[$materialId]['production_count'] = max(0, (int)($usage['production_count'] ?? 0));
-                
-                // تحديث total_used فقط إذا لم تكن هناك سجلات (لأن السجلات قد تكون أكثر دقة)
-                if (!$usageDataHasLogs) {
-                    $usageData[$materialId]['total_used'] += (float)($usage['total_used'] ?? 0);
+                if ($usageDataHasLogs) {
+                    continue;
                 }
+
+                $usageData[$materialId]['total_used'] += (float)($usage['total_used'] ?? 0);
+                $usageData[$materialId]['production_count'] += (int)($usage['production_count'] ?? 0);
 
                 $firstUsed = $usage['first_used'] ?? null;
                 $lastUsed = $usage['last_used'] ?? null;
@@ -2060,8 +2036,7 @@ if ($hasPackagingUsageLogs && !$usageDataHasLogs) {
             }
 
             $usageData[$manualMaterialId]['total_used'] += (float)($manualUsage['total_used'] ?? 0);
-            // لا نستخدم usage_count من السجلات كـ production_count لأنه يحسب سجلات وليس عمليات إنتاج
-            // production_count سيتم تحديثه من production_materials
+            $usageData[$manualMaterialId]['production_count'] += (int)($manualUsage['usage_count'] ?? 0);
 
             $manualFirstUsed = $manualUsage['first_used'] ?? null;
             $manualLastUsed = $manualUsage['last_used'] ?? null;
@@ -2145,34 +2120,12 @@ $totalMaterials = count($filteredMaterials);
 $totalPages = ceil($totalMaterials / $perPage);
 $paginatedMaterials = array_slice($filteredMaterials, $offset, $perPage);
 
-// حساب عدد عمليات الإنتاج المميزة (وليس مجموع production_count لكل مادة)
-$totalProductionsCount = 0;
-if ($materialColumn) {
-    try {
-        $totalProductionsResult = $db->queryOne(
-            "SELECT COUNT(DISTINCT pm.production_id) as total_productions
-             FROM production_materials pm
-             WHERE pm.{$materialColumn} IS NOT NULL"
-        );
-        $totalProductionsCount = isset($totalProductionsResult['total_productions']) 
-            ? (int)$totalProductionsResult['total_productions'] 
-            : 0;
-    } catch (Exception $e) {
-        error_log("Error calculating total productions: " . $e->getMessage());
-        // في حالة الخطأ، نستخدم المجموع كبديل
-        $totalProductionsCount = array_sum(array_column($usageData, 'production_count'));
-    }
-} else {
-    // إذا لم يكن هناك materialColumn، نستخدم المجموع
-    $totalProductionsCount = array_sum(array_column($usageData, 'production_count'));
-}
-
 // إحصائيات
 $stats = [
     'total_materials' => count($packagingMaterials),
     'total_used' => array_sum(array_column($usageData, 'total_used')),
     'materials_with_usage' => count($usageData),
-    'total_productions' => $totalProductionsCount
+    'total_productions' => array_sum(array_column($usageData, 'production_count'))
 ];
 
 $packagingReport = [
@@ -2256,12 +2209,10 @@ unset($breakdownEntry);
 
 ksort($packagingReport['type_breakdown'], SORT_NATURAL | SORT_FLAG_CASE);
 
-// ترتيب الأدوات حسب الكمية (الأعلى أولاً للعرض العادي)
 usort($packagingReport['top_items'], static function ($a, $b) {
     return $b['quantity'] <=> $a['quantity'];
 });
-// نحتفظ بجميع الأدوات في التقرير (وليس فقط أعلى 8) حتى يمكن تصفيتها عند الطباعة
-// $packagingReport['top_items'] = array_slice($packagingReport['top_items'], 0, 8);
+$packagingReport['top_items'] = array_slice($packagingReport['top_items'], 0, 8);
 
 $packagingReport['last_updated'] = $lastUpdatedTimestamp
     ? date('Y-m-d H:i', $lastUpdatedTimestamp)
@@ -2304,7 +2255,7 @@ $packagingReportGeneratedAt = $packagingReport['generated_at'] ?? date('Y-m-d H:
 </div>
 
 <?php if ($error): ?>
-    <div class="alert alert-danger alert-dismissible fade show" id="errorAlert" data-auto-refresh="true">
+    <div class="alert alert-danger alert-dismissible fade show">
         <i class="bi bi-exclamation-triangle-fill me-2"></i>
         <?php echo htmlspecialchars($error); ?>
         <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
@@ -2312,7 +2263,7 @@ $packagingReportGeneratedAt = $packagingReport['generated_at'] ?? date('Y-m-d H:
 <?php endif; ?>
 
 <?php if ($success): ?>
-    <div class="alert alert-success alert-dismissible fade show" id="successAlert" data-auto-refresh="true">
+    <div class="alert alert-success alert-dismissible fade show">
         <i class="bi bi-check-circle-fill me-2"></i>
         <?php echo htmlspecialchars($success); ?>
         <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
@@ -2331,6 +2282,21 @@ $packagingReportGeneratedAt = $packagingReport['generated_at'] ?? date('Y-m-d H:
                     </div>
                     <div class="text-primary">
                         <i class="bi bi-box-seam fs-1"></i>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+    <div class="col-md-3">
+        <div class="card shadow-sm">
+            <div class="card-body">
+                <div class="d-flex justify-content-between align-items-center">
+                    <div>
+                        <div class="text-muted small">إجمالي المستخدم</div>
+                        <div class="h4 mb-0"><?php echo number_format($stats['total_used'], 0); ?></div>
+                    </div>
+                    <div class="text-warning">
+                        <i class="bi bi-arrow-down-circle fs-1"></i>
                     </div>
                 </div>
             </div>
@@ -2419,7 +2385,15 @@ $packagingReportGeneratedAt = $packagingReport['generated_at'] ?? date('Y-m-d H:
 <div class="card shadow-sm">
     <div class="card-header bg-primary text-white d-flex flex-wrap gap-2 justify-content-between align-items-center">
         <h5 class="mb-0">قائمة أدوات التعبئة (<?php echo $totalMaterials; ?>)</h5>
-        
+        <button
+            type="button"
+            id="printPackagingWarehouseReportButton"
+            class="btn btn-outline-light btn-sm d-print-none"
+            aria-label="طباعة تقرير أدوات التعبئة"
+        >
+            <i class="bi bi-printer me-1"></i>
+            طباعة التقرير
+        </button>
     </div>
     <div class="card-body">
         <?php if (empty($paginatedMaterials)): ?>
@@ -3777,29 +3751,4 @@ document.addEventListener('DOMContentLoaded', function () {
     }
 }
 </style>
-
-<!-- إعادة تحميل الصفحة تلقائياً بعد أي رسالة (نجاح أو خطأ) لمنع تكرار الطلبات -->
-<script>
-// إعادة تحميل الصفحة تلقائياً بعد أي رسالة (نجاح أو خطأ) لمنع تكرار الطلبات
-(function() {
-    const successAlert = document.getElementById('successAlert');
-    const errorAlert = document.getElementById('errorAlert');
-    
-    // التحقق من وجود رسالة نجاح أو خطأ
-    const alertElement = successAlert || errorAlert;
-    
-    if (alertElement && alertElement.dataset.autoRefresh === 'true') {
-        // انتظار 3 ثوانٍ لإعطاء المستخدم وقتاً لرؤية الرسالة
-        setTimeout(function() {
-            // إعادة تحميل الصفحة بدون معاملات GET لمنع تكرار الطلبات
-            const currentUrl = new URL(window.location.href);
-            // إزالة معاملات success و error من URL
-            currentUrl.searchParams.delete('success');
-            currentUrl.searchParams.delete('error');
-            // إعادة تحميل الصفحة
-            window.location.href = currentUrl.toString();
-        }, 3000);
-    }
-})();
-</script>
 

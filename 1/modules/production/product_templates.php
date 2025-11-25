@@ -1188,33 +1188,9 @@ try {
     error_log('Failed to load derivatives from suppliers: ' . $e->getMessage());
 }
 
-// جلب الطحينة من مخزن الطحينة
-try {
-    $tahiniExists = $db->queryOne("SHOW TABLES LIKE 'tahini_stock'");
-    if (!empty($tahiniExists)) {
-        // التحقق من وجود الطحينة المتاحة من الموردين النشطين
-        $hasTahini = $db->queryOne("
-            SELECT COUNT(*) as count 
-            FROM tahini_stock ts
-            INNER JOIN suppliers s ON ts.supplier_id = s.id
-            WHERE ts.quantity > 0 
-            AND s.status = 'active'
-        ");
-        if ($hasTahini && $hasTahini['count'] > 0) {
-            $rawMaterialsData['طحينة'] = [
-                'material_type' => 'tahini',
-                'has_types' => false,
-                'types' => []
-            ];
-        }
-    }
-} catch (Exception $e) {
-    error_log('Failed to load tahini: ' . $e->getMessage());
-}
-
 // إنشاء قائمة بأسماء المواد فقط للعرض في القائمة المنسدلة
-// المواد الخام الأساسية: عسل، زيت زيتون، شمع عسل، مشتقات، مكسرات، طحينة
-$allowedMaterials = ['عسل', 'زيت زيتون', 'شمع عسل', 'مشتقات', 'مكسرات', 'طحينة'];
+// المواد الخام الأساسية الخمسة فقط: عسل، زيت زيتون، شمع عسل، مشتقات، مكسرات
+$allowedMaterials = ['عسل', 'زيت زيتون', 'شمع عسل', 'مشتقات', 'مكسرات'];
 $rawMaterialsForTemplate = array_intersect($allowedMaterials, array_keys($rawMaterialsData));
 
 sort($rawMaterialsForTemplate);
@@ -1231,7 +1207,7 @@ $lang = isset($translations) ? $translations : [];
 </div>
 
 <?php if ($error): ?>
-    <div class="alert alert-danger alert-dismissible fade show" id="errorAlert" data-auto-refresh="true">
+    <div class="alert alert-danger alert-dismissible fade show">
         <i class="bi bi-exclamation-triangle-fill me-2"></i>
         <?php echo htmlspecialchars($error); ?>
         <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
@@ -1239,7 +1215,7 @@ $lang = isset($translations) ? $translations : [];
 <?php endif; ?>
 
 <?php if ($success): ?>
-    <div class="alert alert-success alert-dismissible fade show" id="successAlert" data-auto-refresh="true">
+    <div class="alert alert-success alert-dismissible fade show">
         <i class="bi bi-check-circle-fill me-2"></i>
         <?php echo htmlspecialchars($success); ?>
         <button type="button" class="btn-close" data-bs-dismiss="alert"></button>

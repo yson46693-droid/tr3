@@ -190,7 +190,7 @@ function calculateHours($checkIn, $checkOut) {
     $in = strtotime($checkIn);
     $out = strtotime($checkOut);
     $hours = ($out - $in) / 3600;
-    return formatHours($hours);
+    return number_format($hours, 2) . ' ساعة';
 }
 ?>
 
@@ -203,14 +203,14 @@ function calculateHours($checkIn, $checkOut) {
     </div>
     <div class="card-body">
         <?php if ($error): ?>
-            <div class="alert alert-danger alert-dismissible fade show" id="errorAlert" data-auto-refresh="true">
+            <div class="alert alert-danger alert-dismissible fade show">
                 <i class="bi bi-exclamation-triangle me-2"></i><?php echo htmlspecialchars($error); ?>
                 <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
             </div>
         <?php endif; ?>
         
         <?php if ($success): ?>
-            <div class="alert alert-success alert-dismissible fade show" id="successAlert" data-auto-refresh="true">
+            <div class="alert alert-success alert-dismissible fade show">
                 <i class="bi bi-check-circle me-2"></i><?php echo htmlspecialchars($success); ?>
                 <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
             </div>
@@ -521,30 +521,5 @@ document.addEventListener('DOMContentLoaded', function() {
         return new bootstrap.Tooltip(tooltipTriggerEl);
     });
 });
-</script>
-
-<!-- إعادة تحميل الصفحة تلقائياً بعد أي رسالة (نجاح أو خطأ) لمنع تكرار الطلبات -->
-<script>
-// إعادة تحميل الصفحة تلقائياً بعد أي رسالة (نجاح أو خطأ) لمنع تكرار الطلبات
-(function() {
-    const successAlert = document.getElementById('successAlert');
-    const errorAlert = document.getElementById('errorAlert');
-    
-    // التحقق من وجود رسالة نجاح أو خطأ
-    const alertElement = successAlert || errorAlert;
-    
-    if (alertElement && alertElement.dataset.autoRefresh === 'true') {
-        // انتظار 3 ثوانٍ لإعطاء المستخدم وقتاً لرؤية الرسالة
-        setTimeout(function() {
-            // إعادة تحميل الصفحة بدون معاملات GET لمنع تكرار الطلبات
-            const currentUrl = new URL(window.location.href);
-            // إزالة معاملات success و error من URL
-            currentUrl.searchParams.delete('success');
-            currentUrl.searchParams.delete('error');
-            // إعادة تحميل الصفحة
-            window.location.href = currentUrl.toString();
-        }, 3000);
-    }
-})();
 </script>
 
