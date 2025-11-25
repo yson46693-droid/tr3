@@ -487,6 +487,12 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && trim($_P
                                 <span><?php echo isset($lang['collections']) ? $lang['collections'] : 'التحصيلات'; ?></span>
                             </button>
                         </li>
+                        <li class="nav-item" role="presentation">
+                            <button class="nav-link" id="returns-tab" data-bs-toggle="pill" data-bs-target="#returns-section" type="button" role="tab" aria-controls="returns-section" aria-selected="false">
+                                <i class="bi bi-arrow-return-left"></i>
+                                <span>المرتجعات</span>
+                            </button>
+                        </li>
                     </ul>
 
                     <div class="tab-content combined-tab-content" id="salesCollectionsTabContent">
@@ -551,6 +557,23 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && trim($_P
                                 <div class="empty-state-icon"><i class="bi bi-cash-coin"></i></div>
                                 <div class="empty-state-title"><?php echo isset($lang['collections']) ? $lang['collections'] : 'التحصيلات'; ?></div>
                                 <div class="empty-state-description"><?php echo isset($lang['collections_page_coming_soon']) ? $lang['collections_page_coming_soon'] : 'صفحة التحصيلات - سيتم إضافتها'; ?></div>
+                            </div>
+                            <?php } ?>
+                             </div>
+                        </div>
+
+                        <div class="tab-pane fade combined-tab-pane" id="returns-section" role="tabpanel" aria-labelledby="returns-tab">
+                             <div id="returns-section-content" class="printable-section">
+                            <?php 
+                            $returnsModulePath = __DIR__ . '/../modules/sales/new_returns.php';
+                            if (file_exists($returnsModulePath)) {
+                                include $returnsModulePath;
+                            } else {
+                            ?>
+                            <div class="empty-state-card">
+                                <div class="empty-state-icon"><i class="bi bi-arrow-return-left"></i></div>
+                                <div class="empty-state-title">المرتجعات</div>
+                                <div class="empty-state-description">صفحة المرتجعات - سيتم إضافتها قريباً</div>
                             </div>
                             <?php } ?>
                              </div>
@@ -1111,15 +1134,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && trim($_P
                 <!-- صفحة نقل المخازن -->
                 <?php 
                 $modulePath = __DIR__ . '/../modules/manager/warehouse_transfers.php';
-                if (file_exists($modulePath)) {
-                    include $modulePath;
-                }
-                ?>
-                
-            <?php elseif ($page === 'returns'): ?>
-                <!-- صفحة المرتجعات -->
-                <?php 
-                $modulePath = __DIR__ . '/../modules/sales/returns.php';
                 if (file_exists($modulePath)) {
                     include $modulePath;
                 }

@@ -92,13 +92,6 @@ $baseUrl = getDashboardUrl();
             </li>
             
             <li class="nav-item">
-                <a class="nav-link" href="<?php echo $baseUrl; ?>sales.php?page=returns">
-                    <i class="bi bi-arrow-return-left"></i>
-                    <span>المرتجعات</span>
-                </a>
-            </li>
-            
-            <li class="nav-item">
                 <a class="nav-link" href="<?php echo $baseUrl; ?>sales.php?page=exchanges">
                     <i class="bi bi-arrow-repeat"></i>
                     <span>الاستبدال</span>

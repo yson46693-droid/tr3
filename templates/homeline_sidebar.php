@@ -374,13 +374,6 @@ switch ($role) {
                 'badge' => null
             ],
             [
-                'title' => isset($lang['returns_exchanges']) ? $lang['returns_exchanges'] : 'المرتجعات والاستبدال',
-                'icon' => 'bi-arrow-return-left',
-                'url' => $baseUrl . 'sales.php?page=returns',
-                'active' => ($currentPage === 'sales.php' && ($currentPageParam === 'returns' || $currentPageParam === 'exchanges')),
-                'badge' => null
-            ],
-            [
                 'title' => isset($lang['my_salary']) ? $lang['my_salary'] : 'مرتبي',
                 'icon' => 'bi-wallet2',
                 'url' => $baseUrl . 'sales.php?page=my_salary',

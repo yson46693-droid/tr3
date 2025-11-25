@@ -348,11 +348,92 @@ function viewReturnDetails(returnId) {
     content.innerHTML = '<div class="text-center"><div class="spinner-border" role="status"><span class="visually-hidden">جاري التحميل...</span></div></div>';
     modal.show();
     
-    // Fetch return details (you can create an API endpoint for this)
-    // For now, just show a message
-    setTimeout(() => {
-        content.innerHTML = '<p>تفاصيل طلب المرتجع رقم: ' + returnId + '</p><p class="text-muted">يمكن إضافة API endpoint لعرض التفاصيل الكاملة</p>';
-    }, 500);
+    fetch(basePath + '/api/new_returns_api.php?action=details&id=' + returnId, {
+        credentials: 'same-origin',
+        headers: {
+            'Accept': 'application/json'
+        }
+    })
+    .then(response => response.json())
+    .then(data => {
+        if (data.success && data.return) {
+            const ret = data.return;
+            let html = `
+                <div class="row mb-3">
+                    <div class="col-md-6">
+                        <strong>رقم المرتجع:</strong> ${ret.return_number || '-'}
+                    </div>
+                    <div class="col-md-6">
+                        <strong>التاريخ:</strong> ${ret.return_date || '-'}
+                    </div>
+                </div>
+                <div class="row mb-3">
+                    <div class="col-md-6">
+                        <strong>العميل:</strong> ${ret.customer_name || '-'}
+                    </div>
+                    <div class="col-md-6">
+                        <strong>المندوب:</strong> ${ret.sales_rep_name || '-'}
+                    </div>
+                </div>
+                <div class="row mb-3">
+                    <div class="col-md-6">
+                        <strong>المبلغ:</strong> <span class="text-primary">${parseFloat(ret.refund_amount || 0).toFixed(2)} ج.م</span>
+                    </div>
+                    <div class="col-md-6">
+                        <strong>الحالة:</strong> <span class="badge bg-${ret.status === 'approved' ? 'success' : ret.status === 'rejected' ? 'danger' : 'warning'}">${ret.status || '-'}</span>
+                    </div>
+                </div>
+                <hr>
+                <h6>المنتجات:</h6>
+                <table class="table table-sm table-bordered">
+                    <thead>
+                        <tr>
+                            <th>المنتج</th>
+                            <th>الكمية</th>
+                            <th>سعر الوحدة</th>
+                            <th>الإجمالي</th>
+                            <th>رقم التشغيلة</th>
+                            <th>حالة</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+            `;
+            
+            if (ret.items && ret.items.length > 0) {
+                ret.items.forEach(item => {
+                    html += `
+                        <tr>
+                            <td>${item.product_name || '-'}</td>
+                            <td>${parseFloat(item.quantity || 0).toFixed(2)}</td>
+                            <td>${parseFloat(item.unit_price || 0).toFixed(2)} ج.م</td>
+                            <td>${parseFloat(item.total_price || 0).toFixed(2)} ج.م</td>
+                            <td>${item.batch_number || '-'}</td>
+                            <td>${item.is_damaged ? '<span class="badge bg-danger">تالف</span>' : '<span class="badge bg-success">سليم</span>'}</td>
+                        </tr>
+                    `;
+                });
+            } else {
+                html += '<tr><td colspan="6" class="text-center">لا توجد منتجات</td></tr>';
+            }
+            
+            html += `
+                    </tbody>
+                </table>
+            `;
+            
+            if (ret.notes) {
+                html += `<hr><strong>ملاحظات:</strong><p>${ret.notes}</p>`;
+            }
+            
+            content.innerHTML = html;
+        } else {
+            content.innerHTML = '<div class="alert alert-warning">لا يمكن تحميل تفاصيل المرتجع</div>';
+        }
+    })
+    .catch(error => {
+        console.error('Error:', error);
+        content.innerHTML = '<div class="alert alert-danger">حدث خطأ أثناء تحميل التفاصيل</div>';
+    });
 }
 </script>
 

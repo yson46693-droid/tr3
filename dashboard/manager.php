@@ -798,9 +798,9 @@ $pageTitle = isset($lang['manager_dashboard']) ? $lang['manager_dashboard'] : '�
                 ?>
                 
             <?php elseif ($page === 'returns'): ?>
-                <!-- صفحة المرتجعات والاستبدال - حساب المدير -->
+                <!-- صفحة المرتجعات - حساب المدير -->
                 <?php 
-                $modulePath = __DIR__ . '/../modules/manager/returns.php';
+                $modulePath = __DIR__ . '/../modules/manager/returns_overview.php';
                 if (file_exists($modulePath)) {
                     include $modulePath;
                 } else {

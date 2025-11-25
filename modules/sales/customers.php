@@ -1368,6 +1368,520 @@ document.addEventListener('DOMContentLoaded', function () {
 </script>
 <?php endif; ?>
 
+<!-- Modal سجل مشتريات العميل - إنشاء مرتجع -->
+<?php if (in_array($currentRole, ['manager', 'sales'], true)): ?>
+<div class="modal fade" id="customerPurchaseHistoryModal" tabindex="-1" aria-hidden="true">
+    <div class="modal-dialog modal-xl modal-dialog-scrollable">
+        <div class="modal-content">
+            <div class="modal-header bg-primary text-white">
+                <h5 class="modal-title">
+                    <i class="bi bi-arrow-return-left me-2"></i>
+                    سجل مشتريات العميل - إنشاء مرتجع
+                </h5>
+                <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal" aria-label="إغلاق"></button>
+            </div>
+            <div class="modal-body">
+                <!-- Customer Info -->
+                <div class="card mb-3">
+                    <div class="card-body">
+                        <div class="row">
+                            <div class="col-md-4">
+                                <div class="text-muted small">العميل</div>
+                                <div class="fs-5 fw-bold" id="purchaseHistoryCustomerName">-</div>
+                            </div>
+                            <div class="col-md-4">
+                                <div class="text-muted small">الهاتف</div>
+                                <div id="purchaseHistoryCustomerPhone">-</div>
+                            </div>
+                            <div class="col-md-4">
+                                <div class="text-muted small">العنوان</div>
+                                <div id="purchaseHistoryCustomerAddress">-</div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Filters -->
+                <div class="card mb-3">
+                    <div class="card-body">
+                        <div class="row g-2">
+                            <div class="col-md-4">
+                                <input type="text" class="form-control form-control-sm" 
+                                       id="purchaseHistorySearchProduct" 
+                                       placeholder="البحث باسم المنتج">
+                            </div>
+                            <div class="col-md-4">
+                                <input type="text" class="form-control form-control-sm" 
+                                       id="purchaseHistorySearchBatch" 
+                                       placeholder="البحث برقم التشغيلة">
+                            </div>
+                            <div class="col-md-4">
+                                <button type="button" class="btn btn-primary btn-sm w-100" 
+                                        onclick="loadPurchaseHistory()">
+                                    <i class="bi bi-search me-1"></i>بحث
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Loading -->
+                <div class="text-center py-4" id="purchaseHistoryLoading">
+                    <div class="spinner-border text-primary" role="status">
+                        <span class="visually-hidden">جاري التحميل...</span>
+                    </div>
+                </div>
+
+                <!-- Error -->
+                <div class="alert alert-danger d-none" id="purchaseHistoryError"></div>
+
+                <!-- Purchase History Table -->
+                <div id="purchaseHistoryTable" class="d-none">
+                    <div class="table-responsive">
+                        <table class="table table-hover table-bordered">
+                            <thead class="table-light">
+                                <tr>
+                                    <th style="width: 50px;">
+                                        <input type="checkbox" id="selectAllItems" onchange="toggleAllItems()">
+                                    </th>
+                                    <th>رقم الفاتورة</th>
+                                    <th>رقم التشغيلة</th>
+                                    <th>اسم المنتج</th>
+                                    <th>الكمية المشتراة</th>
+                                    <th>الكمية المرتجعة</th>
+                                    <th>المتاح للإرجاع</th>
+                                    <th>سعر الوحدة</th>
+                                    <th>السعر الإجمالي</th>
+                                    <th>تاريخ الشراء</th>
+                                    <th style="width: 100px;">إجراءات</th>
+                                </tr>
+                            </thead>
+                            <tbody id="purchaseHistoryTableBody">
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">إلغاء</button>
+                <button type="button" class="btn btn-success" id="createReturnBtn" onclick="openCreateReturnModal()" style="display: none;">
+                    <i class="bi bi-arrow-return-left me-1"></i>إنشاء مرتجع
+                </button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Create Return Modal -->
+<div class="modal fade" id="createReturnModal" tabindex="-1" aria-hidden="true">
+    <div class="modal-dialog modal-lg">
+        <div class="modal-content">
+            <div class="modal-header bg-success text-white">
+                <h5 class="modal-title">
+                    <i class="bi bi-arrow-return-left me-2"></i>
+                    إنشاء طلب مرتجع
+                </h5>
+                <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body" id="createReturnContent">
+                <!-- Content will be filled by JavaScript -->
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">إلغاء</button>
+                <button type="button" class="btn btn-success" onclick="submitReturnRequest()">
+                    <i class="bi bi-check-circle me-1"></i>إرسال طلب الإرجاع
+                </button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<script>
+const basePath = '<?php echo getBasePath(); ?>';
+let currentCustomerId = null;
+let selectedItemsForReturn = [];
+let purchaseHistoryData = []; // Store original purchase history data
+
+// Open purchase history modal
+document.querySelectorAll('.js-customer-purchase-history').forEach(function(button) {
+    button.addEventListener('click', function() {
+        const customerId = this.getAttribute('data-customer-id');
+        const customerName = this.getAttribute('data-customer-name');
+        
+        currentCustomerId = customerId;
+        
+        // Set customer info
+        document.getElementById('purchaseHistoryCustomerName').textContent = customerName;
+        
+        // Show modal
+        const modal = new bootstrap.Modal(document.getElementById('customerPurchaseHistoryModal'));
+        modal.show();
+        
+        // Load purchase history
+        loadPurchaseHistory(customerId);
+    });
+});
+
+function loadPurchaseHistory(customerId) {
+    const loading = document.getElementById('purchaseHistoryLoading');
+    const tableDiv = document.getElementById('purchaseHistoryTable');
+    const errorDiv = document.getElementById('purchaseHistoryError');
+    const tableBody = document.getElementById('purchaseHistoryTableBody');
+    
+    loading.classList.remove('d-none');
+    tableDiv.classList.add('d-none');
+    errorDiv.classList.add('d-none');
+    
+    const productFilter = document.getElementById('purchaseHistorySearchProduct').value;
+    const batchFilter = document.getElementById('purchaseHistorySearchBatch').value;
+    
+    let url = basePath + '/api/customer_purchase_history.php?action=get_history&customer_id=' + customerId;
+    
+    if (productFilter) {
+        url += '&product_name=' + encodeURIComponent(productFilter);
+    }
+    
+    if (batchFilter) {
+        url += '&batch_number=' + encodeURIComponent(batchFilter);
+    }
+    
+    fetch(url, {
+        credentials: 'same-origin',
+        headers: {
+            'Accept': 'application/json'
+        }
+    })
+    .then(response => response.json())
+    .then(data => {
+        loading.classList.add('d-none');
+        
+        if (data.success) {
+            // Update customer info
+            if (data.customer) {
+                document.getElementById('purchaseHistoryCustomerPhone').textContent = data.customer.phone || '-';
+                document.getElementById('purchaseHistoryCustomerAddress').textContent = data.customer.address || '-';
+            }
+            
+            // Store purchase history data
+            purchaseHistoryData = data.purchase_history || [];
+            displayPurchaseHistory(purchaseHistoryData);
+            tableDiv.classList.remove('d-none');
+        } else {
+            errorDiv.textContent = data.message || 'حدث خطأ أثناء تحميل سجل المشتريات';
+            errorDiv.classList.remove('d-none');
+        }
+    })
+    .catch(error => {
+        loading.classList.add('d-none');
+        errorDiv.textContent = 'حدث خطأ في الاتصال بالخادم';
+        errorDiv.classList.remove('d-none');
+        console.error('Error:', error);
+    });
+}
+
+function displayPurchaseHistory(history) {
+    const tableBody = document.getElementById('purchaseHistoryTableBody');
+    tableBody.innerHTML = '';
+    
+    if (!history || history.length === 0) {
+        tableBody.innerHTML = '<tr><td colspan="11" class="text-center text-muted">لا توجد مشتريات</td></tr>';
+        return;
+    }
+    
+    history.forEach(function(item) {
+        if (!item.can_return) {
+            return; // Skip items that can't be returned
+        }
+        
+        const row = document.createElement('tr');
+        row.innerHTML = `
+            <td>
+                <input type="checkbox" class="item-checkbox" 
+                       data-invoice-id="${item.invoice_id}"
+                       data-invoice-item-id="${item.invoice_item_id}"
+                       data-product-id="${item.product_id}"
+                       data-product-name="${item.product_name}"
+                       data-unit-price="${item.unit_price}"
+                       data-batch-number-ids='${JSON.stringify(item.batch_number_ids || [])}'
+                       data-batch-numbers='${JSON.stringify(item.batch_numbers || [])}'
+                       onchange="updateSelectedItems()">
+            </td>
+            <td>${item.invoice_number || '-'}</td>
+            <td>${(item.batch_numbers || []).join(', ') || '-'}</td>
+            <td>${item.product_name || '-'}</td>
+            <td>${parseFloat(item.quantity || 0).toFixed(2)}</td>
+            <td>${parseFloat(item.returned_quantity || 0).toFixed(2)}</td>
+            <td><strong>${parseFloat(item.available_to_return || 0).toFixed(2)}</strong></td>
+            <td>${parseFloat(item.unit_price || 0).toFixed(2)} ج.م</td>
+            <td>${parseFloat(item.total_price || 0).toFixed(2)} ج.م</td>
+            <td>${item.invoice_date || '-'}</td>
+            <td>
+                <button class="btn btn-sm btn-primary" 
+                        onclick="selectItemForReturn(${item.invoice_item_id}, ${item.product_id})"
+                        title="إرجاع جزئي">
+                    <i class="bi bi-arrow-return-left"></i>
+                </button>
+            </td>
+        `;
+        tableBody.appendChild(row);
+    });
+}
+
+function toggleAllItems() {
+    const selectAll = document.getElementById('selectAllItems');
+    const checkboxes = document.querySelectorAll('.item-checkbox');
+    
+    checkboxes.forEach(function(checkbox) {
+        checkbox.checked = selectAll.checked;
+    });
+    
+    updateSelectedItems();
+}
+
+function updateSelectedItems() {
+    const checkboxes = document.querySelectorAll('.item-checkbox:checked');
+    selectedItemsForReturn = [];
+    
+    checkboxes.forEach(function(checkbox) {
+        const row = checkbox.closest('tr');
+        const available = parseFloat(row.querySelector('td:nth-child(7)').textContent.trim());
+        const invoiceNumber = row.querySelector('td:nth-child(2)').textContent.trim();
+        if (available > 0) {
+            selectedItemsForReturn.push({
+                invoice_id: parseInt(checkbox.dataset.invoiceId),
+                invoice_number: invoiceNumber,
+                invoice_item_id: parseInt(checkbox.dataset.invoiceItemId),
+                product_id: parseInt(checkbox.dataset.productId),
+                product_name: checkbox.dataset.productName,
+                unit_price: parseFloat(checkbox.dataset.unitPrice),
+                batch_number_ids: JSON.parse(checkbox.dataset.batchNumberIds || '[]'),
+                batch_numbers: JSON.parse(checkbox.dataset.batchNumbers || '[]'),
+                available_to_return: available
+            });
+        }
+    });
+    
+    const createBtn = document.getElementById('createReturnBtn');
+    if (selectedItemsForReturn.length > 0) {
+        createBtn.style.display = 'block';
+    } else {
+        createBtn.style.display = 'none';
+    }
+}
+
+function selectItemForReturn(invoiceItemId, productId) {
+    // Select this specific item
+    const checkbox = document.querySelector(`.item-checkbox[data-invoice-item-id="${invoiceItemId}"][data-product-id="${productId}"]`);
+    if (checkbox) {
+        checkbox.checked = true;
+        updateSelectedItems();
+        openCreateReturnModal();
+    }
+}
+
+function openCreateReturnModal() {
+    if (selectedItemsForReturn.length === 0) {
+        alert('يرجى تحديد منتج واحد على الأقل للإرجاع');
+        return;
+    }
+    
+    // Group items by invoice
+    const itemsByInvoice = {};
+    selectedItemsForReturn.forEach(function(item) {
+        if (!itemsByInvoice[item.invoice_id]) {
+            itemsByInvoice[item.invoice_id] = [];
+        }
+        itemsByInvoice[item.invoice_id].push(item);
+    });
+    
+    // Build modal content
+    let html = '<form id="returnRequestForm">';
+    
+    Object.keys(itemsByInvoice).forEach(function(invoiceId) {
+        const firstItem = itemsByInvoice[invoiceId][0];
+        html += `<div class="card mb-3">
+            <div class="card-header">فاتورة رقم: ${firstItem.invoice_number || invoiceId}</div>
+            <div class="card-body">
+                <table class="table table-sm">
+                    <thead>
+                        <tr>
+                            <th>المنتج</th>
+                            <th>رقم التشغيلة</th>
+                            <th>الكمية المتاحة</th>
+                            <th>الكمية للإرجاع</th>
+                            <th>تالف</th>
+                            <th>سبب التلف</th>
+                        </tr>
+                    </thead>
+                    <tbody>`;
+        
+        itemsByInvoice[invoiceId].forEach(function(item, index) {
+            const batchNumbers = (item.batch_numbers || []).join(', ') || '-';
+            html += `
+                <tr>
+                    <td>${item.product_name}</td>
+                    <td>${batchNumbers}</td>
+                    <td id="available-qty-${item.invoice_item_id}">0</td>
+                    <td>
+                        <input type="number" 
+                               class="form-control form-control-sm return-qty" 
+                               data-invoice-item-id="${item.invoice_item_id}"
+                               data-product-id="${item.product_id}"
+                               data-unit-price="${item.unit_price}"
+                               data-batch-number-id="${item.batch_number_ids[0] || ''}"
+                               min="0" 
+                               step="0.01" 
+                               required>
+                    </td>
+                    <td>
+                        <input type="checkbox" 
+                               class="form-check-input is-damaged-checkbox"
+                               data-invoice-item-id="${item.invoice_item_id}">
+                    </td>
+                    <td>
+                        <input type="text" 
+                               class="form-control form-control-sm damage-reason"
+                               data-invoice-item-id="${item.invoice_item_id}"
+                               placeholder="سبب التلف (اختياري)"
+                               disabled>
+                    </td>
+                </tr>
+            `;
+        });
+        
+        html += `</tbody></table>
+            </div>
+        </div>`;
+    });
+    
+    html += `
+        <div class="mb-3">
+            <label class="form-label">سبب الإرجاع</label>
+            <select class="form-select" name="reason" required>
+                <option value="customer_request">طلب العميل</option>
+                <option value="defective">منتج تالف</option>
+                <option value="wrong_item">منتج خاطئ</option>
+                <option value="other">أخرى</option>
+            </select>
+        </div>
+        <div class="mb-3">
+            <label class="form-label">وصف تفصيلي (اختياري)</label>
+            <textarea class="form-control" name="reason_description" rows="3"></textarea>
+        </div>
+        <div class="mb-3">
+            <label class="form-label">ملاحظات (اختياري)</label>
+            <textarea class="form-control" name="notes" rows="2"></textarea>
+        </div>
+        <input type="hidden" name="invoice_id" value="${Object.keys(itemsByInvoice)[0]}">
+    </form>`;
+    
+    // Set available quantities from stored purchase history data
+    selectedItemsForReturn.forEach(function(item) {
+        const historyItem = purchaseHistoryData.find(function(h) {
+            return h.invoice_item_id === item.invoice_item_id;
+        });
+        const availableCell = document.getElementById(`available-qty-${item.invoice_item_id}`);
+        if (availableCell && historyItem) {
+            availableCell.textContent = parseFloat(historyItem.available_to_return || 0).toFixed(2);
+            
+            // Set max attribute for quantity input
+            const qtyInput = document.querySelector(`.return-qty[data-invoice-item-id="${item.invoice_item_id}"]`);
+            if (qtyInput) {
+                qtyInput.max = historyItem.available_to_return || 0;
+            }
+        }
+    });
+    
+    document.getElementById('createReturnContent').innerHTML = html;
+    
+    // Enable/disable damage reason based on checkbox
+    document.querySelectorAll('.is-damaged-checkbox').forEach(function(checkbox) {
+        checkbox.addEventListener('change', function() {
+            const reasonInput = document.querySelector(`.damage-reason[data-invoice-item-id="${this.dataset.invoiceItemId}"]`);
+            if (reasonInput) {
+                reasonInput.disabled = !this.checked;
+                if (!this.checked) {
+                    reasonInput.value = '';
+                }
+            }
+        });
+    });
+    
+    const modal = new bootstrap.Modal(document.getElementById('createReturnModal'));
+    modal.show();
+}
+
+function submitReturnRequest() {
+    const form = document.getElementById('returnRequestForm');
+    if (!form.checkValidity()) {
+        form.reportValidity();
+        return;
+    }
+    
+    const formData = new FormData(form);
+    const invoiceId = formData.get('invoice_id');
+    
+    const items = [];
+    document.querySelectorAll('.return-qty').forEach(function(input) {
+        const qty = parseFloat(input.value);
+        if (qty > 0) {
+            const isDamaged = document.querySelector(`.is-damaged-checkbox[data-invoice-item-id="${input.dataset.invoiceItemId}"]`).checked;
+            const damageReason = document.querySelector(`.damage-reason[data-invoice-item-id="${input.dataset.invoiceItemId}"]`).value;
+            
+            items.push({
+                invoice_item_id: parseInt(input.dataset.invoiceItemId),
+                product_id: parseInt(input.dataset.productId),
+                quantity: qty,
+                unit_price: parseFloat(input.dataset.unitPrice),
+                batch_number_id: input.dataset.batchNumberId ? parseInt(input.dataset.batchNumberId) : null,
+                is_damaged: isDamaged,
+                damage_reason: isDamaged ? damageReason : null
+            });
+        }
+    });
+    
+    if (items.length === 0) {
+        alert('يرجى إدخال كمية للإرجاع');
+        return;
+    }
+    
+    const requestData = {
+        customer_id: currentCustomerId,
+        invoice_id: parseInt(invoiceId),
+        items: items,
+        reason: formData.get('reason'),
+        reason_description: formData.get('reason_description'),
+        notes: formData.get('notes')
+    };
+    
+    fetch(basePath + '/api/new_returns_api.php?action=create', {
+        method: 'POST',
+        headers: {
+            'Content-Type': 'application/json'
+        },
+        credentials: 'same-origin',
+        body: JSON.stringify(requestData)
+    })
+    .then(response => response.json())
+    .then(data => {
+        if (data.success) {
+            alert('تم إنشاء طلب الإرجاع بنجاح وتم إرساله للمدير للموافقة');
+            bootstrap.Modal.getInstance(document.getElementById('createReturnModal')).hide();
+            bootstrap.Modal.getInstance(document.getElementById('customerPurchaseHistoryModal')).hide();
+            // Reload page or refresh table
+            location.reload();
+        } else {
+            alert('خطأ: ' + (data.message || 'حدث خطأ أثناء إنشاء طلب الإرجاع'));
+        }
+    })
+    .catch(error => {
+        console.error('Error:', error);
+        alert('حدث خطأ في الاتصال بالخادم');
+    });
+}
+</script>
+<?php endif; ?>
+
 <?php endif; // end if ($section === 'company') from line 738 ?>
 
 <?php if ($section === 'delegates' && !$isSalesUser): ?>
@@ -2533,6 +3047,15 @@ document.addEventListener('DOMContentLoaded', function () {
                                             data-customer-name="<?php echo htmlspecialchars($customer['name']); ?>"
                                         >
                                             <i class="bi bi-journal-text me-1"></i>سجل المشتريات
+                                        </button>
+                                        <button
+                                            type="button"
+                                            class="btn btn-sm btn-outline-primary js-customer-purchase-history"
+                                            data-customer-id="<?php echo (int)$customer['id']; ?>"
+                                            data-customer-name="<?php echo htmlspecialchars($customer['name']); ?>"
+                                            title="سجل مشتريات العميل - إنشاء مرتجع"
+                                        >
+                                            <i class="bi bi-arrow-return-left me-1"></i>إرجاع
                                         </button>
                                         <?php endif; ?>
                                     </div>

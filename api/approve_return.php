@@ -12,6 +12,9 @@ require_once __DIR__ . '/../includes/auth.php';
 require_once __DIR__ . '/../includes/return_processor.php';
 require_once __DIR__ . '/../includes/approval_system.php';
 require_once __DIR__ . '/../includes/audit_log.php';
+require_once __DIR__ . '/../includes/return_inventory_manager.php';
+require_once __DIR__ . '/../includes/return_financial_processor.php';
+require_once __DIR__ . '/../includes/return_salary_deduction.php';
 
 header('Content-Type: application/json; charset=utf-8');
 
@@ -59,17 +62,23 @@ try {
          FROM returns r
          LEFT JOIN customers c ON r.customer_id = c.id
          LEFT JOIN users u ON r.sales_rep_id = u.id
-         WHERE r.id = ? AND r.status = 'pending'",
+         WHERE r.id = ?",
         [$returnId]
     );
     
     if (!$return) {
         http_response_code(404);
-        echo json_encode(['success' => false, 'message' => 'طلب المرتجع غير موجود أو تمت معالجته بالفعل'], JSON_UNESCAPED_UNICODE);
+        echo json_encode(['success' => false, 'message' => 'طلب المرتجع غير موجود'], JSON_UNESCAPED_UNICODE);
         exit;
     }
     
     if ($action === 'reject') {
+        // Check if return can be rejected (only pending returns)
+        if ($return['status'] !== 'pending') {
+            http_response_code(400);
+            echo json_encode(['success' => false, 'message' => 'لا يمكن رفض مرتجع تمت معالجته بالفعل'], JSON_UNESCAPED_UNICODE);
+            exit;
+        }
         // Reject return request
         $conn->begin_transaction();
         
@@ -80,8 +89,9 @@ try {
             );
             
             // Reject approval request
+            $entityColumn = getApprovalsEntityColumn();
             $approval = $db->queryOne(
-                "SELECT id FROM approvals WHERE type = 'return_request' AND entity_id = ? AND status = 'pending'",
+                "SELECT id FROM approvals WHERE type = 'return_request' AND {$entityColumn} = ? AND status = 'pending'",
                 [$returnId]
             );
             
@@ -109,6 +119,13 @@ try {
     }
     
     // Approve return request
+    // Check if return can be approved (only pending returns)
+    if ($return['status'] !== 'pending') {
+        http_response_code(400);
+        echo json_encode(['success' => false, 'message' => 'لا يمكن الموافقة على مرتجع تمت معالجته بالفعل'], JSON_UNESCAPED_UNICODE);
+        exit;
+    }
+    
     $conn->begin_transaction();
     
     try {
@@ -130,68 +147,35 @@ try {
         $returnAmount = (float)$return['refund_amount'];
         $customerBalance = (float)($return['customer_balance'] ?? 0);
         
-        // Calculate return impact
-        $impact = calculateReturnImpact($customerBalance, $returnAmount);
-        
-        $financialResult = null;
-        $penaltyResult = null;
-        
-        // Apply business logic based on case
-        switch ($impact['case']) {
-            case 1: // Customer owes money (customerDebt > 0)
-                $financialResult = applyCustomerDebtRules($customerId, $returnAmount, $impact['customerDebt']);
-                break;
-                
-            case 2: // Customer has credit (customerCredit > 0)
-                $financialResult = applyCustomerCreditRules($customerId, $returnAmount, $impact['customerCredit']);
-                break;
-                
-            case 3: // Customer has zero debt and zero credit
-                // Apply 2% penalty to sales rep
-                if ($salesRepId > 0) {
-                    $penaltyResult = applySalesRepPenalty($salesRepId, $returnAmount);
-                    if (!$penaltyResult['success']) {
-                        throw new RuntimeException('فشل تطبيق عقوبة المندوب: ' . ($penaltyResult['message'] ?? 'خطأ غير معروف'));
-                    }
-                }
-                $financialResult = [
-                    'success' => true,
-                    'newBalance' => $customerBalance,
-                    'message' => 'لا يوجد تغيير في رصيد العميل - تم خصم 2% من راتب المندوب'
-                ];
-                break;
-        }
-        
-        if (!$financialResult || !($financialResult['success'] ?? false)) {
-            throw new RuntimeException('فشل تطبيق قواعد الرصيد: ' . ($financialResult['message'] ?? 'خطأ غير معروف'));
-        }
-        
-        // Move inventory to salesman car stock
-        $itemsForInventory = [];
-        foreach ($returnItems as $item) {
-            $itemsForInventory[] = [
-                'product_id' => (int)$item['product_id'],
-                'quantity' => (float)$item['quantity'],
-                'unit_price' => (float)$item['unit_price'],
-                'batch_number' => $item['batch_number'] ?? null,
-                'batch_number_id' => isset($item['batch_number_id']) ? (int)$item['batch_number_id'] : null,
-            ];
-        }
-        
-        $inventoryResult = moveInventoryToSalesmanCar($itemsForInventory, $salesRepId, $currentUser['id'], null);
-        if (!$inventoryResult['success']) {
-            throw new RuntimeException('فشل نقل المخزون: ' . ($inventoryResult['message'] ?? 'خطأ غير معروف'));
-        }
-        
-        // Update return status
+        // Update return status to approved first (before processing)
         $db->execute(
             "UPDATE returns SET status = 'approved', approved_by = ?, approved_at = NOW(), notes = ? WHERE id = ?",
             [$currentUser['id'], $notes ?: null, $returnId]
         );
         
+        // Process financials using new system
+        $financialResult = processReturnFinancials($returnId, $currentUser['id']);
+        if (!$financialResult['success']) {
+            throw new RuntimeException('فشل معالجة التسوية المالية: ' . ($financialResult['message'] ?? 'خطأ غير معروف'));
+        }
+        
+        // Return products to inventory using new system
+        $inventoryResult = returnProductsToVehicleInventory($returnId, $currentUser['id']);
+        if (!$inventoryResult['success']) {
+            throw new RuntimeException('فشل إرجاع المنتجات للمخزون: ' . ($inventoryResult['message'] ?? 'خطأ غير معروف'));
+        }
+        
+        // Apply salary deduction using new system
+        $penaltyResult = applyReturnSalaryDeduction($returnId, $salesRepId, $currentUser['id']);
+        if (!$penaltyResult['success'] && $penaltyResult['deduction_amount'] > 0) {
+            // Log but don't fail if penalty fails (it's non-critical)
+            error_log('Warning: Failed to apply salary deduction: ' . ($penaltyResult['message'] ?? ''));
+        }
+        
         // Approve approval request
+        $entityColumn = getApprovalsEntityColumn();
         $approval = $db->queryOne(
-            "SELECT id FROM approvals WHERE type = 'return_request' AND entity_id = ? AND status = 'pending'",
+            "SELECT id FROM approvals WHERE type = 'return_request' AND {$entityColumn} = ? AND status = 'pending'",
             [$returnId]
         );
         
@@ -201,26 +185,28 @@ try {
         
         // Build financial note
         $financialNote = '';
-        if ($impact['case'] === 1) {
-            $debtReduced = $financialResult['debtReduced'] ?? 0;
-            $creditAdded = $financialResult['creditAdded'] ?? 0;
-            if ($creditAdded > 0) {
-                $financialNote = "تم خصم {$debtReduced} ج.م من دين العميل وإضافة {$creditAdded} ج.م لرصيده الدائن";
-            } else {
-                $financialNote = "تم خصم {$debtReduced} ج.م من دين العميل";
+        $debtReduction = $financialResult['debt_reduction'] ?? 0;
+        $creditAdded = $financialResult['credit_added'] ?? 0;
+        $deductionAmount = $penaltyResult['deduction_amount'] ?? 0;
+        
+        if ($debtReduction > 0 && $creditAdded > 0) {
+            $financialNote = sprintf("تم خصم %.2f ج.م من دين العميل وإضافة %.2f ج.م لرصيده الدائن", $debtReduction, $creditAdded);
+        } elseif ($debtReduction > 0) {
+            $financialNote = sprintf("تم خصم %.2f ج.م من دين العميل", $debtReduction);
+        } elseif ($creditAdded > 0) {
+            $financialNote = sprintf("تم إضافة %.2f ج.م لرصيد العميل الدائن", $creditAdded);
+        }
+        
+        if ($deductionAmount > 0) {
+            if ($financialNote) {
+                $financialNote .= "\n";
             }
-        } elseif ($impact['case'] === 2) {
-            $creditAdded = $financialResult['creditAdded'] ?? $returnAmount;
-            $financialNote = "تم إضافة {$creditAdded} ج.م لرصيد العميل الدائن";
-        } elseif ($impact['case'] === 3) {
-            $penaltyAmount = $penaltyResult['penaltyAmount'] ?? ($returnAmount * 0.02);
-            $financialNote = "تم خصم 2% ({$penaltyAmount} ج.م) من راتب المندوب - لا يوجد تغيير في رصيد العميل";
+            $financialNote .= sprintf("تم خصم 2%% (%.2f ج.م) من راتب المندوب", $deductionAmount);
         }
         
         logAudit($currentUser['id'], 'approve_return', 'returns', $returnId, null, [
             'return_number' => $return['return_number'],
             'return_amount' => $returnAmount,
-            'case' => $impact['case'],
             'financial_result' => $financialResult,
             'penalty_result' => $penaltyResult,
             'inventory_result' => $inventoryResult,
@@ -233,8 +219,8 @@ try {
             'success' => true,
             'message' => 'تمت الموافقة على طلب المرتجع بنجاح',
             'financial_note' => $financialNote,
-            'new_balance' => $financialResult['newBalance'] ?? $customerBalance,
-            'penalty_applied' => $penaltyResult ? $penaltyResult['penaltyAmount'] : 0,
+            'new_balance' => $financialResult['new_balance'] ?? $customerBalance,
+            'penalty_applied' => $penaltyResult['deduction_amount'] ?? 0,
         ], JSON_UNESCAPED_UNICODE);
         
     } catch (Throwable $e) {

@@ -85,8 +85,8 @@ switch ($role) {
                 'badge' => null
             ],
             [
-                'title' => 'المرتجعات والاستبدال',
-                'icon' => 'bi-arrow-left-right',
+                'title' => 'المرتجعات',
+                'icon' => 'bi-arrow-return-left',
                 'url' => $baseUrl . 'manager.php?page=returns',
                 'active' => (isset($_GET['page']) && $_GET['page'] === 'returns'),
                 'badge' => null
