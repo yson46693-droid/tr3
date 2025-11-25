@@ -93,6 +93,83 @@ class Database {
                 error_log('PWA splash sessions table migration error: ' . $migrationError->getMessage());
             }
 
+            // التحقق من وجود أعمدة created_from_pos و created_by_admin في جدول customers
+            try {
+                $tableCheck = $this->connection->query("SHOW TABLES LIKE 'customers'");
+                if ($tableCheck instanceof mysqli_result && $tableCheck->num_rows > 0) {
+                    $createdFromPosCheck = $this->connection->query("SHOW COLUMNS FROM `customers` LIKE 'created_from_pos'");
+                    $createdByAdminCheck = $this->connection->query("SHOW COLUMNS FROM `customers` LIKE 'created_by_admin'");
+                    $repIdCheck = $this->connection->query("SHOW COLUMNS FROM `customers` LIKE 'rep_id'");
+                    
+                    $needsRepId = !($repIdCheck instanceof mysqli_result && $repIdCheck->num_rows > 0);
+                    $needsCreatedFromPos = !($createdFromPosCheck instanceof mysqli_result && $createdFromPosCheck->num_rows > 0);
+                    $needsCreatedByAdmin = !($createdByAdminCheck instanceof mysqli_result && $createdByAdminCheck->num_rows > 0);
+                    
+                    if ($repIdCheck instanceof mysqli_result) {
+                        $repIdCheck->free();
+                    }
+                    if ($createdFromPosCheck instanceof mysqli_result) {
+                        $createdFromPosCheck->free();
+                    }
+                    if ($createdByAdminCheck instanceof mysqli_result) {
+                        $createdByAdminCheck->free();
+                    }
+                    
+                    if ($needsRepId || $needsCreatedFromPos || $needsCreatedByAdmin) {
+                        // إضافة الأعمدة واحداً تلو الآخر بالترتيب الصحيح
+                        if ($needsRepId) {
+                            $this->connection->query("ALTER TABLE `customers` ADD COLUMN `rep_id` INT NULL AFTER `id`");
+                        }
+                        if ($needsCreatedFromPos) {
+                            // تحديد العمود الذي يجب أن يأتي بعده
+                            $afterColumn = $needsRepId ? 'rep_id' : 'id';
+                            $this->connection->query("ALTER TABLE `customers` ADD COLUMN `created_from_pos` TINYINT(1) NOT NULL DEFAULT 0 AFTER `{$afterColumn}`");
+                        }
+                        if ($needsCreatedByAdmin) {
+                            // تحديد العمود الذي يجب أن يأتي بعده
+                            if (!$needsCreatedFromPos) {
+                                $afterColumn = $needsRepId ? 'rep_id' : 'id';
+                            } else {
+                                $afterColumn = 'created_from_pos';
+                            }
+                            $this->connection->query("ALTER TABLE `customers` ADD COLUMN `created_by_admin` TINYINT(1) NOT NULL DEFAULT 0 AFTER `{$afterColumn}`");
+                        }
+                        
+                        // إضافة الأعمدة تمت، الآن نضيف المفاتيح والتحديثات
+                        if ($needsRepId) {
+                            // إضافة مفتاح rep_id إذا تم إضافته
+                            try {
+                                $indexCheck = $this->connection->query("SHOW INDEX FROM `customers` WHERE Key_name = 'rep_id'");
+                                if (!($indexCheck instanceof mysqli_result && $indexCheck->num_rows > 0)) {
+                                    $this->connection->query("ALTER TABLE `customers` ADD KEY `rep_id` (`rep_id`)");
+                                }
+                                if ($indexCheck instanceof mysqli_result) {
+                                    $indexCheck->free();
+                                }
+                            } catch (Throwable $indexError) {
+                                error_log('Customers rep_id index migration error: ' . $indexError->getMessage());
+                            }
+                            
+                            // تحديث rep_id للعملاء الموجودين
+                            try {
+                                $this->connection->query("
+                                    UPDATE customers c
+                                    INNER JOIN users u ON c.rep_id IS NULL AND c.created_by = u.id AND u.role = 'sales'
+                                    SET c.rep_id = u.id
+                                ");
+                            } catch (Throwable $updateError) {
+                                error_log('Customers rep_id update error: ' . $updateError->getMessage());
+                            }
+                        }
+                    }
+                }
+                if ($tableCheck instanceof mysqli_result) {
+                    $tableCheck->free();
+                }
+            } catch (Throwable $customerFlagsError) {
+                error_log('Customers flags migration error: ' . $customerFlagsError->getMessage());
+            }
+
             $this->ensureVehicleInventoryAutoUpgrade();
             
         } catch (Exception $e) {
