@@ -250,10 +250,11 @@ if (ob_get_level() > 0) {
         }
         
         #pageLoader.hidden {
-            opacity: 0;
-            visibility: hidden;
+            opacity: 0 !important;
+            visibility: hidden !important;
             pointer-events: none !important;
             z-index: -1 !important;
+            display: none !important;
         }
         
         #pageLoader:not(.hidden) {
@@ -262,9 +263,30 @@ if (ob_get_level() > 0) {
         
         /* التأكد من أن pageLoader لا يمنع النقرات بعد إخفائه */
         #pageLoader[style*="display: none"],
-        #pageLoader.hidden[style*="display: none"] {
+        #pageLoader.hidden[style*="display: none"],
+        #pageLoader[style*="display:none"] {
             pointer-events: none !important;
             z-index: -1 !important;
+            display: none !important;
+        }
+        
+        /* التأكد من أن الأزرار والعناصر التفاعلية قابلة للنقر */
+        .topbar-action,
+        .topbar-action *,
+        button,
+        input[type="checkbox"],
+        input[type="button"],
+        input[type="submit"],
+        a.topbar-action {
+            pointer-events: auto !important;
+            z-index: auto !important;
+            position: relative !important;
+        }
+        
+        /* التأكد من أن topbar قابلة للنقر */
+        .homeline-topbar,
+        .homeline-topbar * {
+            pointer-events: auto !important;
         }
         
         /* إصلاح Modal - قيم z-index صحيحة */
