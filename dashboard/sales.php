@@ -756,55 +756,10 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && trim($_P
                             handlePrintableButtons();
                         }
 
-                        function initTabs() {
-                            // تهيئة التبويبات باستخدام Bootstrap
-                            const tabButtons = document.querySelectorAll('#salesCollectionsTabs button[data-bs-toggle="tab"]');
-                            tabButtons.forEach(function(button) {
-                                button.addEventListener('click', function(e) {
-                                    e.preventDefault();
-                                    const targetId = this.getAttribute('data-bs-target');
-                                    if (targetId) {
-                                        // إخفاء جميع التبويبات
-                                        const allTabPanes = document.querySelectorAll('.tab-pane');
-                                        allTabPanes.forEach(function(pane) {
-                                            pane.classList.remove('show', 'active');
-                                        });
-                                        
-                                        // إزالة active من جميع الأزرار
-                                        tabButtons.forEach(function(btn) {
-                                            btn.classList.remove('active');
-                                            btn.setAttribute('aria-selected', 'false');
-                                        });
-                                        
-                                        // إظهار التبويب المحدد
-                                        const targetPane = document.querySelector(targetId);
-                                        if (targetPane) {
-                                            targetPane.classList.add('show', 'active');
-                                        }
-                                        
-                                        // تفعيل الزر المحدد
-                                        this.classList.add('active');
-                                        this.setAttribute('aria-selected', 'true');
-                                    }
-                                });
-                            });
-                        }
-
-                        function waitForBootstrap() {
-                            if (typeof bootstrap !== 'undefined' && typeof bootstrap.Tab !== 'undefined') {
-                                initTabs();
-                                initPrintableReports();
-                            } else {
-                                setTimeout(waitForBootstrap, 100);
-                            }
-                        }
-
                         if (document.readyState === 'loading') {
-                            document.addEventListener('DOMContentLoaded', function() {
-                                waitForBootstrap();
-                            });
+                            document.addEventListener('DOMContentLoaded', initPrintableReports);
                         } else {
-                            waitForBootstrap();
+                            initPrintableReports();
                         }
 
                         window.openPrintableReport = openPrintableReport;
@@ -1426,76 +1381,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && trim($_P
             });
         }
 
-        // تهيئة جميع الأزرار والوظائف بعد تحميل الصفحة
-        function initAllButtons() {
-            // تهيئة أزرار Modals
-            const modalButtons = document.querySelectorAll('[data-bs-toggle="modal"]');
-            modalButtons.forEach(function(button) {
-                button.addEventListener('click', function(e) {
-                    const targetId = this.getAttribute('data-bs-target');
-                    if (targetId && typeof bootstrap !== 'undefined') {
-                        const modalElement = document.querySelector(targetId);
-                        if (modalElement) {
-                            const modal = new bootstrap.Modal(modalElement);
-                            modal.show();
-                        }
-                    }
-                });
-            });
-
-            // تهيئة أزرار التبويبات مرة أخرى للتأكد
-            const tabButtons = document.querySelectorAll('#salesCollectionsTabs button[data-bs-toggle="tab"]');
-            tabButtons.forEach(function(button) {
-                if (!button.hasAttribute('data-listener-attached')) {
-                    button.setAttribute('data-listener-attached', 'true');
-                    button.addEventListener('click', function(e) {
-                        e.preventDefault();
-                        const targetId = this.getAttribute('data-bs-target');
-                        if (targetId) {
-                            // استخدام Bootstrap Tab API إذا كان متاحاً
-                            if (typeof bootstrap !== 'undefined' && typeof bootstrap.Tab !== 'undefined') {
-                                const tab = new bootstrap.Tab(this);
-                                tab.show();
-                            } else {
-                                // Fallback: التبديل اليدوي
-                                const allTabPanes = document.querySelectorAll('.tab-pane');
-                                allTabPanes.forEach(function(pane) {
-                                    pane.classList.remove('show', 'active');
-                                });
-                                
-                                tabButtons.forEach(function(btn) {
-                                    btn.classList.remove('active');
-                                    btn.setAttribute('aria-selected', 'false');
-                                });
-                                
-                                const targetPane = document.querySelector(targetId);
-                                if (targetPane) {
-                                    targetPane.classList.add('show', 'active');
-                                }
-                                
-                                this.classList.add('active');
-                                this.setAttribute('aria-selected', 'true');
-                            }
-                        }
-                    });
-                }
-            });
-        }
-
-        // انتظار تحميل Bootstrap ثم تهيئة الأزرار
-        function waitAndInit() {
-            if (typeof bootstrap !== 'undefined') {
-                initAllButtons();
-            } else {
-                setTimeout(waitAndInit, 100);
-            }
-        }
-
-        if (document.readyState === 'loading') {
-            document.addEventListener('DOMContentLoaded', waitAndInit);
-        } else {
-            waitAndInit();
-        }
     })();
 </script>
 <script src="<?php echo ASSETS_URL; ?>js/attendance_notifications.js"></script>
