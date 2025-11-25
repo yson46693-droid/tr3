@@ -1240,8 +1240,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && trim($_P
                 }
                 
                 // تعطيل الزر أثناء المعالجة
-                generateSalesReportBtn.disabled = true;
-                generateSalesReportBtn.innerHTML = '<span class="spinner-border spinner-border-sm me-2"></span>جاري الإنشاء...';
+                newBtn.disabled = true;
+                newBtn.innerHTML = '<span class="spinner-border spinner-border-sm me-2"></span>جاري الإنشاء...';
                 
                 // إرسال الطلب
                 const url = basePath + '/api/generate_sales_report.php?date_from=' + encodeURIComponent(dateFrom) + '&date_to=' + encodeURIComponent(dateTo);
@@ -1251,8 +1251,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && trim($_P
                 
                 if (reportWindow) {
                     // إعادة تعيين الزر
-                    generateSalesReportBtn.disabled = false;
-                    generateSalesReportBtn.innerHTML = '<i class="bi bi-file-earmark-pdf me-2"></i>إنشاء التقرير';
+                    newBtn.disabled = false;
+                    newBtn.innerHTML = '<i class="bi bi-file-earmark-pdf me-2"></i>إنشاء التقرير';
                     
                     // إغلاق النموذج
                     const modalElement = document.getElementById('generateSalesReportModal');
@@ -1294,8 +1294,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && trim($_P
                 }
                 
                 // تعطيل الزر أثناء المعالجة
-                generateCollectionsReportBtn.disabled = true;
-                generateCollectionsReportBtn.innerHTML = '<span class="spinner-border spinner-border-sm me-2"></span>جاري الإنشاء...';
+                newCollectionsBtn.disabled = true;
+                newCollectionsBtn.innerHTML = '<span class="spinner-border spinner-border-sm me-2"></span>جاري الإنشاء...';
                 
                 // إرسال الطلب
                 const url = basePath + '/api/generate_collections_report.php?date_from=' + encodeURIComponent(dateFrom) + '&date_to=' + encodeURIComponent(dateTo);
@@ -1305,8 +1305,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && trim($_P
                 
                 if (reportWindow) {
                     // إعادة تعيين الزر
-                    generateCollectionsReportBtn.disabled = false;
-                    generateCollectionsReportBtn.innerHTML = '<i class="bi bi-file-earmark-pdf me-2"></i>إنشاء التقرير';
+                    newCollectionsBtn.disabled = false;
+                    newCollectionsBtn.innerHTML = '<i class="bi bi-file-earmark-pdf me-2"></i>إنشاء التقرير';
                     
                     // إغلاق النموذج
                     const modalElement = document.getElementById('generateCollectionsReportModal');
@@ -1325,6 +1325,99 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && trim($_P
             }
         }
         
+            // معالج إنشاء تقرير العميل - المبيعات
+            const generateCustomerSalesReportBtn = document.getElementById('generateCustomerSalesReportBtn');
+            
+            if (generateCustomerSalesReportBtn) {
+                const newCustomerSalesBtn = generateCustomerSalesReportBtn.cloneNode(true);
+                generateCustomerSalesReportBtn.parentNode.replaceChild(newCustomerSalesBtn, generateCustomerSalesReportBtn);
+                
+                newCustomerSalesBtn.addEventListener('click', function() {
+                    const customerId = document.getElementById('customerSalesReportCustomerId').value;
+                    
+                    if (!customerId) {
+                        alert('يرجى اختيار العميل');
+                        return;
+                    }
+                    
+                    // تعطيل الزر أثناء المعالجة
+                    newCustomerSalesBtn.disabled = true;
+                    newCustomerSalesBtn.innerHTML = '<span class="spinner-border spinner-border-sm me-2"></span>جاري الإنشاء...';
+                    
+                    // إرسال الطلب
+                    const url = basePath + '/api/generate_customer_sales_report.php?customer_id=' + encodeURIComponent(customerId);
+                    
+                    // فتح التقرير في نافذة منبثقة
+                    const reportWindow = window.open(url, 'customerSalesReport', 'width=1000,height=800,scrollbars=yes,resizable=yes');
+                    
+                    if (reportWindow) {
+                        // إعادة تعيين الزر
+                        newCustomerSalesBtn.disabled = false;
+                        newCustomerSalesBtn.innerHTML = '<i class="bi bi-file-earmark-pdf me-2"></i>إنشاء التقرير';
+                        
+                        // إغلاق النموذج
+                        const modalElement = document.getElementById('generateCustomerSalesReportModal');
+                        if (modalElement && typeof bootstrap !== 'undefined') {
+                            const modal = bootstrap.Modal.getInstance(modalElement);
+                            if (modal) {
+                                modal.hide();
+                            }
+                        }
+                    } else {
+                        alert('يرجى السماح للموقع بفتح النوافذ المنبثقة');
+                        newCustomerSalesBtn.disabled = false;
+                        newCustomerSalesBtn.innerHTML = '<i class="bi bi-file-earmark-pdf me-2"></i>إنشاء التقرير';
+                    }
+                });
+            }
+
+            // معالج إنشاء تقرير العميل - التحصيلات
+            const generateCustomerCollectionsReportBtn = document.getElementById('generateCustomerCollectionsReportBtn');
+            
+            if (generateCustomerCollectionsReportBtn) {
+                const newCustomerCollectionsBtn = generateCustomerCollectionsReportBtn.cloneNode(true);
+                generateCustomerCollectionsReportBtn.parentNode.replaceChild(newCustomerCollectionsBtn, generateCustomerCollectionsReportBtn);
+                
+                newCustomerCollectionsBtn.addEventListener('click', function() {
+                    const customerId = document.getElementById('customerCollectionsReportCustomerId').value;
+                    
+                    if (!customerId) {
+                        alert('يرجى اختيار العميل');
+                        return;
+                    }
+                    
+                    // تعطيل الزر أثناء المعالجة
+                    newCustomerCollectionsBtn.disabled = true;
+                    newCustomerCollectionsBtn.innerHTML = '<span class="spinner-border spinner-border-sm me-2"></span>جاري الإنشاء...';
+                    
+                    // إرسال الطلب
+                    const url = basePath + '/api/generate_customer_collections_report.php?customer_id=' + encodeURIComponent(customerId);
+                    
+                    // فتح التقرير في نافذة منبثقة
+                    const reportWindow = window.open(url, 'customerCollectionsReport', 'width=1000,height=800,scrollbars=yes,resizable=yes');
+                    
+                    if (reportWindow) {
+                        // إعادة تعيين الزر
+                        newCustomerCollectionsBtn.disabled = false;
+                        newCustomerCollectionsBtn.innerHTML = '<i class="bi bi-file-earmark-pdf me-2"></i>إنشاء التقرير';
+                        
+                        // إغلاق النموذج
+                        const modalElement = document.getElementById('generateCustomerCollectionsReportModal');
+                        if (modalElement && typeof bootstrap !== 'undefined') {
+                            const modal = bootstrap.Modal.getInstance(modalElement);
+                            if (modal) {
+                                modal.hide();
+                            }
+                        }
+                    } else {
+                        alert('يرجى السماح للموقع بفتح النوافذ المنبثقة');
+                        newCustomerCollectionsBtn.disabled = false;
+                        newCustomerCollectionsBtn.innerHTML = '<i class="bi bi-file-earmark-pdf me-2"></i>إنشاء التقرير';
+                    }
+                });
+            }
+        }
+        
         // تشغيل الكود بعد تحميل الصفحة
         if (document.readyState === 'loading') {
             document.addEventListener('DOMContentLoaded', function() {
@@ -1332,86 +1425,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && trim($_P
             });
         } else {
             setTimeout(initReportButtons, 100);
-        }
-
-        // معالج إنشاء تقرير العميل - المبيعات
-        const generateCustomerSalesReportBtn = document.getElementById('generateCustomerSalesReportBtn');
-        
-        if (generateCustomerSalesReportBtn) {
-            generateCustomerSalesReportBtn.addEventListener('click', function() {
-                const customerId = document.getElementById('customerSalesReportCustomerId').value;
-                
-                if (!customerId) {
-                    alert('يرجى اختيار العميل');
-                    return;
-                }
-                
-                // تعطيل الزر أثناء المعالجة
-                generateCustomerSalesReportBtn.disabled = true;
-                generateCustomerSalesReportBtn.innerHTML = '<span class="spinner-border spinner-border-sm me-2"></span>جاري الإنشاء...';
-                
-                // إرسال الطلب
-                const url = basePath + '/api/generate_customer_sales_report.php?customer_id=' + encodeURIComponent(customerId);
-                
-                // فتح التقرير في نافذة منبثقة
-                const reportWindow = window.open(url, 'customerSalesReport', 'width=1000,height=800,scrollbars=yes,resizable=yes');
-                
-                if (reportWindow) {
-                    // إعادة تعيين الزر
-                    generateCustomerSalesReportBtn.disabled = false;
-                    generateCustomerSalesReportBtn.innerHTML = '<i class="bi bi-file-earmark-pdf me-2"></i>إنشاء التقرير';
-                    
-                    // إغلاق النموذج
-                    const modal = bootstrap.Modal.getInstance(document.getElementById('generateCustomerSalesReportModal'));
-                    if (modal) {
-                        modal.hide();
-                    }
-                } else {
-                    alert('يرجى السماح للموقع بفتح النوافذ المنبثقة');
-                    generateCustomerSalesReportBtn.disabled = false;
-                    generateCustomerSalesReportBtn.innerHTML = '<i class="bi bi-file-earmark-pdf me-2"></i>إنشاء التقرير';
-                }
-            });
-        }
-
-        // معالج إنشاء تقرير العميل - التحصيلات
-        const generateCustomerCollectionsReportBtn = document.getElementById('generateCustomerCollectionsReportBtn');
-        
-        if (generateCustomerCollectionsReportBtn) {
-            generateCustomerCollectionsReportBtn.addEventListener('click', function() {
-                const customerId = document.getElementById('customerCollectionsReportCustomerId').value;
-                
-                if (!customerId) {
-                    alert('يرجى اختيار العميل');
-                    return;
-                }
-                
-                // تعطيل الزر أثناء المعالجة
-                generateCustomerCollectionsReportBtn.disabled = true;
-                generateCustomerCollectionsReportBtn.innerHTML = '<span class="spinner-border spinner-border-sm me-2"></span>جاري الإنشاء...';
-                
-                // إرسال الطلب
-                const url = basePath + '/api/generate_customer_collections_report.php?customer_id=' + encodeURIComponent(customerId);
-                
-                // فتح التقرير في نافذة منبثقة
-                const reportWindow = window.open(url, 'customerCollectionsReport', 'width=1000,height=800,scrollbars=yes,resizable=yes');
-                
-                if (reportWindow) {
-                    // إعادة تعيين الزر
-                    generateCustomerCollectionsReportBtn.disabled = false;
-                    generateCustomerCollectionsReportBtn.innerHTML = '<i class="bi bi-file-earmark-pdf me-2"></i>إنشاء التقرير';
-                    
-                    // إغلاق النموذج
-                    const modal = bootstrap.Modal.getInstance(document.getElementById('generateCustomerCollectionsReportModal'));
-                    if (modal) {
-                        modal.hide();
-                    }
-                } else {
-                    alert('يرجى السماح للموقع بفتح النوافذ المنبثقة');
-                    generateCustomerCollectionsReportBtn.disabled = false;
-                    generateCustomerCollectionsReportBtn.innerHTML = '<i class="bi bi-file-earmark-pdf me-2"></i>إنشاء التقرير';
-                }
-            });
         }
 
     })();
