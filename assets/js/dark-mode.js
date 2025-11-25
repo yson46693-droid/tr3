@@ -61,24 +61,38 @@
         const darkModeToggles = document.querySelectorAll('#darkModeToggle');
         
         darkModeToggles.forEach(toggle => {
-            // إزالة أي event listeners سابقة لتجنب التكرار
-            const newToggle = toggle.cloneNode(true);
-            toggle.parentNode.replaceChild(newToggle, toggle);
+            if (!toggle || !toggle.parentNode) {
+                return; // تجاهل إذا كان العنصر غير موجود
+            }
             
-            // إضافة event listener جديد
-            newToggle.addEventListener('change', function(e) {
-                e.stopPropagation();
-                toggleDarkMode();
-            });
-            
-            // إضافة click listener أيضاً للتأكد
-            newToggle.addEventListener('click', function(e) {
-                e.stopPropagation();
-            });
-            
-            // التأكد من أن pointer-events مفعلة
-            newToggle.style.pointerEvents = 'auto';
-            newToggle.style.cursor = 'pointer';
+            try {
+                // التحقق من وجود data-listener-added لتجنب إضافة listeners متعددة
+                if (toggle.hasAttribute('data-listener-added')) {
+                    return; // تم إضافة listeners بالفعل
+                }
+                
+                // إضافة event listener جديد
+                toggle.addEventListener('change', function(e) {
+                    e.stopPropagation();
+                    toggleDarkMode();
+                });
+                
+                // إضافة click listener أيضاً للتأكد
+                toggle.addEventListener('click', function(e) {
+                    e.stopPropagation();
+                });
+                
+                // التأكد من أن pointer-events مفعلة
+                if (toggle.style) {
+                    toggle.style.pointerEvents = 'auto';
+                    toggle.style.cursor = 'pointer';
+                }
+                
+                // وضع علامة أن listeners تم إضافتها
+                toggle.setAttribute('data-listener-added', 'true');
+            } catch (error) {
+                console.warn('Error attaching dark mode listeners:', error);
+            }
         });
     }
     

@@ -1480,40 +1480,44 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && trim($_P
             // إخفاء pageLoader أولاً
             ensurePageLoaderHidden();
             
-            // التأكد من أن جميع الأزرار قابلة للنقر
-            const buttons = document.querySelectorAll('button, a.topbar-action, input[type="checkbox"]');
-            buttons.forEach(function(btn) {
-                if (btn) {
-                    btn.style.pointerEvents = 'auto';
-                    btn.style.zIndex = 'auto';
-                }
-            });
-            
-            // التأكد من أن topbar قابلة للنقر
-            const topbar = document.querySelector('.homeline-topbar');
-            if (topbar) {
-                topbar.style.pointerEvents = 'auto';
-                topbar.style.zIndex = 'auto';
-            }
-            
-            // التأكد من أن darkModeToggle يعمل
-            const darkModeToggle = document.getElementById('darkModeToggle');
-            if (darkModeToggle) {
-                darkModeToggle.style.pointerEvents = 'auto';
-                darkModeToggle.style.cursor = 'pointer';
+            try {
+                // التأكد من أن جميع الأزرار قابلة للنقر
+                const buttons = document.querySelectorAll('button, a.topbar-action, input[type="checkbox"]');
+                buttons.forEach(function(btn) {
+                    if (btn && btn.style) {
+                        btn.style.pointerEvents = 'auto';
+                        btn.style.zIndex = 'auto';
+                    }
+                });
                 
-                // إضافة event listener مباشرة إذا لم يكن موجوداً
-                if (!darkModeToggle.hasAttribute('data-listener-added')) {
-                    darkModeToggle.setAttribute('data-listener-added', 'true');
-                    darkModeToggle.addEventListener('change', function() {
-                        if (typeof toggleDarkMode === 'function') {
-                            toggleDarkMode();
-                        }
-                    });
-                    darkModeToggle.addEventListener('click', function(e) {
-                        e.stopPropagation();
-                    });
+                // التأكد من أن topbar قابلة للنقر
+                const topbar = document.querySelector('.homeline-topbar');
+                if (topbar && topbar.style) {
+                    topbar.style.pointerEvents = 'auto';
+                    topbar.style.zIndex = 'auto';
                 }
+                
+                // التأكد من أن darkModeToggle يعمل
+                const darkModeToggle = document.getElementById('darkModeToggle');
+                if (darkModeToggle && darkModeToggle.style) {
+                    darkModeToggle.style.pointerEvents = 'auto';
+                    darkModeToggle.style.cursor = 'pointer';
+                    
+                    // إضافة event listener مباشرة إذا لم يكن موجوداً
+                    if (!darkModeToggle.hasAttribute('data-listener-added')) {
+                        darkModeToggle.setAttribute('data-listener-added', 'true');
+                        darkModeToggle.addEventListener('change', function() {
+                            if (typeof toggleDarkMode === 'function') {
+                                toggleDarkMode();
+                            }
+                        });
+                        darkModeToggle.addEventListener('click', function(e) {
+                            e.stopPropagation();
+                        });
+                    }
+                }
+            } catch (error) {
+                console.warn('Error fixing buttons interactivity:', error);
             }
         }
         
