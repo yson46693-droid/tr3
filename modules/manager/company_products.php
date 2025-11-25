@@ -143,9 +143,11 @@ try {
                 fp.unit_price,
                 fp.total_price,
                 CASE 
-                    WHEN fp.total_price IS NOT NULL AND fp.total_price > 0 THEN fp.total_price
-                    WHEN fp.unit_price IS NOT NULL AND fp.unit_price > 0 AND fp.quantity_produced > 0 
-                        THEN (fp.unit_price * fp.quantity_produced)
+                    WHEN fp.unit_price IS NOT NULL AND fp.unit_price > 0 
+                        THEN (fp.unit_price * COALESCE(fp.quantity_produced, 0))
+                    WHEN (fp.unit_price IS NULL OR fp.unit_price = 0)
+                         AND fp.total_price IS NOT NULL AND fp.total_price > 0 
+                        THEN fp.total_price
                     ELSE 0
                 END AS calculated_total_price,
                 GROUP_CONCAT(DISTINCT u.full_name ORDER BY u.full_name SEPARATOR ', ') AS workers
