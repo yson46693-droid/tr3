@@ -18,14 +18,18 @@
     }
 
     function enableModal(modal) {
-        if (!modal) {
+        if (!modal || !modal.style) {
             return;
         }
 
-        modal.style.pointerEvents = 'auto';
-        const focusable = modal.querySelector('input, select, textarea, button');
-        if (focusable) {
-            focusable.focus({ preventScroll: true });
+        try {
+            modal.style.pointerEvents = 'auto';
+            const focusable = modal.querySelector('input, select, textarea, button');
+            if (focusable) {
+                focusable.focus({ preventScroll: true });
+            }
+        } catch (error) {
+            console.warn('Error enabling modal:', error);
         }
     }
 

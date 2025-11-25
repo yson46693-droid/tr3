@@ -407,7 +407,9 @@ if (!defined('ACCESS_ALLOWED')) {
                     
                     // إزالة شاشة التحميل من DOM بعد انتهاء التأثير
                     setTimeout(function() {
-                        pageLoader.style.display = 'none';
+                        if (pageLoader && pageLoader.style) {
+                            pageLoader.style.display = 'none';
+                        }
                     }, 500);
                 }, 800); // تأخير 800ms لإظهار الشاشة
             }
@@ -492,8 +494,10 @@ if (!defined('ACCESS_ALLOWED')) {
             // استخدام pageshow event للتحقق من أن الصفحة تم تحميلها من جديد
             window.addEventListener('pageshow', function(event) {
                 // إذا كانت الصفحة من cache (back/forward)، لا تظهر splash screen
-                if (event.persisted) {
-                    pageLoader.style.display = 'none';
+                if (event.persisted && pageLoader) {
+                    if (pageLoader.style) {
+                        pageLoader.style.display = 'none';
+                    }
                     pageLoader.classList.add('hidden');
                     if (dashboardMain) {
                         dashboardMain.classList.add('content-fade-in');
@@ -508,9 +512,11 @@ if (!defined('ACCESS_ALLOWED')) {
                 
                 // إنشاء جلسة جديدة وإظهار splash screen
                 createSplashSession().then(function(token) {
-                    if (token) {
+                    if (token && pageLoader) {
                         pageLoader.classList.remove('hidden');
-                        pageLoader.style.display = 'flex';
+                        if (pageLoader.style) {
+                            pageLoader.style.display = 'flex';
+                        }
                         resetInactivityTimer();
                         
                         // إخفاء الشاشة بعد تحميل الصفحة
@@ -542,9 +548,11 @@ if (!defined('ACCESS_ALLOWED')) {
                 checkSplashSession(splashSessionToken).then(function(exists) {
                     clearTimeout(splashCheckTimeout);
                     
-                    if (exists) {
+                    if (exists && pageLoader) {
                         // الجلسة موجودة، لا تظهر splash screen
-                        pageLoader.style.display = 'none';
+                        if (pageLoader.style) {
+                            pageLoader.style.display = 'none';
+                        }
                         pageLoader.classList.add('hidden');
                         
                         if (dashboardMain) {
@@ -555,9 +563,11 @@ if (!defined('ACCESS_ALLOWED')) {
                     } else {
                         // الجلسة غير موجودة، أنشئ جلسة جديدة وأظهر splash screen
                         createSplashSession().then(function(token) {
-                            if (token) {
+                            if (token && pageLoader) {
                                 pageLoader.classList.remove('hidden');
-                                pageLoader.style.display = 'flex';
+                                if (pageLoader.style) {
+                                    pageLoader.style.display = 'flex';
+                                }
                                 resetInactivityTimer();
                                 
                                 if (document.readyState === 'complete') {
@@ -586,9 +596,11 @@ if (!defined('ACCESS_ALLOWED')) {
                 createSplashSession().then(function(token) {
                     clearTimeout(splashCheckTimeout);
                     
-                    if (token) {
+                    if (token && pageLoader) {
                         pageLoader.classList.remove('hidden');
-                        pageLoader.style.display = 'flex';
+                        if (pageLoader.style) {
+                            pageLoader.style.display = 'flex';
+                        }
                         resetInactivityTimer();
                         
                         if (document.readyState === 'complete') {
@@ -634,8 +646,12 @@ if (!defined('ACCESS_ALLOWED')) {
             
             // إخفاء شاشة التحميل عند فتح أي Modal
             document.addEventListener('show.bs.modal', function() {
-                pageLoader.classList.add('hidden');
-                pageLoader.style.display = 'none';
+                if (pageLoader) {
+                    pageLoader.classList.add('hidden');
+                    if (pageLoader.style) {
+                        pageLoader.style.display = 'none';
+                    }
+                }
             });
             
             // تعطيل شاشة التحميل عند التنقل بين الأقسام لتجنب التجميد
@@ -682,8 +698,12 @@ if (!defined('ACCESS_ALLOWED')) {
                     
                     isNavigating = true;
                     // إظهار شاشة التحميل فقط للتنقل بين الصفحات الرئيسية
-                    pageLoader.classList.remove('hidden');
-                    pageLoader.style.display = 'flex';
+                    if (pageLoader) {
+                        pageLoader.classList.remove('hidden');
+                        if (pageLoader.style) {
+                            pageLoader.style.display = 'flex';
+                        }
+                    }
                 }
             });
             
@@ -691,8 +711,12 @@ if (!defined('ACCESS_ALLOWED')) {
             window.addEventListener('pageshow', function(event) {
                 isNavigating = false;
                 if (event.persisted || (window.performance && window.performance.navigation.type === 2)) {
-                    pageLoader.classList.add('hidden');
-                    pageLoader.style.display = 'none';
+                    if (pageLoader) {
+                        pageLoader.classList.add('hidden');
+                        if (pageLoader.style) {
+                            pageLoader.style.display = 'none';
+                        }
+                    }
                 }
             });
             
@@ -750,12 +774,16 @@ if (!defined('ACCESS_ALLOWED')) {
                 
                 if (data && data.success && typeof data.count === 'number') {
                     const count = Math.max(0, parseInt(data.count, 10));
-                    badge.textContent = count.toString();
-                    if (count > 0) {
-                        badge.style.display = 'inline-block';
-                        badge.classList.add('badge-danger', 'bg-danger');
-                    } else {
-                        badge.style.display = 'none';
+                    if (badge) {
+                        badge.textContent = count.toString();
+                        if (badge.style) {
+                            if (count > 0) {
+                                badge.style.display = 'inline-block';
+                                badge.classList.add('badge-danger', 'bg-danger');
+                            } else {
+                                badge.style.display = 'none';
+                            }
+                        }
                     }
                 }
             } catch (error) {
