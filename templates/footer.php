@@ -98,8 +98,9 @@ if (!defined('ACCESS_ALLOWED')) {
     <script src="<?php echo $assetsUrl; ?>js/keyboard-shortcuts-global.js?v=<?php echo $cacheVersion; ?>"></script>
     <?php 
     // ملف التشخيص لصفحة المبيعات والتحصيلات
-    // التحقق من $page من $_GET أيضاً كـ fallback
+    // تحقق شامل من جميع الحالات الممكنة
     $currentPage = isset($page) ? $page : (isset($_GET['page']) ? $_GET['page'] : '');
+    $requestUri = isset($_SERVER['REQUEST_URI']) ? $_SERVER['REQUEST_URI'] : '';
     $shouldLoadDiagnostic = false;
     
     // تحقق شامل من جميع الحالات
@@ -109,17 +110,27 @@ if (!defined('ACCESS_ALLOWED')) {
         $shouldLoadDiagnostic = true;
     } elseif (isset($_GET['page']) && in_array($_GET['page'], ['sales', 'collections', 'sales_collections'], true)) {
         $shouldLoadDiagnostic = true;
-    } elseif (isset($_SERVER['REQUEST_URI']) && strpos($_SERVER['REQUEST_URI'], 'sales_collections') !== false) {
+    } elseif (strpos($requestUri, 'sales_collections') !== false) {
         $shouldLoadDiagnostic = true;
-    } elseif (isset($_SERVER['REQUEST_URI']) && (strpos($_SERVER['REQUEST_URI'], 'page=sales') !== false || strpos($_SERVER['REQUEST_URI'], 'page=collections') !== false)) {
+    } elseif (strpos($requestUri, 'page=sales') !== false || strpos($requestUri, 'page=collections') !== false) {
         $shouldLoadDiagnostic = true;
     }
     
-    if ($shouldLoadDiagnostic): ?>
+    // Debug: طباعة جميع القيم للتحقق
+    ?>
+    <script>
+        console.log('%c🔍 Debug - Checking Diagnostic Load Conditions', 'color: #0d6efd; font-weight: bold; font-size: 14px;');
+        console.log('🔍 $page variable:', '<?php echo isset($page) ? htmlspecialchars($page, ENT_QUOTES, 'UTF-8') : 'NOT SET'; ?>');
+        console.log('🔍 $_GET[page]:', '<?php echo htmlspecialchars($_GET['page'] ?? 'NOT SET', ENT_QUOTES, 'UTF-8'); ?>');
+        console.log('🔍 REQUEST_URI:', '<?php echo htmlspecialchars($requestUri, ENT_QUOTES, 'UTF-8'); ?>');
+        console.log('🔍 Should Load:', <?php echo $shouldLoadDiagnostic ? 'true' : 'false'; ?>);
+    </script>
+    <?php 
+    // تحميل الملف دائماً للتأكد من عمله - سنحذف هذا لاحقاً
+    // إذا كان الشرط لا يعمل، سنحمله مباشرة
+    if ($shouldLoadDiagnostic || strpos($requestUri, 'sales.php') !== false): ?>
         <script>
-            console.log('%c🔍 Debug in footer - Loading Diagnostic Script', 'color: #0d6efd; font-weight: bold; font-size: 14px;');
-            console.log('🔍 Current Page:', '<?php echo htmlspecialchars($currentPage, ENT_QUOTES, 'UTF-8'); ?>');
-            console.log('🔍 $_GET[page]:', '<?php echo htmlspecialchars($_GET['page'] ?? 'not set', ENT_QUOTES, 'UTF-8'); ?>');
+            console.log('%c✅ Loading Diagnostic Script', 'color: #28a745; font-weight: bold; font-size: 14px;');
             console.log('🔍 Assets URL:', '<?php echo htmlspecialchars($assetsUrl, ENT_QUOTES, 'UTF-8'); ?>');
             console.log('🔍 Full URL:', '<?php echo htmlspecialchars($assetsUrl . 'js/sales-collections-diagnostic.js', ENT_QUOTES, 'UTF-8'); ?>');
         </script>
@@ -128,10 +139,7 @@ if (!defined('ACCESS_ALLOWED')) {
                 onload="console.log('%c✅ تم تحميل ملف التشخيص بنجاح', 'color: #28a745; font-weight: bold; font-size: 14px;');"></script>
     <?php else: ?>
         <script>
-            console.log('%c⚠️ Debug in footer - Diagnostic NOT loaded', 'color: #ffc107; font-weight: bold;');
-            console.log('⚠️ Current Page:', '<?php echo htmlspecialchars($currentPage, ENT_QUOTES, 'UTF-8'); ?>');
-            console.log('⚠️ $_GET[page]:', '<?php echo htmlspecialchars($_GET['page'] ?? 'not set', ENT_QUOTES, 'UTF-8'); ?>');
-            console.log('⚠️ REQUEST_URI:', '<?php echo htmlspecialchars($_SERVER['REQUEST_URI'] ?? 'not set', ENT_QUOTES, 'UTF-8'); ?>');
+            console.log('%c⚠️ Diagnostic NOT loaded - Conditions not met', 'color: #ffc107; font-weight: bold;');
         </script>
     <?php endif; ?>
     <script>
