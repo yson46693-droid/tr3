@@ -996,24 +996,27 @@ function getVehicleInventory($vehicleId, $filters = []) {
         $categoryExpr,
         $unitExpr
     ) {
-        // استخدام finished_products.unit_price أولاً إذا كان هناك batch_id (البيانات الصحيحة من finished_products)
-        // ثم products.unit_price، ثم product_unit_price المحفوظ
+        // تفضيل سعر الوحدة من finished_products، مع احتساب سعر الوحدة من total_price عند غيابه
+        $fpUnitPriceExpr = "CASE 
+            WHEN fp.unit_price IS NOT NULL AND fp.unit_price > 0 THEN fp.unit_price
+            WHEN (fp.unit_price IS NULL OR fp.unit_price = 0)
+                 AND fp.total_price IS NOT NULL AND fp.total_price > 0
+                 AND fp.quantity_produced IS NOT NULL AND fp.quantity_produced > 0
+                THEN (fp.total_price / fp.quantity_produced)
+            ELSE NULL
+        END";
+        
+        // استخدام السعر المشتق من finished_products أولاً، ثم مصادر المنتجات الأخرى
         $unitPriceExpr = "COALESCE(
-            fp.unit_price,
+            {$fpUnitPriceExpr},
             p_fp.unit_price,
             p.unit_price,
             vi.product_unit_price,
             0
         )";
         
-        // استخدام finished_products.total_price إذا كان موجوداً وحسابه بناءً على الكمية في vehicle_inventory
-        // أو حساب total_value من unit_price × quantity
-        $totalValueExpr = "CASE 
-            WHEN fp.total_price IS NOT NULL AND fp.total_price > 0 AND fp.quantity_produced > 0 THEN
-                (fp.total_price / fp.quantity_produced) * vi.quantity
-            ELSE
-                (vi.quantity * {$unitPriceExpr})
-        END";
+        // حساب القيمة بالاعتماد على سعر الوحدة النهائي
+        $totalValueExpr = "(vi.quantity * {$unitPriceExpr})";
 
         return [
             "SELECT 
