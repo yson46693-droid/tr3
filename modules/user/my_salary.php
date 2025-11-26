@@ -699,6 +699,11 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['
     }
 }
 
+// التحقق من حالة الحضور/الانصراف
+$attendanceCheck = canRequestAdvance($currentUser['id']);
+$canRequestAdvance = $attendanceCheck['allowed'];
+$attendanceMessage = $attendanceCheck['message'] ?? '';
+
 // الحصول على بيانات الراتب الحالي
 $salaryData = getSalarySummary($currentUser['id'], $selectedMonth, $selectedYear);
 
@@ -1126,10 +1131,27 @@ $monthName = date('F', mktime(0, 0, 0, $selectedMonth, 1));
     transition: all 0.3s ease;
 }
 
-.btn-submit-advance:hover {
+.btn-submit-advance:hover:not(:disabled) {
     background: #1e7ae6;
     transform: translateY(-2px);
     box-shadow: 0 4px 12px rgba(45, 140, 240, 0.3);
+}
+
+.btn-submit-advance:disabled {
+    background: #9ca3af;
+    color: #6b7280;
+    cursor: not-allowed;
+    opacity: 0.6;
+}
+
+.disabled-input {
+    background-color: #f3f4f6 !important;
+    color: #9ca3af !important;
+    cursor: not-allowed !important;
+}
+
+.disabled-input::placeholder {
+    color: #d1d5db !important;
 }
 
 .advance-history-table {
@@ -1336,9 +1358,15 @@ if ($showSuccessFromSession): ?>
 </div>
 
 <!-- نموذج طلب السلفة -->
-<div class="advance-form-card">
+<div class="advance-form-card" <?php if (!$canRequestAdvance): ?>style="opacity: 0.6;"<?php endif; ?>>
     <h3>طلب سلفة</h3>
-    <form method="POST" id="advanceRequestForm" class="needs-validation" novalidate>
+    <?php if (!$canRequestAdvance): ?>
+    <div class="alert alert-warning alert-dismissible fade show mb-3">
+        <i class="bi bi-exclamation-triangle-fill me-2"></i>
+        <strong>يجب تسجيل الانصراف أولاً:</strong> <?php echo htmlspecialchars($attendanceMessage); ?>
+    </div>
+    <?php endif; ?>
+    <form method="POST" id="advanceRequestForm" class="needs-validation" novalidate <?php if (!$canRequestAdvance): ?>onsubmit="return false;"<?php endif; ?>>
         <input type="hidden" name="action" value="request_advance">
         <input type="hidden" name="month" value="<?php echo $selectedMonth; ?>">
         <input type="hidden" name="year" value="<?php echo $selectedYear; ?>">
@@ -1350,22 +1378,24 @@ if ($showSuccessFromSession): ?>
                 <label for="amount" class="form-label">مبلغ السلفة <span class="text-danger">*</span></label>
                 <input type="number" 
                        step="0.01" 
-                       class="form-control" 
+                       class="form-control <?php if (!$canRequestAdvance): ?>disabled-input<?php endif; ?>" 
                        id="amount" 
                        name="amount" 
                        min="0.01"
                        max="<?php echo $maxAdvance > 0 ? number_format($maxAdvance, 2, '.', '') : ''; ?>"
                        required 
-                       placeholder="أدخل المبلغ">
+                       placeholder="أدخل المبلغ"
+                       <?php if (!$canRequestAdvance): ?>disabled<?php endif; ?>>
                 <small class="text-muted">الحد الأقصى: <?php echo formatCurrency($maxAdvance); ?></small>
             </div>
             <div class="col-md-6">
                 <label for="reason" class="form-label">سبب الطلب <span class="text-muted">(اختياري)</span></label>
                 <input type="text" 
-                       class="form-control" 
+                       class="form-control <?php if (!$canRequestAdvance): ?>disabled-input<?php endif; ?>" 
                        id="reason" 
                        name="reason" 
-                       placeholder="اذكر سبب طلب السلفة">
+                       placeholder="اذكر سبب طلب السلفة"
+                       <?php if (!$canRequestAdvance): ?>disabled<?php endif; ?>>
             </div>
         </div>
         
@@ -1375,7 +1405,7 @@ if ($showSuccessFromSession): ?>
         </div>
         
         <div class="text-center">
-            <button type="submit" class="btn-submit-advance">
+            <button type="submit" class="btn-submit-advance" <?php if (!$canRequestAdvance): ?>disabled style="opacity: 0.5; cursor: not-allowed;"<?php endif; ?>>
                 <i class="bi bi-send-fill me-2"></i>إرسال طلب السلفة
             </button>
         </div>
@@ -1589,9 +1619,28 @@ document.addEventListener('DOMContentLoaded', function() {
         const originalButtonHtml = submitButton ? submitButton.innerHTML : '';
         
         advanceForm.addEventListener('submit', function(event) {
+            // التحقق من أن النموذج غير معطل
+            if (submitButton && submitButton.disabled) {
+                event.preventDefault();
+                event.stopImmediatePropagation();
+                
+                // عرض رسالة تذكير
+                if (alertContainer) {
+                    alertContainer.innerHTML = '';
+                    const warningAlert = document.createElement('div');
+                    warningAlert.className = 'alert alert-warning alert-dismissible fade show';
+                    warningAlert.innerHTML = '<i class="bi bi-exclamation-triangle-fill me-2"></i>يجب تسجيل الانصراف أولاً قبل إرسال طلب السلفة.' +
+                        '<button type="button" class="btn-close" data-bs-dismiss="alert"></button>';
+                    alertContainer.appendChild(warningAlert);
+                }
+                return;
+            }
+            
             advanceForm.classList.add('was-validated');
             
             if (!advanceForm.checkValidity()) {
+                event.preventDefault();
+                event.stopPropagation();
                 return;
             }
             
