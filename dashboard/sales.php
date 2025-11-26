@@ -753,8 +753,49 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && trim($_P
                 </div>
 
                 <script>
-                // JavaScript لإنشاء تقارير المبيعات والتحصيلات
+                // JavaScript لتهيئة التبويبات وإنشاء التقارير
                 (function() {
+                    // تهيئة التبويبات
+                    function initTabs() {
+                        // التحقق من تحميل Bootstrap
+                        const bs = window.bootstrap || bootstrap;
+                        if (!bs || typeof bs.Tab === 'undefined') {
+                            console.warn('Bootstrap not loaded, retrying...');
+                            setTimeout(initTabs, 100);
+                            return;
+                        }
+                        
+                        // تهيئة جميع التبويبات
+                        const tabButtons = document.querySelectorAll('#salesRecordsTabs button[data-bs-toggle="tab"]');
+                        tabButtons.forEach(function(button) {
+                            button.addEventListener('shown.bs.tab', function(event) {
+                                // تحديث aria-selected
+                                tabButtons.forEach(function(btn) {
+                                    btn.setAttribute('aria-selected', 'false');
+                                });
+                                event.target.setAttribute('aria-selected', 'true');
+                            });
+                        });
+                        
+                        // تحديد التبويب النشط بناءً على URL
+                        const urlParams = new URLSearchParams(window.location.search);
+                        const section = urlParams.get('section');
+                        let activeTabId = 'sales-tab';
+                        
+                        if (section === 'collections') {
+                            activeTabId = 'collections-tab';
+                        } else if (section === 'returns') {
+                            activeTabId = 'returns-tab';
+                        }
+                        
+                        // تفعيل التبويب النشط
+                        const activeTabButton = document.getElementById(activeTabId);
+                        if (activeTabButton && activeTabButton !== document.querySelector('#salesRecordsTabs .nav-link.active')) {
+                            const tab = new bs.Tab(activeTabButton);
+                            tab.show();
+                        }
+                    }
+                    
                     function initReportButtons() {
                         if (typeof bootstrap === 'undefined') {
                             console.warn('Bootstrap not loaded, retrying...');
@@ -881,12 +922,15 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && trim($_P
                         }
                     }
                     
+                    // تهيئة التبويبات أولاً
                     if (document.readyState === 'loading') {
                         document.addEventListener('DOMContentLoaded', function() {
-                            setTimeout(initReportButtons, 100);
+                            initTabs();
+                            setTimeout(initReportButtons, 200);
                         });
                     } else {
-                        setTimeout(initReportButtons, 100);
+                        initTabs();
+                        setTimeout(initReportButtons, 200);
                     }
                 })();
                 </script>
