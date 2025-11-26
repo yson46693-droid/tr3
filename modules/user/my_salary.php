@@ -701,8 +701,11 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['
 
 // التحقق من حالة الحضور/الانصراف
 $attendanceCheck = canRequestAdvance($currentUser['id']);
-$canRequestAdvance = $attendanceCheck['allowed'];
+$canRequestAdvanceByAttendance = $attendanceCheck['allowed'];
 $attendanceMessage = $attendanceCheck['message'] ?? '';
+$canRequestAdvance = $canRequestAdvanceByAttendance;
+$hasPendingAdvance = false;
+$pendingAdvanceMessage = '';
 
 // الحصول على بيانات الراتب الحالي
 $salaryData = getSalarySummary($currentUser['id'], $selectedMonth, $selectedYear);
@@ -765,6 +768,34 @@ if (ensureSalaryAdvancesTable($db)) {
         LIMIT 10";
 
     $advanceRequests = $db->query($advanceSelectSql, [$currentUser['id']]);
+    
+    // التحقق من وجود طلب سلفة معلق (pending أو accountant_approved)
+    $pendingRequest = $db->queryOne(
+        "SELECT id, amount, request_date, status 
+         FROM salary_advances 
+         WHERE user_id = ? AND status IN ('pending', 'accountant_approved')
+         ORDER BY created_at DESC 
+         LIMIT 1",
+        [$currentUser['id']]
+    );
+    
+    // إذا كان هناك طلب معلق، تعطيل النموذج
+    if ($pendingRequest) {
+        $hasPendingAdvance = true;
+        $canRequestAdvance = false;
+        $pendingStatus = $pendingRequest['status'] ?? 'pending';
+        $statusLabel = ($pendingStatus === 'pending') ? 'قيد الانتظار' : 'موافق عليه من المحاسب';
+        $pendingAmount = formatCurrency($pendingRequest['amount'] ?? 0);
+        $pendingDate = !empty($pendingRequest['request_date']) ? date('Y-m-d', strtotime($pendingRequest['request_date'])) : '';
+        
+        $pendingAdvanceMessage = 'يوجد طلب سلفة معلق (حالة: ' . $statusLabel . '، المبلغ: ' . $pendingAmount . '، التاريخ: ' . $pendingDate . '). يرجى انتظار معالجة الطلب الحالي قبل إرسال طلب جديد.';
+        
+        if (!empty($attendanceMessage)) {
+            $attendanceMessage = $pendingAdvanceMessage . ' ' . $attendanceMessage;
+        } else {
+            $attendanceMessage = $pendingAdvanceMessage;
+        }
+    }
 }
 
 // الحصول على تفاصيل الراتب الشهري (إذا كان محفوظاً)
@@ -1363,7 +1394,13 @@ if ($showSuccessFromSession): ?>
     <?php if (!$canRequestAdvance): ?>
     <div class="alert alert-warning alert-dismissible fade show mb-3">
         <i class="bi bi-exclamation-triangle-fill me-2"></i>
-        <strong>يجب تسجيل الانصراف أولاً:</strong> <?php echo htmlspecialchars($attendanceMessage); ?>
+        <?php if ($hasPendingAdvance): ?>
+            <strong>يوجد طلب سلفة معلق:</strong> <?php echo htmlspecialchars($pendingAdvanceMessage); ?>
+        <?php elseif (!$canRequestAdvanceByAttendance): ?>
+            <strong>يجب تسجيل الانصراف أولاً:</strong> <?php echo htmlspecialchars($attendanceMessage); ?>
+        <?php else: ?>
+            <strong>غير متاح:</strong> <?php echo htmlspecialchars($attendanceMessage); ?>
+        <?php endif; ?>
     </div>
     <?php endif; ?>
     <form method="POST" id="advanceRequestForm" class="needs-validation" novalidate <?php if (!$canRequestAdvance): ?>onsubmit="return false;"<?php endif; ?>>
