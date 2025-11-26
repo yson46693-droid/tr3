@@ -521,12 +521,31 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     $cartonType = null;
                 }
                 
+                // التحقق من وجود عمود carton_type في الجدول
+                $cartonTypeColumnExists = !empty($db->queryOne("SHOW COLUMNS FROM product_templates LIKE 'carton_type'"));
+                
+                // بناء الاستعلام ديناميكيًا بناءً على وجود الأعمدة
+                $columns = ['product_name', 'honey_quantity', 'created_by', 'status', 'template_type', 'main_supplier_id', 'notes', 'details_json'];
+                $placeholders = ['?', '0', '?', "'active'", '?', 'NULL', 'NULL', '?'];
+                $values = [$productName, $currentUser['id'], 'legacy', $templateDetailsJson];
+                
+                // إضافة unit_price إن كان موجودًا
+                if ($unitPrice !== null) {
+                    $columns[] = 'unit_price';
+                    $placeholders[] = '?';
+                    $values[] = $unitPrice;
+                }
+                
+                // إضافة carton_type إن كان العمود موجودًا
+                if ($cartonTypeColumnExists) {
+                    $columns[] = 'carton_type';
+                    $placeholders[] = '?';
+                    $values[] = $cartonType;
+                }
+                
                 // إنشاء القالب
-                $result = $db->execute(
-                    "INSERT INTO product_templates (product_name, honey_quantity, created_by, status, template_type, main_supplier_id, notes, details_json, unit_price, carton_type) 
-                     VALUES (?, 0, ?, 'active', ?, NULL, NULL, ?, ?, ?)",
-                    [$productName, $currentUser['id'], 'legacy', $templateDetailsJson, $unitPrice, $cartonType]
-                );
+                $sql = "INSERT INTO product_templates (" . implode(', ', $columns) . ") VALUES (" . implode(', ', $placeholders) . ")";
+                $result = $db->execute($sql, $values);
                 
                 $templateId = $result['insert_id'];
                 
@@ -784,12 +803,28 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     $cartonType = null;
                 }
                 
-                $db->execute(
-                    "UPDATE product_templates 
-                     SET product_name = ?, details_json = ?, unit_price = ?, carton_type = ?, updated_at = NOW()
-                     WHERE id = ?",
-                    [$productName, $templateDetailsJson, $unitPrice, $cartonType, $templateId]
-                );
+                // التحقق من وجود عمود carton_type في الجدول
+                $cartonTypeColumnExists = !empty($db->queryOne("SHOW COLUMNS FROM product_templates LIKE 'carton_type'"));
+                
+                // بناء استعلام UPDATE ديناميكيًا
+                $updateFields = ['product_name = ?', 'details_json = ?', 'updated_at = NOW()'];
+                $updateValues = [$productName, $templateDetailsJson];
+                
+                // إضافة unit_price إن كان موجودًا
+                if ($unitPrice !== null) {
+                    $updateFields[] = 'unit_price = ?';
+                    $updateValues[] = $unitPrice;
+                }
+                
+                // إضافة carton_type إن كان العمود موجودًا
+                if ($cartonTypeColumnExists) {
+                    $updateFields[] = 'carton_type = ?';
+                    $updateValues[] = $cartonType;
+                }
+                
+                $updateValues[] = $templateId;
+                $sql = "UPDATE product_templates SET " . implode(', ', $updateFields) . " WHERE id = ?";
+                $db->execute($sql, $updateValues);
                 
                 // حذف أدوات التعبئة القديمة
                 $db->execute("DELETE FROM product_template_packaging WHERE template_id = ?", [$templateId]);

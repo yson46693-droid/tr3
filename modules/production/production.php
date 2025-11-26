@@ -2447,6 +2447,19 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
                 $packagingUsageLogsExists = !empty($db->queryOne("SHOW TABLES LIKE 'packaging_usage_logs'"));
 
+                // تهيئة متغيرات تتبع المواد في القالب
+                $templateIncludesPkg003 = false;
+                $templateIncludesPkg004 = false;
+                $templateIncludesPkg005 = false;
+                $templateIncludesPkg006 = false;
+                $templateIncludesPkg007 = false;
+                $templateIncludesPkg009 = false;
+                $templateIncludesPkg010 = false;
+                $templateIncludesPkg011 = false;
+                $templateIncludesPkg012 = false;
+                $templateIncludesPkg036 = false;
+                $templateIncludesPkg042 = false;
+
                 foreach ($packagingItems as $pkg) {
                     $packagingMaterialId = isset($pkg['packaging_material_id']) ? (int)$pkg['packaging_material_id'] : 0;
                     $pkgKey = 'pack_' . ($packagingMaterialId ?: $pkg['id']);
