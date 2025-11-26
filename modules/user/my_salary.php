@@ -326,16 +326,23 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['
     $year = intval($_POST['year'] ?? $selectedYear);
     
     if ($amount <= 0) {
-        $error = 'يجب إدخال مبلغ صحيح أكبر من الصفر';
+        $error = 'فشل إرسال طلب السلفة: يجب إدخال مبلغ صحيح أكبر من الصفر. المبلغ المدخل: ' . formatCurrency($amount);
         $sendAdvanceAjaxResponse(false, $error);
         exit;
     }
     
     // حساب الراتب الحالي
-    $salaryData = getSalarySummary($currentUser['id'], $month, $year);
+    try {
+        $salaryData = getSalarySummary($currentUser['id'], $month, $year);
+    } catch (Exception $salaryError) {
+        error_log("Error getting salary summary: " . $salaryError->getMessage());
+        $error = 'فشل إرسال طلب السلفة: تعذر حساب الراتب الحالي. يرجى المحاولة مرة أخرى أو التواصل مع الإدارة.';
+        $sendAdvanceAjaxResponse(false, $error);
+        exit;
+    }
     
     if (!$salaryData['exists'] && (!isset($salaryData['calculation']) || !$salaryData['calculation']['success'])) {
-        $error = 'لا يوجد راتب محسوب لهذا الشهر. يرجى الانتظار حتى يتم حساب الراتب.';
+        $error = 'فشل إرسال طلب السلفة: لا يوجد راتب محسوب لهذا الشهر (' . $month . '/' . $year . '). يرجى الانتظار حتى يتم حساب الراتب أو التواصل مع الإدارة.';
         $sendAdvanceAjaxResponse(false, $error);
         exit;
     }
@@ -365,13 +372,43 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['
     $maxAdvance = cleanFinancialValue($currentSalary * 0.5); // نصف الراتب
     
     if ($amount > $maxAdvance) {
-        $error = 'قيمة السلفة لا يمكن أن تتجاوز نصف الراتب الحالي (' . formatCurrency($maxAdvance) . ')';
+        $error = 'فشل إرسال طلب السلفة: قيمة السلفة (' . formatCurrency($amount) . ') لا يمكن أن تتجاوز نصف الراتب الحالي (' . formatCurrency($maxAdvance) . '). يرجى إدخال مبلغ أقل أو يساوي ' . formatCurrency($maxAdvance);
         $sendAdvanceAjaxResponse(false, $error);
         exit;
     }
     
     if (!ensureSalaryAdvancesTable($db)) {
-        $error = 'تعذر الوصول إلى جدول السلف. يرجى التواصل مع الإدارة للتأكد من إعداد قاعدة البيانات.';
+        $error = 'فشل إرسال طلب السلفة: تعذر الوصول إلى جدول طلبات السلف في قاعدة البيانات. يرجى التواصل مع الإدارة للتأكد من إعداد قاعدة البيانات بشكل صحيح.';
+        $sendAdvanceAjaxResponse(false, $error);
+        exit;
+    }
+    
+    // التحقق الإضافي من وجود الجدول وجاهزيته
+    try {
+        $tableExists = $db->queryOne("SHOW TABLES LIKE 'salary_advances'");
+        if (empty($tableExists)) {
+            $error = 'فشل إرسال طلب السلفة: جدول طلبات السلف غير موجود في قاعدة البيانات. يرجى التواصل مع الإدارة لإنشاء الجدول.';
+            $sendAdvanceAjaxResponse(false, $error);
+            exit;
+        }
+        
+        // التحقق من وجود الأعمدة الأساسية
+        $columns = $db->query("SHOW COLUMNS FROM salary_advances");
+        $requiredColumns = ['id', 'user_id', 'amount', 'request_date', 'status'];
+        $existingColumns = [];
+        foreach ($columns as $col) {
+            $existingColumns[] = $col['Field'] ?? '';
+        }
+        
+        $missingColumns = array_diff($requiredColumns, $existingColumns);
+        if (!empty($missingColumns)) {
+            $error = 'فشل إرسال طلب السلفة: جدول طلبات السلف غير مكتمل. الأعمدة المفقودة: ' . implode(', ', $missingColumns) . '. يرجى التواصل مع الإدارة.';
+            $sendAdvanceAjaxResponse(false, $error);
+            exit;
+        }
+    } catch (Exception $tableCheckError) {
+        error_log("Table verification error: " . $tableCheckError->getMessage());
+        $error = 'فشل إرسال طلب السلفة: تعذر التحقق من جاهزية جدول طلبات السلف. يرجى التواصل مع الإدارة.';
         $sendAdvanceAjaxResponse(false, $error);
         exit;
     }
@@ -386,14 +423,24 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['
     
     // التحقق من وجود طلب سلفة معلق بعد التأكد من الجدول
     // التحقق من الطلبات المعلقة (pending) أو الموافق عليها من المحاسب (accountant_approved)
-    $existingRequest = $db->queryOne(
-        "SELECT id FROM salary_advances 
-         WHERE user_id = ? AND status IN ('pending', 'accountant_approved')",
-        [$currentUser['id']]
-    );
-    
-    if ($existingRequest) {
-        $error = 'يوجد طلب سلفة معلق بالفعل في انتظار الموافقة النهائية';
+    try {
+        $existingRequest = $db->queryOne(
+            "SELECT id, status, amount, request_date 
+             FROM salary_advances 
+             WHERE user_id = ? AND status IN ('pending', 'accountant_approved')",
+            [$currentUser['id']]
+        );
+        
+        if ($existingRequest) {
+            $existingStatus = $existingRequest['status'] ?? 'pending';
+            $statusLabel = ($existingStatus === 'pending') ? 'قيد الانتظار' : 'موافق عليه من المحاسب';
+            $error = 'يوجد طلب سلفة معلق بالفعل في انتظار الموافقة النهائية (حالة: ' . $statusLabel . '). يرجى انتظار معالجة الطلب الحالي قبل إرسال طلب جديد.';
+            $sendAdvanceAjaxResponse(false, $error);
+            exit;
+        }
+    } catch (Exception $checkError) {
+        error_log("Error checking existing advance requests: " . $checkError->getMessage());
+        $error = 'فشل إرسال طلب السلفة: تعذر التحقق من الطلبات السابقة. يرجى المحاولة مرة أخرى أو التواصل مع الإدارة.';
         $sendAdvanceAjaxResponse(false, $error);
         exit;
     }
@@ -410,8 +457,47 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['
         
         // التحقق من إنشاء الطلب بنجاح
         if (empty($requestId) || $requestId <= 0) {
-            throw new Exception('فشل إنشاء طلب السلفة في قاعدة البيانات');
+            $error = 'فشل إنشاء طلب السلفة: لم يتم الحصول على رقم تعريف للطلب من قاعدة البيانات. يرجى المحاولة مرة أخرى أو التواصل مع الإدارة.';
+            $sendAdvanceAjaxResponse(false, $error);
+            exit;
         }
+        
+        // التحقق من وجود الطلب في الجدول بعد الإدراج مباشرة
+        $verifyRequest = $db->queryOne(
+            "SELECT id, user_id, amount, request_date, status 
+             FROM salary_advances 
+             WHERE id = ? AND user_id = ?",
+            [$requestId, $currentUser['id']]
+        );
+        
+        if (empty($verifyRequest)) {
+            $error = 'فشل إرسال طلب السلفة: تم إنشاء الطلب لكن لم يتم العثور عليه في قاعدة البيانات. يرجى التحقق من الجدول أو التواصل مع الإدارة.';
+            error_log("Advance request verification failed: Request ID {$requestId} not found in salary_advances table after insert");
+            $sendAdvanceAjaxResponse(false, $error);
+            exit;
+        }
+        
+        // التحقق من تطابق البيانات
+        $verifyAmount = floatval($verifyRequest['amount'] ?? 0);
+        $verifyDate = $verifyRequest['request_date'] ?? '';
+        $verifyStatus = $verifyRequest['status'] ?? '';
+        
+        if (abs($verifyAmount - $amount) > 0.01) {
+            $error = 'فشل إرسال طلب السلفة: المبلغ المحفوظ (' . formatCurrency($verifyAmount) . ') لا يطابق المبلغ المرسل (' . formatCurrency($amount) . '). يرجى التواصل مع الإدارة.';
+            error_log("Advance request data mismatch: Amount mismatch for request ID {$requestId}. Expected: {$amount}, Found: {$verifyAmount}");
+            $sendAdvanceAjaxResponse(false, $error);
+            exit;
+        }
+        
+        if ($verifyStatus !== 'pending') {
+            $error = 'فشل إرسال طلب السلفة: حالة الطلب المحفوظة (' . $verifyStatus . ') غير صحيحة. يرجى التواصل مع الإدارة.';
+            error_log("Advance request status mismatch: Status mismatch for request ID {$requestId}. Expected: pending, Found: {$verifyStatus}");
+            $sendAdvanceAjaxResponse(false, $error);
+            exit;
+        }
+        
+        // تسجيل نجاح التحقق
+        error_log("Advance request #{$requestId}: Successfully verified in database. Amount: {$amount}, Date: {$verifyDate}, Status: {$verifyStatus}");
         
         // إرسال إشعار للمحاسب - مع التحقق من وجود محاسبين نشطين
         $accountants = $db->query("SELECT id FROM users WHERE role = 'accountant' AND status = 'active'");
@@ -501,13 +587,30 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['
         exit;
     } catch (Exception $e) {
         error_log("Salary advance insert error: " . $e->getMessage());
+        error_log("Error trace: " . $e->getTraceAsString());
         
         // محاولة معالجة الأخطاء الشائعة وتقديم رسالة مفيدة للمستخدم
-        if (stripos($e->getMessage(), 'salary_advances') !== false) {
-            $error = 'تعذر حفظ طلب السلفة بسبب عدم جاهزية قاعدة البيانات. يرجى إبلاغ المحاسب للتأكد من إنشاء جدول السلف.';
+        $errorMessage = $e->getMessage();
+        
+        if (stripos($errorMessage, 'salary_advances') !== false || stripos($errorMessage, 'Table') !== false) {
+            $error = 'فشل إرسال طلب السلفة: تعذر الوصول إلى جدول طلبات السلف في قاعدة البيانات. يرجى إبلاغ المحاسب للتأكد من إنشاء الجدول.';
+        } elseif (stripos($errorMessage, 'foreign key') !== false || stripos($errorMessage, 'constraint') !== false) {
+            $error = 'فشل إرسال طلب السلفة: خطأ في البيانات المرسلة. يرجى التأكد من صحة البيانات والمحاولة مرة أخرى.';
+        } elseif (stripos($errorMessage, 'connection') !== false || stripos($errorMessage, 'database') !== false) {
+            $error = 'فشل إرسال طلب السلفة: تعذر الاتصال بقاعدة البيانات. يرجى التحقق من الاتصال والمحاولة مرة أخرى.';
+        } elseif (stripos($errorMessage, 'duplicate') !== false) {
+            $error = 'فشل إرسال طلب السلفة: يبدو أن هناك طلب سلفة مكرر. يرجى التحقق من سجل الطلبات أو التواصل مع الإدارة.';
         } else {
-            $error = 'حدث خطأ أثناء حفظ طلب السلفة. يرجى المحاولة مرة أخرى، وإذا استمرت المشكلة تواصل مع الإدارة.';
+            $error = 'فشل إرسال طلب السلفة: حدث خطأ غير متوقع أثناء حفظ الطلب في قاعدة البيانات. يرجى المحاولة مرة أخرى، وإذا استمرت المشكلة تواصل مع الإدارة مع رقم الخطأ: ' . substr(md5($errorMessage), 0, 8);
         }
+        
+        $sendAdvanceAjaxResponse(false, $error);
+        exit;
+    } catch (Throwable $e) {
+        error_log("Salary advance insert fatal error: " . $e->getMessage());
+        error_log("Error trace: " . $e->getTraceAsString());
+        
+        $error = 'فشل إرسال طلب السلفة: حدث خطأ فني أثناء معالجة الطلب. يرجى المحاولة مرة أخرى أو التواصل مع الإدارة.';
         $sendAdvanceAjaxResponse(false, $error);
         exit;
     }
@@ -1336,12 +1439,12 @@ document.addEventListener('DOMContentLoaded', function() {
                 }
                 
                 if (!response.ok) {
-                    const message = (data && data.message) ? data.message : 'تعذر الاتصال بالخادم. يرجى المحاولة مرة أخرى.';
+                    const message = (data && data.message) ? data.message : 'فشل إرسال طلب السلفة: تعذر الاتصال بالخادم. يرجى التحقق من الاتصال بالإنترنت والمحاولة مرة أخرى.';
                     throw new Error(message);
                 }
                 
                 if (!data) {
-                    throw new Error('حدث خطأ غير متوقع في الخادم. يرجى المحاولة لاحقاً.');
+                    throw new Error('فشل إرسال طلب السلفة: حدث خطأ غير متوقع في الخادم. يرجى المحاولة لاحقاً أو التواصل مع الإدارة.');
                 }
                 
                 return data;
@@ -1349,7 +1452,8 @@ document.addEventListener('DOMContentLoaded', function() {
             .then(data => {
                 const alert = document.createElement('div');
                 alert.className = 'alert alert-dismissible fade show ' + (data.success ? 'alert-success' : 'alert-danger');
-                alert.innerHTML = `<i class="bi ${data.success ? 'bi-check-circle-fill' : 'bi-exclamation-triangle-fill'} me-2"></i>${data.message || (data.success ? 'تم إرسال طلب السلفة بنجاح.' : 'تعذر إرسال طلب السلفة.')}` +
+                const message = data.message || (data.success ? 'تم إرسال طلب السلفة بنجاح. سيتم مراجعته من قبل المحاسب والمدير.' : 'فشل إرسال طلب السلفة. يرجى المحاولة مرة أخرى أو التواصل مع الإدارة.');
+                alert.innerHTML = `<i class="bi ${data.success ? 'bi-check-circle-fill' : 'bi-exclamation-triangle-fill'} me-2"></i>${message}` +
                     '<button type="button" class="btn-close" data-bs-dismiss="alert"></button>';
                 
                 if (alertContainer) {
@@ -1377,15 +1481,26 @@ document.addEventListener('DOMContentLoaded', function() {
                     submitButton.innerHTML = originalButtonHtml;
                 }
                 
+                // عرض رسالة خطأ واضحة
+                let errorMessage = error.message || 'فشل إرسال طلب السلفة: حدث خطأ غير متوقع. يرجى المحاولة مرة أخرى أو التواصل مع الإدارة.';
+                
+                // إذا كانت الرسالة لا تبدأ بـ "فشل إرسال طلب السلفة"، أضفها
+                if (!errorMessage.includes('فشل إرسال طلب السلفة')) {
+                    errorMessage = 'فشل إرسال طلب السلفة: ' + errorMessage;
+                }
+                
                 const alert = document.createElement('div');
                 alert.className = 'alert alert-danger alert-dismissible fade show';
-                alert.innerHTML = `<i class="bi bi-exclamation-triangle-fill me-2"></i>${error.message || 'تعذر إرسال طلب السلفة.'}` +
+                alert.innerHTML = `<i class="bi bi-exclamation-triangle-fill me-2"></i>${errorMessage}` +
                     '<button type="button" class="btn-close" data-bs-dismiss="alert"></button>';
                 
                 if (alertContainer) {
                     alertContainer.innerHTML = '';
                     alertContainer.appendChild(alert);
                 }
+                
+                // تسجيل الخطأ في console للمطورين
+                console.error('Advance request error:', error);
             })
             .finally(() => {
                 if (submitButton && !submitButton.disabled) {
