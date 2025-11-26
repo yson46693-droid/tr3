@@ -200,7 +200,7 @@ $customers = $db->query("SELECT id, name FROM customers WHERE status = 'active' 
 <?php 
 $isSalesRecords = isset($_GET['page']) && $_GET['page'] === 'sales_records';
 $filterCardClass = $isSalesRecords ? 'border-0 shadow-lg' : 'shadow-sm';
-$filterCardStyle = $isSalesRecords ? 'background: linear-gradient(135deg,rgb(0, 27, 148) 0%,rgb(15, 76, 168) 100%); border-radius: 12px;' : '';
+$filterCardStyle = $isSalesRecords ? 'background: linear-gradient(135deg,rgb(12, 45, 194) 0%,rgb(11, 94, 218) 100%); border-radius: 12px;' : '';
 ?>
 <div class="card <?php echo $filterCardClass; ?> mb-4" style="<?php echo $filterCardStyle; ?>">
     <div class="card-body" style="<?php echo $isSalesRecords ? 'padding: 1.5rem;' : ''; ?>">
