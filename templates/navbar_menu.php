@@ -194,28 +194,6 @@ switch ($role) {
                 'active' => (isset($_GET['page']) && $_GET['page'] === 'my_records'),
                 'badge' => null
             ],
-            ['divider' => true, 'title' => 'السجلات'],
-            [
-                'title' => isset($lang['sales']) ? $lang['sales'] : 'المبيعات',
-                'icon' => 'bi-receipt',
-                'url' => $baseUrl . 'sales.php?page=sales',
-                'active' => (isset($_GET['page']) && $_GET['page'] === 'sales'),
-                'badge' => null
-            ],
-            [
-                'title' => isset($lang['collections']) ? $lang['collections'] : 'التحصيلات',
-                'icon' => 'bi-cash-coin',
-                'url' => $baseUrl . 'sales.php?page=collections',
-                'active' => (isset($_GET['page']) && $_GET['page'] === 'collections'),
-                'badge' => null
-            ],
-            [
-                'title' => 'المرتجعات',
-                'icon' => 'bi-arrow-return-left',
-                'url' => $baseUrl . 'sales.php?page=returns',
-                'active' => (isset($_GET['page']) && $_GET['page'] === 'returns'),
-                'badge' => null
-            ],
             [
                 'title' => 'طلبات العملاء',
                 'icon' => 'bi-cart-check',
