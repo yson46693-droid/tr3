@@ -523,9 +523,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 
                 // إنشاء القالب
                 $result = $db->execute(
-                    "INSERT INTO product_templates (product_name, honey_quantity, created_by, status, template_type, main_supplier_id, notes, details_json, unit_price) 
-                     VALUES (?, 0, ?, 'active', ?, NULL, NULL, ?, ?)",
-                    [$productName, $currentUser['id'], 'legacy', $templateDetailsJson, $unitPrice]
+                    "INSERT INTO product_templates (product_name, honey_quantity, created_by, status, template_type, main_supplier_id, notes, details_json, unit_price, carton_type) 
+                     VALUES (?, 0, ?, 'active', ?, NULL, NULL, ?, ?, ?)",
+                    [$productName, $currentUser['id'], 'legacy', $templateDetailsJson, $unitPrice, $cartonType]
                 );
                 
                 $templateId = $result['insert_id'];
@@ -1818,15 +1818,15 @@ $lang = isset($translations) ? $translations : [];
                     </div>
                     
                     <div class="mb-3">
-                        <label class="form-label">نوع الكرتونة <span class="text-danger">*</span></label>
-                        <select class="form-select" name="carton_type" required>
-                            <option value="">اختر نوع الكرتونة</option>
+                        <label class="form-label">نوع الكرتونة</label>
+                        <select class="form-select" name="carton_type">
+                            <option value="">اختر نوع الكرتونة (اختياري)</option>
                             <option value="kilo">كيلو (PKG-002)</option>
                             <option value="half">نص (PKG-001)</option>
                             <option value="quarter">ربع (PKG-041)</option>
                             <option value="third">ثلث (PKG-041)</option>
                         </select>
-                        <small class="text-muted">اختر نوع الكرتونة المستخدمة في تعبئة المنتج</small>
+                        <small class="text-muted">اختر نوع الكرتونة المستخدمة في تعبئة المنتج (اختياري - سيتم تطبيق الخصم التلقائي إذا تم اختياره)</small>
                     </div>
                     
                     <div class="mb-3">
@@ -1922,15 +1922,15 @@ $lang = isset($translations) ? $translations : [];
                     </div>
                     
                     <div class="mb-3">
-                        <label class="form-label">نوع الكرتونة <span class="text-danger">*</span></label>
-                        <select class="form-select" name="carton_type" id="editCartonType" required>
-                            <option value="">اختر نوع الكرتونة</option>
+                        <label class="form-label">نوع الكرتونة</label>
+                        <select class="form-select" name="carton_type" id="editCartonType">
+                            <option value="">اختر نوع الكرتونة (اختياري)</option>
                             <option value="kilo">كيلو (PKG-002)</option>
                             <option value="half">نص (PKG-001)</option>
                             <option value="quarter">ربع (PKG-041)</option>
                             <option value="third">ثلث (PKG-041)</option>
                         </select>
-                        <small class="text-muted">اختر نوع الكرتونة المستخدمة في تعبئة المنتج</small>
+                        <small class="text-muted">اختر نوع الكرتونة المستخدمة في تعبئة المنتج (اختياري - سيتم تطبيق الخصم التلقائي إذا تم اختياره)</small>
                     </div>
                     
                     <div class="mb-3">
