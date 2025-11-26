@@ -39,16 +39,24 @@ $sql = "SELECT
         r.return_date,
         r.refund_amount,
         r.status,
-        r.return_quantity,
         r.reason,
         c.id as customer_id,
         c.name as customer_name,
         i.invoice_number,
-        GROUP_CONCAT(DISTINCT ri.batch_number ORDER BY ri.batch_number SEPARATOR ', ') as batch_numbers
+        COALESCE(SUM(ri.quantity), 0) as return_quantity,
+        GROUP_CONCAT(DISTINCT 
+            CASE 
+                WHEN b.batch_number IS NOT NULL THEN b.batch_number
+                WHEN ri.batch_number_id IS NOT NULL THEN CAST(ri.batch_number_id AS CHAR)
+                ELSE NULL
+            END
+            ORDER BY b.batch_number SEPARATOR ', '
+        ) as batch_numbers
     FROM returns r
     LEFT JOIN customers c ON r.customer_id = c.id
     LEFT JOIN invoices i ON r.invoice_id = i.id
     LEFT JOIN return_items ri ON r.id = ri.return_id
+    LEFT JOIN batch_numbers b ON ri.batch_number_id = b.id
     WHERE 1=1";
 
 $params = [];
@@ -81,11 +89,12 @@ if ($dateTo) {
 }
 
 if ($batchFilter) {
-    $sql .= " AND ri.batch_number LIKE ?";
+    $sql .= " AND (ri.batch_number LIKE ? OR b.batch_number LIKE ?)";
+    $params[] = "%{$batchFilter}%";
     $params[] = "%{$batchFilter}%";
 }
 
-$sql .= " GROUP BY r.id
+$sql .= " GROUP BY r.id, r.return_number, r.return_date, r.refund_amount, r.status, r.reason, c.id, c.name, i.invoice_number
           ORDER BY r.created_at DESC
           LIMIT ? OFFSET ?";
 
@@ -99,6 +108,7 @@ $countSql = "SELECT COUNT(DISTINCT r.id) as total
              FROM returns r
              LEFT JOIN customers c ON r.customer_id = c.id
              LEFT JOIN return_items ri ON r.id = ri.return_id
+             LEFT JOIN batch_numbers b ON ri.batch_number_id = b.id
              WHERE 1=1";
 
 $countParams = [];
@@ -128,7 +138,8 @@ if ($dateTo) {
 }
 
 if ($batchFilter) {
-    $countSql .= " AND ri.batch_number LIKE ?";
+    $countSql .= " AND (ri.batch_number LIKE ? OR b.batch_number LIKE ?)";
+    $countParams[] = "%{$batchFilter}%";
     $countParams[] = "%{$batchFilter}%";
 }
 
