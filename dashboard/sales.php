@@ -774,43 +774,59 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && trim($_P
         const bs = window.bootstrap || bootstrap;
         const useBootstrap = bs && typeof bs.Tab !== 'undefined';
         
-        tabButtons.forEach(function(button) {
-            // إزالة أي event listeners سابقة
-            const newButton = button.cloneNode(true);
-            button.parentNode.replaceChild(newButton, button);
-            
-            // إضافة معالج click مباشر لجميع التبويبات
-            newButton.addEventListener('click', function(e) {
-                e.preventDefault();
-                e.stopPropagation();
-                
-                const targetId = this.getAttribute('data-bs-target');
-                if (!targetId) return;
-                
-                // إخفاء جميع المحتويات
-                document.querySelectorAll('.tab-pane').forEach(function(pane) {
-                    pane.classList.remove('show', 'active');
-                });
-                
-                // إظهار المحتوى المطلوب
-                const targetPane = document.querySelector(targetId);
-                if (targetPane) {
-                    targetPane.classList.add('show', 'active');
+        // استخدام event delegation بدلاً من استبدال الأزرار
+        const tabsContainer = document.getElementById('salesRecordsTabs');
+        if (!tabsContainer) {
+            setTimeout(initTabs, 100);
+            return;
+        }
+        
+        // إضافة معالج click واحد للكونتينر (event delegation)
+        tabsContainer.addEventListener('click', function(e) {
+            // البحث عن الزر المطلوب (يدعم العناصر المتداخلة مثل <i> و <span>)
+            let button = e.target;
+            while (button && button !== tabsContainer) {
+                if (button.tagName === 'BUTTON' && button.hasAttribute('data-bs-toggle') && button.getAttribute('data-bs-toggle') === 'tab') {
+                    break;
                 }
-                
-                // تحديث حالة التبويبات
-                updateTabState(this, tabButtons);
-                updateURL(this);
+                button = button.parentElement;
+            }
+            
+            if (!button || button === tabsContainer) return;
+            
+            e.preventDefault();
+            e.stopPropagation();
+            
+            const targetId = button.getAttribute('data-bs-target');
+            if (!targetId) return;
+            
+            // إخفاء جميع المحتويات
+            document.querySelectorAll('.tab-pane').forEach(function(pane) {
+                pane.classList.remove('show', 'active');
             });
             
-            if (useBootstrap) {
-                // استخدام Bootstrap Tabs للاستفادة من الأنيميشن
-                newButton.addEventListener('shown.bs.tab', function(event) {
-                    updateTabState(event.target, tabButtons);
+            // إظهار المحتوى المطلوب
+            const targetPane = document.querySelector(targetId);
+            if (targetPane) {
+                targetPane.classList.add('show', 'active');
+            }
+            
+            // تحديث حالة التبويبات - الحصول على الأزرار الحالية
+            const currentTabButtons = document.querySelectorAll('#salesRecordsTabs button[data-bs-toggle="tab"]');
+            updateTabState(button, currentTabButtons);
+            updateURL(button);
+        });
+        
+        // إضافة event listener لـ Bootstrap إذا كان متاحاً
+        if (useBootstrap) {
+            tabButtons.forEach(function(button) {
+                button.addEventListener('shown.bs.tab', function(event) {
+                    const currentTabButtons = document.querySelectorAll('#salesRecordsTabs button[data-bs-toggle="tab"]');
+                    updateTabState(event.target, currentTabButtons);
                     updateURL(event.target);
                 });
-            }
-        });
+            });
+        }
         
         // تحديد التبويب النشط بناءً على URL
         const urlParams = new URLSearchParams(window.location.search);
