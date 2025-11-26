@@ -752,311 +752,302 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && trim($_P
                     </div>
                 </div>
 
-                <script>
-                // JavaScript لتهيئة التبويبات وإنشاء التقارير
-                (function() {
-                    // تهيئة التبويبات
-                    function initTabs() {
-                        // التحقق من تحميل Bootstrap
-                        const bs = window.bootstrap || bootstrap;
-                        if (!bs || typeof bs.Tab === 'undefined') {
-                            console.warn('Bootstrap not loaded, retrying...');
-                            setTimeout(initTabs, 100);
-                            return;
-                        }
-                        
-                        // تهيئة جميع التبويبات
-                        const tabButtons = document.querySelectorAll('#salesRecordsTabs button[data-bs-toggle="tab"]');
-                        tabButtons.forEach(function(button) {
-                            // إضافة event listener للتبويبات
-                            button.addEventListener('shown.bs.tab', function(event) {
-                                // تحديث aria-selected
-                                tabButtons.forEach(function(btn) {
-                                    btn.setAttribute('aria-selected', 'false');
-                                    btn.classList.remove('active');
-                                });
-                                event.target.setAttribute('aria-selected', 'true');
-                                event.target.classList.add('active');
-                                
-                                // تحديث URL بدون إعادة تحميل الصفحة
-                                const targetId = event.target.getAttribute('data-bs-target');
-                                let section = 'sales';
-                                if (targetId === '#collections-section') {
-                                    section = 'collections';
-                                } else if (targetId === '#returns-section') {
-                                    section = 'returns';
-                                }
-                                
-                                const url = new URL(window.location);
-                                url.searchParams.set('section', section);
-                                window.history.pushState({}, '', url);
-                            });
-                            
-                            // إضافة event listener للضغط المباشر (fallback)
-                            button.addEventListener('click', function(e) {
-                                const targetId = this.getAttribute('data-bs-target');
-                                if (targetId) {
-                                    // إخفاء جميع المحتويات
-                                    document.querySelectorAll('.tab-pane').forEach(function(pane) {
-                                        pane.classList.remove('show', 'active');
-                                    });
-                                    
-                                    // إظهار المحتوى المطلوب
-                                    const targetPane = document.querySelector(targetId);
-                                    if (targetPane) {
-                                        targetPane.classList.add('show', 'active');
-                                    }
-                                    
-                                    // تحديث التبويبات
-                                    tabButtons.forEach(function(btn) {
-                                        btn.classList.remove('active');
-                                        btn.setAttribute('aria-selected', 'false');
-                                    });
-                                    this.classList.add('active');
-                                    this.setAttribute('aria-selected', 'true');
-                                }
-                            });
-                        });
-                        
-                        // تحديد التبويب النشط بناءً على URL
-                        const urlParams = new URLSearchParams(window.location.search);
-                        const section = urlParams.get('section');
-                        let activeTabId = 'sales-tab';
-                        
-                        if (section === 'collections') {
-                            activeTabId = 'collections-tab';
-                        } else if (section === 'returns') {
-                            activeTabId = 'returns-tab';
-                        }
-                        
-                        // تفعيل التبويب النشط
-                        const activeTabButton = document.getElementById(activeTabId);
-                        const currentActiveTab = document.querySelector('#salesRecordsTabs .nav-link.active');
-                        
-                        if (activeTabButton) {
-                            // إذا كان التبويب النشط مختلفاً، قم بتفعيله
-                            if (!currentActiveTab || currentActiveTab.id !== activeTabId) {
-                                try {
-                                    const tab = new bs.Tab(activeTabButton);
-                                    tab.show();
-                                } catch (e) {
-                                    console.warn('Error showing tab with Bootstrap, using fallback:', e);
-                                    // Fallback: تفعيل يدوي
-                                    tabButtons.forEach(function(btn) {
-                                        btn.classList.remove('active');
-                                        btn.setAttribute('aria-selected', 'false');
-                                    });
-                                    activeTabButton.classList.add('active');
-                                    activeTabButton.setAttribute('aria-selected', 'true');
-                                    
-                                    // إظهار المحتوى المناسب
-                                    document.querySelectorAll('.tab-pane').forEach(function(pane) {
-                                        pane.classList.remove('show', 'active');
-                                    });
-                                    const targetPane = document.querySelector(activeTabButton.getAttribute('data-bs-target'));
-                                    if (targetPane) {
-                                        targetPane.classList.add('show', 'active');
-                                    }
-                                }
-                            }
-                        }
-                    }
-                    
-                    function initReportButtons() {
-                        if (typeof bootstrap === 'undefined') {
-                            console.warn('Bootstrap not loaded, retrying...');
-                            setTimeout(initReportButtons, 100);
-                            return;
-                        }
-                        
-                        const basePath = '<?php echo getBasePath(); ?>';
-                        
-                        // معالج إنشاء تقرير المبيعات
-                        const generateSalesReportBtn = document.getElementById('generateSalesReportBtn');
-                        if (generateSalesReportBtn) {
-                            generateSalesReportBtn.addEventListener('click', function() {
-                                const dateFrom = document.getElementById('salesReportDateFrom').value;
-                                const dateTo = document.getElementById('salesReportDateTo').value;
-                                
-                                if (!dateFrom || !dateTo) {
-                                    alert('يرجى اختيار الفترة المطلوبة');
-                                    return;
-                                }
-                                
-                                if (new Date(dateFrom) > new Date(dateTo)) {
-                                    alert('تاريخ البداية يجب أن يكون قبل تاريخ النهاية');
-                                    return;
-                                }
-                                
-                                const url = basePath + '/api/generate_sales_report.php?date_from=' + encodeURIComponent(dateFrom) + '&date_to=' + encodeURIComponent(dateTo);
-                                const reportWindow = window.open(url, 'salesReport', 'width=1000,height=800,scrollbars=yes,resizable=yes');
-                                
-                                if (reportWindow) {
-                                    const modalElement = document.getElementById('generateSalesReportModal');
-                                    if (modalElement && typeof bootstrap !== 'undefined') {
-                                        const modal = bootstrap.Modal.getInstance(modalElement);
-                                        if (modal) modal.hide();
-                                    }
-                                } else {
-                                    alert('يرجى السماح للموقع بفتح النوافذ المنبثقة');
-                                }
-                            });
-                        }
-                        
-                        // معالج إنشاء تقرير التحصيلات
-                        const generateCollectionsReportBtn = document.getElementById('generateCollectionsReportBtn');
-                        if (generateCollectionsReportBtn) {
-                            generateCollectionsReportBtn.addEventListener('click', function() {
-                                const dateFrom = document.getElementById('collectionsReportDateFrom').value;
-                                const dateTo = document.getElementById('collectionsReportDateTo').value;
-                                
-                                if (!dateFrom || !dateTo) {
-                                    alert('يرجى اختيار الفترة المطلوبة');
-                                    return;
-                                }
-                                
-                                if (new Date(dateFrom) > new Date(dateTo)) {
-                                    alert('تاريخ البداية يجب أن يكون قبل تاريخ النهاية');
-                                    return;
-                                }
-                                
-                                const url = basePath + '/api/generate_collections_report.php?date_from=' + encodeURIComponent(dateFrom) + '&date_to=' + encodeURIComponent(dateTo);
-                                const reportWindow = window.open(url, 'collectionsReport', 'width=1000,height=800,scrollbars=yes,resizable=yes');
-                                
-                                if (reportWindow) {
-                                    const modalElement = document.getElementById('generateCollectionsReportModal');
-                                    if (modalElement && typeof bootstrap !== 'undefined') {
-                                        const modal = bootstrap.Modal.getInstance(modalElement);
-                                        if (modal) modal.hide();
-                                    }
-                                } else {
-                                    alert('يرجى السماح للموقع بفتح النوافذ المنبثقة');
-                                }
-                            });
-                        }
-                        
-                        // معالج إنشاء تقرير العميل - المبيعات
-                        const generateCustomerSalesReportBtn = document.getElementById('generateCustomerSalesReportBtn');
-                        if (generateCustomerSalesReportBtn) {
-                            generateCustomerSalesReportBtn.addEventListener('click', function() {
-                                const customerId = document.getElementById('customerSalesReportCustomerId').value;
-                                
-                                if (!customerId) {
-                                    alert('يرجى اختيار العميل');
-                                    return;
-                                }
-                                
-                                const url = basePath + '/api/generate_customer_sales_report.php?customer_id=' + encodeURIComponent(customerId);
-                                const reportWindow = window.open(url, 'customerSalesReport', 'width=1000,height=800,scrollbars=yes,resizable=yes');
-                                
-                                if (reportWindow) {
-                                    const modalElement = document.getElementById('generateCustomerSalesReportModal');
-                                    if (modalElement && typeof bootstrap !== 'undefined') {
-                                        const modal = bootstrap.Modal.getInstance(modalElement);
-                                        if (modal) modal.hide();
-                                    }
-                                } else {
-                                    alert('يرجى السماح للموقع بفتح النوافذ المنبثقة');
-                                }
-                            });
-                        }
+                // استبدل الكود من السطر 755 إلى 1059 بهذا الكود المحسّن:
 
-                        // معالج إنشاء تقرير العميل - التحصيلات
-                        const generateCustomerCollectionsReportBtn = document.getElementById('generateCustomerCollectionsReportBtn');
-                        if (generateCustomerCollectionsReportBtn) {
-                            generateCustomerCollectionsReportBtn.addEventListener('click', function() {
-                                const customerId = document.getElementById('customerCollectionsReportCustomerId').value;
-                                
-                                if (!customerId) {
-                                    alert('يرجى اختيار العميل');
-                                    return;
-                                }
-                                
-                                const url = basePath + '/api/generate_customer_collections_report.php?customer_id=' + encodeURIComponent(customerId);
-                                const reportWindow = window.open(url, 'customerCollectionsReport', 'width=1000,height=800,scrollbars=yes,resizable=yes');
-                                
-                                if (reportWindow) {
-                                    const modalElement = document.getElementById('generateCustomerCollectionsReportModal');
-                                    if (modalElement && typeof bootstrap !== 'undefined') {
-                                        const modal = bootstrap.Modal.getInstance(modalElement);
-                                        if (modal) modal.hide();
-                                    }
-                                } else {
-                                    alert('يرجى السماح للموقع بفتح النوافذ المنبثقة');
-                                }
-                            });
-                        }
-                    }
-                    
-                    // تهيئة التبويبات أولاً
-                    function initAll() {
-                        initTabs();
-                        setTimeout(initReportButtons, 200);
-                    }
-                    
-                    if (document.readyState === 'loading') {
-                        document.addEventListener('DOMContentLoaded', function() {
-                            setTimeout(initAll, 100);
-                        });
-                    } else {
-                        setTimeout(initAll, 100);
-                    }
-                    
-                    // إعادة المحاولة بعد تحميل الصفحة بالكامل
-                    window.addEventListener('load', function() {
-                        setTimeout(initAll, 200);
-                    });
-                })();
-                
-                // Fallback يدوي للتبويبات في حالة فشل Bootstrap
-                document.addEventListener('DOMContentLoaded', function() {
-                    setTimeout(function() {
-                        const tabButtons = document.querySelectorAll('#salesRecordsTabs button[data-bs-toggle="tab"]');
-                        if (tabButtons.length > 0) {
-                            tabButtons.forEach(function(button) {
-                                if (!button.hasAttribute('data-listener-added')) {
-                                    button.setAttribute('data-listener-added', 'true');
-                                    button.addEventListener('click', function(e) {
-                                        e.preventDefault();
-                                        const targetId = this.getAttribute('data-bs-target');
-                                        if (!targetId) return;
-                                        
-                                        // إخفاء جميع المحتويات
-                                        document.querySelectorAll('.tab-pane').forEach(function(pane) {
-                                            pane.classList.remove('show', 'active');
-                                        });
-                                        
-                                        // إظهار المحتوى المطلوب
-                                        const targetPane = document.querySelector(targetId);
-                                        if (targetPane) {
-                                            targetPane.classList.add('show', 'active');
-                                        }
-                                        
-                                        // تحديث التبويبات
-                                        tabButtons.forEach(function(btn) {
-                                            btn.classList.remove('active');
-                                            btn.setAttribute('aria-selected', 'false');
-                                        });
-                                        this.classList.add('active');
-                                        this.setAttribute('aria-selected', 'true');
-                                        
-                                        // تحديث URL
-                                        let section = 'sales';
-                                        if (targetId === '#collections-section') {
-                                            section = 'collections';
-                                        } else if (targetId === '#returns-section') {
-                                            section = 'returns';
-                                        }
-                                        const url = new URL(window.location);
-                                        url.searchParams.set('section', section);
-                                        window.history.pushState({}, '', url);
-                                    });
-                                }
-                            });
-                        }
-                    }, 300);
+<script>
+// JavaScript لتهيئة التبويبات وإنشاء التقارير
+(function() {
+    let tabsInitialized = false;
+    let reportButtonsInitialized = false;
+    
+    // تهيئة التبويبات
+    function initTabs() {
+        if (tabsInitialized) return;
+        
+        const tabButtons = document.querySelectorAll('#salesRecordsTabs button[data-bs-toggle="tab"]');
+        if (tabButtons.length === 0) {
+            setTimeout(initTabs, 100);
+            return;
+        }
+        
+        // التحقق من تحميل Bootstrap
+        const bs = window.bootstrap || bootstrap;
+        const useBootstrap = bs && typeof bs.Tab !== 'undefined';
+        
+        tabButtons.forEach(function(button) {
+            // إزالة أي event listeners سابقة
+            const newButton = button.cloneNode(true);
+            button.parentNode.replaceChild(newButton, button);
+            
+            if (useBootstrap) {
+                // استخدام Bootstrap Tabs
+                newButton.addEventListener('shown.bs.tab', function(event) {
+                    updateTabState(event.target, tabButtons);
+                    updateURL(event.target);
                 });
-                </script>
+            } else {
+                // Fallback يدوي
+                newButton.addEventListener('click', function(e) {
+                    e.preventDefault();
+                    e.stopPropagation();
+                    
+                    const targetId = this.getAttribute('data-bs-target');
+                    if (!targetId) return;
+                    
+                    // إخفاء جميع المحتويات
+                    document.querySelectorAll('.tab-pane').forEach(function(pane) {
+                        pane.classList.remove('show', 'active');
+                    });
+                    
+                    // إظهار المحتوى المطلوب
+                    const targetPane = document.querySelector(targetId);
+                    if (targetPane) {
+                        targetPane.classList.add('show', 'active');
+                    }
+                    
+                    updateTabState(this, tabButtons);
+                    updateURL(this);
+                });
+            }
+        });
+        
+        // تحديد التبويب النشط بناءً على URL
+        const urlParams = new URLSearchParams(window.location.search);
+        const section = urlParams.get('section');
+        let activeTabId = 'sales-tab';
+        
+        if (section === 'collections') {
+            activeTabId = 'collections-tab';
+        } else if (section === 'returns') {
+            activeTabId = 'returns-tab';
+        }
+        
+        // تفعيل التبويب النشط
+        const activeTabButton = document.getElementById(activeTabId);
+        if (activeTabButton) {
+            const currentActiveTab = document.querySelector('#salesRecordsTabs .nav-link.active');
+            if (!currentActiveTab || currentActiveTab.id !== activeTabId) {
+                if (useBootstrap) {
+                    try {
+                        const tab = new bs.Tab(activeTabButton);
+                        tab.show();
+                    } catch (e) {
+                        console.warn('Error showing tab with Bootstrap:', e);
+                        activateTabManually(activeTabButton);
+                    }
+                } else {
+                    activateTabManually(activeTabButton);
+                }
+            }
+        }
+        
+        tabsInitialized = true;
+    }
+    
+    function updateTabState(activeButton, allButtons) {
+        allButtons.forEach(function(btn) {
+            btn.classList.remove('active');
+            btn.setAttribute('aria-selected', 'false');
+        });
+        activeButton.classList.add('active');
+        activeButton.setAttribute('aria-selected', 'true');
+    }
+    
+    function updateURL(button) {
+        const targetId = button.getAttribute('data-bs-target');
+        let section = 'sales';
+        if (targetId === '#collections-section') {
+            section = 'collections';
+        } else if (targetId === '#returns-section') {
+            section = 'returns';
+        }
+        const url = new URL(window.location);
+        url.searchParams.set('section', section);
+        window.history.pushState({}, '', url);
+    }
+    
+    function activateTabManually(button) {
+        const targetId = button.getAttribute('data-bs-target');
+        if (!targetId) return;
+        
+        // إخفاء جميع المحتويات
+        document.querySelectorAll('.tab-pane').forEach(function(pane) {
+            pane.classList.remove('show', 'active');
+        });
+        
+        // إظهار المحتوى المطلوب
+        const targetPane = document.querySelector(targetId);
+        if (targetPane) {
+            targetPane.classList.add('show', 'active');
+        }
+        
+        // تحديث التبويبات
+        const tabButtons = document.querySelectorAll('#salesRecordsTabs button[data-bs-toggle="tab"]');
+        updateTabState(button, tabButtons);
+    }
+    
+    function initReportButtons() {
+        if (reportButtonsInitialized) return;
+        
+        const bs = window.bootstrap || bootstrap;
+        if (!bs || typeof bs.Modal === 'undefined') {
+            setTimeout(initReportButtons, 100);
+            return;
+        }
+        
+        const basePath = '<?php echo getBasePath(); ?>';
+        
+        // معالج إنشاء تقرير المبيعات
+        const generateSalesReportBtn = document.getElementById('generateSalesReportBtn');
+        if (generateSalesReportBtn) {
+            const newBtn = generateSalesReportBtn.cloneNode(true);
+            generateSalesReportBtn.parentNode.replaceChild(newBtn, generateSalesReportBtn);
+            
+            newBtn.addEventListener('click', function() {
+                const dateFrom = document.getElementById('salesReportDateFrom').value;
+                const dateTo = document.getElementById('salesReportDateTo').value;
+                
+                if (!dateFrom || !dateTo) {
+                    alert('يرجى اختيار الفترة المطلوبة');
+                    return;
+                }
+                
+                if (new Date(dateFrom) > new Date(dateTo)) {
+                    alert('تاريخ البداية يجب أن يكون قبل تاريخ النهاية');
+                    return;
+                }
+                
+                const url = basePath + '/api/generate_sales_report.php?date_from=' + encodeURIComponent(dateFrom) + '&date_to=' + encodeURIComponent(dateTo);
+                const reportWindow = window.open(url, 'salesReport', 'width=1000,height=800,scrollbars=yes,resizable=yes');
+                
+                if (reportWindow) {
+                    const modalElement = document.getElementById('generateSalesReportModal');
+                    if (modalElement) {
+                        const modal = bs.Modal.getInstance(modalElement);
+                        if (modal) modal.hide();
+                    }
+                } else {
+                    alert('يرجى السماح للموقع بفتح النوافذ المنبثقة');
+                }
+            });
+        }
+        
+        // معالج إنشاء تقرير التحصيلات
+        const generateCollectionsReportBtn = document.getElementById('generateCollectionsReportBtn');
+        if (generateCollectionsReportBtn) {
+            const newBtn = generateCollectionsReportBtn.cloneNode(true);
+            generateCollectionsReportBtn.parentNode.replaceChild(newBtn, generateCollectionsReportBtn);
+            
+            newBtn.addEventListener('click', function() {
+                const dateFrom = document.getElementById('collectionsReportDateFrom').value;
+                const dateTo = document.getElementById('collectionsReportDateTo').value;
+                
+                if (!dateFrom || !dateTo) {
+                    alert('يرجى اختيار الفترة المطلوبة');
+                    return;
+                }
+                
+                if (new Date(dateFrom) > new Date(dateTo)) {
+                    alert('تاريخ البداية يجب أن يكون قبل تاريخ النهاية');
+                    return;
+                }
+                
+                const url = basePath + '/api/generate_collections_report.php?date_from=' + encodeURIComponent(dateFrom) + '&date_to=' + encodeURIComponent(dateTo);
+                const reportWindow = window.open(url, 'collectionsReport', 'width=1000,height=800,scrollbars=yes,resizable=yes');
+                
+                if (reportWindow) {
+                    const modalElement = document.getElementById('generateCollectionsReportModal');
+                    if (modalElement) {
+                        const modal = bs.Modal.getInstance(modalElement);
+                        if (modal) modal.hide();
+                    }
+                } else {
+                    alert('يرجى السماح للموقع بفتح النوافذ المنبثقة');
+                }
+            });
+        }
+        
+        // معالج إنشاء تقرير العميل - المبيعات
+        const generateCustomerSalesReportBtn = document.getElementById('generateCustomerSalesReportBtn');
+        if (generateCustomerSalesReportBtn) {
+            const newBtn = generateCustomerSalesReportBtn.cloneNode(true);
+            generateCustomerSalesReportBtn.parentNode.replaceChild(newBtn, generateCustomerSalesReportBtn);
+            
+            newBtn.addEventListener('click', function() {
+                const customerId = document.getElementById('customerSalesReportCustomerId').value;
+                
+                if (!customerId) {
+                    alert('يرجى اختيار العميل');
+                    return;
+                }
+                
+                const url = basePath + '/api/generate_customer_sales_report.php?customer_id=' + encodeURIComponent(customerId);
+                const reportWindow = window.open(url, 'customerSalesReport', 'width=1000,height=800,scrollbars=yes,resizable=yes');
+                
+                if (reportWindow) {
+                    const modalElement = document.getElementById('generateCustomerSalesReportModal');
+                    if (modalElement) {
+                        const modal = bs.Modal.getInstance(modalElement);
+                        if (modal) modal.hide();
+                    }
+                } else {
+                    alert('يرجى السماح للموقع بفتح النوافذ المنبثقة');
+                }
+            });
+        }
+
+        // معالج إنشاء تقرير العميل - التحصيلات
+        const generateCustomerCollectionsReportBtn = document.getElementById('generateCustomerCollectionsReportBtn');
+        if (generateCustomerCollectionsReportBtn) {
+            const newBtn = generateCustomerCollectionsReportBtn.cloneNode(true);
+            generateCustomerCollectionsReportBtn.parentNode.replaceChild(newBtn, generateCustomerCollectionsReportBtn);
+            
+            newBtn.addEventListener('click', function() {
+                const customerId = document.getElementById('customerCollectionsReportCustomerId').value;
+                
+                if (!customerId) {
+                    alert('يرجى اختيار العميل');
+                    return;
+                }
+                
+                const url = basePath + '/api/generate_customer_collections_report.php?customer_id=' + encodeURIComponent(customerId);
+                const reportWindow = window.open(url, 'customerCollectionsReport', 'width=1000,height=800,scrollbars=yes,resizable=yes');
+                
+                if (reportWindow) {
+                    const modalElement = document.getElementById('generateCustomerCollectionsReportModal');
+                    if (modalElement) {
+                        const modal = bs.Modal.getInstance(modalElement);
+                        if (modal) modal.hide();
+                    }
+                } else {
+                    alert('يرجى السماح للموقع بفتح النوافذ المنبثقة');
+                }
+            });
+        }
+        
+        reportButtonsInitialized = true;
+    }
+    
+    // تهيئة كل شيء
+    function initAll() {
+        initTabs();
+        initReportButtons();
+    }
+    
+    if (document.readyState === 'loading') {
+        document.addEventListener('DOMContentLoaded', function() {
+            setTimeout(initAll, 100);
+        });
+    } else {
+        setTimeout(initAll, 100);
+    }
+    
+    // إعادة المحاولة بعد تحميل الصفحة بالكامل
+    window.addEventListener('load', function() {
+        setTimeout(initAll, 300);
+    });
+})();
+</script>
                 
             <?php elseif ($page === 'orders'): ?>
                 <!-- صفحة طلبات العملاء -->
