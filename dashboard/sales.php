@@ -476,19 +476,19 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && trim($_P
 
                     <ul class="nav nav-pills combined-tabs mb-4 flex-column flex-sm-row gap-2" id="salesCollectionsTabs" role="tablist">
                         <li class="nav-item" role="presentation">
-                            <button class="nav-link active" id="sales-tab" data-bs-toggle="pill" data-bs-target="#sales-section" type="button" role="tab" aria-controls="sales-section" aria-selected="true">
+                            <button class="nav-link active" id="sales-tab" data-bs-toggle="tab" data-bs-target="#sales-section" type="button" role="tab" aria-controls="sales-section" aria-selected="true">
                                 <i class="bi bi-receipt"></i>
                                 <span><?php echo isset($lang['sales']) ? $lang['sales'] : 'المبيعات'; ?></span>
                             </button>
                         </li>
                         <li class="nav-item" role="presentation">
-                            <button class="nav-link" id="collections-tab" data-bs-toggle="pill" data-bs-target="#collections-section" type="button" role="tab" aria-controls="collections-section" aria-selected="false">
+                            <button class="nav-link" id="collections-tab" data-bs-toggle="tab" data-bs-target="#collections-section" type="button" role="tab" aria-controls="collections-section" aria-selected="false">
                                 <i class="bi bi-cash-coin"></i>
                                 <span><?php echo isset($lang['collections']) ? $lang['collections'] : 'التحصيلات'; ?></span>
                             </button>
                         </li>
                         <li class="nav-item" role="presentation">
-                            <button class="nav-link" id="returns-tab" data-bs-toggle="pill" data-bs-target="#returns-section" type="button" role="tab" aria-controls="returns-section" aria-selected="false">
+                            <button class="nav-link" id="returns-tab" data-bs-toggle="tab" data-bs-target="#returns-section" type="button" role="tab" aria-controls="returns-section" aria-selected="false">
                                 <i class="bi bi-arrow-return-left"></i>
                                 <span>المرتجعات</span>
                             </button>
@@ -1072,6 +1072,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && trim($_P
                                     tab.show();
                                 }
                             }
+                            
+                            // التأكد من أن Bootstrap يتعامل مع التبويبات تلقائياً
+                            // لا حاجة لإضافة event listeners يدوياً - Bootstrap يتولى ذلك عبر data-bs-toggle="pill"
                         }
 
                         function handlePrintableButtons() {
@@ -1081,11 +1084,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && trim($_P
                             }
 
                             printableButtons.forEach(function (button) {
-                                // إزالة أي معالجات سابقة
-                                const newButton = button.cloneNode(true);
-                                button.parentNode.replaceChild(newButton, button);
-                                
-                                newButton.addEventListener('click', function () {
+                                button.addEventListener('click', function () {
                                     const targetId = this.getAttribute('data-report-target');
                                     const reportTitle = this.getAttribute('data-report-title') || '';
                                     openPrintableReport(targetId, reportTitle, assetsBaseUrl);
@@ -1098,23 +1097,10 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && trim($_P
                             handlePrintableButtons();
                         }
 
-                        // التأكد من تحميل Bootstrap قبل تشغيل الكود
-                        function waitForBootstrap(callback) {
-            if (typeof bootstrap !== 'undefined' && typeof bootstrap.Tab !== 'undefined') {
-                                callback();
-                            } else {
-                                setTimeout(function() {
-                                    waitForBootstrap(callback);
-                                }, 100);
-                            }
-                        }
-
                         if (document.readyState === 'loading') {
-                            document.addEventListener('DOMContentLoaded', function() {
-                                waitForBootstrap(initPrintableReports);
-                            });
+                            document.addEventListener('DOMContentLoaded', initPrintableReports);
                         } else {
-                            waitForBootstrap(initPrintableReports);
+                            initPrintableReports();
                         }
 
                         window.openPrintableReport = openPrintableReport;
