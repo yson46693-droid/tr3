@@ -484,16 +484,21 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         if ($amount <= 0) {
             $error = 'يجب إدخال مبلغ السلفة';
         } else {
-            // التحقق من وجود طلب سلفة معلق (pending أو accountant_approved)
-            $existingRequest = $db->queryOne(
-                "SELECT id FROM salary_advances 
-                 WHERE user_id = ? AND status IN ('pending', 'accountant_approved')",
-                [$userId]
-            );
-            
-            if ($existingRequest) {
-                $error = 'يوجد طلب سلفة معلق بالفعل لهذا الموظف في انتظار الموافقة النهائية';
+            // التحقق من آخر تسجيل حضور/انصراف
+            $attendanceCheck = canRequestAdvance($userId);
+            if (!$attendanceCheck['allowed']) {
+                $error = $attendanceCheck['message'];
             } else {
+                // التحقق من وجود طلب سلفة معلق (pending أو accountant_approved)
+                $existingRequest = $db->queryOne(
+                    "SELECT id FROM salary_advances 
+                     WHERE user_id = ? AND status IN ('pending', 'accountant_approved')",
+                    [$userId]
+                );
+                
+                if ($existingRequest) {
+                    $error = 'يوجد طلب سلفة معلق بالفعل لهذا الموظف في انتظار الموافقة النهائية';
+                } else {
                 try {
                     $result = $db->execute(
                         "INSERT INTO salary_advances (user_id, amount, reason, request_date, status) 
@@ -509,6 +514,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     $success = 'تم إرسال طلب السلفة بنجاح. في انتظار موافقة المحاسب.';
                 } catch (Exception $e) {
                     $error = 'حدث خطأ في إرسال الطلب: ' . $e->getMessage();
+                }
                 }
             }
         }

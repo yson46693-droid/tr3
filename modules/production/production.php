@@ -4914,6 +4914,144 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 try {
                     error_log('=== Starting auto-deduction logic for all auto-added materials (PKG-009, PKG-004, PKG-010, etc.) ===');
                     
+                    // أولاً: التحقق من وجود المواد المحفزة في القائمة وإضافة المواد المستهدفة تلقائياً
+                    $triggerMaterials = [
+                        'PKG009' => ['target' => 'PKG001', 'threshold' => 12, 'divisor' => 12],
+                        'PKG004' => ['target' => 'PKG001', 'threshold' => 12, 'divisor' => 12],
+                        'PKG042' => ['target' => 'PKG001', 'threshold' => 12, 'divisor' => 12],
+                        'PKG011' => ['target' => 'PKG001', 'threshold' => 12, 'divisor' => 12],
+                        'PKG010' => ['target' => 'PKG002', 'threshold' => 6, 'divisor' => 6],
+                        'PKG036' => ['target' => 'PKG002', 'threshold' => 6, 'divisor' => 6],
+                    ];
+                    
+                    $foundTriggers = [];
+                    $targetMaterialsToAdd = [];
+                    
+                    if (!empty($materialsConsumption['packaging'])) {
+                        foreach ($materialsConsumption['packaging'] as $packItem) {
+                            $packItemCode = isset($packItem['material_code']) ? (string)$packItem['material_code'] : '';
+                            $packItemCodeKey = $packItemCode ? $normalizePackagingCodeKey($packItemCode) : null;
+                            $packMaterialId = isset($packItem['material_id']) ? (int)$packItem['material_id'] : 0;
+                            
+                            // التحقق من material_id في قاعدة البيانات إذا لم يكن الكود واضحاً
+                            if (empty($packItemCodeKey) && $packMaterialId > 0 && $packagingTableExists) {
+                                try {
+                                    $materialCodeCheck = $db->queryOne(
+                                        "SELECT material_id FROM packaging_materials WHERE id = ?",
+                                        [$packMaterialId]
+                                    );
+                                    if ($materialCodeCheck && !empty($materialCodeCheck['material_id'])) {
+                                        $packItemCodeKey = $normalizePackagingCodeKey($materialCodeCheck['material_id']);
+                                        error_log('Resolved material code from DB: ID=' . $packMaterialId . ', Code=' . $packItemCodeKey);
+                                    }
+                                } catch (Exception $checkError) {
+                                    // تجاهل الخطأ
+                                }
+                            }
+                            
+                            // التحقق من وجود مادة محفزة
+                            if ($packItemCodeKey && isset($triggerMaterials[$packItemCodeKey])) {
+                                $trigger = $triggerMaterials[$packItemCodeKey];
+                                if ($quantity >= $trigger['threshold']) {
+                                    $foundTriggers[$packItemCodeKey] = true;
+                                    $targetCodeKey = $trigger['target'];
+                                    
+                                    // حساب الكمية المطلوبة
+                                    $quantityForBoxes = (int)floor((float)$quantity);
+                                    $additionalQty = intdiv(max($quantityForBoxes, 0), $trigger['divisor']);
+                                    
+                                    if ($additionalQty > 0) {
+                                        if (!isset($targetMaterialsToAdd[$targetCodeKey])) {
+                                            $targetMaterialsToAdd[$targetCodeKey] = [
+                                                'code_key' => $targetCodeKey,
+                                                'quantity' => 0
+                                            ];
+                                        }
+                                        $targetMaterialsToAdd[$targetCodeKey]['quantity'] += $additionalQty;
+                                        error_log('Trigger found: ' . $packItemCodeKey . ' → ' . $targetCodeKey . ', Qty=' . $quantity . ', Additional=' . $additionalQty);
+                                    }
+                                }
+                            }
+                        }
+                    }
+                    
+                    // إضافة المواد المستهدفة إلى القائمة إذا لم تكن موجودة
+                    foreach ($targetMaterialsToAdd as $targetInfo) {
+                        $targetCodeKey = $targetInfo['code_key'];
+                        $targetDisplayCode = $formatPackagingCode($targetCodeKey) ?? ('PKG-' . substr($targetCodeKey, 3));
+                        $additionalQty = $targetInfo['quantity'];
+                        
+                        // البحث عن المادة المستهدفة في قاعدة البيانات
+                        $targetMaterialId = null;
+                        $targetMaterialName = 'مادة تعبئة ' . $targetDisplayCode;
+                        $targetMaterialUnit = 'قطعة';
+                        
+                        if ($packagingTableExists) {
+                            try {
+                                $directSearch = $db->queryOne(
+                                    "SELECT id, name, unit, material_id FROM packaging_materials 
+                                     WHERE UPPER(REPLACE(REPLACE(REPLACE(REPLACE(COALESCE(material_id, ''), '-', ''), ' ', ''), '_', ''), '.', '')) = ?
+                                        OR UPPER(REPLACE(REPLACE(REPLACE(REPLACE(COALESCE(material_id, ''), '-', ''), ' ', ''), '_', ''), '.', '')) LIKE ?
+                                        OR UPPER(REPLACE(REPLACE(REPLACE(REPLACE(COALESCE(name, ''), '-', ''), ' ', ''), '_', ''), '.', '')) LIKE ?
+                                     LIMIT 1",
+                                    [$targetCodeKey, $targetCodeKey . '%', '%' . $targetCodeKey . '%']
+                                );
+                                
+                                if ($directSearch && !empty($directSearch['id'])) {
+                                    $targetMaterialId = (int)$directSearch['id'];
+                                    if (!empty($directSearch['name'])) {
+                                        $targetMaterialName = $directSearch['name'];
+                                    }
+                                    if (!empty($directSearch['unit'])) {
+                                        $targetMaterialUnit = $directSearch['unit'];
+                                    }
+                                    error_log('Target material found: ' . $targetDisplayCode . ', ID=' . $targetMaterialId);
+                                }
+                            } catch (Exception $searchError) {
+                                error_log('Error searching for target material ' . $targetDisplayCode . ': ' . $searchError->getMessage());
+                            }
+                        }
+                        
+                        if ($targetMaterialId !== null) {
+                            // التحقق إذا كانت المادة موجودة بالفعل في القائمة
+                            $targetExists = false;
+                            foreach ($materialsConsumption['packaging'] as &$existingItem) {
+                                $existingCodeKey = isset($existingItem['material_code']) 
+                                    ? $normalizePackagingCodeKey($existingItem['material_code']) 
+                                    : null;
+                                $existingMaterialId = isset($existingItem['material_id']) ? (int)$existingItem['material_id'] : 0;
+                                
+                                if (($existingCodeKey === $targetCodeKey) || ($existingMaterialId === $targetMaterialId)) {
+                                    $existingItem['quantity'] += $additionalQty;
+                                    $existingItem['material_code'] = $targetDisplayCode;
+                                    $existingItem['material_id'] = $targetMaterialId;
+                                    $targetExists = true;
+                                    error_log('Target material merged with existing: ' . $targetDisplayCode . ', New Qty=' . $existingItem['quantity']);
+                                    break;
+                                }
+                            }
+                            unset($existingItem);
+                            
+                            if (!$targetExists) {
+                                $targetProductId = ensureProductionMaterialProductId($targetMaterialName, 'packaging', $targetMaterialUnit);
+                                
+                                $materialsConsumption['packaging'][] = [
+                                    'material_id' => $targetMaterialId,
+                                    'quantity' => $additionalQty,
+                                    'name' => $targetMaterialName,
+                                    'unit' => $targetMaterialUnit,
+                                    'product_id' => $targetProductId,
+                                    'supplier_id' => null,
+                                    'template_item_id' => null,
+                                    'material_code' => $targetDisplayCode
+                                ];
+                                error_log('Target material added to consumption: ' . $targetDisplayCode . ', ID=' . $targetMaterialId . ', Qty=' . $additionalQty);
+                            }
+                        } else {
+                            error_log('WARNING: Target material ' . $targetDisplayCode . ' not found in database!');
+                        }
+                    }
+                    
                     // جمع جميع المواد المضافة تلقائياً من $materialsConsumption['packaging']
                     $autoDeductionItemsMap = [];
                     

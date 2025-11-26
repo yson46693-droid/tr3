@@ -611,6 +611,42 @@ function markAttendanceEventNotificationSent(int $userId, string $eventType, str
 }
 
 /**
+ * التحقق من آخر تسجيل حضور/انصراف للمستخدم
+ * ترجع true إذا كان آخر تسجيل هو انصراف أو لا يوجد سجلات
+ * ترجع false إذا كان آخر تسجيل هو حضور بدون انصراف
+ */
+function canRequestAdvance($userId) {
+    $db = db();
+    
+    // الحصول على آخر سجل حضور للمستخدم
+    $lastRecord = $db->queryOne(
+        "SELECT check_in_time, check_out_time, date 
+         FROM attendance_records 
+         WHERE user_id = ? 
+         ORDER BY check_in_time DESC 
+         LIMIT 1",
+        [$userId]
+    );
+    
+    // إذا لم يكن هناك سجلات، يسمح بطلب السلفة
+    if (!$lastRecord) {
+        return ['allowed' => true, 'message' => ''];
+    }
+    
+    // إذا كان آخر سجل هو حضور بدون انصراف (check_out_time IS NULL)
+    if (empty($lastRecord['check_out_time'])) {
+        $checkInDate = $lastRecord['date'] ?? date('Y-m-d');
+        return [
+            'allowed' => false, 
+            'message' => 'يجب تسجيل الانصراف أولاً قبل إرسال طلب السلفة. آخر تسجيل حضور كان في ' . $checkInDate
+        ];
+    }
+    
+    // إذا كان آخر سجل هو انصراف، يسمح بطلب السلفة
+    return ['allowed' => true, 'message' => ''];
+}
+
+/**
  * تسجيل حضور مع صورة
  */
 function recordAttendanceCheckIn($userId, $photoBase64 = null) {

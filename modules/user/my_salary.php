@@ -376,6 +376,14 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['
         exit;
     }
     
+    // التحقق من آخر تسجيل حضور/انصراف
+    $attendanceCheck = canRequestAdvance($currentUser['id']);
+    if (!$attendanceCheck['allowed']) {
+        $error = $attendanceCheck['message'];
+        $sendAdvanceAjaxResponse(false, $error);
+        exit;
+    }
+    
     // التحقق من وجود طلب سلفة معلق بعد التأكد من الجدول
     // التحقق من الطلبات المعلقة (pending) أو الموافق عليها من المحاسب (accountant_approved)
     $existingRequest = $db->queryOne(
