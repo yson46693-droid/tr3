@@ -778,13 +778,13 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 }
                 
                 // تحديث القالب
+                // الحصول على نوع الكرتونة
+                $cartonType = trim($_POST['carton_type'] ?? '');
+                if (!in_array($cartonType, ['kilo', 'half', 'quarter', 'third'])) {
+                    $cartonType = null;
+                }
+                
                 $db->execute(
-                    // الحصول على نوع الكرتونة
-                    $cartonType = trim($_POST['carton_type'] ?? '');
-                    if (!in_array($cartonType, ['kilo', 'half', 'quarter', 'third'])) {
-                        $cartonType = null;
-                    }
-                    
                     "UPDATE product_templates 
                      SET product_name = ?, details_json = ?, unit_price = ?, carton_type = ?, updated_at = NOW()
                      WHERE id = ?",
