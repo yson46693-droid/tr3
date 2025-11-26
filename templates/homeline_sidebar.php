@@ -331,13 +331,6 @@ switch ($role) {
                 'active' => ($currentPage === 'sales.php' && $currentPageParam === 'customers'),
                 'badge' => null
             ],
-            [
-                'title' => 'سجلات المندوب',
-                'icon' => 'bi-journal-text',
-                'url' => $baseUrl . 'sales.php?page=my_records',
-                'active' => ($currentPage === 'sales.php' && $currentPageParam === 'my_records'),
-                'badge' => null
-            ],
 
             [
                 'title' => isset($lang['customer_orders']) ? $lang['customer_orders'] : 'طلبات العملاء',
@@ -372,6 +365,13 @@ switch ($role) {
                 'icon' => 'bi-cash-stack',
                 'url' => $baseUrl . 'sales.php?page=cash_register',
                 'active' => ($currentPage === 'sales.php' && $currentPageParam === 'cash_register'),
+                'badge' => null
+            ],
+            [
+                'title' => 'سجلات المندوب',
+                'icon' => 'bi-journal-text',
+                'url' => $baseUrl . 'sales.php?page=my_records',
+                'active' => ($currentPage === 'sales.php' && $currentPageParam === 'my_records'),
                 'badge' => null
             ],
             [
