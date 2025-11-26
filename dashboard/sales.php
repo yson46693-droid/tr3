@@ -768,12 +768,53 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && trim($_P
                         // تهيئة جميع التبويبات
                         const tabButtons = document.querySelectorAll('#salesRecordsTabs button[data-bs-toggle="tab"]');
                         tabButtons.forEach(function(button) {
+                            // إضافة event listener للتبويبات
                             button.addEventListener('shown.bs.tab', function(event) {
                                 // تحديث aria-selected
                                 tabButtons.forEach(function(btn) {
                                     btn.setAttribute('aria-selected', 'false');
+                                    btn.classList.remove('active');
                                 });
                                 event.target.setAttribute('aria-selected', 'true');
+                                event.target.classList.add('active');
+                                
+                                // تحديث URL بدون إعادة تحميل الصفحة
+                                const targetId = event.target.getAttribute('data-bs-target');
+                                let section = 'sales';
+                                if (targetId === '#collections-section') {
+                                    section = 'collections';
+                                } else if (targetId === '#returns-section') {
+                                    section = 'returns';
+                                }
+                                
+                                const url = new URL(window.location);
+                                url.searchParams.set('section', section);
+                                window.history.pushState({}, '', url);
+                            });
+                            
+                            // إضافة event listener للضغط المباشر (fallback)
+                            button.addEventListener('click', function(e) {
+                                const targetId = this.getAttribute('data-bs-target');
+                                if (targetId) {
+                                    // إخفاء جميع المحتويات
+                                    document.querySelectorAll('.tab-pane').forEach(function(pane) {
+                                        pane.classList.remove('show', 'active');
+                                    });
+                                    
+                                    // إظهار المحتوى المطلوب
+                                    const targetPane = document.querySelector(targetId);
+                                    if (targetPane) {
+                                        targetPane.classList.add('show', 'active');
+                                    }
+                                    
+                                    // تحديث التبويبات
+                                    tabButtons.forEach(function(btn) {
+                                        btn.classList.remove('active');
+                                        btn.setAttribute('aria-selected', 'false');
+                                    });
+                                    this.classList.add('active');
+                                    this.setAttribute('aria-selected', 'true');
+                                }
                             });
                         });
                         
@@ -790,9 +831,34 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && trim($_P
                         
                         // تفعيل التبويب النشط
                         const activeTabButton = document.getElementById(activeTabId);
-                        if (activeTabButton && activeTabButton !== document.querySelector('#salesRecordsTabs .nav-link.active')) {
-                            const tab = new bs.Tab(activeTabButton);
-                            tab.show();
+                        const currentActiveTab = document.querySelector('#salesRecordsTabs .nav-link.active');
+                        
+                        if (activeTabButton) {
+                            // إذا كان التبويب النشط مختلفاً، قم بتفعيله
+                            if (!currentActiveTab || currentActiveTab.id !== activeTabId) {
+                                try {
+                                    const tab = new bs.Tab(activeTabButton);
+                                    tab.show();
+                                } catch (e) {
+                                    console.warn('Error showing tab with Bootstrap, using fallback:', e);
+                                    // Fallback: تفعيل يدوي
+                                    tabButtons.forEach(function(btn) {
+                                        btn.classList.remove('active');
+                                        btn.setAttribute('aria-selected', 'false');
+                                    });
+                                    activeTabButton.classList.add('active');
+                                    activeTabButton.setAttribute('aria-selected', 'true');
+                                    
+                                    // إظهار المحتوى المناسب
+                                    document.querySelectorAll('.tab-pane').forEach(function(pane) {
+                                        pane.classList.remove('show', 'active');
+                                    });
+                                    const targetPane = document.querySelector(activeTabButton.getAttribute('data-bs-target'));
+                                    if (targetPane) {
+                                        targetPane.classList.add('show', 'active');
+                                    }
+                                }
+                            }
                         }
                     }
                     
