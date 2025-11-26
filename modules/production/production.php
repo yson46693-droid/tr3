@@ -4909,6 +4909,160 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 }
                 } // نهاية else - فقط عند عدم قيام batchCreationCreate بالخصم
                 
+                // خصم المواد المضافة تلقائياً (PKG-009 → PKG-001, PKG-004 → PKG-001, PKG-010 → PKG-002, إلخ) - يجب أن يتم دائماً بغض النظر عن stock_deducted
+                // هذه المواد إضافية ويجب خصمها دائماً حتى لو كان batchCreationCreate قد قام بخصم المواد الأخرى
+                try {
+                    error_log('=== Starting auto-deduction logic for all auto-added materials (PKG-009, PKG-004, PKG-010, etc.) ===');
+                    
+                    // جمع جميع المواد المضافة تلقائياً من $materialsConsumption['packaging']
+                    $autoDeductionItemsMap = [];
+                    
+                    if (!empty($materialsConsumption['packaging'])) {
+                        foreach ($materialsConsumption['packaging'] as $packItem) {
+                            $packMaterialId = isset($packItem['material_id']) ? (int)$packItem['material_id'] : 0;
+                            $packQuantity = (float)($packItem['quantity'] ?? 0);
+                            $packItemCode = isset($packItem['material_code']) ? (string)$packItem['material_code'] : '';
+                            $packItemCodeKey = $packItemCode ? $normalizePackagingCodeKey($packItemCode) : null;
+                            
+                            // التحقق إذا كانت هذه المادة مضافة تلقائياً (template_item_id = null)
+                            $isAutoAdded = isset($packItem['template_item_id']) && $packItem['template_item_id'] === null;
+                            
+                            // أو التحقق من الكود إذا كان PKG-001 أو PKG-002 (المواد المستهدفة من الخصم التلقائي)
+                            $isTargetMaterial = ($packItemCodeKey === 'PKG001' || $packItemCodeKey === 'PKG002');
+                            
+                            if (($isAutoAdded || $isTargetMaterial) && $packMaterialId > 0 && $packQuantity > 0) {
+                                // التحقق من أن هذه المادة موجودة في قاعدة البيانات
+                                try {
+                                    $materialCheck = $db->queryOne(
+                                        "SELECT id, name, unit, quantity FROM packaging_materials WHERE id = ?",
+                                        [$packMaterialId]
+                                    );
+                                    
+                                    if ($materialCheck) {
+                                        // إضافة إلى قائمة الخصم التلقائي (تجميع الكميات إذا كان material_id مكرر)
+                                        if (!isset($autoDeductionItemsMap[$packMaterialId])) {
+                                            $autoDeductionItemsMap[$packMaterialId] = [
+                                                'material_id' => $packMaterialId,
+                                                'quantity' => 0,
+                                                'name' => !empty($materialCheck['name']) ? $materialCheck['name'] : ($packItem['name'] ?? ''),
+                                                'code' => $packItemCode,
+                                                'unit' => !empty($materialCheck['unit']) ? $materialCheck['unit'] : ($packItem['unit'] ?? 'وحدة')
+                                            ];
+                                        }
+                                        $autoDeductionItemsMap[$packMaterialId]['quantity'] += $packQuantity;
+                                        error_log('Auto-deduction item added: ID=' . $packMaterialId . ', Code=' . $packItemCode . ', Qty=' . $packQuantity . ' (total: ' . $autoDeductionItemsMap[$packMaterialId]['quantity'] . ')');
+                                    } else {
+                                        error_log('WARNING: Auto-deduction material ID=' . $packMaterialId . ' not found in database!');
+                                    }
+                                } catch (Exception $checkError) {
+                                    error_log('Error checking auto-deduction material ID=' . $packMaterialId . ': ' . $checkError->getMessage());
+                                }
+                            }
+                        }
+                    }
+                    
+                    // تنفيذ الخصم للمواد المضافة تلقائياً
+                    if (!empty($autoDeductionItemsMap)) {
+                        error_log('Processing ' . count($autoDeductionItemsMap) . ' auto-deduction items');
+                        
+                        foreach ($autoDeductionItemsMap as $deductionItem) {
+                            $packMaterialId = (int)$deductionItem['material_id'];
+                            $packQuantity = (float)$deductionItem['quantity'];
+                            $packItemName = trim((string)$deductionItem['name']);
+                            $packItemCode = isset($deductionItem['code']) ? (string)$deductionItem['code'] : '';
+                            
+                            error_log('Processing auto-deduction: material_id=' . $packMaterialId . ', quantity=' . $packQuantity . ', name=' . $packItemName . ', code=' . $packItemCode);
+                            
+                            if ($packMaterialId > 0 && $packQuantity > 0) {
+                                $materialNameForLog = $packItemName;
+                                $materialUnitForLog = $deductionItem['unit'] ?? 'وحدة';
+                                
+                                // الحصول على الكمية الحالية قبل الخصم مع FOR UPDATE لتجنب الخصم المزدوج
+                                $currentQuantityCheck = $db->queryOne(
+                                    "SELECT name, unit, quantity FROM packaging_materials WHERE id = ? FOR UPDATE",
+                                    [$packMaterialId]
+                                );
+                                
+                                if (!$currentQuantityCheck) {
+                                    error_log('WARNING: Auto-deduction material ID=' . $packMaterialId . ' not found! Skipping.');
+                                    continue;
+                                }
+                                
+                                $quantityBefore = (float)($currentQuantityCheck['quantity'] ?? 0);
+                                if (!empty($currentQuantityCheck['name'])) {
+                                    $materialNameForLog = $currentQuantityCheck['name'];
+                                }
+                                if (!empty($currentQuantityCheck['unit'])) {
+                                    $materialUnitForLog = $currentQuantityCheck['unit'];
+                                }
+                                
+                                // التحقق من أن الكمية المتاحة كافية
+                                if ($quantityBefore < $packQuantity) {
+                                    error_log('WARNING: Insufficient stock for auto-deduction material ID=' . $packMaterialId . '. Available=' . $quantityBefore . ', Required=' . $packQuantity);
+                                    // لا نوقف العملية، فقط نسجل تحذير
+                                }
+                                
+                                error_log('Auto-deducting from packaging_materials: ID=' . $packMaterialId . ', Quantity=' . $packQuantity . ', Before=' . $quantityBefore);
+                                
+                                try {
+                                    $db->execute(
+                                        "UPDATE packaging_materials 
+                                         SET quantity = GREATEST(quantity - ?, 0), updated_at = NOW() 
+                                         WHERE id = ?",
+                                        [$packQuantity, $packMaterialId]
+                                    );
+                                    
+                                    // التحقق من نجاح الخصم
+                                    $verifyDeduction = $db->queryOne(
+                                        "SELECT quantity FROM packaging_materials WHERE id = ?",
+                                        [$packMaterialId]
+                                    );
+                                    if ($verifyDeduction) {
+                                        $quantityAfter = (float)($verifyDeduction['quantity'] ?? 0);
+                                        $expectedAfter = max($quantityBefore - $packQuantity, 0);
+                                        error_log('Auto-deduction successful: ID=' . $packMaterialId . ', After=' . $quantityAfter . ' (expected: ' . $expectedAfter . ')');
+                                        
+                                        // تسجيل في packaging_usage_logs إذا كان موجوداً
+                                        if ($packagingUsageLogsExists && $quantityBefore !== null) {
+                                            $quantityUsed = $quantityBefore - $quantityAfter;
+                                            
+                                            if ($quantityUsed > 0) {
+                                                try {
+                                                    $db->execute(
+                                                        "INSERT INTO packaging_usage_logs 
+                                                         (material_id, material_name, material_code, source_table, quantity_before, quantity_used, quantity_after, unit, used_by) 
+                                                         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                                                        [
+                                                            $packMaterialId,
+                                                            $materialNameForLog,
+                                                            null,
+                                                            'packaging_materials',
+                                                            $quantityBefore,
+                                                            $quantityUsed,
+                                                            $quantityAfter,
+                                                            $materialUnitForLog ?: 'وحدة',
+                                                            $currentUser['id'] ?? null
+                                                        ]
+                                                    );
+                                                    error_log('Auto-deduction usage log inserted: ID=' . $packMaterialId . ', Used=' . $quantityUsed);
+                                                } catch (Exception $packagingUsageInsertError) {
+                                                    error_log('Auto-deduction packaging usage log insert failed: ' . $packagingUsageInsertError->getMessage());
+                                                }
+                                            }
+                                        }
+                                    }
+                                } catch (Exception $deductionError) {
+                                    error_log('Auto-deduction ERROR: ' . $deductionError->getMessage() . ' | ID=' . $packMaterialId . ', Qty=' . $packQuantity);
+                                }
+                            }
+                        }
+                    } else {
+                        error_log('No auto-deduction items found to process');
+                    }
+                } catch (Exception $autoDeductionError) {
+                    error_log('Auto-deduction error: ' . $autoDeductionError->getMessage());
+                }
+                
                 // خصم المواد المضافة تلقائياً (PKG-042, PKG-011, PKG-036) - يجب أن يتم دائماً بغض النظر عن stock_deducted
                 // هذه المواد إضافية ويجب خصمها دائماً حتى لو كان batchCreationCreate قد قام بخصم المواد الأخرى
                 try {

@@ -332,10 +332,10 @@ switch ($role) {
                 'badge' => null
             ],
             [
-                'title' => isset($lang['sales_and_collections']) ? $lang['sales_and_collections'] : 'مبيعات و تحصيلات',
-                'icon' => 'bi-cart-check',
-                'url' => $baseUrl . 'sales.php?page=sales_collections',
-                'active' => ($currentPage === 'sales.php' && in_array($currentPageParam, ['sales', 'collections', 'sales_collections'], true)),
+                'title' => 'السجلات',
+                'icon' => 'bi-journal-text',
+                'url' => $baseUrl . 'sales.php?page=sales_records',
+                'active' => ($currentPage === 'sales.php' && $currentPageParam === 'sales_records'),
                 'badge' => null
             ],
             [
