@@ -188,7 +188,7 @@ switch ($role) {
                 'badge' => null
             ],
             [
-                'title' => 'سجلات المندوب',
+                'title' => ' سجلات المبيعات',
                 'icon' => 'bi-journal-text',
                 'url' => $baseUrl . 'sales.php?page=my_records',
                 'active' => (isset($_GET['page']) && $_GET['page'] === 'my_records'),
