@@ -1249,6 +1249,8 @@ $monthName = date('F', mktime(0, 0, 0, $selectedMonth, 1));
 </div>
 
 <!-- رسائل النجاح والخطأ -->
+<div id="pageAlertContainer"></div>
+
 <?php if ($error): ?>
     <div class="alert alert-danger alert-dismissible fade show mb-4">
         <i class="bi bi-exclamation-triangle-fill me-2"></i>
@@ -1447,18 +1449,26 @@ document.addEventListener('DOMContentLoaded', function() {
         
         if (advanceTable) {
             const rows = advanceTable.querySelectorAll('tr');
-            rows.forEach(row => {
-                const firstCell = row.querySelector('td:first-child');
-                if (firstCell) {
-                    const cellText = firstCell.textContent.trim();
-                    // البحث عن رقم الطلب في الخلية الأولى (مثل #123)
-                    const match = cellText.match(/#(\d+)/);
-                    if (match && match[1] === advanceId) {
-                        requestFound = true;
-                        requestRow = row;
+            if (rows.length === 0) {
+                // الجدول فارغ - الطلب غير موجود
+                requestFound = false;
+            } else {
+                rows.forEach(row => {
+                    const firstCell = row.querySelector('td:first-child');
+                    if (firstCell) {
+                        const cellText = firstCell.textContent.trim();
+                        // البحث عن رقم الطلب في الخلية الأولى (مثل #123)
+                        const match = cellText.match(/#(\d+)/);
+                        if (match && match[1] === advanceId) {
+                            requestFound = true;
+                            requestRow = row;
+                        }
                     }
-                }
-            });
+                });
+            }
+        } else {
+            // لا يوجد جدول على الإطلاق - الطلب غير موجود
+            requestFound = false;
         }
         
         // إزالة رسالة النجاح الافتراضية من session إذا كانت موجودة
@@ -1468,12 +1478,34 @@ document.addEventListener('DOMContentLoaded', function() {
         }
         
         if (!requestFound) {
-            // إذا لم يتم العثور على الطلب في الجدول، عرض رسالة خطأ
+            // إذا لم يتم العثور على الطلب في الجدول، عرض رسالة خطأ واضحة في أعلى الصفحة
+            const pageAlertContainer = document.getElementById('pageAlertContainer');
+            if (pageAlertContainer) {
+                // إزالة أي رسائل موجودة مسبقاً
+                pageAlertContainer.innerHTML = '';
+                
+                const errorAlert = document.createElement('div');
+                errorAlert.className = 'alert alert-danger alert-dismissible fade show mb-4';
+                errorAlert.style.cssText = 'font-size: 16px; font-weight: 600;';
+                errorAlert.innerHTML = '<i class="bi bi-exclamation-triangle-fill me-2"></i><strong>فشل إرسال طلب السلفة:</strong> لم يتم العثور على الطلب في الجدول. يرجى التحقق من سجل الطلبات أو التواصل مع الإدارة.' +
+                    '<button type="button" class="btn-close" data-bs-dismiss="alert"></button>';
+                pageAlertContainer.appendChild(errorAlert);
+                
+                // تمرير الصفحة إلى أعلى لعرض الرسالة
+                setTimeout(() => {
+                    pageAlertContainer.scrollIntoView({ behavior: 'smooth', block: 'start' });
+                }, 100);
+            }
+            
+            // عرض رسالة خطأ أيضاً في نموذج طلب السلفة
             const alertContainer = document.getElementById('advanceAlertContainer');
             if (alertContainer) {
+                // إزالة أي رسائل موجودة مسبقاً
+                alertContainer.innerHTML = '';
+                
                 const errorAlert = document.createElement('div');
                 errorAlert.className = 'alert alert-danger alert-dismissible fade show';
-                errorAlert.innerHTML = '<i class="bi bi-exclamation-triangle-fill me-2"></i>فشل إرسال طلب السلفة: لم يتم العثور على الطلب في الجدول. يرجى التحقق من سجل الطلبات أو التواصل مع الإدارة.' +
+                errorAlert.innerHTML = '<i class="bi bi-exclamation-triangle-fill me-2"></i><strong>فشل إرسال طلب السلفة:</strong> لم يتم العثور على الطلب في الجدول. يرجى التحقق من سجل الطلبات أو التواصل مع الإدارة.' +
                     '<button type="button" class="btn-close" data-bs-dismiss="alert"></button>';
                 alertContainer.appendChild(errorAlert);
             }
@@ -1485,7 +1517,17 @@ document.addEventListener('DOMContentLoaded', function() {
             
             console.error('Advance request verification failed: Request ID ' + advanceId + ' not found in table');
         } else {
-            // إذا تم العثور على الطلب، عرض رسالة النجاح
+            // إذا تم العثور على الطلب، عرض رسالة النجاح في أعلى الصفحة
+            const pageAlertContainer = document.getElementById('pageAlertContainer');
+            if (pageAlertContainer) {
+                const successAlert = document.createElement('div');
+                successAlert.className = 'alert alert-success alert-dismissible fade show mb-4';
+                successAlert.innerHTML = '<i class="bi bi-check-circle-fill me-2"></i><strong>تم إرسال طلب السلفة بنجاح.</strong> سيتم مراجعته من قبل المحاسب والمدير.' +
+                    '<button type="button" class="btn-close" data-bs-dismiss="alert"></button>';
+                pageAlertContainer.appendChild(successAlert);
+            }
+            
+            // عرض رسالة النجاح أيضاً في نموذج طلب السلفة
             const alertContainer = document.getElementById('advanceAlertContainer');
             if (alertContainer) {
                 const successAlert = document.createElement('div');
@@ -1493,14 +1535,14 @@ document.addEventListener('DOMContentLoaded', function() {
                 successAlert.innerHTML = '<i class="bi bi-check-circle-fill me-2"></i>تم إرسال طلب السلفة بنجاح. سيتم مراجعته من قبل المحاسب والمدير.' +
                     '<button type="button" class="btn-close" data-bs-dismiss="alert"></button>';
                 alertContainer.appendChild(successAlert);
-                
-                // تمييز الصف في الجدول (اختياري)
-                if (requestRow) {
-                    requestRow.style.backgroundColor = '#d1fae5';
-                    setTimeout(() => {
-                        requestRow.style.backgroundColor = '';
-                    }, 3000);
-                }
+            }
+            
+            // تمييز الصف في الجدول (اختياري)
+            if (requestRow) {
+                requestRow.style.backgroundColor = '#d1fae5';
+                setTimeout(() => {
+                    requestRow.style.backgroundColor = '';
+                }, 3000);
             }
             
             // إزالة advance_id من URL بعد عرض الرسالة
