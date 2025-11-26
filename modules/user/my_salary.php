@@ -499,6 +499,85 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['
         // تسجيل نجاح التحقق
         error_log("Advance request #{$requestId}: Successfully verified in database. Amount: {$amount}, Date: {$verifyDate}, Status: {$verifyStatus}");
         
+        // التحقق النهائي: التأكد من أن الطلب سيظهر في الجدول (نفس الاستعلام المستخدم في عرض الجدول)
+        try {
+            $salaryColumns = [];
+            $salaryMonthColumn = null;
+            $salaryYearColumn = null;
+            $salaryTotalColumn = null;
+
+            try {
+                $salaryColumns = $db->query("SHOW COLUMNS FROM salaries");
+            } catch (Throwable $salaryColumnsError) {
+                error_log('Failed to read salaries columns: ' . $salaryColumnsError->getMessage());
+            }
+
+            if (is_array($salaryColumns)) {
+                foreach ($salaryColumns as $column) {
+                    $field = $column['Field'] ?? '';
+                    if ($field === 'month' || $field === 'salary_month') {
+                        $salaryMonthColumn = $salaryMonthColumn ?? $field;
+                    } elseif ($field === 'year' || $field === 'salary_year') {
+                        $salaryYearColumn = $salaryYearColumn ?? $field;
+                    } elseif ($field === 'total_amount' || $field === 'amount' || $field === 'net_total') {
+                        $salaryTotalColumn = $salaryTotalColumn ?? $field;
+                    }
+                }
+            }
+
+            $salaryMonthSelect = $salaryMonthColumn
+                ? "s.{$salaryMonthColumn} AS deducted_salary_month"
+                : "NULL AS deducted_salary_month";
+
+            $salaryYearSelect = $salaryYearColumn
+                ? "s.{$salaryYearColumn} AS deducted_salary_year"
+                : "NULL AS deducted_salary_year";
+
+            $salaryTotalSelect = $salaryTotalColumn
+                ? "s.{$salaryTotalColumn} AS deducted_salary_total"
+                : "NULL AS deducted_salary_total";
+
+            $finalCheckSql = "
+                SELECT 
+                    sa.id,
+                    sa.amount,
+                    sa.status,
+                    sa.request_date,
+                    {$salaryMonthSelect},
+                    {$salaryYearSelect},
+                    {$salaryTotalSelect}
+                FROM salary_advances sa
+                LEFT JOIN salaries s ON sa.deducted_from_salary_id = s.id
+                WHERE sa.id = ? AND sa.user_id = ?
+                ORDER BY sa.created_at DESC 
+                LIMIT 1";
+
+            $finalCheck = $db->queryOne($finalCheckSql, [$requestId, $currentUser['id']]);
+            
+            if (empty($finalCheck)) {
+                $error = 'فشل إرسال طلب السلفة: تم إنشاء الطلب لكن لا يظهر في الجدول. يرجى التحقق من الجدول أو التواصل مع الإدارة.';
+                error_log("Advance request final check failed: Request ID {$requestId} not found in table query result");
+                $sendAdvanceAjaxResponse(false, $error);
+                exit;
+            }
+            
+            // التحقق من أن البيانات صحيحة
+            $finalAmount = floatval($finalCheck['amount'] ?? 0);
+            if (abs($finalAmount - $amount) > 0.01) {
+                $error = 'فشل إرسال طلب السلفة: المبلغ في الجدول (' . formatCurrency($finalAmount) . ') لا يطابق المبلغ المرسل (' . formatCurrency($amount) . '). يرجى التواصل مع الإدارة.';
+                error_log("Advance request final check: Amount mismatch. Expected: {$amount}, Found: {$finalAmount}");
+                $sendAdvanceAjaxResponse(false, $error);
+                exit;
+            }
+            
+            error_log("Advance request #{$requestId}: Final check passed. Request will appear in table.");
+        } catch (Exception $finalCheckError) {
+            error_log("Final check error for advance request #{$requestId}: " . $finalCheckError->getMessage());
+            $error = 'فشل إرسال طلب السلفة: تعذر التحقق النهائي من ظهور الطلب في الجدول. يرجى التحقق من الجدول أو التواصل مع الإدارة.';
+            $sendAdvanceAjaxResponse(false, $error);
+            exit;
+        }
+        
         // إرسال إشعار للمحاسب - مع التحقق من وجود محاسبين نشطين
         $accountants = $db->query("SELECT id FROM users WHERE role = 'accountant' AND status = 'active'");
         
@@ -575,12 +654,16 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['
         $redirectParams = [
             'page' => 'my_salary',
             'month' => $month,
-            'year' => $year
+            'year' => $year,
+            'advance_id' => $requestId // إضافة رقم الطلب للتحقق منه بعد إعادة التحميل
         ];
         $redirectUrl = getDashboardUrl($currentUser['role']) . '?' . http_build_query($redirectParams);
         
-        // حفظ رسالة النجاح للواجهة الأمامية ولجلسة المستخدم
+        // حفظ رسالة النجاح ورقم الطلب للواجهة الأمامية ولجلسة المستخدم
         $_SESSION['success_message'] = $successMessage;
+        $_SESSION['last_advance_request_id'] = $requestId;
+        $_SESSION['last_advance_request_amount'] = $amount;
+        
         if ($sendAdvanceAjaxResponse(true, $successMessage, $redirectUrl) === false) {
             preventDuplicateSubmission($successMessage, $redirectParams, null, $currentUser['role']);
         }
@@ -1174,7 +1257,11 @@ $monthName = date('F', mktime(0, 0, 0, $selectedMonth, 1));
     </div>
 <?php endif; ?>
 
-<?php if ($success): ?>
+<?php 
+// عرض رسالة النجاح من session فقط إذا لم يكن هناك advance_id في URL
+// لأن JavaScript سيتحقق من وجود الطلب في الجدول ويعرض الرسالة
+$showSuccessFromSession = $success && !isset($_GET['advance_id']);
+if ($showSuccessFromSession): ?>
     <div class="alert alert-success alert-dismissible fade show mb-4">
         <i class="bi bi-check-circle-fill me-2"></i>
         <?php echo htmlspecialchars($success); ?>
@@ -1348,6 +1435,85 @@ $monthName = date('F', mktime(0, 0, 0, $selectedMonth, 1));
 
 <script>
 document.addEventListener('DOMContentLoaded', function() {
+    // التحقق من وجود طلب السلفة في الجدول بعد إعادة تحميل الصفحة
+    const urlParams = new URLSearchParams(window.location.search);
+    const advanceId = urlParams.get('advance_id');
+    
+    if (advanceId) {
+        // التحقق من وجود الطلب في الجدول
+        const advanceTable = document.querySelector('.advance-history-table table tbody');
+        let requestFound = false;
+        let requestRow = null;
+        
+        if (advanceTable) {
+            const rows = advanceTable.querySelectorAll('tr');
+            rows.forEach(row => {
+                const firstCell = row.querySelector('td:first-child');
+                if (firstCell) {
+                    const cellText = firstCell.textContent.trim();
+                    // البحث عن رقم الطلب في الخلية الأولى (مثل #123)
+                    const match = cellText.match(/#(\d+)/);
+                    if (match && match[1] === advanceId) {
+                        requestFound = true;
+                        requestRow = row;
+                    }
+                }
+            });
+        }
+        
+        // إزالة رسالة النجاح الافتراضية من session إذا كانت موجودة
+        const successAlert = document.querySelector('.alert-success');
+        if (successAlert) {
+            successAlert.remove();
+        }
+        
+        if (!requestFound) {
+            // إذا لم يتم العثور على الطلب في الجدول، عرض رسالة خطأ
+            const alertContainer = document.getElementById('advanceAlertContainer');
+            if (alertContainer) {
+                const errorAlert = document.createElement('div');
+                errorAlert.className = 'alert alert-danger alert-dismissible fade show';
+                errorAlert.innerHTML = '<i class="bi bi-exclamation-triangle-fill me-2"></i>فشل إرسال طلب السلفة: لم يتم العثور على الطلب في الجدول. يرجى التحقق من سجل الطلبات أو التواصل مع الإدارة.' +
+                    '<button type="button" class="btn-close" data-bs-dismiss="alert"></button>';
+                alertContainer.appendChild(errorAlert);
+            }
+            
+            // إزالة advance_id من URL
+            urlParams.delete('advance_id');
+            const newUrl = window.location.pathname + (urlParams.toString() ? '?' + urlParams.toString() : '');
+            window.history.replaceState({}, '', newUrl);
+            
+            console.error('Advance request verification failed: Request ID ' + advanceId + ' not found in table');
+        } else {
+            // إذا تم العثور على الطلب، عرض رسالة النجاح
+            const alertContainer = document.getElementById('advanceAlertContainer');
+            if (alertContainer) {
+                const successAlert = document.createElement('div');
+                successAlert.className = 'alert alert-success alert-dismissible fade show';
+                successAlert.innerHTML = '<i class="bi bi-check-circle-fill me-2"></i>تم إرسال طلب السلفة بنجاح. سيتم مراجعته من قبل المحاسب والمدير.' +
+                    '<button type="button" class="btn-close" data-bs-dismiss="alert"></button>';
+                alertContainer.appendChild(successAlert);
+                
+                // تمييز الصف في الجدول (اختياري)
+                if (requestRow) {
+                    requestRow.style.backgroundColor = '#d1fae5';
+                    setTimeout(() => {
+                        requestRow.style.backgroundColor = '';
+                    }, 3000);
+                }
+            }
+            
+            // إزالة advance_id من URL بعد عرض الرسالة
+            setTimeout(() => {
+                urlParams.delete('advance_id');
+                const newUrl = window.location.pathname + (urlParams.toString() ? '?' + urlParams.toString() : '');
+                window.history.replaceState({}, '', newUrl);
+            }, 2000);
+            
+            console.log('Advance request verification passed: Request ID ' + advanceId + ' found in table');
+        }
+    }
+    
     // Form validation
     const forms = document.querySelectorAll('.needs-validation');
     Array.from(forms).forEach(form => {
@@ -1450,29 +1616,50 @@ document.addEventListener('DOMContentLoaded', function() {
                 return data;
             })
             .then(data => {
-                const alert = document.createElement('div');
-                alert.className = 'alert alert-dismissible fade show ' + (data.success ? 'alert-success' : 'alert-danger');
-                const message = data.message || (data.success ? 'تم إرسال طلب السلفة بنجاح. سيتم مراجعته من قبل المحاسب والمدير.' : 'فشل إرسال طلب السلفة. يرجى المحاولة مرة أخرى أو التواصل مع الإدارة.');
-                alert.innerHTML = `<i class="bi ${data.success ? 'bi-check-circle-fill' : 'bi-exclamation-triangle-fill'} me-2"></i>${message}` +
-                    '<button type="button" class="btn-close" data-bs-dismiss="alert"></button>';
-                
-                if (alertContainer) {
-                    alertContainer.innerHTML = '';
-                    alertContainer.appendChild(alert);
+                if (!data.success) {
+                    // عرض رسالة الخطأ مباشرة
+                    const alert = document.createElement('div');
+                    alert.className = 'alert alert-danger alert-dismissible fade show';
+                    const message = data.message || 'فشل إرسال طلب السلفة. يرجى المحاولة مرة أخرى أو التواصل مع الإدارة.';
+                    alert.innerHTML = `<i class="bi bi-exclamation-triangle-fill me-2"></i>${message}` +
+                        '<button type="button" class="btn-close" data-bs-dismiss="alert"></button>';
+                    
+                    if (alertContainer) {
+                        alertContainer.innerHTML = '';
+                        alertContainer.appendChild(alert);
+                    }
+                    
+                    if (submitButton) {
+                        submitButton.disabled = false;
+                        submitButton.innerHTML = originalButtonHtml;
+                    }
+                    return;
                 }
                 
-                if (data.success) {
-                    advanceForm.reset();
-                    advanceForm.classList.remove('was-validated');
-                    if (data.redirect) {
-                        setTimeout(function() {
-                            window.location.href = data.redirect;
-                        }, 1200);
-                    } else {
-                        setTimeout(function() {
-                            window.location.reload();
-                        }, 1200);
-                    }
+                // في حالة النجاح، لا نعرض رسالة النجاح الآن
+                // بل ننتظر إعادة تحميل الصفحة والتحقق من وجود الطلب في الجدول أولاً
+                advanceForm.reset();
+                advanceForm.classList.remove('was-validated');
+                
+                // عرض رسالة تحميل مؤقتة
+                if (alertContainer) {
+                    const loadingAlert = document.createElement('div');
+                    loadingAlert.className = 'alert alert-info alert-dismissible fade show';
+                    loadingAlert.innerHTML = '<i class="bi bi-hourglass-split me-2"></i>جاري التحقق من حفظ الطلب...' +
+                        '<button type="button" class="btn-close" data-bs-dismiss="alert"></button>';
+                    alertContainer.innerHTML = '';
+                    alertContainer.appendChild(loadingAlert);
+                }
+                
+                // إعادة تحميل الصفحة للتحقق من وجود الطلب في الجدول
+                if (data.redirect) {
+                    setTimeout(function() {
+                        window.location.href = data.redirect;
+                    }, 500);
+                } else {
+                    setTimeout(function() {
+                        window.location.reload();
+                    }, 500);
                 }
             })
             .catch(error => {
