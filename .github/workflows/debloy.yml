@@ -19,23 +19,18 @@ jobs:
       - name: Upload via FTP
         uses: SamKirkland/FTP-Deploy-Action@v4.3.4
         with:
-          # بيانات السيرفر
           server: ftpupload.net
           username: if0_40239608
           password: ${{ secrets.FTP_PASSWORD }}
 
-          # المسارات11
           local-dir: ./
           server-dir: /htdocs/v1/
 
-          # إعدادات البروتوكول (هام جدًا لـ InfinityFree)
           protocol: ftp
           port: 21
           timeout: 50000
-          passive: true
           security: loose
 
-          # استبعاد ملفات لا يجب رفعها
           exclude: |
             **/.git*
             **/.git*/**
