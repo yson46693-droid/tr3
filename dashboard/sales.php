@@ -989,16 +989,73 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && trim($_P
                     }
                     
                     // تهيئة التبويبات أولاً
-                    if (document.readyState === 'loading') {
-                        document.addEventListener('DOMContentLoaded', function() {
-                            initTabs();
-                            setTimeout(initReportButtons, 200);
-                        });
-                    } else {
+                    function initAll() {
                         initTabs();
                         setTimeout(initReportButtons, 200);
                     }
+                    
+                    if (document.readyState === 'loading') {
+                        document.addEventListener('DOMContentLoaded', function() {
+                            setTimeout(initAll, 100);
+                        });
+                    } else {
+                        setTimeout(initAll, 100);
+                    }
+                    
+                    // إعادة المحاولة بعد تحميل الصفحة بالكامل
+                    window.addEventListener('load', function() {
+                        setTimeout(initAll, 200);
+                    });
                 })();
+                
+                // Fallback يدوي للتبويبات في حالة فشل Bootstrap
+                document.addEventListener('DOMContentLoaded', function() {
+                    setTimeout(function() {
+                        const tabButtons = document.querySelectorAll('#salesRecordsTabs button[data-bs-toggle="tab"]');
+                        if (tabButtons.length > 0) {
+                            tabButtons.forEach(function(button) {
+                                if (!button.hasAttribute('data-listener-added')) {
+                                    button.setAttribute('data-listener-added', 'true');
+                                    button.addEventListener('click', function(e) {
+                                        e.preventDefault();
+                                        const targetId = this.getAttribute('data-bs-target');
+                                        if (!targetId) return;
+                                        
+                                        // إخفاء جميع المحتويات
+                                        document.querySelectorAll('.tab-pane').forEach(function(pane) {
+                                            pane.classList.remove('show', 'active');
+                                        });
+                                        
+                                        // إظهار المحتوى المطلوب
+                                        const targetPane = document.querySelector(targetId);
+                                        if (targetPane) {
+                                            targetPane.classList.add('show', 'active');
+                                        }
+                                        
+                                        // تحديث التبويبات
+                                        tabButtons.forEach(function(btn) {
+                                            btn.classList.remove('active');
+                                            btn.setAttribute('aria-selected', 'false');
+                                        });
+                                        this.classList.add('active');
+                                        this.setAttribute('aria-selected', 'true');
+                                        
+                                        // تحديث URL
+                                        let section = 'sales';
+                                        if (targetId === '#collections-section') {
+                                            section = 'collections';
+                                        } else if (targetId === '#returns-section') {
+                                            section = 'returns';
+                                        }
+                                        const url = new URL(window.location);
+                                        url.searchParams.set('section', section);
+                                        window.history.pushState({}, '', url);
+                                    });
+                                }
+                            });
+                        }
+                    }, 300);
+                });
                 </script>
                 
             <?php elseif ($page === 'orders'): ?>
