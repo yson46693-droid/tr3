@@ -105,6 +105,7 @@ if (isset($_GET['ajax']) && $_GET['ajax'] === 'template_details' && isset($_GET[
             'status' => $template['status'] ?? 'active',
             'template_type' => $template['template_type'] ?? 'general',
             'unit_price' => $template['unit_price'] ?? null,
+            'carton_type' => $template['carton_type'] ?? null,
             'notes' => trim((string)($template['notes'] ?? '')),
             'raw_materials' => $materialDetails,
             'packaging' => $normalisedPackaging,
@@ -514,11 +515,17 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     }
                 }
                 
+                // الحصول على نوع الكرتونة
+                $cartonType = trim($_POST['carton_type'] ?? '');
+                if (!in_array($cartonType, ['kilo', 'half', 'quarter', 'third'])) {
+                    $cartonType = null;
+                }
+                
                 // إنشاء القالب
                 $result = $db->execute(
-                    "INSERT INTO product_templates (product_name, honey_quantity, created_by, status, template_type, main_supplier_id, notes, details_json, unit_price) 
-                     VALUES (?, 0, ?, 'active', ?, NULL, NULL, ?, ?)",
-                    [$productName, $currentUser['id'], 'legacy', $templateDetailsJson, $unitPrice]
+                    "INSERT INTO product_templates (product_name, honey_quantity, created_by, status, template_type, main_supplier_id, notes, details_json, unit_price, carton_type) 
+                     VALUES (?, 0, ?, 'active', ?, NULL, NULL, ?, ?, ?)",
+                    [$productName, $currentUser['id'], 'legacy', $templateDetailsJson, $unitPrice, $cartonType]
                 );
                 
                 $templateId = $result['insert_id'];
@@ -772,10 +779,16 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 
                 // تحديث القالب
                 $db->execute(
+                    // الحصول على نوع الكرتونة
+                    $cartonType = trim($_POST['carton_type'] ?? '');
+                    if (!in_array($cartonType, ['kilo', 'half', 'quarter', 'third'])) {
+                        $cartonType = null;
+                    }
+                    
                     "UPDATE product_templates 
-                     SET product_name = ?, details_json = ?, unit_price = ?, updated_at = NOW()
+                     SET product_name = ?, details_json = ?, unit_price = ?, carton_type = ?, updated_at = NOW()
                      WHERE id = ?",
-                    [$productName, $templateDetailsJson, $unitPrice, $templateId]
+                    [$productName, $templateDetailsJson, $unitPrice, $cartonType, $templateId]
                 );
                 
                 // حذف أدوات التعبئة القديمة
@@ -1805,6 +1818,18 @@ $lang = isset($translations) ? $translations : [];
                     </div>
                     
                     <div class="mb-3">
+                        <label class="form-label">نوع الكرتونة <span class="text-danger">*</span></label>
+                        <select class="form-select" name="carton_type" required>
+                            <option value="">اختر نوع الكرتونة</option>
+                            <option value="kilo">كيلو (PKG-002)</option>
+                            <option value="half">نص (PKG-001)</option>
+                            <option value="quarter">ربع (PKG-041)</option>
+                            <option value="third">ثلث (PKG-041)</option>
+                        </select>
+                        <small class="text-muted">اختر نوع الكرتونة المستخدمة في تعبئة المنتج</small>
+                    </div>
+                    
+                    <div class="mb-3">
                         <label class="form-label">أدوات التعبئة المستخدمة <span class="text-danger">*</span></label>
                         <?php if (empty($packagingMaterials)): ?>
                             <div class="alert alert-warning">
@@ -1894,6 +1919,18 @@ $lang = isset($translations) ? $translations : [];
                         <input type="text" class="form-control" name="product_name" id="editProductName" required 
                                placeholder="مثل: عسل بالجوز 720 جرام">
                         <small class="text-muted">أدخل اسم المنتج الذي سيتم إنتاجه</small>
+                    </div>
+                    
+                    <div class="mb-3">
+                        <label class="form-label">نوع الكرتونة <span class="text-danger">*</span></label>
+                        <select class="form-select" name="carton_type" id="editCartonType" required>
+                            <option value="">اختر نوع الكرتونة</option>
+                            <option value="kilo">كيلو (PKG-002)</option>
+                            <option value="half">نص (PKG-001)</option>
+                            <option value="quarter">ربع (PKG-041)</option>
+                            <option value="third">ثلث (PKG-041)</option>
+                        </select>
+                        <small class="text-muted">اختر نوع الكرتونة المستخدمة في تعبئة المنتج</small>
                     </div>
                     
                     <div class="mb-3">
@@ -2824,6 +2861,13 @@ function editTemplate(templateId, templateDataJson, isBase64 = false) {
     // ملء البيانات في النموذج
     document.getElementById('editTemplateId').value = templateId;
     document.getElementById('editProductName').value = templateData.product_name || '';
+    
+    // ملء حقل نوع الكرتونة
+    const editCartonTypeEl = document.getElementById('editCartonType');
+    if (editCartonTypeEl) {
+        const cartonType = templateData.carton_type || '';
+        editCartonTypeEl.value = cartonType;
+    }
     
     // ملء حقل السعر
     const editUnitPriceEl = document.getElementById('editUnitPrice');

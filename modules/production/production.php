@@ -2343,17 +2343,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     }
                     return $codeKey;
                 };
-                $templateIncludesPkg009 = false;
-                $templateIncludesPkg010 = false;
-                $templateIncludesPkg007 = false;
-                $templateIncludesPkg003 = false;
-                $templateIncludesPkg004 = false;
-                $templateIncludesPkg005 = false;
-                $templateIncludesPkg006 = false;
-                $templateIncludesPkg042 = false;
-                $templateIncludesPkg011 = false;
-                $templateIncludesPkg012 = false;
-                $templateIncludesPkg036 = false;
+                // تم إزالة منطق الخصم التلقائي القديم - سيتم استخدام نظام جديد يعتمد على نوع الكرتونة
                 $packagingMaterialCodeCache = [];
                 $fetchPackagingMaterialByCode = static function (string $code) use (
                     $db,
@@ -2593,7 +2583,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                         }
                     }
 
-                    // اكتشاف PKG-009 بعدة طرق للتأكد
+                    // تم إزالة منطق اكتشاف PKG-009, PKG-004, PKG-010 - سيتم استخدام نظام جديد يعتمد على نوع الكرتونة
                     $isPkg009 = false;
                     if ($packagingMaterialCodeKey === 'PKG009') {
                         $isPkg009 = true;
@@ -2968,7 +2958,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     }
                 }
 
-                if ($templateIncludesPkg009 && $quantity >= 12) {
+                // تم إزالة منطق الخصم التلقائي القديم - سيتم استخدام نظام جديد يعتمد على نوع الكرتونة
+                if (false) { // تم تعطيل الكود القديم
                     error_log('PKG-001 deduction logic triggered: templateIncludesPkg009=' . ($templateIncludesPkg009 ? 'true' : 'false') . ', quantity=' . $quantity);
                     // خصم تلقائي لـ PKG-001 عند وجود PKG-009 لكل 12 وحدة منتجة
                     $pkg001CodeKey = 'PKG001';
@@ -4909,7 +4900,175 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 }
                 } // نهاية else - فقط عند عدم قيام batchCreationCreate بالخصم
                 
-                // خصم المواد المضافة تلقائياً (PKG-009 → PKG-001, PKG-004 → PKG-001, PKG-010 → PKG-002, إلخ) - يجب أن يتم دائماً بغض النظر عن stock_deducted
+                // خصم تلقائي بناءً على نوع الكرتونة المخزن في القالب
+                try {
+                    $cartonType = $template['carton_type'] ?? null;
+                    if ($cartonType && in_array($cartonType, ['kilo', 'half', 'quarter', 'third'])) {
+                        error_log('=== Starting carton-based auto-deduction: carton_type=' . $cartonType . ', quantity=' . $quantity);
+                        
+                        // تعريف قواعد الخصم لكل نوع كرتونة
+                        $cartonRules = [
+                            'kilo' => ['target_code' => 'PKG002', 'threshold' => 6, 'divisor' => 6],
+                            'half' => ['target_code' => 'PKG001', 'threshold' => 12, 'divisor' => 12],
+                            'quarter' => ['target_code' => 'PKG041', 'threshold' => 24, 'divisor' => 24],
+                            'third' => ['target_code' => 'PKG041', 'threshold' => 18, 'divisor' => 18],
+                        ];
+                        
+                        $rule = $cartonRules[$cartonType];
+                        
+                        if ($quantity >= $rule['threshold']) {
+                            $targetCodeKey = $rule['target_code'];
+                            $targetDisplayCode = $formatPackagingCode($targetCodeKey) ?? ('PKG-' . substr($targetCodeKey, 3));
+                            
+                            // حساب الكمية المطلوبة للخصم
+                            $quantityForBoxes = (int)floor((float)$quantity);
+                            $additionalQty = intdiv(max($quantityForBoxes, 0), $rule['divisor']);
+                            
+                            error_log('Carton auto-deduction: type=' . $cartonType . ', target=' . $targetDisplayCode . ', quantity=' . $quantity . ', additionalQty=' . $additionalQty);
+                            
+                            if ($additionalQty > 0 && $packagingTableExists) {
+                                // البحث عن المادة المستهدفة في قاعدة البيانات
+                                $targetMaterialId = null;
+                                $targetMaterialName = 'مادة تعبئة ' . $targetDisplayCode;
+                                $targetMaterialUnit = 'قطعة';
+                                
+                                try {
+                                    $directSearch = $db->queryOne(
+                                        "SELECT id, name, unit, material_id FROM packaging_materials 
+                                         WHERE UPPER(REPLACE(REPLACE(REPLACE(REPLACE(COALESCE(material_id, ''), '-', ''), ' ', ''), '_', ''), '.', '')) = ?
+                                            OR UPPER(REPLACE(REPLACE(REPLACE(REPLACE(COALESCE(material_id, ''), '-', ''), ' ', ''), '_', ''), '.', '')) LIKE ?
+                                            OR UPPER(REPLACE(REPLACE(REPLACE(REPLACE(COALESCE(name, ''), '-', ''), ' ', ''), '_', ''), '.', '')) LIKE ?
+                                         LIMIT 1",
+                                        [$targetCodeKey, $targetCodeKey . '%', '%' . $targetCodeKey . '%']
+                                    );
+                                    
+                                    if ($directSearch && !empty($directSearch['id'])) {
+                                        $targetMaterialId = (int)$directSearch['id'];
+                                        if (!empty($directSearch['name'])) {
+                                            $targetMaterialName = $directSearch['name'];
+                                        }
+                                        if (!empty($directSearch['unit'])) {
+                                            $targetMaterialUnit = $directSearch['unit'];
+                                        }
+                                        error_log('Target material found: ' . $targetDisplayCode . ', ID=' . $targetMaterialId);
+                                    }
+                                } catch (Exception $searchError) {
+                                    error_log('Error searching for target material ' . $targetDisplayCode . ': ' . $searchError->getMessage());
+                                }
+                                
+                                if ($targetMaterialId !== null) {
+                                    // التحقق إذا كانت المادة موجودة بالفعل في القائمة
+                                    $targetExists = false;
+                                    foreach ($materialsConsumption['packaging'] as &$existingItem) {
+                                        $existingCodeKey = isset($existingItem['material_code']) 
+                                            ? $normalizePackagingCodeKey($existingItem['material_code']) 
+                                            : null;
+                                        $existingMaterialId = isset($existingItem['material_id']) ? (int)$existingItem['material_id'] : 0;
+                                        
+                                        if (($existingCodeKey === $targetCodeKey) || ($existingMaterialId === $targetMaterialId)) {
+                                            $existingItem['quantity'] += $additionalQty;
+                                            $existingItem['material_code'] = $targetDisplayCode;
+                                            $existingItem['material_id'] = $targetMaterialId;
+                                            $targetExists = true;
+                                            error_log('Target material merged with existing: ' . $targetDisplayCode . ', New Qty=' . $existingItem['quantity']);
+                                            break;
+                                        }
+                                    }
+                                    unset($existingItem);
+                                    
+                                    if (!$targetExists) {
+                                        $targetProductId = ensureProductionMaterialProductId($targetMaterialName, 'packaging', $targetMaterialUnit);
+                                        
+                                        $materialsConsumption['packaging'][] = [
+                                            'material_id' => $targetMaterialId,
+                                            'quantity' => $additionalQty,
+                                            'name' => $targetMaterialName,
+                                            'unit' => $targetMaterialUnit,
+                                            'product_id' => $targetProductId,
+                                            'supplier_id' => null,
+                                            'template_item_id' => null,
+                                            'material_code' => $targetDisplayCode
+                                        ];
+                                        error_log('Target material added to consumption: ' . $targetDisplayCode . ', ID=' . $targetMaterialId . ', Qty=' . $additionalQty);
+                                    }
+                                    
+                                    // تنفيذ الخصم من قاعدة البيانات
+                                    try {
+                                        $currentQuantityCheck = $db->queryOne(
+                                            "SELECT name, unit, quantity FROM packaging_materials WHERE id = ? FOR UPDATE",
+                                            [$targetMaterialId]
+                                        );
+                                        
+                                        if ($currentQuantityCheck) {
+                                            $quantityBefore = (float)($currentQuantityCheck['quantity'] ?? 0);
+                                            $materialNameForLog = !empty($currentQuantityCheck['name']) ? $currentQuantityCheck['name'] : $targetMaterialName;
+                                            $materialUnitForLog = !empty($currentQuantityCheck['unit']) ? $currentQuantityCheck['unit'] : $targetMaterialUnit;
+                                            
+                                            error_log('Deducting from packaging_materials: ID=' . $targetMaterialId . ', Quantity=' . $additionalQty . ', Before=' . $quantityBefore);
+                                            
+                                            $db->execute(
+                                                "UPDATE packaging_materials 
+                                                 SET quantity = GREATEST(quantity - ?, 0), updated_at = NOW() 
+                                                 WHERE id = ?",
+                                                [$additionalQty, $targetMaterialId]
+                                            );
+                                            
+                                            // التحقق من نجاح الخصم
+                                            $verifyDeduction = $db->queryOne(
+                                                "SELECT quantity FROM packaging_materials WHERE id = ?",
+                                                [$targetMaterialId]
+                                            );
+                                            if ($verifyDeduction) {
+                                                $quantityAfter = (float)($verifyDeduction['quantity'] ?? 0);
+                                                error_log('Carton auto-deduction successful: ID=' . $targetMaterialId . ', After=' . $quantityAfter);
+                                                
+                                                // تسجيل في packaging_usage_logs إذا كان موجوداً
+                                                if ($packagingUsageLogsExists && $quantityBefore !== null) {
+                                                    $quantityUsed = $quantityBefore - $quantityAfter;
+                                                    
+                                                    if ($quantityUsed > 0) {
+                                                        try {
+                                                            $db->execute(
+                                                                "INSERT INTO packaging_usage_logs 
+                                                                 (material_id, material_name, material_code, source_table, quantity_before, quantity_used, quantity_after, unit, used_by) 
+                                                                 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                                                                [
+                                                                    $targetMaterialId,
+                                                                    $materialNameForLog,
+                                                                    null,
+                                                                    'packaging_materials',
+                                                                    $quantityBefore,
+                                                                    $quantityUsed,
+                                                                    $quantityAfter,
+                                                                    $materialUnitForLog ?: 'وحدة',
+                                                                    $currentUser['id'] ?? null
+                                                                ]
+                                                            );
+                                                        } catch (Exception $packagingUsageInsertError) {
+                                                            error_log('Carton auto-deduction usage log insert failed: ' . $packagingUsageInsertError->getMessage());
+                                                        }
+                                                    }
+                                                }
+                                            }
+                                        }
+                                    } catch (Exception $deductionError) {
+                                        error_log('Carton auto-deduction ERROR: ' . $deductionError->getMessage() . ' | ID=' . $targetMaterialId . ', Qty=' . $additionalQty);
+                                    }
+                                } else {
+                                    error_log('WARNING: Target material ' . $targetDisplayCode . ' not found in database!');
+                                }
+                            }
+                        } else {
+                            error_log('Carton auto-deduction skipped: quantity (' . $quantity . ') < threshold (' . $rule['threshold'] . ')');
+                        }
+                    } else {
+                        error_log('Carton auto-deduction skipped: carton_type not set or invalid (' . ($cartonType ?? 'NULL') . ')');
+                    }
+                } catch (Exception $cartonDeductionError) {
+                    error_log('Carton auto-deduction error: ' . $cartonDeductionError->getMessage());
+                }
+                
+                // تم إزالة منطق الخصم التلقائي القديم - سيتم استخدام نظام جديد يعتمد على نوع الكرتونة
                 // هذه المواد إضافية ويجب خصمها دائماً حتى لو كان batchCreationCreate قد قام بخصم المواد الأخرى
                 try {
                     error_log('=== Starting auto-deduction logic for all auto-added materials (PKG-009, PKG-004, PKG-010, etc.) ===');
@@ -5201,10 +5360,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     error_log('Auto-deduction error: ' . $autoDeductionError->getMessage());
                 }
                 
-                // خصم المواد المضافة تلقائياً (PKG-042, PKG-011, PKG-036) - يجب أن يتم دائماً بغض النظر عن stock_deducted
-                // هذه المواد إضافية ويجب خصمها دائماً حتى لو كان batchCreationCreate قد قام بخصم المواد الأخرى
-                try {
-                    error_log('=== Starting auto-deduction logic for PKG-042, PKG-011, PKG-036 ===');
+                // تم إزالة منطق الخصم التلقائي القديم - سيتم استخدام نظام جديد يعتمد على نوع الكرتونة
+                if (false) { // تم تعطيل الكود القديم
                     $autoDeductionItems = [];
                     
                     // استخدام المتغيرات التي تم تعيينها أثناء معالجة مواد التعبئة من القالب
@@ -5459,9 +5616,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                             }
                         }
                     }
-                } catch (Exception $autoDeductionError) {
-                    error_log('Auto-added packaging deduction error: ' . $autoDeductionError->getMessage());
-                }
+                } // نهاية الكود القديم المعطل
                 
                 // إنشاء أرقام باركود بعدد الكمية المنتجة
                 $batchNumbersToPrint = [];
