@@ -476,7 +476,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && trim($_P
 
                     <ul class="nav nav-pills combined-tabs mb-4 flex-column flex-sm-row gap-2" id="salesCollectionsTabs" role="tablist">
                         <li class="nav-item" role="presentation">
-                            <button class="nav-link active" id="sales-tab" data-bs-toggle="tab" data-bs-target="#sales-section" type="button" role="tab" aria-controls="sales-section" aria-selected="true">
+                        <button class="nav-link active" id="sales-tab" data-bs-toggle="tab" data-bs-target="#sales-section" type="button" role="tab" aria-controls="sales-section" aria-selected="true">
                                 <i class="bi bi-receipt"></i>
                                 <span><?php echo isset($lang['sales']) ? $lang['sales'] : 'المبيعات'; ?></span>
                             </button>
@@ -1064,17 +1064,31 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && trim($_P
                         const assetsBaseUrl = '<?php echo rtrim(ASSETS_URL, '/'); ?>';
 
                         function initCombinedTabs() {
+                            // التحقق من تحميل Bootstrap
+                            if (typeof bootstrap === 'undefined' && typeof window.bootstrap === 'undefined') {
+                                console.warn('Bootstrap not loaded yet, retrying...');
+                                setTimeout(initCombinedTabs, 100);
+                                return;
+                            }
+                            
                             const defaultTab = '<?php echo $activeCombinedTab === 'collections' ? 'collections' : 'sales'; ?>';
                             if (defaultTab === 'collections') {
                                 const tabTrigger = document.getElementById('collections-tab');
-                                if (tabTrigger && window.bootstrap && typeof window.bootstrap.Tab === 'function') {
-                                    const tab = new bootstrap.Tab(tabTrigger);
-                                    tab.show();
+                                if (tabTrigger) {
+                                    const bs = window.bootstrap || bootstrap;
+                                    if (bs && typeof bs.Tab === 'function') {
+                                        try {
+                                            const tab = new bs.Tab(tabTrigger);
+                                            tab.show();
+                                        } catch (e) {
+                                            console.error('Error showing collections tab:', e);
+                                        }
+                                    }
                                 }
                             }
                             
                             // التأكد من أن Bootstrap يتعامل مع التبويبات تلقائياً
-                            // لا حاجة لإضافة event listeners يدوياً - Bootstrap يتولى ذلك عبر data-bs-toggle="pill"
+                            // لا حاجة لإضافة event listeners يدوياً - Bootstrap يتولى ذلك عبر data-bs-toggle="tab"
                         }
 
                         function handlePrintableButtons() {
