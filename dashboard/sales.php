@@ -762,12 +762,26 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && trim($_P
     
     // تهيئة التبويبات
     function initTabs() {
-        if (tabsInitialized) return;
-        
         const tabButtons = document.querySelectorAll('#salesRecordsTabs button[data-bs-toggle="tab"]');
         if (tabButtons.length === 0) {
-            setTimeout(initTabs, 100);
+            if (!tabsInitialized) {
+                setTimeout(initTabs, 100);
+            }
             return;
+        }
+        
+        // إذا تم التهيئة مسبقاً، تأكد من أن الأزرار لا تزال تحتوي على event listeners
+        if (tabsInitialized) {
+            // التحقق من أن الأزرار لديها event listeners
+            let hasListeners = false;
+            tabButtons.forEach(function(btn) {
+                if (btn.hasAttribute('data-tab-initialized')) {
+                    hasListeners = true;
+                }
+            });
+            if (hasListeners) {
+                return; // تم التهيئة بالفعل
+            }
         }
         
         // التحقق من تحميل Bootstrap
@@ -818,6 +832,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && trim($_P
                     updateURL(event.target);
                 });
             }
+            
+            // وضع علامة أن الزر تم تهيئته
+            newButton.setAttribute('data-tab-initialized', 'true');
         });
         
         // تحديد التبويب النشط بناءً على URL
