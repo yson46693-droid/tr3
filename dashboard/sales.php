@@ -779,34 +779,35 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && trim($_P
             const newButton = button.cloneNode(true);
             button.parentNode.replaceChild(newButton, button);
             
+            // إضافة معالج click مباشر لجميع التبويبات
+            newButton.addEventListener('click', function(e) {
+                e.preventDefault();
+                e.stopPropagation();
+                
+                const targetId = this.getAttribute('data-bs-target');
+                if (!targetId) return;
+                
+                // إخفاء جميع المحتويات
+                document.querySelectorAll('.tab-pane').forEach(function(pane) {
+                    pane.classList.remove('show', 'active');
+                });
+                
+                // إظهار المحتوى المطلوب
+                const targetPane = document.querySelector(targetId);
+                if (targetPane) {
+                    targetPane.classList.add('show', 'active');
+                }
+                
+                // تحديث حالة التبويبات
+                updateTabState(this, tabButtons);
+                updateURL(this);
+            });
+            
             if (useBootstrap) {
-                // استخدام Bootstrap Tabs
+                // استخدام Bootstrap Tabs للاستفادة من الأنيميشن
                 newButton.addEventListener('shown.bs.tab', function(event) {
                     updateTabState(event.target, tabButtons);
                     updateURL(event.target);
-                });
-            } else {
-                // Fallback يدوي
-                newButton.addEventListener('click', function(e) {
-                    e.preventDefault();
-                    e.stopPropagation();
-                    
-                    const targetId = this.getAttribute('data-bs-target');
-                    if (!targetId) return;
-                    
-                    // إخفاء جميع المحتويات
-                    document.querySelectorAll('.tab-pane').forEach(function(pane) {
-                        pane.classList.remove('show', 'active');
-                    });
-                    
-                    // إظهار المحتوى المطلوب
-                    const targetPane = document.querySelector(targetId);
-                    if (targetPane) {
-                        targetPane.classList.add('show', 'active');
-                    }
-                    
-                    updateTabState(this, tabButtons);
-                    updateURL(this);
                 });
             }
         });
