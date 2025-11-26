@@ -24,7 +24,7 @@ jobs:
           username: if0_40239608
           password: ${{ secrets.FTP_PASSWORD }}
 
-          # المسارات
+          # المسارات11
           local-dir: ./
           server-dir: /htdocs/v1/
 
