@@ -1078,26 +1078,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && trim($_P
         setTimeout(initAll, 100);
         setTimeout(initAll, 500);
     });
-    
-    // إعادة المحاولة عند تغيير الصفحة (للتأكد من عمل التبويبات بعد AJAX)
-    document.addEventListener('DOMContentLoaded', function() {
-        const observer = new MutationObserver(function(mutations) {
-            const tabsContainer = document.getElementById('salesRecordsTabs');
-            if (tabsContainer && !tabsContainer.hasAttribute('data-tabs-initialized')) {
-                tabsInitialized = false;
-                initTabs();
-                tabsContainer.setAttribute('data-tabs-initialized', 'true');
-            }
-        });
-        
-        const mainContent = document.querySelector('.main-content') || document.body;
-        if (mainContent) {
-            observer.observe(mainContent, {
-                childList: true,
-                subtree: true
-            });
-        }
-    });
 })();
 </script>
                 
