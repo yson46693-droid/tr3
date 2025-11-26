@@ -331,11 +331,26 @@ switch ($role) {
                 'active' => ($currentPage === 'sales.php' && $currentPageParam === 'customers'),
                 'badge' => null
             ],
+            ['divider' => true, 'title' => 'السجلات'],
             [
-                'title' => 'السجلات',
-                'icon' => 'bi-journal-text',
-                'url' => $baseUrl . 'sales.php?page=sales_records',
-                'active' => ($currentPage === 'sales.php' && $currentPageParam === 'sales_records'),
+                'title' => isset($lang['sales']) ? $lang['sales'] : 'المبيعات',
+                'icon' => 'bi-receipt',
+                'url' => $baseUrl . 'sales.php?page=sales',
+                'active' => ($currentPage === 'sales.php' && $currentPageParam === 'sales'),
+                'badge' => null
+            ],
+            [
+                'title' => isset($lang['collections']) ? $lang['collections'] : 'التحصيلات',
+                'icon' => 'bi-cash-coin',
+                'url' => $baseUrl . 'sales.php?page=collections',
+                'active' => ($currentPage === 'sales.php' && $currentPageParam === 'collections'),
+                'badge' => null
+            ],
+            [
+                'title' => 'المرتجعات',
+                'icon' => 'bi-arrow-return-left',
+                'url' => $baseUrl . 'sales.php?page=returns',
+                'active' => ($currentPage === 'sales.php' && $currentPageParam === 'returns'),
                 'badge' => null
             ],
             [

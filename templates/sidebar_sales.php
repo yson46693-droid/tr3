@@ -43,13 +43,33 @@ $baseUrl = getDashboardUrl();
                 </a>
             </li>
 
-            <li class="nav-item">
-                <a class="nav-link <?php echo (isset($_GET['page']) && $_GET['page'] === 'sales_records') ? 'active' : ''; ?>" 
-                   href="<?php echo $baseUrl; ?>sales.php?page=sales_records">
-                    <i class="bi bi-journal-text"></i>
-                    <span>السجلات</span>
-                </a>
-            </li>
+            <div class="sidebar-section">
+                <div class="sidebar-section-title">السجلات</div>
+                
+                <li class="nav-item">
+                    <a class="nav-link <?php echo (isset($_GET['page']) && $_GET['page'] === 'sales') ? 'active' : ''; ?>" 
+                       href="<?php echo $baseUrl; ?>sales.php?page=sales">
+                        <i class="bi bi-receipt"></i>
+                        <span><?php echo isset($lang['sales']) ? $lang['sales'] : 'المبيعات'; ?></span>
+                    </a>
+                </li>
+                
+                <li class="nav-item">
+                    <a class="nav-link <?php echo (isset($_GET['page']) && $_GET['page'] === 'collections') ? 'active' : ''; ?>" 
+                       href="<?php echo $baseUrl; ?>sales.php?page=collections">
+                        <i class="bi bi-cash-coin"></i>
+                        <span><?php echo isset($lang['collections']) ? $lang['collections'] : 'التحصيلات'; ?></span>
+                    </a>
+                </li>
+                
+                <li class="nav-item">
+                    <a class="nav-link <?php echo (isset($_GET['page']) && $_GET['page'] === 'returns') ? 'active' : ''; ?>" 
+                       href="<?php echo $baseUrl; ?>sales.php?page=returns">
+                        <i class="bi bi-arrow-return-left"></i>
+                        <span>المرتجعات</span>
+                    </a>
+                </li>
+            </div>
 
             <div class="sidebar-section">
                 <div class="sidebar-section-title">Sales</div>

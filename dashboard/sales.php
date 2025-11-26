@@ -390,6 +390,410 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && trim($_P
                 </div>
                 <?php } ?>
                 
+            <?php elseif ($page === 'sales'): ?>
+                <!-- صفحة المبيعات -->
+                <?php
+                // الحصول على قائمة العملاء للنماذج
+                $reportCustomers = $db->query("SELECT id, name, phone FROM customers WHERE status = 'active' ORDER BY name");
+                ?>
+                <!-- Page Header -->
+                <div class="page-header">
+                    <h2><i class="bi bi-receipt"></i><?php echo isset($lang['sales']) ? $lang['sales'] : 'المبيعات'; ?></h2>
+                </div>
+
+                <div class="combined-actions mb-4">
+                    <button type="button"
+                            class="btn btn-primary shadow-sm"
+                            data-bs-toggle="modal"
+                            data-bs-target="#generateSalesReportModal">
+                        <i class="bi bi-file-earmark-text"></i>
+                        <span>إنشاء تقرير</span>
+                    </button>
+                    <button type="button"
+                            class="btn btn-success shadow-sm"
+                            data-bs-toggle="modal"
+                            data-bs-target="#generateCustomerSalesReportModal">
+                        <i class="bi bi-person-badge"></i>
+                        <span>تقرير العميل</span>
+                    </button>
+                </div>
+                
+                <div id="sales-section-content" class="printable-section">
+                    <?php 
+                    $salesModulePath = __DIR__ . '/../modules/sales/sales.php';
+                    if (file_exists($salesModulePath)) {
+                        $_GET['page'] = 'sales_records';
+                        include $salesModulePath;
+                    } else {
+                    ?>
+                    <div class="empty-state-card">
+                        <div class="empty-state-icon"><i class="bi bi-cart-check"></i></div>
+                        <div class="empty-state-title"><?php echo isset($lang['sales']) ? $lang['sales'] : 'المبيعات'; ?></div>
+                        <div class="empty-state-description"><?php echo isset($lang['sales_page_coming_soon']) ? $lang['sales_page_coming_soon'] : 'صفحة المبيعات - سيتم إضافتها'; ?></div>
+                    </div>
+                    <?php } ?>
+                </div>
+
+                <!-- Modal: إنشاء تقرير المبيعات -->
+                <div class="modal fade" id="generateSalesReportModal" tabindex="-1" aria-labelledby="generateSalesReportModalLabel" aria-hidden="true">
+                    <div class="modal-dialog">
+                        <div class="modal-content">
+                            <div class="modal-header">
+                                <h5 class="modal-title" id="generateSalesReportModalLabel">
+                                    <i class="bi bi-file-earmark-text me-2"></i>إنشاء تقرير المبيعات
+                                </h5>
+                                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+                            </div>
+                            <div class="modal-body">
+                                <form id="generateSalesReportForm">
+                                    <div class="mb-3">
+                                        <label for="salesReportDateFrom" class="form-label">من تاريخ <span class="text-danger">*</span></label>
+                                        <input type="date" class="form-control" id="salesReportDateFrom" name="date_from" required>
+                                    </div>
+                                    <div class="mb-3">
+                                        <label for="salesReportDateTo" class="form-label">إلى تاريخ <span class="text-danger">*</span></label>
+                                        <input type="date" class="form-control" id="salesReportDateTo" name="date_to" required>
+                                    </div>
+                                </form>
+                            </div>
+                            <div class="modal-footer">
+                                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">إلغاء</button>
+                                <button type="button" class="btn btn-primary" id="generateSalesReportBtn">
+                                    <i class="bi bi-file-earmark-pdf me-2"></i>إنشاء التقرير
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Modal: تقرير العميل - المبيعات -->
+                <div class="modal fade" id="generateCustomerSalesReportModal" tabindex="-1" aria-labelledby="generateCustomerSalesReportModalLabel" aria-hidden="true">
+                    <div class="modal-dialog">
+                        <div class="modal-content">
+                            <div class="modal-header">
+                                <h5 class="modal-title" id="generateCustomerSalesReportModalLabel">
+                                    <i class="bi bi-person-badge me-2"></i>تقرير العميل - المبيعات
+                                </h5>
+                                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+                            </div>
+                            <div class="modal-body">
+                                <form id="generateCustomerSalesReportForm">
+                                    <div class="mb-3">
+                                        <label for="customerSalesReportCustomerId" class="form-label">العميل <span class="text-danger">*</span></label>
+                                        <select class="form-select" id="customerSalesReportCustomerId" name="customer_id" required>
+                                            <option value="">اختر العميل</option>
+                                            <?php foreach ($reportCustomers as $customer): ?>
+                                                <option value="<?php echo $customer['id']; ?>">
+                                                    <?php echo htmlspecialchars($customer['name']); ?>
+                                                    <?php if (!empty($customer['phone'])): ?>
+                                                        - <?php echo htmlspecialchars($customer['phone']); ?>
+                                                    <?php endif; ?>
+                                                </option>
+                                            <?php endforeach; ?>
+                                        </select>
+                                    </div>
+                                </form>
+                            </div>
+                            <div class="modal-footer">
+                                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">إلغاء</button>
+                                <button type="button" class="btn btn-success" id="generateCustomerSalesReportBtn">
+                                    <i class="bi bi-file-earmark-pdf me-2"></i>إنشاء التقرير
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+            <?php elseif ($page === 'collections'): ?>
+                <!-- صفحة التحصيلات -->
+                <?php
+                // الحصول على قائمة العملاء للنماذج
+                $reportCustomers = $db->query("SELECT id, name, phone FROM customers WHERE status = 'active' ORDER BY name");
+                ?>
+                <!-- Page Header -->
+                <div class="page-header">
+                    <h2><i class="bi bi-cash-coin"></i><?php echo isset($lang['collections']) ? $lang['collections'] : 'التحصيلات'; ?></h2>
+                </div>
+
+                <div class="combined-actions mb-4">
+                    <button type="button"
+                            class="btn btn-primary shadow-sm"
+                            data-bs-toggle="modal"
+                            data-bs-target="#generateCollectionsReportModal">
+                        <i class="bi bi-file-earmark-text"></i>
+                        <span>إنشاء تقرير</span>
+                    </button>
+                    <button type="button"
+                            class="btn btn-success shadow-sm"
+                            data-bs-toggle="modal"
+                            data-bs-target="#generateCustomerCollectionsReportModal">
+                        <i class="bi bi-person-badge"></i>
+                        <span>تقرير العميل</span>
+                    </button>
+                </div>
+                
+                <div id="collections-section-content" class="printable-section">
+                    <?php 
+                    $collectionsModulePath = __DIR__ . '/../modules/sales/collections.php';
+                    if (file_exists($collectionsModulePath)) {
+                        include $collectionsModulePath;
+                    } else {
+                    ?>
+                    <div class="empty-state-card">
+                        <div class="empty-state-icon"><i class="bi bi-cash-coin"></i></div>
+                        <div class="empty-state-title"><?php echo isset($lang['collections']) ? $lang['collections'] : 'التحصيلات'; ?></div>
+                        <div class="empty-state-description"><?php echo isset($lang['collections_page_coming_soon']) ? $lang['collections_page_coming_soon'] : 'صفحة التحصيلات - سيتم إضافتها'; ?></div>
+                    </div>
+                    <?php } ?>
+                </div>
+
+                <!-- Modal: إنشاء تقرير التحصيلات -->
+                <div class="modal fade" id="generateCollectionsReportModal" tabindex="-1" aria-labelledby="generateCollectionsReportModalLabel" aria-hidden="true">
+                    <div class="modal-dialog">
+                        <div class="modal-content">
+                            <div class="modal-header">
+                                <h5 class="modal-title" id="generateCollectionsReportModalLabel">
+                                    <i class="bi bi-file-earmark-text me-2"></i>إنشاء تقرير التحصيلات
+                                </h5>
+                                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+                            </div>
+                            <div class="modal-body">
+                                <form id="generateCollectionsReportForm">
+                                    <div class="mb-3">
+                                        <label for="collectionsReportDateFrom" class="form-label">من تاريخ <span class="text-danger">*</span></label>
+                                        <input type="date" class="form-control" id="collectionsReportDateFrom" name="date_from" required>
+                                    </div>
+                                    <div class="mb-3">
+                                        <label for="collectionsReportDateTo" class="form-label">إلى تاريخ <span class="text-danger">*</span></label>
+                                        <input type="date" class="form-control" id="collectionsReportDateTo" name="date_to" required>
+                                    </div>
+                                </form>
+                            </div>
+                            <div class="modal-footer">
+                                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">إلغاء</button>
+                                <button type="button" class="btn btn-primary" id="generateCollectionsReportBtn">
+                                    <i class="bi bi-file-earmark-pdf me-2"></i>إنشاء التقرير
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Modal: تقرير العميل - التحصيلات -->
+                <div class="modal fade" id="generateCustomerCollectionsReportModal" tabindex="-1" aria-labelledby="generateCustomerCollectionsReportModalLabel" aria-hidden="true">
+                    <div class="modal-dialog">
+                        <div class="modal-content">
+                            <div class="modal-header">
+                                <h5 class="modal-title" id="generateCustomerCollectionsReportModalLabel">
+                                    <i class="bi bi-person-badge me-2"></i>تقرير العميل - التحصيلات
+                                </h5>
+                                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+                            </div>
+                            <div class="modal-body">
+                                <form id="generateCustomerCollectionsReportForm">
+                                    <div class="mb-3">
+                                        <label for="customerCollectionsReportCustomerId" class="form-label">العميل <span class="text-danger">*</span></label>
+                                        <select class="form-select" id="customerCollectionsReportCustomerId" name="customer_id" required>
+                                            <option value="">اختر العميل</option>
+                                            <?php foreach ($reportCustomers as $customer): ?>
+                                                <option value="<?php echo $customer['id']; ?>">
+                                                    <?php echo htmlspecialchars($customer['name']); ?>
+                                                    <?php if (!empty($customer['phone'])): ?>
+                                                        - <?php echo htmlspecialchars($customer['phone']); ?>
+                                                    <?php endif; ?>
+                                                </option>
+                                            <?php endforeach; ?>
+                                        </select>
+                                    </div>
+                                </form>
+                            </div>
+                            <div class="modal-footer">
+                                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">إلغاء</button>
+                                <button type="button" class="btn btn-success" id="generateCustomerCollectionsReportBtn">
+                                    <i class="bi bi-file-earmark-pdf me-2"></i>إنشاء التقرير
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+            <?php elseif ($page === 'returns'): ?>
+                <!-- صفحة المرتجعات -->
+                <!-- Page Header -->
+                <div class="page-header">
+                    <h2><i class="bi bi-arrow-return-left"></i>المرتجعات</h2>
+                </div>
+                
+                <div id="returns-section-content" class="printable-section">
+                    <?php 
+                    $returnsModulePath = __DIR__ . '/../modules/sales/new_returns.php';
+                    if (file_exists($returnsModulePath)) {
+                        include $returnsModulePath;
+                    } else {
+                    ?>
+                    <div class="empty-state-card">
+                        <div class="empty-state-icon"><i class="bi bi-arrow-return-left"></i></div>
+                        <div class="empty-state-title">المرتجعات</div>
+                        <div class="empty-state-description">صفحة المرتجعات - سيتم إضافتها قريباً</div>
+                    </div>
+                    <?php } ?>
+                </div>
+
+            <?php if (in_array($page, ['sales', 'collections'])): ?>
+<script>
+// JavaScript لتهيئة أزرار التقارير في صفحات المبيعات والتحصيلات
+(function() {
+    let reportButtonsInitialized = false;
+    
+    function initReportButtons() {
+        if (reportButtonsInitialized) return;
+        
+        const bs = window.bootstrap || bootstrap;
+        if (!bs || typeof bs.Modal === 'undefined') {
+            setTimeout(initReportButtons, 100);
+            return;
+        }
+        
+        const basePath = '<?php echo getBasePath(); ?>';
+        
+        <?php if ($page === 'sales'): ?>
+        // معالج إنشاء تقرير المبيعات
+        const generateSalesReportBtn = document.getElementById('generateSalesReportBtn');
+        if (generateSalesReportBtn) {
+            generateSalesReportBtn.addEventListener('click', function() {
+                const dateFrom = document.getElementById('salesReportDateFrom').value;
+                const dateTo = document.getElementById('salesReportDateTo').value;
+                
+                if (!dateFrom || !dateTo) {
+                    alert('يرجى اختيار الفترة المطلوبة');
+                    return;
+                }
+                
+                if (new Date(dateFrom) > new Date(dateTo)) {
+                    alert('تاريخ البداية يجب أن يكون قبل تاريخ النهاية');
+                    return;
+                }
+                
+                const url = basePath + '/api/generate_sales_report.php?date_from=' + encodeURIComponent(dateFrom) + '&date_to=' + encodeURIComponent(dateTo);
+                const reportWindow = window.open(url, 'salesReport', 'width=1000,height=800,scrollbars=yes,resizable=yes');
+                
+                if (reportWindow) {
+                    const modalElement = document.getElementById('generateSalesReportModal');
+                    if (modalElement) {
+                        const modal = bs.Modal.getInstance(modalElement);
+                        if (modal) modal.hide();
+                    }
+                } else {
+                    alert('يرجى السماح للموقع بفتح النوافذ المنبثقة');
+                }
+            });
+        }
+        
+        // معالج إنشاء تقرير العميل - المبيعات
+        const generateCustomerSalesReportBtn = document.getElementById('generateCustomerSalesReportBtn');
+        if (generateCustomerSalesReportBtn) {
+            generateCustomerSalesReportBtn.addEventListener('click', function() {
+                const customerId = document.getElementById('customerSalesReportCustomerId').value;
+                
+                if (!customerId) {
+                    alert('يرجى اختيار العميل');
+                    return;
+                }
+                
+                const url = basePath + '/api/generate_customer_sales_report.php?customer_id=' + encodeURIComponent(customerId);
+                const reportWindow = window.open(url, 'customerSalesReport', 'width=1000,height=800,scrollbars=yes,resizable=yes');
+                
+                if (reportWindow) {
+                    const modalElement = document.getElementById('generateCustomerSalesReportModal');
+                    if (modalElement) {
+                        const modal = bs.Modal.getInstance(modalElement);
+                        if (modal) modal.hide();
+                    }
+                } else {
+                    alert('يرجى السماح للموقع بفتح النوافذ المنبثقة');
+                }
+            });
+        }
+        <?php endif; ?>
+        
+        <?php if ($page === 'collections'): ?>
+        // معالج إنشاء تقرير التحصيلات
+        const generateCollectionsReportBtn = document.getElementById('generateCollectionsReportBtn');
+        if (generateCollectionsReportBtn) {
+            generateCollectionsReportBtn.addEventListener('click', function() {
+                const dateFrom = document.getElementById('collectionsReportDateFrom').value;
+                const dateTo = document.getElementById('collectionsReportDateTo').value;
+                
+                if (!dateFrom || !dateTo) {
+                    alert('يرجى اختيار الفترة المطلوبة');
+                    return;
+                }
+                
+                if (new Date(dateFrom) > new Date(dateTo)) {
+                    alert('تاريخ البداية يجب أن يكون قبل تاريخ النهاية');
+                    return;
+                }
+                
+                const url = basePath + '/api/generate_collections_report.php?date_from=' + encodeURIComponent(dateFrom) + '&date_to=' + encodeURIComponent(dateTo);
+                const reportWindow = window.open(url, 'collectionsReport', 'width=1000,height=800,scrollbars=yes,resizable=yes');
+                
+                if (reportWindow) {
+                    const modalElement = document.getElementById('generateCollectionsReportModal');
+                    if (modalElement) {
+                        const modal = bs.Modal.getInstance(modalElement);
+                        if (modal) modal.hide();
+                    }
+                } else {
+                    alert('يرجى السماح للموقع بفتح النوافذ المنبثقة');
+                }
+            });
+        }
+        
+        // معالج إنشاء تقرير العميل - التحصيلات
+        const generateCustomerCollectionsReportBtn = document.getElementById('generateCustomerCollectionsReportBtn');
+        if (generateCustomerCollectionsReportBtn) {
+            generateCustomerCollectionsReportBtn.addEventListener('click', function() {
+                const customerId = document.getElementById('customerCollectionsReportCustomerId').value;
+                
+                if (!customerId) {
+                    alert('يرجى اختيار العميل');
+                    return;
+                }
+                
+                const url = basePath + '/api/generate_customer_collections_report.php?customer_id=' + encodeURIComponent(customerId);
+                const reportWindow = window.open(url, 'customerCollectionsReport', 'width=1000,height=800,scrollbars=yes,resizable=yes');
+                
+                if (reportWindow) {
+                    const modalElement = document.getElementById('generateCustomerCollectionsReportModal');
+                    if (modalElement) {
+                        const modal = bs.Modal.getInstance(modalElement);
+                        if (modal) modal.hide();
+                    }
+                } else {
+                    alert('يرجى السماح للموقع بفتح النوافذ المنبثقة');
+                }
+            });
+        }
+        <?php endif; ?>
+        
+        reportButtonsInitialized = true;
+    }
+    
+    if (document.readyState === 'loading') {
+        document.addEventListener('DOMContentLoaded', function() {
+            requestAnimationFrame(function() {
+                initReportButtons();
+            });
+        });
+    } else {
+        requestAnimationFrame(function() {
+            initReportButtons();
+        });
+    }
+})();
+</script>
+            <?php endif; ?>
+
             <?php elseif ($page === 'sales_records'): ?>
                 <?php
                 // الحصول على قائمة العملاء للنماذج
