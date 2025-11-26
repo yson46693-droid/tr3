@@ -523,9 +523,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 
                 // إنشاء القالب
                 $result = $db->execute(
-                    "INSERT INTO product_templates (product_name, honey_quantity, created_by, status, template_type, main_supplier_id, notes, details_json, unit_price, carton_type) 
-                     VALUES (?, 0, ?, 'active', ?, NULL, NULL, ?, ?, ?)",
-                    [$productName, $currentUser['id'], 'legacy', $templateDetailsJson, $unitPrice, $cartonType]
+                    "INSERT INTO product_templates (product_name, honey_quantity, created_by, status, template_type, main_supplier_id, notes, details_json, unit_price) 
+                     VALUES (?, 0, ?, 'active', ?, NULL, NULL, ?, ?)",
+                    [$productName, $currentUser['id'], 'legacy', $templateDetailsJson, $unitPrice]
                 );
                 
                 $templateId = $result['insert_id'];
