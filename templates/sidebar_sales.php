@@ -43,6 +43,14 @@ $baseUrl = getDashboardUrl();
                 </a>
             </li>
 
+            <li class="nav-item">
+                <a class="nav-link <?php echo (isset($_GET['page']) && $_GET['page'] === 'my_records') ? 'active' : ''; ?>" 
+                   href="<?php echo $baseUrl; ?>sales.php?page=my_records">
+                    <i class="bi bi-journal-text"></i>
+                    <span>سجلات المندوب</span>
+                </a>
+            </li>
+
             <div class="sidebar-section">
                 <div class="sidebar-section-title">السجلات</div>
                 

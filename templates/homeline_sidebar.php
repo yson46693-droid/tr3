@@ -331,6 +331,13 @@ switch ($role) {
                 'active' => ($currentPage === 'sales.php' && $currentPageParam === 'customers'),
                 'badge' => null
             ],
+            [
+                'title' => 'سجلات المندوب',
+                'icon' => 'bi-journal-text',
+                'url' => $baseUrl . 'sales.php?page=my_records',
+                'active' => ($currentPage === 'sales.php' && $currentPageParam === 'my_records'),
+                'badge' => null
+            ],
             ['divider' => true, 'title' => 'السجلات'],
             [
                 'title' => isset($lang['sales']) ? $lang['sales'] : 'المبيعات',

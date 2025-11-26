@@ -794,6 +794,622 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && trim($_P
 </script>
             <?php endif; ?>
 
+            <?php elseif ($page === 'my_records'): ?>
+                <!-- صفحة سجلات المندوب -->
+                <?php
+                // الحصول على قائمة العملاء للنماذج
+                $reportCustomers = $db->query("SELECT id, name, phone FROM customers WHERE status = 'active' ORDER BY name");
+                
+                // تحديد التبويب النشط
+                $activeTab = $_GET['section'] ?? 'sales';
+                if ($activeTab === 'collections') {
+                    $activeTab = 'collections';
+                } elseif ($activeTab === 'returns') {
+                    $activeTab = 'returns';
+                } else {
+                    $activeTab = 'sales';
+                }
+                ?>
+                <!-- Page Header -->
+                <div class="page-header">
+                    <h2><i class="bi bi-journal-text"></i>سجلات المندوب</h2>
+                </div>
+
+                <div class="combined-sections">
+                    <style>
+                        .combined-tabs .nav-link {
+                            font-weight: 600;
+                            display: flex;
+                            align-items: center;
+                            gap: 0.5rem;
+                            padding: 0.75rem 1.5rem;
+                            box-shadow: 0 2px 6px rgba(14, 30, 37, 0.08);
+                            transition: all 0.3s ease;
+                        }
+                        .combined-tabs .nav-link:not(.active) {
+                            background-color: rgba(12, 45, 194, 0.08);
+                            color: inherit;
+                        }
+                        .combined-tabs .nav-link.active {
+                            background: linear-gradient(135deg, rgb(12, 45, 194) 0%, rgb(11, 94, 218) 100%);
+                            color: white;
+                        }
+                        .combined-tabs .nav-link:hover:not(.active) {
+                            background-color: rgba(12, 45, 194, 0.15);
+                            transform: translateY(-2px);
+                        }
+                        .combined-tabs .nav-link i {
+                            font-size: 1.1rem;
+                        }
+                        .combined-tab-pane {
+                            animation: fadeUp 0.25s ease;
+                        }
+                        .combined-actions {
+                            display: flex;
+                            justify-content: flex-end;
+                            gap: 0.75rem;
+                            margin-bottom: 1.5rem;
+                            flex-wrap: wrap;
+                        }
+                        .combined-actions .btn i {
+                            font-size: 1rem;
+                        }
+                        .combined-actions .btn span {
+                            font-weight: 600;
+                        }
+                        @keyframes fadeUp {
+                            from {
+                                opacity: 0;
+                                transform: translateY(10px);
+                            }
+                            to {
+                                opacity: 1;
+                                transform: translateY(0);
+                            }
+                        }
+                        @media (max-width: 576px) {
+                            .combined-tabs {
+                                gap: 0.75rem;
+                            }
+                            .combined-tabs .nav-link {
+                                width: 100%;
+                                justify-content: center;
+                            }
+                        }
+                    </style>
+
+                    <ul class="nav nav-pills combined-tabs mb-4 flex-column flex-sm-row gap-2" id="myRecordsTabs" role="tablist">
+                        <li class="nav-item" role="presentation">
+                            <button class="nav-link <?php echo $activeTab === 'sales' ? 'active' : ''; ?>" 
+                                    id="my-sales-tab" 
+                                    data-bs-toggle="tab" 
+                                    data-bs-target="#my-sales-section" 
+                                    type="button" 
+                                    role="tab" 
+                                    aria-controls="my-sales-section" 
+                                    aria-selected="<?php echo $activeTab === 'sales' ? 'true' : 'false'; ?>">
+                                <i class="bi bi-receipt"></i>
+                                <span><?php echo isset($lang['sales']) ? $lang['sales'] : 'المبيعات'; ?></span>
+                            </button>
+                        </li>
+                        <li class="nav-item" role="presentation">
+                            <button class="nav-link <?php echo $activeTab === 'collections' ? 'active' : ''; ?>" 
+                                    id="my-collections-tab" 
+                                    data-bs-toggle="tab" 
+                                    data-bs-target="#my-collections-section" 
+                                    type="button" 
+                                    role="tab" 
+                                    aria-controls="my-collections-section" 
+                                    aria-selected="<?php echo $activeTab === 'collections' ? 'true' : 'false'; ?>">
+                                <i class="bi bi-cash-coin"></i>
+                                <span><?php echo isset($lang['collections']) ? $lang['collections'] : 'التحصيلات'; ?></span>
+                            </button>
+                        </li>
+                        <li class="nav-item" role="presentation">
+                            <button class="nav-link <?php echo $activeTab === 'returns' ? 'active' : ''; ?>" 
+                                    id="my-returns-tab" 
+                                    data-bs-toggle="tab" 
+                                    data-bs-target="#my-returns-section" 
+                                    type="button" 
+                                    role="tab" 
+                                    aria-controls="my-returns-section" 
+                                    aria-selected="<?php echo $activeTab === 'returns' ? 'true' : 'false'; ?>">
+                                <i class="bi bi-arrow-return-left"></i>
+                                <span>المرتجعات</span>
+                            </button>
+                        </li>
+                    </ul>
+
+                    <div class="tab-content combined-tab-content" id="myRecordsTabContent">
+                        <div class="tab-pane fade <?php echo $activeTab === 'sales' ? 'show active' : ''; ?> combined-tab-pane" 
+                             id="my-sales-section" 
+                             role="tabpanel" 
+                             aria-labelledby="my-sales-tab">
+                            <div class="combined-actions">
+                                <button type="button"
+                                        class="btn btn-primary shadow-sm"
+                                        data-bs-toggle="modal"
+                                        data-bs-target="#myGenerateSalesReportModal">
+                                    <i class="bi bi-file-earmark-text"></i>
+                                    <span>إنشاء تقرير</span>
+                                </button>
+                                <button type="button"
+                                        class="btn btn-success shadow-sm"
+                                        data-bs-toggle="modal"
+                                        data-bs-target="#myGenerateCustomerSalesReportModal">
+                                    <i class="bi bi-person-badge"></i>
+                                    <span>تقرير العميل</span>
+                                </button>
+                            </div>
+                            <div id="my-sales-section-content" class="printable-section">
+                                <?php 
+                                $salesModulePath = __DIR__ . '/../modules/sales/sales.php';
+                                if (file_exists($salesModulePath)) {
+                                    $_GET['page'] = 'sales_records';
+                                    include $salesModulePath;
+                                } else {
+                                ?>
+                                <div class="empty-state-card">
+                                    <div class="empty-state-icon"><i class="bi bi-cart-check"></i></div>
+                                    <div class="empty-state-title"><?php echo isset($lang['sales']) ? $lang['sales'] : 'المبيعات'; ?></div>
+                                    <div class="empty-state-description"><?php echo isset($lang['sales_page_coming_soon']) ? $lang['sales_page_coming_soon'] : 'صفحة المبيعات - سيتم إضافتها'; ?></div>
+                                </div>
+                                <?php } ?>
+                            </div>
+                        </div>
+
+                        <div class="tab-pane fade <?php echo $activeTab === 'collections' ? 'show active' : ''; ?> combined-tab-pane" 
+                             id="my-collections-section" 
+                             role="tabpanel" 
+                             aria-labelledby="my-collections-tab">
+                            <div class="combined-actions">
+                                <button type="button"
+                                        class="btn btn-primary shadow-sm"
+                                        data-bs-toggle="modal"
+                                        data-bs-target="#myGenerateCollectionsReportModal">
+                                    <i class="bi bi-file-earmark-text"></i>
+                                    <span>إنشاء تقرير</span>
+                                </button>
+                                <button type="button"
+                                        class="btn btn-success shadow-sm"
+                                        data-bs-toggle="modal"
+                                        data-bs-target="#myGenerateCustomerCollectionsReportModal">
+                                    <i class="bi bi-person-badge"></i>
+                                    <span>تقرير العميل</span>
+                                </button>
+                            </div>
+                            <div id="my-collections-section-content" class="printable-section">
+                                <?php 
+                                $collectionsModulePath = __DIR__ . '/../modules/sales/collections.php';
+                                if (file_exists($collectionsModulePath)) {
+                                    include $collectionsModulePath;
+                                } else {
+                                ?>
+                                <div class="empty-state-card">
+                                    <div class="empty-state-icon"><i class="bi bi-cash-coin"></i></div>
+                                    <div class="empty-state-title"><?php echo isset($lang['collections']) ? $lang['collections'] : 'التحصيلات'; ?></div>
+                                    <div class="empty-state-description"><?php echo isset($lang['collections_page_coming_soon']) ? $lang['collections_page_coming_soon'] : 'صفحة التحصيلات - سيتم إضافتها'; ?></div>
+                                </div>
+                                <?php } ?>
+                            </div>
+                        </div>
+
+                        <div class="tab-pane fade <?php echo $activeTab === 'returns' ? 'show active' : ''; ?> combined-tab-pane" 
+                             id="my-returns-section" 
+                             role="tabpanel" 
+                             aria-labelledby="my-returns-tab">
+                            <div id="my-returns-section-content" class="printable-section">
+                                <?php 
+                                $returnsModulePath = __DIR__ . '/../modules/sales/new_returns.php';
+                                if (file_exists($returnsModulePath)) {
+                                    include $returnsModulePath;
+                                } else {
+                                ?>
+                                <div class="empty-state-card">
+                                    <div class="empty-state-icon"><i class="bi bi-arrow-return-left"></i></div>
+                                    <div class="empty-state-title">المرتجعات</div>
+                                    <div class="empty-state-description">صفحة المرتجعات - سيتم إضافتها قريباً</div>
+                                </div>
+                                <?php } ?>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Modal: إنشاء تقرير المبيعات -->
+                <div class="modal fade" id="myGenerateSalesReportModal" tabindex="-1" aria-labelledby="myGenerateSalesReportModalLabel" aria-hidden="true">
+                    <div class="modal-dialog">
+                        <div class="modal-content">
+                            <div class="modal-header">
+                                <h5 class="modal-title" id="myGenerateSalesReportModalLabel">
+                                    <i class="bi bi-file-earmark-text me-2"></i>إنشاء تقرير المبيعات
+                                </h5>
+                                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+                            </div>
+                            <div class="modal-body">
+                                <form id="myGenerateSalesReportForm">
+                                    <div class="mb-3">
+                                        <label for="mySalesReportDateFrom" class="form-label">من تاريخ <span class="text-danger">*</span></label>
+                                        <input type="date" class="form-control" id="mySalesReportDateFrom" name="date_from" required>
+                                    </div>
+                                    <div class="mb-3">
+                                        <label for="mySalesReportDateTo" class="form-label">إلى تاريخ <span class="text-danger">*</span></label>
+                                        <input type="date" class="form-control" id="mySalesReportDateTo" name="date_to" required>
+                                    </div>
+                                </form>
+                            </div>
+                            <div class="modal-footer">
+                                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">إلغاء</button>
+                                <button type="button" class="btn btn-primary" id="myGenerateSalesReportBtn">
+                                    <i class="bi bi-file-earmark-pdf me-2"></i>إنشاء التقرير
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Modal: إنشاء تقرير التحصيلات -->
+                <div class="modal fade" id="myGenerateCollectionsReportModal" tabindex="-1" aria-labelledby="myGenerateCollectionsReportModalLabel" aria-hidden="true">
+                    <div class="modal-dialog">
+                        <div class="modal-content">
+                            <div class="modal-header">
+                                <h5 class="modal-title" id="myGenerateCollectionsReportModalLabel">
+                                    <i class="bi bi-file-earmark-text me-2"></i>إنشاء تقرير التحصيلات
+                                </h5>
+                                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+                            </div>
+                            <div class="modal-body">
+                                <form id="myGenerateCollectionsReportForm">
+                                    <div class="mb-3">
+                                        <label for="myCollectionsReportDateFrom" class="form-label">من تاريخ <span class="text-danger">*</span></label>
+                                        <input type="date" class="form-control" id="myCollectionsReportDateFrom" name="date_from" required>
+                                    </div>
+                                    <div class="mb-3">
+                                        <label for="myCollectionsReportDateTo" class="form-label">إلى تاريخ <span class="text-danger">*</span></label>
+                                        <input type="date" class="form-control" id="myCollectionsReportDateTo" name="date_to" required>
+                                    </div>
+                                </form>
+                            </div>
+                            <div class="modal-footer">
+                                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">إلغاء</button>
+                                <button type="button" class="btn btn-primary" id="myGenerateCollectionsReportBtn">
+                                    <i class="bi bi-file-earmark-pdf me-2"></i>إنشاء التقرير
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Modal: تقرير العميل - المبيعات -->
+                <div class="modal fade" id="myGenerateCustomerSalesReportModal" tabindex="-1" aria-labelledby="myGenerateCustomerSalesReportModalLabel" aria-hidden="true">
+                    <div class="modal-dialog">
+                        <div class="modal-content">
+                            <div class="modal-header">
+                                <h5 class="modal-title" id="myGenerateCustomerSalesReportModalLabel">
+                                    <i class="bi bi-person-badge me-2"></i>تقرير العميل - المبيعات
+                                </h5>
+                                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+                            </div>
+                            <div class="modal-body">
+                                <form id="myGenerateCustomerSalesReportForm">
+                                    <div class="mb-3">
+                                        <label for="myCustomerSalesReportCustomerId" class="form-label">العميل <span class="text-danger">*</span></label>
+                                        <select class="form-select" id="myCustomerSalesReportCustomerId" name="customer_id" required>
+                                            <option value="">اختر العميل</option>
+                                            <?php foreach ($reportCustomers as $customer): ?>
+                                                <option value="<?php echo $customer['id']; ?>">
+                                                    <?php echo htmlspecialchars($customer['name']); ?>
+                                                    <?php if (!empty($customer['phone'])): ?>
+                                                        - <?php echo htmlspecialchars($customer['phone']); ?>
+                                                    <?php endif; ?>
+                                                </option>
+                                            <?php endforeach; ?>
+                                        </select>
+                                    </div>
+                                </form>
+                            </div>
+                            <div class="modal-footer">
+                                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">إلغاء</button>
+                                <button type="button" class="btn btn-success" id="myGenerateCustomerSalesReportBtn">
+                                    <i class="bi bi-file-earmark-pdf me-2"></i>إنشاء التقرير
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Modal: تقرير العميل - التحصيلات -->
+                <div class="modal fade" id="myGenerateCustomerCollectionsReportModal" tabindex="-1" aria-labelledby="myGenerateCustomerCollectionsReportModalLabel" aria-hidden="true">
+                    <div class="modal-dialog">
+                        <div class="modal-content">
+                            <div class="modal-header">
+                                <h5 class="modal-title" id="myGenerateCustomerCollectionsReportModalLabel">
+                                    <i class="bi bi-person-badge me-2"></i>تقرير العميل - التحصيلات
+                                </h5>
+                                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+                            </div>
+                            <div class="modal-body">
+                                <form id="myGenerateCustomerCollectionsReportForm">
+                                    <div class="mb-3">
+                                        <label for="myCustomerCollectionsReportCustomerId" class="form-label">العميل <span class="text-danger">*</span></label>
+                                        <select class="form-select" id="myCustomerCollectionsReportCustomerId" name="customer_id" required>
+                                            <option value="">اختر العميل</option>
+                                            <?php foreach ($reportCustomers as $customer): ?>
+                                                <option value="<?php echo $customer['id']; ?>">
+                                                    <?php echo htmlspecialchars($customer['name']); ?>
+                                                    <?php if (!empty($customer['phone'])): ?>
+                                                        - <?php echo htmlspecialchars($customer['phone']); ?>
+                                                    <?php endif; ?>
+                                                </option>
+                                            <?php endforeach; ?>
+                                        </select>
+                                    </div>
+                                </form>
+                            </div>
+                            <div class="modal-footer">
+                                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">إلغاء</button>
+                                <button type="button" class="btn btn-success" id="myGenerateCustomerCollectionsReportBtn">
+                                    <i class="bi bi-file-earmark-pdf me-2"></i>إنشاء التقرير
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+<script>
+// JavaScript لتهيئة التبويبات وأزرار التقارير في صفحة سجلات المندوب
+(function() {
+    let tabsInitialized = false;
+    let reportButtonsInitialized = false;
+    
+    // تهيئة التبويبات
+    function initTabs() {
+        const tabButtons = document.querySelectorAll('#myRecordsTabs button[data-bs-toggle="tab"]');
+        if (tabButtons.length === 0) {
+            if (!tabsInitialized) {
+                setTimeout(initTabs, 100);
+            }
+            return;
+        }
+        
+        if (tabsInitialized) {
+            let hasListeners = false;
+            tabButtons.forEach(function(btn) {
+                if (btn.hasAttribute('data-tab-initialized')) {
+                    hasListeners = true;
+                }
+            });
+            if (hasListeners) {
+                return;
+            }
+        }
+        
+        const bs = window.bootstrap || bootstrap;
+        const useBootstrap = bs && typeof bs.Tab !== 'undefined';
+        
+        tabButtons.forEach(function(button) {
+            if (button.hasAttribute('data-tab-initialized')) {
+                return;
+            }
+            
+            if (useBootstrap) {
+                button.addEventListener('shown.bs.tab', function(event) {
+                    const currentTabButtons = document.querySelectorAll('#myRecordsTabs button[data-bs-toggle="tab"]');
+                    updateTabState(event.target, currentTabButtons);
+                    updateURL(event.target);
+                });
+            } else {
+                button.addEventListener('click', function(e) {
+                    e.preventDefault();
+                    e.stopPropagation();
+                    
+                    const targetId = this.getAttribute('data-bs-target');
+                    if (!targetId) return;
+                    
+                    document.querySelectorAll('.tab-pane').forEach(function(pane) {
+                        pane.classList.remove('show', 'active');
+                    });
+                    
+                    const targetPane = document.querySelector(targetId);
+                    if (targetPane) {
+                        targetPane.classList.add('show', 'active');
+                    }
+                    
+                    const currentTabButtons = document.querySelectorAll('#myRecordsTabs button[data-bs-toggle="tab"]');
+                    updateTabState(this, currentTabButtons);
+                    updateURL(this);
+                });
+            }
+            
+            button.setAttribute('data-tab-initialized', 'true');
+        });
+        
+        tabsInitialized = true;
+    }
+    
+    function updateTabState(activeButton, allButtons) {
+        allButtons.forEach(function(btn) {
+            btn.classList.remove('active');
+            btn.setAttribute('aria-selected', 'false');
+        });
+        activeButton.classList.add('active');
+        activeButton.setAttribute('aria-selected', 'true');
+    }
+    
+    function updateURL(button) {
+        const targetId = button.getAttribute('data-bs-target');
+        let section = 'sales';
+        if (targetId === '#my-collections-section') {
+            section = 'collections';
+        } else if (targetId === '#my-returns-section') {
+            section = 'returns';
+        }
+        const url = new URL(window.location);
+        url.searchParams.set('section', section);
+        window.history.pushState({}, '', url);
+    }
+    
+    function initReportButtons() {
+        if (reportButtonsInitialized) return;
+        
+        const bs = window.bootstrap || bootstrap;
+        if (!bs || typeof bs.Modal === 'undefined') {
+            setTimeout(initReportButtons, 100);
+            return;
+        }
+        
+        const basePath = '<?php echo getBasePath(); ?>';
+        
+        // معالج إنشاء تقرير المبيعات
+        const generateSalesReportBtn = document.getElementById('myGenerateSalesReportBtn');
+        if (generateSalesReportBtn) {
+            generateSalesReportBtn.addEventListener('click', function() {
+                const dateFrom = document.getElementById('mySalesReportDateFrom').value;
+                const dateTo = document.getElementById('mySalesReportDateTo').value;
+                
+                if (!dateFrom || !dateTo) {
+                    alert('يرجى اختيار الفترة المطلوبة');
+                    return;
+                }
+                
+                if (new Date(dateFrom) > new Date(dateTo)) {
+                    alert('تاريخ البداية يجب أن يكون قبل تاريخ النهاية');
+                    return;
+                }
+                
+                const url = basePath + '/api/generate_sales_report.php?date_from=' + encodeURIComponent(dateFrom) + '&date_to=' + encodeURIComponent(dateTo);
+                const reportWindow = window.open(url, 'salesReport', 'width=1000,height=800,scrollbars=yes,resizable=yes');
+                
+                if (reportWindow) {
+                    const modalElement = document.getElementById('myGenerateSalesReportModal');
+                    if (modalElement) {
+                        const modal = bs.Modal.getInstance(modalElement);
+                        if (modal) modal.hide();
+                    }
+                } else {
+                    alert('يرجى السماح للموقع بفتح النوافذ المنبثقة');
+                }
+            });
+        }
+        
+        // معالج إنشاء تقرير العميل - المبيعات
+        const generateCustomerSalesReportBtn = document.getElementById('myGenerateCustomerSalesReportBtn');
+        if (generateCustomerSalesReportBtn) {
+            generateCustomerSalesReportBtn.addEventListener('click', function() {
+                const customerId = document.getElementById('myCustomerSalesReportCustomerId').value;
+                
+                if (!customerId) {
+                    alert('يرجى اختيار العميل');
+                    return;
+                }
+                
+                const url = basePath + '/api/generate_customer_sales_report.php?customer_id=' + encodeURIComponent(customerId);
+                const reportWindow = window.open(url, 'customerSalesReport', 'width=1000,height=800,scrollbars=yes,resizable=yes');
+                
+                if (reportWindow) {
+                    const modalElement = document.getElementById('myGenerateCustomerSalesReportModal');
+                    if (modalElement) {
+                        const modal = bs.Modal.getInstance(modalElement);
+                        if (modal) modal.hide();
+                    }
+                } else {
+                    alert('يرجى السماح للموقع بفتح النوافذ المنبثقة');
+                }
+            });
+        }
+        
+        // معالج إنشاء تقرير التحصيلات
+        const generateCollectionsReportBtn = document.getElementById('myGenerateCollectionsReportBtn');
+        if (generateCollectionsReportBtn) {
+            generateCollectionsReportBtn.addEventListener('click', function() {
+                const dateFrom = document.getElementById('myCollectionsReportDateFrom').value;
+                const dateTo = document.getElementById('myCollectionsReportDateTo').value;
+                
+                if (!dateFrom || !dateTo) {
+                    alert('يرجى اختيار الفترة المطلوبة');
+                    return;
+                }
+                
+                if (new Date(dateFrom) > new Date(dateTo)) {
+                    alert('تاريخ البداية يجب أن يكون قبل تاريخ النهاية');
+                    return;
+                }
+                
+                const url = basePath + '/api/generate_collections_report.php?date_from=' + encodeURIComponent(dateFrom) + '&date_to=' + encodeURIComponent(dateTo);
+                const reportWindow = window.open(url, 'collectionsReport', 'width=1000,height=800,scrollbars=yes,resizable=yes');
+                
+                if (reportWindow) {
+                    const modalElement = document.getElementById('myGenerateCollectionsReportModal');
+                    if (modalElement) {
+                        const modal = bs.Modal.getInstance(modalElement);
+                        if (modal) modal.hide();
+                    }
+                } else {
+                    alert('يرجى السماح للموقع بفتح النوافذ المنبثقة');
+                }
+            });
+        }
+        
+        // معالج إنشاء تقرير العميل - التحصيلات
+        const generateCustomerCollectionsReportBtn = document.getElementById('myGenerateCustomerCollectionsReportBtn');
+        if (generateCustomerCollectionsReportBtn) {
+            generateCustomerCollectionsReportBtn.addEventListener('click', function() {
+                const customerId = document.getElementById('myCustomerCollectionsReportCustomerId').value;
+                
+                if (!customerId) {
+                    alert('يرجى اختيار العميل');
+                    return;
+                }
+                
+                const url = basePath + '/api/generate_customer_collections_report.php?customer_id=' + encodeURIComponent(customerId);
+                const reportWindow = window.open(url, 'customerCollectionsReport', 'width=1000,height=800,scrollbars=yes,resizable=yes');
+                
+                if (reportWindow) {
+                    const modalElement = document.getElementById('myGenerateCustomerCollectionsReportModal');
+                    if (modalElement) {
+                        const modal = bs.Modal.getInstance(modalElement);
+                        if (modal) modal.hide();
+                    }
+                } else {
+                    alert('يرجى السماح للموقع بفتح النوافذ المنبثقة');
+                }
+            });
+        }
+        
+        reportButtonsInitialized = true;
+    }
+    
+    function initAll() {
+        initTabs();
+        initReportButtons();
+    }
+    
+    function scheduleInit() {
+        if (document.readyState === 'loading') {
+            document.addEventListener('DOMContentLoaded', function() {
+                requestAnimationFrame(function() {
+                    initAll();
+                });
+            }, { once: true });
+        } else {
+            requestAnimationFrame(function() {
+                initAll();
+            });
+        }
+    }
+    
+    scheduleInit();
+    
+    window.addEventListener('load', function() {
+        if (!tabsInitialized || !reportButtonsInitialized) {
+            requestAnimationFrame(function() {
+                initAll();
+            });
+        }
+    }, { once: true });
+})();
+</script>
+
             <?php elseif ($page === 'sales_records'): ?>
                 <?php
                 // الحصول على قائمة العملاء للنماذج

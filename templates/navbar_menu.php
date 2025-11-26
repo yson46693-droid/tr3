@@ -187,6 +187,13 @@ switch ($role) {
                 'active' => (isset($_GET['page']) && $_GET['page'] === 'customers'),
                 'badge' => null
             ],
+            [
+                'title' => 'سجلات المندوب',
+                'icon' => 'bi-journal-text',
+                'url' => $baseUrl . 'sales.php?page=my_records',
+                'active' => (isset($_GET['page']) && $_GET['page'] === 'my_records'),
+                'badge' => null
+            ],
             ['divider' => true, 'title' => 'السجلات'],
             [
                 'title' => isset($lang['sales']) ? $lang['sales'] : 'المبيعات',
