@@ -32,7 +32,6 @@ jobs:
           protocol: ftp
           port: 21
           timeout: 50000
-          passive: true
           security: loose
 
           # استبعاد ملفات لا يجب رفعها
