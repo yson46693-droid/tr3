@@ -94,7 +94,7 @@ if ($batchFilter) {
     $params[] = "%{$batchFilter}%";
 }
 
-$sql .= " GROUP BY r.id, r.return_number, r.return_date, r.refund_amount, r.status, r.reason, c.id, c.name, i.invoice_number
+$sql .= " GROUP BY r.id
           ORDER BY r.created_at DESC
           LIMIT ? OFFSET ?";
 
