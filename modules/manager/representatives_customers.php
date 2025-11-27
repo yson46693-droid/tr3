@@ -27,6 +27,98 @@ applyPRGPattern($error, $success);
 
 $dashboardScript = basename($_SERVER['PHP_SELF'] ?? 'manager.php');
 
+// معالجة طلبات AJAX لسجل المشتريات
+if (
+    in_array($currentRole, ['manager', 'accountant'], true) &&
+    isset($_GET['ajax'], $_GET['action']) &&
+    $_GET['ajax'] === 'purchase_history' &&
+    $_GET['action'] === 'purchase_history'
+) {
+    // تنظيف أي output قبل إرسال JSON
+    while (ob_get_level() > 0) {
+        ob_end_clean();
+    }
+    
+    header('Content-Type: application/json; charset=utf-8');
+    header('Cache-Control: no-cache, must-revalidate');
+    header('Expires: Mon, 26 Jul 1997 05:00:00 GMT');
+
+    $customerId = isset($_GET['customer_id']) ? (int)$_GET['customer_id'] : 0;
+    if ($customerId <= 0) {
+        echo json_encode([
+            'success' => false,
+            'message' => 'معرف العميل غير صالح.'
+        ], JSON_UNESCAPED_UNICODE);
+        exit;
+    }
+
+    try {
+        require_once __DIR__ . '/../../includes/customer_history.php';
+        
+        $historyPayload = customerHistoryGetHistory($customerId);
+        
+        // التأكد من أن النتيجة في التنسيق الصحيح
+        if (!isset($historyPayload['success'])) {
+            $historyPayload = [
+                'success' => true,
+                'customer' => $historyPayload['customer'] ?? null,
+                'history' => $historyPayload['history'] ?? $historyPayload
+            ];
+        }
+        
+        // التأكد من أن history موجود وبه البيانات المطلوبة
+        if (!isset($historyPayload['history'])) {
+            $historyPayload['history'] = [
+                'window_start' => date('Y-m-d', strtotime('-6 months')),
+                'invoices' => [],
+                'totals' => [
+                    'invoice_count' => 0,
+                    'total_invoiced' => 0.0,
+                    'total_paid' => 0.0,
+                    'total_returns' => 0.0,
+                    'total_exchanges' => 0.0,
+                    'net_total' => 0.0,
+                ],
+                'returns' => [],
+                'exchanges' => [],
+            ];
+        }
+        
+        // التأكد من أن totals موجود
+        if (!isset($historyPayload['history']['totals'])) {
+            $historyPayload['history']['totals'] = [
+                'invoice_count' => 0,
+                'total_invoiced' => 0.0,
+                'total_paid' => 0.0,
+                'total_returns' => 0.0,
+                'total_exchanges' => 0.0,
+                'net_total' => 0.0,
+            ];
+        }
+        
+        // التأكد من أن المصفوفات موجودة
+        if (!isset($historyPayload['history']['invoices']) || !is_array($historyPayload['history']['invoices'])) {
+            $historyPayload['history']['invoices'] = [];
+        }
+        if (!isset($historyPayload['history']['returns']) || !is_array($historyPayload['history']['returns'])) {
+            $historyPayload['history']['returns'] = [];
+        }
+        if (!isset($historyPayload['history']['exchanges']) || !is_array($historyPayload['history']['exchanges'])) {
+            $historyPayload['history']['exchanges'] = [];
+        }
+        
+        echo json_encode($historyPayload, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
+        exit;
+    } catch (Throwable $historyError) {
+        error_log('Representatives customers purchase history error: ' . $historyError->getMessage());
+        echo json_encode([
+            'success' => false,
+            'message' => 'حدث خطأ أثناء تحميل سجل المشتريات: ' . $historyError->getMessage()
+        ], JSON_UNESCAPED_UNICODE);
+        exit;
+    }
+}
+
 $representatives = [];
 $representativeSummary = [
     'total' => 0,
@@ -1127,24 +1219,36 @@ document.addEventListener('DOMContentLoaded', function() {
                 const modalInstance = bootstrap.Modal.getOrCreateInstance(historyModal);
                 modalInstance.show();
                 
-                // جلب بيانات سجل المشتريات
+                // جلب بيانات سجل المشتريات من endpoint representatives_customers
                 const baseUrl = '<?php echo getRelativeUrl($dashboardScript); ?>';
-                const historyUrl = baseUrl + (baseUrl.includes('?') ? '&' : '?') + 'page=customers&section=company&action=purchase_history&ajax=purchase_history&customer_id=' + encodeURIComponent(customerId);
+                const historyUrl = baseUrl + (baseUrl.includes('?') ? '&' : '?') + 'page=representatives_customers&action=purchase_history&ajax=purchase_history&customer_id=' + encodeURIComponent(customerId);
+                
+                console.log('Fetching history from:', historyUrl);
                 
                 fetch(historyUrl, {
+                    credentials: 'same-origin',
                     headers: {
+                        'Accept': 'application/json',
                         'X-Requested-With': 'XMLHttpRequest'
                     }
                 })
                 .then(response => {
+                    console.log('Response status:', response.status);
+                    console.log('Response headers:', response.headers.get('content-type'));
+                    
                     if (!response.ok) {
-                        throw new Error('تعذر تحميل البيانات. حالة الخادم: ' + response.status);
+                        return response.text().then(text => {
+                            console.error('Error response:', text.substring(0, 500));
+                            throw new Error('تعذر تحميل البيانات. حالة الخادم: ' + response.status);
+                        });
                     }
+                    
                     const contentType = response.headers.get('content-type') || '';
                     if (!contentType.includes('application/json')) {
                         return response.text().then(text => {
-                            console.error('Expected JSON but got:', contentType, text);
-                            throw new Error('استجابة غير صحيحة من الخادم.');
+                            console.error('Expected JSON but got:', contentType);
+                            console.error('Response text:', text.substring(0, 1000));
+                            throw new Error('استجابة غير صحيحة من الخادم. يرجى التحقق من أن endpoint يعيد JSON.');
                         });
                     }
                     return response.json();
