@@ -36,12 +36,11 @@ if (!in_array($section, $allowedSections, true)) {
 $dashboardScript = basename($_SERVER['PHP_SELF'] ?? 'manager.php');
 $basePageUrl = getRelativeUrl($dashboardScript . '?page=customers');
 
-// معالجة update_location قبل أي شيء آخر لمنع أي output
-if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && trim($_POST['action']) === 'update_location') {
-    // تنظيف أي output سابق بشكل كامل
-    while (ob_get_level() > 0) {
-        ob_end_clean();
-    }
+// معالجة update_location (AJAX فقط)
+if ($_SERVER['REQUEST_METHOD'] === 'POST' 
+    && isset($_POST['action']) 
+    && trim($_POST['action']) === 'update_location'
+    && ($section === 'company' || isset($_GET['section']) && $_GET['section'] === 'company')) {
     
     // التأكد من أن الطلب AJAX
     $isAjaxRequest = (
@@ -50,18 +49,17 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && trim($_P
     );
     
     if (!$isAjaxRequest) {
-        http_response_code(400);
+        // إذا لم يكن AJAX، تجاهل الطلب وتابع التحميل العادي
+        // لا نخرج هنا لأن هذا قد يكون طلب POST عادي
+    } else {
+        // تنظيف أي output سابق بشكل كامل
+        while (ob_get_level() > 0) {
+            ob_end_clean();
+        }
+        
         header('Content-Type: application/json; charset=utf-8');
-        echo json_encode([
-            'success' => false,
-            'message' => 'طلب غير صالح.',
-        ], JSON_UNESCAPED_UNICODE);
-        exit;
-    }
-    
-    header('Content-Type: application/json; charset=utf-8');
-    header('Cache-Control: no-cache, must-revalidate');
-    header('Expires: Mon, 26 Jul 1997 05:00:00 GMT');
+        header('Cache-Control: no-cache, must-revalidate');
+        header('Expires: Mon, 26 Jul 1997 05:00:00 GMT');
 
     $customerId = isset($_POST['customer_id']) ? (int)$_POST['customer_id'] : 0;
     $latitude = $_POST['latitude'] ?? null;
@@ -151,6 +149,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && trim($_P
             'message' => 'حدث خطأ أثناء تحديث الموقع.',
         ], JSON_UNESCAPED_UNICODE);
         exit;
+    }
     }
 }
 
