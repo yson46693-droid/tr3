@@ -839,6 +839,9 @@ function escapeHtml(text) {
 }
 
 function formatCurrency(amount) {
+    if (typeof amount === 'string') {
+        amount = parseFloat(amount) || 0;
+    }
     return new Intl.NumberFormat('ar-EG', {
         style: 'currency',
         currency: 'EGP',
@@ -854,6 +857,175 @@ function formatDate(dateString) {
         month: 'long',
         day: 'numeric'
     });
+}
+
+// دوال مساعدة لبناء HTML من JSON (استخدام formatCurrency الموجود أعلاه)
+
+function formatCurrencySimple(value) {
+    const number = Number(value || 0);
+    return number.toLocaleString('ar-EG', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) + ' ج.م';
+}
+
+function renderRepInvoices(rows, tableBody) {
+    if (!tableBody) return;
+    tableBody.innerHTML = '';
+    
+    if (!Array.isArray(rows) || rows.length === 0) {
+        const emptyRow = document.createElement('tr');
+        const emptyCell = document.createElement('td');
+        emptyCell.colSpan = 8;
+        emptyCell.className = 'text-center text-muted py-4';
+        emptyCell.textContent = 'لا توجد فواتير خلال النافذة الزمنية.';
+        emptyRow.appendChild(emptyCell);
+        tableBody.appendChild(emptyRow);
+        return;
+    }
+    
+    rows.forEach(function (row) {
+        const tr = document.createElement('tr');
+        tr.innerHTML = `
+            <td>${row.invoice_number || '—'}</td>
+            <td>${row.invoice_date || '—'}</td>
+            <td>${formatCurrencySimple(row.invoice_total || 0)}</td>
+            <td>${formatCurrencySimple(row.paid_amount || 0)}</td>
+            <td>
+                <span class="text-danger fw-semibold">${formatCurrencySimple(row.return_total || 0)}</span>
+                <div class="text-muted small">${row.return_count || 0} مرتجع</div>
+            </td>
+            <td>
+                <span class="text-success fw-semibold">${formatCurrencySimple(row.exchange_total || 0)}</span>
+                <div class="text-muted small">${row.exchange_count || 0} استبدال</div>
+            </td>
+            <td>${formatCurrencySimple(row.net_total || 0)}</td>
+            <td>${row.invoice_status || '—'}</td>
+        `;
+        tableBody.appendChild(tr);
+    });
+}
+
+function renderRepReturns(list, container) {
+    if (!container) return;
+    container.innerHTML = '';
+    
+    if (!Array.isArray(list) || list.length === 0) {
+        const empty = document.createElement('div');
+        empty.className = 'text-muted';
+        empty.textContent = 'لا توجد مرتجعات خلال الفترة.';
+        container.appendChild(empty);
+        return;
+    }
+    
+    const group = document.createElement('div');
+    group.className = 'list-group list-group-flush';
+    
+    list.forEach(function (item) {
+        const row = document.createElement('div');
+        row.className = 'list-group-item';
+        row.innerHTML = `
+            <div class="d-flex justify-content-between align-items-center">
+                <div>
+                    <div class="fw-semibold">رقم المرتجع: ${item.return_number || '—'}</div>
+                    <div class="text-muted small">
+                        التاريخ: ${item.return_date || '—'} | النوع: ${item.return_type || '—'}
+                    </div>
+                </div>
+                <div class="text-danger fw-semibold">${formatCurrencySimple(item.refund_amount || 0)}</div>
+            </div>
+            <div class="text-muted small mt-1">الحالة: ${item.status || '—'}</div>
+        `;
+        group.appendChild(row);
+    });
+    
+    container.appendChild(group);
+}
+
+function renderRepExchanges(list, container) {
+    if (!container) return;
+    container.innerHTML = '';
+    
+    if (!Array.isArray(list) || list.length === 0) {
+        const empty = document.createElement('div');
+        empty.className = 'text-muted';
+        empty.textContent = 'لا توجد حالات استبدال خلال الفترة.';
+        container.appendChild(empty);
+        return;
+    }
+    
+    const group = document.createElement('div');
+    group.className = 'list-group list-group-flush';
+    
+    list.forEach(function (item) {
+        const difference = Number(item.difference_amount || 0);
+        const row = document.createElement('div');
+        row.className = 'list-group-item';
+        row.innerHTML = `
+            <div class="d-flex justify-content-between align-items-center">
+                <div>
+                    <div class="fw-semibold">رقم الاستبدال: ${item.exchange_number || '—'}</div>
+                    <div class="text-muted small">
+                        التاريخ: ${item.exchange_date || '—'} | النوع: ${item.exchange_type || '—'}
+                    </div>
+                </div>
+                <div class="fw-semibold ${difference >= 0 ? 'text-success' : 'text-danger'}">
+                    ${formatCurrencySimple(difference)}
+                </div>
+            </div>
+            <div class="text-muted small mt-1">الحالة: ${item.status || '—'}</div>
+        `;
+        group.appendChild(row);
+    });
+    
+    container.appendChild(group);
+}
+
+function displayRepReturnHistory(history, tableBody) {
+    if (!tableBody) return;
+    tableBody.innerHTML = '';
+    
+    if (!Array.isArray(history) || history.length === 0) {
+        tableBody.innerHTML = '<tr><td colspan="11" class="text-center text-muted">لا توجد مشتريات متاحة للإرجاع</td></tr>';
+        return;
+    }
+    
+    history.forEach(function(item) {
+        if (!item.can_return) {
+            return; // Skip items that can't be returned
+        }
+        
+        const row = document.createElement('tr');
+        row.innerHTML = `
+            <td>
+                <input type="checkbox" class="form-check-input rep-return-item-checkbox" 
+                       data-invoice-id="${item.invoice_id}"
+                       data-invoice-item-id="${item.invoice_item_id}"
+                       data-product-id="${item.product_id}"
+                       data-product-name="${escapeHtml(item.product_name || '')}"
+                       data-unit-price="${item.unit_price || 0}"
+                       data-batch-number-ids='${JSON.stringify(item.batch_number_ids || [])}'
+                       data-batch-numbers='${JSON.stringify(item.batch_numbers || [])}'>
+            </td>
+            <td>${item.invoice_number || '-'}</td>
+            <td>${(item.batch_numbers || []).join(', ') || '-'}</td>
+            <td>${escapeHtml(item.product_name || '-')}</td>
+            <td>${parseFloat(item.quantity || 0).toFixed(2)}</td>
+            <td>${parseFloat(item.returned_quantity || 0).toFixed(2)}</td>
+            <td><strong>${parseFloat(item.available_to_return || 0).toFixed(2)}</strong></td>
+            <td>${parseFloat(item.unit_price || 0).toFixed(2)} ج.م</td>
+            <td>${parseFloat(item.total_price || 0).toFixed(2)} ج.م</td>
+            <td>${item.purchase_date || '-'}</td>
+            <td>
+                <button type="button" class="btn btn-sm btn-outline-primary" onclick="viewRepReturnItemDetails(${item.invoice_item_id})">
+                    <i class="bi bi-eye"></i>
+                </button>
+            </td>
+        `;
+        tableBody.appendChild(row);
+    });
+}
+
+function viewRepReturnItemDetails(invoiceItemId) {
+    // يمكن إضافة وظيفة لعرض تفاصيل العنصر
+    console.log('View details for item:', invoiceItemId);
 }
 
     // تهيئة modal التحصيل
@@ -936,13 +1108,21 @@ document.addEventListener('DOMContentLoaded', function() {
                 const loadingElement = historyModal.querySelector('.rep-history-loading');
                 const contentElement = historyModal.querySelector('.rep-history-content');
                 const errorElement = historyModal.querySelector('.rep-history-error');
-                const tableBody = historyModal.querySelector('.rep-history-table tbody');
+                const invoicesTableBody = historyModal.querySelector('.rep-history-table tbody');
+                const returnsContainer = historyModal.querySelector('.rep-history-returns');
+                const exchangesContainer = historyModal.querySelector('.rep-history-exchanges');
+                const totalInvoicesEl = historyModal.querySelector('.rep-history-total-invoices');
+                const totalInvoicedEl = historyModal.querySelector('.rep-history-total-invoiced');
+                const totalReturnsEl = historyModal.querySelector('.rep-history-total-returns');
+                const netTotalEl = historyModal.querySelector('.rep-history-net-total');
                 
                 if (nameElement) nameElement.textContent = customerName;
                 if (loadingElement) loadingElement.classList.remove('d-none');
                 if (contentElement) contentElement.classList.add('d-none');
                 if (errorElement) errorElement.classList.add('d-none');
-                if (tableBody) tableBody.innerHTML = '';
+                if (invoicesTableBody) invoicesTableBody.innerHTML = '';
+                if (returnsContainer) returnsContainer.innerHTML = '';
+                if (exchangesContainer) exchangesContainer.innerHTML = '';
                 
                 const modalInstance = bootstrap.Modal.getOrCreateInstance(historyModal);
                 modalInstance.show();
@@ -956,19 +1136,56 @@ document.addEventListener('DOMContentLoaded', function() {
                         'X-Requested-With': 'XMLHttpRequest'
                     }
                 })
-                .then(response => response.text())
-                .then(html => {
-                    if (loadingElement) loadingElement.classList.add('d-none');
-                    if (contentElement) {
-                        contentElement.innerHTML = html;
-                        contentElement.classList.remove('d-none');
+                .then(response => {
+                    if (!response.ok) {
+                        throw new Error('تعذر تحميل البيانات. حالة الخادم: ' + response.status);
                     }
+                    const contentType = response.headers.get('content-type') || '';
+                    if (!contentType.includes('application/json')) {
+                        return response.text().then(text => {
+                            console.error('Expected JSON but got:', contentType, text);
+                            throw new Error('استجابة غير صحيحة من الخادم.');
+                        });
+                    }
+                    return response.json();
+                })
+                .then(payload => {
+                    if (!payload || !payload.success) {
+                        throw new Error(payload?.message || 'فشل تحميل بيانات السجل.');
+                    }
+                    
+                    const history = payload.history || {};
+                    const totals = history.totals || {};
+                    
+                    // تحديث الإحصائيات
+                    if (totalInvoicesEl) {
+                        totalInvoicesEl.textContent = Number(totals.invoice_count || 0).toLocaleString('ar-EG');
+                    }
+                    if (totalInvoicedEl) {
+                        totalInvoicedEl.textContent = formatCurrencySimple(totals.total_invoiced || 0);
+                    }
+                    if (totalReturnsEl) {
+                        totalReturnsEl.textContent = formatCurrencySimple(totals.total_returns || 0);
+                    }
+                    if (netTotalEl) {
+                        netTotalEl.textContent = formatCurrencySimple(totals.net_total || 0);
+                    }
+                    
+                    // عرض البيانات
+                    renderRepInvoices(Array.isArray(history.invoices) ? history.invoices : [], invoicesTableBody);
+                    renderRepReturns(Array.isArray(history.returns) ? history.returns : [], returnsContainer);
+                    renderRepExchanges(Array.isArray(history.exchanges) ? history.exchanges : [], exchangesContainer);
+                    
+                    // إخفاء loading وإظهار المحتوى
+                    if (loadingElement) loadingElement.classList.add('d-none');
+                    if (contentElement) contentElement.classList.remove('d-none');
+                    if (errorElement) errorElement.classList.add('d-none');
                 })
                 .catch(error => {
                     console.error('Error loading history:', error);
                     if (loadingElement) loadingElement.classList.add('d-none');
                     if (errorElement) {
-                        errorElement.textContent = 'حدث خطأ أثناء تحميل سجل المشتريات';
+                        errorElement.textContent = error.message || 'حدث خطأ أثناء تحميل سجل المشتريات';
                         errorElement.classList.remove('d-none');
                     }
                 });
@@ -993,37 +1210,65 @@ document.addEventListener('DOMContentLoaded', function() {
                 const loadingElement = returnModal.querySelector('.rep-return-loading');
                 const contentElement = returnModal.querySelector('.rep-return-content');
                 const errorElement = returnModal.querySelector('.rep-return-error');
+                const tableBody = returnModal.querySelector('.rep-return-table tbody');
+                const customerPhoneEl = returnModal.querySelector('.rep-return-customer-phone');
+                const customerAddressEl = returnModal.querySelector('.rep-return-customer-address');
                 
                 if (nameElement) nameElement.textContent = customerName;
                 if (loadingElement) loadingElement.classList.remove('d-none');
                 if (contentElement) contentElement.classList.add('d-none');
                 if (errorElement) errorElement.classList.add('d-none');
+                if (tableBody) tableBody.innerHTML = '';
                 
                 const modalInstance = bootstrap.Modal.getOrCreateInstance(returnModal);
                 modalInstance.show();
                 
-                // جلب بيانات سجل المشتريات للإرجاع
-                const baseUrl = '<?php echo getRelativeUrl($dashboardScript); ?>';
-                const returnUrl = baseUrl + (baseUrl.includes('?') ? '&' : '?') + 'page=customers&section=company&action=purchase_history&ajax=purchase_history&customer_id=' + encodeURIComponent(customerId);
+                // جلب بيانات سجل المشتريات للإرجاع من API
+                const basePath = '<?php echo getBasePath(); ?>';
+                const returnUrl = basePath + '/api/customer_purchase_history.php?action=get_history&customer_id=' + encodeURIComponent(customerId);
                 
                 fetch(returnUrl, {
+                    credentials: 'same-origin',
                     headers: {
+                        'Accept': 'application/json',
                         'X-Requested-With': 'XMLHttpRequest'
                     }
                 })
-                .then(response => response.text())
-                .then(html => {
+                .then(response => {
+                    if (!response.ok) {
+                        throw new Error('تعذر تحميل البيانات. حالة الخادم: ' + response.status);
+                    }
+                    return response.json();
+                })
+                .then(data => {
                     if (loadingElement) loadingElement.classList.add('d-none');
-                    if (contentElement) {
-                        contentElement.innerHTML = html;
-                        contentElement.classList.remove('d-none');
+                    
+                    if (data.success) {
+                        // تحديث معلومات العميل
+                        if (data.customer) {
+                            if (customerPhoneEl) customerPhoneEl.textContent = data.customer.phone || '-';
+                            if (customerAddressEl) customerAddressEl.textContent = data.customer.address || '-';
+                        }
+                        
+                        // عرض بيانات المشتريات
+                        const purchaseHistory = data.purchase_history || [];
+                        displayRepReturnHistory(purchaseHistory, tableBody);
+                        
+                        if (contentElement) {
+                            contentElement.classList.remove('d-none');
+                        }
+                    } else {
+                        if (errorElement) {
+                            errorElement.textContent = data.message || 'حدث خطأ أثناء تحميل بيانات الإرجاع';
+                            errorElement.classList.remove('d-none');
+                        }
                     }
                 })
                 .catch(error => {
                     console.error('Error loading return data:', error);
                     if (loadingElement) loadingElement.classList.add('d-none');
                     if (errorElement) {
-                        errorElement.textContent = 'حدث خطأ أثناء تحميل بيانات الإرجاع';
+                        errorElement.textContent = error.message || 'حدث خطأ أثناء تحميل بيانات الإرجاع';
                         errorElement.classList.remove('d-none');
                     }
                 });
@@ -1261,12 +1506,12 @@ document.addEventListener('DOMContentLoaded', function() {
 <div class="modal fade" id="repCustomerHistoryModal" tabindex="-1" aria-hidden="true">
     <div class="modal-dialog modal-xl modal-dialog-scrollable">
         <div class="modal-content">
-            <div class="modal-header">
+            <div class="modal-header bg-dark text-white">
                 <h5 class="modal-title">
                     <i class="bi bi-journal-text me-2"></i>
-                    سجل المشتريات - <span class="rep-history-customer-name">-</span>
+                    سجل مشتريات العميل - <span class="rep-history-customer-name">-</span>
                 </h5>
-                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="إغلاق"></button>
+                <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal" aria-label="إغلاق"></button>
             </div>
             <div class="modal-body">
                 <div class="rep-history-loading text-center py-5">
@@ -1276,7 +1521,77 @@ document.addEventListener('DOMContentLoaded', function() {
                     <p class="mt-3 text-muted">جاري تحميل سجل المشتريات...</p>
                 </div>
                 <div class="rep-history-error alert alert-danger d-none" role="alert"></div>
-                <div class="rep-history-content d-none"></div>
+                <div class="rep-history-content d-none">
+                    <!-- الإحصائيات -->
+                    <div class="row g-3 mb-4">
+                        <div class="col-sm-6 col-lg-3">
+                            <div class="card shadow-sm border-0 h-100">
+                                <div class="card-body">
+                                    <div class="text-muted small">عدد الفواتير</div>
+                                    <div class="fs-4 fw-semibold rep-history-total-invoices">0</div>
+                                </div>
+                            </div>
+                        </div>
+                        <div class="col-sm-6 col-lg-3">
+                            <div class="card shadow-sm border-0 h-100">
+                                <div class="card-body">
+                                    <div class="text-muted small">إجمالي الفواتير</div>
+                                    <div class="fs-4 fw-semibold rep-history-total-invoiced">0.00 ج.م</div>
+                                </div>
+                            </div>
+                        </div>
+                        <div class="col-sm-6 col-lg-3">
+                            <div class="card shadow-sm border-0 h-100">
+                                <div class="card-body">
+                                    <div class="text-muted small">إجمالي المرتجعات</div>
+                                    <div class="fs-4 fw-semibold text-danger rep-history-total-returns">0.00 ج.م</div>
+                                </div>
+                            </div>
+                        </div>
+                        <div class="col-sm-6 col-lg-3">
+                            <div class="card shadow-sm border-0 h-100">
+                                <div class="card-body">
+                                    <div class="text-muted small">الصافي</div>
+                                    <div class="fs-4 fw-semibold text-primary rep-history-net-total">0.00 ج.م</div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                    
+                    <!-- الفواتير -->
+                    <div class="mb-4">
+                        <h6 class="mb-3"><i class="bi bi-receipt me-2"></i>الفواتير</h6>
+                        <div class="table-responsive">
+                            <table class="table table-hover rep-history-table">
+                                <thead>
+                                    <tr>
+                                        <th>رقم الفاتورة</th>
+                                        <th>التاريخ</th>
+                                        <th>إجمالي الفاتورة</th>
+                                        <th>المدفوع</th>
+                                        <th>المرتجعات</th>
+                                        <th>الاستبدالات</th>
+                                        <th>الصافي</th>
+                                        <th>الحالة</th>
+                                    </tr>
+                                </thead>
+                                <tbody></tbody>
+                            </table>
+                        </div>
+                    </div>
+                    
+                    <!-- المرتجعات -->
+                    <div class="mb-4">
+                        <h6 class="mb-3"><i class="bi bi-arrow-left me-2"></i>المرتجعات</h6>
+                        <div class="rep-history-returns"></div>
+                    </div>
+                    
+                    <!-- الاستبدالات -->
+                    <div>
+                        <h6 class="mb-3"><i class="bi bi-arrow-left-right me-2"></i>الاستبدالات</h6>
+                        <div class="rep-history-exchanges"></div>
+                    </div>
+                </div>
             </div>
             <div class="modal-footer">
                 <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">إغلاق</button>
@@ -1292,11 +1607,31 @@ document.addEventListener('DOMContentLoaded', function() {
             <div class="modal-header bg-success text-white">
                 <h5 class="modal-title">
                     <i class="bi bi-arrow-return-left me-2"></i>
-                    إنشاء مرتجع - <span class="rep-return-customer-name">-</span>
+                    سجل مشتريات العميل - إنشاء مرتجع - <span class="rep-return-customer-name">-</span>
                 </h5>
                 <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal" aria-label="إغلاق"></button>
             </div>
             <div class="modal-body">
+                <!-- معلومات العميل -->
+                <div class="card mb-3">
+                    <div class="card-body">
+                        <div class="row">
+                            <div class="col-md-4">
+                                <div class="text-muted small">العميل</div>
+                                <div class="fs-5 fw-bold rep-return-customer-name">-</div>
+                            </div>
+                            <div class="col-md-4">
+                                <div class="text-muted small">الهاتف</div>
+                                <div class="rep-return-customer-phone">-</div>
+                            </div>
+                            <div class="col-md-4">
+                                <div class="text-muted small">العنوان</div>
+                                <div class="rep-return-customer-address">-</div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                
                 <div class="rep-return-loading text-center py-5">
                     <div class="spinner-border text-success" role="status">
                         <span class="visually-hidden">جاري التحميل...</span>
@@ -1304,14 +1639,50 @@ document.addEventListener('DOMContentLoaded', function() {
                     <p class="mt-3 text-muted">جاري تحميل بيانات المشتريات...</p>
                 </div>
                 <div class="rep-return-error alert alert-danger d-none" role="alert"></div>
-                <div class="rep-return-content d-none"></div>
+                <div class="rep-return-content d-none">
+                    <div class="table-responsive">
+                        <table class="table table-hover table-bordered rep-return-table">
+                            <thead class="table-light">
+                                <tr>
+                                    <th style="width: 50px;">
+                                        <input type="checkbox" id="repSelectAllItems" onchange="repToggleAllItems()">
+                                    </th>
+                                    <th>رقم الفاتورة</th>
+                                    <th>رقم التشغيلة</th>
+                                    <th>اسم المنتج</th>
+                                    <th>الكمية المشتراة</th>
+                                    <th>الكمية المرتجعة</th>
+                                    <th>المتاح للإرجاع</th>
+                                    <th>سعر الوحدة</th>
+                                    <th>السعر الإجمالي</th>
+                                    <th>تاريخ الشراء</th>
+                                    <th style="width: 100px;">إجراءات</th>
+                                </tr>
+                            </thead>
+                            <tbody></tbody>
+                        </table>
+                    </div>
+                </div>
             </div>
             <div class="modal-footer">
                 <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">إلغاء</button>
+                <button type="button" class="btn btn-success" id="repCreateReturnBtn" style="display: none;">
+                    <i class="bi bi-arrow-return-left me-1"></i>إنشاء مرتجع
+                </button>
             </div>
         </div>
     </div>
 </div>
+
+<script>
+function repToggleAllItems() {
+    const selectAll = document.getElementById('repSelectAllItems');
+    const checkboxes = document.querySelectorAll('.rep-return-item-checkbox');
+    checkboxes.forEach(cb => {
+        cb.checked = selectAll.checked;
+    });
+}
+</script>
 
 <script>
 // تنظيف modal عرض الموقع عند الإغلاق
