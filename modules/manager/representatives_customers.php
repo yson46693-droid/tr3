@@ -90,18 +90,12 @@ try {
                     COALESCE(SUM(CASE WHEN balance > 0 THEN balance ELSE 0 END), 0) AS total_debt,
                     COALESCE(SUM(CASE WHEN balance > 0 THEN 1 ELSE 0 END), 0) AS debtor_count
                 FROM customers
-                WHERE (rep_id = ? OR (created_by = ? AND (created_from_pos = 0 AND created_by_admin = 0)))",
+                WHERE rep_id = ? OR (created_by = ? AND rep_id IS NULL)",
                 [$repId, $repId]
             );
-            if ($customerStats) {
-                $rep['customer_count'] = (int)($customerStats['customer_count'] ?? 0);
-                $rep['total_debt'] = (float)($customerStats['total_debt'] ?? 0.0);
-                $rep['debtor_count'] = (int)($customerStats['debtor_count'] ?? 0);
-            } else {
-                $rep['customer_count'] = 0;
-                $rep['total_debt'] = 0.0;
-                $rep['debtor_count'] = 0;
-            }
+            $rep['customer_count'] = (int)($customerStats['customer_count'] ?? 0);
+            $rep['total_debt'] = (float)($customerStats['total_debt'] ?? 0.0);
+            $rep['debtor_count'] = (int)($customerStats['debtor_count'] ?? 0);
         } else {
             $rep['customer_count'] = 0;
             $rep['total_debt'] = 0.0;

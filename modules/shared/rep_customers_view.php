@@ -51,7 +51,7 @@ if (!$rep) {
     return;
 }
 
-$whereParts = ['(c.rep_id = ? OR (c.created_by = ? AND (c.created_from_pos = 0 AND c.created_by_admin = 0)))'];
+$whereParts = ['(c.rep_id = ? OR (c.created_by = ? AND c.rep_id IS NULL))'];
 $listParams = [$repId, $repId];
 $countParams = [$repId, $repId];
 $statsParams = [$repId, $repId];
@@ -116,7 +116,7 @@ try {
         SELECT COALESCE(SUM(col.amount), 0) AS total_collections
         FROM collections col
         INNER JOIN customers c ON col.customer_id = c.id
-        WHERE (c.rep_id = ? OR (c.created_by = ? AND (c.created_from_pos = 0 AND c.created_by_admin = 0)))";
+        WHERE (c.rep_id = ? OR (c.created_by = ? AND c.rep_id IS NULL))";
     $collectionsParams = [$repId, $repId];
 
     if ($debtStatus === 'debtor') {
