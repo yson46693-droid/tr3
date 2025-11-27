@@ -49,15 +49,14 @@ try {
     // التحقق من وجود الأعمدة في جدول users
     $hasLastLoginAt = false;
     $hasProfileImage = false;
+    $hasProfilePhoto = false;
     try {
         $lastLoginCheck = $db->queryOne("SHOW COLUMNS FROM users LIKE 'last_login_at'");
         $hasLastLoginAt = !empty($lastLoginCheck);
         $profileImageCheck = $db->queryOne("SHOW COLUMNS FROM users LIKE 'profile_image'");
         $hasProfileImage = !empty($profileImageCheck);
-        if (!$hasProfileImage) {
-            $profilePhotoCheck = $db->queryOne("SHOW COLUMNS FROM users LIKE 'profile_photo'");
-            $hasProfileImage = !empty($profilePhotoCheck);
-        }
+        $profilePhotoCheck = $db->queryOne("SHOW COLUMNS FROM users LIKE 'profile_photo'");
+        $hasProfilePhoto = !empty($profilePhotoCheck);
     } catch (Throwable $e) {
         error_log('Column check error: ' . $e->getMessage());
     }
@@ -80,8 +79,10 @@ try {
     
     if ($hasProfileImage) {
         $selectColumns[] = 'u.profile_image';
-    } else {
+    } elseif ($hasProfilePhoto) {
         $selectColumns[] = 'u.profile_photo AS profile_image';
+    } else {
+        $selectColumns[] = 'NULL AS profile_image';
     }
     
     $selectSql = implode(', ', $selectColumns);
@@ -113,8 +114,10 @@ try {
         
         if ($hasProfileImage) {
             $selectColumnsAlt[] = 'profile_image';
-        } else {
+        } elseif ($hasProfilePhoto) {
             $selectColumnsAlt[] = 'profile_photo AS profile_image';
+        } else {
+            $selectColumnsAlt[] = 'NULL AS profile_image';
         }
         
         $selectSqlAlt = implode(', ', $selectColumnsAlt);
