@@ -739,6 +739,34 @@ foreach ($factoryProducts as $product) {
                             <div class="product-detail-row"><span>الكمية:</span> <span><strong><?php echo $quantity; ?></strong></span></div>
                             <div class="product-detail-row"><span>سعر الوحدة:</span> <span><?php echo formatCurrency($unitPrice); ?></span></div>
                             <div class="product-detail-row"><span>إجمالي القيمة:</span> <span><strong class="text-success"><?php echo formatCurrency($totalPrice); ?></strong></span></div>
+
+                            <?php if ($batchNumber && $batchNumber !== '—'): ?>
+                                <?php
+                                    $viewUrl = getRelativeUrl('production.php?page=batch_numbers&batch_number=' . urlencode($batchNumber));
+                                ?>
+                                <div style="display: flex; gap: 10px; margin-top: 15px;">
+                                    <button type="button" 
+                                            class="btn-view js-batch-details" 
+                                            style="border: none; cursor: pointer; flex: 1; background: #0c2c80; color: white; padding: 10px 16px; border-radius: 10px; font-weight: bold; font-size: 13px;"
+                                            data-batch="<?php echo htmlspecialchars($batchNumber); ?>"
+                                            data-product="<?php echo htmlspecialchars($productName); ?>"
+                                            data-view-url="<?php echo htmlspecialchars($viewUrl); ?>">
+                                        <i class="bi bi-eye me-1"></i>عرض التفاصيل
+                                    </button>
+                                    <button type="button" 
+                                            class="btn-view js-print-barcode" 
+                                            style="border: none; cursor: pointer; flex: 1; background: #28a745; color: white; padding: 10px 16px; border-radius: 10px; font-weight: bold; font-size: 13px;"
+                                            data-batch="<?php echo htmlspecialchars($batchNumber); ?>"
+                                            data-product="<?php echo htmlspecialchars($productName); ?>"
+                                            data-quantity="<?php echo htmlspecialchars($quantity); ?>">
+                                        <i class="bi bi-printer me-1"></i>طباعة الباركود
+                                    </button>
+                                </div>
+                            <?php else: ?>
+                                <span class="btn-view" style="opacity: 0.5; cursor: not-allowed; display: inline-block; margin-top: 15px; background: #0c2c80; color: white; padding: 10px 16px; border-radius: 10px; font-weight: bold; font-size: 13px;">
+                                    <i class="bi bi-eye me-1"></i>عرض التفاصيل
+                                </span>
+                            <?php endif; ?>
                         </div>
                     <?php endforeach; ?>
                 </div>
@@ -992,7 +1020,390 @@ foreach ($factoryProducts as $product) {
     </div>
 </div>
 
+<!-- Modal طباعة الباركود -->
+<div class="modal fade" id="printBarcodesModal" tabindex="-1">
+    <div class="modal-dialog modal-lg">
+        <div class="modal-content">
+            <div class="modal-header bg-success text-white">
+                <h5 class="modal-title"><i class="bi bi-printer me-2"></i>طباعة الباركود</h5>
+                <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body">
+                <div class="alert alert-success">
+                    <i class="bi bi-check-circle me-2"></i>
+                    جاهز للطباعة
+                </div>
+                <div class="mb-3">
+                    <label class="form-label">اسم المنتج</label>
+                    <input type="text" class="form-control" id="barcode_product_name" readonly>
+                </div>
+                <div class="mb-3">
+                    <label class="form-label">عدد الباركودات المراد طباعتها</label>
+                    <input type="number" class="form-control" id="barcode_print_quantity" min="1" value="1">
+                    <small class="text-muted">سيتم طباعة نفس رقم التشغيلة بعدد المرات المحدد</small>
+                </div>
+                <div class="mb-3">
+                    <label class="form-label">أرقام التشغيلة</label>
+                    <div class="border rounded p-3" style="max-height: 200px; overflow-y: auto;">
+                        <div id="batch_numbers_list"></div>
+                    </div>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">إغلاق</button>
+                <button type="button" class="btn btn-primary" onclick="printBarcodes()">
+                    <i class="bi bi-printer me-2"></i>طباعة
+                </button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Modal تفاصيل التشغيلة -->
+<div class="modal fade" id="batchDetailsModal" tabindex="-1" aria-hidden="true" data-bs-backdrop="static" data-bs-keyboard="false">
+    <div class="modal-dialog modal-lg modal-dialog-scrollable modal-dialog-centered">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title">تفاصيل التشغيلة</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="إغلاق"></button>
+            </div>
+            <div class="modal-body">
+                <div id="batchDetailsLoading" class="d-flex justify-content-center py-4">
+                    <div class="spinner-border text-primary" role="status">
+                        <span class="visually-hidden">جارٍ التحميل...</span>
+                    </div>
+                </div>
+                <div id="batchDetailsError" class="alert alert-danger d-none" role="alert"></div>
+                <div id="batchDetailsContent" class="d-none">
+                    <div id="batchSummarySection" class="mb-4"></div>
+                    <div id="batchMaterialsSection" class="mb-4"></div>
+                    <div id="batchRawMaterialsSection" class="mb-4"></div>
+                    <div id="batchWorkersSection" class="mb-0"></div>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">إغلاق</button>
+            </div>
+        </div>
+    </div>
+</div>
+
 <script>
+// وظيفة طباعة الباركود
+const PRINT_BARCODE_URL = <?php echo json_encode(getRelativeUrl('print_barcode.php')); ?>;
+window.PRINT_BARCODE_URL = PRINT_BARCODE_URL;
+
+function showBarcodePrintModal(batchNumber, productName, defaultQuantity) {
+    const modalElement = document.getElementById('printBarcodesModal');
+    if (!modalElement) {
+        console.error('Modal printBarcodesModal not found');
+        const quantity = defaultQuantity > 0 ? defaultQuantity : 1;
+        const fallbackUrl = `${PRINT_BARCODE_URL}?batch=${encodeURIComponent(batchNumber)}&quantity=${quantity}&print=1`;
+        window.open(fallbackUrl, '_blank');
+        return;
+    }
+    
+    const quantity = defaultQuantity > 0 ? defaultQuantity : 1;
+    window.batchNumbersToPrint = [batchNumber];
+
+    const productNameInput = document.getElementById('barcode_product_name');
+    if (productNameInput) {
+        productNameInput.value = productName || '';
+    }
+
+    const quantityInput = document.getElementById('barcode_print_quantity');
+    if (quantityInput) {
+        quantityInput.value = quantity;
+    }
+
+    const batchListContainer = document.getElementById('batch_numbers_list');
+    if (batchListContainer) {
+        batchListContainer.innerHTML = `
+            <div class="alert alert-info mb-0">
+                <i class="bi bi-info-circle me-2"></i>
+                <strong>رقم التشغيلة:</strong> ${batchNumber}<br>
+                <small>ستتم طباعة نفس رقم التشغيلة بعدد ${quantity} باركود</small>
+            </div>
+        `;
+    }
+
+    if (typeof bootstrap !== 'undefined' && bootstrap.Modal) {
+        const modal = bootstrap.Modal.getOrCreateInstance(modalElement);
+        modal.show();
+    } else {
+        const fallbackUrl = `${PRINT_BARCODE_URL}?batch=${encodeURIComponent(batchNumber)}&quantity=${quantity}&print=1`;
+        window.open(fallbackUrl, '_blank');
+    }
+}
+
+function printBarcodes() {
+    const batchNumbers = window.batchNumbersToPrint || [];
+    if (batchNumbers.length === 0) {
+        alert('لا توجد أرقام تشغيلة للطباعة');
+        return;
+    }
+
+    const quantityInput = document.getElementById('barcode_print_quantity');
+    const printQuantity = quantityInput ? parseInt(quantityInput.value, 10) : 1;
+    
+    if (!printQuantity || printQuantity < 1) {
+        alert('يرجى إدخال عدد صحيح للطباعة');
+        return;
+    }
+
+    const batchNumber = batchNumbers[0];
+    const printUrl = `${PRINT_BARCODE_URL}?batch=${encodeURIComponent(batchNumber)}&quantity=${printQuantity}&print=1`;
+    window.open(printUrl, '_blank');
+}
+
+window.showBarcodePrintModal = showBarcodePrintModal;
+window.printBarcodes = printBarcodes;
+
+// وظيفة عرض تفاصيل التشغيلة
+const batchDetailsEndpoint = <?php echo json_encode(getRelativeUrl('api/production/get_batch_details.php')); ?>;
+let batchDetailsIsLoading = false;
+
+function showBatchDetailsModal(batchNumber, productName) {
+    if (!batchNumber || typeof batchNumber !== 'string' || batchNumber.trim() === '') {
+        console.error('Invalid batch number');
+        return;
+    }
+    
+    if (batchDetailsIsLoading) {
+        return;
+    }
+    
+    if (typeof bootstrap === 'undefined' || typeof bootstrap.Modal === 'undefined') {
+        alert('تعذر فتح تفاصيل التشغيلة. يرجى تحديث الصفحة.');
+        return;
+    }
+    
+    const modalElement = document.getElementById('batchDetailsModal');
+    if (!modalElement) {
+        console.error('batchDetailsModal not found');
+        return;
+    }
+    
+    const modalInstance = bootstrap.Modal.getOrCreateInstance(modalElement);
+    const loader = modalElement.querySelector('#batchDetailsLoading');
+    const errorAlert = modalElement.querySelector('#batchDetailsError');
+    const contentWrapper = modalElement.querySelector('#batchDetailsContent');
+    const modalTitle = modalElement.querySelector('.modal-title');
+    
+    if (modalTitle) {
+        modalTitle.textContent = productName ? `تفاصيل التشغيلة - ${productName}` : 'تفاصيل التشغيلة';
+    }
+    
+    loader.classList.remove('d-none');
+    errorAlert.classList.add('d-none');
+    contentWrapper.classList.add('d-none');
+    batchDetailsIsLoading = true;
+    
+    modalInstance.show();
+    
+    fetch(batchDetailsEndpoint, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ batch_number: batchNumber })
+    })
+    .then(response => response.json())
+    .then(data => {
+        loader.classList.add('d-none');
+        batchDetailsIsLoading = false;
+        
+        if (data.success && data.batch) {
+            renderBatchDetails(data.batch);
+            contentWrapper.classList.remove('d-none');
+        } else {
+            errorAlert.textContent = data.message || 'تعذر تحميل تفاصيل التشغيلة';
+            errorAlert.classList.remove('d-none');
+        }
+    })
+    .catch(error => {
+        loader.classList.add('d-none');
+        errorAlert.textContent = 'حدث خطأ أثناء تحميل التفاصيل';
+        errorAlert.classList.remove('d-none');
+        batchDetailsIsLoading = false;
+        console.error('Error loading batch details:', error);
+    });
+}
+
+function renderBatchDetails(data) {
+    const summarySection = document.getElementById('batchSummarySection');
+    const materialsSection = document.getElementById('batchMaterialsSection');
+    const rawMaterialsSection = document.getElementById('batchRawMaterialsSection');
+    const workersSection = document.getElementById('batchWorkersSection');
+
+    const batchNumber = data.batch_number ?? '—';
+    const summaryRows = [
+        ['رقم التشغيلة', batchNumber],
+        ['المنتج', data.product_name ?? '—'],
+        ['تاريخ الإنتاج', data.production_date ? data.production_date : '—'],
+        ['الكمية المنتجة', data.quantity_produced ?? data.quantity ?? '—']
+    ];
+
+    if (data.honey_supplier_name) {
+        summaryRows.push(['مورد العسل', data.honey_supplier_name]);
+    }
+    if (data.packaging_supplier_name) {
+        summaryRows.push(['مورد التعبئة', data.packaging_supplier_name]);
+    }
+    if (data.notes) {
+        summaryRows.push(['ملاحظات', data.notes]);
+    }
+
+    summarySection.innerHTML = `
+        <div class="card shadow-sm">
+            <div class="card-header bg-primary text-white">
+                <h6 class="mb-0"><i class="bi bi-info-circle me-2"></i>ملخص التشغيلة</h6>
+            </div>
+            <div class="card-body">
+                <div class="table-responsive dashboard-table-wrapper">
+                    <table class="table dashboard-table dashboard-table--compact align-middle mb-0">
+                        <tbody>
+                            ${summaryRows.map(([label, value]) => `
+                                <tr>
+                                    <th class="w-25">${label}</th>
+                                    <td>${value}</td>
+                                </tr>
+                            `).join('')}
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+    `;
+
+    const packagingItems = Array.isArray(data.packaging_materials) ? data.packaging_materials : [];
+    if (packagingItems.length > 0) {
+        materialsSection.innerHTML = `
+            <div class="card shadow-sm">
+                <div class="card-header bg-light">
+                    <h6 class="mb-0"><i class="bi bi-box-seam me-2"></i>مواد التعبئة</h6>
+                </div>
+                <div class="card-body">
+                    <div class="table-responsive dashboard-table-wrapper">
+                        <table class="table dashboard-table dashboard-table--compact align-middle mb-0">
+                            <thead>
+                                <tr>
+                                    <th>المادة</th>
+                                    <th>الكمية</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                ${packagingItems.map(item => `
+                                    <tr>
+                                        <td>${item.material_name ?? '—'}</td>
+                                        <td>${item.quantity ?? '—'} ${item.unit ?? ''}</td>
+                                    </tr>
+                                `).join('')}
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            </div>
+        `;
+    } else {
+        materialsSection.innerHTML = '';
+    }
+
+    const rawMaterialsItems = Array.isArray(data.raw_materials) ? data.raw_materials : [];
+    if (rawMaterialsItems.length > 0) {
+        rawMaterialsSection.innerHTML = `
+            <div class="card shadow-sm">
+                <div class="card-header bg-light">
+                    <h6 class="mb-0"><i class="bi bi-flower1 me-2"></i>الخامات</h6>
+                </div>
+                <div class="card-body">
+                    <div class="table-responsive dashboard-table-wrapper">
+                        <table class="table dashboard-table dashboard-table--compact align-middle mb-0">
+                            <thead>
+                                <tr>
+                                    <th>المادة</th>
+                                    <th>الكمية</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                ${rawMaterialsItems.map(item => `
+                                    <tr>
+                                        <td>${item.material_name ?? '—'}</td>
+                                        <td>${item.quantity ?? '—'} ${item.unit ?? ''}</td>
+                                    </tr>
+                                `).join('')}
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            </div>
+        `;
+    } else {
+        rawMaterialsSection.innerHTML = '';
+    }
+
+    const workers = Array.isArray(data.workers) ? data.workers : [];
+    if (workers.length > 0) {
+        workersSection.innerHTML = `
+            <div class="card shadow-sm">
+                <div class="card-header bg-light">
+                    <h6 class="mb-0"><i class="bi bi-people me-2"></i>العمال</h6>
+                </div>
+                <div class="card-body">
+                    <ul class="list-unstyled mb-0">
+                        ${workers.map(worker => `
+                            <li class="mb-2">
+                                <i class="bi bi-person-circle me-2 text-primary"></i>
+                                ${worker.name ?? '—'}
+                            </li>
+                        `).join('')}
+                    </ul>
+                </div>
+            </div>
+        `;
+    } else {
+        workersSection.innerHTML = '';
+    }
+}
+
+window.showBatchDetailsModal = showBatchDetailsModal;
+
+// ربط الأحداث للأزرار
+document.addEventListener('click', function(event) {
+    // زر تفاصيل التشغيلة
+    const detailsButton = event.target.closest('.js-batch-details');
+    if (detailsButton) {
+        event.preventDefault();
+        event.stopPropagation();
+        const batchNumber = detailsButton.getAttribute('data-batch') || detailsButton.dataset.batch;
+        const productName = detailsButton.getAttribute('data-product') || detailsButton.dataset.product || '';
+        if (batchNumber && batchNumber.trim() !== '') {
+            if (typeof showBatchDetailsModal === 'function') {
+                showBatchDetailsModal(batchNumber, productName);
+            } else {
+                console.error('showBatchDetailsModal function not found');
+            }
+        }
+        return;
+    }
+
+    // زر طباعة الباركود
+    const printButton = event.target.closest('.js-print-barcode');
+    if (printButton) {
+        event.preventDefault();
+        event.stopPropagation();
+        const batchNumber = printButton.getAttribute('data-batch') || printButton.dataset.batch;
+        const productName = printButton.getAttribute('data-product') || printButton.dataset.product || '';
+        const quantity = parseFloat(printButton.getAttribute('data-quantity') || printButton.dataset.quantity || '1');
+        if (batchNumber && batchNumber.trim() !== '') {
+            if (typeof window.showBarcodePrintModal === 'function') {
+                window.showBarcodePrintModal(batchNumber, productName, quantity);
+            } else {
+                console.error('showBarcodePrintModal function not found');
+            }
+        }
+        return;
+    }
+});
+
 // معالجة تعديل المنتجات الخارجية
 document.querySelectorAll('.js-edit-external').forEach(btn => {
     btn.addEventListener('click', function() {
