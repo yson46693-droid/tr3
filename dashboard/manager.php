@@ -58,6 +58,20 @@ if ($page === 'packaging_warehouse' && isset($_GET['ajax']) && isset($_GET['mate
     }
 }
 
+// معالجة AJAX لسجل المشتريات من صفحة representatives_customers
+if ($page === 'representatives_customers' && 
+    isset($_GET['ajax'], $_GET['action']) && 
+    $_GET['ajax'] === 'purchase_history' && 
+    $_GET['action'] === 'purchase_history') {
+    
+    // استخدام API endpoint منفصل
+    $apiPath = __DIR__ . '/../api/customer_history_api.php';
+    if (file_exists($apiPath)) {
+        include $apiPath;
+        exit; // إيقاف التنفيذ بعد معالجة AJAX
+    }
+}
+
 // تحميل باقي الملفات المطلوبة للصفحة العادية
 require_once __DIR__ . '/../includes/config.php';
 require_once __DIR__ . '/../includes/db.php';

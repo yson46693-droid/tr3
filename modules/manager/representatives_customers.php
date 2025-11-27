@@ -858,6 +858,61 @@ function formatDate(dateString) {
     });
 }
 
+/**
+ * دالة مساعدة لجلب JSON من API مع معالجة أخطاء محسنة
+ * @param {string} url - URL للـ API endpoint
+ * @returns {Promise<Object>} - البيانات كـ JSON object
+ */
+function fetchJson(url) {
+    return fetch(url, {
+        credentials: 'same-origin',
+        headers: {
+            'Accept': 'application/json',
+            'X-Requested-With': 'XMLHttpRequest'
+        }
+    })
+    .then(response => {
+        // قراءة النص أولاً للتحقق من نوع المحتوى
+        return response.text().then(text => {
+            const contentType = response.headers.get('content-type') || '';
+            
+            // التحقق من أن الاستجابة JSON
+            if (!contentType.includes('application/json')) {
+                console.error('Expected JSON but got:', contentType);
+                console.error('Response text:', text.substring(0, 1000));
+                
+                // محاولة التحقق من أن النص هو HTML (صفحة خطأ أو redirect)
+                if (text.trim().startsWith('<!DOCTYPE') || text.trim().startsWith('<html')) {
+                    throw new Error('الخادم يعيد صفحة HTML بدلاً من JSON. قد تكون الجلسة منتهية أو هناك خطأ في الخادم.');
+                }
+                
+                throw new Error('استجابة غير صحيحة من الخادم. يرجى التحقق من أن endpoint يعيد JSON.');
+            }
+            
+            if (!response.ok) {
+                console.error('Error response:', text.substring(0, 500));
+                
+                // محاولة تحليل JSON للخطأ
+                try {
+                    const errorData = JSON.parse(text);
+                    throw new Error(errorData.message || 'تعذر تحميل البيانات. حالة الخادم: ' + response.status);
+                } catch (e) {
+                    throw new Error('تعذر تحميل البيانات. حالة الخادم: ' + response.status);
+                }
+            }
+            
+            // محاولة تحليل JSON
+            try {
+                return JSON.parse(text);
+            } catch (parseError) {
+                console.error('JSON parse error:', parseError);
+                console.error('Response text:', text.substring(0, 500));
+                throw new Error('فشل تحليل استجابة JSON من الخادم.');
+            }
+        });
+    });
+}
+
 // دوال مساعدة لبناء HTML من JSON (استخدام formatCurrency الموجود أعلاه)
 
 function formatCurrencySimple(value) {
@@ -1126,40 +1181,13 @@ document.addEventListener('DOMContentLoaded', function() {
                 const modalInstance = bootstrap.Modal.getOrCreateInstance(historyModal);
                 modalInstance.show();
                 
-                // جلب بيانات سجل المشتريات من endpoint customers (يعمل بشكل صحيح)
-                const baseUrl = '<?php echo getRelativeUrl($dashboardScript); ?>';
-                const historyUrl = baseUrl + (baseUrl.includes('?') ? '&' : '?') + 'page=customers&section=company&action=purchase_history&ajax=purchase_history&customer_id=' + encodeURIComponent(customerId);
+                // جلب بيانات سجل المشتريات من API endpoint
+                const basePath = '<?php echo getBasePath(); ?>';
+                const historyUrl = basePath + '/api/customer_history_api.php?customer_id=' + encodeURIComponent(customerId);
                 
                 console.log('Fetching history from:', historyUrl);
                 
-                fetch(historyUrl, {
-                    credentials: 'same-origin',
-                    headers: {
-                        'Accept': 'application/json',
-                        'X-Requested-With': 'XMLHttpRequest'
-                    }
-                })
-                .then(response => {
-                    console.log('Response status:', response.status);
-                    console.log('Response headers:', response.headers.get('content-type'));
-                    
-                    if (!response.ok) {
-                        return response.text().then(text => {
-                            console.error('Error response:', text.substring(0, 500));
-                            throw new Error('تعذر تحميل البيانات. حالة الخادم: ' + response.status);
-                        });
-                    }
-                    
-                    const contentType = response.headers.get('content-type') || '';
-                    if (!contentType.includes('application/json')) {
-                        return response.text().then(text => {
-                            console.error('Expected JSON but got:', contentType);
-                            console.error('Response text:', text.substring(0, 1000));
-                            throw new Error('استجابة غير صحيحة من الخادم. يرجى التحقق من أن endpoint يعيد JSON.');
-                        });
-                    }
-                    return response.json();
-                })
+                fetchJson(historyUrl)
                 .then(payload => {
                     if (!payload || !payload.success) {
                         throw new Error(payload?.message || 'فشل تحميل بيانات السجل.');
@@ -1238,19 +1266,7 @@ document.addEventListener('DOMContentLoaded', function() {
                 const basePath = '<?php echo getBasePath(); ?>';
                 const returnUrl = basePath + '/api/customer_purchase_history.php?action=get_history&customer_id=' + encodeURIComponent(customerId);
                 
-                fetch(returnUrl, {
-                    credentials: 'same-origin',
-                    headers: {
-                        'Accept': 'application/json',
-                        'X-Requested-With': 'XMLHttpRequest'
-                    }
-                })
-                .then(response => {
-                    if (!response.ok) {
-                        throw new Error('تعذر تحميل البيانات. حالة الخادم: ' + response.status);
-                    }
-                    return response.json();
-                })
+                fetchJson(returnUrl)
                 .then(data => {
                     if (loadingElement) loadingElement.classList.add('d-none');
                     
