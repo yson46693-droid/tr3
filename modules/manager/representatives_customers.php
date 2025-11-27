@@ -86,13 +86,12 @@ try {
         if ($repId > 0) {
             $customerStats = $db->queryOne(
                 "SELECT 
-                    COUNT(DISTINCT c.id) AS customer_count,
-                    COALESCE(SUM(CASE WHEN c.balance > 0 THEN c.balance ELSE 0 END), 0) AS total_debt,
-                    COALESCE(SUM(CASE WHEN c.balance > 0 THEN 1 ELSE 0 END), 0) AS debtor_count
-                FROM customers c
-                WHERE (c.rep_id = ? OR c.created_by = ?)
-                  AND (c.created_from_pos = 0 AND c.created_by_admin = 0)",
-                [$repId, $repId]
+                    COUNT(*) AS customer_count,
+                    COALESCE(SUM(CASE WHEN balance > 0 THEN balance ELSE 0 END), 0) AS total_debt,
+                    COALESCE(SUM(CASE WHEN balance > 0 THEN 1 ELSE 0 END), 0) AS debtor_count
+                FROM customers
+                WHERE rep_id = ?",
+                [$repId]
             );
             if ($customerStats) {
                 $rep['customer_count'] = (int)($customerStats['customer_count'] ?? 0);
