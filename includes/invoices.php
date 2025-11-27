@@ -102,7 +102,7 @@ function createInvoice($customerId, $salesRepId, $date, $items, $taxRate = 0, $d
 }
 
 /**
- * توليد رقم فاتورة
+ * توليد رقم فاتورة فريد (يضمن عدم تكرار الأرقام حتى لو كان البيع لنفس العميل)
  */
 function generateInvoiceNumber() {
     $db = db();
@@ -110,11 +110,11 @@ function generateInvoiceNumber() {
     $year = date('Y');
     $month = date('m');
     
-    // الحصول على آخر رقم فاتورة لهذا الشهر
+    // الحصول على آخر رقم فاتورة لهذا الشهر (بغض النظر عن العميل)
     $result = $db->queryOne(
         "SELECT invoice_number FROM invoices 
          WHERE invoice_number LIKE ? 
-         ORDER BY invoice_number DESC LIMIT 1",
+         ORDER BY id DESC LIMIT 1",
         ["INV-{$year}{$month}-%"]
     );
     
@@ -126,7 +126,30 @@ function generateInvoiceNumber() {
         $serial = 1;
     }
     
-    return sprintf("INV-%s%s-%04d", $year, $month, $serial);
+    // التأكد من عدم وجود فاتورة بنفس الرقم (حماية إضافية)
+    $maxAttempts = 100;
+    $attempt = 0;
+    $invoiceNumber = sprintf("INV-%s%s-%04d", $year, $month, $serial);
+    
+    while ($attempt < $maxAttempts) {
+        $existing = $db->queryOne(
+            "SELECT id FROM invoices WHERE invoice_number = ? LIMIT 1",
+            [$invoiceNumber]
+        );
+        
+        if (!$existing) {
+            // الرقم فريد، يمكن استخدامه
+            return $invoiceNumber;
+        }
+        
+        // الرقم موجود، جرب الرقم التالي
+        $serial++;
+        $invoiceNumber = sprintf("INV-%s%s-%04d", $year, $month, $serial);
+        $attempt++;
+    }
+    
+    // في حالة فشل جميع المحاولات، استخدم timestamp كجزء من الرقم
+    return sprintf("INV-%s%s-%04d-%s", $year, $month, $serial, substr(time(), -4));
 }
 
 /**

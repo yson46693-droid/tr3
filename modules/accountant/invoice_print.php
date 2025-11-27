@@ -124,7 +124,10 @@ $subtotal        = $invoiceData['subtotal'] ?? 0;
 $discount        = $invoiceData['discount_amount'] ?? 0;
 $total           = $invoiceData['total_amount'] ?? 0;
 $paidAmount      = $invoiceData['paid_amount'] ?? 0;
-$dueAmount       = max(0, $total - $paidAmount);
+// استخدام remaining_amount من قاعدة البيانات إذا كان موجوداً، وإلا حسابها من total - paid
+$dueAmount       = isset($invoiceData['remaining_amount']) && $invoiceData['remaining_amount'] !== null 
+    ? (float)$invoiceData['remaining_amount'] 
+    : max(0, $total - $paidAmount);
 $notes           = trim((string)($invoiceData['notes'] ?? ''));
 
 $currencyLabel   = CURRENCY . ' ' . CURRENCY_SYMBOL;

@@ -278,7 +278,6 @@ $tableHeaderStyle = $isSalesRecords ? 'background: linear-gradient(135deg, #667e
                         <th class="<?php echo $isSalesRecords ? 'text-white fw-bold' : ''; ?>" style="<?php echo $isSalesRecords ? 'border: none; padding: 1rem;' : ''; ?>">الكمية</th>
                         <th class="<?php echo $isSalesRecords ? 'text-white fw-bold' : ''; ?>" style="<?php echo $isSalesRecords ? 'border: none; padding: 1rem;' : ''; ?>">السعر</th>
                         <th class="<?php echo $isSalesRecords ? 'text-white fw-bold' : ''; ?>" style="<?php echo $isSalesRecords ? 'border: none; padding: 1rem;' : ''; ?>">الإجمالي</th>
-                        <th class="<?php echo $isSalesRecords ? 'text-white fw-bold' : ''; ?>" style="<?php echo $isSalesRecords ? 'border: none; padding: 1rem;' : ''; ?>">الحالة</th>
                         <?php if ($currentUser['role'] !== 'sales'): ?>
                         <th class="<?php echo $isSalesRecords ? 'text-white fw-bold' : ''; ?>" style="<?php echo $isSalesRecords ? 'border: none; padding: 1rem;' : ''; ?>">مندوب المبيعات</th>
                         <?php endif; ?>
