@@ -339,7 +339,7 @@ $tableHeaderStyle = $isSalesRecords ? 'background: linear-gradient(135deg, #667e
                                 <?php endif; ?>
                                 <td style="<?php echo $isSalesRecords ? 'padding: 1rem;' : ''; ?>">
                                     <?php if (!empty($sale['invoice_id']) && !empty($sale['invoice_number'])): ?>
-                                        <a href="print_invoice.php?id=<?php echo (int)$sale['invoice_id']; ?>" 
+                                        <a href="<?php echo getRelativeUrl('print_invoice.php?id=' . (int)$sale['invoice_id']); ?>" 
                                            target="_blank" 
                                            class="btn btn-sm <?php echo $isSalesRecords ? 'btn-light shadow-sm' : 'btn-primary'; ?>" 
                                            title="طباعة الفاتورة"

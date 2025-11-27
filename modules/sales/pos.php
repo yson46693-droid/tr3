@@ -167,7 +167,7 @@ if (!$error && !empty($customersTableExists)) {
     $statusColumnExists = $db->queryOne("SHOW COLUMNS FROM customers LIKE 'status'");
     $createdByColumnExists = $db->queryOne("SHOW COLUMNS FROM customers LIKE 'created_by'");
 
-    $customerSql = "SELECT id, name FROM customers WHERE 1=1";
+    $customerSql = "SELECT id, name, balance FROM customers WHERE 1=1";
     $customerParams = [];
 
     if (!empty($statusColumnExists)) {
@@ -359,6 +359,8 @@ if (!$error && $_SERVER['REQUEST_METHOD'] === 'POST') {
             $newCustomerName = trim($_POST['new_customer_name'] ?? '');
             $newCustomerPhone = trim($_POST['new_customer_phone'] ?? '');
             $newCustomerAddress = trim($_POST['new_customer_address'] ?? '');
+            $newCustomerLatitude = isset($_POST['new_customer_latitude']) && $_POST['new_customer_latitude'] !== '' ? trim($_POST['new_customer_latitude']) : null;
+            $newCustomerLongitude = isset($_POST['new_customer_longitude']) && $_POST['new_customer_longitude'] !== '' ? trim($_POST['new_customer_longitude']) : null;
 
             if ($newCustomerName === '') {
                 $validationErrors[] = 'يجب إدخال اسم العميل الجديد.';
@@ -380,18 +382,47 @@ if (!$error && $_SERVER['REQUEST_METHOD'] === 'POST') {
                     $repIdForCustomer = ($currentUser['role'] ?? '') === 'sales' ? $currentUser['id'] : null;
                     $createdByAdminFlag = $repIdForCustomer ? 0 : 1;
 
+                    // التحقق من وجود أعمدة اللوكيشن
+                    $hasLatitudeColumn = !empty($db->queryOne("SHOW COLUMNS FROM customers LIKE 'latitude'"));
+                    $hasLongitudeColumn = !empty($db->queryOne("SHOW COLUMNS FROM customers LIKE 'longitude'"));
+                    $hasLocationCapturedAtColumn = !empty($db->queryOne("SHOW COLUMNS FROM customers LIKE 'location_captured_at'"));
+                    
+                    $customerColumns = ['name', 'phone', 'address', 'balance', 'status', 'created_by', 'rep_id', 'created_from_pos', 'created_by_admin'];
+                    $customerValues = [
+                        $newCustomerName,
+                        $newCustomerPhone !== '' ? $newCustomerPhone : null,
+                        $newCustomerAddress !== '' ? $newCustomerAddress : null,
+                        $dueAmount,
+                        'active',
+                        $currentUser['id'],
+                        $repIdForCustomer,
+                        0,
+                        $createdByAdminFlag,
+                    ];
+                    $customerPlaceholders = ['?', '?', '?', '?', '?', '?', '?', '?', '?'];
+                    
+                    if ($hasLatitudeColumn && $newCustomerLatitude !== null) {
+                        $customerColumns[] = 'latitude';
+                        $customerValues[] = (float)$newCustomerLatitude;
+                        $customerPlaceholders[] = '?';
+                    }
+                    
+                    if ($hasLongitudeColumn && $newCustomerLongitude !== null) {
+                        $customerColumns[] = 'longitude';
+                        $customerValues[] = (float)$newCustomerLongitude;
+                        $customerPlaceholders[] = '?';
+                    }
+                    
+                    if ($hasLocationCapturedAtColumn && $newCustomerLatitude !== null && $newCustomerLongitude !== null) {
+                        $customerColumns[] = 'location_captured_at';
+                        $customerValues[] = date('Y-m-d H:i:s');
+                        $customerPlaceholders[] = '?';
+                    }
+                    
                     $db->execute(
-                        "INSERT INTO customers (name, phone, address, balance, status, created_by, rep_id, created_from_pos, created_by_admin) 
-                         VALUES (?, ?, ?, ?, 'active', ?, ?, 0, ?)",
-                        [
-                            $newCustomerName,
-                            $newCustomerPhone !== '' ? $newCustomerPhone : null,
-                            $newCustomerAddress !== '' ? $newCustomerAddress : null,
-                            $dueAmount,
-                            $currentUser['id'],
-                            $repIdForCustomer,
-                            $createdByAdminFlag,
-                        ]
+                        "INSERT INTO customers (" . implode(', ', $customerColumns) . ") 
+                         VALUES (" . implode(', ', $customerPlaceholders) . ")",
+                        $customerValues
                     );
                     $customerId = (int) $db->getLastInsertId();
                     $createdCustomerId = $customerId;
@@ -413,6 +444,20 @@ if (!$error && $_SERVER['REQUEST_METHOD'] === 'POST') {
 
                     $currentBalance = (float) ($customer['balance'] ?? 0);
                     $creditUsed = 0.0;
+                    
+                    // التحقق من وجود سجل مشتريات سابق للعميل (قبل إنشاء الفاتورة الحالية)
+                    $hasPreviousPurchases = false;
+                    try {
+                        $previousInvoiceCount = $db->queryOne(
+                            "SELECT COUNT(*) as count FROM invoices WHERE customer_id = ?",
+                            [$customerId]
+                        );
+                        $hasPreviousPurchases = ((int)($previousInvoiceCount['count'] ?? 0)) > 0;
+                    } catch (Throwable $e) {
+                        error_log('Error checking previous purchases: ' . $e->getMessage());
+                        // في حالة الخطأ، نفترض وجود سجل مشتريات سابق كإجراء احتياطي
+                        $hasPreviousPurchases = true;
+                    }
                     
                     // حساب المبلغ المتبقي بعد التحصيل الجزئي
                     $remainingAfterPartialPayment = $baseDueAmount;
@@ -482,11 +527,23 @@ if (!$error && $_SERVER['REQUEST_METHOD'] === 'POST') {
                     $invoiceStatus = 'partial';
                 }
 
+                // تحديد ما إذا كانت المعاملة من رصيد دائن
+                $isCreditSale = ($creditUsed > 0.0001);
+                $hasRemainingDebt = ($dueAmount > 0.0001);
+                
                 // تحديث الفاتورة بالمبلغ المدفوع والمبلغ المتبقي
-                $db->execute(
-                    "UPDATE invoices SET paid_amount = ?, remaining_amount = ?, status = ?, updated_at = NOW() WHERE id = ?",
-                    [$effectivePaidAmount, $dueAmount, $invoiceStatus, $invoiceId]
-                );
+                $invoiceUpdateSql = "UPDATE invoices SET paid_amount = ?, remaining_amount = ?, status = ?, updated_at = NOW()";
+                $invoiceUpdateParams = [$effectivePaidAmount, $dueAmount, $invoiceStatus];
+                
+                // إضافة فلاج للفاتورة إذا كان هناك عمود paid_from_credit
+                $hasPaidFromCreditColumn = !empty($db->queryOne("SHOW COLUMNS FROM invoices LIKE 'paid_from_credit'"));
+                if ($hasPaidFromCreditColumn) {
+                    $invoiceUpdateSql .= ", paid_from_credit = ?";
+                    $invoiceUpdateParams[] = $isCreditSale ? 1 : 0;
+                }
+                
+                $invoiceUpdateParams[] = $invoiceId;
+                $db->execute($invoiceUpdateSql . " WHERE id = ?", $invoiceUpdateParams);
                 
                 // إضافة الفاتورة إلى سجل مشتريات العميل
                 try {
@@ -519,7 +576,10 @@ if (!$error && $_SERVER['REQUEST_METHOD'] === 'POST') {
                 }
                 
                 // تسجيل التحصيل الجزئي في جدول التحصيلات إذا كان هناك مبلغ محصل فعلياً
-                if ($effectivePaidAmount > 0.0001 && $paymentType === 'partial') {
+                // لا نسجل في خزنة المندوب إذا كانت المعاملة من رصيد دائن
+                $shouldRecordCollection = ($effectivePaidAmount > 0.0001 && $paymentType === 'partial' && !$isCreditSale);
+                
+                if ($shouldRecordCollection) {
                     // التحقق من وجود الأعمدة في جدول collections
                     $hasStatusColumn = !empty($db->queryOne("SHOW COLUMNS FROM collections LIKE 'status'"));
                     $hasNotesColumn = !empty($db->queryOne("SHOW COLUMNS FROM collections LIKE 'notes'"));
@@ -749,7 +809,35 @@ if (!$error && $_SERVER['REQUEST_METHOD'] === 'POST') {
                     'credit_used'       => $creditUsed,
                     'due_amount'        => $dueAmount,
                     'customer_id'       => $customerId,
+                    'is_credit_sale'    => $isCreditSale,
+                    'has_previous_purchases' => $hasPreviousPurchases ?? false,
                 ]);
+
+                // تحديث عمولة المندوب حسب القواعد:
+                // - إذا كان للعميل رصيد دائن ولا يمتلك سجل مشتريات سابق: لا نسبة تحصيل
+                // - إذا كان للعميل رصيد دائن ولديه سجل مشتريات سابق: نسبة تحصيل عادية
+                // - لا نسجل المبلغ في خزنة المندوب إذا كانت المعاملة من رصيد دائن
+                if (($currentUser['role'] ?? '') === 'sales') {
+                    try {
+                        require_once __DIR__ . '/../../includes/salary_calculator.php';
+                        
+                        // فقط إذا كان للعميل سجل مشتريات سابق، نحسب نسبة التحصيل
+                        // أو إذا لم تكن المعاملة من رصيد دائن
+                        $shouldCalculateCommission = !$isCreditSale || ($hasPreviousPurchases ?? false);
+                        
+                        if ($shouldCalculateCommission) {
+                            // تحديث عمولة المندوب
+                            refreshSalesCommissionForUser(
+                                $currentUser['id'],
+                                $saleDate,
+                                'تحديث تلقائي بعد بيع من نقطة البيع' . ($isCreditSale ? ' (من رصيد دائن)' : '')
+                            );
+                        }
+                    } catch (Throwable $commissionError) {
+                        error_log('Error updating sales commission after POS sale: ' . $commissionError->getMessage());
+                        // لا نوقف العملية إذا فشل تحديث العمولة
+                    }
+                }
 
                 $conn->commit();
 
@@ -1739,9 +1827,15 @@ if (!$error) {
                                 <select class="form-select" id="posCustomerSelect" name="customer_id" required>
                                     <option value="">اختر العميل</option>
                                     <?php foreach ($customers as $customer): ?>
-                                        <option value="<?php echo (int) $customer['id']; ?>"><?php echo htmlspecialchars($customer['name']); ?></option>
+                                        <option value="<?php echo (int) $customer['id']; ?>" data-balance="<?php echo htmlspecialchars((string)($customer['balance'] ?? 0)); ?>"><?php echo htmlspecialchars($customer['name']); ?></option>
                                     <?php endforeach; ?>
                                 </select>
+                                <div class="mt-2" id="posCustomerBalanceInfo" style="display: none;">
+                                    <div class="alert alert-info mb-0 py-2 px-3">
+                                        <i class="bi bi-info-circle me-1"></i>
+                                        <span id="posCustomerBalanceText">-</span>
+                                    </div>
+                                </div>
                             </div>
 
                             <div class="mb-3 d-none" id="posNewCustomerWrap">
@@ -1757,6 +1851,17 @@ if (!$error) {
                                     <div class="col-sm-6">
                                         <label class="form-label">العنوان <span class="text-muted">(اختياري)</span></label>
                                         <input type="text" class="form-control" name="new_customer_address" placeholder="عنوان العميل">
+                                    </div>
+                                    <div class="col-12">
+                                        <label class="form-label">موقع العميل <span class="text-muted">(اختياري)</span></label>
+                                        <div class="d-flex gap-2">
+                                            <input type="text" class="form-control" name="new_customer_latitude" id="posNewCustomerLatitude" placeholder="خط العرض" readonly>
+                                            <input type="text" class="form-control" name="new_customer_longitude" id="posNewCustomerLongitude" placeholder="خط الطول" readonly>
+                                            <button type="button" class="btn btn-outline-primary" id="posGetLocationBtn" title="الحصول على الموقع الحالي">
+                                                <i class="bi bi-geo-alt"></i>
+                                            </button>
+                                        </div>
+                                        <small class="text-muted">اضغط على زر الموقع للحصول على موقعك الحالي</small>
                                     </div>
                                 </div>
                             </div>
@@ -1790,11 +1895,6 @@ if (!$error) {
                             </div>
 
                             <div class="row g-2 g-md-3 align-items-start mb-3">
-                                <div class="col-12 col-sm-6">
-                                    <label class="form-label">مدفوع مسبقاً (اختياري)</label>
-                                    <input type="number" step="0.01" min="0" value="0" class="form-control form-control-sm" id="posPrepaidInput" name="prepaid_amount">
-                                    <div class="pos-inline-note">سيتم خصم المبلغ من إجمالي السلة.</div>
-                                </div>
                                 <div class="col-12 col-sm-6">
                                     <div class="pos-summary-card-neutral">
                                         <span class="small text-uppercase opacity-75">الإجمالي بعد الخصم</span>
@@ -1849,12 +1949,6 @@ if (!$error) {
                                     <small class="text-muted">اتركه فارغاً لطباعة "أجل غير مسمى"</small>
                                 </div>
                             </div>
-
-                            <div class="mb-3">
-                                <label class="form-label">ملاحظات إضافية <span class="text-muted">(اختياري)</span></label>
-                                <textarea class="form-control form-control-sm" name="notes" rows="3" placeholder="مثال: تعليمات التسليم، شروط خاصة..."></textarea>
-                            </div>
-
                             <div class="d-flex flex-wrap gap-2 justify-content-between">
                                 <button type="button" class="btn btn-outline-secondary btn-sm flex-fill flex-md-none" id="posResetFormBtn">
                                     <i class="bi bi-arrow-repeat me-1 me-md-2"></i><span class="d-none d-sm-inline">إعادة تعيين</span>
@@ -2420,10 +2514,48 @@ if (!$error) {
         });
     });
 
+    // دالة تحديث حالة رصيد العميل
+    function updateCustomerBalance() {
+        const balanceInfo = document.getElementById('posCustomerBalanceInfo');
+        const balanceText = document.getElementById('posCustomerBalanceText');
+        
+        if (!elements.customerSelect || !balanceInfo || !balanceText) {
+            return;
+        }
+        
+        const selectedOption = elements.customerSelect.options[elements.customerSelect.selectedIndex];
+        if (!selectedOption || !selectedOption.value) {
+            balanceInfo.style.display = 'none';
+            return;
+        }
+        
+        const balance = parseFloat(selectedOption.getAttribute('data-balance') || '0');
+        
+        if (balance > 0) {
+            balanceText.textContent = 'ديون العميل: ' + formatCurrency(balance);
+            balanceInfo.querySelector('.alert').className = 'alert alert-warning mb-0 py-2 px-3';
+            balanceInfo.style.display = 'block';
+        } else if (balance < 0) {
+            balanceText.textContent = 'رصيد دائن: ' + formatCurrency(Math.abs(balance));
+            balanceInfo.querySelector('.alert').className = 'alert alert-success mb-0 py-2 px-3';
+            balanceInfo.style.display = 'block';
+        } else {
+            balanceText.textContent = 'الرصيد: 0';
+            balanceInfo.querySelector('.alert').className = 'alert alert-info mb-0 py-2 px-3';
+            balanceInfo.style.display = 'block';
+        }
+    }
+    
     // إضافة مستمعين لحقول العميل لتحديث حالة الزر
     if (elements.customerSelect) {
-        elements.customerSelect.addEventListener('change', updateSummary);
-        elements.customerSelect.addEventListener('input', updateSummary);
+        elements.customerSelect.addEventListener('change', function() {
+            updateSummary();
+            updateCustomerBalance();
+        });
+        elements.customerSelect.addEventListener('input', function() {
+            updateSummary();
+            updateCustomerBalance();
+        });
     }
     if (elements.newCustomerName) {
         elements.newCustomerName.addEventListener('input', updateSummary);
@@ -2447,6 +2579,37 @@ if (!$error) {
         });
     }
 
+    // دالة الحصول على موقع المستخدم
+    const getLocationBtn = document.getElementById('posGetLocationBtn');
+    const latitudeInput = document.getElementById('posNewCustomerLatitude');
+    const longitudeInput = document.getElementById('posNewCustomerLongitude');
+    
+    if (getLocationBtn && latitudeInput && longitudeInput) {
+        getLocationBtn.addEventListener('click', function() {
+            if (!navigator.geolocation) {
+                alert('المتصفح لا يدعم الحصول على الموقع');
+                return;
+            }
+            
+            getLocationBtn.disabled = true;
+            getLocationBtn.innerHTML = '<i class="bi bi-hourglass-split"></i>';
+            
+            navigator.geolocation.getCurrentPosition(
+                function(position) {
+                    latitudeInput.value = position.coords.latitude.toFixed(8);
+                    longitudeInput.value = position.coords.longitude.toFixed(8);
+                    getLocationBtn.disabled = false;
+                    getLocationBtn.innerHTML = '<i class="bi bi-geo-alt"></i>';
+                },
+                function(error) {
+                    alert('فشل الحصول على الموقع: ' + error.message);
+                    getLocationBtn.disabled = false;
+                    getLocationBtn.innerHTML = '<i class="bi bi-geo-alt"></i>';
+                }
+            );
+        });
+    }
+    
     // تهيئة أولية للقيم
     refreshPaymentOptionStates();
     renderCart();
