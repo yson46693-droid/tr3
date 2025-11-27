@@ -17,6 +17,7 @@ require_once __DIR__ . '/../../includes/path_helper.php';
 require_once __DIR__ . '/../../includes/invoices.php';
 require_once __DIR__ . '/../../includes/reports.php';
 require_once __DIR__ . '/../../includes/simple_telegram.php';
+require_once __DIR__ . '/../../includes/customer_history.php';
 
 if (!function_exists('renderSalesInvoiceHtml')) {
     function renderSalesInvoiceHtml(array $invoice, array $meta = []): string
@@ -470,6 +471,36 @@ if (!$error && $_SERVER['REQUEST_METHOD'] === 'POST') {
                     "UPDATE invoices SET paid_amount = ?, remaining_amount = ?, status = ?, updated_at = NOW() WHERE id = ?",
                     [$effectivePaidAmount, $dueAmount, $invoiceStatus, $invoiceId]
                 );
+                
+                // إضافة الفاتورة إلى سجل مشتريات العميل
+                try {
+                    customerHistoryEnsureSetup();
+                    $db->execute(
+                        "INSERT INTO customer_purchase_history
+                            (customer_id, invoice_id, invoice_number, invoice_date, invoice_total, paid_amount, invoice_status,
+                             return_total, return_count, exchange_total, exchange_count, created_at)
+                         VALUES (?, ?, ?, ?, ?, ?, ?, 0, 0, 0, 0, NOW())
+                         ON DUPLICATE KEY UPDATE
+                            invoice_number = VALUES(invoice_number),
+                            invoice_date = VALUES(invoice_date),
+                            invoice_total = VALUES(invoice_total),
+                            paid_amount = VALUES(paid_amount),
+                            invoice_status = VALUES(invoice_status),
+                            updated_at = NOW()",
+                        [
+                            $customerId,
+                            $invoiceId,
+                            $invoiceNumber,
+                            $saleDate,
+                            $netTotal,
+                            $effectivePaidAmount,
+                            $invoiceStatus
+                        ]
+                    );
+                } catch (Throwable $historyError) {
+                    error_log('Error adding invoice to customer purchase history: ' . $historyError->getMessage());
+                    // لا نوقف العملية إذا فشل تسجيل التاريخ، لكن نسجل الخطأ
+                }
                 
                 // تسجيل التحصيل الجزئي في جدول التحصيلات إذا كان هناك مبلغ محصل فعلياً
                 if ($effectivePaidAmount > 0.0001 && $paymentType === 'partial') {
