@@ -357,8 +357,8 @@ function getFinishedProductBatchOptions($onlyAvailable = true, $fromWarehouseId 
                                 $warehouseQuantity = (float)($row['quantity_produced'] ?? 0);
                                 $usingQuantityProduced = true;
                                 
-                                // خصم الكمية المنقولة بالفعل (approved أو completed) فقط من quantity_produced
-                                if ($warehouseQuantity > 0) {
+                                // خصم الكمية المنقولة بالفعل (approved أو completed) من هذا المخزن فقط
+                                if ($warehouseQuantity > 0 && $batchId > 0) {
                                     $transferred = $db->queryOne(
                                         "SELECT COALESCE(SUM(
                                             CASE
@@ -367,9 +367,9 @@ function getFinishedProductBatchOptions($onlyAvailable = true, $fromWarehouseId 
                                             END
                                         ), 0) AS transferred_quantity
                                         FROM warehouse_transfer_items wti
-                                        LEFT JOIN warehouse_transfers wt ON wt.id = wti.transfer_id
-                                        WHERE wti.batch_id = ?",
-                                        [$batchId]
+                                        INNER JOIN warehouse_transfers wt ON wt.id = wti.transfer_id
+                                        WHERE wti.batch_id = ? AND wt.from_warehouse_id = ?",
+                                        [$batchId, $warehouseId]
                                     );
                                     $warehouseQuantity -= (float)($transferred['transferred_quantity'] ?? 0);
                                 }
@@ -481,10 +481,40 @@ function getFinishedProductBatchOptions($onlyAvailable = true, $fromWarehouseId 
                 
                 // إذا لم نجد الكمية من batch_numbers، نستخدم finished_products كبديل
                 if ($actualQuantity === null || $actualQuantity <= 0) {
-                    // quantity_produced يحتوي بالفعل على الكمية الفعلية المتبقية بعد جميع النقلات والإرجاعات
-                    // لأنه يتم تحديثه عند النقل (خصم) وعند الإرجاع (إضافة)
-                    // لذلك نستخدمه مباشرة دون خصم النقلات المعتمدة
+                    // نبدأ بـ quantity_produced ثم نخصم الكميات المنقولة بالفعل
                     $availableQuantity = (float)$row['quantity_produced'];
+                    
+                    // خصم الكميات المنقولة بالفعل (approved أو completed) إذا كان fromWarehouseId موجوداً
+                    if ($fromWarehouseId && $batchId > 0) {
+                        $transferred = $db->queryOne(
+                            "SELECT COALESCE(SUM(
+                                CASE
+                                    WHEN wt.status IN ('approved', 'completed') THEN wti.quantity
+                                    ELSE 0
+                                END
+                            ), 0) AS transferred_quantity
+                            FROM warehouse_transfer_items wti
+                            INNER JOIN warehouse_transfers wt ON wt.id = wti.transfer_id
+                            WHERE wti.batch_id = ? AND wt.from_warehouse_id = ?",
+                            [$batchId, $fromWarehouseId]
+                        );
+                        $availableQuantity -= (float)($transferred['transferred_quantity'] ?? 0);
+                    } elseif ($batchId > 0) {
+                        // إذا لم يكن هناك fromWarehouseId، نخصم جميع النقلات المعتمدة
+                        $transferred = $db->queryOne(
+                            "SELECT COALESCE(SUM(
+                                CASE
+                                    WHEN wt.status IN ('approved', 'completed') THEN wti.quantity
+                                    ELSE 0
+                                END
+                            ), 0) AS transferred_quantity
+                            FROM warehouse_transfer_items wti
+                            LEFT JOIN warehouse_transfers wt ON wt.id = wti.transfer_id
+                            WHERE wti.batch_id = ?",
+                            [$batchId]
+                        );
+                        $availableQuantity -= (float)($transferred['transferred_quantity'] ?? 0);
+                    }
                 } else {
                     // إذا استخدمنا batch_numbers، يجب خصم النقلات المعتمدة لأن batch_numbers لا يتم تحديثه تلقائياً
                     $transferred = $db->queryOne(
@@ -503,7 +533,7 @@ function getFinishedProductBatchOptions($onlyAvailable = true, $fromWarehouseId 
                 }
                 
                 // خصم الكمية المحجوزة في طلبات النقل المعلقة (pending) من نفس المخزن إذا كان fromWarehouseId موجوداً
-                if ($fromWarehouseId) {
+                if ($fromWarehouseId && $batchId > 0) {
                     $pendingTransfers = $db->queryOne(
                         "SELECT COALESCE(SUM(wti.quantity), 0) AS pending_quantity
                          FROM warehouse_transfer_items wti
