@@ -214,7 +214,15 @@ if (!$error && $vehicle) {
 $posInvoiceLinks = null;
 $inventoryByProduct = [];
 foreach ($vehicleInventory as $item) {
-    $inventoryByProduct[(int) ($item['product_id'] ?? 0)] = $item;
+    // استخدام مفتاح مركب من product_id و finished_batch_id للتمييز بين التشغيلات المختلفة
+    $productId = (int) ($item['product_id'] ?? 0);
+    $batchId = !empty($item['finished_batch_id']) ? (int) $item['finished_batch_id'] : 0;
+    $key = $productId . '_' . $batchId;
+    $inventoryByProduct[$key] = $item;
+    // أيضاً نحتفظ بنسخة بالمفتاح القديم للتوافق مع الكود القديم (إذا لم يكن هناك batch_id)
+    if ($batchId === 0) {
+        $inventoryByProduct[$productId] = $item;
+    }
 }
 
 if (!$error && $_SERVER['REQUEST_METHOD'] === 'POST') {
@@ -253,15 +261,19 @@ if (!$error && $_SERVER['REQUEST_METHOD'] === 'POST') {
         if (empty($validationErrors)) {
             foreach ($cartItems as $index => $row) {
                 $productId = isset($row['product_id']) ? (int) $row['product_id'] : 0;
+                $batchId = isset($row['finished_batch_id']) ? (int) $row['finished_batch_id'] : 0;
                 $quantity = isset($row['quantity']) ? (float) $row['quantity'] : 0;
                 $unitPrice = isset($row['unit_price']) ? round((float) $row['unit_price'], 2) : 0;
 
-                if ($productId <= 0 || !isset($inventoryByProduct[$productId])) {
+                // البحث باستخدام المفتاح المركب أولاً، ثم المفتاح القديم للتوافق
+                $key = $productId . '_' . $batchId;
+                $product = $inventoryByProduct[$key] ?? ($batchId === 0 ? ($inventoryByProduct[$productId] ?? null) : null);
+
+                if ($productId <= 0 || !$product) {
                     $validationErrors[] = 'المنتج المحدد رقم ' . ($index + 1) . ' غير متاح في مخزون السيارة.';
                     continue;
                 }
 
-                $product = $inventoryByProduct[$productId];
                 $available = (float) ($product['quantity'] ?? 0);
 
                 if ($quantity <= 0) {
@@ -285,8 +297,12 @@ if (!$error && $_SERVER['REQUEST_METHOD'] === 'POST') {
                 $lineTotal = round($unitPrice * $quantity, 2);
                 $subtotal += $lineTotal;
 
+                // الحصول على finished_batch_id من المنتج
+                $finishedBatchId = !empty($product['finished_batch_id']) ? (int)$product['finished_batch_id'] : null;
+
                 $normalizedCart[] = [
                     'product_id' => $productId,
+                    'finished_batch_id' => $finishedBatchId,
                     'name' => $product['product_name'] ?? 'منتج',
                     'category' => $product['category'] ?? null,
                     'quantity' => $quantity,
@@ -629,17 +645,32 @@ if (!$error && $_SERVER['REQUEST_METHOD'] === 'POST') {
                     $quantity = $item['quantity'];
                     $unitPrice = $item['unit_price'];
                     $lineTotal = $item['line_total'];
+                    // الحصول على finished_batch_id من البيانات المرسلة
+                    $requestedBatchId = isset($item['finished_batch_id']) && $item['finished_batch_id'] > 0 ? (int)$item['finished_batch_id'] : null;
 
                     // التحقق من الكمية مرة أخرى باستخدام FOR UPDATE لتجنب race conditions
                     // جلب جميع بيانات المنتج من مخزون السيارة للحفاظ عليها عند التحديث
-                    $vehicleInventoryItem = $db->queryOne(
-                        "SELECT quantity, finished_batch_id, finished_batch_number, finished_production_date, 
-                                finished_quantity_produced, finished_workers, product_name, product_category, 
-                                product_unit, product_unit_price, product_snapshot, manager_unit_price
-                         FROM vehicle_inventory 
-                         WHERE vehicle_id = ? AND product_id = ? FOR UPDATE",
-                        [$vehicle['id'], $productId]
-                    );
+                    // استخدام finished_batch_id للبحث عن السجل الصحيح إذا كان متوفراً
+                    if ($requestedBatchId !== null) {
+                        $vehicleInventoryItem = $db->queryOne(
+                            "SELECT quantity, finished_batch_id, finished_batch_number, finished_production_date, 
+                                    finished_quantity_produced, finished_workers, product_name, product_category, 
+                                    product_unit, product_unit_price, product_snapshot, manager_unit_price
+                             FROM vehicle_inventory 
+                             WHERE vehicle_id = ? AND product_id = ? AND finished_batch_id = ? FOR UPDATE",
+                            [$vehicle['id'], $productId, $requestedBatchId]
+                        );
+                    } else {
+                        // إذا لم يكن هناك batch_id، البحث عن سجل بدون batch_id
+                        $vehicleInventoryItem = $db->queryOne(
+                            "SELECT quantity, finished_batch_id, finished_batch_number, finished_production_date, 
+                                    finished_quantity_produced, finished_workers, product_name, product_category, 
+                                    product_unit, product_unit_price, product_snapshot, manager_unit_price
+                             FROM vehicle_inventory 
+                             WHERE vehicle_id = ? AND product_id = ? AND (finished_batch_id IS NULL OR finished_batch_id = 0) FOR UPDATE",
+                            [$vehicle['id'], $productId]
+                        );
+                    }
 
                     if (!$vehicleInventoryItem) {
                         throw new RuntimeException('المنتج ' . $item['name'] . ' غير موجود في مخزون السيارة.');
@@ -651,8 +682,8 @@ if (!$error && $_SERVER['REQUEST_METHOD'] === 'POST') {
                         throw new RuntimeException('الكمية المتاحة للمنتج ' . $item['name'] . ' غير كافية. المتاح: ' . $available . '، المطلوب: ' . $quantity);
                     }
 
-                    // الحصول على batch_id من vehicle_inventory إذا كان متوفراً
-                    $batchId = !empty($vehicleInventoryItem['finished_batch_id']) ? (int)$vehicleInventoryItem['finished_batch_id'] : null;
+                    // استخدام batch_id من البيانات المرسلة أو من vehicle_inventory
+                    $batchId = $requestedBatchId ?? (!empty($vehicleInventoryItem['finished_batch_id']) ? (int)$vehicleInventoryItem['finished_batch_id'] : null);
 
                     // تسجيل حركة المخزون أولاً (قبل تحديث vehicle_inventory)
                     // لأن recordInventoryMovement تتحقق من الكمية من vehicle_inventory
@@ -1610,8 +1641,18 @@ if (!$error) {
                         </div>
                     <?php else: ?>
                         <?php foreach ($vehicleInventory as $item): ?>
-                            <div class="pos-product-card" data-product-card data-product-id="<?php echo (int) $item['product_id']; ?>" data-name="<?php echo htmlspecialchars($item['product_name'] ?? '', ENT_QUOTES, 'UTF-8'); ?>" data-category="<?php echo htmlspecialchars($item['category'] ?? '', ENT_QUOTES, 'UTF-8'); ?>">
-                                <div class="pos-product-name"><?php echo htmlspecialchars($item['product_name'] ?? 'منتج'); ?></div>
+                            <?php
+                            $batchId = !empty($item['finished_batch_id']) ? (int) $item['finished_batch_id'] : 0;
+                            $batchNumber = !empty($item['finished_batch_number']) ? htmlspecialchars($item['finished_batch_number'], ENT_QUOTES, 'UTF-8') : '';
+                            $uniqueId = $batchId > 0 ? ($item['product_id'] . '_' . $batchId) : (string) $item['product_id'];
+                            ?>
+                            <div class="pos-product-card" data-product-card data-product-id="<?php echo (int) $item['product_id']; ?>" data-unique-id="<?php echo htmlspecialchars($uniqueId, ENT_QUOTES, 'UTF-8'); ?>" data-name="<?php echo htmlspecialchars($item['product_name'] ?? '', ENT_QUOTES, 'UTF-8'); ?>" data-category="<?php echo htmlspecialchars($item['category'] ?? '', ENT_QUOTES, 'UTF-8'); ?>">
+                                <div class="pos-product-name">
+                                    <?php echo htmlspecialchars($item['product_name'] ?? 'منتج'); ?>
+                                    <?php if ($batchNumber): ?>
+                                        <small class="text-muted d-block mt-1">تشغيلة: <?php echo $batchNumber; ?></small>
+                                    <?php endif; ?>
+                                </div>
                                 <?php if (!empty($item['category'])): ?>
                                     <div class="pos-product-meta">
                                         <span class="pos-product-badge"><?php echo htmlspecialchars($item['category']); ?></span>
@@ -1632,7 +1673,8 @@ if (!$error) {
                                 <button type="button"
                                         class="btn btn-outline-primary pos-select-btn"
                                         data-select-product
-                                        data-product-id="<?php echo (int) $item['product_id']; ?>">
+                                        data-product-id="<?php echo (int) $item['product_id']; ?>"
+                                        data-unique-id="<?php echo htmlspecialchars($uniqueId, ENT_QUOTES, 'UTF-8'); ?>">
                                     <i class="bi bi-plus-circle me-2"></i>إضافة إلى السلة
                                 </button>
                             </div>
@@ -1877,8 +1919,17 @@ if (!$error) {
                 }
             }
 
+            $batchId = !empty($item['finished_batch_id']) ? (int) $item['finished_batch_id'] : 0;
+            $batchNumber = !empty($item['finished_batch_number']) ? $item['finished_batch_number'] : '';
+            
+            // إنشاء معرف فريد لكل منتج+تشغيلة
+            $uniqueId = $batchId > 0 ? ($item['product_id'] . '_' . $batchId) : (string) $item['product_id'];
+            
             $inventoryForJs[] = [
                 'product_id' => (int) ($item['product_id'] ?? 0),
+                'finished_batch_id' => $batchId,
+                'finished_batch_number' => $batchNumber,
+                'unique_id' => $uniqueId, // معرف فريد للمنتج+التشغيلة
                 'name' => $item['product_name'] ?? '',
                 'category' => $item['category'] ?? ($item['product_category'] ?? ''),
                 'quantity' => (float) ($item['quantity'] ?? 0),
@@ -1898,7 +1949,8 @@ if (!$error) {
         item.total_value = sanitizeNumber(item.total_value);
     });
 
-    const inventoryMap = new Map(inventory.map((item) => [item.product_id, item]));
+    // استخدام unique_id كمفتاح للتمييز بين التشغيلات المختلفة لنفس المنتج
+    const inventoryMap = new Map(inventory.map((item) => [item.unique_id || item.product_id, item]));
     const cart = [];
 
     const elements = {
@@ -2000,6 +2052,7 @@ if (!$error) {
     function syncCartData() {
         const payload = cart.map((item) => ({
             product_id: item.product_id,
+            finished_batch_id: item.finished_batch_id || null,
             quantity: sanitizeNumber(item.quantity),
             unit_price: sanitizeNumber(item.unit_price),
         }));
@@ -2126,41 +2179,44 @@ if (!$error) {
             const sanitizedQty = sanitizeNumber(item.quantity);
             const sanitizedPrice = sanitizeNumber(item.unit_price);
             const sanitizedAvailable = sanitizeNumber(item.available);
+            const uniqueId = item.unique_id || item.product_id;
+            const batchInfo = item.finished_batch_id ? ` • تشغيلة: ${escapeHtml(item.finished_batch_number || item.finished_batch_id)}` : '';
             return `
-                <tr data-cart-row data-product-id="${item.product_id}">
+                <tr data-cart-row data-unique-id="${uniqueId}">
                     <td data-label="المنتج">
                         <div class="fw-semibold">${escapeHtml(item.name)}</div>
-                        <div class="text-muted small">${escapeHtml(item.category || 'غير مصنف')} • متاح: ${sanitizedAvailable.toFixed(2)}</div>
+                        <div class="text-muted small">${escapeHtml(item.category || 'غير مصنف')}${batchInfo} • متاح: ${sanitizedAvailable.toFixed(2)}</div>
                     </td>
                     <td data-label="الكمية">
                         <div class="pos-qty-control">
-                            <button type="button" class="btn btn-light border" data-action="decrease" data-product-id="${item.product_id}" aria-label="تقليل الكمية"><i class="bi bi-dash"></i></button>
-                            <input type="number" step="0.01" min="0" max="${sanitizedAvailable.toFixed(2)}" class="form-control" data-cart-qty data-product-id="${item.product_id}" value="${sanitizedQty.toFixed(2)}" aria-label="الكمية">
-                            <button type="button" class="btn btn-light border" data-action="increase" data-product-id="${item.product_id}" aria-label="زيادة الكمية"><i class="bi bi-plus"></i></button>
+                            <button type="button" class="btn btn-light border" data-action="decrease" data-unique-id="${uniqueId}" aria-label="تقليل الكمية"><i class="bi bi-dash"></i></button>
+                            <input type="number" step="0.01" min="0" max="${sanitizedAvailable.toFixed(2)}" class="form-control" data-cart-qty data-unique-id="${uniqueId}" value="${sanitizedQty.toFixed(2)}" aria-label="الكمية">
+                            <button type="button" class="btn btn-light border" data-action="increase" data-unique-id="${uniqueId}" aria-label="زيادة الكمية"><i class="bi bi-plus"></i></button>
                         </div>
                     </td>
                     <td data-label="سعر الوحدة">
-                        <input type="number" step="0.01" min="0" class="form-control" data-cart-price data-product-id="${item.product_id}" value="${sanitizedPrice.toFixed(2)}" aria-label="سعر الوحدة">
+                        <input type="number" step="0.01" min="0" class="form-control" data-cart-price data-unique-id="${uniqueId}" value="${sanitizedPrice.toFixed(2)}" aria-label="سعر الوحدة">
                     </td>
                     <td data-label="الإجمالي" class="fw-semibold">${formatCurrency(sanitizedQty * sanitizedPrice)}</td>
                     <td data-label="إجراءات" class="text-end">
-                        <button type="button" class="btn btn-link text-danger p-0" data-action="remove" data-product-id="${item.product_id}" aria-label="حذف المنتج"><i class="bi bi-x-circle"></i></button>
+                        <button type="button" class="btn btn-link text-danger p-0" data-action="remove" data-unique-id="${uniqueId}" aria-label="حذف المنتج"><i class="bi bi-x-circle"></i></button>
                     </td>
                 </tr>`;
         }).join('');
 
         elements.cartBody.innerHTML = rows;
+        syncCartData(); // تحديث البيانات المرسلة للخادم
         updateSummary();
     }
 
-    function addToCart(productId) {
-        const product = inventoryMap.get(productId);
+    function addToCart(uniqueId) {
+        const product = inventoryMap.get(uniqueId);
         if (!product) {
             return;
         }
         product.quantity = sanitizeNumber(product.quantity);
         product.unit_price = sanitizeNumber(product.unit_price);
-        const existing = cart.find((item) => item.product_id === productId);
+        const existing = cart.find((item) => item.unique_id === uniqueId);
         if (existing) {
             const maxQty = sanitizeNumber(product.quantity);
             const newQty = sanitizeNumber(existing.quantity + 1);
@@ -2175,6 +2231,8 @@ if (!$error) {
             }
             cart.push({
                 product_id: product.product_id,
+                finished_batch_id: product.finished_batch_id || null,
+                unique_id: product.unique_id || product.product_id,
                 name: product.name,
                 category: product.category,
                 quantity: Math.min(1, sanitizeNumber(product.quantity)),
@@ -2186,23 +2244,23 @@ if (!$error) {
         renderCart();
     }
 
-    function removeFromCart(productId) {
-        const index = cart.findIndex((item) => item.product_id === productId);
+    function removeFromCart(uniqueId) {
+        const index = cart.findIndex((item) => item.unique_id === uniqueId);
         if (index >= 0) {
             cart.splice(index, 1);
             renderCart();
         }
     }
 
-    function adjustQuantity(productId, delta) {
-        const item = cart.find((entry) => entry.product_id === productId);
-        const product = inventoryMap.get(productId);
+    function adjustQuantity(uniqueId, delta) {
+        const item = cart.find((entry) => entry.unique_id === uniqueId);
+        const product = inventoryMap.get(uniqueId);
         if (!item || !product) {
             return;
         }
         let newQuantity = sanitizeNumber(item.quantity + delta);
         if (newQuantity <= 0) {
-            removeFromCart(productId);
+            removeFromCart(uniqueId);
             return;
         }
         const maxQty = sanitizeNumber(product.quantity);
@@ -2213,15 +2271,15 @@ if (!$error) {
         renderCart(); // renderCart() تستدعي updateSummary() تلقائياً
     }
 
-    function updateQuantity(productId, value) {
-        const item = cart.find((entry) => entry.product_id === productId);
-        const product = inventoryMap.get(productId);
+    function updateQuantity(uniqueId, value) {
+        const item = cart.find((entry) => entry.unique_id === uniqueId);
+        const product = inventoryMap.get(uniqueId);
         if (!item || !product) {
             return;
         }
         let qty = sanitizeNumber(value);
         if (qty <= 0) {
-            removeFromCart(productId);
+            removeFromCart(uniqueId);
             return;
         }
         const maxQty = sanitizeNumber(product.quantity);
@@ -2232,8 +2290,8 @@ if (!$error) {
         renderCart(); // renderCart() تستدعي updateSummary() تلقائياً
     }
 
-    function updateUnitPrice(productId, value) {
-        const item = cart.find((entry) => entry.product_id === productId);
+    function updateUnitPrice(uniqueId, value) {
+        const item = cart.find((entry) => entry.unique_id === uniqueId);
         if (!item) {
             return;
         }
@@ -2248,17 +2306,17 @@ if (!$error) {
     elements.inventoryButtons.forEach((button) => {
         button.addEventListener('click', function (event) {
             event.stopPropagation();
-            const productId = parseInt(this.dataset.productId, 10);
-            addToCart(productId);
+            const uniqueId = this.dataset.uniqueId || this.dataset.productId;
+            addToCart(uniqueId);
         });
     });
 
     elements.inventoryCards.forEach((card) => {
         card.addEventListener('click', function () {
-            const productId = parseInt(this.dataset.productId, 10);
+            const uniqueId = this.dataset.uniqueId || this.dataset.productId;
             elements.inventoryCards.forEach((c) => c.classList.remove('active'));
             this.classList.add('active');
-            renderSelectedProduct(inventoryMap.get(productId));
+            renderSelectedProduct(inventoryMap.get(uniqueId));
         });
     });
 
@@ -2280,16 +2338,16 @@ if (!$error) {
             if (!action) {
                 return;
             }
-            const productId = parseInt(action.dataset.productId, 10);
+            const uniqueId = action.dataset.uniqueId || action.dataset.productId;
             switch (action.dataset.action) {
                 case 'increase':
-                    adjustQuantity(productId, 1);
+                    adjustQuantity(uniqueId, 1);
                     break;
                 case 'decrease':
-                    adjustQuantity(productId, -1);
+                    adjustQuantity(uniqueId, -1);
                     break;
                 case 'remove':
-                    removeFromCart(productId);
+                    removeFromCart(uniqueId);
                     break;
             }
         });
@@ -2297,13 +2355,13 @@ if (!$error) {
         elements.cartBody.addEventListener('input', function (event) {
             const qtyInput = event.target.matches('[data-cart-qty]') ? event.target : null;
             const priceInput = event.target.matches('[data-cart-price]') ? event.target : null;
-            const productId = parseInt(event.target.dataset.productId || '0', 10);
+            const uniqueId = event.target.dataset.uniqueId || event.target.dataset.productId;
             if (qtyInput) {
-                updateQuantity(productId, qtyInput.value);
+                updateQuantity(uniqueId, qtyInput.value);
                 // renderCart() تستدعي updateSummary() تلقائياً
             }
             if (priceInput) {
-                updateUnitPrice(productId, priceInput.value);
+                updateUnitPrice(uniqueId, priceInput.value);
                 // renderCart() تستدعي updateSummary() تلقائياً
             }
         });
