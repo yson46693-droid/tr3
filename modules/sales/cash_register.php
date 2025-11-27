@@ -393,30 +393,7 @@ $salesRepInfo = $db->queryOne(
     </div>
 </div>
 
-<!-- تفاصيل المبيعات المعلقة -->
-<div class="card shadow-sm mb-4">
-    <div class="card-header bg-warning text-dark">
-        <h5 class="mb-0">
-            <i class="bi bi-exclamation-triangle me-2"></i>
-            المبيعات المعلقة (الديون)
-        </h5>
-    </div>
-    <div class="card-body">
-        <div class="row align-items-center">
-            <div class="col-md-8">
-                <p class="mb-0 text-muted">
-                    المبيعات/الأرصدة التي لم يتم تحصيلها بالكامل. يتم الحساب مباشرةً من أرصدة العملاء لضمان التطابق مع صفحة العملاء.
-                </p>
-                <p class="mb-0 text-muted small mt-2">
-                    يشمل الإجمالي <?php echo formatCurrency($oldDebtsTotal); ?> ديون العملاء المضافة يدوياً بدون سجل مشتريات.
-                </p>
-            </div>
-            <div class="col-md-4 text-end">
-                <div class="fs-3 fw-bold text-warning"><?php echo formatCurrency($pendingSales); ?></div>
-            </div>
-        </div>
-    </div>
-</div>
+
 
 <!-- ملخص الحسابات -->
 <style>
