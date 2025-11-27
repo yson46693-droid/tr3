@@ -36,6 +36,124 @@ if (!in_array($section, $allowedSections, true)) {
 $dashboardScript = basename($_SERVER['PHP_SELF'] ?? 'manager.php');
 $basePageUrl = getRelativeUrl($dashboardScript . '?page=customers');
 
+// معالجة update_location قبل أي شيء آخر لمنع أي output
+if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && trim($_POST['action']) === 'update_location') {
+    // تنظيف أي output سابق بشكل كامل
+    while (ob_get_level() > 0) {
+        ob_end_clean();
+    }
+    
+    // التأكد من أن الطلب AJAX
+    $isAjaxRequest = (
+        (isset($_SERVER['HTTP_X_REQUESTED_WITH']) && strtolower($_SERVER['HTTP_X_REQUESTED_WITH']) === 'xmlhttprequest') ||
+        (isset($_SERVER['HTTP_ACCEPT']) && stripos($_SERVER['HTTP_ACCEPT'], 'application/json') !== false)
+    );
+    
+    if (!$isAjaxRequest) {
+        http_response_code(400);
+        header('Content-Type: application/json; charset=utf-8');
+        echo json_encode([
+            'success' => false,
+            'message' => 'طلب غير صالح.',
+        ], JSON_UNESCAPED_UNICODE);
+        exit;
+    }
+    
+    header('Content-Type: application/json; charset=utf-8');
+    header('Cache-Control: no-cache, must-revalidate');
+    header('Expires: Mon, 26 Jul 1997 05:00:00 GMT');
+
+    $customerId = isset($_POST['customer_id']) ? (int)$_POST['customer_id'] : 0;
+    $latitude = $_POST['latitude'] ?? null;
+    $longitude = $_POST['longitude'] ?? null;
+
+    if ($customerId <= 0 || $latitude === null || $longitude === null) {
+        echo json_encode([
+            'success' => false,
+            'message' => 'بيانات الموقع غير مكتملة.',
+        ], JSON_UNESCAPED_UNICODE);
+        exit;
+    }
+
+    if (!is_numeric($latitude) || !is_numeric($longitude)) {
+        echo json_encode([
+            'success' => false,
+            'message' => 'إحداثيات الموقع غير صالحة.',
+        ], JSON_UNESCAPED_UNICODE);
+        exit;
+    }
+
+    $latitude = (float)$latitude;
+    $longitude = (float)$longitude;
+
+    if ($latitude < -90 || $latitude > 90 || $longitude < -180 || $longitude > 180) {
+        echo json_encode([
+            'success' => false,
+            'message' => 'إحداثيات الموقع خارج النطاق المسموح.',
+        ], JSON_UNESCAPED_UNICODE);
+        exit;
+    }
+
+    try {
+        // التأكد من وجود الأعمدة
+        $latitudeColumn = $db->queryOne("SHOW COLUMNS FROM customers LIKE 'latitude'");
+        if (empty($latitudeColumn)) {
+            $db->execute("ALTER TABLE customers ADD COLUMN latitude DECIMAL(10, 8) NULL AFTER address");
+        }
+        $longitudeColumn = $db->queryOne("SHOW COLUMNS FROM customers LIKE 'longitude'");
+        if (empty($longitudeColumn)) {
+            $db->execute("ALTER TABLE customers ADD COLUMN longitude DECIMAL(11, 8) NULL AFTER latitude");
+        }
+        $locationCapturedColumn = $db->queryOne("SHOW COLUMNS FROM customers LIKE 'location_captured_at'");
+        if (empty($locationCapturedColumn)) {
+            $db->execute("ALTER TABLE customers ADD COLUMN location_captured_at TIMESTAMP NULL AFTER longitude");
+        }
+
+        // التحقق من وجود العميل
+        $customer = $db->queryOne("SELECT id FROM customers WHERE id = ?", [$customerId]);
+        if (!$customer) {
+            throw new InvalidArgumentException('العميل غير موجود.');
+        }
+
+        // تحديث الموقع
+        $db->execute(
+            "UPDATE customers SET latitude = ?, longitude = ?, location_captured_at = NOW() WHERE id = ?",
+            [$latitude, $longitude, $customerId]
+        );
+
+        logAudit(
+            $currentUser['id'],
+            'update_customer_location',
+            'customer',
+            $customerId,
+            null,
+            [
+                'latitude' => $latitude,
+                'longitude' => $longitude,
+            ]
+        );
+
+        echo json_encode([
+            'success' => true,
+            'message' => 'تم تحديث موقع العميل بنجاح.',
+        ], JSON_UNESCAPED_UNICODE);
+        exit;
+    } catch (InvalidArgumentException $invalidLocation) {
+        echo json_encode([
+            'success' => false,
+            'message' => $invalidLocation->getMessage(),
+        ], JSON_UNESCAPED_UNICODE);
+        exit;
+    } catch (Throwable $updateLocationError) {
+        error_log('Update customer location error: ' . $updateLocationError->getMessage());
+        echo json_encode([
+            'success' => false,
+            'message' => 'حدث خطأ أثناء تحديث الموقع.',
+        ], JSON_UNESCAPED_UNICODE);
+        exit;
+    }
+}
+
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     $action = $_POST['action'] ?? '';
 
@@ -253,6 +371,13 @@ if (!in_array($debtStatus, $allowedDebtStatuses, true)) {
     $debtStatus = 'all';
 }
 
+// معاملات البحث المتقدم
+$searchEmail = trim($_GET['search_email'] ?? '');
+$searchAddress = trim($_GET['search_address'] ?? '');
+$hasLocation = isset($_GET['has_location']) ? $_GET['has_location'] : '';
+$balanceMin = isset($_GET['balance_min']) && $_GET['balance_min'] !== '' ? cleanFinancialValue($_GET['balance_min'], true) : null;
+$balanceMax = isset($_GET['balance_max']) && $_GET['balance_max'] !== '' ? cleanFinancialValue($_GET['balance_max'], true) : null;
+
 $pageNum = isset($_GET['p']) ? max(1, (int)$_GET['p']) : 1;
 $perPage = 20;
 $offset = ($pageNum - 1) * $perPage;
@@ -292,6 +417,43 @@ if ($section === 'company') {
         $statsParams[] = $searchWildcard;
         $statsParams[] = $searchWildcard;
     }
+    
+    // البحث المتقدم
+    if ($searchEmail !== '') {
+        $whereParts[] = 'c.email LIKE ?';
+        $emailWildcard = '%' . $searchEmail . '%';
+        $listParams[] = $emailWildcard;
+        $countParams[] = $emailWildcard;
+        $statsParams[] = $emailWildcard;
+    }
+    
+    if ($searchAddress !== '') {
+        $whereParts[] = 'c.address LIKE ?';
+        $addressWildcard = '%' . $searchAddress . '%';
+        $listParams[] = $addressWildcard;
+        $countParams[] = $addressWildcard;
+        $statsParams[] = $addressWildcard;
+    }
+    
+    if ($hasLocation === '1') {
+        $whereParts[] = '(c.latitude IS NOT NULL AND c.longitude IS NOT NULL)';
+    } elseif ($hasLocation === '0') {
+        $whereParts[] = '(c.latitude IS NULL OR c.longitude IS NULL)';
+    }
+    
+    if ($balanceMin !== null) {
+        $whereParts[] = 'c.balance >= ?';
+        $listParams[] = $balanceMin;
+        $countParams[] = $balanceMin;
+        $statsParams[] = $balanceMin;
+    }
+    
+    if ($balanceMax !== null) {
+        $whereParts[] = 'c.balance <= ?';
+        $listParams[] = $balanceMax;
+        $countParams[] = $balanceMax;
+        $statsParams[] = $balanceMax;
+    }
 
     $whereClause = implode(' AND ', $whereParts);
 
@@ -304,7 +466,7 @@ if ($section === 'company') {
         FROM customers c
         WHERE {$whereClause}";
     $listSql = "
-        SELECT c.*
+        SELECT c.*, c.latitude, c.longitude, c.location_captured_at
         FROM customers c
         WHERE {$whereClause}
         ORDER BY c.name ASC

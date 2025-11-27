@@ -586,6 +586,7 @@ try {
                                         <th>اسم العميل</th>
                                         <th>الهاتف</th>
                                         <th>الرصيد</th>
+                                        <th>الموقع</th>
                                         <th>إجراءات</th>
                                     </tr>
                                 </thead>
@@ -696,12 +697,44 @@ function loadRepDetails(repId, repName) {
                         const collectDisabled = balance <= 0 ? 'disabled' : '';
                         const collectBtnClass = balance > 0 ? 'btn-success' : 'btn-outline-secondary';
                         
+                        // معالجة الموقع
+                        const hasLocation = customer.latitude !== null && customer.longitude !== null;
+                        const latValue = hasLocation ? parseFloat(customer.latitude) : null;
+                        const lngValue = hasLocation ? parseFloat(customer.longitude) : null;
+                        const locationButtons = hasLocation ? `
+                            <button
+                                type="button"
+                                class="btn btn-sm btn-outline-info rep-location-view-btn"
+                                data-latitude="${latValue.toFixed(8)}"
+                                data-longitude="${lngValue.toFixed(8)}"
+                                title="عرض الموقع على الخريطة"
+                            >
+                                <i class="bi bi-map me-1"></i>عرض
+                            </button>
+                        ` : `
+                            <span class="badge bg-secondary-subtle text-secondary">غير محدد</span>
+                        `;
+                        
                         return `
                         <tr>
                             <td>${escapeHtml(customer.name || '—')}</td>
                             <td>${escapeHtml(customer.phone || '—')}</td>
                             <td class="${balanceClass}">
                                 ${formatCurrency(balance || 0)}
+                            </td>
+                            <td>
+                                <div class="d-flex flex-wrap align-items-center gap-2">
+                                    <button
+                                        type="button"
+                                        class="btn btn-sm btn-outline-primary rep-location-capture-btn"
+                                        data-customer-id="${customer.id || 0}"
+                                        data-customer-name="${escapeHtml(customer.name || '—')}"
+                                        title="تحديد موقع العميل"
+                                    >
+                                        <i class="bi bi-geo-alt me-1"></i>تحديد
+                                    </button>
+                                    ${locationButtons}
+                                </div>
                             </td>
                             <td>
                                 <div class="d-flex flex-wrap align-items-center gap-2">
@@ -741,7 +774,7 @@ function loadRepDetails(repId, repName) {
                     `;
                     }).join('');
                 } else {
-                    customersList.innerHTML = '<tr><td colspan="4" class="text-center text-muted">لا يوجد عملاء</td></tr>';
+                    customersList.innerHTML = '<tr><td colspan="5" class="text-center text-muted">لا يوجد عملاء</td></tr>';
                 }
                 
                 // تحديث قائمة التحصيلات
@@ -896,6 +929,111 @@ document.addEventListener('DOMContentLoaded', function() {
             const baseUrl = '<?php echo getRelativeUrl($dashboardScript); ?>';
             const returnUrl = baseUrl + (baseUrl.includes('?') ? '&' : '?') + 'page=customers&section=company&action=purchase_history&ajax=purchase_history&customer_id=' + encodeURIComponent(customerId);
             window.open(returnUrl, '_blank');
+        }
+        
+        // معالجة أزرار عرض الموقع
+        if (e.target.closest('.rep-location-view-btn')) {
+            const button = e.target.closest('.rep-location-view-btn');
+            const latitude = button.getAttribute('data-latitude');
+            const longitude = button.getAttribute('data-longitude');
+            if (!latitude || !longitude) {
+                alert('لا يوجد موقع مسجل لهذا العميل.');
+                return;
+            }
+            const url = 'https://www.google.com/maps?q=' + encodeURIComponent(latitude + ',' + longitude) + '&hl=ar&z=16';
+            window.open(url, '_blank');
+        }
+        
+        // معالجة أزرار تحديد الموقع
+        if (e.target.closest('.rep-location-capture-btn')) {
+            const button = e.target.closest('.rep-location-capture-btn');
+            const customerId = button.getAttribute('data-customer-id');
+            const customerName = button.getAttribute('data-customer-name') || '';
+            
+            if (!customerId) {
+                alert('تعذر تحديد العميل.');
+                return;
+            }
+            
+            if (!navigator.geolocation) {
+                alert('المتصفح الحالي لا يدعم تحديد الموقع الجغرافي.');
+                return;
+            }
+            
+            // تعطيل الزر وإظهار loading
+            const originalHtml = button.innerHTML;
+            button.disabled = true;
+            button.innerHTML = '<span class="spinner-border spinner-border-sm me-1"></span>جارٍ التحديد...';
+            
+            navigator.geolocation.getCurrentPosition(
+                function (position) {
+                    const latitude = position.coords.latitude.toFixed(8);
+                    const longitude = position.coords.longitude.toFixed(8);
+                    const baseUrl = '<?php echo getRelativeUrl($dashboardScript); ?>';
+                    const requestUrl = baseUrl + (baseUrl.includes('?') ? '&' : '?') + 'page=customers&section=company';
+                    
+                    const formData = new URLSearchParams();
+                    formData.append('action', 'update_location');
+                    formData.append('customer_id', customerId);
+                    formData.append('latitude', latitude);
+                    formData.append('longitude', longitude);
+                    
+                    fetch(requestUrl, {
+                        method: 'POST',
+                        headers: {
+                            'Content-Type': 'application/x-www-form-urlencoded; charset=UTF-8',
+                            'X-Requested-With': 'XMLHttpRequest',
+                            'Accept': 'application/json'
+                        },
+                        body: formData.toString()
+                    })
+                    .then(response => {
+                        const contentType = response.headers.get('content-type');
+                        if (!contentType || !contentType.includes('application/json')) {
+                            return response.text().then(text => {
+                                throw new Error('استجابة غير صالحة من الخادم');
+                            });
+                        }
+                        return response.json();
+                    })
+                    .then(data => {
+                        if (data.success) {
+                            alert('تم تحديد موقع العميل بنجاح.');
+                            // إعادة تحميل بيانات المندوب
+                            const repId = button.closest('#repDetailsModal')?.dataset?.repId || 
+                                         document.querySelector('[data-rep-id]')?.dataset?.repId;
+                            if (repId) {
+                                const repName = document.getElementById('repModalName')?.textContent?.replace('تفاصيل: ', '') || '';
+                                loadRepDetails(repId, repName);
+                            }
+                        } else {
+                            alert(data.message || 'فشل تحديد الموقع. يرجى المحاولة مرة أخرى.');
+                        }
+                    })
+                    .catch(error => {
+                        console.error('Error updating location:', error);
+                        alert('حدث خطأ أثناء تحديد الموقع. يرجى المحاولة مرة أخرى.');
+                    })
+                    .finally(() => {
+                        button.disabled = false;
+                        button.innerHTML = originalHtml;
+                    });
+                },
+                function (error) {
+                    button.disabled = false;
+                    button.innerHTML = originalHtml;
+                    if (error.code === error.PERMISSION_DENIED) {
+                        alert('لم يتم منح صلاحية الموقع. يرجى تمكينها من إعدادات المتصفح.');
+                    } else {
+                        alert('تعذر تحديد الموقع. يرجى المحاولة مرة أخرى.');
+                    }
+                },
+                {
+                    enableHighAccuracy: true,
+                    timeout: 10000,
+                    maximumAge: 0
+                }
+            );
         }
     });
 });

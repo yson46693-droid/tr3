@@ -103,6 +103,9 @@ try {
             email,
             balance,
             status,
+            latitude,
+            longitude,
+            location_captured_at,
             created_at
         FROM customers
         WHERE rep_id = ? OR created_by = ?
