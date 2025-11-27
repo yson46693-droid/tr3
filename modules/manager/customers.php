@@ -428,71 +428,7 @@ if ($error): ?>
     ]);
     ?>
 
-    <?php include __DIR__ . '/partials/company_customers_modals.php'; ?>
-<?php else: ?>
-    <div class="row g-3 mb-4">
-        <div class="col-6 col-md-3">
-            <div class="card shadow-sm border-0 h-100">
-                <div class="card-body">
-                    <div class="text-muted small">عدد المناديب</div>
-                    <div class="fs-4 fw-bold mb-0"><?php echo number_format($representativeSummary['total']); ?></div>
-                </div>
-            </div>
-        </div>
-        <div class="col-6 col-md-3">
-            <div class="card shadow-sm border-0 h-100">
-                <div class="card-body">
-                    <div class="text-muted small">إجمالي العملاء</div>
-                    <div class="fs-4 fw-bold mb-0"><?php echo number_format($representativeSummary['customers']); ?></div>
-                </div>
-            </div>
-        </div>
-        <div class="col-6 col-md-3">
-            <div class="card shadow-sm border-0 h-100">
-                <div class="card-body">
-                    <div class="text-muted small">العملاء المدينون</div>
-                    <div class="fs-4 fw-bold text-warning mb-0"><?php echo number_format($representativeSummary['debtors']); ?></div>
-                </div>
-            </div>
-        </div>
-        <div class="col-6 col-md-3">
-            <div class="card shadow-sm border-0 h-100">
-                <div class="card-body">
-                    <div class="text-muted small">إجمالي الديون</div>
-                    <div class="fs-4 fw-bold text-danger mb-0"><?php echo formatCurrency($representativeSummary['debt']); ?></div>
-                </div>
-            </div>
-        </div>
-    </div>
-
-    <?php
-    renderRepresentativeCards($representatives, [
-        'view_base_url' => getRelativeUrl($dashboardScript . '?page=rep_customers_view'),
-    ]);
-    ?>
-<?php endif; ?>
-
-<style>
-.representative-card {
-    border-radius: 18px;
-    transition: transform 0.2s ease, box-shadow 0.2s ease;
-}
-.representative-card:hover {
-    transform: translateY(-4px);
-    box-shadow: 0 12px 24px rgba(15, 23, 42, 0.08);
-}
-.rep-stat-card {
-    border: 1px solid rgba(226, 232, 240, 0.8);
-    border-radius: 12px;
-    padding: 0.75rem;
-    background: #fff;
-}
-.rep-stat-value {
-    font-size: 1.1rem;
-    font-weight: 600;
-}
-</style>
-
+   
 <script>
 document.addEventListener('DOMContentLoaded', function () {
     document.querySelectorAll('.location-view-btn').forEach(function (button) {
@@ -509,4 +445,5 @@ document.addEventListener('DOMContentLoaded', function () {
     });
 });
 </script>
-
+<?php endif; ?>
+<!-- End of page scripts -->
