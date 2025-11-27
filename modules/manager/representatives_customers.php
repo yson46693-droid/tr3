@@ -46,17 +46,49 @@ try {
     $returnsTableCheck = $db->queryOne("SHOW TABLES LIKE 'returns'");
     $hasReturnsTable = !empty($returnsTableCheck);
     
+    // التحقق من وجود الأعمدة في جدول users
+    $hasLastLoginAt = false;
+    $hasProfileImage = false;
+    try {
+        $lastLoginCheck = $db->queryOne("SHOW COLUMNS FROM users LIKE 'last_login_at'");
+        $hasLastLoginAt = !empty($lastLoginCheck);
+        $profileImageCheck = $db->queryOne("SHOW COLUMNS FROM users LIKE 'profile_image'");
+        $hasProfileImage = !empty($profileImageCheck);
+        if (!$hasProfileImage) {
+            $profilePhotoCheck = $db->queryOne("SHOW COLUMNS FROM users LIKE 'profile_photo'");
+            $hasProfileImage = !empty($profilePhotoCheck);
+        }
+    } catch (Throwable $e) {
+        error_log('Column check error: ' . $e->getMessage());
+    }
+    
+    // بناء SELECT بشكل ديناميكي بناءً على الأعمدة الموجودة
+    $selectColumns = [
+        'u.id',
+        'u.full_name',
+        'u.username',
+        'u.phone',
+        'u.email',
+        'u.status'
+    ];
+    
+    if ($hasLastLoginAt) {
+        $selectColumns[] = 'u.last_login_at';
+    } else {
+        $selectColumns[] = 'NULL AS last_login_at';
+    }
+    
+    if ($hasProfileImage) {
+        $selectColumns[] = 'u.profile_image';
+    } else {
+        $selectColumns[] = 'u.profile_photo AS profile_image';
+    }
+    
+    $selectSql = implode(', ', $selectColumns);
+    
     // استعلام المندوبين - استخدام استعلام أبسط أولاً ثم حساب الإحصائيات
     $representatives = $db->query(
-        "SELECT 
-            u.id,
-            u.full_name,
-            u.username,
-            u.phone,
-            u.email,
-            u.status,
-            u.last_login_at,
-            u.profile_image
+        "SELECT {$selectSql}
         FROM users u
         WHERE u.role = 'sales'
         ORDER BY u.full_name ASC"
@@ -64,16 +96,31 @@ try {
     
     // إذا لم يتم العثور على مندوبين، جرب بدون فلتر status
     if (empty($representatives)) {
+        $selectColumnsAlt = [
+            'id',
+            'full_name',
+            'username',
+            'phone',
+            'email',
+            'status'
+        ];
+        
+        if ($hasLastLoginAt) {
+            $selectColumnsAlt[] = 'last_login_at';
+        } else {
+            $selectColumnsAlt[] = 'NULL AS last_login_at';
+        }
+        
+        if ($hasProfileImage) {
+            $selectColumnsAlt[] = 'profile_image';
+        } else {
+            $selectColumnsAlt[] = 'profile_photo AS profile_image';
+        }
+        
+        $selectSqlAlt = implode(', ', $selectColumnsAlt);
+        
         $representatives = $db->query(
-            "SELECT 
-                id,
-                full_name,
-                username,
-                phone,
-                email,
-                status,
-                last_login_at,
-                profile_image
+            "SELECT {$selectSqlAlt}
             FROM users
             WHERE role = 'sales' OR role LIKE '%sales%'
             ORDER BY full_name ASC"
@@ -84,18 +131,33 @@ try {
     foreach ($representatives as &$rep) {
         $repId = (int)($rep['id'] ?? 0);
         if ($repId > 0) {
-            $customerStats = $db->queryOne(
-                "SELECT 
-                    COUNT(DISTINCT id) AS customer_count,
-                    COALESCE(SUM(CASE WHEN balance > 0 THEN balance ELSE 0 END), 0) AS total_debt,
-                    COALESCE(SUM(CASE WHEN balance > 0 THEN 1 ELSE 0 END), 0) AS debtor_count
-                FROM customers
-                WHERE rep_id = ? OR created_by = ?",
-                [$repId, $repId]
-            );
-            $rep['customer_count'] = (int)($customerStats['customer_count'] ?? 0);
-            $rep['total_debt'] = (float)($customerStats['total_debt'] ?? 0.0);
-            $rep['debtor_count'] = (int)($customerStats['debtor_count'] ?? 0);
+            try {
+                // استخدام استعلام بسيط وواضح
+                $customerStats = $db->queryOne(
+                    "SELECT 
+                        COUNT(*) AS customer_count,
+                        COALESCE(SUM(CASE WHEN balance > 0 THEN balance ELSE 0 END), 0) AS total_debt,
+                        COALESCE(SUM(CASE WHEN balance > 0 THEN 1 ELSE 0 END), 0) AS debtor_count
+                    FROM customers
+                    WHERE rep_id = ? OR created_by = ?",
+                    [$repId, $repId]
+                );
+                
+                if ($customerStats !== null && is_array($customerStats)) {
+                    $rep['customer_count'] = (int)($customerStats['customer_count'] ?? 0);
+                    $rep['total_debt'] = (float)($customerStats['total_debt'] ?? 0.0);
+                    $rep['debtor_count'] = (int)($customerStats['debtor_count'] ?? 0);
+                } else {
+                    $rep['customer_count'] = 0;
+                    $rep['total_debt'] = 0.0;
+                    $rep['debtor_count'] = 0;
+                }
+            } catch (Throwable $statsError) {
+                error_log('Customer stats error for rep ' . $repId . ': ' . $statsError->getMessage());
+                $rep['customer_count'] = 0;
+                $rep['total_debt'] = 0.0;
+                $rep['debtor_count'] = 0;
+            }
         } else {
             $rep['customer_count'] = 0;
             $rep['total_debt'] = 0.0;

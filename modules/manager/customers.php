@@ -274,23 +274,69 @@ $representativeSummary = [
 
 if ($section === 'representatives') {
     try {
+        // التحقق من وجود الأعمدة في جدول users
+        $hasLastLoginAt = false;
+        $hasProfileImage = false;
+        try {
+            $lastLoginCheck = $db->queryOne("SHOW COLUMNS FROM users LIKE 'last_login_at'");
+            $hasLastLoginAt = !empty($lastLoginCheck);
+            $profileImageCheck = $db->queryOne("SHOW COLUMNS FROM users LIKE 'profile_image'");
+            $hasProfileImage = !empty($profileImageCheck);
+            if (!$hasProfileImage) {
+                $profilePhotoCheck = $db->queryOne("SHOW COLUMNS FROM users LIKE 'profile_photo'");
+                $hasProfileImage = !empty($profilePhotoCheck);
+            }
+        } catch (Throwable $e) {
+            // تجاهل الخطأ
+        }
+        
+        // بناء SELECT و GROUP BY بشكل ديناميكي
+        $selectColumns = [
+            'u.id',
+            'u.full_name',
+            'u.username',
+            'u.phone',
+            'u.email',
+            'u.status'
+        ];
+        
+        $groupByColumns = [
+            'u.id',
+            'u.full_name',
+            'u.username',
+            'u.phone',
+            'u.email',
+            'u.status'
+        ];
+        
+        if ($hasLastLoginAt) {
+            $selectColumns[] = 'u.last_login_at';
+            $groupByColumns[] = 'u.last_login_at';
+        } else {
+            $selectColumns[] = 'NULL AS last_login_at';
+        }
+        
+        if ($hasProfileImage) {
+            $selectColumns[] = 'u.profile_image';
+            $groupByColumns[] = 'u.profile_image';
+        } else {
+            $selectColumns[] = 'u.profile_photo AS profile_image';
+            $groupByColumns[] = 'u.profile_photo';
+        }
+        
+        $selectColumns[] = 'COUNT(DISTINCT c.id) AS customer_count';
+        $selectColumns[] = 'COALESCE(SUM(CASE WHEN c.balance > 0 THEN c.balance ELSE 0 END), 0) AS total_debt';
+        $selectColumns[] = 'COALESCE(SUM(CASE WHEN c.balance > 0 THEN 1 ELSE 0 END), 0) AS debtor_count';
+        
+        $selectSql = implode(', ', $selectColumns);
+        $groupBySql = implode(', ', $groupByColumns);
+        
         $representatives = $db->query(
-            "SELECT 
-                u.id,
-                u.full_name,
-                u.username,
-                u.phone,
-                u.email,
-                u.status,
-                u.last_login_at,
-                u.profile_image,
-                COUNT(DISTINCT c.id) AS customer_count,
-                COALESCE(SUM(CASE WHEN c.balance > 0 THEN c.balance ELSE 0 END), 0) AS total_debt,
-                COALESCE(SUM(CASE WHEN c.balance > 0 THEN 1 ELSE 0 END), 0) AS debtor_count
+            "SELECT {$selectSql}
             FROM users u
             LEFT JOIN customers c ON (c.rep_id = u.id OR c.created_by = u.id)
             WHERE u.role = 'sales'
-            GROUP BY u.id, u.full_name, u.username, u.phone, u.email, u.status, u.last_login_at, u.profile_image
+            GROUP BY {$groupBySql}
             ORDER BY customer_count DESC, u.full_name ASC"
         );
 
