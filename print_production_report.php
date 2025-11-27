@@ -9,6 +9,7 @@ require_once __DIR__ . '/includes/db.php';
 require_once __DIR__ . '/includes/auth.php';
 require_once __DIR__ . '/includes/production_helper.php';
 require_once __DIR__ . '/includes/path_helper.php';
+require_once __DIR__ . '/includes/consumption_reports.php';
 
 requireRole(['production', 'manager', 'accountant']);
 
