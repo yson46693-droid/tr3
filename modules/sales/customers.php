@@ -1498,6 +1498,9 @@ document.addEventListener('DOMContentLoaded', function () {
                 <!-- Content will be filled by JavaScript -->
             </div>
             <div class="modal-footer">
+                <button type="button" class="btn btn-outline-secondary" onclick="goBackToPurchaseHistory()">
+                    <i class="bi bi-arrow-right me-1"></i>رجوع
+                </button>
                 <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">إلغاء</button>
                 <button type="button" class="btn btn-success" onclick="submitReturnRequest()">
                     <i class="bi bi-check-circle me-1"></i>إرسال طلب الإرجاع
@@ -1820,6 +1823,18 @@ function openCreateReturnModal() {
     
     const modal = new bootstrap.Modal(document.getElementById('createReturnModal'));
     modal.show();
+}
+
+function goBackToPurchaseHistory() {
+    // Close the create return modal
+    const createReturnModal = bootstrap.Modal.getInstance(document.getElementById('createReturnModal'));
+    if (createReturnModal) {
+        createReturnModal.hide();
+    }
+    
+    // Show the purchase history modal
+    const purchaseHistoryModal = new bootstrap.Modal(document.getElementById('customerPurchaseHistoryModal'));
+    purchaseHistoryModal.show();
 }
 
 function submitReturnRequest() {
