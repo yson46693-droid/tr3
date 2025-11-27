@@ -694,17 +694,7 @@ function loadRepDetails(repId, repName) {
                             <td class="${customer.balance > 0 ? 'text-danger' : customer.balance < 0 ? 'text-success' : ''}">
                                 ${formatCurrency(customer.balance || 0)}
                             </td>
-                            <td>
-                                <span class="badge ${customer.status === 'active' ? 'bg-success' : 'bg-secondary'}">
-                                    ${customer.status === 'active' ? 'نشط' : 'غير نشط'}
-                                </span>
-                            </td>
-                            <td>
-                                <a href="${baseUrl}${baseUrl.includes('?') ? '&' : '?'}page=rep_customers_view&rep_id=${repId}&customer_id=${customer.id}" 
-                                   class="btn btn-sm btn-outline-primary" target="_blank">
-                                    <i class="bi bi-eye"></i>
-                                </a>
-                            </td>
+                            
                         </tr>
                     `).join('');
                 } else {
