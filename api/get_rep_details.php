@@ -2,13 +2,54 @@
 
 declare(strict_types=1);
 
+// إرسال header JSON أولاً
 header('Content-Type: application/json; charset=utf-8');
+
+// منع أي output قبل JSON
+ob_start();
 
 require_once __DIR__ . '/../includes/config.php';
 require_once __DIR__ . '/../includes/db.php';
 require_once __DIR__ . '/../includes/auth.php';
 
-requireRole(['manager', 'accountant']);
+// التحقق من الصلاحيات بدون استخدام requireLogin الذي قد يطبع HTML
+try {
+    // بدء الجلسة إذا لم تكن بدأت
+    if (session_status() === PHP_SESSION_NONE) {
+        session_start();
+    }
+    
+    // التحقق من تسجيل الدخول
+    if (empty($_SESSION['user_id']) || empty($_SESSION['role'])) {
+        ob_end_clean();
+        echo json_encode([
+            'success' => false,
+            'error' => 'يجب تسجيل الدخول أولاً'
+        ], JSON_UNESCAPED_UNICODE);
+        exit;
+    }
+    
+    $currentRole = strtolower((string)($_SESSION['role'] ?? ''));
+    
+    if (!in_array($currentRole, ['manager', 'accountant'], true)) {
+        ob_end_clean();
+        echo json_encode([
+            'success' => false,
+            'error' => 'غير مصرح لك بالوصول'
+        ], JSON_UNESCAPED_UNICODE);
+        exit;
+    }
+} catch (Throwable $authError) {
+    ob_end_clean();
+    echo json_encode([
+        'success' => false,
+        'error' => 'خطأ في المصادقة'
+    ], JSON_UNESCAPED_UNICODE);
+    exit;
+}
+
+// تنظيف أي output غير مرغوب فيه
+ob_end_clean();
 
 $db = db();
 $repId = isset($_GET['rep_id']) ? (int)$_GET['rep_id'] : 0;
