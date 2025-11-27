@@ -81,24 +81,15 @@ if (!function_exists('storeSalesInvoiceDocument')) {
             }
 
             $relativePath = 'exports/sales-pos/' . $filename;
-            
-            // استخدام getRelativeUrl للحصول على المسار الصحيح بغض النظر عن موقع الموقع
-            $viewerPathQuery = 'reports/view.php?type=export&file=' . rawurlencode($relativePath) . '&token=' . $token;
-            $printPathQuery = $viewerPathQuery . '&print=1';
-            
-            $viewerPath = function_exists('getRelativeUrl')
-                ? getRelativeUrl($viewerPathQuery)
-                : '/reports/view.php?type=export&file=' . rawurlencode($relativePath) . '&token=' . $token;
-            $printPath = function_exists('getRelativeUrl')
-                ? getRelativeUrl($printPathQuery)
-                : $viewerPath . '&print=1';
+            $viewerPath = '/reports/view.php?type=export&file=' . rawurlencode($relativePath) . '&token=' . $token;
+            $printPath = $viewerPath . '&print=1';
 
             $absoluteViewer = function_exists('getAbsoluteUrl')
-                ? getAbsoluteUrl($viewerPathQuery)
-                : (function_exists('getRelativeUrl') ? getRelativeUrl($viewerPathQuery) : $viewerPath);
+                ? getAbsoluteUrl(ltrim($viewerPath, '/'))
+                : $viewerPath;
             $absolutePrint = function_exists('getAbsoluteUrl')
-                ? getAbsoluteUrl($printPathQuery)
-                : (function_exists('getRelativeUrl') ? getRelativeUrl($printPathQuery) : $printPath);
+                ? getAbsoluteUrl(ltrim($printPath, '/'))
+                : $printPath;
 
             return [
                 'relative_path' => $relativePath,

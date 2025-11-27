@@ -316,24 +316,6 @@ $tableHeaderStyle = $isSalesRecords ? 'background: linear-gradient(135deg, #667e
                                 <td style="<?php echo $isSalesRecords ? 'padding: 1rem;' : ''; ?>"><?php echo number_format($sale['quantity'], 2); ?></td>
                                 <td style="<?php echo $isSalesRecords ? 'padding: 1rem; font-weight: 500;' : ''; ?>"><?php echo formatCurrency($sale['price']); ?></td>
                                 <td style="<?php echo $isSalesRecords ? 'padding: 1rem;' : ''; ?>"><strong class="<?php echo $isSalesRecords ? 'text-primary' : ''; ?>" style="<?php echo $isSalesRecords ? 'font-size: 1.1rem;' : ''; ?>"><?php echo formatCurrency($sale['total']); ?></strong></td>
-                                <td style="<?php echo $isSalesRecords ? 'padding: 1rem;' : ''; ?>">
-                                    <span class="badge <?php echo $isSalesRecords ? 'shadow-sm' : ''; ?>" style="<?php 
-                                        $statusBg = $sale['status'] === 'approved' ? 'success' : 
-                                            ($sale['status'] === 'pending' ? 'warning' : 
-                                            ($sale['status'] === 'rejected' ? 'danger' : 'info'));
-                                        echo $isSalesRecords ? 'padding: 0.5rem 0.75rem; font-weight: 600; font-size: 0.85rem; color: #000;' : '';
-                                    ?>" class="bg-<?php echo $statusBg; ?>">
-                                        <?php 
-                                        $statuses = [
-                                            'pending' => 'معلق',
-                                            'approved' => 'موافق عليه',
-                                            'rejected' => 'مرفوض',
-                                            'completed' => 'مكتمل'
-                                        ];
-                                        echo $statuses[$sale['status']] ?? $sale['status'];
-                                        ?>
-                                    </span>
-                                </td>
                                 <?php if ($currentUser['role'] !== 'sales'): ?>
                                 <td style="<?php echo $isSalesRecords ? 'padding: 1rem;' : ''; ?>"><?php echo htmlspecialchars($sale['salesperson_name'] ?? '-'); ?></td>
                                 <?php endif; ?>
