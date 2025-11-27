@@ -17,7 +17,12 @@ requireRole('manager');
 $currentUser = getCurrentUser();
 $db = db();
 
-$redirectUrl = getRelativeUrl('manager.php?page=product_specifications');
+// تحديد redirect URL بناءً على ما إذا كان يتم تضمينه كقسم أم لا
+if (isset($specificationsRedirectUrl)) {
+    $redirectUrl = $specificationsRedirectUrl;
+} else {
+    $redirectUrl = getRelativeUrl('dashboard/manager.php?page=product_templates&section=specifications');
+}
 $sessionErrorKey = 'manager_product_specs_error';
 $sessionSuccessKey = 'manager_product_specs_success';
 $error = '';
