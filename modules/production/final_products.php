@@ -1552,6 +1552,11 @@ $finishedProductsPageNum = isset($_GET['fp']) ? max(1, intval($_GET['fp'])) : 1;
 $finishedProductsPerPage = 20;
 $finishedProductsOffset = ($finishedProductsPageNum - 1) * $finishedProductsPerPage;
 
+// معاملات البحث والفلترة
+$searchQuery = isset($_GET['search']) ? trim($_GET['search']) : '';
+$filterDateFrom = isset($_GET['date_from']) ? trim($_GET['date_from']) : '';
+$filterDateTo = isset($_GET['date_to']) ? trim($_GET['date_to']) : '';
+
 if (!empty($finishedProductsTableExists)) {
     // حذف حقل manager_unit_price إذا كان موجوداً
     try {
@@ -1603,13 +1608,44 @@ if (!empty($finishedProductsTableExists)) {
         error_log('Failed to ensure unit_price column in product_templates: ' . $e->getMessage());
     }
     
-    // حساب العدد الإجمالي للمنتجات
+    // حساب العدد الإجمالي للمنتجات مع دعم البحث والفلترة
     try {
+        $countWhereConditions = [];
+        $countWhereParams = [];
+        
+        // فلترة حسب البحث
+        if (!empty($searchQuery)) {
+            $countWhereConditions[] = "(fp.batch_number LIKE ? OR EXISTS (
+                SELECT 1 FROM products pr WHERE pr.id = COALESCE(fp.product_id, (SELECT bn.product_id FROM batch_numbers bn WHERE bn.batch_number = fp.batch_number LIMIT 1))
+                AND pr.name LIKE ?
+            ) OR fp.product_name LIKE ?)";
+            $searchPattern = '%' . $searchQuery . '%';
+            $countWhereParams[] = $searchPattern;
+            $countWhereParams[] = $searchPattern;
+            $countWhereParams[] = $searchPattern;
+        }
+        
+        // فلترة حسب تاريخ الإنتاج
+        if (!empty($filterDateFrom)) {
+            $countWhereConditions[] = "DATE(fp.production_date) >= ?";
+            $countWhereParams[] = $filterDateFrom;
+        }
+        
+        if (!empty($filterDateTo)) {
+            $countWhereConditions[] = "DATE(fp.production_date) <= ?";
+            $countWhereParams[] = $filterDateTo;
+        }
+        
+        $countWhereClause = !empty($countWhereConditions) 
+            ? " AND " . implode(" AND ", $countWhereConditions)
+            : "";
+        
         $finishedProductsCountResult = $db->queryOne("
             SELECT COUNT(DISTINCT fp.id) as total
             FROM finished_products fp
             WHERE (fp.quantity_produced IS NULL OR fp.quantity_produced > 0)
-        ");
+            $countWhereClause
+        ", $countWhereParams);
         $finishedProductsCount = isset($finishedProductsCountResult['total']) ? (int)$finishedProductsCountResult['total'] : 0;
     } catch (Exception $e) {
         error_log('Failed to count finished products: ' . $e->getMessage());
@@ -1617,6 +1653,34 @@ if (!empty($finishedProductsTableExists)) {
     }
     
     try {
+        // بناء شروط البحث والفلترة
+        $whereConditions = [];
+        $whereParams = [];
+        
+        // فلترة حسب البحث
+        if (!empty($searchQuery)) {
+            $whereConditions[] = "(fp.batch_number LIKE ? OR COALESCE(NULLIF(TRIM(fp.product_name), ''), pr.name) LIKE ?)";
+            $searchPattern = '%' . $searchQuery . '%';
+            $whereParams[] = $searchPattern;
+            $whereParams[] = $searchPattern;
+        }
+        
+        // فلترة حسب تاريخ الإنتاج
+        if (!empty($filterDateFrom)) {
+            $whereConditions[] = "DATE(fp.production_date) >= ?";
+            $whereParams[] = $filterDateFrom;
+        }
+        
+        if (!empty($filterDateTo)) {
+            $whereConditions[] = "DATE(fp.production_date) <= ?";
+            $whereParams[] = $filterDateTo;
+        }
+        
+        $whereClause = "";
+        if (!empty($whereConditions)) {
+            $whereClause = " AND " . implode(" AND ", $whereConditions);
+        }
+        
         $finishedProductsRows = $db->query("
             SELECT 
                 fp.id,
@@ -1678,10 +1742,11 @@ if (!empty($finishedProductsTableExists)) {
             LEFT JOIN batch_workers bw ON fp.batch_id = bw.batch_id
             LEFT JOIN users u ON bw.employee_id = u.id
             WHERE (fp.quantity_produced IS NULL OR fp.quantity_produced > 0)
+            $whereClause
             GROUP BY fp.id
-            ORDER BY fp.production_date ASC, fp.id ASC
+            ORDER BY fp.production_date DESC, fp.id DESC
             LIMIT ? OFFSET ?
-        ", [$finishedProductsPerPage, $finishedProductsOffset]);
+        ", array_merge($whereParams, [$finishedProductsPerPage, $finishedProductsOffset]));
         
         // تحديث الحقول unit_price و total_price للمنتجات التي لا تحتوي عليها
         if (is_array($finishedProductsRows)) {
@@ -1839,7 +1904,7 @@ if ($isManager) {
 ?>
 
 <div class="header">
-    <span style="font-size: 24px;">📦</span>
+    <i class="bi bi-box-seam" style="font-size: 24px;"></i>
     <span>منتجات المصنع</span>
     <div style="margin-right: auto; margin-left: 20px;">
         <button
@@ -1854,6 +1919,67 @@ if ($isManager) {
             <i class="bi bi-arrow-left-right"></i>
             طلب نقل منتجات
         </button>
+    </div>
+</div>
+
+<!-- حقول البحث والفلترة -->
+<?php
+$searchQuery = isset($_GET['search']) ? trim($_GET['search']) : '';
+$filterDateFrom = isset($_GET['date_from']) ? trim($_GET['date_from']) : '';
+$filterDateTo = isset($_GET['date_to']) ? trim($_GET['date_to']) : '';
+$filterProduct = isset($_GET['filter_product']) ? trim($_GET['filter_product']) : '';
+?>
+<div class="card shadow-sm mb-4" style="margin: 0 25px 25px;">
+    <div class="card-header bg-light">
+        <h6 class="mb-0"><i class="bi bi-funnel me-2"></i>البحث والفلترة</h6>
+    </div>
+    <div class="card-body">
+        <form method="GET" action="" id="filterForm" class="row g-3">
+            <input type="hidden" name="page" value="inventory">
+            <input type="hidden" name="fp" value="1">
+            
+            <div class="col-md-4">
+                <label for="search" class="form-label"><i class="bi bi-search me-1"></i>البحث</label>
+                <input type="text" 
+                       class="form-control" 
+                       id="search" 
+                       name="search" 
+                       value="<?php echo htmlspecialchars($searchQuery); ?>" 
+                       placeholder="ابحث عن اسم المنتج أو رقم التشغيلة...">
+            </div>
+            
+            <div class="col-md-3">
+                <label for="date_from" class="form-label"><i class="bi bi-calendar-event me-1"></i>من تاريخ</label>
+                <input type="date" 
+                       class="form-control" 
+                       id="date_from" 
+                       name="date_from" 
+                       value="<?php echo htmlspecialchars($filterDateFrom); ?>">
+            </div>
+            
+            <div class="col-md-3">
+                <label for="date_to" class="form-label"><i class="bi bi-calendar-event me-1"></i>إلى تاريخ</label>
+                <input type="date" 
+                       class="form-control" 
+                       id="date_to" 
+                       name="date_to" 
+                       value="<?php echo htmlspecialchars($filterDateTo); ?>">
+            </div>
+            
+            <div class="col-md-2">
+                <label class="form-label d-block">&nbsp;</label>
+                <div class="d-flex gap-2">
+                    <button type="submit" class="btn btn-primary flex-fill">
+                        <i class="bi bi-search me-1"></i>بحث
+                    </button>
+                    <?php if ($searchQuery || $filterDateFrom || $filterDateTo): ?>
+                    <a href="?page=inventory" class="btn btn-outline-secondary">
+                        <i class="bi bi-x-circle"></i>
+                    </a>
+                    <?php endif; ?>
+                </div>
+            </div>
+        </form>
     </div>
 </div>
 
@@ -2001,7 +2127,9 @@ if ($isManager) {
                 }
             ?>
             <div class="card">
-                <div class="status">finished</div>
+                <div class="status">
+                    <i class="bi bi-check-circle me-1"></i>finished
+                </div>
 
                 <div class="prod-name"><?php echo $productName; ?></div>
                 <?php if ($batchNumber): ?>
@@ -2012,8 +2140,34 @@ if ($isManager) {
 
                 <div class="barcode-box">
                     <?php if ($batchNumber): ?>
-                        <img src="<?php echo htmlspecialchars($barcodeImageUrl); ?>" width="90%" alt="Barcode">
+                        <div id="barcode-<?php echo htmlspecialchars(md5($batchNumber)); ?>" class="barcode-container"></div>
                         <div class="barcode-id"><?php echo htmlspecialchars($batchNumber); ?></div>
+                        <script>
+                        (function() {
+                            var batchNum = <?php echo json_encode($batchNumber); ?>;
+                            var barcodeId = 'barcode-<?php echo htmlspecialchars(md5($batchNumber)); ?>';
+                            var container = document.getElementById(barcodeId);
+                            if (container) {
+                                if (typeof JsBarcode !== 'undefined') {
+                                    var svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
+                                    svg.setAttribute('width', '100%');
+                                    svg.setAttribute('height', '60');
+                                    container.appendChild(svg);
+                                    JsBarcode(svg, batchNum, {
+                                        format: "CODE128",
+                                        width: 2,
+                                        height: 50,
+                                        displayValue: false,
+                                        margin: 5,
+                                        background: "#ffffff",
+                                        lineColor: "#000000"
+                                    });
+                                } else {
+                                    container.innerHTML = '<div style="padding: 10px; color: #666; font-size: 12px;">' + batchNum + '</div>';
+                                }
+                            }
+                        })();
+                        </script>
                     <?php else: ?>
                         <div class="barcode-id" style="color: #999;">لا يوجد باركود</div>
                     <?php endif; ?>
@@ -2023,14 +2177,18 @@ if ($isManager) {
                 <div class="detail-row"><span>الكمية:</span> <span><?php echo $quantity; ?></span></div>
 
                 <?php if ($batchNumber): ?>
-                    <a href="<?php echo htmlspecialchars($viewUrl); ?>" class="btn-view js-batch-details" 
-                       data-batch="<?php echo htmlspecialchars($batchNumber); ?>"
-                       data-product="<?php echo htmlspecialchars($finishedRow['product_name'] ?? ''); ?>"
-                       data-view-url="<?php echo htmlspecialchars($viewUrl); ?>">
-                        عرض التفاصيل
-                    </a>
+                    <button type="button" 
+                            class="btn-view js-batch-details" 
+                            style="border: none; cursor: pointer;"
+                            data-batch="<?php echo htmlspecialchars($batchNumber); ?>"
+                            data-product="<?php echo htmlspecialchars($finishedRow['product_name'] ?? ''); ?>"
+                            data-view-url="<?php echo htmlspecialchars($viewUrl); ?>">
+                        <i class="bi bi-eye me-1"></i>عرض التفاصيل
+                    </button>
                 <?php else: ?>
-                    <a href="#" class="btn-view" style="opacity: 0.5; cursor: not-allowed;">عرض التفاصيل</a>
+                    <span class="btn-view" style="opacity: 0.5; cursor: not-allowed; display: inline-block;">
+                        <i class="bi bi-eye me-1"></i>عرض التفاصيل
+                    </span>
                 <?php endif; ?>
             </div>
         <?php endforeach; ?>
@@ -3260,10 +3418,19 @@ if (!window.transferFormInitialized) {
             if (detailsButton) {
                 event.preventDefault();
                 event.stopPropagation();
-                const batchNumber = detailsButton.dataset.batch;
-                const productName = detailsButton.dataset.product || '';
-                if (batchNumber) {
-                    showBatchDetailsModal(batchNumber, productName);
+                const batchNumber = detailsButton.getAttribute('data-batch') || detailsButton.dataset.batch;
+                const productName = detailsButton.getAttribute('data-product') || detailsButton.dataset.product || '';
+                if (batchNumber && batchNumber.trim() !== '') {
+                    if (typeof showBatchDetailsModal === 'function') {
+                        showBatchDetailsModal(batchNumber, productName);
+                    } else {
+                        console.error('showBatchDetailsModal function not found');
+                        // Fallback: الانتقال إلى صفحة التفاصيل
+                        const viewUrl = detailsButton.getAttribute('data-view-url') || detailsButton.dataset.viewUrl;
+                        if (viewUrl) {
+                            window.location.href = viewUrl;
+                        }
+                    }
                 }
                 return;
             }
