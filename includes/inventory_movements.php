@@ -66,10 +66,33 @@ function recordInventoryMovement($productId, $warehouseId, $type, $quantity, $re
         if ($usingVehicleInventory && in_array($type, ['out', 'transfer'], true)) {
             // الحصول على الكمية من vehicle_inventory
             // ملاحظة: نستخدم FOR UPDATE لأن vehicle_inventory قد يتم تحديثه قبل استدعاء recordInventoryMovement
-            $vehicleInventory = $db->queryOne(
-                "SELECT quantity, finished_batch_id FROM vehicle_inventory WHERE vehicle_id = ? AND product_id = ? FOR UPDATE",
-                [$vehicleId, $productId]
-            );
+            // إذا كان هناك batchId، نستخدمه في الاستعلام لضمان قراءة نفس السجل الذي تم التحقق منه في approveWarehouseTransfer
+            if ($batchId) {
+                $vehicleInventory = $db->queryOne(
+                    "SELECT quantity, finished_batch_id FROM vehicle_inventory 
+                     WHERE vehicle_id = ? AND product_id = ? AND finished_batch_id = ? FOR UPDATE",
+                    [$vehicleId, $productId, $batchId]
+                );
+                
+                // إذا لم نجد سجل مع finished_batch_id = batchId، نبحث عن أي سجل بنفس product_id
+                // (للتوافق مع الحالات القديمة أو السجلات التي لم يتم تحديثها)
+                if (!$vehicleInventory) {
+                    $vehicleInventory = $db->queryOne(
+                        "SELECT quantity, finished_batch_id FROM vehicle_inventory 
+                         WHERE vehicle_id = ? AND product_id = ? 
+                         AND (finished_batch_id IS NULL OR finished_batch_id = 0) FOR UPDATE",
+                        [$vehicleId, $productId]
+                    );
+                }
+            } else {
+                // إذا لم يكن هناك batchId، نبحث عن السجلات التي لا تحتوي على finished_batch_id
+                $vehicleInventory = $db->queryOne(
+                    "SELECT quantity, finished_batch_id FROM vehicle_inventory 
+                     WHERE vehicle_id = ? AND product_id = ? 
+                     AND (finished_batch_id IS NULL OR finished_batch_id = 0) FOR UPDATE",
+                    [$vehicleId, $productId]
+                );
+            }
             
             if (!$vehicleInventory) {
                 return ['success' => false, 'message' => 'المنتج غير موجود في مخزون السيارة'];
@@ -150,8 +173,12 @@ function recordInventoryMovement($productId, $warehouseId, $type, $quantity, $re
             case 'out':
                 $quantityAfter = $quantityBefore - $quantity;
                 if ($quantityAfter < 0) {
-                    // إذا كنا نستخدم finished_products، لا نفحص products.quantity
-                    if ($usingFinishedProductQuantity) {
+                    // إذا كنا نستخدم vehicle_inventory، لا نفحص لأن الكمية تم التحقق منها مسبقاً في approveWarehouseTransfer
+                    // و vehicle_inventory يتم تحديثه قبل استدعاء recordInventoryMovement
+                    if ($usingVehicleInventory) {
+                        // الكمية تم التحقق منها بالفعل، فقط نسجل الحركة
+                        error_log("recordInventoryMovement: Using vehicle_inventory for 'out' movement. quantity_before: $quantityBefore, quantity: $quantity, quantity_after: $quantityAfter (may be negative if already updated)");
+                    } elseif ($usingFinishedProductQuantity) {
                         // التحقق من quantity_produced فقط
                         if ($quantityAfter < 0) {
                             error_log("recordInventoryMovement: Insufficient quantity in finished_products. batch_id: $batchId, quantity_produced: $quantityBefore, requested: $quantity");
@@ -171,8 +198,12 @@ function recordInventoryMovement($productId, $warehouseId, $type, $quantity, $re
                 // للتحويل، نحتاج معالجة خاصة
                 $quantityAfter = $quantityBefore - $quantity;
                 if ($quantityAfter < 0) {
-                    // إذا كنا نستخدم finished_products، لا نفحص products.quantity
-                    if ($usingFinishedProductQuantity) {
+                    // إذا كنا نستخدم vehicle_inventory، لا نفحص لأن الكمية تم التحقق منها مسبقاً في approveWarehouseTransfer
+                    // و vehicle_inventory يتم تحديثه قبل استدعاء recordInventoryMovement
+                    if ($usingVehicleInventory) {
+                        // الكمية تم التحقق منها بالفعل، فقط نسجل الحركة
+                        error_log("recordInventoryMovement: Using vehicle_inventory for 'transfer' movement. quantity_before: $quantityBefore, quantity: $quantity, quantity_after: $quantityAfter (may be negative if already updated)");
+                    } elseif ($usingFinishedProductQuantity) {
                         // التحقق من quantity_produced فقط
                         if ($quantityAfter < 0) {
                             error_log("recordInventoryMovement: Insufficient quantity in finished_products for transfer. batch_id: $batchId, quantity_produced: $quantityBefore, requested: $quantity");
