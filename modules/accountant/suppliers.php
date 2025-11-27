@@ -246,7 +246,7 @@ if (!empty($suppliers)) {
         try {
             $supplyLogs = $db->query(
                 "
-                SELECT id, supplier_id, supplier_name, material_category, material_label, quantity, unit, details, recorded_at
+                SELECT id, supplier_id, supplier_name, material_category, material_label, stock_source, stock_id, quantity, unit, details, recorded_at
                 FROM production_supply_logs
                 WHERE supplier_id IN ($placeholders)
                   AND recorded_at BETWEEN ? AND ?
@@ -723,9 +723,9 @@ if (isset($_GET['edit'])) {
                                                             <tr>
                                                                 <th>التاريخ</th>
                                                                 <th>القسم</th>
-                                                                <th>المادة</th>
+                                                                <th>تفاصيل المادة</th>
                                                                 <th>الكمية</th>
-                                                                <th>الوصف</th>
+                                                                <th>معلومات إضافية</th>
                                                             </tr>
                                                         </thead>
                                                         <tbody>
@@ -749,8 +749,17 @@ if (isset($_GET['edit'])) {
                                                                     $categoryLabel = $supplierSupplyCategoryLabels[$categoryKey] ?? ($categoryKey !== '' ? $categoryKey : '—');
                                                                     $materialLabel = trim((string)($supplyEntry['material_label'] ?? ''));
                                                                     $details = trim((string)($supplyEntry['details'] ?? ''));
+                                                                    $stockSource = trim((string)($supplyEntry['stock_source'] ?? ''));
+                                                                    $stockId = isset($supplyEntry['stock_id']) ? (int)$supplyEntry['stock_id'] : null;
                                                                     $quantityValue = isset($supplyEntry['quantity']) ? (float)$supplyEntry['quantity'] : 0.0;
                                                                     $unitLabel = isset($supplyEntry['unit']) && $supplyEntry['unit'] !== '' ? $supplyEntry['unit'] : 'كجم';
+                                                                    
+                                                                    // تحسين عرض اسم المادة مع التفاصيل
+                                                                    $materialDisplay = $materialLabel !== '' ? $materialLabel : 'مادة غير محددة';
+                                                                    if ($details !== '' && $materialLabel !== '') {
+                                                                        // إذا كان الوصف يحتوي على معلومات إضافية، نعرضها بشكل منفصل
+                                                                        $materialDisplay = $materialLabel;
+                                                                    }
                                                                 ?>
                                                                 <tr>
                                                                     <td>
@@ -759,17 +768,49 @@ if (isset($_GET['edit'])) {
                                                                             <div class="text-muted small"><?php echo htmlspecialchars($entryTime); ?></div>
                                                                         <?php endif; ?>
                                                                     </td>
-                                                                    <td><?php echo htmlspecialchars($categoryLabel); ?></td>
-                                                                    <td><?php echo htmlspecialchars($materialLabel !== '' ? $materialLabel : '-'); ?></td>
                                                                     <td>
-                                                                        <span class="fw-semibold text-primary"><?php echo number_format($quantityValue, 3); ?></span>
-                                                                        <span class="text-muted small"><?php echo htmlspecialchars($unitLabel); ?></span>
+                                                                        <span class="badge bg-info-subtle text-info"><?php echo htmlspecialchars($categoryLabel); ?></span>
+                                                                        <?php if ($stockSource !== ''): ?>
+                                                                            <div class="text-muted small mt-1">
+                                                                                <i class="bi bi-box-seam"></i> <?php echo htmlspecialchars($stockSource); ?>
+                                                                            </div>
+                                                                        <?php endif; ?>
                                                                     </td>
                                                                     <td>
+                                                                        <div class="fw-semibold text-dark mb-1">
+                                                                            <i class="bi bi-box-seam text-primary me-1"></i>
+                                                                            <?php echo htmlspecialchars($materialDisplay); ?>
+                                                                        </div>
                                                                         <?php if ($details !== ''): ?>
-                                                                            <?php echo htmlspecialchars($details); ?>
-                                                                        <?php else: ?>
-                                                                            <span class="text-muted">-</span>
+                                                                            <div class="text-muted small mt-2 p-2 bg-light rounded" style="font-size: 0.85rem; line-height: 1.5;">
+                                                                                <strong class="text-dark d-block mb-1">التفاصيل:</strong>
+                                                                                <?php echo nl2br(htmlspecialchars($details)); ?>
+                                                                            </div>
+                                                                        <?php endif; ?>
+                                                                        <?php if ($stockId !== null && $stockId > 0): ?>
+                                                                            <div class="text-muted small mt-1">
+                                                                                <i class="bi bi-hash"></i> رقم السجل: <span class="fw-semibold"><?php echo $stockId; ?></span>
+                                                                            </div>
+                                                                        <?php endif; ?>
+                                                                    </td>
+                                                                    <td>
+                                                                        <div class="fw-bold text-primary fs-5"><?php echo number_format($quantityValue, 3); ?></div>
+                                                                        <div class="text-muted small mt-1">
+                                                                            <i class="bi bi-rulers"></i> <?php echo htmlspecialchars($unitLabel); ?>
+                                                                        </div>
+                                                                    </td>
+                                                                    <td>
+                                                                        <?php if ($stockSource !== ''): ?>
+                                                                            <div class="mb-2">
+                                                                                <span class="badge bg-secondary-subtle text-secondary">
+                                                                                    <i class="bi bi-archive"></i> <?php echo htmlspecialchars($stockSource); ?>
+                                                                                </span>
+                                                                            </div>
+                                                                        <?php endif; ?>
+                                                                        <?php if ($supplyEntry['supplier_name'] ?? ''): ?>
+                                                                            <div class="text-muted small">
+                                                                                <i class="bi bi-truck"></i> <?php echo htmlspecialchars($supplyEntry['supplier_name']); ?>
+                                                                            </div>
                                                                         <?php endif; ?>
                                                                     </td>
                                                                 </tr>
