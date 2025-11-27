@@ -586,8 +586,6 @@ try {
                                         <th>اسم العميل</th>
                                         <th>الهاتف</th>
                                         <th>الرصيد</th>
-                                        <th>الحالة</th>
-                                        <th>الإجراءات</th>
                                     </tr>
                                 </thead>
                                 <tbody id="repCustomersList">
