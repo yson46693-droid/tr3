@@ -40,14 +40,6 @@ CREATE TABLE IF NOT EXISTS `message_reads` (
 
 CREATE INDEX `messages_created_at_idx` ON `messages` (`created_at`);
 
--- Trigger لضمان تحديث حقل updated_at عند تعديل الرسالة
-DROP TRIGGER IF EXISTS `messages_before_update`;
-DELIMITER $$
-CREATE TRIGGER `messages_before_update`
-BEFORE UPDATE ON `messages`
-FOR EACH ROW
-BEGIN
-  SET NEW.`updated_at` = CURRENT_TIMESTAMP;
-END$$
-DELIMITER ;
+-- لا حاجة لإنشاء trigger لأن الجدول يستخدم ON UPDATE CURRENT_TIMESTAMP بالفعل
+-- والذي يقوم تلقائياً بتحديث updated_at عند تحديث أي صف
 

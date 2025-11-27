@@ -4,6 +4,17 @@
  */
 
 define('ACCESS_ALLOWED', true);
+
+// تنظيف أي output buffer سابق قبل أي شيء
+while (ob_get_level() > 0) {
+    ob_end_clean();
+}
+
+// بدء output buffering لضمان عدم وجود محتوى قبل DOCTYPE
+if (!ob_get_level()) {
+    ob_start();
+}
+
 require_once __DIR__ . '/../includes/config.php';
 require_once __DIR__ . '/../includes/db.php';
 require_once __DIR__ . '/../includes/auth.php';

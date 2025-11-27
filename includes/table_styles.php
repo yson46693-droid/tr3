@@ -5,7 +5,17 @@
  * Outputs a single <style> block the first time it is included.
  */
 
-if (!defined('GLOBAL_TABLE_STYLES_RENDERED')) {
+// Skip output for AJAX requests to prevent headers from being sent before JSON
+$isAjaxRequest = (
+    (isset($_SERVER['HTTP_X_REQUESTED_WITH']) && strtolower($_SERVER['HTTP_X_REQUESTED_WITH']) === 'xmlhttprequest')
+    || !empty($_POST['is_ajax'])
+    || (
+        isset($_SERVER['HTTP_ACCEPT']) &&
+        stripos($_SERVER['HTTP_ACCEPT'], 'application/json') !== false
+    )
+);
+
+if (!defined('GLOBAL_TABLE_STYLES_RENDERED') && !$isAjaxRequest) {
     define('GLOBAL_TABLE_STYLES_RENDERED', true);
     ?>
     <style>
