@@ -20,14 +20,9 @@ requireRole(['manager', 'accountant']);
 $currentUser = getCurrentUser();
 $currentRole = strtolower((string)($currentUser['role'] ?? 'manager'));
 $db = db();
-$error = '';
-$success = '';
-
-applyPRGPattern($error, $success);
-
 $dashboardScript = basename($_SERVER['PHP_SELF'] ?? 'manager.php');
 
-// معالجة طلبات AJAX لسجل المشتريات
+// معالجة طلبات AJAX لسجل المشتريات (يجب أن تكون قبل applyPRGPattern)
 if (
     in_array($currentRole, ['manager', 'accountant'], true) &&
     isset($_GET['ajax'], $_GET['action']) &&
@@ -37,6 +32,12 @@ if (
     // تنظيف أي output قبل إرسال JSON
     while (ob_get_level() > 0) {
         ob_end_clean();
+    }
+    
+    // التأكد من عدم وجود أي output سابق
+    if (headers_sent($file, $line)) {
+        error_log("Headers already sent in $file at line $line");
+        // إذا تم إرسال headers بالفعل، نحاول إرسال JSON على أي حال
     }
     
     header('Content-Type: application/json; charset=utf-8');
@@ -111,6 +112,7 @@ if (
         exit;
     } catch (Throwable $historyError) {
         error_log('Representatives customers purchase history error: ' . $historyError->getMessage());
+        error_log('Stack trace: ' . $historyError->getTraceAsString());
         echo json_encode([
             'success' => false,
             'message' => 'حدث خطأ أثناء تحميل سجل المشتريات: ' . $historyError->getMessage()
@@ -118,6 +120,10 @@ if (
         exit;
     }
 }
+
+$error = '';
+$success = '';
+applyPRGPattern($error, $success);
 
 $representatives = [];
 $representativeSummary = [
