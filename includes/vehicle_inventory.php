@@ -1254,20 +1254,44 @@ function updateVehicleInventory($vehicleId, $productId, $quantity, $userId = nul
             $finishedQuantityProduced = (float)$finishedQuantityProduced;
         }
 
-        // عدم الحصول على finishedBatchId من السجل الموجود - يجب أن يأتي من البيانات المرسلة فقط
-        // لتجنب خلط أرقام التشغيلة المختلفة
-        // استخدام القيم من السجل الموجود فقط للمعلومات الأخرى إذا لم تكن متوفرة
-        if ($existing && $finishedBatchNumber === null && empty($finishedBatchId)) {
-            $finishedBatchNumber = $existing['finished_batch_number'] ?? null;
-        }
-        if ($existing && $finishedProductionDate === null && empty($finishedBatchId)) {
-            $finishedProductionDate = $existing['finished_production_date'] ?? null;
-        }
-        if ($existing && $finishedQuantityProduced === null && empty($finishedBatchId)) {
-            $finishedQuantityProduced = $existing['finished_quantity_produced'] ?? null;
-        }
-        if ($existing && $finishedWorkers === null && empty($finishedBatchId)) {
-            $finishedWorkers = $existing['finished_workers'] ?? null;
+        // الحفاظ على بيانات التشغيلة من السجل الموجود إذا لم يتم تمريرها في finishedProductData
+        // هذا مهم عند تحديث الكمية فقط (مثل البيع) للحفاظ على بيانات التشغيلة
+        if ($existing) {
+            // إذا كان finished_batch_id الممرر يطابق الموجود، نحافظ على جميع بيانات التشغيلة
+            $existingBatchId = !empty($existing['finished_batch_id']) ? (int)$existing['finished_batch_id'] : null;
+            $shouldPreserveBatchData = ($finishedBatchId !== null && $existingBatchId === $finishedBatchId) || 
+                                       ($finishedBatchId === null && $existingBatchId === null);
+            
+            if ($shouldPreserveBatchData) {
+                // الحفاظ على بيانات التشغيلة من السجل الموجود إذا لم يتم تمريرها
+                if ($finishedBatchNumber === null) {
+                    $finishedBatchNumber = $existing['finished_batch_number'] ?? null;
+                }
+                if ($finishedProductionDate === null) {
+                    $finishedProductionDate = $existing['finished_production_date'] ?? null;
+                }
+                if ($finishedQuantityProduced === null) {
+                    $finishedQuantityProduced = $existing['finished_quantity_produced'] ?? null;
+                }
+                if ($finishedWorkers === null) {
+                    $finishedWorkers = $existing['finished_workers'] ?? null;
+                }
+            } else {
+                // إذا كان finished_batch_id مختلف، نحافظ على البيانات فقط إذا لم يتم تمريرها
+                // (هذا للحالات التي يتم فيها تغيير التشغيلة)
+                if ($finishedBatchNumber === null && empty($finishedBatchId)) {
+                    $finishedBatchNumber = $existing['finished_batch_number'] ?? null;
+                }
+                if ($finishedProductionDate === null && empty($finishedBatchId)) {
+                    $finishedProductionDate = $existing['finished_production_date'] ?? null;
+                }
+                if ($finishedQuantityProduced === null && empty($finishedBatchId)) {
+                    $finishedQuantityProduced = $existing['finished_quantity_produced'] ?? null;
+                }
+                if ($finishedWorkers === null && empty($finishedBatchId)) {
+                    $finishedWorkers = $existing['finished_workers'] ?? null;
+                }
+            }
         }
         
         if ($existing) {

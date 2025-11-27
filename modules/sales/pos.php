@@ -631,8 +631,13 @@ if (!$error && $_SERVER['REQUEST_METHOD'] === 'POST') {
                     $lineTotal = $item['line_total'];
 
                     // التحقق من الكمية مرة أخرى باستخدام FOR UPDATE لتجنب race conditions
+                    // جلب جميع بيانات المنتج من مخزون السيارة للحفاظ عليها عند التحديث
                     $vehicleInventoryItem = $db->queryOne(
-                        "SELECT quantity, finished_batch_id FROM vehicle_inventory WHERE vehicle_id = ? AND product_id = ? FOR UPDATE",
+                        "SELECT quantity, finished_batch_id, finished_batch_number, finished_production_date, 
+                                finished_quantity_produced, finished_workers, product_name, product_category, 
+                                product_unit, product_unit_price, product_snapshot, manager_unit_price
+                         FROM vehicle_inventory 
+                         WHERE vehicle_id = ? AND product_id = ? FOR UPDATE",
                         [$vehicle['id'], $productId]
                     );
 
@@ -669,11 +674,24 @@ if (!$error && $_SERVER['REQUEST_METHOD'] === 'POST') {
 
                     // تحديث vehicle_inventory بعد تسجيل الحركة
                     $newQuantity = max(0, $available - $quantity);
-                    // تمرير finished_batch_id في finishedProductData لضمان تحديث السجل الصحيح
+                    // تمرير جميع بيانات التشغيلة من السجل الموجود للحفاظ عليها عند التحديث
                     $finishedProductData = [];
                     if ($batchId) {
                         $finishedProductData['finished_batch_id'] = $batchId;
                         $finishedProductData['batch_id'] = $batchId;
+                        // الحفاظ على بيانات التشغيلة من السجل الموجود
+                        if (!empty($vehicleInventoryItem['finished_batch_number'])) {
+                            $finishedProductData['finished_batch_number'] = $vehicleInventoryItem['finished_batch_number'];
+                        }
+                        if (!empty($vehicleInventoryItem['finished_production_date'])) {
+                            $finishedProductData['finished_production_date'] = $vehicleInventoryItem['finished_production_date'];
+                        }
+                        if (!empty($vehicleInventoryItem['finished_quantity_produced'])) {
+                            $finishedProductData['finished_quantity_produced'] = $vehicleInventoryItem['finished_quantity_produced'];
+                        }
+                        if (!empty($vehicleInventoryItem['finished_workers'])) {
+                            $finishedProductData['finished_workers'] = $vehicleInventoryItem['finished_workers'];
+                        }
                     }
                     $updateResult = updateVehicleInventory($vehicle['id'], $productId, $newQuantity, $currentUser['id'], null, $finishedProductData);
                     if (empty($updateResult['success'])) {
