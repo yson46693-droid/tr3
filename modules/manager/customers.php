@@ -156,6 +156,92 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     }
                 }
             }
+        } elseif ($action === 'collect_debt') {
+            $customerId = isset($_POST['customer_id']) ? (int)$_POST['customer_id'] : 0;
+            $amount = isset($_POST['amount']) ? cleanFinancialValue($_POST['amount']) : 0;
+
+            if ($customerId <= 0) {
+                $error = 'معرف العميل غير صالح.';
+            } elseif ($amount <= 0) {
+                $error = 'يجب إدخال مبلغ تحصيل أكبر من صفر.';
+            } else {
+                $transactionStarted = false;
+
+                try {
+                    $db->beginTransaction();
+                    $transactionStarted = true;
+
+                    $customer = $db->queryOne(
+                        "SELECT id, name, balance FROM customers WHERE id = ? FOR UPDATE",
+                        [$customerId]
+                    );
+
+                    if (!$customer) {
+                        throw new InvalidArgumentException('لم يتم العثور على العميل المطلوب.');
+                    }
+
+                    $currentBalance = isset($customer['balance']) ? (float)$customer['balance'] : 0.0;
+
+                    if ($currentBalance <= 0) {
+                        throw new InvalidArgumentException('لا توجد ديون نشطة على هذا العميل.');
+                    }
+
+                    if ($amount > $currentBalance) {
+                        throw new InvalidArgumentException('المبلغ المدخل أكبر من ديون العميل الحالية.');
+                    }
+
+                    $newBalance = round(max($currentBalance - $amount, 0), 2);
+
+                    $db->execute(
+                        "UPDATE customers SET balance = ? WHERE id = ?",
+                        [$newBalance, $customerId]
+                    );
+
+                    logAudit(
+                        $currentUser['id'],
+                        'collect_customer_debt',
+                        'customer',
+                        $customerId,
+                        null,
+                        [
+                            'collected_amount'   => $amount,
+                            'previous_balance'   => $currentBalance,
+                            'new_balance'        => $newBalance,
+                        ]
+                    );
+
+                    // حفظ التحصيل في جدول collections
+                    $collectionsTableExists = $db->queryOne("SHOW TABLES LIKE 'collections'");
+                    if (!empty($collectionsTableExists)) {
+                        try {
+                            $db->execute(
+                                "INSERT INTO collections (customer_id, amount, status, created_by, created_at)
+                                 VALUES (?, ?, 'approved', ?, NOW())",
+                                [$customerId, $amount, $currentUser['id']]
+                            );
+                        } catch (Throwable $collectionError) {
+                            error_log('Manager collect debt - collection insert error: ' . $collectionError->getMessage());
+                        }
+                    }
+
+                    $db->commit();
+                    $transactionStarted = false;
+
+                    $_SESSION['success_message'] = 'تم تحصيل المبلغ بنجاح.';
+                    redirectAfterPost('customers', ['section' => 'company'], [], $currentRole);
+                } catch (InvalidArgumentException $invalidCollect) {
+                    if ($transactionStarted) {
+                        $db->rollBack();
+                    }
+                    $error = $invalidCollect->getMessage();
+                } catch (Throwable $collectError) {
+                    if ($transactionStarted) {
+                        $db->rollBack();
+                    }
+                    error_log('Manager collect debt error: ' . $collectError->getMessage());
+                    $error = 'تعذر تحصيل المبلغ. يرجى المحاولة لاحقاً.';
+                }
+            }
         }
     }
 }

@@ -586,11 +586,12 @@ try {
                                         <th>اسم العميل</th>
                                         <th>الهاتف</th>
                                         <th>الرصيد</th>
+                                        <th>إجراءات</th>
                                     </tr>
                                 </thead>
                                 <tbody id="repCustomersList">
                                     <tr>
-                                        <td colspan="5" class="text-center text-muted">لا توجد بيانات</td>
+                                        <td colspan="4" class="text-center text-muted">لا توجد بيانات</td>
                                     </tr>
                                 </tbody>
                             </table>
@@ -687,18 +688,60 @@ function loadRepDetails(repId, repName) {
                 // تحديث قائمة العملاء
                 const customersList = document.getElementById('repCustomersList');
                 if (data.customers && data.customers.length > 0) {
-                    customersList.innerHTML = data.customers.map(customer => `
+                    customersList.innerHTML = data.customers.map(customer => {
+                        const balance = parseFloat(customer.balance || 0);
+                        const rawBalance = balance.toFixed(2);
+                        const formattedBalance = formatCurrency(Math.abs(balance));
+                        const balanceClass = balance > 0 ? 'text-danger' : balance < 0 ? 'text-success' : '';
+                        const collectDisabled = balance <= 0 ? 'disabled' : '';
+                        const collectBtnClass = balance > 0 ? 'btn-success' : 'btn-outline-secondary';
+                        
+                        return `
                         <tr>
                             <td>${escapeHtml(customer.name || '—')}</td>
                             <td>${escapeHtml(customer.phone || '—')}</td>
-                            <td class="${customer.balance > 0 ? 'text-danger' : customer.balance < 0 ? 'text-success' : ''}">
-                                ${formatCurrency(customer.balance || 0)}
+                            <td class="${balanceClass}">
+                                ${formatCurrency(balance || 0)}
                             </td>
-                            
+                            <td>
+                                <div class="d-flex flex-wrap align-items-center gap-2">
+                                    <button
+                                        type="button"
+                                        class="btn btn-sm ${collectBtnClass} rep-collect-btn"
+                                        data-bs-toggle="modal"
+                                        data-bs-target="#repCollectPaymentModal"
+                                        data-customer-id="${customer.id || 0}"
+                                        data-customer-name="${escapeHtml(customer.name || '—')}"
+                                        data-customer-balance="${rawBalance}"
+                                        data-customer-balance-formatted="${formattedBalance}"
+                                        ${collectDisabled}
+                                    >
+                                        <i class="bi bi-cash-coin me-1"></i>تحصيل
+                                    </button>
+                                    <button
+                                        type="button"
+                                        class="btn btn-sm btn-outline-dark rep-history-btn js-customer-history"
+                                        data-customer-id="${customer.id || 0}"
+                                        data-customer-name="${escapeHtml(customer.name || '—')}"
+                                    >
+                                        <i class="bi bi-journal-text me-1"></i>سجل المشتريات
+                                    </button>
+                                    <button
+                                        type="button"
+                                        class="btn btn-sm btn-outline-primary rep-return-btn js-customer-purchase-history"
+                                        data-customer-id="${customer.id || 0}"
+                                        data-customer-name="${escapeHtml(customer.name || '—')}"
+                                        title="سجل مشتريات العميل - إنشاء مرتجع"
+                                    >
+                                        <i class="bi bi-arrow-return-left me-1"></i>إرجاع
+                                    </button>
+                                </div>
+                            </td>
                         </tr>
-                    `).join('');
+                    `;
+                    }).join('');
                 } else {
-                    customersList.innerHTML = '<tr><td colspan="5" class="text-center text-muted">لا يوجد عملاء</td></tr>';
+                    customersList.innerHTML = '<tr><td colspan="4" class="text-center text-muted">لا يوجد عملاء</td></tr>';
                 }
                 
                 // تحديث قائمة التحصيلات
@@ -778,5 +821,128 @@ function formatDate(dateString) {
         day: 'numeric'
     });
 }
+
+// تهيئة modal التحصيل
+document.addEventListener('DOMContentLoaded', function() {
+    const repCollectModal = document.getElementById('repCollectPaymentModal');
+    if (repCollectModal) {
+        const nameElement = repCollectModal.querySelector('.rep-collection-customer-name');
+        const debtElement = repCollectModal.querySelector('.rep-collection-current-debt');
+        const customerIdInput = repCollectModal.querySelector('input[name="customer_id"]');
+        const amountInput = repCollectModal.querySelector('input[name="amount"]');
+
+        if (nameElement && debtElement && customerIdInput && amountInput) {
+            repCollectModal.addEventListener('show.bs.modal', function (event) {
+                const triggerButton = event.relatedTarget;
+                if (!triggerButton) {
+                    return;
+                }
+
+                const customerName = triggerButton.getAttribute('data-customer-name') || '-';
+                const balanceRaw = triggerButton.getAttribute('data-customer-balance') || '0';
+                const balanceFormatted = triggerButton.getAttribute('data-customer-balance-formatted') || balanceRaw;
+                const numericBalance = parseFloat(balanceRaw);
+                if (!Number.isFinite(numericBalance)) {
+                    numericBalance = 0;
+                }
+                const debtAmount = numericBalance > 0 ? numericBalance : 0;
+
+                nameElement.textContent = customerName;
+                debtElement.textContent = balanceFormatted;
+                customerIdInput.value = triggerButton.getAttribute('data-customer-id') || '';
+
+                amountInput.value = debtAmount.toFixed(2);
+                amountInput.setAttribute('max', debtAmount.toFixed(2));
+                amountInput.setAttribute('min', '0');
+                amountInput.readOnly = debtAmount <= 0;
+                if (debtAmount > 0) {
+                    amountInput.focus();
+                }
+            });
+
+            repCollectModal.addEventListener('hidden.bs.modal', function () {
+                if (amountInput) {
+                    amountInput.value = '';
+                    amountInput.removeAttribute('max');
+                    amountInput.removeAttribute('min');
+                    amountInput.readOnly = false;
+                }
+                if (customerIdInput) {
+                    customerIdInput.value = '';
+                }
+            });
+        }
+    }
+
+    // معالجة أزرار سجل المشتريات (delegation للعناصر الديناميكية)
+    document.addEventListener('click', function(e) {
+        if (e.target.closest('.rep-history-btn.js-customer-history')) {
+            const button = e.target.closest('.rep-history-btn.js-customer-history');
+            const customerId = button.getAttribute('data-customer-id');
+            const customerName = button.getAttribute('data-customer-name') || '-';
+            
+            // فتح صفحة سجل المشتريات في نافذة جديدة أو redirect
+            const baseUrl = '<?php echo getRelativeUrl($dashboardScript); ?>';
+            const historyUrl = baseUrl + (baseUrl.includes('?') ? '&' : '?') + 'page=customers&section=company&action=purchase_history&customer_id=' + encodeURIComponent(customerId);
+            window.open(historyUrl, '_blank');
+        }
+        
+        if (e.target.closest('.rep-return-btn.js-customer-purchase-history')) {
+            const button = e.target.closest('.rep-return-btn.js-customer-purchase-history');
+            const customerId = button.getAttribute('data-customer-id');
+            const customerName = button.getAttribute('data-customer-name') || '-';
+            
+            // فتح صفحة إنشاء مرتجع في نافذة جديدة أو redirect
+            const baseUrl = '<?php echo getRelativeUrl($dashboardScript); ?>';
+            const returnUrl = baseUrl + (baseUrl.includes('?') ? '&' : '?') + 'page=customers&section=company&action=purchase_history&ajax=purchase_history&customer_id=' + encodeURIComponent(customerId);
+            window.open(returnUrl, '_blank');
+        }
+    });
+});
 </script>
+
+<!-- Modal تحصيل ديون العميل -->
+<div class="modal fade" id="repCollectPaymentModal" tabindex="-1" aria-hidden="true">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title"><i class="bi bi-cash-coin me-2"></i>تحصيل ديون العميل</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="إغلاق"></button>
+            </div>
+            <form method="POST" action="<?php echo htmlspecialchars(getRelativeUrl($dashboardScript . '?page=customers&section=company')); ?>">
+                <input type="hidden" name="action" value="collect_debt">
+                <input type="hidden" name="customer_id" value="">
+                <div class="modal-body">
+                    <div class="mb-3">
+                        <div class="fw-semibold text-muted">العميل</div>
+                        <div class="fs-5 rep-collection-customer-name">-</div>
+                    </div>
+                    <div class="mb-3">
+                        <div class="fw-semibold text-muted">الديون الحالية</div>
+                        <div class="fs-5 text-warning rep-collection-current-debt">-</div>
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label" for="repCollectionAmount">مبلغ التحصيل <span class="text-danger">*</span></label>
+                        <input
+                            type="number"
+                            class="form-control"
+                            id="repCollectionAmount"
+                            name="amount"
+                            step="0.01"
+                            min="0.01"
+                            required
+                        >
+                        <div class="form-text">لن يتم قبول مبلغ أكبر من قيمة الديون الحالية.</div>
+                    </div>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">إلغاء</button>
+                    <button type="submit" class="btn btn-primary">
+                        <i class="bi bi-check-circle me-1"></i>تحصيل
+                    </button>
+                </div>
+            </form>
+        </div>
+    </div>
+</div>
 
