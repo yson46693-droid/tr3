@@ -45,12 +45,15 @@ if (!function_exists('renderRepresentativeCards')) {
                     $statusBadge = $status === 'active' ? 'bg-success-subtle text-success' : 'bg-secondary-subtle text-secondary';
                     ?>
                     <div class="col-12 col-md-6 col-xl-4">
-                        <a
-                            href="<?php echo htmlspecialchars($cardUrl); ?>"
-                            class="text-decoration-none representative-card-link"
-                            <?php echo $openInNewTab ? 'target="_blank"' : ''; ?>
+                        <div 
+                            class="card representative-card h-100 shadow-sm"
+                            style="cursor: pointer;"
+                            data-bs-toggle="modal"
+                            data-bs-target="#repDetailsModal"
+                            data-rep-id="<?php echo $repId; ?>"
+                            data-rep-name="<?php echo htmlspecialchars($repName); ?>"
+                            onclick="loadRepDetails(<?php echo $repId; ?>, '<?php echo htmlspecialchars($repName, ENT_QUOTES); ?>')"
                         >
-                            <div class="card representative-card h-100 shadow-sm">
                                 <div class="card-body d-flex flex-column gap-3">
                                     <div class="d-flex align-items-center gap-3">
                                         <div class="rep-avatar">
@@ -113,14 +116,19 @@ if (!function_exists('renderRepresentativeCards')) {
                                         <?php endif; ?>
                                     </div>
                                     <div class="text-end">
-                                        <span class="btn btn-outline-primary btn-sm">
+                                        <button 
+                                            type="button"
+                                            class="btn btn-outline-primary btn-sm"
+                                            onclick="event.stopPropagation(); loadRepDetails(<?php echo $repId; ?>, '<?php echo htmlspecialchars($repName, ENT_QUOTES); ?>');"
+                                            data-bs-toggle="modal"
+                                            data-bs-target="#repDetailsModal"
+                                        >
                                             <i class="bi bi-people-fill me-1"></i>
                                             عرض العملاء
-                                        </span>
+                                        </button>
                                     </div>
                                 </div>
                             </div>
-                        </a>
                     </div>
                 <?php endforeach; ?>
             <?php endif; ?>

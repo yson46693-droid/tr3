@@ -521,3 +521,276 @@ try {
 }
 </style>
 
+<!-- Modal تفاصيل المندوب -->
+<div class="modal fade" id="repDetailsModal" tabindex="-1" aria-labelledby="repDetailsModalLabel" aria-hidden="true">
+    <div class="modal-dialog modal-xl modal-dialog-scrollable">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title" id="repDetailsModalLabel">
+                    <i class="bi bi-person-circle me-2"></i>
+                    <span id="repModalName">تفاصيل المندوب</span>
+                </h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="إغلاق"></button>
+            </div>
+            <div class="modal-body">
+                <div id="repDetailsLoading" class="text-center py-5">
+                    <div class="spinner-border text-primary" role="status">
+                        <span class="visually-hidden">جاري التحميل...</span>
+                    </div>
+                    <p class="mt-3 text-muted">جاري تحميل البيانات...</p>
+                </div>
+                <div id="repDetailsContent" style="display: none;">
+                    <!-- الإحصائيات -->
+                    <div class="row g-3 mb-4">
+                        <div class="col-6 col-md-3">
+                            <div class="card border-0 shadow-sm">
+                                <div class="card-body text-center">
+                                    <div class="text-muted small mb-2">عدد العملاء</div>
+                                    <div class="h4 mb-0 text-primary" id="repCustomerCount">0</div>
+                                </div>
+                            </div>
+                        </div>
+                        <div class="col-6 col-md-3">
+                            <div class="card border-0 shadow-sm">
+                                <div class="card-body text-center">
+                                    <div class="text-muted small mb-2">إجمالي الديون</div>
+                                    <div class="h4 mb-0 text-danger" id="repTotalDebt">0.00 ج.م</div>
+                                </div>
+                            </div>
+                        </div>
+                        <div class="col-6 col-md-3">
+                            <div class="card border-0 shadow-sm">
+                                <div class="card-body text-center">
+                                    <div class="text-muted small mb-2">إجمالي التحصيلات</div>
+                                    <div class="h4 mb-0 text-success" id="repTotalCollections">0.00 ج.م</div>
+                                </div>
+                            </div>
+                        </div>
+                        <div class="col-6 col-md-3">
+                            <div class="card border-0 shadow-sm">
+                                <div class="card-body text-center">
+                                    <div class="text-muted small mb-2">إجمالي المرتجعات</div>
+                                    <div class="h4 mb-0 text-info" id="repTotalReturns">0.00 ج.م</div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- قائمة العملاء -->
+                    <div class="mb-4">
+                        <h6 class="mb-3"><i class="bi bi-people me-2"></i>قائمة العملاء</h6>
+                        <div class="table-responsive">
+                            <table class="table table-hover">
+                                <thead>
+                                    <tr>
+                                        <th>اسم العميل</th>
+                                        <th>الهاتف</th>
+                                        <th>الرصيد</th>
+                                        <th>الحالة</th>
+                                        <th>الإجراءات</th>
+                                    </tr>
+                                </thead>
+                                <tbody id="repCustomersList">
+                                    <tr>
+                                        <td colspan="5" class="text-center text-muted">لا توجد بيانات</td>
+                                    </tr>
+                                </tbody>
+                            </table>
+                        </div>
+                    </div>
+
+                    <!-- قائمة التحصيلات -->
+                    <div class="mb-4">
+                        <h6 class="mb-3"><i class="bi bi-cash-coin me-2"></i>التحصيلات</h6>
+                        <div class="table-responsive">
+                            <table class="table table-hover">
+                                <thead>
+                                    <tr>
+                                        <th>التاريخ</th>
+                                        <th>العميل</th>
+                                        <th>المبلغ</th>
+                                        <th>الحالة</th>
+                                    </tr>
+                                </thead>
+                                <tbody id="repCollectionsList">
+                                    <tr>
+                                        <td colspan="4" class="text-center text-muted">لا توجد تحصيلات</td>
+                                    </tr>
+                                </tbody>
+                            </table>
+                        </div>
+                    </div>
+
+                    <!-- قائمة المرتجعات -->
+                    <div>
+                        <h6 class="mb-3"><i class="bi bi-arrow-left-right me-2"></i>المرتجعات</h6>
+                        <div class="table-responsive">
+                            <table class="table table-hover">
+                                <thead>
+                                    <tr>
+                                        <th>التاريخ</th>
+                                        <th>العميل</th>
+                                        <th>المبلغ</th>
+                                        <th>الحالة</th>
+                                    </tr>
+                                </thead>
+                                <tbody id="repReturnsList">
+                                    <tr>
+                                        <td colspan="4" class="text-center text-muted">لا توجد مرتجعات</td>
+                                    </tr>
+                                </tbody>
+                            </table>
+                        </div>
+                    </div>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">إغلاق</button>
+                <a href="#" id="repViewCustomersLink" class="btn btn-primary" target="_blank">
+                    <i class="bi bi-people-fill me-1"></i>
+                    عرض جميع العملاء
+                </a>
+            </div>
+        </div>
+    </div>
+</div>
+
+<script>
+function loadRepDetails(repId, repName) {
+    // تحديث اسم المندوب في الـ modal
+    const modalNameEl = document.getElementById('repModalName');
+    if (modalNameEl) {
+        modalNameEl.textContent = 'تفاصيل: ' + repName;
+    }
+    
+    // إظهار loading وإخفاء المحتوى
+    const loadingEl = document.getElementById('repDetailsLoading');
+    const contentEl = document.getElementById('repDetailsContent');
+    if (loadingEl) loadingEl.style.display = 'block';
+    if (contentEl) contentEl.style.display = 'none';
+    
+    // تحديث رابط عرض جميع العملاء
+    const viewCustomersLink = document.getElementById('repViewCustomersLink');
+    if (viewCustomersLink) {
+        const baseUrl = '<?php echo getRelativeUrl($dashboardScript); ?>';
+        viewCustomersLink.href = baseUrl + (baseUrl.includes('?') ? '&' : '?') + 'page=rep_customers_view&rep_id=' + repId;
+    }
+    
+    // جلب البيانات من API
+    const apiUrl = '<?php echo getRelativeUrl("api/get_rep_details.php"); ?>';
+    fetch(apiUrl + '?rep_id=' + repId)
+        .then(response => response.json())
+        .then(data => {
+            if (data.success) {
+                // تحديث الإحصائيات
+                document.getElementById('repCustomerCount').textContent = data.stats.customer_count || 0;
+                document.getElementById('repTotalDebt').textContent = formatCurrency(data.stats.total_debt || 0);
+                document.getElementById('repTotalCollections').textContent = formatCurrency(data.stats.total_collections || 0);
+                document.getElementById('repTotalReturns').textContent = formatCurrency(data.stats.total_returns || 0);
+                
+                // تحديث قائمة العملاء
+                const customersList = document.getElementById('repCustomersList');
+                if (data.customers && data.customers.length > 0) {
+                    customersList.innerHTML = data.customers.map(customer => `
+                        <tr>
+                            <td>${escapeHtml(customer.name || '—')}</td>
+                            <td>${escapeHtml(customer.phone || '—')}</td>
+                            <td class="${customer.balance > 0 ? 'text-danger' : customer.balance < 0 ? 'text-success' : ''}">
+                                ${formatCurrency(customer.balance || 0)}
+                            </td>
+                            <td>
+                                <span class="badge ${customer.status === 'active' ? 'bg-success' : 'bg-secondary'}">
+                                    ${customer.status === 'active' ? 'نشط' : 'غير نشط'}
+                                </span>
+                            </td>
+                            <td>
+                                <a href="${baseUrl}${baseUrl.includes('?') ? '&' : '?'}page=rep_customers_view&rep_id=${repId}&customer_id=${customer.id}" 
+                                   class="btn btn-sm btn-outline-primary" target="_blank">
+                                    <i class="bi bi-eye"></i>
+                                </a>
+                            </td>
+                        </tr>
+                    `).join('');
+                } else {
+                    customersList.innerHTML = '<tr><td colspan="5" class="text-center text-muted">لا يوجد عملاء</td></tr>';
+                }
+                
+                // تحديث قائمة التحصيلات
+                const collectionsList = document.getElementById('repCollectionsList');
+                if (data.collections && data.collections.length > 0) {
+                    collectionsList.innerHTML = data.collections.map(collection => `
+                        <tr>
+                            <td>${formatDate(collection.date || collection.created_at)}</td>
+                            <td>${escapeHtml(collection.customer_name || '—')}</td>
+                            <td class="text-success">${formatCurrency(collection.amount || 0)}</td>
+                            <td>
+                                <span class="badge ${collection.status === 'approved' ? 'bg-success' : collection.status === 'pending' ? 'bg-warning' : 'bg-secondary'}">
+                                    ${collection.status === 'approved' ? 'معتمد' : collection.status === 'pending' ? 'معلق' : collection.status || '—'}
+                                </span>
+                            </td>
+                        </tr>
+                    `).join('');
+                } else {
+                    collectionsList.innerHTML = '<tr><td colspan="4" class="text-center text-muted">لا توجد تحصيلات</td></tr>';
+                }
+                
+                // تحديث قائمة المرتجعات
+                const returnsList = document.getElementById('repReturnsList');
+                if (data.returns && data.returns.length > 0) {
+                    returnsList.innerHTML = data.returns.map(returnItem => `
+                        <tr>
+                            <td>${formatDate(returnItem.return_date || returnItem.created_at)}</td>
+                            <td>${escapeHtml(returnItem.customer_name || '—')}</td>
+                            <td class="text-info">${formatCurrency(returnItem.refund_amount || 0)}</td>
+                            <td>
+                                <span class="badge ${returnItem.status === 'approved' || returnItem.status === 'completed' ? 'bg-success' : returnItem.status === 'pending' ? 'bg-warning' : 'bg-secondary'}">
+                                    ${returnItem.status === 'approved' ? 'معتمد' : returnItem.status === 'completed' ? 'مكتمل' : returnItem.status === 'pending' ? 'معلق' : returnItem.status || '—'}
+                                </span>
+                            </td>
+                        </tr>
+                    `).join('');
+                } else {
+                    returnsList.innerHTML = '<tr><td colspan="4" class="text-center text-muted">لا توجد مرتجعات</td></tr>';
+                }
+                
+                // إخفاء loading وإظهار المحتوى
+                if (loadingEl) loadingEl.style.display = 'none';
+                if (contentEl) contentEl.style.display = 'block';
+            } else {
+                document.getElementById('repDetailsLoading').innerHTML = 
+                    '<div class="alert alert-danger">فشل تحميل البيانات: ' + (data.error || 'خطأ غير معروف') + '</div>';
+            }
+        })
+        .catch(error => {
+            console.error('Error loading rep details:', error);
+            if (loadingEl) {
+                loadingEl.innerHTML = '<div class="alert alert-danger">حدث خطأ أثناء تحميل البيانات</div>';
+            }
+        });
+}
+
+function escapeHtml(text) {
+    const div = document.createElement('div');
+    div.textContent = text;
+    return div.innerHTML;
+}
+
+function formatCurrency(amount) {
+    return new Intl.NumberFormat('ar-EG', {
+        style: 'currency',
+        currency: 'EGP',
+        minimumFractionDigits: 2
+    }).format(amount || 0);
+}
+
+function formatDate(dateString) {
+    if (!dateString) return '—';
+    const date = new Date(dateString);
+    return date.toLocaleDateString('ar-EG', {
+        year: 'numeric',
+        month: 'long',
+        day: 'numeric'
+    });
+}
+</script>
+
