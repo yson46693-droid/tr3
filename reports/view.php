@@ -163,8 +163,42 @@ $normalized = str_replace('\\', '/', $relativePath);
 $normalized = ltrim($normalized, '/');
 
 $fullPath = $reportsBaseDir . '/' . $normalized;
+
+// إذا لم يُعثر على الملف في المسار الأول، جرب المسار البديل
 if (!is_file($fullPath)) {
-    renderReportError(404, 'ملف التقرير غير موجود.');
+    // محاولة البحث في المسار البديل
+    $alternateBaseDir = null;
+    if (defined('REPORTS_PRIVATE_PATH') && $reportsBaseDir === rtrim(str_replace('\\', '/', REPORTS_PRIVATE_PATH), '/')) {
+        // إذا كنا نبحث في REPORTS_PRIVATE_PATH، جرب REPORTS_PATH
+        $alternateBaseDir = defined('REPORTS_PATH') 
+            ? rtrim(str_replace('\\', '/', REPORTS_PATH), '/')
+            : str_replace('\\', '/', BASE_PATH . '/reports');
+    } elseif (defined('REPORTS_PATH') && $reportsBaseDir === rtrim(str_replace('\\', '/', REPORTS_PATH), '/')) {
+        // إذا كنا نبحث في REPORTS_PATH، جرب REPORTS_PRIVATE_PATH
+        $alternateBaseDir = defined('REPORTS_PRIVATE_PATH')
+            ? rtrim(str_replace('\\', '/', REPORTS_PRIVATE_PATH), '/')
+            : null;
+    } else {
+        // إذا لم يكن هناك مسار بديل محدد، جرب REPORTS_PATH
+        $alternateBaseDir = defined('REPORTS_PATH')
+            ? rtrim(str_replace('\\', '/', REPORTS_PATH), '/')
+            : str_replace('\\', '/', BASE_PATH . '/reports');
+    }
+    
+    if ($alternateBaseDir !== null) {
+        $alternatePath = $alternateBaseDir . '/' . $normalized;
+        if (is_file($alternatePath)) {
+            $fullPath = $alternatePath;
+        } else {
+            // تسجيل للمساعدة في التشخيص
+            error_log("Report file not found. Searched in: {$fullPath} and {$alternatePath}");
+            renderReportError(404, 'ملف التقرير غير موجود.');
+        }
+    } else {
+        // تسجيل للمساعدة في التشخيص
+        error_log("Report file not found. Searched in: {$fullPath}");
+        renderReportError(404, 'ملف التقرير غير موجود.');
+    }
 }
 
 $contents = @file_get_contents($fullPath);
