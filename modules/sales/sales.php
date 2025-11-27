@@ -298,7 +298,7 @@ $tableHeaderStyle = $isSalesRecords ? 'background: linear-gradient(135deg, #667e
                                 <td style="<?php echo $isSalesRecords ? 'padding: 1rem; font-weight: 500;' : ''; ?>"><?php echo formatDate($sale['date']); ?></td>
                                 <td style="<?php echo $isSalesRecords ? 'padding: 1rem;' : ''; ?>">
                                     <?php if (!empty($sale['invoice_number'])): ?>
-                                        <span class="badge <?php echo $isSalesRecords ? 'bg-gradient text-white shadow-sm' : 'bg-info'; ?>" style="<?php echo $isSalesRecords ? 'background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); padding: 0.5rem 0.75rem; font-weight: 600;' : ''; ?>"><?php echo htmlspecialchars($sale['invoice_number']); ?></span>
+                                        <span class="badge <?php echo $isSalesRecords ? 'bg-gradient shadow-sm' : 'bg-info'; ?>" style="<?php echo $isSalesRecords ? 'background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); padding: 0.5rem 0.75rem; font-weight: 600; color: #000;' : ''; ?>"><?php echo htmlspecialchars($sale['invoice_number']); ?></span>
                                     <?php else: ?>
                                         <span class="text-muted">-</span>
                                     <?php endif; ?>
@@ -313,7 +313,7 @@ $tableHeaderStyle = $isSalesRecords ? 'background: linear-gradient(135deg, #667e
                                         $statusBg = $sale['status'] === 'approved' ? 'success' : 
                                             ($sale['status'] === 'pending' ? 'warning' : 
                                             ($sale['status'] === 'rejected' ? 'danger' : 'info'));
-                                        echo $isSalesRecords ? 'padding: 0.5rem 0.75rem; font-weight: 600; font-size: 0.85rem;' : '';
+                                        echo $isSalesRecords ? 'padding: 0.5rem 0.75rem; font-weight: 600; font-size: 0.85rem; color: #000;' : '';
                                     ?>" class="bg-<?php echo $statusBg; ?>">
                                         <?php 
                                         $statuses = [

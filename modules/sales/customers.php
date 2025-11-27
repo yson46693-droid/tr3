@@ -1516,23 +1516,35 @@ let currentCustomerId = null;
 let selectedItemsForReturn = [];
 let purchaseHistoryData = []; // Store original purchase history data
 
-// Open purchase history modal
-document.querySelectorAll('.js-customer-purchase-history').forEach(function(button) {
-    button.addEventListener('click', function() {
-        const customerId = this.getAttribute('data-customer-id');
-        const customerName = this.getAttribute('data-customer-name');
+// Open purchase history modal - using event delegation for dynamic content
+document.addEventListener('DOMContentLoaded', function() {
+    // Use event delegation to handle clicks on buttons that may be added dynamically
+    document.addEventListener('click', function(e) {
+        const button = e.target.closest('.js-customer-purchase-history');
+        if (!button) return;
+        
+        const customerId = button.getAttribute('data-customer-id');
+        const customerName = button.getAttribute('data-customer-name');
+        
+        if (!customerId) return;
         
         currentCustomerId = customerId;
         
         // Set customer info
-        document.getElementById('purchaseHistoryCustomerName').textContent = customerName;
+        const nameElement = document.getElementById('purchaseHistoryCustomerName');
+        if (nameElement) {
+            nameElement.textContent = customerName;
+        }
         
         // Show modal
-        const modal = new bootstrap.Modal(document.getElementById('customerPurchaseHistoryModal'));
-        modal.show();
-        
-        // Load purchase history
-        loadPurchaseHistory(customerId);
+        const modalElement = document.getElementById('customerPurchaseHistoryModal');
+        if (modalElement) {
+            const modal = new bootstrap.Modal(modalElement);
+            modal.show();
+            
+            // Load purchase history
+            loadPurchaseHistory(customerId);
+        }
     });
 });
 
