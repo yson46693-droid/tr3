@@ -2105,7 +2105,23 @@ $filterProduct = isset($_GET['filter_product']) ? trim($_GET['filter_product']) 
         background: #0a2466;
         color: white;
     }
+
+    .barcode-container {
+        width: 100%;
+        min-height: 60px;
+        display: flex;
+        justify-content: center;
+        align-items: center;
+    }
+
+    .barcode-container svg {
+        max-width: 100%;
+        height: auto;
+    }
 </style>
+
+<!-- تحميل مكتبة JsBarcode -->
+<script src="https://cdn.jsdelivr.net/npm/jsbarcode@3.11.5/dist/JsBarcode.all.min.js"></script>
 
 <?php if (!empty($finishedProductsRows)): ?>
     <div class="grid">
@@ -2140,34 +2156,10 @@ $filterProduct = isset($_GET['filter_product']) ? trim($_GET['filter_product']) 
 
                 <div class="barcode-box">
                     <?php if ($batchNumber): ?>
-                        <div id="barcode-<?php echo htmlspecialchars(md5($batchNumber)); ?>" class="barcode-container"></div>
+                        <div class="barcode-container" data-batch="<?php echo htmlspecialchars($batchNumber); ?>">
+                            <svg class="barcode-svg" style="width: 100%; height: 50px;"></svg>
+                        </div>
                         <div class="barcode-id"><?php echo htmlspecialchars($batchNumber); ?></div>
-                        <script>
-                        (function() {
-                            var batchNum = <?php echo json_encode($batchNumber); ?>;
-                            var barcodeId = 'barcode-<?php echo htmlspecialchars(md5($batchNumber)); ?>';
-                            var container = document.getElementById(barcodeId);
-                            if (container) {
-                                if (typeof JsBarcode !== 'undefined') {
-                                    var svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
-                                    svg.setAttribute('width', '100%');
-                                    svg.setAttribute('height', '60');
-                                    container.appendChild(svg);
-                                    JsBarcode(svg, batchNum, {
-                                        format: "CODE128",
-                                        width: 2,
-                                        height: 50,
-                                        displayValue: false,
-                                        margin: 5,
-                                        background: "#ffffff",
-                                        lineColor: "#000000"
-                                    });
-                                } else {
-                                    container.innerHTML = '<div style="padding: 10px; color: #666; font-size: 12px;">' + batchNum + '</div>';
-                                }
-                            }
-                        })();
-                        </script>
                     <?php else: ?>
                         <div class="barcode-id" style="color: #999;">لا يوجد باركود</div>
                     <?php endif; ?>
@@ -2193,6 +2185,77 @@ $filterProduct = isset($_GET['filter_product']) ? trim($_GET['filter_product']) 
             </div>
         <?php endforeach; ?>
     </div>
+    
+    <!-- توليد الباركودات -->
+    <script>
+    (function() {
+        var maxRetries = 50;
+        var retryCount = 0;
+        
+        function generateAllBarcodes() {
+            if (typeof JsBarcode === 'undefined') {
+                retryCount++;
+                if (retryCount < maxRetries) {
+                    // إعادة المحاولة بعد 100ms
+                    setTimeout(generateAllBarcodes, 100);
+                } else {
+                    console.error('JsBarcode library failed to load');
+                    // عرض أرقام التشغيلة كنص بديل
+                    document.querySelectorAll('.barcode-container[data-batch]').forEach(function(container) {
+                        var batchNumber = container.getAttribute('data-batch');
+                        var svg = container.querySelector('svg');
+                        if (svg) {
+                            svg.innerHTML = '<text x="50%" y="50%" text-anchor="middle" font-size="14" fill="#666" font-family="Arial">' + batchNumber + '</text>';
+                        }
+                    });
+                }
+                return;
+            }
+            
+            // توليد الباركود لكل بطاقة
+            var containers = document.querySelectorAll('.barcode-container[data-batch]');
+            if (containers.length === 0) {
+                return;
+            }
+            
+            containers.forEach(function(container) {
+                var batchNumber = container.getAttribute('data-batch');
+                var svg = container.querySelector('svg.barcode-svg');
+                
+                if (svg && batchNumber && batchNumber.trim() !== '') {
+                    try {
+                        // مسح محتوى SVG أولاً
+                        svg.innerHTML = '';
+                        
+                        // توليد الباركود
+                        JsBarcode(svg, batchNumber, {
+                            format: "CODE128",
+                            width: 2,
+                            height: 50,
+                            displayValue: false,
+                            margin: 5,
+                            background: "#ffffff",
+                            lineColor: "#000000"
+                        });
+                    } catch (error) {
+                        console.error('Error generating barcode for ' + batchNumber + ':', error);
+                        svg.innerHTML = '<text x="50%" y="50%" text-anchor="middle" font-size="12" fill="#666" font-family="Arial">' + batchNumber + '</text>';
+                    }
+                }
+            });
+        }
+        
+        // تشغيل بعد تحميل الصفحة
+        if (document.readyState === 'loading') {
+            document.addEventListener('DOMContentLoaded', function() {
+                setTimeout(generateAllBarcodes, 200);
+            });
+        } else {
+            setTimeout(generateAllBarcodes, 200);
+        }
+    })();
+    </script>
+    
     <?php 
     // حساب عدد الصفحات الإجمالي
     $finishedProductsTotalPages = max(1, (int) ceil($finishedProductsCount / $finishedProductsPerPage));
