@@ -60,7 +60,7 @@ switch ($role) {
                 'badge' => null
             ],
             [
-                'title' => isset($lang['customers']) ? $lang['customers'] : ' عملاء الشركة',
+                'title' => ' عملاء الشركة',
                 'icon' => 'bi-people',
                 'url' => $baseUrl . 'manager.php?page=customers',
                 'active' => ($currentPage === 'manager.php' && $currentPageParam === 'customers'),
