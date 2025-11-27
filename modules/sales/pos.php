@@ -2614,6 +2614,13 @@ if (!$error) {
     refreshPaymentOptionStates();
     renderCart();
     sanitizeSummaryDisplays();
+    
+    // عرض معلومات العميل المالية عند تحميل الصفحة
+    // استخدام setTimeout لضمان تحميل جميع العناصر
+    setTimeout(function() {
+        updateCustomerBalance();
+    }, 100);
+    
     window.posDebugInfo = {
         sanitizeNumber,
         sanitizeSummaryDisplays,
