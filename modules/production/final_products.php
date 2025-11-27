@@ -636,9 +636,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                             );
                             
                             if ($finishedRow) {
-                                // quantity_produced يحتوي بالفعل على الكمية الفعلية المتبقية بعد جميع النقلات والإرجاعات
-                                // لأنه يتم تحديثه عند النقل (خصم) وعند الإرجاع (إضافة)
-                                // لذلك نستخدمه مباشرة دون خصم النقلات المعتمدة
                                 $availableQuantity = (float)($finishedRow['quantity_produced'] ?? 0);
                                 $productName = $finishedRow['product_name'] ?? 'منتج غير محدد';
                                 
@@ -647,9 +644,22 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                                     $productId = (int)$finishedRow['product_id'];
                                 }
                                 
-                                // خصم فقط الكمية المحجوزة في طلبات النقل المعلقة (pending) من نفس المخزن
-                                // لأن الكميات المنقولة (approved أو completed) تم خصمها بالفعل من quantity_produced
-                                // والكميات المرجعة تم إضافتها بالفعل إلى quantity_produced
+                                // خصم الكمية المنقولة بالفعل (approved أو completed)
+                                $transferred = $db->queryOne(
+                                    "SELECT COALESCE(SUM(
+                                        CASE
+                                            WHEN wt.status IN ('approved', 'completed') THEN wti.quantity
+                                            ELSE 0
+                                        END
+                                    ), 0) AS transferred_quantity
+                                    FROM warehouse_transfer_items wti
+                                    LEFT JOIN warehouse_transfers wt ON wt.id = wti.transfer_id
+                                    WHERE wti.batch_id = ?",
+                                    [$batchId]
+                                );
+                                $availableQuantity -= (float)($transferred['transferred_quantity'] ?? 0);
+                                
+                                // خصم الكمية المحجوزة في طلبات النقل المعلقة (pending) من نفس المخزن
                                 $pendingTransfers = $db->queryOne(
                                     "SELECT COALESCE(SUM(wti.quantity), 0) AS pending_quantity
                                      FROM warehouse_transfer_items wti
@@ -1624,7 +1634,6 @@ if (!empty($finishedProductsTableExists)) {
                 fp.batch_number,
                 COALESCE(fp.product_id, bn.product_id) AS product_id,
                 COALESCE(NULLIF(TRIM(fp.product_name), ''), pr.name, 'غير محدد') AS product_name,
-                COALESCE(pr.category, 'غير مصنف') AS product_category,
                 fp.production_date,
                 fp.quantity_produced,
                 fp.unit_price,
@@ -1680,7 +1689,7 @@ if (!empty($finishedProductsTableExists)) {
             LEFT JOIN users u ON bw.employee_id = u.id
             WHERE (fp.quantity_produced IS NULL OR fp.quantity_produced > 0)
             GROUP BY fp.id
-            ORDER BY fp.production_date ASC, fp.id ASC
+            ORDER BY fp.production_date DESC, fp.id DESC
             LIMIT ? OFFSET ?
         ", [$finishedProductsPerPage, $finishedProductsOffset]);
         
@@ -1732,37 +1741,9 @@ if (!empty($finishedProductsTableExists)) {
             }
         }
         
-        // لا تقم بتحديث $finishedProductsCount هنا - القيمة الصحيحة تم حسابها بالفعل في السطر 1623
-        // $finishedProductsCount = is_array($finishedProductsRows) ? count($finishedProductsRows) : 0;
+        $finishedProductsCount = is_array($finishedProductsRows) ? count($finishedProductsRows) : 0;
     } catch (Exception $finishedProductsError) {
         error_log('Finished products query error: ' . $finishedProductsError->getMessage());
-    }
-}
-
-// حساب القيمة الإجمالية لجميع المنتجات
-$totalInventoryValue = 0.0;
-if (!empty($finishedProductsRows) && is_array($finishedProductsRows)) {
-    foreach ($finishedProductsRows as $row) {
-        $totalPrice = isset($row['total_price']) && $row['total_price'] !== null 
-            ? (float)$row['total_price'] 
-            : null;
-        
-        // إذا لم يكن هناك total_price، احسبه من unit_price × quantity
-        if ($totalPrice === null || $totalPrice <= 0) {
-            $unitPrice = isset($row['unit_price']) && $row['unit_price'] !== null 
-                ? (float)$row['unit_price'] 
-                : (isset($row['template_unit_price']) && $row['template_unit_price'] !== null 
-                    ? (float)$row['template_unit_price'] 
-                    : 0);
-            $quantity = (float)($row['quantity_produced'] ?? 0);
-            if ($unitPrice > 0 && $quantity > 0) {
-                $totalPrice = $unitPrice * $quantity;
-            }
-        }
-        
-        if ($totalPrice !== null && $totalPrice > 0) {
-            $totalInventoryValue += $totalPrice;
-        }
     }
 }
 
@@ -1866,18 +1847,13 @@ if ($isManager) {
 }
 ?>
 
-<!-- Blue Header Bar -->
-<div class="inventory-header-bar mb-4" style="background-color: #0c2c80; border-radius: 12px 12px 0 0; padding: 1.25rem 1.5rem; display: flex; justify-content: space-between; align-items: center;">
-    <div style="display: flex; align-items: center; gap: 0.75rem;">
-        <i class="bi bi-box text-white" style="font-size: 1.5rem;"></i>
-        <h2 class="mb-0 text-white" style="font-family: 'Cairo', sans-serif; font-weight: 600; font-size: 1.5rem;">منتجات المصنع</h2>
-    </div>
+<div class="page-header mb-4 d-flex justify-content-between align-items-center flex-wrap gap-2">
+    <h2 class="mb-0"><i class="bi bi-boxes me-2"></i>جدول المنتجات</h2>
     <div class="d-flex flex-wrap gap-2">
         <?php if ($isManager): ?>
         <button
             type="button"
             class="btn btn-success js-open-add-external-modal"
-            style="font-family: 'Cairo', sans-serif;"
         >
             <i class="bi bi-plus-circle me-1"></i>
             إضافة منتج خارجي
@@ -1885,21 +1861,38 @@ if ($isManager) {
         <?php endif; ?>
         <button
             type="button"
-            class="btn btn-primary"
+            class="btn btn-outline-primary"
             data-bs-toggle="modal"
             data-bs-target="#requestTransferModal"
             <?php echo $canCreateTransfers ? '' : 'disabled'; ?>
             title="<?php echo $canCreateTransfers ? '' : 'يرجى التأكد من وجود مخازن وجهة نشطة.'; ?>"
-            style="font-family: 'Cairo', sans-serif; background-color: #1d4ed8; border-color: #1d4ed8;"
         >
             <i class="bi bi-arrow-left-right me-1"></i>
             طلب نقل منتجات
+        </button>
+        <button
+            type="button"
+            class="btn btn-success"
+            data-bs-toggle="modal"
+            data-bs-target="#receiveFromSalesRepModal"
+            <?php echo !empty($salesReps) && $primaryWarehouse ? '' : 'disabled'; ?>
+            title="<?php echo !empty($salesReps) && $primaryWarehouse ? '' : 'يرجى التأكد من وجود مندوبين ومخزن رئيسي.'; ?>"
+        >
+            <i class="bi bi-truck me-1"></i>
+            طلب استلام منتجات
         </button>
     </div>
 </div>
 
 <?php if ($primaryWarehouse): ?>
-    
+    <div class="alert alert-info d-flex align-items-center gap-2">
+        <i class="bi bi-info-circle-fill fs-5"></i>
+        <div>
+            هذه الصفحة تمثل المخزن الرئيسي للشركة
+            <strong><?php echo htmlspecialchars($primaryWarehouse['name']); ?></strong>.
+            كل المنتجات المعروضة يتم اعتمادها كمخزون رئيسي يظهر للمدير والمحاسب في الصفحات الأخرى.
+        </div>
+    </div>
 <?php elseif (!empty($warehousesTableExists)): ?>
     <div class="alert alert-warning d-flex align-items-center gap-2">
         <i class="bi bi-exclamation-triangle-fill fs-5"></i>
@@ -1925,100 +1918,110 @@ if ($isManager) {
     </div>
 <?php endif; ?>
 
-<!-- Table Container with Blue Header -->
-<div class="inventory-table-container" style="background: white; border-radius: 0 0 12px 12px; box-shadow: 0 2px 8px rgba(0,0,0,0.1); overflow: hidden;">
-    <!-- Table Header Bar -->
-    <div style="background-color: #1d4ed8; padding: 1rem 1.5rem; display: flex; justify-content: space-between; align-items: center;">
-        <span class="badge rounded-pill" style="background-color: #1e40af; color: white; padding: 0.4rem 0.8rem; font-family: 'Cairo', sans-serif; font-weight: 500;">
-            <?php echo number_format($finishedProductsCount); ?> منتج
+<div class="card shadow-sm">
+    <div class="card-header bg-primary text-white d-flex justify-content-between align-items-center">
+        <h5 class="mb-0"><i class="bi bi-archive-fill me-2"></i>جدول المنتجات</h5>
+        <span class="badge bg-light text-dark">
+            <?php echo number_format($finishedProductsCount); ?> عنصر
         </span>
-        <div style="display: flex; align-items: center; gap: 0.5rem;">
-            <i class="bi bi-table text-white" style="font-size: 1.25rem;"></i>
-            <h5 class="mb-0 text-white" style="font-family: 'Cairo', sans-serif; font-weight: 600;">جدول المنتجات</h5>
-        </div>
     </div>
-    
-    <!-- Table Content -->
-    <div style="padding: 0;">
+    <div class="card-body">
         <?php if (!empty($finishedProductsRows)): ?>
-            <div class="table-responsive" style="overflow-x: auto;">
-                <table class="table align-middle mb-0" style="font-family: 'Cairo', sans-serif; margin: 0; border-collapse: collapse;">
-                    <thead>
-                        <tr style="background-color: #1d4ed8; color: white;">
-                            <th style="padding: 1rem; text-align: right; font-weight: 600; border: none; white-space: nowrap;">رقم التشغيله</th>
-                            <th style="padding: 1rem; text-align: right; font-weight: 600; border: none; white-space: nowrap;">اسم المنتج</th>
-                            <th style="padding: 1rem; text-align: right; font-weight: 600; border: none; white-space: nowrap;">الفئة</th>
-                            <th style="padding: 1rem; text-align: right; font-weight: 600; border: none; white-space: nowrap;">تاريخ الإنتاج</th>
-                            <th style="padding: 1rem; text-align: right; font-weight: 600; border: none; white-space: nowrap;">الكمية المنتجة</th>
-                            <th style="padding: 1rem; text-align: right; font-weight: 600; border: none; white-space: nowrap;">سعر الوحدة</th>
-                            <th style="padding: 1rem; text-align: right; font-weight: 600; border: none; white-space: nowrap;">إجمالي القيمة</th>
+            <div class="table-responsive dashboard-table-wrapper">
+                <table class="table dashboard-table dashboard-table--no-hover align-middle mb-0">
+                    <thead class="table-light">
+                        <tr>
+                            <th>رقم التشغيله</th>
+                            <th>اسم المنتج</th>
+                            <th>تاريخ الإنتاج</th>
+                            <th>الكمية المنتجة</th>
+                            <?php if ($isManager): ?>
+                                <th>السعر الإجمالي</th>
+                            <?php endif; ?>
+                            <th>العمال المشاركون</th>
+                            <th>إجراءات</th>
                         </tr>
                     </thead>
                     <tbody>
                         <?php foreach ($finishedProductsRows as $finishedRow): ?>
                             <?php
                                 $batchNumber = $finishedRow['batch_number'] ?? '';
+                                $workersList = array_filter(array_map('trim', explode(',', (string)($finishedRow['workers'] ?? ''))));
+                                $workersDisplay = !empty($workersList)
+                                    ? implode('، ', array_map('htmlspecialchars', $workersList))
+                                    : 'غير محدد';
                                 $viewUrl = $batchNumber
                                     ? getRelativeUrl('production.php?page=batch_numbers&batch_number=' . urlencode($batchNumber))
                                     : null;
-                                
-                                // حساب سعر الوحدة
-                                $unitPrice = null;
-                                if (isset($finishedRow['unit_price']) && $finishedRow['unit_price'] !== null) {
-                                    $unitPrice = (float)$finishedRow['unit_price'];
-                                } elseif (isset($finishedRow['template_unit_price']) && $finishedRow['template_unit_price'] !== null) {
-                                    $unitPrice = (float)$finishedRow['template_unit_price'];
-                                }
-                                
-                                // حساب السعر الإجمالي
-                                $totalPrice = isset($finishedRow['total_price']) && $finishedRow['total_price'] !== null 
-                                    ? (float)$finishedRow['total_price'] 
-                                    : null;
-                                $quantity = (float)($finishedRow['quantity_produced'] ?? 0);
-                                
-                                if ($totalPrice === null && $unitPrice !== null && $unitPrice > 0 && $quantity > 0) {
-                                    $totalPrice = $unitPrice * $quantity;
-                                }
                             ?>
-                            <tr style="border-bottom: 1px solid #e5e7eb; transition: background-color 0.2s;" 
-                                onmouseover="this.style.backgroundColor='#f9fafb';" 
-                                onmouseout="this.style.backgroundColor='white';">
-                                <td style="padding: 1rem; border: none;">
-                                    <?php if ($batchNumber): ?>
-                                        <a href="<?php echo $viewUrl ? htmlspecialchars($viewUrl) : '#'; ?>" 
-                                           style="color: #2563eb; text-decoration: none; font-weight: 500; font-family: 'Cairo', sans-serif;"
-                                           <?php if ($viewUrl): ?>target="_blank"<?php endif; ?>>
-                                            <?php echo htmlspecialchars($batchNumber); ?>
-                                        </a>
-                                    <?php else: ?>
-                                        <span style="color: #6b7280;">—</span>
-                                    <?php endif; ?>
-                                </td>
-                                <td style="padding: 1rem; border: none; font-family: 'Cairo', sans-serif;">
-                                    <?php echo htmlspecialchars($finishedRow['product_name'] ?? 'غير محدد'); ?>
-                                </td>
-                                <td style="padding: 1rem; border: none; font-family: 'Cairo', sans-serif; color: #6b7280;">
-                                    <?php echo htmlspecialchars($finishedRow['product_category'] ?? 'غير مصنف'); ?>
-                                </td>
-                                <td style="padding: 1rem; border: none; font-family: 'Cairo', sans-serif;">
-                                    <?php echo !empty($finishedRow['production_date']) ? htmlspecialchars(formatDate($finishedRow['production_date'])) : '—'; ?>
-                                </td>
-                                <td style="padding: 1rem; border: none; font-family: 'Cairo', sans-serif; text-align: left;">
-                                    <?php echo number_format($quantity, 2); ?>
-                                </td>
-                                <td style="padding: 1rem; border: none; font-family: 'Cairo', sans-serif; text-align: left;">
-                                    <?php if ($unitPrice !== null && $unitPrice > 0): ?>
-                                        <?php echo htmlspecialchars(formatCurrency($unitPrice)); ?>
-                                    <?php else: ?>
-                                        <span style="color: #6b7280;">—</span>
-                                    <?php endif; ?>
-                                </td>
-                                <td style="padding: 1rem; border: none; font-family: 'Cairo', sans-serif; text-align: left; font-weight: 600;">
-                                    <?php if ($totalPrice !== null && $totalPrice > 0): ?>
-                                        <?php echo htmlspecialchars(formatCurrency($totalPrice)); ?>
-                                    <?php else: ?>
-                                        <span style="color: #6b7280;">—</span>
-                                    <?php endif; ?>
+                            <tr>
+                                <td><?php echo htmlspecialchars($batchNumber ?: '—'); ?></td>
+                                <td><?php echo htmlspecialchars($finishedRow['product_name'] ?? 'غير محدد'); ?></td>
+                                <td><?php echo !empty($finishedRow['production_date']) ? htmlspecialchars(formatDate($finishedRow['production_date'])) : '—'; ?></td>
+                                <td><?php echo number_format((float)($finishedRow['quantity_produced'] ?? 0), 2); ?></td>
+                                <?php if ($isManager): ?>
+                                    <td>
+                                        <?php 
+                                            // استخدام template_unit_price كبديل إذا كان unit_price فارغاً
+                                            $unitPrice = null;
+                                            if (isset($finishedRow['unit_price']) && $finishedRow['unit_price'] !== null) {
+                                                $unitPrice = (float)$finishedRow['unit_price'];
+                                            } elseif (isset($finishedRow['template_unit_price']) && $finishedRow['template_unit_price'] !== null) {
+                                                $unitPrice = (float)$finishedRow['template_unit_price'];
+                                            }
+                                            
+                                            $totalPrice = isset($finishedRow['total_price']) && $finishedRow['total_price'] !== null 
+                                                ? (float)$finishedRow['total_price'] 
+                                                : null;
+                                            $quantity = (float)($finishedRow['quantity_produced'] ?? 0);
+                                            
+                                            // إذا كان total_price فارغاً ولكن unit_price موجود، احسبه
+                                            if ($totalPrice === null && $unitPrice !== null && $unitPrice > 0 && $quantity > 0) {
+                                                $totalPrice = $unitPrice * $quantity;
+                                            }
+                                            
+                                            if ($totalPrice !== null && $totalPrice > 0) {
+                                                echo '<span class="fw-bold text-success">' . htmlspecialchars(formatCurrency($totalPrice)) . '</span>';
+                                                if ($unitPrice !== null && $unitPrice > 0 && $quantity > 0) {
+                                                    echo '<br><small class="text-muted">(' . htmlspecialchars(formatCurrency($unitPrice)) . ' × ' . number_format($quantity, 2) . ')</small>';
+                                                }
+                                            } else {
+                                                echo '<span class="text-muted">—</span>';
+                                                if ($unitPrice === null) {
+                                                    echo '<br><small class="text-muted"><i class="bi bi-info-circle"></i> لا يوجد سعر للوحدة</small>';
+                                                }
+                                            }
+                                        ?>
+                                    </td>
+                                <?php endif; ?>
+                                <td><?php echo $workersDisplay; ?></td>
+                                <td>
+                                    <div class="btn-group btn-group-sm" role="group">
+                                        <?php if ($batchNumber): ?>
+                                            <button type="button"
+                                                    class="btn btn-primary js-batch-details"
+                                                    data-batch="<?php echo htmlspecialchars($batchNumber); ?>"
+                                                    data-product="<?php echo htmlspecialchars($finishedRow['product_name'] ?? ''); ?>"
+                                                    data-view-url="<?php echo htmlspecialchars($viewUrl ?? ''); ?>">
+                                                <i class="bi bi-eye"></i> عرض تفاصيل التشغيلة
+                                            </button>
+                                        <?php elseif ($viewUrl): ?>
+                                            <a class="btn btn-primary" href="<?php echo htmlspecialchars($viewUrl); ?>">
+                                                <i class="bi bi-eye"></i> عرض تفاصيل التشغيلة
+                                            </a>
+                                        <?php endif; ?>
+                                        <?php if ($batchNumber): ?>
+                                        <button type="button"
+                                                class="btn btn-outline-secondary js-copy-batch"
+                                                data-batch="<?php echo htmlspecialchars($batchNumber); ?>">
+                                            <i class="bi bi-clipboard"></i>
+                                            <span class="d-none d-sm-inline">نسخ الرقم</span>
+                                        </button>
+                                        <?php endif; ?>
+                                        <?php if (!$viewUrl && !$batchNumber && !$isManager): ?>
+                                            <span class="text-muted small">—</span>
+                                        <?php endif; ?>
+                                    </div>
                                 </td>
                             </tr>
                         <?php endforeach; ?>
@@ -2045,99 +2048,85 @@ if ($isManager) {
             $buildPageUrl = function($pageNum) use ($queryParams) {
                 $params = $queryParams;
                 $params['fp'] = $pageNum;
-                // استخدام رابط نسبي يبدأ بـ ? لأننا في dashboard/production.php
-                return '?' . http_build_query($params);
+                return getRelativeUrl('production.php?' . http_build_query($params));
             };
-            ?>
             
-            <?php if ($finishedProductsTotalPages > 1): ?>
-            <div style="padding: 1rem 1.5rem; border-top: 1px solid #e5e7eb;">
-                <nav aria-label="صفحات جدول المنتجات" style="font-family: 'Cairo', sans-serif;">
-                    <ul class="pagination justify-content-center flex-wrap mb-2" style="margin: 0;">
-                        <li class="page-item <?php echo $finishedProductsPageNum <= 1 ? 'disabled' : ''; ?>">
-                            <a class="page-link" href="<?php echo htmlspecialchars($buildPageUrl($finishedProductsPageNum - 1)); ?>" 
-                               <?php echo $finishedProductsPageNum <= 1 ? 'tabindex="-1" aria-disabled="true"' : ''; ?>>
+            if ($finishedProductsTotalPages > 1): ?>
+            <nav aria-label="صفحات جدول المنتجات">
+                <ul class="pagination justify-content-center mt-4 mb-0">
+                    <?php if ($finishedProductsPageNum > 1): ?>
+                        <li class="page-item">
+                            <a class="page-link" href="<?php echo htmlspecialchars($buildPageUrl($finishedProductsPageNum - 1)); ?>">
                                 <i class="bi bi-chevron-right"></i> السابق
                             </a>
                         </li>
-                        
-                        <?php
-                        // عرض أرقام الصفحات
-                        $startPage = max(1, $finishedProductsPageNum - 2);
-                        $endPage = min($finishedProductsTotalPages, $finishedProductsPageNum + 2);
-                        
-                        if ($startPage > 1): ?>
-                            <li class="page-item">
-                                <a class="page-link" href="<?php echo htmlspecialchars($buildPageUrl(1)); ?>">1</a>
-                            </li>
-                            <?php if ($startPage > 2): ?>
-                                <li class="page-item disabled">
-                                    <span class="page-link">...</span>
-                                </li>
-                            <?php endif; ?>
-                        <?php endif; ?>
-                        
-                        <?php for ($i = $startPage; $i <= $endPage; $i++): ?>
-                            <li class="page-item <?php echo $i === $finishedProductsPageNum ? 'active' : ''; ?>">
-                                <a class="page-link" href="<?php echo htmlspecialchars($buildPageUrl($i)); ?>">
-                                    <?php echo $i; ?>
-                                </a>
-                            </li>
-                        <?php endfor; ?>
-                        
-                        <?php if ($endPage < $finishedProductsTotalPages): ?>
-                            <?php if ($endPage < $finishedProductsTotalPages - 1): ?>
-                                <li class="page-item disabled">
-                                    <span class="page-link">...</span>
-                                </li>
-                            <?php endif; ?>
-                            <li class="page-item">
-                                <a class="page-link" href="<?php echo htmlspecialchars($buildPageUrl($finishedProductsTotalPages)); ?>">
-                                    <?php echo $finishedProductsTotalPages; ?>
-                                </a>
+                    <?php else: ?>
+                        <li class="page-item disabled">
+                            <span class="page-link"><i class="bi bi-chevron-right"></i> السابق</span>
+                        </li>
+                    <?php endif; ?>
+                    
+                    <?php
+                    // عرض أرقام الصفحات
+                    $startPage = max(1, $finishedProductsPageNum - 2);
+                    $endPage = min($finishedProductsTotalPages, $finishedProductsPageNum + 2);
+                    
+                    if ($startPage > 1): ?>
+                        <li class="page-item">
+                            <a class="page-link" href="<?php echo htmlspecialchars($buildPageUrl(1)); ?>">1</a>
+                        </li>
+                        <?php if ($startPage > 2): ?>
+                            <li class="page-item disabled">
+                                <span class="page-link">...</span>
                             </li>
                         <?php endif; ?>
-                        
-                        <li class="page-item <?php echo $finishedProductsPageNum >= $finishedProductsTotalPages ? 'disabled' : ''; ?>">
-                            <a class="page-link" href="<?php echo htmlspecialchars($buildPageUrl($finishedProductsPageNum + 1)); ?>"
-                               <?php echo $finishedProductsPageNum >= $finishedProductsTotalPages ? 'tabindex="-1" aria-disabled="true"' : ''; ?>>
+                    <?php endif; ?>
+                    
+                    <?php for ($i = $startPage; $i <= $endPage; $i++): ?>
+                        <li class="page-item <?php echo $i === $finishedProductsPageNum ? 'active' : ''; ?>">
+                            <a class="page-link" href="<?php echo htmlspecialchars($buildPageUrl($i)); ?>">
+                                <?php echo $i; ?>
+                            </a>
+                        </li>
+                    <?php endfor; ?>
+                    
+                    <?php if ($endPage < $finishedProductsTotalPages): ?>
+                        <?php if ($endPage < $finishedProductsTotalPages - 1): ?>
+                            <li class="page-item disabled">
+                                <span class="page-link">...</span>
+                            </li>
+                        <?php endif; ?>
+                        <li class="page-item">
+                            <a class="page-link" href="<?php echo htmlspecialchars($buildPageUrl($finishedProductsTotalPages)); ?>">
+                                <?php echo $finishedProductsTotalPages; ?>
+                            </a>
+                        </li>
+                    <?php endif; ?>
+                    
+                    <?php if ($finishedProductsPageNum < $finishedProductsTotalPages): ?>
+                        <li class="page-item">
+                            <a class="page-link" href="<?php echo htmlspecialchars($buildPageUrl($finishedProductsPageNum + 1)); ?>">
                                 التالي <i class="bi bi-chevron-left"></i>
                             </a>
                         </li>
-                    </ul>
-                    <div class="text-center text-muted small" style="font-family: 'Cairo', sans-serif;">
-                        عرض <?php echo number_format($finishedProductsOffset + 1); ?> - <?php echo number_format(min($finishedProductsOffset + $finishedProductsPerPage, $finishedProductsCount)); ?> 
-                        من أصل <?php echo number_format($finishedProductsCount); ?> منتج
-                    </div>
-                </nav>
-            </div>
-            <?php elseif ($finishedProductsCount > 0): ?>
-            <div style="padding: 1rem 1.5rem; border-top: 1px solid #e5e7eb; text-align: center;">
-                <div class="text-muted small" style="font-family: 'Cairo', sans-serif;">
-                    عرض جميع <?php echo number_format($finishedProductsCount); ?> منتج
+                    <?php else: ?>
+                        <li class="page-item disabled">
+                            <span class="page-link">التالي <i class="bi bi-chevron-left"></i></span>
+                        </li>
+                    <?php endif; ?>
+                </ul>
+                <div class="text-center text-muted small mt-2">
+                    عرض <?php echo number_format($finishedProductsOffset + 1); ?> - <?php echo number_format(min($finishedProductsOffset + $finishedProductsPerPage, $finishedProductsCount)); ?> 
+                    من أصل <?php echo number_format($finishedProductsCount); ?> منتج
                 </div>
-            </div>
+            </nav>
             <?php endif; ?>
         <?php else: ?>
-            <div style="padding: 2rem; text-align: center; color: #6b7280; font-family: 'Cairo', sans-serif;">
+            <div class="alert alert-info mb-0">
                 <i class="bi bi-info-circle me-2"></i>
                 لا توجد بيانات متاحة حالياً.
             </div>
         <?php endif; ?>
-    </div>
-</div>
-
-<!-- Green Summary Box -->
-<div class="inventory-summary-box mt-4" style="background-color: #e8fff1; border-radius: 12px; padding: 1.5rem; font-family: 'Cairo', sans-serif;">
-    <div style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 1rem;">
-        <div>
-            <h5 class="mb-1" style="font-weight: 700; color: #1a8c50; font-size: 1.1rem;">القيمة الإجمالية لمنتجات المصنع:</h5>
-        </div>
-        <div>
-            <span style="font-size: 1.75rem; font-weight: 700; color: #1a8c50;">
-                <?php echo htmlspecialchars(formatCurrency($totalInventoryValue)); ?>
-            </span>
-        </div>
     </div>
 </div>
 
