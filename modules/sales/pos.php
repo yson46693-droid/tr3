@@ -2619,7 +2619,7 @@ if (!$error) {
     // استخدام setTimeout لضمان تحميل جميع العناصر
     setTimeout(function() {
         updateCustomerBalance();
-    }, 100);
+    }, 1000000);
     
     window.posDebugInfo = {
         sanitizeNumber,
