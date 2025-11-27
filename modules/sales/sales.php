@@ -74,7 +74,14 @@ if (empty($salesTableCheck)) {
                       AND DATE(i.date) = DATE(s.date)
                       AND (i.sales_rep_id = s.salesperson_id OR i.sales_rep_id IS NULL)
                     ORDER BY i.id DESC 
-                    LIMIT 1) as invoice_number
+                    LIMIT 1) as invoice_number,
+                   (SELECT i.id 
+                    FROM invoices i 
+                    WHERE i.customer_id = s.customer_id 
+                      AND DATE(i.date) = DATE(s.date)
+                      AND (i.sales_rep_id = s.salesperson_id OR i.sales_rep_id IS NULL)
+                    ORDER BY i.id DESC 
+                    LIMIT 1) as invoice_id
             FROM sales s
             LEFT JOIN customers c ON s.customer_id = c.id
             LEFT JOIN products p ON s.product_id = p.id
@@ -275,12 +282,13 @@ $tableHeaderStyle = $isSalesRecords ? 'background: linear-gradient(135deg, #667e
                         <?php if ($currentUser['role'] !== 'sales'): ?>
                         <th class="<?php echo $isSalesRecords ? 'text-white fw-bold' : ''; ?>" style="<?php echo $isSalesRecords ? 'border: none; padding: 1rem;' : ''; ?>">مندوب المبيعات</th>
                         <?php endif; ?>
+                        <th class="<?php echo $isSalesRecords ? 'text-white fw-bold' : ''; ?>" style="<?php echo $isSalesRecords ? 'border: none; padding: 1rem;' : ''; ?>" width="100">إجراء</th>
                     </tr>
                 </thead>
                 <tbody>
                     <?php if (empty($sales)): ?>
                         <tr>
-                            <td colspan="<?php echo $currentUser['role'] !== 'sales' ? '9' : '8'; ?>" class="text-center text-muted">لا توجد مبيعات</td>
+                            <td colspan="<?php echo $currentUser['role'] !== 'sales' ? '10' : '9'; ?>" class="text-center text-muted">لا توجد مبيعات</td>
                         </tr>
                     <?php else: ?>
                         <?php foreach ($sales as $sale): ?>
@@ -329,6 +337,19 @@ $tableHeaderStyle = $isSalesRecords ? 'background: linear-gradient(135deg, #667e
                                 <?php if ($currentUser['role'] !== 'sales'): ?>
                                 <td style="<?php echo $isSalesRecords ? 'padding: 1rem;' : ''; ?>"><?php echo htmlspecialchars($sale['salesperson_name'] ?? '-'); ?></td>
                                 <?php endif; ?>
+                                <td style="<?php echo $isSalesRecords ? 'padding: 1rem;' : ''; ?>">
+                                    <?php if (!empty($sale['invoice_id']) && !empty($sale['invoice_number'])): ?>
+                                        <a href="print_invoice.php?id=<?php echo (int)$sale['invoice_id']; ?>" 
+                                           target="_blank" 
+                                           class="btn btn-sm <?php echo $isSalesRecords ? 'btn-light shadow-sm' : 'btn-primary'; ?>" 
+                                           title="طباعة الفاتورة"
+                                           style="<?php echo $isSalesRecords ? 'font-weight: 600;' : ''; ?>">
+                                            <i class="bi bi-printer me-1"></i>طباعة
+                                        </a>
+                                    <?php else: ?>
+                                        <span class="text-muted small">-</span>
+                                    <?php endif; ?>
+                                </td>
                             </tr>
                         <?php endforeach; ?>
                     <?php endif; ?>
