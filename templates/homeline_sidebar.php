@@ -139,7 +139,7 @@ switch ($role) {
                 'badge' => null
             ],
             [
-                'title' => 'قوالب المنتجات',
+                'title' => 'قوالب  و وصفات المنتجات',
                 'icon' => 'bi-file-earmark-text',
                 'url' => $baseUrl . 'manager.php?page=product_templates',
                 'active' => ($currentPage === 'manager.php' && $currentPageParam === 'product_templates'),

@@ -44,8 +44,8 @@ $baseUrl = getDashboardUrl();
             </li>
 
             <li class="nav-item">
-                <a class="nav-link <?php echo (isset($_GET['page']) && $_GET['page'] === 'product_specifications') ? 'active' : ''; ?>"
-                   href="<?php echo $baseUrl; ?>manager.php?page=product_specifications">
+                <a class="nav-link <?php echo (isset($_GET['page']) && $_GET['page'] === 'product_templates' && isset($_GET['section']) && $_GET['section'] === 'specifications') ? 'active' : ''; ?>"
+                   href="<?php echo $baseUrl; ?>manager.php?page=product_templates&section=specifications">
                     <i class="bi bi-file-text"></i>
                     <span>مواصفات المنتجات</span>
                 </a>

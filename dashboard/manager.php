@@ -879,12 +879,9 @@ $pageTitle = isset($lang['manager_dashboard']) ? $lang['manager_dashboard'] : '�
                 
             <?php elseif ($page === 'product_specifications'): ?>
                 <?php 
-                $modulePath = __DIR__ . '/../modules/manager/product_specifications.php';
-                if (file_exists($modulePath)) {
-                    include $modulePath;
-                } else {
-                    echo '<div class="alert alert-warning">صفحة مواصفات المنتجات غير متاحة حالياً</div>';
-                }
+                // إعادة توجيه إلى صفحة قوالب المنتجات مع قسم المواصفات
+                header('Location: ' . getRelativeUrl('dashboard/manager.php?page=product_templates&section=specifications'));
+                exit;
                 ?>
                 
             <?php elseif ($page === 'import_packaging'): ?>

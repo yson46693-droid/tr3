@@ -1269,8 +1269,28 @@ sort($rawMaterialsForTemplate);
 
 require_once __DIR__ . '/../../includes/lang/' . getCurrentLanguage() . '.php';
 $lang = isset($translations) ? $translations : [];
+
+// تحديد القسم الحالي (templates أو specifications)
+$currentSection = isset($_GET['section']) ? $_GET['section'] : 'templates';
+$baseUrl = getRelativeUrl('dashboard/manager.php?page=product_templates');
 ?>
 
+<!-- أزرار التنقل بين الأقسام -->
+<div class="section-navigation mb-4">
+    <div class="btn-group" role="group" aria-label="Navigation between sections">
+        <a href="<?php echo $baseUrl; ?>&section=templates" 
+           class="btn <?php echo $currentSection === 'templates' ? 'btn-primary' : 'btn-outline-primary'; ?>">
+            <i class="bi bi-file-earmark-text me-2"></i>قوالب المنتجات
+        </a>
+        <a href="<?php echo $baseUrl; ?>&section=specifications" 
+           class="btn <?php echo $currentSection === 'specifications' ? 'btn-primary' : 'btn-outline-primary'; ?>">
+            <i class="bi bi-journal-text me-2"></i>مواصفات المنتجات
+        </a>
+    </div>
+</div>
+
+<?php if ($currentSection === 'templates'): ?>
+<!-- قسم قوالب المنتجات -->
 <div class="page-header mb-4 d-flex justify-content-between align-items-center flex-wrap">
     <h2 class="mb-0"><i class="bi bi-file-earmark-text me-2"></i>قوالب المنتجات</h2>
     <button class="btn btn-primary" data-bs-toggle="modal" data-bs-target="#createTemplateModal">
@@ -1558,6 +1578,31 @@ $lang = isset($translations) ? $translations : [];
             </div>
         <?php endforeach; ?>
     </div>
+<?php endif; ?>
+
+<?php elseif ($currentSection === 'specifications'): ?>
+<!-- قسم مواصفات المنتجات -->
+<?php
+// تحميل محتوى صفحة مواصفات المنتجات
+$specificationsModulePath = __DIR__ . '/../manager/product_specifications.php';
+if (file_exists($specificationsModulePath)) {
+    // تعيين redirect URL للقسم الصحيح
+    $specificationsRedirectUrl = getRelativeUrl('dashboard/manager.php?page=product_templates&section=specifications');
+    
+    // بدء output buffering لالتقاط المحتوى
+    ob_start();
+    include $specificationsModulePath;
+    $specificationsContent = ob_get_clean();
+    
+    // إزالة رأس الصفحة (page-header) من المحتوى
+    $specificationsContent = preg_replace('/<div class="page-header[^"]*"[^>]*>.*?<\/div>\s*<\/div>/s', '', $specificationsContent);
+    $specificationsContent = preg_replace('/<div class="page-header[^>]*>.*?<\/div>/s', '', $specificationsContent);
+    
+    echo $specificationsContent;
+} else {
+    echo '<div class="alert alert-warning">صفحة مواصفات المنتجات غير متاحة حالياً</div>';
+}
+?>
 <?php endif; ?>
 
 <style>
