@@ -36,11 +36,12 @@ if (!in_array($section, $allowedSections, true)) {
 $dashboardScript = basename($_SERVER['PHP_SELF'] ?? 'manager.php');
 $basePageUrl = getRelativeUrl($dashboardScript . '?page=customers');
 
-// معالجة update_location (AJAX فقط)
+// معالجة update_location (AJAX فقط - فقط لصفحة customers)
 if ($_SERVER['REQUEST_METHOD'] === 'POST' 
     && isset($_POST['action']) 
     && trim($_POST['action']) === 'update_location'
-    && ($section === 'company' || isset($_GET['section']) && $_GET['section'] === 'company')) {
+    && isset($_GET['page']) 
+    && $_GET['page'] === 'customers') {
     
     // التأكد من أن الطلب AJAX
     $isAjaxRequest = (
@@ -48,10 +49,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST'
         (isset($_SERVER['HTTP_ACCEPT']) && stripos($_SERVER['HTTP_ACCEPT'], 'application/json') !== false)
     );
     
-    if (!$isAjaxRequest) {
-        // إذا لم يكن AJAX، تجاهل الطلب وتابع التحميل العادي
-        // لا نخرج هنا لأن هذا قد يكون طلب POST عادي
-    } else {
+    if ($isAjaxRequest) {
         // تنظيف أي output سابق بشكل كامل
         while (ob_get_level() > 0) {
             ob_end_clean();
@@ -61,95 +59,95 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST'
         header('Cache-Control: no-cache, must-revalidate');
         header('Expires: Mon, 26 Jul 1997 05:00:00 GMT');
 
-    $customerId = isset($_POST['customer_id']) ? (int)$_POST['customer_id'] : 0;
-    $latitude = $_POST['latitude'] ?? null;
-    $longitude = $_POST['longitude'] ?? null;
+        $customerId = isset($_POST['customer_id']) ? (int)$_POST['customer_id'] : 0;
+        $latitude = $_POST['latitude'] ?? null;
+        $longitude = $_POST['longitude'] ?? null;
 
-    if ($customerId <= 0 || $latitude === null || $longitude === null) {
-        echo json_encode([
-            'success' => false,
-            'message' => 'بيانات الموقع غير مكتملة.',
-        ], JSON_UNESCAPED_UNICODE);
-        exit;
-    }
-
-    if (!is_numeric($latitude) || !is_numeric($longitude)) {
-        echo json_encode([
-            'success' => false,
-            'message' => 'إحداثيات الموقع غير صالحة.',
-        ], JSON_UNESCAPED_UNICODE);
-        exit;
-    }
-
-    $latitude = (float)$latitude;
-    $longitude = (float)$longitude;
-
-    if ($latitude < -90 || $latitude > 90 || $longitude < -180 || $longitude > 180) {
-        echo json_encode([
-            'success' => false,
-            'message' => 'إحداثيات الموقع خارج النطاق المسموح.',
-        ], JSON_UNESCAPED_UNICODE);
-        exit;
-    }
-
-    try {
-        // التأكد من وجود الأعمدة
-        $latitudeColumn = $db->queryOne("SHOW COLUMNS FROM customers LIKE 'latitude'");
-        if (empty($latitudeColumn)) {
-            $db->execute("ALTER TABLE customers ADD COLUMN latitude DECIMAL(10, 8) NULL AFTER address");
-        }
-        $longitudeColumn = $db->queryOne("SHOW COLUMNS FROM customers LIKE 'longitude'");
-        if (empty($longitudeColumn)) {
-            $db->execute("ALTER TABLE customers ADD COLUMN longitude DECIMAL(11, 8) NULL AFTER latitude");
-        }
-        $locationCapturedColumn = $db->queryOne("SHOW COLUMNS FROM customers LIKE 'location_captured_at'");
-        if (empty($locationCapturedColumn)) {
-            $db->execute("ALTER TABLE customers ADD COLUMN location_captured_at TIMESTAMP NULL AFTER longitude");
+        if ($customerId <= 0 || $latitude === null || $longitude === null) {
+            echo json_encode([
+                'success' => false,
+                'message' => 'بيانات الموقع غير مكتملة.',
+            ], JSON_UNESCAPED_UNICODE);
+            exit;
         }
 
-        // التحقق من وجود العميل
-        $customer = $db->queryOne("SELECT id FROM customers WHERE id = ?", [$customerId]);
-        if (!$customer) {
-            throw new InvalidArgumentException('العميل غير موجود.');
+        if (!is_numeric($latitude) || !is_numeric($longitude)) {
+            echo json_encode([
+                'success' => false,
+                'message' => 'إحداثيات الموقع غير صالحة.',
+            ], JSON_UNESCAPED_UNICODE);
+            exit;
         }
 
-        // تحديث الموقع
-        $db->execute(
-            "UPDATE customers SET latitude = ?, longitude = ?, location_captured_at = NOW() WHERE id = ?",
-            [$latitude, $longitude, $customerId]
-        );
+        $latitude = (float)$latitude;
+        $longitude = (float)$longitude;
 
-        logAudit(
-            $currentUser['id'],
-            'update_customer_location',
-            'customer',
-            $customerId,
-            null,
-            [
-                'latitude' => $latitude,
-                'longitude' => $longitude,
-            ]
-        );
+        if ($latitude < -90 || $latitude > 90 || $longitude < -180 || $longitude > 180) {
+            echo json_encode([
+                'success' => false,
+                'message' => 'إحداثيات الموقع خارج النطاق المسموح.',
+            ], JSON_UNESCAPED_UNICODE);
+            exit;
+        }
 
-        echo json_encode([
-            'success' => true,
-            'message' => 'تم تحديث موقع العميل بنجاح.',
-        ], JSON_UNESCAPED_UNICODE);
-        exit;
-    } catch (InvalidArgumentException $invalidLocation) {
-        echo json_encode([
-            'success' => false,
-            'message' => $invalidLocation->getMessage(),
-        ], JSON_UNESCAPED_UNICODE);
-        exit;
-    } catch (Throwable $updateLocationError) {
-        error_log('Update customer location error: ' . $updateLocationError->getMessage());
-        echo json_encode([
-            'success' => false,
-            'message' => 'حدث خطأ أثناء تحديث الموقع.',
-        ], JSON_UNESCAPED_UNICODE);
-        exit;
-    }
+        try {
+            // التأكد من وجود الأعمدة
+            $latitudeColumn = $db->queryOne("SHOW COLUMNS FROM customers LIKE 'latitude'");
+            if (empty($latitudeColumn)) {
+                $db->execute("ALTER TABLE customers ADD COLUMN latitude DECIMAL(10, 8) NULL AFTER address");
+            }
+            $longitudeColumn = $db->queryOne("SHOW COLUMNS FROM customers LIKE 'longitude'");
+            if (empty($longitudeColumn)) {
+                $db->execute("ALTER TABLE customers ADD COLUMN longitude DECIMAL(11, 8) NULL AFTER latitude");
+            }
+            $locationCapturedColumn = $db->queryOne("SHOW COLUMNS FROM customers LIKE 'location_captured_at'");
+            if (empty($locationCapturedColumn)) {
+                $db->execute("ALTER TABLE customers ADD COLUMN location_captured_at TIMESTAMP NULL AFTER longitude");
+            }
+
+            // التحقق من وجود العميل
+            $customer = $db->queryOne("SELECT id FROM customers WHERE id = ?", [$customerId]);
+            if (!$customer) {
+                throw new InvalidArgumentException('العميل غير موجود.');
+            }
+
+            // تحديث الموقع
+            $db->execute(
+                "UPDATE customers SET latitude = ?, longitude = ?, location_captured_at = NOW() WHERE id = ?",
+                [$latitude, $longitude, $customerId]
+            );
+
+            logAudit(
+                $currentUser['id'],
+                'update_customer_location',
+                'customer',
+                $customerId,
+                null,
+                [
+                    'latitude' => $latitude,
+                    'longitude' => $longitude,
+                ]
+            );
+
+            echo json_encode([
+                'success' => true,
+                'message' => 'تم تحديث موقع العميل بنجاح.',
+            ], JSON_UNESCAPED_UNICODE);
+            exit;
+        } catch (InvalidArgumentException $invalidLocation) {
+            echo json_encode([
+                'success' => false,
+                'message' => $invalidLocation->getMessage(),
+            ], JSON_UNESCAPED_UNICODE);
+            exit;
+        } catch (Throwable $updateLocationError) {
+            error_log('Update customer location error: ' . $updateLocationError->getMessage());
+            echo json_encode([
+                'success' => false,
+                'message' => 'حدث خطأ أثناء تحديث الموقع.',
+            ], JSON_UNESCAPED_UNICODE);
+            exit;
+        }
     }
 }
 
