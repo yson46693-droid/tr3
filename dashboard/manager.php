@@ -830,6 +830,17 @@ $pageTitle = isset($lang['manager_dashboard']) ? $lang['manager_dashboard'] : '�
                 }
                 ?>
                 
+            <?php elseif ($page === 'company_cash'): ?>
+                <!-- صفحة خزنة الشركة -->
+                <?php 
+                $modulePath = __DIR__ . '/../modules/manager/company_cash.php';
+                if (file_exists($modulePath)) {
+                    include $modulePath;
+                } else {
+                    echo '<div class="alert alert-warning">صفحة خزنة الشركة غير متاحة حالياً</div>';
+                }
+                ?>
+                
             <?php elseif ($page === 'shipping_orders'): ?>
                 <!-- صفحة طلبات شركات الشحن -->
                 <?php 

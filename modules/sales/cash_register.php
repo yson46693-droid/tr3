@@ -530,7 +530,7 @@ $salesRepInfo = $db->queryOne(
             <div class="glass-card">
                 <div class="glass-card-header">
                     <i class="bi bi-exclamation-triangle-fill glass-card-orange"></i>
-                    <h6 class="mb-0 fw-semibold">المبيعات المعلقة (يشمل الديون اليدوية)</h6>
+                    <h6 class="mb-0 fw-semibold">المبيعات المعلقة (يشمل الديون القديمه)</h6>
                 </div>
                 <div class="glass-card-body">
                     <p class="glass-card-value glass-card-orange mb-0">- <?php echo formatCurrency($pendingSales); ?></p>
