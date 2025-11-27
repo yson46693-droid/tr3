@@ -1866,14 +1866,7 @@ if ($isManager) {
 </div>
 
 <?php if ($primaryWarehouse): ?>
-    <div class="alert alert-info d-flex align-items-center gap-2">
-        <i class="bi bi-info-circle-fill fs-5"></i>
-        <div>
-            هذه الصفحة تمثل المخزن الرئيسي للشركة
-            <strong><?php echo htmlspecialchars($primaryWarehouse['name']); ?></strong>.
-            كل المنتجات المعروضة يتم اعتمادها كمخزون رئيسي يظهر للمدير والمحاسب في الصفحات الأخرى.
-        </div>
-    </div>
+    
 <?php elseif (!empty($warehousesTableExists)): ?>
     <div class="alert alert-warning d-flex align-items-center gap-2">
         <i class="bi bi-exclamation-triangle-fill fs-5"></i>
