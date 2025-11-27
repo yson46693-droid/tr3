@@ -358,9 +358,14 @@ renderRepresentativeCards($representatives, [
 ?>
 
 <style>
+.representative-card-link {
+    display: block;
+    cursor: pointer;
+}
 .representative-card {
     border-radius: 18px;
     transition: transform 0.2s ease, box-shadow 0.2s ease;
+    cursor: pointer;
 }
 .representative-card:hover {
     transform: translateY(-4px);
