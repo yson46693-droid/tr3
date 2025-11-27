@@ -113,7 +113,7 @@ if (!function_exists('renderRepresentativeCards')) {
                                         <?php endif; ?>
                                     </div>
                                     <div class="text-end">
-                                        <span class="btn btn-outline-primary btn-sm" style="pointer-events: none;">
+                                        <span class="btn btn-outline-primary btn-sm">
                                             <i class="bi bi-people-fill me-1"></i>
                                             عرض العملاء
                                         </span>

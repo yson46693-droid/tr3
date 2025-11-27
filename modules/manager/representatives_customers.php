@@ -384,8 +384,11 @@ if ($error): ?>
 </div>
 
 <?php
+// بناء الرابط بشكل صحيح
+$baseUrl = getRelativeUrl($dashboardScript);
+$viewBaseUrl = $baseUrl . (strpos($baseUrl, '?') !== false ? '&' : '?') . 'page=rep_customers_view';
 renderRepresentativeCards($representatives, [
-    'view_base_url' => getRelativeUrl($dashboardScript . '?page=rep_customers_view'),
+    'view_base_url' => $viewBaseUrl,
 ]);
 ?>
 
