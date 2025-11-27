@@ -36,13 +36,22 @@ if (
     
     // التأكد من عدم وجود أي output سابق
     if (headers_sent($file, $line)) {
-        error_log("Headers already sent in $file at line $line");
-        // إذا تم إرسال headers بالفعل، نحاول إرسال JSON على أي حال
+        error_log("Representatives customers: Headers already sent in $file at line $line");
+        // إذا تم إرسال headers بالفعل، نحاول تنظيف output وإرسال JSON
+        while (ob_get_level() > 0) {
+            ob_end_clean();
+        }
     }
     
-    header('Content-Type: application/json; charset=utf-8');
-    header('Cache-Control: no-cache, must-revalidate');
-    header('Expires: Mon, 26 Jul 1997 05:00:00 GMT');
+    // إرسال headers
+    if (!headers_sent()) {
+        header('Content-Type: application/json; charset=utf-8');
+        header('Cache-Control: no-cache, must-revalidate');
+        header('Expires: Mon, 26 Jul 1997 05:00:00 GMT');
+    } else {
+        // إذا تم إرسال headers بالفعل، نحاول إرسال JSON على أي حال
+        http_response_code(200);
+    }
 
     $customerId = isset($_GET['customer_id']) ? (int)$_GET['customer_id'] : 0;
     if ($customerId <= 0) {
@@ -54,7 +63,10 @@ if (
     }
 
     try {
+        // منع أي output من require_once
+        ob_start();
         require_once __DIR__ . '/../../includes/customer_history.php';
+        ob_end_clean();
         
         $historyPayload = customerHistoryGetHistory($customerId);
         
@@ -108,11 +120,26 @@ if (
             $historyPayload['history']['exchanges'] = [];
         }
         
+        // التأكد من عدم وجود أي output قبل إرسال JSON
+        while (ob_get_level() > 0) {
+            ob_end_clean();
+        }
+        
         echo json_encode($historyPayload, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
         exit;
     } catch (Throwable $historyError) {
+        // تنظيف أي output قبل إرسال JSON
+        while (ob_get_level() > 0) {
+            ob_end_clean();
+        }
+        
         error_log('Representatives customers purchase history error: ' . $historyError->getMessage());
         error_log('Stack trace: ' . $historyError->getTraceAsString());
+        
+        if (!headers_sent()) {
+            header('Content-Type: application/json; charset=utf-8');
+        }
+        
         echo json_encode([
             'success' => false,
             'message' => 'حدث خطأ أثناء تحميل سجل المشتريات: ' . $historyError->getMessage()
