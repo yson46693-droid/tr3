@@ -669,10 +669,12 @@ function loadRepDetails(repId, repName) {
     if (loadingEl) loadingEl.style.display = 'block';
     if (contentEl) contentEl.style.display = 'none';
     
+    // تعريف baseUrl لاستخدامه في الدالة
+    const baseUrl = '<?php echo getRelativeUrl($dashboardScript); ?>';
+    
     // تحديث رابط عرض جميع العملاء
     const viewCustomersLink = document.getElementById('repViewCustomersLink');
     if (viewCustomersLink) {
-        const baseUrl = '<?php echo getRelativeUrl($dashboardScript); ?>';
         viewCustomersLink.href = baseUrl + (baseUrl.includes('?') ? '&' : '?') + 'page=rep_customers_view&rep_id=' + repId;
     }
     
