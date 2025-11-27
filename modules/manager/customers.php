@@ -284,11 +284,11 @@ if ($section === 'representatives') {
                 u.status,
                 u.last_login_at,
                 u.profile_image,
-                COUNT(c.id) AS customer_count,
+                COUNT(DISTINCT c.id) AS customer_count,
                 COALESCE(SUM(CASE WHEN c.balance > 0 THEN c.balance ELSE 0 END), 0) AS total_debt,
                 COALESCE(SUM(CASE WHEN c.balance > 0 THEN 1 ELSE 0 END), 0) AS debtor_count
             FROM users u
-            LEFT JOIN customers c ON c.rep_id = u.id
+            LEFT JOIN customers c ON (c.rep_id = u.id OR c.created_by = u.id)
             WHERE u.role = 'sales'
             GROUP BY u.id, u.full_name, u.username, u.phone, u.email, u.status, u.last_login_at, u.profile_image
             ORDER BY customer_count DESC, u.full_name ASC"
