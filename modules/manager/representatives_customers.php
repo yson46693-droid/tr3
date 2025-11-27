@@ -707,6 +707,7 @@ function loadRepDetails(repId, repName) {
                                 class="btn btn-sm btn-outline-info rep-location-view-btn"
                                 data-latitude="${latValue.toFixed(8)}"
                                 data-longitude="${lngValue.toFixed(8)}"
+                                data-customer-name="${escapeHtml(customer.name || '—')}"
                                 title="عرض الموقع على الخريطة"
                             >
                                 <i class="bi bi-map me-1"></i>عرض
@@ -855,7 +856,7 @@ function formatDate(dateString) {
     });
 }
 
-// تهيئة modal التحصيل
+    // تهيئة modal التحصيل
 document.addEventListener('DOMContentLoaded', function() {
     const repCollectModal = document.getElementById('repCollectPaymentModal');
     if (repCollectModal) {
@@ -874,7 +875,7 @@ document.addEventListener('DOMContentLoaded', function() {
                 const customerName = triggerButton.getAttribute('data-customer-name') || '-';
                 const balanceRaw = triggerButton.getAttribute('data-customer-balance') || '0';
                 const balanceFormatted = triggerButton.getAttribute('data-customer-balance-formatted') || balanceRaw;
-                const numericBalance = parseFloat(balanceRaw);
+                let numericBalance = parseFloat(balanceRaw);
                 if (!Number.isFinite(numericBalance)) {
                     numericBalance = 0;
                 }
@@ -906,46 +907,181 @@ document.addEventListener('DOMContentLoaded', function() {
             });
         }
     }
+    
+    // معالجة أزرار التحصيل لمنع propagation
+    document.addEventListener('click', function(e) {
+        if (e.target.closest('.rep-collect-btn')) {
+            const button = e.target.closest('.rep-collect-btn');
+            if (button.hasAttribute('disabled')) {
+                e.preventDefault();
+                e.stopPropagation();
+                return;
+            }
+            // السماح للـ Bootstrap modal بالعمل بشكل طبيعي
+        }
+    });
 
     // معالجة أزرار سجل المشتريات (delegation للعناصر الديناميكية)
     document.addEventListener('click', function(e) {
         if (e.target.closest('.rep-history-btn.js-customer-history')) {
+            e.preventDefault();
+            e.stopPropagation();
             const button = e.target.closest('.rep-history-btn.js-customer-history');
             const customerId = button.getAttribute('data-customer-id');
             const customerName = button.getAttribute('data-customer-name') || '-';
             
-            // فتح صفحة سجل المشتريات في نافذة جديدة أو redirect
-            const baseUrl = '<?php echo getRelativeUrl($dashboardScript); ?>';
-            const historyUrl = baseUrl + (baseUrl.includes('?') ? '&' : '?') + 'page=customers&section=company&action=purchase_history&customer_id=' + encodeURIComponent(customerId);
-            window.open(historyUrl, '_blank');
+            const historyModal = document.getElementById('repCustomerHistoryModal');
+            if (historyModal) {
+                const nameElement = historyModal.querySelector('.rep-history-customer-name');
+                const loadingElement = historyModal.querySelector('.rep-history-loading');
+                const contentElement = historyModal.querySelector('.rep-history-content');
+                const errorElement = historyModal.querySelector('.rep-history-error');
+                const tableBody = historyModal.querySelector('.rep-history-table tbody');
+                
+                if (nameElement) nameElement.textContent = customerName;
+                if (loadingElement) loadingElement.classList.remove('d-none');
+                if (contentElement) contentElement.classList.add('d-none');
+                if (errorElement) errorElement.classList.add('d-none');
+                if (tableBody) tableBody.innerHTML = '';
+                
+                const modalInstance = bootstrap.Modal.getOrCreateInstance(historyModal);
+                modalInstance.show();
+                
+                // جلب بيانات سجل المشتريات
+                const baseUrl = '<?php echo getRelativeUrl($dashboardScript); ?>';
+                const historyUrl = baseUrl + (baseUrl.includes('?') ? '&' : '?') + 'page=customers&section=company&action=purchase_history&ajax=purchase_history&customer_id=' + encodeURIComponent(customerId);
+                
+                fetch(historyUrl, {
+                    headers: {
+                        'X-Requested-With': 'XMLHttpRequest'
+                    }
+                })
+                .then(response => response.text())
+                .then(html => {
+                    if (loadingElement) loadingElement.classList.add('d-none');
+                    if (contentElement) {
+                        contentElement.innerHTML = html;
+                        contentElement.classList.remove('d-none');
+                    }
+                })
+                .catch(error => {
+                    console.error('Error loading history:', error);
+                    if (loadingElement) loadingElement.classList.add('d-none');
+                    if (errorElement) {
+                        errorElement.textContent = 'حدث خطأ أثناء تحميل سجل المشتريات';
+                        errorElement.classList.remove('d-none');
+                    }
+                });
+            } else {
+                // Fallback: فتح في نافذة جديدة
+                const baseUrl = '<?php echo getRelativeUrl($dashboardScript); ?>';
+                const historyUrl = baseUrl + (baseUrl.includes('?') ? '&' : '?') + 'page=customers&section=company&action=purchase_history&customer_id=' + encodeURIComponent(customerId);
+                window.open(historyUrl, '_blank');
+            }
         }
         
         if (e.target.closest('.rep-return-btn.js-customer-purchase-history')) {
+            e.preventDefault();
+            e.stopPropagation();
             const button = e.target.closest('.rep-return-btn.js-customer-purchase-history');
             const customerId = button.getAttribute('data-customer-id');
             const customerName = button.getAttribute('data-customer-name') || '-';
             
-            // فتح صفحة إنشاء مرتجع في نافذة جديدة أو redirect
-            const baseUrl = '<?php echo getRelativeUrl($dashboardScript); ?>';
-            const returnUrl = baseUrl + (baseUrl.includes('?') ? '&' : '?') + 'page=customers&section=company&action=purchase_history&ajax=purchase_history&customer_id=' + encodeURIComponent(customerId);
-            window.open(returnUrl, '_blank');
+            const returnModal = document.getElementById('repCustomerReturnModal');
+            if (returnModal) {
+                const nameElement = returnModal.querySelector('.rep-return-customer-name');
+                const loadingElement = returnModal.querySelector('.rep-return-loading');
+                const contentElement = returnModal.querySelector('.rep-return-content');
+                const errorElement = returnModal.querySelector('.rep-return-error');
+                
+                if (nameElement) nameElement.textContent = customerName;
+                if (loadingElement) loadingElement.classList.remove('d-none');
+                if (contentElement) contentElement.classList.add('d-none');
+                if (errorElement) errorElement.classList.add('d-none');
+                
+                const modalInstance = bootstrap.Modal.getOrCreateInstance(returnModal);
+                modalInstance.show();
+                
+                // جلب بيانات سجل المشتريات للإرجاع
+                const baseUrl = '<?php echo getRelativeUrl($dashboardScript); ?>';
+                const returnUrl = baseUrl + (baseUrl.includes('?') ? '&' : '?') + 'page=customers&section=company&action=purchase_history&ajax=purchase_history&customer_id=' + encodeURIComponent(customerId);
+                
+                fetch(returnUrl, {
+                    headers: {
+                        'X-Requested-With': 'XMLHttpRequest'
+                    }
+                })
+                .then(response => response.text())
+                .then(html => {
+                    if (loadingElement) loadingElement.classList.add('d-none');
+                    if (contentElement) {
+                        contentElement.innerHTML = html;
+                        contentElement.classList.remove('d-none');
+                    }
+                })
+                .catch(error => {
+                    console.error('Error loading return data:', error);
+                    if (loadingElement) loadingElement.classList.add('d-none');
+                    if (errorElement) {
+                        errorElement.textContent = 'حدث خطأ أثناء تحميل بيانات الإرجاع';
+                        errorElement.classList.remove('d-none');
+                    }
+                });
+            } else {
+                // Fallback: فتح في نافذة جديدة
+                const baseUrl = '<?php echo getRelativeUrl($dashboardScript); ?>';
+                const returnUrl = baseUrl + (baseUrl.includes('?') ? '&' : '?') + 'page=customers&section=company&action=purchase_history&ajax=purchase_history&customer_id=' + encodeURIComponent(customerId);
+                window.open(returnUrl, '_blank');
+            }
         }
         
         // معالجة أزرار عرض الموقع
         if (e.target.closest('.rep-location-view-btn')) {
+            e.preventDefault();
+            e.stopPropagation();
             const button = e.target.closest('.rep-location-view-btn');
             const latitude = button.getAttribute('data-latitude');
             const longitude = button.getAttribute('data-longitude');
+            const customerName = button.getAttribute('data-customer-name') || button.closest('tr')?.querySelector('td:first-child')?.textContent?.trim() || '-';
+            
             if (!latitude || !longitude) {
                 alert('لا يوجد موقع مسجل لهذا العميل.');
                 return;
             }
-            const url = 'https://www.google.com/maps?q=' + encodeURIComponent(latitude + ',' + longitude) + '&hl=ar&z=16';
-            window.open(url, '_blank');
+            
+            const viewLocationModal = document.getElementById('repViewLocationModal');
+            if (viewLocationModal) {
+                const locationCustomerName = viewLocationModal.querySelector('.rep-location-customer-name');
+                const locationMapFrame = viewLocationModal.querySelector('.rep-location-map-frame');
+                const locationExternalLink = viewLocationModal.querySelector('.rep-location-open-map');
+                
+                if (locationCustomerName) {
+                    locationCustomerName.textContent = customerName;
+                }
+                
+                if (locationMapFrame) {
+                    const embedUrl = 'https://www.google.com/maps?q=' + encodeURIComponent(latitude + ',' + longitude) + '&hl=ar&z=16&output=embed';
+                    locationMapFrame.src = embedUrl;
+                }
+                
+                if (locationExternalLink) {
+                    const externalUrl = 'https://www.google.com/maps?q=' + encodeURIComponent(latitude + ',' + longitude) + '&hl=ar&z=16';
+                    locationExternalLink.href = externalUrl;
+                }
+                
+                const modalInstance = bootstrap.Modal.getOrCreateInstance(viewLocationModal);
+                modalInstance.show();
+            } else {
+                // Fallback: فتح في نافذة جديدة إذا لم يوجد modal
+                const url = 'https://www.google.com/maps?q=' + encodeURIComponent(latitude + ',' + longitude) + '&hl=ar&z=16';
+                window.open(url, '_blank');
+            }
         }
         
         // معالجة أزرار تحديد الموقع
         if (e.target.closest('.rep-location-capture-btn')) {
+            e.preventDefault();
+            e.stopPropagation();
             const button = e.target.closest('.rep-location-capture-btn');
             const customerId = button.getAttribute('data-customer-id');
             const customerName = button.getAttribute('data-customer-name') || '';
@@ -1001,7 +1137,8 @@ document.addEventListener('DOMContentLoaded', function() {
                             alert('تم تحديد موقع العميل بنجاح.');
                             // إعادة تحميل بيانات المندوب
                             const repId = button.closest('#repDetailsModal')?.dataset?.repId || 
-                                         document.querySelector('[data-rep-id]')?.dataset?.repId;
+                                         document.querySelector('[data-rep-id]')?.dataset?.repId ||
+                                         document.querySelector('.representative-card[data-rep-id]')?.dataset?.repId;
                             if (repId) {
                                 const repName = document.getElementById('repModalName')?.textContent?.replace('تفاصيل: ', '') || '';
                                 loadRepDetails(repId, repName);
@@ -1083,4 +1220,114 @@ document.addEventListener('DOMContentLoaded', function() {
         </div>
     </div>
 </div>
+
+<!-- Modal عرض موقع العميل -->
+<div class="modal fade" id="repViewLocationModal" tabindex="-1" aria-hidden="true">
+    <div class="modal-dialog modal-lg modal-dialog-centered">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title"><i class="bi bi-geo-alt me-2"></i>موقع العميل</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="إغلاق"></button>
+            </div>
+            <div class="modal-body">
+                <div class="mb-3">
+                    <div class="text-muted small fw-semibold">العميل</div>
+                    <div class="fs-5 fw-bold rep-location-customer-name">-</div>
+                </div>
+                <div class="ratio ratio-16x9">
+                    <iframe
+                        class="rep-location-map-frame border rounded"
+                        src=""
+                        title="معاينة موقع العميل"
+                        allowfullscreen
+                        loading="lazy"
+                    ></iframe>
+                </div>
+                <p class="mt-3 text-muted mb-0">
+                    يمكنك متابعة الموقع داخل المعاينة أو فتحه في خرائط Google للحصول على اتجاهات دقيقة.
+                </p>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">إغلاق</button>
+                <a href="#" target="_blank" rel="noopener" class="btn btn-primary rep-location-open-map">
+                    <i class="bi bi-map me-1"></i> فتح في الخرائط
+                </a>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Modal سجل المشتريات -->
+<div class="modal fade" id="repCustomerHistoryModal" tabindex="-1" aria-hidden="true">
+    <div class="modal-dialog modal-xl modal-dialog-scrollable">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title">
+                    <i class="bi bi-journal-text me-2"></i>
+                    سجل المشتريات - <span class="rep-history-customer-name">-</span>
+                </h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="إغلاق"></button>
+            </div>
+            <div class="modal-body">
+                <div class="rep-history-loading text-center py-5">
+                    <div class="spinner-border text-primary" role="status">
+                        <span class="visually-hidden">جاري التحميل...</span>
+                    </div>
+                    <p class="mt-3 text-muted">جاري تحميل سجل المشتريات...</p>
+                </div>
+                <div class="rep-history-error alert alert-danger d-none" role="alert"></div>
+                <div class="rep-history-content d-none"></div>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">إغلاق</button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Modal إنشاء مرتجع -->
+<div class="modal fade" id="repCustomerReturnModal" tabindex="-1" aria-hidden="true">
+    <div class="modal-dialog modal-xl modal-dialog-scrollable">
+        <div class="modal-content">
+            <div class="modal-header bg-success text-white">
+                <h5 class="modal-title">
+                    <i class="bi bi-arrow-return-left me-2"></i>
+                    إنشاء مرتجع - <span class="rep-return-customer-name">-</span>
+                </h5>
+                <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal" aria-label="إغلاق"></button>
+            </div>
+            <div class="modal-body">
+                <div class="rep-return-loading text-center py-5">
+                    <div class="spinner-border text-success" role="status">
+                        <span class="visually-hidden">جاري التحميل...</span>
+                    </div>
+                    <p class="mt-3 text-muted">جاري تحميل بيانات المشتريات...</p>
+                </div>
+                <div class="rep-return-error alert alert-danger d-none" role="alert"></div>
+                <div class="rep-return-content d-none"></div>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">إلغاء</button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<script>
+// تنظيف modal عرض الموقع عند الإغلاق
+document.addEventListener('DOMContentLoaded', function() {
+    const viewLocationModal = document.getElementById('repViewLocationModal');
+    if (viewLocationModal) {
+        viewLocationModal.addEventListener('hidden.bs.modal', function () {
+            const locationMapFrame = viewLocationModal.querySelector('.rep-location-map-frame');
+            const locationCustomerName = viewLocationModal.querySelector('.rep-location-customer-name');
+            const locationExternalLink = viewLocationModal.querySelector('.rep-location-open-map');
+            
+            if (locationMapFrame) locationMapFrame.src = '';
+            if (locationCustomerName) locationCustomerName.textContent = '-';
+            if (locationExternalLink) locationExternalLink.href = '#';
+        });
+    }
+});
+</script>
 
