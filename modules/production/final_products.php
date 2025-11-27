@@ -636,6 +636,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                             );
                             
                             if ($finishedRow) {
+                                // quantity_produced يحتوي بالفعل على الكمية الفعلية المتبقية بعد جميع النقلات والإرجاعات
+                                // لأنه يتم تحديثه عند النقل (خصم) وعند الإرجاع (إضافة)
+                                // لذلك نستخدمه مباشرة دون خصم النقلات المعتمدة
                                 $availableQuantity = (float)($finishedRow['quantity_produced'] ?? 0);
                                 $productName = $finishedRow['product_name'] ?? 'منتج غير محدد';
                                 
@@ -644,22 +647,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                                     $productId = (int)$finishedRow['product_id'];
                                 }
                                 
-                                // خصم الكمية المنقولة بالفعل (approved أو completed)
-                                $transferred = $db->queryOne(
-                                    "SELECT COALESCE(SUM(
-                                        CASE
-                                            WHEN wt.status IN ('approved', 'completed') THEN wti.quantity
-                                            ELSE 0
-                                        END
-                                    ), 0) AS transferred_quantity
-                                    FROM warehouse_transfer_items wti
-                                    LEFT JOIN warehouse_transfers wt ON wt.id = wti.transfer_id
-                                    WHERE wti.batch_id = ?",
-                                    [$batchId]
-                                );
-                                $availableQuantity -= (float)($transferred['transferred_quantity'] ?? 0);
-                                
-                                // خصم الكمية المحجوزة في طلبات النقل المعلقة (pending) من نفس المخزن
+                                // خصم فقط الكمية المحجوزة في طلبات النقل المعلقة (pending) من نفس المخزن
+                                // لأن الكميات المنقولة (approved أو completed) تم خصمها بالفعل من quantity_produced
+                                // والكميات المرجعة تم إضافتها بالفعل إلى quantity_produced
                                 $pendingTransfers = $db->queryOne(
                                     "SELECT COALESCE(SUM(wti.quantity), 0) AS pending_quantity
                                      FROM warehouse_transfer_items wti
@@ -1689,7 +1679,7 @@ if (!empty($finishedProductsTableExists)) {
             LEFT JOIN users u ON bw.employee_id = u.id
             WHERE (fp.quantity_produced IS NULL OR fp.quantity_produced > 0)
             GROUP BY fp.id
-            ORDER BY fp.production_date DESC, fp.id DESC
+            ORDER BY fp.production_date ASC, fp.id ASC
             LIMIT ? OFFSET ?
         ", [$finishedProductsPerPage, $finishedProductsOffset]);
         
@@ -1741,7 +1731,8 @@ if (!empty($finishedProductsTableExists)) {
             }
         }
         
-        $finishedProductsCount = is_array($finishedProductsRows) ? count($finishedProductsRows) : 0;
+        // لا تقم بتحديث $finishedProductsCount هنا - القيمة الصحيحة تم حسابها بالفعل في السطر 1623
+        // $finishedProductsCount = is_array($finishedProductsRows) ? count($finishedProductsRows) : 0;
     } catch (Exception $finishedProductsError) {
         error_log('Finished products query error: ' . $finishedProductsError->getMessage());
     }
@@ -1870,29 +1861,12 @@ if ($isManager) {
             <i class="bi bi-arrow-left-right me-1"></i>
             طلب نقل منتجات
         </button>
-        <button
-            type="button"
-            class="btn btn-success"
-            data-bs-toggle="modal"
-            data-bs-target="#receiveFromSalesRepModal"
-            <?php echo !empty($salesReps) && $primaryWarehouse ? '' : 'disabled'; ?>
-            title="<?php echo !empty($salesReps) && $primaryWarehouse ? '' : 'يرجى التأكد من وجود مندوبين ومخزن رئيسي.'; ?>"
-        >
-            <i class="bi bi-truck me-1"></i>
-            طلب استلام منتجات
-        </button>
+        
     </div>
 </div>
 
 <?php if ($primaryWarehouse): ?>
-    <div class="alert alert-info d-flex align-items-center gap-2">
-        <i class="bi bi-info-circle-fill fs-5"></i>
-        <div>
-            هذه الصفحة تمثل المخزن الرئيسي للشركة
-            <strong><?php echo htmlspecialchars($primaryWarehouse['name']); ?></strong>.
-            كل المنتجات المعروضة يتم اعتمادها كمخزون رئيسي يظهر للمدير والمحاسب في الصفحات الأخرى.
-        </div>
-    </div>
+    
 <?php elseif (!empty($warehousesTableExists)): ?>
     <div class="alert alert-warning d-flex align-items-center gap-2">
         <i class="bi bi-exclamation-triangle-fill fs-5"></i>
@@ -2048,23 +2022,20 @@ if ($isManager) {
             $buildPageUrl = function($pageNum) use ($queryParams) {
                 $params = $queryParams;
                 $params['fp'] = $pageNum;
-                return getRelativeUrl('production.php?' . http_build_query($params));
+                // استخدام رابط نسبي يبدأ بـ ? لأننا في dashboard/production.php
+                return '?' . http_build_query($params);
             };
+            ?>
             
-            if ($finishedProductsTotalPages > 1): ?>
-            <nav aria-label="صفحات جدول المنتجات">
-                <ul class="pagination justify-content-center mt-4 mb-0">
-                    <?php if ($finishedProductsPageNum > 1): ?>
-                        <li class="page-item">
-                            <a class="page-link" href="<?php echo htmlspecialchars($buildPageUrl($finishedProductsPageNum - 1)); ?>">
-                                <i class="bi bi-chevron-right"></i> السابق
-                            </a>
-                        </li>
-                    <?php else: ?>
-                        <li class="page-item disabled">
-                            <span class="page-link"><i class="bi bi-chevron-right"></i> السابق</span>
-                        </li>
-                    <?php endif; ?>
+            <?php if ($finishedProductsTotalPages > 1): ?>
+            <nav aria-label="صفحات جدول المنتجات" class="mt-4">
+                <ul class="pagination justify-content-center flex-wrap mb-0">
+                    <li class="page-item <?php echo $finishedProductsPageNum <= 1 ? 'disabled' : ''; ?>">
+                        <a class="page-link" href="<?php echo htmlspecialchars($buildPageUrl($finishedProductsPageNum - 1)); ?>" 
+                           <?php echo $finishedProductsPageNum <= 1 ? 'tabindex="-1" aria-disabled="true"' : ''; ?>>
+                            <i class="bi bi-chevron-right"></i> السابق
+                        </a>
+                    </li>
                     
                     <?php
                     // عرض أرقام الصفحات
@@ -2103,23 +2074,22 @@ if ($isManager) {
                         </li>
                     <?php endif; ?>
                     
-                    <?php if ($finishedProductsPageNum < $finishedProductsTotalPages): ?>
-                        <li class="page-item">
-                            <a class="page-link" href="<?php echo htmlspecialchars($buildPageUrl($finishedProductsPageNum + 1)); ?>">
-                                التالي <i class="bi bi-chevron-left"></i>
-                            </a>
-                        </li>
-                    <?php else: ?>
-                        <li class="page-item disabled">
-                            <span class="page-link">التالي <i class="bi bi-chevron-left"></i></span>
-                        </li>
-                    <?php endif; ?>
+                    <li class="page-item <?php echo $finishedProductsPageNum >= $finishedProductsTotalPages ? 'disabled' : ''; ?>">
+                        <a class="page-link" href="<?php echo htmlspecialchars($buildPageUrl($finishedProductsPageNum + 1)); ?>"
+                           <?php echo $finishedProductsPageNum >= $finishedProductsTotalPages ? 'tabindex="-1" aria-disabled="true"' : ''; ?>>
+                            التالي <i class="bi bi-chevron-left"></i>
+                        </a>
+                    </li>
                 </ul>
                 <div class="text-center text-muted small mt-2">
                     عرض <?php echo number_format($finishedProductsOffset + 1); ?> - <?php echo number_format(min($finishedProductsOffset + $finishedProductsPerPage, $finishedProductsCount)); ?> 
                     من أصل <?php echo number_format($finishedProductsCount); ?> منتج
                 </div>
             </nav>
+            <?php elseif ($finishedProductsCount > 0): ?>
+            <div class="text-center text-muted small mt-3">
+                عرض جميع <?php echo number_format($finishedProductsCount); ?> منتج
+            </div>
             <?php endif; ?>
         <?php else: ?>
             <div class="alert alert-info mb-0">
