@@ -1861,17 +1861,7 @@ if ($isManager) {
             <i class="bi bi-arrow-left-right me-1"></i>
             طلب نقل منتجات
         </button>
-        <button
-            type="button"
-            class="btn btn-success"
-            data-bs-toggle="modal"
-            data-bs-target="#receiveFromSalesRepModal"
-            <?php echo !empty($salesReps) && $primaryWarehouse ? '' : 'disabled'; ?>
-            title="<?php echo !empty($salesReps) && $primaryWarehouse ? '' : 'يرجى التأكد من وجود مندوبين ومخزن رئيسي.'; ?>"
-        >
-            <i class="bi bi-truck me-1"></i>
-            طلب استلام منتجات
-        </button>
+        
     </div>
 </div>
 
