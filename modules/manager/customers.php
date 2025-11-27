@@ -313,12 +313,7 @@ $tabs = [
         'href' => getRelativeUrl($basePageUrl . '&section=company'),
         'icon' => 'bi bi-building',
     ],
-    [
-        'id' => 'representatives',
-        'label' => 'عملاء المندوبين',
-        'href' => getRelativeUrl($basePageUrl . '&section=representatives'),
-        'icon' => 'bi bi-people-fill',
-    ],
+    
 ];
 
 $primaryButton = null;
