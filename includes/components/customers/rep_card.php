@@ -86,6 +86,26 @@ if (!function_exists('renderRepresentativeCards')) {
                                             </div>
                                         </div>
                                     </div>
+                                    <?php if (isset($rep['total_collections']) || isset($rep['total_returns'])): ?>
+                                    <div class="row g-2">
+                                        <?php if (isset($rep['total_collections'])): ?>
+                                        <div class="col-6">
+                                            <div class="rep-stat-card border-success">
+                                                <div class="rep-stat-label text-muted small">التحصيلات</div>
+                                                <div class="rep-stat-value text-success small fw-bold"><?php echo formatCurrency((float)($rep['total_collections'] ?? 0)); ?></div>
+                                            </div>
+                                        </div>
+                                        <?php endif; ?>
+                                        <?php if (isset($rep['total_returns'])): ?>
+                                        <div class="col-6">
+                                            <div class="rep-stat-card border-info">
+                                                <div class="rep-stat-label text-muted small">المرتجعات</div>
+                                                <div class="rep-stat-value text-info small fw-bold"><?php echo formatCurrency((float)($rep['total_returns'] ?? 0)); ?></div>
+                                            </div>
+                                        </div>
+                                        <?php endif; ?>
+                                    </div>
+                                    <?php endif; ?>
                                     <div class="rep-contact-list small text-muted">
                                         <div><i class="bi bi-telephone me-2"></i><?php echo htmlspecialchars($repPhone); ?></div>
                                         <?php if ($repEmail): ?>

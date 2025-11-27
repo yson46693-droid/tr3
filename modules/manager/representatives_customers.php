@@ -33,9 +33,19 @@ $representativeSummary = [
     'customers' => 0,
     'debtors' => 0,
     'debt' => 0.0,
+    'total_collections' => 0.0,
+    'total_returns' => 0.0,
 ];
 
 try {
+    // التحقق من وجود عمود status في جدول collections
+    $collectionsStatusCheck = $db->queryOne("SHOW COLUMNS FROM collections LIKE 'status'");
+    $hasCollectionsStatus = !empty($collectionsStatusCheck);
+    
+    // التحقق من وجود جدول returns
+    $returnsTableCheck = $db->queryOne("SHOW TABLES LIKE 'returns'");
+    $hasReturnsTable = !empty($returnsTableCheck);
+    
     $representatives = $db->query(
         "SELECT 
             u.id,
@@ -46,7 +56,7 @@ try {
             u.status,
             u.last_login_at,
             u.profile_image,
-            COUNT(c.id) AS customer_count,
+            COUNT(DISTINCT c.id) AS customer_count,
             COALESCE(SUM(CASE WHEN c.balance > 0 THEN c.balance ELSE 0 END), 0) AS total_debt,
             COALESCE(SUM(CASE WHEN c.balance > 0 THEN 1 ELSE 0 END), 0) AS debtor_count
         FROM users u
@@ -56,12 +66,65 @@ try {
         ORDER BY customer_count DESC, u.full_name ASC"
     );
 
-    foreach ($representatives as $repRow) {
+    // حساب إجمالي التحصيلات والمرتجعات لكل مندوب
+    foreach ($representatives as &$repRow) {
+        $repId = (int)($repRow['id'] ?? 0);
+        
+        // حساب إجمالي التحصيلات للمندوب
+        $collectionsTotal = 0.0;
+        try {
+            $collectionsTableCheck = $db->queryOne("SHOW TABLES LIKE 'collections'");
+            if (!empty($collectionsTableCheck)) {
+                if ($hasCollectionsStatus) {
+                    $collectionsResult = $db->queryOne(
+                        "SELECT COALESCE(SUM(amount), 0) AS total_collections
+                         FROM collections
+                         WHERE collected_by = ? AND status IN ('pending', 'approved')",
+                        [$repId]
+                    );
+                } else {
+                    $collectionsResult = $db->queryOne(
+                        "SELECT COALESCE(SUM(amount), 0) AS total_collections
+                         FROM collections
+                         WHERE collected_by = ?",
+                        [$repId]
+                    );
+                }
+                $collectionsTotal = (float)($collectionsResult['total_collections'] ?? 0.0);
+            }
+        } catch (Throwable $collectionsError) {
+            error_log('Collections calculation error for rep ' . $repId . ': ' . $collectionsError->getMessage());
+        }
+        
+        // حساب إجمالي المرتجعات للمندوب
+        $returnsTotal = 0.0;
+        if ($hasReturnsTable) {
+            try {
+                $returnsResult = $db->queryOne(
+                    "SELECT COALESCE(SUM(refund_amount), 0) AS total_returns
+                     FROM returns
+                     WHERE sales_rep_id = ? AND status IN ('approved', 'processed', 'completed')",
+                    [$repId]
+                );
+                $returnsTotal = (float)($returnsResult['total_returns'] ?? 0.0);
+            } catch (Throwable $returnsError) {
+                error_log('Returns calculation error for rep ' . $repId . ': ' . $returnsError->getMessage());
+            }
+        }
+        
+        $repRow['total_collections'] = $collectionsTotal;
+        $repRow['total_returns'] = $returnsTotal;
+        
+        // تحديث الإحصائيات الإجمالية
         $representativeSummary['total']++;
         $representativeSummary['customers'] += (int)($repRow['customer_count'] ?? 0);
         $representativeSummary['debtors'] += (int)($repRow['debtor_count'] ?? 0);
         $representativeSummary['debt'] += (float)($repRow['total_debt'] ?? 0.0);
+        $representativeSummary['total_collections'] += $collectionsTotal;
+        $representativeSummary['total_returns'] += $returnsTotal;
     }
+    unset($repRow);
+    
 } catch (Throwable $repsError) {
     error_log('Manager representatives list error: ' . $repsError->getMessage());
     $representatives = [];
@@ -121,6 +184,28 @@ if ($error): ?>
             </div>
         </div>
     </div>
+    <div class="col-6 col-md-3">
+        <div class="card shadow-sm border-0 h-100">
+            <div class="card-body d-flex align-items-center justify-content-between">
+                <div>
+                    <div class="text-muted small">إجمالي التحصيلات</div>
+                    <div class="fs-4 fw-bold text-success mb-0"><?php echo formatCurrency($representativeSummary['total_collections']); ?></div>
+                </div>
+                <span class="text-success display-6"><i class="bi bi-cash-coin"></i></span>
+            </div>
+        </div>
+    </div>
+    <div class="col-6 col-md-3">
+        <div class="card shadow-sm border-0 h-100">
+            <div class="card-body d-flex align-items-center justify-content-between">
+                <div>
+                    <div class="text-muted small">إجمالي المرتجعات</div>
+                    <div class="fs-4 fw-bold text-info mb-0"><?php echo formatCurrency($representativeSummary['total_returns']); ?></div>
+                </div>
+                <span class="text-info display-6"><i class="bi bi-arrow-left-right"></i></span>
+            </div>
+        </div>
+    </div>
 </div>
 
 <?php
@@ -143,6 +228,14 @@ renderRepresentativeCards($representatives, [
     border-radius: 12px;
     padding: 0.75rem;
     background: #fff;
+}
+.rep-stat-card.border-success {
+    border-color: rgba(25, 135, 84, 0.3) !important;
+    background: rgba(25, 135, 84, 0.05);
+}
+.rep-stat-card.border-info {
+    border-color: rgba(13, 202, 240, 0.3) !important;
+    background: rgba(13, 202, 240, 0.05);
 }
 .rep-stat-value {
     font-size: 1.1rem;
