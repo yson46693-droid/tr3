@@ -1,0 +1,188 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>منتجات المصنع</title>
+
+<style>
+    body {
+        margin: 0;
+        font-family: 'Cairo', sans-serif;
+        background: #f5f7fb;
+    }
+
+    .header {
+        padding: 25px;
+        font-size: 30px;
+        font-weight: bold;
+        color: #0c2c80;
+        display: flex;
+        align-items: center;
+        gap: 10px;
+    }
+
+    /* Summary Box */
+    .summary-box {
+        padding: 20px;
+        margin: 20px;
+        background: #e8fff1;
+        border: 1px solid #c7f3d9;
+        border-radius: 14px;
+        font-size: 22px;
+        font-weight: bold;
+        color: #1a8c50;
+        text-align: center;
+    }
+
+    /* Grid Cards */
+    .grid {
+        padding: 25px;
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(340px, 1fr));
+        gap: 20px;
+    }
+
+    /* Card */
+    .card {
+        background: white;
+        padding: 25px;
+        border-radius: 18px;
+        box-shadow: 0px 4px 20px rgba(0,0,0,0.07);
+        border: 1px solid #e2e6f3;
+        position: relative;
+    }
+
+    .status {
+        position: absolute;
+        top: 15px;
+        left: 15px;
+        background: #2e89ff;
+        padding: 6px 14px;
+        border-radius: 20px;
+        color: white;
+        font-size: 12px;
+        font-weight: bold;
+    }
+
+    .prod-name {
+        font-size: 18px;
+        font-weight: bold;
+        color: #0d2f66;
+        margin-bottom: 6px;
+    }
+
+    .prod-id {
+        color: #2767ff;
+        font-weight: bold;
+        text-decoration: none;
+    }
+
+    .barcode-box {
+        background: #f8faff;
+        border: 1px solid #d7e1f3;
+        padding: 15px;
+        border-radius: 12px;
+        text-align: center;
+        margin: 15px 0;
+    }
+
+    .barcode-id {
+        font-weight: bold;
+        margin-top: 8px;
+        color: #123c90;
+    }
+
+    .detail-row {
+        font-size: 14px;
+        margin-top: 5px;
+        color: #4b5772;
+        display: flex;
+        justify-content: space-between;
+    }
+
+    .btn-view {
+        margin-top: 15px;
+        display: inline-block;
+        padding: 10px 16px;
+        background: #0c2c80;
+        color: white;
+        border-radius: 10px;
+        text-decoration: none;
+        font-weight: bold;
+        font-size: 13px;
+    }
+</style>
+</head>
+
+<body>
+
+<div class="header">📦 منتجات المصنع</div>
+
+
+
+<div class="grid">
+
+    <!-- تشغيله 1 -->
+    <div class="card">
+        <div class="status">finished</div>
+
+        <div class="prod-name">طحينه 1 ك</div>
+        <a href="#" class="prod-id">251127-873712</a>
+
+        <div class="barcode-box">
+            <img src="https://www.free-barcode-generator.net/wp-content/themes/barcode/images/barcode-img.png" width="90%">
+            <div class="barcode-id">251127-873712</div>
+        </div>
+
+        <div class="detail-row"><span>تاريخ الإنتاج:</span> <span>27/11/2025</span></div>
+        <div class="detail-row"><span>الكمية:</span> <span>10.00</span></div>
+        <div class="detail-row"><span>سعر الوحدة:</span> <span>100 ج.م</span></div>
+        <div class="detail-row"><span>إجمالي القيمة:</span> <span>1,000 ج.م</span></div>
+
+        <a href="#" class="btn-view">عرض التفاصيل</a>
+    </div>
+
+    <!-- تشغيله 2 -->
+    <div class="card">
+        <div class="status">finished</div>
+
+        <div class="prod-name">شمع نص كيلو</div>
+        <a href="#" class="prod-id">251127-765997</a>
+
+        <div class="barcode-box">
+            <img src="https://www.free-barcode-generator.net/wp-content/themes/barcode/images/barcode-img.png" width="90%">
+            <div class="barcode-id">251127-765997</div>
+        </div>
+
+        <div class="detail-row"><span>تاريخ الإنتاج:</span> <span>27/11/2025</span></div>
+        <div class="detail-row"><span>الكمية:</span> <span>14.00</span></div>
+        <div class="detail-row"><span>سعر الوحدة:</span> <span>100 ج.م</span></div>
+        <div class="detail-row"><span>إجمالي القيمة:</span> <span>1,400 ج.م</span></div>
+
+        <a href="#" class="btn-view">عرض التفاصيل</a>
+    </div>
+
+    <!-- تشغيله 3 -->
+    <div class="card">
+        <div class="status">finished</div>
+
+        <div class="prod-name">شمع نص كيلو</div>
+        <a href="#" class="prod-id">251127-955633</a>
+
+        <div class="barcode-box">
+            <img src="https://www.free-barcode-generator.net/wp-content/themes/barcode/images/barcode-img.png" width="90%">
+            <div class="barcode-id">251127-955633</div>
+        </div>
+
+        <div class="detail-row"><span>تاريخ الإنتاج:</span> <span>27/11/2025</span></div>
+        <div class="detail-row"><span>الكمية:</span> <span>8.00</span></div>
+   
+
+        <a href="#" class="btn-view">عرض التفاصيل</a>
+    </div>
+
+</div>
+
+</body>
+</html>
