@@ -421,19 +421,32 @@ function getFinishedProductBatchOptions($onlyAvailable = true, $fromWarehouseId 
                         
                         // إذا كانت الكمية في products = 0 أو NULL، نستخدم quantity_produced من finished_products
                         if ($availableQuantity <= 0) {
-                            // quantity_produced يحتوي بالفعل على الكمية الفعلية المتبقية بعد جميع النقلات والإرجاعات
-                            // لأنه يتم تحديثه عند النقل (خصم) وعند الإرجاع (إضافة)
-                            // لذلك نستخدمه مباشرة دون خصم النقلات المعتمدة
+                            // نبدأ بـ quantity_produced ثم نخصم الكميات المنقولة بالفعل
                             $availableQuantity = (float)($row['quantity_produced'] ?? 0);
                             $usingQuantityProduced = true;
+                            
+                            // خصم الكميات المنقولة بالفعل (approved أو completed) من المخزن الرئيسي
+                            if ($availableQuantity > 0 && $batchId > 0) {
+                                $transferred = $db->queryOne(
+                                    "SELECT COALESCE(SUM(
+                                        CASE
+                                            WHEN wt.status IN ('approved', 'completed') THEN wti.quantity
+                                            ELSE 0
+                                        END
+                                    ), 0) AS transferred_quantity
+                                    FROM warehouse_transfer_items wti
+                                    INNER JOIN warehouse_transfers wt ON wt.id = wti.transfer_id
+                                    WHERE wti.batch_id = ? AND wt.from_warehouse_id = ?",
+                                    [$batchId, $fromWarehouseId]
+                                );
+                                $availableQuantity -= (float)($transferred['transferred_quantity'] ?? 0);
+                            }
                         }
                     }
 
                     // خصم الكمية المحجوزة في طلبات النقل المعلقة (pending) من نفس المخزن
                     // فقط عندما نستخدم quantity_produced، وليس عندما نستخدم products.quantity مباشرة
                     // لأن products.quantity تعكس الكمية الفعلية بعد جميع النقلات
-                    // والكميات المنقولة (approved أو completed) تم خصمها بالفعل من quantity_produced
-                    // والكميات المرجعة تم إضافتها بالفعل إلى quantity_produced
                     if (isset($usingQuantityProduced) && $usingQuantityProduced && $batchId > 0) {
                         $pendingTransfers = $db->queryOne(
                             "SELECT COALESCE(SUM(wti.quantity), 0) AS pending_quantity

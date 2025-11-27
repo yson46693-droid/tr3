@@ -2106,6 +2106,10 @@ $filterProduct = isset($_GET['filter_product']) ? trim($_GET['filter_product']) 
         color: white;
     }
 
+    .btn-view.js-print-barcode:hover {
+        background: #218838;
+    }
+
     .barcode-container {
         width: 100%;
         min-height: 60px;
@@ -2169,16 +2173,26 @@ $filterProduct = isset($_GET['filter_product']) ? trim($_GET['filter_product']) 
                 <div class="detail-row"><span>الكمية:</span> <span><?php echo $quantity; ?></span></div>
 
                 <?php if ($batchNumber): ?>
-                    <button type="button" 
-                            class="btn-view js-batch-details" 
-                            style="border: none; cursor: pointer;"
-                            data-batch="<?php echo htmlspecialchars($batchNumber); ?>"
-                            data-product="<?php echo htmlspecialchars($finishedRow['product_name'] ?? ''); ?>"
-                            data-view-url="<?php echo htmlspecialchars($viewUrl); ?>">
-                        <i class="bi bi-eye me-1"></i>عرض التفاصيل
-                    </button>
+                    <div style="display: flex; gap: 10px; margin-top: 15px;">
+                        <button type="button" 
+                                class="btn-view js-batch-details" 
+                                style="border: none; cursor: pointer; flex: 1;"
+                                data-batch="<?php echo htmlspecialchars($batchNumber); ?>"
+                                data-product="<?php echo htmlspecialchars($finishedRow['product_name'] ?? ''); ?>"
+                                data-view-url="<?php echo htmlspecialchars($viewUrl); ?>">
+                            <i class="bi bi-eye me-1"></i>عرض التفاصيل
+                        </button>
+                        <button type="button" 
+                                class="btn-view js-print-barcode" 
+                                style="border: none; cursor: pointer; flex: 1; background: #28a745;"
+                                data-batch="<?php echo htmlspecialchars($batchNumber); ?>"
+                                data-product="<?php echo htmlspecialchars($finishedRow['product_name'] ?? ''); ?>"
+                                data-quantity="<?php echo htmlspecialchars($quantity); ?>">
+                            <i class="bi bi-printer me-1"></i>طباعة الباركود
+                        </button>
+                    </div>
                 <?php else: ?>
-                    <span class="btn-view" style="opacity: 0.5; cursor: not-allowed; display: inline-block;">
+                    <span class="btn-view" style="opacity: 0.5; cursor: not-allowed; display: inline-block; margin-top: 15px;">
                         <i class="bi bi-eye me-1"></i>عرض التفاصيل
                     </span>
                 <?php endif; ?>
@@ -2355,6 +2369,45 @@ $filterProduct = isset($_GET['filter_product']) ? trim($_GET['filter_product']) 
         </div>
     </div>
 <?php endif; ?>
+
+<!-- Modal طباعة الباركود -->
+<div class="modal fade" id="printBarcodesModal" tabindex="-1">
+    <div class="modal-dialog modal-lg">
+        <div class="modal-content">
+            <div class="modal-header bg-success text-white">
+                <h5 class="modal-title"><i class="bi bi-printer me-2"></i>طباعة الباركود</h5>
+                <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body">
+                <div class="alert alert-success">
+                    <i class="bi bi-check-circle me-2"></i>
+                    جاهز للطباعة
+                </div>
+                <div class="mb-3">
+                    <label class="form-label">اسم المنتج</label>
+                    <input type="text" class="form-control" id="barcode_product_name" readonly>
+                </div>
+                <div class="mb-3">
+                    <label class="form-label">عدد الباركودات المراد طباعتها</label>
+                    <input type="number" class="form-control" id="barcode_print_quantity" min="1" value="1">
+                    <small class="text-muted">سيتم طباعة نفس رقم التشغيلة بعدد المرات المحدد</small>
+                </div>
+                <div class="mb-3">
+                    <label class="form-label">أرقام التشغيلة</label>
+                    <div class="border rounded p-3" style="max-height: 200px; overflow-y: auto;">
+                        <div id="batch_numbers_list"></div>
+                    </div>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">إغلاق</button>
+                <button type="button" class="btn btn-primary" onclick="printBarcodes()">
+                    <i class="bi bi-printer me-2"></i>طباعة
+                </button>
+            </div>
+        </div>
+    </div>
+</div>
 
 <?php if ($isManager): ?>
 <div class="card shadow-sm mt-4">
@@ -3902,6 +3955,88 @@ document.addEventListener('DOMContentLoaded', function() {
                 productsContainerReceive.innerHTML = '<div class="alert alert-info">يرجى اختيار المندوب أولاً.</div>';
                 receiveForm.querySelectorAll('input[type="hidden"][name^="items"]').forEach(input => input.remove());
             });
+        }
+    }
+});
+
+// وظيفة طباعة الباركود
+const PRINT_BARCODE_URL = <?php echo json_encode(getRelativeUrl('print_barcode.php')); ?>;
+
+function showBarcodePrintModal(batchNumber, productName, defaultQuantity) {
+    const modalElement = document.getElementById('printBarcodesModal');
+    const quantity = defaultQuantity > 0 ? defaultQuantity : 1;
+
+    window.batchNumbersToPrint = [batchNumber];
+
+    const productNameInput = document.getElementById('barcode_product_name');
+    if (productNameInput) {
+        productNameInput.value = productName || '';
+    }
+
+    const quantityText = document.getElementById('barcode_quantity');
+    if (quantityText) {
+        quantityText.textContent = quantity;
+    }
+
+    const quantityInput = document.getElementById('barcode_print_quantity');
+    if (quantityInput) {
+        quantityInput.value = quantity;
+    }
+
+    const batchListContainer = document.getElementById('batch_numbers_list');
+    if (batchListContainer) {
+        batchListContainer.innerHTML = `
+            <div class="alert alert-info mb-0">
+                <i class="bi bi-info-circle me-2"></i>
+                <strong>رقم التشغيلة:</strong> ${batchNumber}<br>
+                <small>ستتم طباعة نفس رقم التشغيلة بعدد ${quantity} باركود</small>
+            </div>
+        `;
+    }
+
+    if (modalElement && typeof bootstrap !== 'undefined' && bootstrap.Modal) {
+        const modal = bootstrap.Modal.getOrCreateInstance(modalElement);
+        modal.show();
+    } else {
+        const fallbackUrl = `${PRINT_BARCODE_URL}?batch=${encodeURIComponent(batchNumber)}&quantity=${quantity}&print=1`;
+        window.open(fallbackUrl, '_blank');
+    }
+}
+
+function printBarcodes() {
+    const batchNumbers = window.batchNumbersToPrint || [];
+    if (batchNumbers.length === 0) {
+        alert('لا توجد أرقام تشغيلة للطباعة');
+        return;
+    }
+
+    const quantityInput = document.getElementById('barcode_print_quantity');
+    const printQuantity = quantityInput ? parseInt(quantityInput.value, 10) : 1;
+    
+    if (!printQuantity || printQuantity < 1) {
+        alert('يرجى إدخال عدد صحيح للطباعة');
+        return;
+    }
+
+    const batchNumber = batchNumbers[0];
+    const printUrl = `${PRINT_BARCODE_URL}?batch=${encodeURIComponent(batchNumber)}&quantity=${printQuantity}&print=1`;
+    window.open(printUrl, '_blank');
+}
+
+// ربط أحداث أزرار طباعة الباركود
+document.addEventListener('click', function(event) {
+    const printButton = event.target.closest('.js-print-barcode');
+    if (printButton) {
+        event.preventDefault();
+        event.stopPropagation();
+        const batchNumber = printButton.getAttribute('data-batch') || printButton.dataset.batch;
+        const productName = printButton.getAttribute('data-product') || printButton.dataset.product || '';
+        const quantity = parseInt(printButton.getAttribute('data-quantity') || printButton.dataset.quantity || '1', 10);
+        
+        if (batchNumber && batchNumber.trim() !== '') {
+            showBarcodePrintModal(batchNumber, productName, quantity);
+        } else {
+            alert('رقم التشغيلة غير متوفر للطباعة.');
         }
     }
 });
