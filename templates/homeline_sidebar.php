@@ -67,6 +67,13 @@ switch ($role) {
                 'badge' => null
             ],
             [
+                'title' => 'عملاء المندوبين',
+                'icon' => 'bi-people-fill',
+                'url' => $baseUrl . 'manager.php?page=representatives_customers',
+                'active' => ($currentPage === 'manager.php' && $currentPageParam === 'representatives_customers'),
+                'badge' => null
+            ],
+            [
                 'title' => 'طلبات العملاء',
                 'icon' => 'bi-bag-check',
                 'url' => $baseUrl . 'manager.php?page=orders',

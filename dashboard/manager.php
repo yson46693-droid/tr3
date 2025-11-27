@@ -733,6 +733,21 @@ $pageTitle = isset($lang['manager_dashboard']) ? $lang['manager_dashboard'] : '�
                     echo '<div class="alert alert-warning">صفحة العملاء غير متاحة حالياً</div>';
                 }
                 ?>
+                
+            <?php elseif ($page === 'representatives_customers'): ?>
+                <?php 
+                $modulePath = __DIR__ . '/../modules/manager/representatives_customers.php';
+                if (file_exists($modulePath)) {
+                    try {
+                        include $modulePath;
+                    } catch (Throwable $e) {
+                        error_log('Manager representatives customers module error: ' . $e->getMessage());
+                        echo '<div class="alert alert-danger">حدث خطأ أثناء تحميل صفحة عملاء المندوبين: ' . htmlspecialchars($e->getMessage()) . '</div>';
+                    }
+                } else {
+                    echo '<div class="alert alert-warning">صفحة عملاء المندوبين غير متاحة حالياً</div>';
+                }
+                ?>
 
             <?php elseif ($page === 'rep_customers_view'): ?>
                 <?php 
