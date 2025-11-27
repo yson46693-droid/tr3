@@ -28,7 +28,7 @@ applyPRGPattern($error, $success);
 
 $sectionInput = $_POST['section'] ?? $_GET['section'] ?? 'company';
 $section = $sectionInput;
-$allowedSections = ['company', 'representatives'];
+$allowedSections = ['company', 'representatives', 'rep_customers'];
 if (!in_array($section, $allowedSections, true)) {
     $section = 'company';
 }
@@ -360,7 +360,6 @@ $tabs = [
         'href' => getRelativeUrl($basePageUrl . '&section=company'),
         'icon' => 'bi bi-building',
     ],
-    
 ];
 
 $primaryButton = null;

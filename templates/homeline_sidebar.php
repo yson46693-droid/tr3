@@ -60,7 +60,7 @@ switch ($role) {
                 'badge' => null
             ],
             [
-                'title' => isset($lang['customers']) ? $lang['customers'] : 'العملاء',
+                'title' => isset($lang['customers']) ? $lang['customers'] : ' عملاء الشركة',
                 'icon' => 'bi-people',
                 'url' => $baseUrl . 'manager.php?page=customers',
                 'active' => ($currentPage === 'manager.php' && $currentPageParam === 'customers'),
@@ -74,7 +74,7 @@ switch ($role) {
                 'badge' => null
             ],
             [
-                'title' => 'طلبات العملاء',
+                'title' => ' تسجيل طلبات العملاء',
                 'icon' => 'bi-bag-check',
                 'url' => $baseUrl . 'manager.php?page=orders',
                 'active' => ($currentPage === 'manager.php' && $currentPageParam === 'orders'),
@@ -117,7 +117,7 @@ switch ($role) {
                 'badge' => null
             ],
             [
-                'title' => 'مهام الإنتاج',
+                'title' => ' تسجيل مهام الإنتاج',
                 'icon' => 'bi-list-task',
                 'url' => $baseUrl . 'manager.php?page=production_tasks',
                 'active' => ($currentPage === 'manager.php' && $currentPageParam === 'production_tasks'),

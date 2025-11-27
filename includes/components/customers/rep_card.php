@@ -80,14 +80,6 @@ if (!function_exists('renderRepresentativeCards')) {
                                                 <div class="rep-stat-value"><?php echo number_format($customerCount); ?></div>
                                             </div>
                                         </div>
-                                        <div class="col-6">
-                                            <div class="rep-stat-card">
-                                                <div class="rep-stat-label text-muted">آخر دخول</div>
-                                                <div class="rep-stat-value small">
-                                                    <?php echo !empty($rep['last_login_at']) ? htmlspecialchars(formatDate($rep['last_login_at'])) : 'غير متوفر'; ?>
-                                                </div>
-                                            </div>
-                                        </div>
                                     </div>
                                     <?php if (isset($rep['total_collections']) || isset($rep['total_returns'])): ?>
                                     <div class="row g-2">
@@ -109,12 +101,6 @@ if (!function_exists('renderRepresentativeCards')) {
                                         <?php endif; ?>
                                     </div>
                                     <?php endif; ?>
-                                    <div class="rep-contact-list small text-muted">
-                                        <div><i class="bi bi-telephone me-2"></i><?php echo htmlspecialchars($repPhone); ?></div>
-                                        <?php if ($repEmail): ?>
-                                            <div><i class="bi bi-envelope me-2"></i><?php echo htmlspecialchars($repEmail); ?></div>
-                                        <?php endif; ?>
-                                    </div>
                                     <div class="text-end">
                                         <button 
                                             type="button"
