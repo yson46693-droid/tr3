@@ -1252,9 +1252,9 @@ document.addEventListener('DOMContentLoaded', function() {
                 const modalInstance = bootstrap.Modal.getOrCreateInstance(historyModal);
                 modalInstance.show();
                 
-                // جلب بيانات سجل المشتريات من API endpoint
-                const basePath = '<?php echo getBasePath(); ?>';
-                const historyUrl = basePath + '/api/customer_purchase_history.php?action=get_history&customer_id=' + encodeURIComponent(customerId);
+                // جلب بيانات سجل المشتريات من endpoint customers (يعمل بشكل صحيح)
+                const baseUrl = '<?php echo getRelativeUrl($dashboardScript); ?>';
+                const historyUrl = baseUrl + (baseUrl.includes('?') ? '&' : '?') + 'page=customers&section=company&action=purchase_history&ajax=purchase_history&customer_id=' + encodeURIComponent(customerId);
                 
                 console.log('Fetching history from:', historyUrl);
                 
@@ -1285,36 +1285,6 @@ document.addEventListener('DOMContentLoaded', function() {
                         });
                     }
                     return response.json();
-                })
-                .then(data => {
-                    // تحويل البيانات من API إلى التنسيق المطلوب
-                    if (!data || !data.success) {
-                        throw new Error(data?.message || 'فشل تحميل بيانات السجل.');
-                    }
-                    
-                    // API يعيد purchase_history مباشرة، نحتاج لاستخدام endpoint customers للحصول على التنسيق المطلوب
-                    const baseUrl = '<?php echo getRelativeUrl($dashboardScript); ?>';
-                    const customersHistoryUrl = baseUrl + (baseUrl.includes('?') ? '&' : '?') + 'page=customers&section=company&action=purchase_history&ajax=purchase_history&customer_id=' + encodeURIComponent(customerId);
-                    
-                    return fetch(customersHistoryUrl, {
-                        credentials: 'same-origin',
-                        headers: {
-                            'Accept': 'application/json',
-                            'X-Requested-With': 'XMLHttpRequest'
-                        }
-                    }).then(response => {
-                        if (!response.ok) {
-                            throw new Error('تعذر تحميل البيانات. حالة الخادم: ' + response.status);
-                        }
-                        const contentType = response.headers.get('content-type') || '';
-                        if (!contentType.includes('application/json')) {
-                            return response.text().then(text => {
-                                console.error('Expected JSON but got:', contentType, text.substring(0, 500));
-                                throw new Error('استجابة غير صحيحة من الخادم.');
-                            });
-                        }
-                        return response.json();
-                    });
                 })
                 .then(payload => {
                     if (!payload || !payload.success) {
