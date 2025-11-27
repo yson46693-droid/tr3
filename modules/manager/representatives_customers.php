@@ -35,6 +35,8 @@ $representativeSummary = [
     'debt' => 0.0,
     'total_collections' => 0.0,
     'total_returns' => 0.0,
+    'creditors' => 0,
+    'total_credit' => 0.0,
 ];
 
 try {
@@ -140,7 +142,9 @@ try {
                     "SELECT 
                         COUNT(*) AS customer_count,
                         COALESCE(SUM(CASE WHEN balance > 0 THEN balance ELSE 0 END), 0) AS total_debt,
-                        COALESCE(SUM(CASE WHEN balance > 0 THEN 1 ELSE 0 END), 0) AS debtor_count
+                        COALESCE(SUM(CASE WHEN balance > 0 THEN 1 ELSE 0 END), 0) AS debtor_count,
+                        COALESCE(SUM(CASE WHEN balance < 0 THEN ABS(balance) ELSE 0 END), 0) AS total_credit,
+                        COALESCE(SUM(CASE WHEN balance < 0 THEN 1 ELSE 0 END), 0) AS creditor_count
                     FROM customers
                     WHERE rep_id = ? OR created_by = ?",
                     [$repId, $repId]
@@ -150,10 +154,14 @@ try {
                     $rep['customer_count'] = (int)($customerStats['customer_count'] ?? 0);
                     $rep['total_debt'] = (float)($customerStats['total_debt'] ?? 0.0);
                     $rep['debtor_count'] = (int)($customerStats['debtor_count'] ?? 0);
+                    $rep['total_credit'] = (float)($customerStats['total_credit'] ?? 0.0);
+                    $rep['creditor_count'] = (int)($customerStats['creditor_count'] ?? 0);
                 } else {
                     $rep['customer_count'] = 0;
                     $rep['total_debt'] = 0.0;
                     $rep['debtor_count'] = 0;
+                    $rep['total_credit'] = 0.0;
+                    $rep['creditor_count'] = 0;
                 }
             } catch (Throwable $statsError) {
                 error_log('Customer stats error for rep ' . $repId . ': ' . $statsError->getMessage());
@@ -233,6 +241,8 @@ try {
         $representativeSummary['customers'] += (int)($repRow['customer_count'] ?? 0);
         $representativeSummary['debtors'] += (int)($repRow['debtor_count'] ?? 0);
         $representativeSummary['debt'] += (float)($repRow['total_debt'] ?? 0.0);
+        $representativeSummary['creditors'] += (int)($repRow['creditor_count'] ?? 0);
+        $representativeSummary['total_credit'] += (float)($repRow['total_credit'] ?? 0.0);
         $representativeSummary['total_collections'] += $collectionsTotal;
         $representativeSummary['total_returns'] += $returnsTotal;
     }
@@ -349,6 +359,28 @@ if ($error): ?>
             </div>
         </div>
     </div>
+    <div class="col-6 col-md-3">
+        <div class="card shadow-sm border-0 h-100">
+            <div class="card-body d-flex align-items-center justify-content-between">
+                <div>
+                    <div class="text-muted small">العملاء الدائنين</div>
+                    <div class="fs-4 fw-bold text-primary mb-0"><?php echo number_format($representativeSummary['creditors']); ?></div>
+                </div>
+                <span class="text-primary display-6"><i class="bi bi-people"></i></span>
+            </div>
+        </div>
+    </div>
+    <div class="col-6 col-md-3">
+        <div class="card shadow-sm border-0 h-100">
+            <div class="card-body d-flex align-items-center justify-content-between">
+                <div>
+                    <div class="text-muted small">إجمالي الرصيد الدائن</div>
+                    <div class="fs-4 fw-bold text-primary mb-0"><?php echo formatCurrency($representativeSummary['total_credit']); ?></div>
+                </div>
+                <span class="text-primary display-6"><i class="bi bi-wallet2"></i></span>
+            </div>
+        </div>
+    </div>
 </div>
 
 <?php
@@ -356,6 +388,101 @@ renderRepresentativeCards($representatives, [
     'view_base_url' => getRelativeUrl($dashboardScript . '?page=rep_customers_view'),
 ]);
 ?>
+
+<?php
+// جلب العملاء ذوي الرصيد الدائن (رصيد سالب)
+$creditorCustomers = [];
+try {
+    $creditorCustomers = $db->query(
+        "SELECT 
+            c.id,
+            c.name,
+            c.phone,
+            c.email,
+            c.address,
+            c.balance,
+            c.created_at,
+            u.full_name AS rep_name,
+            u.id AS rep_id
+        FROM customers c
+        LEFT JOIN users u ON (c.rep_id = u.id OR c.created_by = u.id)
+        WHERE (c.rep_id IN (SELECT id FROM users WHERE role = 'sales') 
+               OR c.created_by IN (SELECT id FROM users WHERE role = 'sales'))
+          AND c.balance < 0
+        ORDER BY ABS(c.balance) DESC, c.name ASC"
+    );
+} catch (Throwable $creditorError) {
+    error_log('Creditor customers query error: ' . $creditorError->getMessage());
+    $creditorCustomers = [];
+}
+?>
+
+<?php if (!empty($creditorCustomers)): ?>
+<div class="row mt-4">
+    <div class="col-12">
+        <div class="card shadow-sm">
+            <div class="card-header bg-primary text-white">
+                <h5 class="mb-0">
+                    <i class="bi bi-wallet2 me-2"></i>
+                    العملاء ذوو الرصيد الدائن (<?php echo number_format(count($creditorCustomers)); ?>)
+                </h5>
+            </div>
+            <div class="card-body">
+                <div class="table-responsive">
+                    <table class="table table-hover align-middle">
+                        <thead class="table-light">
+                            <tr>
+                                <th>اسم العميل</th>
+                                <th>رقم الهاتف</th>
+                                <th>البريد الإلكتروني</th>
+                                <th>العنوان</th>
+                                <th>الرصيد الدائن</th>
+                                <th>المندوب</th>
+                                <th>تاريخ الإضافة</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            <?php foreach ($creditorCustomers as $customer): ?>
+                                <?php
+                                $balanceValue = (float)($customer['balance'] ?? 0.0);
+                                $creditAmount = abs($balanceValue);
+                                ?>
+                                <tr>
+                                    <td>
+                                        <strong><?php echo htmlspecialchars($customer['name'] ?? '-'); ?></strong>
+                                    </td>
+                                    <td><?php echo htmlspecialchars($customer['phone'] ?? '-'); ?></td>
+                                    <td><?php echo htmlspecialchars($customer['email'] ?? '-'); ?></td>
+                                    <td><?php echo htmlspecialchars($customer['address'] ?? '-'); ?></td>
+                                    <td>
+                                        <span class="badge bg-primary-subtle text-primary fs-6">
+                                            <?php echo formatCurrency($creditAmount); ?>
+                                        </span>
+                                    </td>
+                                    <td>
+                                        <?php if (!empty($customer['rep_name'])): ?>
+                                            <span class="text-muted">
+                                                <?php echo htmlspecialchars($customer['rep_name']); ?>
+                                            </span>
+                                        <?php else: ?>
+                                            <span class="text-muted">—</span>
+                                        <?php endif; ?>
+                                    </td>
+                                    <td>
+                                        <?php echo function_exists('formatDate') 
+                                            ? formatDate($customer['created_at'] ?? '') 
+                                            : htmlspecialchars((string)($customer['created_at'] ?? '-')); ?>
+                                    </td>
+                                </tr>
+                            <?php endforeach; ?>
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+<?php endif; ?>
 
 <style>
 .representative-card-link {
