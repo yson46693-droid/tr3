@@ -646,10 +646,6 @@ try {
             </div>
             <div class="modal-footer">
                 <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">إغلاق</button>
-                <a href="#" id="repViewCustomersLink" class="btn btn-primary" target="_blank">
-                    <i class="bi bi-people-fill me-1"></i>
-                    عرض جميع العملاء
-                </a>
             </div>
         </div>
     </div>
