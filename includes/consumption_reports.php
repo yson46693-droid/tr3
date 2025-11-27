@@ -276,15 +276,51 @@ function getConsumptionSummary($dateFrom, $dateTo)
             $isPackagingMaterial = in_array($productId, $packagingMaterialsIds);
         }
         
+        // التحقق من أن المنتج ليس مادة خام
+        $isRawMaterial = false;
+        if ($productId > 0 && !empty($rawMaterialsMeta)) {
+            $isRawMaterial = isset($rawMaterialsMeta[$productId]);
+        }
+        
         $classification = consumptionClassifyProduct($row, $packagingMap);
         if (!$classification) {
             continue;
         }
         [$category, $subKey, $subLabel] = $classification;
         
-        // إذا كان التصنيف packaging لكن المنتج غير موجود في packaging_materials، تجاهله
-        if ($category === 'packaging' && !$isPackagingMaterial && !isset($packagingMap[$productId])) {
-            // التحقق مرة أخرى من الكلمات المفتاحية - إذا لم يكن في packaging_materials، تجاهله
+        // إذا كان المنتج مادة خام، يجب أن يكون في فئة raw فقط وليس packaging
+        if ($isRawMaterial) {
+            $category = 'raw';
+            // تحديث التصنيف الفرعي إذا لزم الأمر
+            if (!isset($subKey) || $subKey === 'general') {
+                $materialType = mb_strtolower($row['material_type'] ?? '');
+                if ($materialType !== '') {
+                    $materialMatches = [
+                        'honey_raw' => ['honey', 'منتجات العسل'],
+                        'honey_filtered' => ['honey', 'منتجات العسل'],
+                        'olive_oil' => ['olive_oil', 'زيت الزيتون'],
+                        'beeswax' => ['beeswax', 'شمع العسل'],
+                        'derivatives' => ['derivatives', 'المشتقات'],
+                        'nuts' => ['nuts', 'المكسرات']
+                    ];
+                    if (isset($materialMatches[$materialType])) {
+                        $subKey = $materialMatches[$materialType][0];
+                        $subLabel = $materialMatches[$materialType][1];
+                    } else {
+                        $subKey = 'other';
+                        $subLabel = 'مواد خام أخرى';
+                    }
+                } else {
+                    $subKey = 'other';
+                    $subLabel = 'مواد خام أخرى';
+                }
+            }
+        }
+        
+        // إذا كان التصنيف packaging، يجب أن يكون المنتج موجوداً في packaging_materials فقط
+        // ولا يجب أن يكون مادة خام
+        if ($category === 'packaging' && (!$isPackagingMaterial || $isRawMaterial)) {
+            // تجاهل هذا العنصر من أدوات التعبئة
             continue;
         }
         
@@ -386,6 +422,19 @@ function getConsumptionSummary($dateFrom, $dateTo)
                 if ($name === '') {
                     $name = $materialId > 0 ? ('أداة #' . $materialId) : 'أداة تعبئة';
                 }
+                
+                // التحقق من أن المادة ليست مادة خام
+                if ($materialId > 0 && isset($rawMaterialsMeta[$materialId])) {
+                    // هذه مادة خام، يجب تجاهلها من أدوات التعبئة
+                    continue;
+                }
+                
+                // التحقق من أن المادة موجودة في قائمة أدوات التعبئة
+                if ($materialId > 0 && !empty($packagingMaterialsIds) && !in_array($materialId, $packagingMaterialsIds)) {
+                    // هذه المادة ليست في قائمة أدوات التعبئة، يجب تجاهلها
+                    continue;
+                }
+                
                 $quantityUsed = consumptionFormatNumber($packRow['total_used'] ?? 0);
                 if ($quantityUsed <= 0) {
                     continue;
