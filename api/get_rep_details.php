@@ -2,6 +2,9 @@
 
 declare(strict_types=1);
 
+// تعريف ACCESS_ALLOWED قبل تضمين أي ملفات
+define('ACCESS_ALLOWED', true);
+
 // إرسال header JSON أولاً
 header('Content-Type: application/json; charset=utf-8');
 
