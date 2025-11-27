@@ -6486,7 +6486,7 @@ $lang = isset($translations) ? $translations : [];
                     مواصفة
                 </span>
                 <?php if (($currentUser['role'] ?? '') === 'manager'): ?>
-                    <a href="<?php echo getDashboardUrl('manager'); ?>?page=product_specifications" class="btn btn-light btn-sm">
+                    <a href="<?php echo getDashboardUrl('manager'); ?>?page=product_templates&section=specifications" class="btn btn-light btn-sm">
                         <i class="bi bi-gear me-1"></i>إدارة المواصفات
                     </a>
                 <?php endif; ?>
@@ -6579,7 +6579,7 @@ $lang = isset($translations) ? $translations : [];
                 <?php if ($totalSpecificationsCount > $specificationsCount): ?>
                     <div class="text-muted small mt-3 d-flex justify-content-between flex-wrap gap-2">
                         <span>يعرض آخر <?php echo number_format($specificationsCount); ?> من إجمالي <?php echo number_format($totalSpecificationsCount); ?> مواصفة.</span>
-                        <a class="text-decoration-none" href="<?php echo getDashboardUrl('manager'); ?>?page=product_specifications">
+                        <a class="text-decoration-none" href="<?php echo getDashboardUrl('manager'); ?>?page=product_templates&section=specifications">
                             <i class="bi bi-box-arrow-up-right me-1"></i>عرض جميع المواصفات
                         </a>
                     </div>

@@ -116,7 +116,7 @@ $pageTitle = isset($lang['manager_dashboard']) ? $lang['manager_dashboard'] : '�
                     [
                         'label' => 'مواصفات المنتجات',
                         'icon' => 'bi-journal-text',
-                        'url' => getRelativeUrl('dashboard/manager.php?page=product_specifications')
+                        'url' => getRelativeUrl('dashboard/manager.php?page=product_templates&section=specifications')
                     ],
                     [
                         'label' => 'مخزن أدوات التعبئة',
