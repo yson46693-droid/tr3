@@ -395,18 +395,27 @@ if (!$error && $_SERVER['REQUEST_METHOD'] === 'POST') {
                     }
 
                     $currentBalance = (float) ($customer['balance'] ?? 0);
-                    if ($currentBalance < 0 && $dueAmount > 0) {
-                        // إذا كان للعميل رصيد دائن (سالب)، يتم استخدامه لخفض الدين
-                        $creditUsed = min(abs($currentBalance), $dueAmount);
-                        $dueAmount = round($dueAmount - $creditUsed, 2);
-                        // إضافة الرصيد المستخدم إلى المبلغ المدفوع
-                        $effectivePaidAmount += $creditUsed;
-                    } else {
-                        $creditUsed = 0.0;
+                    $creditUsed = 0.0;
+                    
+                    // حساب المبلغ المتبقي بعد التحصيل الجزئي
+                    $remainingAfterPartialPayment = $baseDueAmount;
+                    
+                    // إذا كان للعميل رصيد دائن (سالب)، يتم استخدامه أولاً لخفض المبلغ المتبقي بعد التحصيل الجزئي
+                    if ($currentBalance < 0 && $remainingAfterPartialPayment > 0) {
+                        $creditAvailable = abs($currentBalance);
+                        $creditUsed = min($creditAvailable, $remainingAfterPartialPayment);
+                        $remainingAfterPartialPayment = round($remainingAfterPartialPayment - $creditUsed, 2);
                     }
-
-                    // حساب الرصيد الجديد: الرصيد الحالي + الرصيد المستخدم + الدين المتبقي
-                    // إذا كان الرصيد سالباً واستخدمناه بالكامل، يصبح الرصيد الجديد = الرصيد الحالي + creditUsed
+                    
+                    // المبلغ المتبقي بعد التحصيل الجزئي وخصم الرصيد الدائن هو الدين الجديد
+                    $dueAmount = $remainingAfterPartialPayment;
+                    
+                    // حساب الرصيد الجديد:
+                    // الرصيد الحالي (سالب إذا كان دائن) + الرصيد الدائن المستخدم + الدين المتبقي
+                    // مثال: رصيد دائن -50، استخدمنا 30، دين متبقي 20
+                    // الرصيد الجديد = -50 + 30 + 20 = 0 (لا يوجد رصيد دائن ولا مدين)
+                    // مثال آخر: رصيد دائن -100، استخدمنا 50، دين متبقي 0
+                    // الرصيد الجديد = -100 + 50 + 0 = -50 (رصيد دائن متبقي)
                     $newBalance = round($currentBalance + $creditUsed + $dueAmount, 2);
                     if (abs($newBalance - $currentBalance) > 0.0001) {
                         $db->execute("UPDATE customers SET balance = ? WHERE id = ?", [$newBalance, $customerId]);
@@ -433,7 +442,7 @@ if (!$error && $_SERVER['REQUEST_METHOD'] === 'POST') {
                     $prepaidAmount,
                     $notes,
                     $currentUser['id'],
-                    $dueDate
+                    $dueDate  // تمرير تاريخ الاستحقاق
                 );
 
                 if (empty($invoiceResult['success'])) {
@@ -461,6 +470,126 @@ if (!$error && $_SERVER['REQUEST_METHOD'] === 'POST') {
                     "UPDATE invoices SET paid_amount = ?, remaining_amount = ?, status = ?, updated_at = NOW() WHERE id = ?",
                     [$effectivePaidAmount, $dueAmount, $invoiceStatus, $invoiceId]
                 );
+                
+                // تسجيل التحصيل الجزئي في جدول التحصيلات إذا كان هناك مبلغ محصل فعلياً
+                if ($effectivePaidAmount > 0.0001 && $paymentType === 'partial') {
+                    // التحقق من وجود الأعمدة في جدول collections
+                    $hasStatusColumn = !empty($db->queryOne("SHOW COLUMNS FROM collections LIKE 'status'"));
+                    $hasNotesColumn = !empty($db->queryOne("SHOW COLUMNS FROM collections LIKE 'notes'"));
+                    $hasCollectionNumberColumn = !empty($db->queryOne("SHOW COLUMNS FROM collections LIKE 'collection_number'"));
+                    
+                    $collectionNumber = null;
+                    if ($hasCollectionNumberColumn) {
+                        try {
+                            $year = date('Y', strtotime($saleDate));
+                            $month = date('m', strtotime($saleDate));
+                            $lastCollection = $db->queryOne(
+                                "SELECT collection_number FROM collections WHERE collection_number LIKE ? ORDER BY collection_number DESC LIMIT 1",
+                                ["COL-{$year}{$month}-%"]
+                            );
+                            
+                            $serial = 1;
+                            if (!empty($lastCollection['collection_number'])) {
+                                $parts = explode('-', $lastCollection['collection_number']);
+                                $serial = intval($parts[2] ?? 0) + 1;
+                            }
+                            $collectionNumber = sprintf("COL-%s%s-%04d", $year, $month, $serial);
+                        } catch (Throwable $e) {
+                            error_log('Error generating collection number: ' . $e->getMessage());
+                        }
+                    }
+                    
+                    $collectionColumns = ['customer_id', 'amount', 'date', 'payment_method', 'collected_by'];
+                    $collectionValues = [$customerId, $effectivePaidAmount, $saleDate, 'cash', $currentUser['id']];
+                    $collectionPlaceholders = ['?', '?', '?', '?', '?'];
+                    
+                    if ($hasCollectionNumberColumn && $collectionNumber !== null) {
+                        array_unshift($collectionColumns, 'collection_number');
+                        array_unshift($collectionValues, $collectionNumber);
+                        array_unshift($collectionPlaceholders, '?');
+                    }
+                    
+                    if ($hasNotesColumn) {
+                        $collectionColumns[] = 'notes';
+                        $collectionValues[] = 'تحصيل جزئي من نقطة بيع المندوب - فاتورة ' . $invoiceNumber;
+                        $collectionPlaceholders[] = '?';
+                    }
+                    
+                    if ($hasStatusColumn) {
+                        $collectionColumns[] = 'status';
+                        $collectionValues[] = 'pending';
+                        $collectionPlaceholders[] = '?';
+                    }
+                    
+                    try {
+                        $collectionSql = "INSERT INTO collections (" . implode(', ', $collectionColumns) . ") VALUES (" . implode(', ', $collectionPlaceholders) . ")";
+                        $db->execute($collectionSql, $collectionValues);
+                        $collectionId = $db->getLastInsertId();
+                        
+                        logAudit($currentUser['id'], 'pos_partial_collection', 'collection', $collectionId, null, [
+                            'invoice_id' => $invoiceId,
+                            'invoice_number' => $invoiceNumber,
+                            'amount' => $effectivePaidAmount,
+                            'collection_number' => $collectionNumber
+                        ]);
+                    } catch (Throwable $collectionError) {
+                        error_log('Error recording partial collection: ' . $collectionError->getMessage());
+                        // لا نوقف العملية إذا فشل تسجيل التحصيل، لكن نسجل الخطأ
+                    }
+                }
+                
+                // إنشاء سجل في payment_schedules إذا كان هناك تاريخ استحقاق ومبلغ متبقي
+                if ($dueDate && $dueAmount > 0.0001) {
+                    try {
+                        // التحقق من وجود جدول payment_schedules
+                        $paymentSchedulesTableExists = $db->queryOne("SHOW TABLES LIKE 'payment_schedules'");
+                        if (!empty($paymentSchedulesTableExists)) {
+                            // التحقق من وجود عمود invoice_id في payment_schedules
+                            $hasInvoiceIdColumn = !empty($db->queryOne("SHOW COLUMNS FROM payment_schedules LIKE 'invoice_id'"));
+                            
+                            if ($hasInvoiceIdColumn) {
+                                // إنشاء سجل في payment_schedules مرتبط بالفاتورة
+                                $db->execute(
+                                    "INSERT INTO payment_schedules 
+                                    (invoice_id, customer_id, sales_rep_id, amount, due_date, installment_number, total_installments, status, created_by) 
+                                    VALUES (?, ?, ?, ?, ?, 1, 1, 'pending', ?)",
+                                    [
+                                        $invoiceId,
+                                        $customerId,
+                                        $currentUser['id'],
+                                        $dueAmount,
+                                        $dueDate,
+                                        $currentUser['id']
+                                    ]
+                                );
+                                
+                                logAudit($currentUser['id'], 'create_payment_schedule_from_pos', 'payment_schedule', $invoiceId, null, [
+                                    'invoice_id' => $invoiceId,
+                                    'invoice_number' => $invoiceNumber,
+                                    'amount' => $dueAmount,
+                                    'due_date' => $dueDate
+                                ]);
+                            } else {
+                                // إذا لم يكن هناك عمود invoice_id، نستخدم sale_id (null في هذه الحالة)
+                                $db->execute(
+                                    "INSERT INTO payment_schedules 
+                                    (sale_id, customer_id, sales_rep_id, amount, due_date, installment_number, total_installments, status, created_by) 
+                                    VALUES (NULL, ?, ?, ?, ?, 1, 1, 'pending', ?)",
+                                    [
+                                        $customerId,
+                                        $currentUser['id'],
+                                        $dueAmount,
+                                        $dueDate,
+                                        $currentUser['id']
+                                    ]
+                                );
+                            }
+                        }
+                    } catch (Throwable $scheduleError) {
+                        error_log('Error creating payment schedule: ' . $scheduleError->getMessage());
+                        // لا نوقف العملية إذا فشل إنشاء الجدول الزمني، لكن نسجل الخطأ
+                    }
+                }
 
                 $totalSoldValue = 0;
 
@@ -509,7 +638,13 @@ if (!$error && $_SERVER['REQUEST_METHOD'] === 'POST') {
 
                     // تحديث vehicle_inventory بعد تسجيل الحركة
                     $newQuantity = max(0, $available - $quantity);
-                    $updateResult = updateVehicleInventory($vehicle['id'], $productId, $newQuantity, $currentUser['id']);
+                    // تمرير finished_batch_id في finishedProductData لضمان تحديث السجل الصحيح
+                    $finishedProductData = [];
+                    if ($batchId) {
+                        $finishedProductData['finished_batch_id'] = $batchId;
+                        $finishedProductData['batch_id'] = $batchId;
+                    }
+                    $updateResult = updateVehicleInventory($vehicle['id'], $productId, $newQuantity, $currentUser['id'], null, $finishedProductData);
                     if (empty($updateResult['success'])) {
                         throw new RuntimeException($updateResult['message'] ?? 'تعذر تحديث مخزون السيارة.');
                     }

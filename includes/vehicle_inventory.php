@@ -1338,8 +1338,24 @@ function updateVehicleInventory($vehicleId, $productId, $quantity, $userId = nul
                     );
                     
                     if ($fallbackExisting) {
-                        // تحديث السجل الموجود - جمع الكميات إذا كان finished_batch_id مختلف
-                        $newQuantity = (float)($fallbackExisting['quantity'] ?? 0) + $quantity;
+                        // تحديد ما إذا كان finished_batch_id مختلف - إذا كان مختلف، نجمع الكميات، وإلا نحدد الكمية
+                        $existingBatchId = !empty($fallbackExisting['finished_batch_id']) ? (int)$fallbackExisting['finished_batch_id'] : null;
+                        $newBatchId = $finishedBatchId !== null ? (int)$finishedBatchId : null;
+                        
+                        // إذا كان finished_batch_id مختلف أو أحدهما null والآخر ليس null، نجمع الكميات
+                        // وإلا (نفس finished_batch_id أو كلاهما null)، نحدد الكمية (SET)
+                        if (($existingBatchId !== $newBatchId) || 
+                            ($existingBatchId === null && $newBatchId !== null) || 
+                            ($existingBatchId !== null && $newBatchId === null)) {
+                            // finished_batch_id مختلف - جمع الكميات (إضافة مخزون جديد)
+                            $newQuantity = (float)($fallbackExisting['quantity'] ?? 0) + $quantity;
+                            error_log("VehicleInventory: Adding quantities due to different batch_id (existing: $existingBatchId, new: $newBatchId)");
+                        } else {
+                            // نفس finished_batch_id أو كلاهما null - تحديد الكمية (SET) - هذا هو السلوك الافتراضي للدالة
+                            $newQuantity = $quantity;
+                            error_log("VehicleInventory: Setting quantity due to same batch_id (batch_id: $existingBatchId)");
+                        }
+                        
                         $db->execute(
                             "UPDATE vehicle_inventory 
                              SET quantity = ?, last_updated_by = ?, last_updated_at = NOW(),
@@ -1364,7 +1380,7 @@ function updateVehicleInventory($vehicleId, $productId, $quantity, $userId = nul
                                 $fallbackExisting['id']
                             ]
                         );
-                        error_log("VehicleInventory: Updated existing record due to unique constraint (batch_id may differ)");
+                        error_log("VehicleInventory: Updated existing record due to unique constraint");
                     } else {
                         // إذا لم نجد سجل موجود، أعد رمي الخطأ
                         throw $insertError;

@@ -15,7 +15,7 @@ require_once __DIR__ . '/notifications.php';
 /**
  * إنشاء فاتورة جديدة
  */
-function createInvoice($customerId, $salesRepId, $date, $items, $taxRate = 0, $discountAmount = 0, $notes = null, $createdBy = null) {
+function createInvoice($customerId, $salesRepId, $date, $items, $taxRate = 0, $discountAmount = 0, $notes = null, $createdBy = null, $dueDate = null) {
     try {
         $db = db();
         
@@ -41,7 +41,7 @@ function createInvoice($customerId, $salesRepId, $date, $items, $taxRate = 0, $d
         $taxAmount = 0; // تم إلغاء الضريبة
         $totalAmount = $subtotal - $discountAmount;
         
-        // حساب تاريخ الاستحقاق (إذا لم يتم تحديده، استخدم null لطباعة "أجل غير مسمى")
+        // التحقق من صحة تاريخ الاستحقاق (إذا لم يتم تحديده، استخدم null لطباعة "أجل غير مسمى")
         if (empty($dueDate) || !preg_match('/^\d{4}-\d{2}-\d{2}$/', $dueDate)) {
             $dueDate = null;
         }
