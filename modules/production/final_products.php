@@ -3551,6 +3551,30 @@ if (!window.transferFormInitialized) {
                 return;
             }
             
+            // زر طباعة الباركود
+            const printButton = event.target.closest('.js-print-barcode');
+            if (printButton) {
+                event.preventDefault();
+                event.stopPropagation();
+                const batchNumber = printButton.getAttribute('data-batch') || printButton.dataset.batch;
+                const productName = printButton.getAttribute('data-product') || printButton.dataset.product || '';
+                const quantity = parseInt(printButton.getAttribute('data-quantity') || printButton.dataset.quantity || '1', 10);
+                
+                if (batchNumber && batchNumber.trim() !== '') {
+                    if (typeof window.showBarcodePrintModal === 'function') {
+                        window.showBarcodePrintModal(batchNumber, productName, quantity);
+                    } else {
+                        console.error('showBarcodePrintModal function not found');
+                        // Fallback: فتح صفحة الطباعة مباشرة
+                        const printUrl = `${window.PRINT_BARCODE_URL || 'print_barcode.php'}?batch=${encodeURIComponent(batchNumber)}&quantity=${quantity}&print=1`;
+                        window.open(printUrl, '_blank');
+                    }
+                } else {
+                    alert('رقم التشغيلة غير متوفر للطباعة.');
+                }
+                return;
+            }
+            
             // فتح نموذج إضافة منتج خارجي
             const addExternalBtn = event.target.closest('.js-open-add-external-modal');
             if (addExternalBtn) {
@@ -3706,6 +3730,88 @@ if (!window.transferFormInitialized) {
         attachClickEvents();
     }
 }
+</script>
+
+<script>
+// وظيفة طباعة الباركود - يجب أن تكون متاحة عالمياً
+const PRINT_BARCODE_URL = <?php echo json_encode(getRelativeUrl('print_barcode.php')); ?>;
+
+// جعل المتغير متاحاً عالمياً
+window.PRINT_BARCODE_URL = PRINT_BARCODE_URL;
+
+function showBarcodePrintModal(batchNumber, productName, defaultQuantity) {
+    const modalElement = document.getElementById('printBarcodesModal');
+    if (!modalElement) {
+        console.error('Modal printBarcodesModal not found');
+        // Fallback: فتح صفحة الطباعة مباشرة
+        const quantity = defaultQuantity > 0 ? defaultQuantity : 1;
+        const fallbackUrl = `${PRINT_BARCODE_URL}?batch=${encodeURIComponent(batchNumber)}&quantity=${quantity}&print=1`;
+        window.open(fallbackUrl, '_blank');
+        return;
+    }
+    
+    const quantity = defaultQuantity > 0 ? defaultQuantity : 1;
+
+    window.batchNumbersToPrint = [batchNumber];
+
+    const productNameInput = document.getElementById('barcode_product_name');
+    if (productNameInput) {
+        productNameInput.value = productName || '';
+    }
+
+    const quantityText = document.getElementById('barcode_quantity');
+    if (quantityText) {
+        quantityText.textContent = quantity;
+    }
+
+    const quantityInput = document.getElementById('barcode_print_quantity');
+    if (quantityInput) {
+        quantityInput.value = quantity;
+    }
+
+    const batchListContainer = document.getElementById('batch_numbers_list');
+    if (batchListContainer) {
+        batchListContainer.innerHTML = `
+            <div class="alert alert-info mb-0">
+                <i class="bi bi-info-circle me-2"></i>
+                <strong>رقم التشغيلة:</strong> ${batchNumber}<br>
+                <small>ستتم طباعة نفس رقم التشغيلة بعدد ${quantity} باركود</small>
+            </div>
+        `;
+    }
+
+    if (typeof bootstrap !== 'undefined' && bootstrap.Modal) {
+        const modal = bootstrap.Modal.getOrCreateInstance(modalElement);
+        modal.show();
+    } else {
+        const fallbackUrl = `${PRINT_BARCODE_URL}?batch=${encodeURIComponent(batchNumber)}&quantity=${quantity}&print=1`;
+        window.open(fallbackUrl, '_blank');
+    }
+}
+
+function printBarcodes() {
+    const batchNumbers = window.batchNumbersToPrint || [];
+    if (batchNumbers.length === 0) {
+        alert('لا توجد أرقام تشغيلة للطباعة');
+        return;
+    }
+
+    const quantityInput = document.getElementById('barcode_print_quantity');
+    const printQuantity = quantityInput ? parseInt(quantityInput.value, 10) : 1;
+    
+    if (!printQuantity || printQuantity < 1) {
+        alert('يرجى إدخال عدد صحيح للطباعة');
+        return;
+    }
+
+    const batchNumber = batchNumbers[0];
+    const printUrl = `${PRINT_BARCODE_URL}?batch=${encodeURIComponent(batchNumber)}&quantity=${printQuantity}&print=1`;
+    window.open(printUrl, '_blank');
+}
+
+// جعل الدوال متاحة عالمياً
+window.showBarcodePrintModal = showBarcodePrintModal;
+window.printBarcodes = printBarcodes;
 </script>
 
 <!-- Modal طلب استلام منتجات من بضاعة المندوب -->
@@ -3959,87 +4065,6 @@ document.addEventListener('DOMContentLoaded', function() {
     }
 });
 
-// وظيفة طباعة الباركود
-const PRINT_BARCODE_URL = <?php echo json_encode(getRelativeUrl('print_barcode.php')); ?>;
-
-function showBarcodePrintModal(batchNumber, productName, defaultQuantity) {
-    const modalElement = document.getElementById('printBarcodesModal');
-    const quantity = defaultQuantity > 0 ? defaultQuantity : 1;
-
-    window.batchNumbersToPrint = [batchNumber];
-
-    const productNameInput = document.getElementById('barcode_product_name');
-    if (productNameInput) {
-        productNameInput.value = productName || '';
-    }
-
-    const quantityText = document.getElementById('barcode_quantity');
-    if (quantityText) {
-        quantityText.textContent = quantity;
-    }
-
-    const quantityInput = document.getElementById('barcode_print_quantity');
-    if (quantityInput) {
-        quantityInput.value = quantity;
-    }
-
-    const batchListContainer = document.getElementById('batch_numbers_list');
-    if (batchListContainer) {
-        batchListContainer.innerHTML = `
-            <div class="alert alert-info mb-0">
-                <i class="bi bi-info-circle me-2"></i>
-                <strong>رقم التشغيلة:</strong> ${batchNumber}<br>
-                <small>ستتم طباعة نفس رقم التشغيلة بعدد ${quantity} باركود</small>
-            </div>
-        `;
-    }
-
-    if (modalElement && typeof bootstrap !== 'undefined' && bootstrap.Modal) {
-        const modal = bootstrap.Modal.getOrCreateInstance(modalElement);
-        modal.show();
-    } else {
-        const fallbackUrl = `${PRINT_BARCODE_URL}?batch=${encodeURIComponent(batchNumber)}&quantity=${quantity}&print=1`;
-        window.open(fallbackUrl, '_blank');
-    }
-}
-
-function printBarcodes() {
-    const batchNumbers = window.batchNumbersToPrint || [];
-    if (batchNumbers.length === 0) {
-        alert('لا توجد أرقام تشغيلة للطباعة');
-        return;
-    }
-
-    const quantityInput = document.getElementById('barcode_print_quantity');
-    const printQuantity = quantityInput ? parseInt(quantityInput.value, 10) : 1;
-    
-    if (!printQuantity || printQuantity < 1) {
-        alert('يرجى إدخال عدد صحيح للطباعة');
-        return;
-    }
-
-    const batchNumber = batchNumbers[0];
-    const printUrl = `${PRINT_BARCODE_URL}?batch=${encodeURIComponent(batchNumber)}&quantity=${printQuantity}&print=1`;
-    window.open(printUrl, '_blank');
-}
-
-// ربط أحداث أزرار طباعة الباركود
-document.addEventListener('click', function(event) {
-    const printButton = event.target.closest('.js-print-barcode');
-    if (printButton) {
-        event.preventDefault();
-        event.stopPropagation();
-        const batchNumber = printButton.getAttribute('data-batch') || printButton.dataset.batch;
-        const productName = printButton.getAttribute('data-product') || printButton.dataset.product || '';
-        const quantity = parseInt(printButton.getAttribute('data-quantity') || printButton.dataset.quantity || '1', 10);
-        
-        if (batchNumber && batchNumber.trim() !== '') {
-            showBarcodePrintModal(batchNumber, productName, quantity);
-        } else {
-            alert('رقم التشغيلة غير متوفر للطباعة.');
-        }
-    }
-});
 </script>
 
 <!-- إعادة تحميل الصفحة تلقائياً بعد أي رسالة (نجاح أو خطأ) لمنع تكرار الطلبات -->
