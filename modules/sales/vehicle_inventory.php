@@ -456,214 +456,216 @@ foreach ($vehicleInventory as $item) {
             </div>
             
             <!-- قائمة مخزون السيارة -->
-            <div class="table-responsive dashboard-table-wrapper" style="overflow-x: auto; -webkit-overflow-scrolling: touch;">
-                <table class="table table-no-hover dashboard-table align-middle" style="min-width: 700px; font-size: 0.9rem;">
-                    <thead>
-                        <tr>
-                            <th style="min-width: 150px; white-space: nowrap;">المنتج</th>
-                            <th style="min-width: 120px; white-space: nowrap;">رقم التشغيلة</th>
-                            <th style="min-width: 110px; white-space: nowrap;">تاريخ الإنتاج</th>
-                            <th style="min-width: 80px; white-space: nowrap; text-align: center;">الكمية</th>
-                            <th style="min-width: 100px; white-space: nowrap; text-align: center;">سعر الوحدة</th>
-                            <th style="min-width: 120px; white-space: nowrap; text-align: center;">القيمة الإجمالية</th>
-                        </tr>
-                    </thead>
-                    <tbody>
-                        <?php if (empty($vehicleInventory)): ?>
-                            <tr>
-                                <td colspan="6" class="text-center text-muted">لا توجد منتجات في مخزن هذه السيارة</td>
-                            </tr>
-                        <?php else: ?>
-                            <?php foreach ($vehicleInventory as $item): ?>
-                                <tr>
-                                    <td style="min-width: 150px;">
-                                        <strong style="word-wrap: break-word; word-break: break-word;"><?php echo htmlspecialchars($item['product_name'] ?? '-'); ?></strong>
-                                    </td>
-                                    <td style="min-width: 120px; white-space: nowrap;"><?php echo htmlspecialchars($item['finished_batch_number'] ?? '—'); ?></td>
-                                    <td style="min-width: 110px; white-space: nowrap;"><?php echo !empty($item['finished_production_date']) ? htmlspecialchars(formatDate($item['finished_production_date'])) : '—'; ?></td>
-                                    <td style="min-width: 80px; white-space: nowrap; text-align: center;"><strong><?php echo number_format($item['quantity'], 2); ?></strong></td>
-                                    <td style="min-width: 100px; white-space: nowrap; text-align: center;">
-                                        <?php
-                                        // حساب سعر الوحدة بناءً على total_value / quantity إذا كان total_value متوفراً
-                                        // أو استخدام unit_price المحسوب
-                                        $unitPrice = 0;
-                                        if (!empty($item['total_value']) && !empty($item['quantity']) && floatval($item['quantity']) > 0) {
-                                            // إذا كان total_value صحيحاً، احسب unit_price منه
-                                            $unitPrice = floatval($item['total_value']) / floatval($item['quantity']);
-                                        } elseif (!empty($item['unit_price']) && floatval($item['unit_price']) > 0) {
-                                            // استخدام unit_price المحسوب من الاستعلام
-                                            $unitPrice = floatval($item['unit_price']);
-                                        } elseif (!empty($item['fp_unit_price']) && floatval($item['fp_unit_price']) > 0) {
-                                            // استخدام unit_price من finished_products
-                                            $unitPrice = floatval($item['fp_unit_price']);
-                                        } elseif (!empty($item['fp_unit_price']) && !empty($item['fp_total_price']) && !empty($item['fp_quantity_produced']) && floatval($item['fp_quantity_produced']) > 0) {
-                                            // حساب من finished_products إذا كان متوفراً
-                                            $unitPrice = floatval($item['fp_total_price']) / floatval($item['fp_quantity_produced']);
-                                        }
-                                        echo formatCurrency($unitPrice);
-                                        ?>
-                                    </td>
-                                    <td style="min-width: 120px; white-space: nowrap; text-align: center;"><strong><?php echo formatCurrency($item['total_value'] ?? 0); ?></strong></td>
-                                </tr>
-                            <?php endforeach; ?>
-                        <?php endif; ?>
-                    </tbody>
-                </table>
-            </div>
-            
             <style>
-                @media (max-width: 768px) {
-                    .dashboard-table-wrapper {
-                        -webkit-overflow-scrolling: touch;
-                        overflow-x: auto;
-                        overflow-y: hidden;
-                        border: 1px solid #dee2e6;
-                        border-radius: 0.25rem;
-                        margin: 0 -0.75rem;
-                        padding: 0.5rem 0.25rem;
-                    }
-                    
-                    .dashboard-table {
-                        font-size: 0.85rem;
-                        margin-bottom: 0;
-                        width: 100%;
-                    }
-                    
-                    .dashboard-table th,
-                    .dashboard-table td {
-                        padding: 0.5rem 0.4rem;
-                        vertical-align: middle;
-                    }
-                    
-                    .dashboard-table th {
-                        font-size: 0.8rem;
-                        font-weight: 600;
-                        background-color: #f8f9fa;
-                        position: sticky;
-                        top: 0;
-                        z-index: 10;
-                    }
-                    
-                    .dashboard-table td strong {
-                        font-size: 0.9rem;
-                    }
-                    
-                    .card-body {
-                        padding: 1rem;
-                    }
-                    
-                    .dashboard-table-details {
-                        font-size: 0.9rem;
-                    }
-                    
-                    .dashboard-table-details th {
-                        width: auto;
-                        min-width: 100px;
-                        font-size: 0.85rem;
-                    }
-                    
-                    .dashboard-table-details td {
-                        font-size: 0.9rem;
-                    }
-                    
-                    .card-header h5 {
-                        font-size: 1rem;
-                    }
-                    
-                    .card-header .btn {
-                        padding: 0.25rem 0.5rem;
-                        font-size: 0.875rem;
-                    }
-                    
-                    .card.bg-light .card-body h6 {
-                        font-size: 0.95rem;
-                        margin-bottom: 0.75rem;
-                    }
-                    
-                    .card.bg-light .card-body span,
-                    .card.bg-light .card-body strong {
-                        font-size: 0.9rem;
-                    }
+                body {
+                    font-family: 'Cairo', sans-serif;
                 }
-                
-                @media (max-width: 576px) {
-                    .dashboard-table-wrapper {
-                        margin: 0 -0.5rem;
-                        padding: 0.25rem 0.15rem;
-                    }
-                    
-                    .dashboard-table {
-                        font-size: 0.75rem;
-                        min-width: 650px;
-                    }
-                    
-                    .dashboard-table th,
-                    .dashboard-table td {
-                        padding: 0.4rem 0.3rem;
-                    }
-                    
-                    .dashboard-table th {
-                        font-size: 0.75rem;
-                    }
-                    
-                    .dashboard-table td strong {
-                        font-size: 0.85rem;
-                    }
-                    
-                    .card-body {
-                        padding: 0.75rem;
-                    }
-                    
-                    .dashboard-table-details {
-                        font-size: 0.85rem;
-                    }
-                    
-                    .dashboard-table-details th {
-                        font-size: 0.8rem;
-                        min-width: 90px;
-                    }
-                    
-                    .dashboard-table-details td {
-                        font-size: 0.85rem;
-                    }
-                    
-                    .card.bg-light .card-body {
-                        padding: 0.75rem;
-                    }
-                    
-                    .card.bg-light .card-body h6 {
-                        font-size: 0.9rem;
-                        margin-bottom: 0.5rem;
-                    }
-                    
-                    .card.bg-light .card-body span,
-                    .card.bg-light .card-body strong {
-                        font-size: 0.85rem;
-                    }
-                    
-                    .row.mb-3 {
-                        margin-bottom: 1rem !important;
-                    }
-                    
-                    .col-md-6 {
-                        margin-bottom: 1rem;
-                    }
-                    
-                    .form-label {
-                        font-size: 0.875rem;
-                    }
-                    
-                    .form-control-sm {
-                        font-size: 0.875rem;
-                        padding: 0.375rem 0.5rem;
-                    }
-                    
-                    .btn-sm {
-                        font-size: 0.8rem;
-                        padding: 0.375rem 0.75rem;
-                    }
+
+                .inventory-grid {
+                    padding: 25px;
+                    display: grid;
+                    grid-template-columns: repeat(auto-fit, minmax(340px, 1fr));
+                    gap: 20px;
+                }
+
+                .inventory-card {
+                    background: white;
+                    padding: 25px;
+                    border-radius: 18px;
+                    box-shadow: 0px 4px 20px rgba(0,0,0,0.07);
+                    border: 1px solid #e2e6f3;
+                    position: relative;
+                }
+
+                .inventory-status {
+                    position: absolute;
+                    top: 15px;
+                    left: 15px;
+                    background: #2e89ff;
+                    padding: 6px 14px;
+                    border-radius: 20px;
+                    color: white;
+                    font-size: 12px;
+                    font-weight: bold;
+                }
+
+                .inventory-prod-name {
+                    font-size: 18px;
+                    font-weight: bold;
+                    color: #0d2f66;
+                    margin-bottom: 6px;
+                }
+
+                .inventory-batch-id {
+                    color: #2767ff;
+                    font-weight: bold;
+                    text-decoration: none;
+                }
+
+                .inventory-barcode-box {
+                    background: #f8faff;
+                    border: 1px solid #d7e1f3;
+                    padding: 15px;
+                    border-radius: 12px;
+                    text-align: center;
+                    margin: 15px 0;
+                }
+
+                .inventory-barcode-id {
+                    font-weight: bold;
+                    margin-top: 8px;
+                    color: #123c90;
+                }
+
+                .inventory-detail-row {
+                    font-size: 14px;
+                    margin-top: 5px;
+                    color: #4b5772;
+                    display: flex;
+                    justify-content: space-between;
+                }
+
+                .inventory-barcode-container {
+                    width: 100%;
+                    min-height: 60px;
+                    display: flex;
+                    justify-content: center;
+                    align-items: center;
+                }
+
+                .inventory-barcode-container svg {
+                    max-width: 100%;
+                    height: auto;
                 }
             </style>
+
+            <!-- تحميل مكتبة JsBarcode -->
+            <script src="https://cdn.jsdelivr.net/npm/jsbarcode@3.11.5/dist/JsBarcode.all.min.js"></script>
+
+            <?php if (empty($vehicleInventory)): ?>
+                <div style="padding: 25px;">
+                    <div class="alert alert-info mb-0">
+                        <i class="bi bi-info-circle me-2"></i>
+                        لا توجد منتجات في مخزن هذه السيارة
+                    </div>
+                </div>
+            <?php else: ?>
+                <div class="inventory-grid">
+                    <?php foreach ($vehicleInventory as $item): ?>
+                        <?php
+                            $batchNumber = $item['finished_batch_number'] ?? '';
+                            $productName = htmlspecialchars($item['product_name'] ?? 'غير محدد');
+                            $productionDate = !empty($item['finished_production_date']) ? htmlspecialchars(formatDate($item['finished_production_date'])) : '—';
+                            $quantity = number_format((float)($item['quantity'] ?? 0), 2);
+                            
+                            // حساب سعر الوحدة
+                            $unitPrice = 0;
+                            if (!empty($item['total_value']) && !empty($item['quantity']) && floatval($item['quantity']) > 0) {
+                                $unitPrice = floatval($item['total_value']) / floatval($item['quantity']);
+                            } elseif (!empty($item['unit_price']) && floatval($item['unit_price']) > 0) {
+                                $unitPrice = floatval($item['unit_price']);
+                            } elseif (!empty($item['fp_unit_price']) && floatval($item['fp_unit_price']) > 0) {
+                                $unitPrice = floatval($item['fp_unit_price']);
+                            } elseif (!empty($item['fp_unit_price']) && !empty($item['fp_total_price']) && !empty($item['fp_quantity_produced']) && floatval($item['fp_quantity_produced']) > 0) {
+                                $unitPrice = floatval($item['fp_total_price']) / floatval($item['fp_quantity_produced']);
+                            }
+                            
+                            $totalValue = floatval($item['total_value'] ?? 0);
+                        ?>
+                        <div class="inventory-card">
+                            <div class="inventory-status">
+                                <i class="bi bi-truck me-1"></i>في السيارة
+                            </div>
+
+                            <div class="inventory-prod-name"><?php echo $productName; ?></div>
+                            <?php if ($batchNumber): ?>
+                                <a href="#" class="inventory-batch-id"><?php echo htmlspecialchars($batchNumber); ?></a>
+                            <?php else: ?>
+                                <span class="inventory-batch-id">—</span>
+                            <?php endif; ?>
+
+                            <div class="inventory-barcode-box">
+                                <?php if ($batchNumber): ?>
+                                    <div class="inventory-barcode-container" data-batch="<?php echo htmlspecialchars($batchNumber); ?>">
+                                        <svg class="barcode-svg" style="width: 100%; height: 50px;"></svg>
+                                    </div>
+                                    <div class="inventory-barcode-id"><?php echo htmlspecialchars($batchNumber); ?></div>
+                                <?php else: ?>
+                                    <div class="inventory-barcode-id" style="color: #999;">لا يوجد باركود</div>
+                                <?php endif; ?>
+                            </div>
+
+                            <div class="inventory-detail-row"><span>تاريخ الإنتاج:</span> <span><?php echo $productionDate; ?></span></div>
+                            <div class="inventory-detail-row"><span>الكمية:</span> <span><strong><?php echo $quantity; ?></strong></span></div>
+                            <div class="inventory-detail-row"><span>سعر الوحدة:</span> <span><?php echo formatCurrency($unitPrice); ?></span></div>
+                            <div class="inventory-detail-row"><span>القيمة الإجمالية:</span> <span><strong class="text-success"><?php echo formatCurrency($totalValue); ?></strong></span></div>
+                        </div>
+                    <?php endforeach; ?>
+                </div>
+                
+                <!-- توليد الباركودات -->
+                <script>
+                (function() {
+                    var maxRetries = 50;
+                    var retryCount = 0;
+                    
+                    function generateAllBarcodes() {
+                        if (typeof JsBarcode === 'undefined') {
+                            retryCount++;
+                            if (retryCount < maxRetries) {
+                                setTimeout(generateAllBarcodes, 100);
+                            } else {
+                                console.error('JsBarcode library failed to load');
+                                document.querySelectorAll('.inventory-barcode-container[data-batch]').forEach(function(container) {
+                                    var batchNumber = container.getAttribute('data-batch');
+                                    var svg = container.querySelector('svg');
+                                    if (svg) {
+                                        svg.innerHTML = '<text x="50%" y="50%" text-anchor="middle" font-size="14" fill="#666" font-family="Arial">' + batchNumber + '</text>';
+                                    }
+                                });
+                            }
+                            return;
+                        }
+                        
+                        var containers = document.querySelectorAll('.inventory-barcode-container[data-batch]');
+                        if (containers.length === 0) {
+                            return;
+                        }
+                        
+                        containers.forEach(function(container) {
+                            var batchNumber = container.getAttribute('data-batch');
+                            var svg = container.querySelector('svg.barcode-svg');
+                            
+                            if (svg && batchNumber && batchNumber.trim() !== '') {
+                                try {
+                                    svg.innerHTML = '';
+                                    JsBarcode(svg, batchNumber, {
+                                        format: "CODE128",
+                                        width: 2,
+                                        height: 50,
+                                        displayValue: false,
+                                        margin: 5,
+                                        background: "#ffffff",
+                                        lineColor: "#000000"
+                                    });
+                                } catch (error) {
+                                    console.error('Error generating barcode for ' + batchNumber + ':', error);
+                                    svg.innerHTML = '<text x="50%" y="50%" text-anchor="middle" font-size="12" fill="#666" font-family="Arial">' + batchNumber + '</text>';
+                                }
+                            }
+                        });
+                    }
+                    
+                    if (document.readyState === 'loading') {
+                        document.addEventListener('DOMContentLoaded', function() {
+                            setTimeout(generateAllBarcodes, 200);
+                        });
+                    } else {
+                        setTimeout(generateAllBarcodes, 200);
+                    }
+                })();
+                </script>
+            <?php endif; ?>
         </div>
     </div>
 <?php endif; ?>

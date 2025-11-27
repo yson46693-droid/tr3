@@ -603,49 +603,209 @@ foreach ($factoryProducts as $product) {
                 </div>
             <?php endif; ?>
             
-            <div class="table-responsive dashboard-table-wrapper">
-                <table class="table dashboard-table align-middle mb-0">
-                    <thead class="table-light">
-                        <tr>
-                            <th>رقم التشغيلة</th>
-                            <th>اسم المنتج</th>
-                            <th>الفئة</th>
-                            <th>تاريخ الإنتاج</th>
-                            <th>الكمية المنتجة</th>
-                            <th>سعر الوحدة</th>
-                            <th>إجمالي القيمة</th>
-                        </tr>
-                    </thead>
-                    <tbody>
-                        <?php if (empty($factoryProducts)): ?>
-                            <tr>
-                                <td colspan="7" class="text-center text-muted py-4">لا توجد منتجات مصنع حالياً</td>
-                            </tr>
-                        <?php else: ?>
-                            <?php foreach ($factoryProducts as $product): ?>
-                                <?php
-                                    $batchNumber = $product['batch_number'] ?? '—';
-                                    $quantity = floatval($product['quantity_produced'] ?? 0);
-                                    $unitPrice = floatval($product['unit_price'] ?? 0);
-                                    $totalPrice = floatval($product['calculated_total_price'] ?? 0);
-                                    if ($totalPrice == 0 && $unitPrice > 0 && $quantity > 0) {
-                                        $totalPrice = $unitPrice * $quantity;
+            <style>
+                body {
+                    font-family: 'Cairo', sans-serif;
+                }
+
+                .products-grid {
+                    padding: 25px;
+                    display: grid;
+                    grid-template-columns: repeat(auto-fit, minmax(340px, 1fr));
+                    gap: 20px;
+                }
+
+                .product-card {
+                    background: white;
+                    padding: 25px;
+                    border-radius: 18px;
+                    box-shadow: 0px 4px 20px rgba(0,0,0,0.07);
+                    border: 1px solid #e2e6f3;
+                    position: relative;
+                }
+
+                .product-status {
+                    position: absolute;
+                    top: 15px;
+                    left: 15px;
+                    background: #2e89ff;
+                    padding: 6px 14px;
+                    border-radius: 20px;
+                    color: white;
+                    font-size: 12px;
+                    font-weight: bold;
+                }
+
+                .product-name {
+                    font-size: 18px;
+                    font-weight: bold;
+                    color: #0d2f66;
+                    margin-bottom: 6px;
+                }
+
+                .product-batch-id {
+                    color: #2767ff;
+                    font-weight: bold;
+                    text-decoration: none;
+                }
+
+                .product-barcode-box {
+                    background: #f8faff;
+                    border: 1px solid #d7e1f3;
+                    padding: 15px;
+                    border-radius: 12px;
+                    text-align: center;
+                    margin: 15px 0;
+                }
+
+                .product-barcode-id {
+                    font-weight: bold;
+                    margin-top: 8px;
+                    color: #123c90;
+                }
+
+                .product-detail-row {
+                    font-size: 14px;
+                    margin-top: 5px;
+                    color: #4b5772;
+                    display: flex;
+                    justify-content: space-between;
+                }
+
+                .product-barcode-container {
+                    width: 100%;
+                    min-height: 60px;
+                    display: flex;
+                    justify-content: center;
+                    align-items: center;
+                }
+
+                .product-barcode-container svg {
+                    max-width: 100%;
+                    height: auto;
+                }
+            </style>
+
+            <!-- تحميل مكتبة JsBarcode -->
+            <script src="https://cdn.jsdelivr.net/npm/jsbarcode@3.11.5/dist/JsBarcode.all.min.js"></script>
+
+            <?php if (empty($factoryProducts)): ?>
+                <div style="padding: 25px;">
+                    <div class="alert alert-info mb-0">
+                        <i class="bi bi-info-circle me-2"></i>
+                        لا توجد منتجات مصنع حالياً
+                    </div>
+                </div>
+            <?php else: ?>
+                <div class="products-grid">
+                    <?php foreach ($factoryProducts as $product): ?>
+                        <?php
+                            $batchNumber = $product['batch_number'] ?? '';
+                            $productName = htmlspecialchars($product['product_name'] ?? 'غير محدد');
+                            $category = htmlspecialchars($product['product_category'] ?? '—');
+                            $productionDate = !empty($product['production_date']) ? htmlspecialchars(formatDate($product['production_date'])) : '—';
+                            $quantity = number_format((float)($product['quantity_produced'] ?? 0), 2);
+                            $unitPrice = floatval($product['unit_price'] ?? 0);
+                            $totalPrice = floatval($product['calculated_total_price'] ?? 0);
+                            if ($totalPrice == 0 && $unitPrice > 0 && floatval($product['quantity_produced'] ?? 0) > 0) {
+                                $totalPrice = $unitPrice * floatval($product['quantity_produced'] ?? 0);
+                            }
+                        ?>
+                        <div class="product-card">
+                            <div class="product-status">
+                                <i class="bi bi-building me-1"></i>مصنع
+                            </div>
+
+                            <div class="product-name"><?php echo $productName; ?></div>
+                            <?php if ($batchNumber && $batchNumber !== '—'): ?>
+                                <a href="#" class="product-batch-id"><?php echo htmlspecialchars($batchNumber); ?></a>
+                            <?php else: ?>
+                                <span class="product-batch-id">—</span>
+                            <?php endif; ?>
+
+                            <div class="product-barcode-box">
+                                <?php if ($batchNumber && $batchNumber !== '—'): ?>
+                                    <div class="product-barcode-container" data-batch="<?php echo htmlspecialchars($batchNumber); ?>">
+                                        <svg class="barcode-svg" style="width: 100%; height: 50px;"></svg>
+                                    </div>
+                                    <div class="product-barcode-id"><?php echo htmlspecialchars($batchNumber); ?></div>
+                                <?php else: ?>
+                                    <div class="product-barcode-id" style="color: #999;">لا يوجد باركود</div>
+                                <?php endif; ?>
+                            </div>
+
+                            <div class="product-detail-row"><span>الفئة:</span> <span><?php echo $category; ?></span></div>
+                            <div class="product-detail-row"><span>تاريخ الإنتاج:</span> <span><?php echo $productionDate; ?></span></div>
+                            <div class="product-detail-row"><span>الكمية:</span> <span><strong><?php echo $quantity; ?></strong></span></div>
+                            <div class="product-detail-row"><span>سعر الوحدة:</span> <span><?php echo formatCurrency($unitPrice); ?></span></div>
+                            <div class="product-detail-row"><span>إجمالي القيمة:</span> <span><strong class="text-success"><?php echo formatCurrency($totalPrice); ?></strong></span></div>
+                        </div>
+                    <?php endforeach; ?>
+                </div>
+                
+                <!-- توليد الباركودات -->
+                <script>
+                (function() {
+                    var maxRetries = 50;
+                    var retryCount = 0;
+                    
+                    function generateAllBarcodes() {
+                        if (typeof JsBarcode === 'undefined') {
+                            retryCount++;
+                            if (retryCount < maxRetries) {
+                                setTimeout(generateAllBarcodes, 100);
+                            } else {
+                                console.error('JsBarcode library failed to load');
+                                document.querySelectorAll('.product-barcode-container[data-batch]').forEach(function(container) {
+                                    var batchNumber = container.getAttribute('data-batch');
+                                    var svg = container.querySelector('svg');
+                                    if (svg) {
+                                        svg.innerHTML = '<text x="50%" y="50%" text-anchor="middle" font-size="14" fill="#666" font-family="Arial">' + batchNumber + '</text>';
                                     }
-                                ?>
-                                <tr>
-                                    <td><strong class="text-primary"><?php echo htmlspecialchars($batchNumber); ?></strong></td>
-                                    <td><strong><?php echo htmlspecialchars($product['product_name']); ?></strong></td>
-                                    <td><?php echo htmlspecialchars($product['product_category'] ?? '—'); ?></td>
-                                    <td><?php echo !empty($product['production_date']) ? htmlspecialchars(formatDate($product['production_date'])) : '—'; ?></td>
-                                    <td><?php echo number_format($quantity, 2); ?></td>
-                                    <td><?php echo formatCurrency($unitPrice); ?></td>
-                                    <td><strong class="text-success"><?php echo formatCurrency($totalPrice); ?></strong></td>
-                                </tr>
-                            <?php endforeach; ?>
-                        <?php endif; ?>
-                    </tbody>
-                </table>
-            </div>
+                                });
+                            }
+                            return;
+                        }
+                        
+                        var containers = document.querySelectorAll('.product-barcode-container[data-batch]');
+                        if (containers.length === 0) {
+                            return;
+                        }
+                        
+                        containers.forEach(function(container) {
+                            var batchNumber = container.getAttribute('data-batch');
+                            var svg = container.querySelector('svg.barcode-svg');
+                            
+                            if (svg && batchNumber && batchNumber.trim() !== '') {
+                                try {
+                                    svg.innerHTML = '';
+                                    JsBarcode(svg, batchNumber, {
+                                        format: "CODE128",
+                                        width: 2,
+                                        height: 50,
+                                        displayValue: false,
+                                        margin: 5,
+                                        background: "#ffffff",
+                                        lineColor: "#000000"
+                                    });
+                                } catch (error) {
+                                    console.error('Error generating barcode for ' + batchNumber + ':', error);
+                                    svg.innerHTML = '<text x="50%" y="50%" text-anchor="middle" font-size="12" fill="#666" font-family="Arial">' + batchNumber + '</text>';
+                                }
+                            }
+                        });
+                    }
+                    
+                    if (document.readyState === 'loading') {
+                        document.addEventListener('DOMContentLoaded', function() {
+                            setTimeout(generateAllBarcodes, 200);
+                        });
+                    } else {
+                        setTimeout(generateAllBarcodes, 200);
+                    }
+                })();
+                </script>
+            <?php endif; ?>
         </div>
     </div>
 
@@ -673,52 +833,58 @@ foreach ($factoryProducts as $product) {
                 </div>
             <?php endif; ?>
             
-            <div class="table-responsive dashboard-table-wrapper">
-                <table class="table dashboard-table align-middle mb-0">
-                    <thead class="table-light">
-                        <tr>
-                            <th>اسم المنتج</th>
-                            <th>الكمية</th>
-                            <th>سعر الوحدة</th>
-                            <th>الإجمالي</th>
-                            <th>الإجراءات</th>
-                        </tr>
-                    </thead>
-                    <tbody>
-                        <?php if (empty($externalProducts)): ?>
-                            <tr>
-                                <td colspan="5" class="text-center text-muted py-4">لا توجد منتجات خارجية. قم بإضافة منتج جديد باستخدام الزر أعلاه.</td>
-                            </tr>
-                        <?php else: ?>
-                            <?php foreach ($externalProducts as $product): ?>
-                                <tr>
-                                    <td><strong><?php echo htmlspecialchars($product['name']); ?></strong></td>
-                                    <td><?php echo number_format((float)$product['quantity'], 2); ?> <?php echo htmlspecialchars($product['unit'] ?? 'قطعة'); ?></td>
-                                    <td><?php echo formatCurrency((float)$product['unit_price']); ?></td>
-                                    <td><strong class="text-primary"><?php echo formatCurrency((float)$product['total_value']); ?></strong></td>
-                                    <td>
-                                        <div class="btn-group btn-group-sm">
-                                            <button type="button" class="btn btn-outline-primary js-edit-external" 
-                                                    data-id="<?php echo $product['id']; ?>"
-                                                    data-name="<?php echo htmlspecialchars($product['name'], ENT_QUOTES); ?>"
-                                                    data-quantity="<?php echo $product['quantity']; ?>"
-                                                    data-unit="<?php echo htmlspecialchars($product['unit'] ?? 'قطعة', ENT_QUOTES); ?>"
-                                                    data-price="<?php echo $product['unit_price']; ?>">
-                                                <i class="bi bi-pencil"></i> تعديل
-                                            </button>
-                                            <button type="button" class="btn btn-outline-danger js-delete-external" 
-                                                    data-id="<?php echo $product['id']; ?>"
-                                                    data-name="<?php echo htmlspecialchars($product['name'], ENT_QUOTES); ?>">
-                                                <i class="bi bi-trash"></i> حذف
-                                            </button>
-                                        </div>
-                                    </td>
-                                </tr>
-                            <?php endforeach; ?>
-                        <?php endif; ?>
-                    </tbody>
-                </table>
-            </div>
+            <?php if (empty($externalProducts)): ?>
+                <div style="padding: 25px;">
+                    <div class="alert alert-info mb-0">
+                        <i class="bi bi-info-circle me-2"></i>
+                        لا توجد منتجات خارجية. قم بإضافة منتج جديد باستخدام الزر أعلاه.
+                    </div>
+                </div>
+            <?php else: ?>
+                <div class="products-grid">
+                    <?php foreach ($externalProducts as $product): ?>
+                        <?php
+                            $productName = htmlspecialchars($product['name'] ?? 'غير محدد');
+                            $quantity = number_format((float)($product['quantity'] ?? 0), 2);
+                            $unit = htmlspecialchars($product['unit'] ?? 'قطعة');
+                            $unitPrice = floatval($product['unit_price'] ?? 0);
+                            $totalValue = floatval($product['total_value'] ?? 0);
+                        ?>
+                        <div class="product-card">
+                            <div class="product-status" style="background: #10b981;">
+                                <i class="bi bi-cart4 me-1"></i>خارجي
+                            </div>
+
+                            <div class="product-name"><?php echo $productName; ?></div>
+                            <div style="color: #94a3b8; font-size: 13px; margin-bottom: 10px;">منتج خارجي</div>
+
+                            <div class="product-detail-row"><span>الكمية:</span> <span><strong><?php echo $quantity; ?> <?php echo $unit; ?></strong></span></div>
+                            <div class="product-detail-row"><span>سعر الوحدة:</span> <span><?php echo formatCurrency($unitPrice); ?></span></div>
+                            <div class="product-detail-row"><span>الإجمالي:</span> <span><strong class="text-success"><?php echo formatCurrency($totalValue); ?></strong></span></div>
+                            
+                            <div style="display: flex; gap: 10px; margin-top: 15px;">
+                                <button type="button" 
+                                        class="btn btn-outline-primary js-edit-external" 
+                                        style="flex: 1; border-radius: 10px; padding: 10px 16px; font-weight: bold; font-size: 13px;"
+                                        data-id="<?php echo $product['id']; ?>"
+                                        data-name="<?php echo htmlspecialchars($product['name'], ENT_QUOTES); ?>"
+                                        data-quantity="<?php echo $product['quantity']; ?>"
+                                        data-unit="<?php echo htmlspecialchars($product['unit'] ?? 'قطعة', ENT_QUOTES); ?>"
+                                        data-price="<?php echo $product['unit_price']; ?>">
+                                    <i class="bi bi-pencil me-1"></i>تعديل
+                                </button>
+                                <button type="button" 
+                                        class="btn btn-outline-danger js-delete-external" 
+                                        style="flex: 1; border-radius: 10px; padding: 10px 16px; font-weight: bold; font-size: 13px;"
+                                        data-id="<?php echo $product['id']; ?>"
+                                        data-name="<?php echo htmlspecialchars($product['name'], ENT_QUOTES); ?>">
+                                    <i class="bi bi-trash me-1"></i>حذف
+                                </button>
+                            </div>
+                        </div>
+                    <?php endforeach; ?>
+                </div>
+            <?php endif; ?>
         </div>
     </div>
 </div>
