@@ -419,145 +419,318 @@ $salesRepInfo = $db->queryOne(
 </div>
 
 <!-- ملخص الحسابات -->
-<div class="card shadow-sm">
-    <div class="card-header bg-primary text-white">
-        <h5 class="mb-0">
-            <i class="bi bi-calculator me-2"></i>
-            ملخص الحسابات
-        </h5>
-    </div>
-    <div class="card-body">
-        <div class="table-responsive dashboard-table-wrapper">
-            <table class="table dashboard-table align-middle">
-                <thead>
-                    <tr>
-                        <th>البند</th>
-                        <th class="text-end">المبلغ</th>
-                    </tr>
-                </thead>
-                <tbody>
-                    <tr>
-                        <td><strong>إجمالي المبيعات</strong></td>
-                        <td class="text-end"><strong><?php echo formatCurrency($totalSales); ?></strong></td>
-                    </tr>
-                    <tr class="table-success">
-                        <td><i class="bi bi-plus-circle me-2"></i>إجمالي التحصيلات من العملاء</td>
-                        <td class="text-end text-success">+ <?php echo formatCurrency($totalCollections); ?></td>
-                    </tr>
-                    <tr class="table-info">
-                        <td><i class="bi bi-plus-circle me-2"></i>مبيعات مدفوعة بالكامل (بدون ديون)</td>
-                        <td class="text-end text-info">+ <?php echo formatCurrency($fullyPaidSales); ?></td>
-                    </tr>
-                    <tr class="table-warning">
-                        <td>
-                            <i class="bi bi-dash-circle me-2"></i>المبيعات المعلقة (يشمل الديون اليدوية)
-                            <div class="small text-muted mt-1">
-                                ديون بدون سجل مشتريات: <?php echo formatCurrency($oldDebtsTotal); ?>
-                            </div>
-                        </td>
-                        <td class="text-end text-warning">- <?php echo formatCurrency($pendingSales); ?></td>
-                    </tr>
-                    <tr class="table-primary">
-                        <td><strong><i class="bi bi-equal me-2"></i>رصيد الخزنة الإجمالي</strong></td>
-                        <td class="text-end"><strong class="text-primary"><?php echo formatCurrency($cashRegisterBalance); ?></strong></td>
-                    </tr>
-                </tbody>
-            </table>
+<style>
+/* Glassmorphism Styles for Cash Register */
+.glass-card {
+    background: rgba(255, 255, 255, 0.7);
+    backdrop-filter: blur(20px);
+    -webkit-backdrop-filter: blur(20px);
+    border-radius: 20px;
+    border: 1px solid rgba(255, 255, 255, 0.3);
+    box-shadow: 0 8px 32px rgba(0, 0, 0, 0.1);
+    transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+    overflow: hidden;
+    position: relative;
+}
+
+.glass-card:hover {
+    transform: translateY(-8px);
+    box-shadow: 0 16px 48px rgba(0, 0, 0, 0.15);
+}
+
+.glass-card-header {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    padding: 16px 20px;
+    border-bottom: 1px solid rgba(0, 0, 0, 0.05);
+}
+
+.glass-card-header i {
+    font-size: 24px;
+}
+
+.glass-card-body {
+    padding: 24px 20px;
+}
+
+.glass-card-value {
+    font-size: 32px;
+    font-weight: 700;
+    line-height: 1.2;
+    margin: 0;
+}
+
+.glass-card-title {
+    font-size: 14px;
+    font-weight: 600;
+    color: #6b7280;
+    margin: 0;
+    margin-bottom: 8px;
+}
+
+.glass-card-blue {
+    color: #0057ff;
+}
+
+.glass-card-green {
+    color: #0fa55a;
+}
+
+.glass-card-orange {
+    color: #c98200;
+}
+
+.glass-card-red {
+    color: #d00000;
+}
+
+.glass-card-red-bg {
+    background: rgba(208, 0, 0, 0.1);
+    border-color: rgba(208, 0, 0, 0.2);
+}
+
+.glass-card-red-bg .glass-card-header {
+    background: rgba(208, 0, 0, 0.05);
+}
+
+.glass-debts-table {
+    background: rgba(255, 255, 255, 0.5);
+    backdrop-filter: blur(10px);
+    -webkit-backdrop-filter: blur(10px);
+    border-radius: 16px;
+    overflow: hidden;
+    margin-top: 20px;
+}
+
+.glass-debts-table table {
+    margin: 0;
+}
+
+.glass-debts-table thead th {
+    background: rgba(208, 0, 0, 0.08);
+    border: none;
+    padding: 16px;
+    font-weight: 600;
+    color: #374151;
+}
+
+.glass-debts-table tbody td {
+    padding: 14px 16px;
+    border-bottom: 1px solid rgba(0, 0, 0, 0.05);
+}
+
+.glass-debts-table tbody tr:last-child td {
+    border-bottom: none;
+}
+
+.glass-debts-table tbody tr:hover {
+    background: rgba(208, 0, 0, 0.03);
+}
+
+.glass-debts-summary {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    padding: 12px 0;
+    margin-bottom: 16px;
+}
+
+.glass-debts-summary i {
+    font-size: 20px;
+    color: #d00000;
+}
+
+@media (max-width: 768px) {
+    .glass-card-value {
+        font-size: 24px;
+    }
+    
+    .glass-card-header {
+        padding: 14px 16px;
+    }
+    
+    .glass-card-body {
+        padding: 20px 16px;
+    }
+}
+</style>
+
+<div class="mb-4">
+    <div class="row g-4">
+        <!-- إجمالي المبيعات -->
+        <div class="col-12 col-md-6 col-lg-4">
+            <div class="glass-card">
+                <div class="glass-card-header">
+                    <i class="bi bi-bar-chart-fill glass-card-blue"></i>
+                    <h6 class="mb-0 fw-semibold">إجمالي المبيعات</h6>
+                </div>
+                <div class="glass-card-body">
+                    <p class="glass-card-value glass-card-blue mb-0"><?php echo formatCurrency($totalSales); ?></p>
+                </div>
+            </div>
         </div>
         
-        <div class="alert alert-info mt-3 mb-0">
-            <i class="bi bi-info-circle me-2"></i>
-            <strong>ملاحظة:</strong> رصيد الخزنة = إجمالي التحصيلات + المبيعات المدفوعة بالكامل (التي تم تحصيل المبلغ بالكامل فوراً دون أي ديون).
+        <!-- التحصيلات من العملاء -->
+        <div class="col-12 col-md-6 col-lg-4">
+            <div class="glass-card">
+                <div class="glass-card-header">
+                    <i class="bi bi-wallet-fill glass-card-green"></i>
+                    <h6 class="mb-0 fw-semibold">إجمالي التحصيلات من العملاء</h6>
+                </div>
+                <div class="glass-card-body">
+                    <p class="glass-card-value glass-card-green mb-0">+ <?php echo formatCurrency($totalCollections); ?></p>
+                </div>
+            </div>
         </div>
+        
+        <!-- مبيعات مدفوعة بالكامل -->
+        <div class="col-12 col-md-6 col-lg-4">
+            <div class="glass-card">
+                <div class="glass-card-header">
+                    <i class="bi bi-cash-coin glass-card-blue"></i>
+                    <h6 class="mb-0 fw-semibold">مبيعات مدفوعة بالكامل (بدون ديون)</h6>
+                </div>
+                <div class="glass-card-body">
+                    <p class="glass-card-value glass-card-blue mb-0">+ <?php echo formatCurrency($fullyPaidSales); ?></p>
+                </div>
+            </div>
+        </div>
+        
+        <!-- المبيعات المعلقة -->
+        <div class="col-12 col-md-6 col-lg-4">
+            <div class="glass-card">
+                <div class="glass-card-header">
+                    <i class="bi bi-exclamation-triangle-fill glass-card-orange"></i>
+                    <h6 class="mb-0 fw-semibold">المبيعات المعلقة (يشمل الديون اليدوية)</h6>
+                </div>
+                <div class="glass-card-body">
+                    <p class="glass-card-value glass-card-orange mb-0">- <?php echo formatCurrency($pendingSales); ?></p>
+                    <?php if ($oldDebtsTotal > 0): ?>
+                    <p class="glass-card-title mt-2 mb-0" style="font-size: 12px;">
+                        ديون بدون سجل مشتريات: <?php echo formatCurrency($oldDebtsTotal); ?>
+                    </p>
+                    <?php endif; ?>
+                </div>
+            </div>
+        </div>
+        
+        <!-- رصيد الخزنة الإجمالي -->
+        <div class="col-12 col-md-6 col-lg-4">
+            <div class="glass-card">
+                <div class="glass-card-header">
+                    <i class="bi bi-bank glass-card-blue"></i>
+                    <h6 class="mb-0 fw-semibold">رصيد الخزنة الإجمالي</h6>
+                </div>
+                <div class="glass-card-body">
+                    <p class="glass-card-value glass-card-blue mb-0"><?php echo formatCurrency($cashRegisterBalance); ?></p>
+                </div>
+            </div>
+        </div>
+    </div>
+    
+    <div class="alert alert-info mt-4 mb-0" style="border-radius: 12px;">
+        <i class="bi bi-info-circle me-2"></i>
+        <strong>ملاحظة:</strong> رصيد الخزنة = إجمالي التحصيلات + المبيعات المدفوعة بالكامل (التي تم تحصيل المبلغ بالكامل فوراً دون أي ديون).
     </div>
 </div>
 
 <!-- جدول الديون القديمة -->
-<div class="card shadow-sm mb-4">
-    <div class="card-header bg-danger text-white">
-        <h5 class="mb-0">
-            <i class="bi bi-clock-history me-2"></i>
-            الديون القديمة
-        </h5>
+<div class="glass-card glass-card-red-bg mb-4">
+    <div class="glass-card-header">
+        <i class="bi bi-clipboard-x-fill glass-card-red"></i>
+        <h5 class="mb-0 fw-bold">الديون القديمة</h5>
     </div>
-    <div class="card-body">
-        <div class="mb-3">
-            <p class="text-muted mb-2">
-                <i class="bi bi-info-circle me-2"></i>
-                العملاء المدينين الذين ليس لديهم سجل مشتريات في النظام.
-            </p>
-            <div class="d-flex align-items-center justify-content-between">
-                <div>
-                    <span class="text-muted small">عدد العملاء: </span>
-                    <strong><?php echo count($oldDebtsCustomers); ?></strong>
-                </div>
-                <div>
-                    <span class="text-muted small">إجمالي الديون: </span>
-                    <strong class="text-danger fs-5"><?php echo formatCurrency($oldDebtsTotal); ?></strong>
+    <div class="glass-card-body">
+        <div class="glass-debts-summary">
+            <i class="bi bi-people-fill"></i>
+            <div>
+                <p class="mb-1 text-muted small">العملاء المدينين الذين ليس لديهم سجل مشتريات في النظام.</p>
+                <div class="d-flex align-items-center gap-4 flex-wrap">
+                    <div>
+                        <span class="text-muted small">عدد العملاء: </span>
+                        <strong><?php echo count($oldDebtsCustomers); ?></strong>
+                    </div>
+                    <div>
+                        <span class="text-muted small">إجمالي الديون: </span>
+                        <strong class="glass-card-red fs-5"><?php echo formatCurrency($oldDebtsTotal); ?></strong>
+                    </div>
                 </div>
             </div>
         </div>
         
         <?php if (!empty($oldDebtsCustomers)): ?>
-            <div class="table-responsive dashboard-table-wrapper">
-                <table class="table dashboard-table align-middle">
-                    <thead>
-                        <tr>
-                            <th>اسم العميل</th>
-                            <th>الهاتف</th>
-                            <th>العنوان</th>
-                            <th class="text-end">الديون</th>
-                            <th>تاريخ الإضافة</th>
-                        </tr>
-                    </thead>
-                    <tbody>
-                        <?php foreach ($oldDebtsCustomers as $customer): ?>
+            <div class="glass-debts-table">
+                <div class="table-responsive">
+                    <table class="table align-middle mb-0">
+                        <thead>
                             <tr>
-                                <td>
-                                    <strong><?php echo htmlspecialchars($customer['name'] ?? '-'); ?></strong>
-                                </td>
-                                <td>
-                                    <?php echo htmlspecialchars($customer['phone'] ?? '-'); ?>
-                                </td>
-                                <td>
-                                    <small class="text-muted">
-                                        <?php echo htmlspecialchars($customer['address'] ?? '-'); ?>
-                                    </small>
-                                </td>
-                                <td class="text-end">
-                                    <strong class="text-danger">
-                                        <?php echo formatCurrency((float)($customer['balance'] ?? 0)); ?>
-                                    </strong>
-                                </td>
-                                <td>
-                                    <small class="text-muted">
-                                        <?php 
-                                        if (!empty($customer['created_at'])) {
-                                            echo date('Y-m-d', strtotime($customer['created_at']));
-                                        } else {
-                                            echo '-';
-                                        }
-                                        ?>
-                                    </small>
-                                </td>
+                                <th>
+                                    <i class="bi bi-person-fill me-2"></i>اسم العميل
+                                </th>
+                                <th>
+                                    <i class="bi bi-telephone-fill me-2"></i>الهاتف
+                                </th>
+                                <th>
+                                    <i class="bi bi-geo-alt-fill me-2"></i>العنوان
+                                </th>
+                                <th class="text-end">
+                                    <i class="bi bi-cash-stack me-2"></i>الديون
+                                </th>
+                                <th>
+                                    <i class="bi bi-calendar-event-fill me-2"></i>تاريخ الإضافة
+                                </th>
                             </tr>
-                        <?php endforeach; ?>
-                    </tbody>
-                    <tfoot>
-                        <tr class="table-danger">
-                            <th colspan="3" class="text-end">
-                                <strong>الإجمالي:</strong>
-                            </th>
-                            <th class="text-end">
-                                <strong><?php echo formatCurrency($oldDebtsTotal); ?></strong>
-                            </th>
-                            <th></th>
-                        </tr>
-                    </tfoot>
-                </table>
+                        </thead>
+                        <tbody>
+                            <?php foreach ($oldDebtsCustomers as $customer): ?>
+                                <tr>
+                                    <td>
+                                        <strong><?php echo htmlspecialchars($customer['name'] ?? '-'); ?></strong>
+                                    </td>
+                                    <td>
+                                        <?php echo htmlspecialchars($customer['phone'] ?? '-'); ?>
+                                    </td>
+                                    <td>
+                                        <small class="text-muted">
+                                            <?php echo htmlspecialchars($customer['address'] ?? '-'); ?>
+                                        </small>
+                                    </td>
+                                    <td class="text-end">
+                                        <strong class="glass-card-red">
+                                            <?php echo formatCurrency((float)($customer['balance'] ?? 0)); ?>
+                                        </strong>
+                                    </td>
+                                    <td>
+                                        <small class="text-muted">
+                                            <?php 
+                                            if (!empty($customer['created_at'])) {
+                                                echo date('Y-m-d', strtotime($customer['created_at']));
+                                            } else {
+                                                echo '-';
+                                            }
+                                            ?>
+                                        </small>
+                                    </td>
+                                </tr>
+                            <?php endforeach; ?>
+                        </tbody>
+                        <tfoot>
+                            <tr style="background: rgba(208, 0, 0, 0.1);">
+                                <th colspan="3" class="text-end">
+                                    <strong>الإجمالي:</strong>
+                                </th>
+                                <th class="text-end">
+                                    <strong class="glass-card-red"><?php echo formatCurrency($oldDebtsTotal); ?></strong>
+                                </th>
+                                <th></th>
+                            </tr>
+                        </tfoot>
+                    </table>
+                </div>
             </div>
         <?php else: ?>
-            <div class="alert alert-info mb-0">
+            <div class="alert alert-info mb-0" style="border-radius: 12px;">
                 <i class="bi bi-check-circle me-2"></i>
                 لا توجد ديون قديمة للعملاء المدينين بدون سجل مشتريات.
             </div>
