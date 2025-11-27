@@ -723,20 +723,7 @@ function loadRepDetails(repId, repName) {
                             <td class="${balanceClass}">
                                 ${formatCurrency(balance || 0)}
                             </td>
-                            <td>
-                                <div class="d-flex flex-wrap align-items-center gap-2">
-                                    <button
-                                        type="button"
-                                        class="btn btn-sm btn-outline-primary rep-location-capture-btn"
-                                        data-customer-id="${customer.id || 0}"
-                                        data-customer-name="${escapeHtml(customer.name || '—')}"
-                                        title="تحديد موقع العميل"
-                                    >
-                                        <i class="bi bi-geo-alt me-1"></i>تحديد
-                                    </button>
-                                    ${locationButtons}
-                                </div>
-                            </td>
+                            
                             <td>
                                 <div class="d-flex flex-wrap align-items-center gap-2">
                                     <button
