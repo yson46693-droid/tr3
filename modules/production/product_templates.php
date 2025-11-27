@@ -1606,6 +1606,28 @@ if (file_exists($specificationsModulePath)) {
 <?php endif; ?>
 
 <style>
+/* أنماط أزرار التنقل بين الأقسام */
+.section-navigation {
+    margin-bottom: 1.5rem;
+}
+
+.section-navigation .btn-group {
+    box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+    border-radius: 0.375rem;
+    overflow: hidden;
+}
+
+.section-navigation .btn {
+    font-weight: 500;
+    padding: 0.625rem 1.25rem;
+    transition: all 0.2s ease;
+}
+
+.section-navigation .btn:hover {
+    transform: translateY(-1px);
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.15);
+}
+
 .template-card {
     cursor: pointer;
     position: relative;
