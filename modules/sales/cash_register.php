@@ -302,56 +302,7 @@ $salesRepInfo = $db->queryOne(
 
 <!-- بطاقات الإحصائيات الرئيسية -->
 <div class="row g-3 mb-4">
-    <div class="col-12 col-md-6 col-xl-3">
-        <div class="card shadow-sm border-0 h-100">
-            <div class="card-body d-flex align-items-center justify-content-between">
-                <div>
-                    <div class="text-muted small fw-semibold">إجمالي المبيعات</div>
-                    <div class="fs-4 fw-bold mb-0 text-primary"><?php echo formatCurrency($totalSales); ?></div>
-                </div>
-                <span class="text-primary display-6"><i class="bi bi-receipt-cutoff"></i></span>
-            </div>
-        </div>
-    </div>
     
-    <div class="col-12 col-md-6 col-xl-3">
-        <div class="card shadow-sm border-0 h-100">
-            <div class="card-body d-flex align-items-center justify-content-between">
-                <div>
-                    <div class="text-muted small fw-semibold">إجمالي التحصيلات</div>
-                    <div class="fs-4 fw-bold mb-0 text-success"><?php echo formatCurrency($totalCollections); ?></div>
-                </div>
-                <span class="text-success display-6"><i class="bi bi-wallet2"></i></span>
-            </div>
-        </div>
-    </div>
-    
-    <div class="col-12 col-md-6 col-xl-3">
-        <div class="card shadow-sm border-0 h-100">
-            <div class="card-body d-flex align-items-center justify-content-between">
-                <div>
-                    <div class="text-muted small fw-semibold">مبيعات مدفوعة بالكامل</div>
-                    <div class="fs-4 fw-bold mb-0 text-info"><?php echo formatCurrency($fullyPaidSales); ?></div>
-                </div>
-                <span class="text-info display-6"><i class="bi bi-check-circle"></i></span>
-            </div>
-        </div>
-    </div>
-    
-    <div class="col-12 col-md-6 col-xl-3">
-        <div class="card shadow-sm border-0 h-100" style="background: linear-gradient(135deg,rgb(3, 30, 151) 0%,rgba(31, 2, 103, 0.57) 100%);">
-            <div class="card-body d-flex align-items-center justify-content-between" style="color: #ffffff !important;">
-                <div>
-                    <div class="small fw-semibold" style="color: rgba(255, 255, 255, 0.9) !important;">رصيد الخزنة</div>
-                    <div class="fs-4 fw-bold mb-0" style="color: #ffffff !important;"><?php echo formatCurrency($cashRegisterBalance); ?></div>
-                    <div class="small mt-1" style="color: rgba(255, 255, 255, 0.85) !important;">
-                        (تحصيلات + مبيعات كاملة)
-                    </div>
-                </div>
-                <span class="display-6" style="color: rgba(255, 255, 255, 0.8) !important;"><i class="bi bi-safe"></i></span>
-            </div>
-        </div>
-    </div>
 </div>
 
 <!-- بطاقات إحصائيات إضافية -->
