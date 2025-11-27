@@ -466,7 +466,64 @@ if (!empty($warehousesTableExists)) {
 
         $finishedProductOptions = [];
         if ($primaryWarehouse && !empty($primaryWarehouse['id'])) {
-            $finishedProductOptions = getFinishedProductBatchOptions(true, $primaryWarehouse['id']);
+            // استخدام quantity_produced مباشرة من finished_products لأنها تحتوي على الكمية الصحيحة
+            // نخصم فقط الكميات المحجوزة في طلبات النقل المعلقة (pending)
+            $finishedExists = $db->queryOne("SHOW TABLES LIKE 'finished_products'");
+            if (!empty($finishedExists)) {
+                $finishedProductsRows = $db->query("
+                    SELECT
+                        fp.id AS batch_id,
+                        COALESCE(fp.product_id, bn.product_id) AS product_id,
+                        COALESCE(NULLIF(TRIM(fp.product_name), ''), p.name, 'غير محدد') AS product_name,
+                        fp.batch_number,
+                        fp.production_date,
+                        fp.quantity_produced,
+                        p.name AS original_product_name
+                    FROM finished_products fp
+                    LEFT JOIN batch_numbers bn ON fp.batch_number = bn.batch_number
+                    LEFT JOIN products p ON COALESCE(fp.product_id, bn.product_id) = p.id
+                    WHERE fp.quantity_produced > 0
+                    GROUP BY fp.id, COALESCE(fp.product_id, bn.product_id), fp.product_name, fp.batch_number, fp.production_date, fp.quantity_produced, p.name
+                    ORDER BY fp.production_date DESC, product_name ASC, fp.batch_number ASC
+                ") ?? [];
+                
+                foreach ($finishedProductsRows as $row) {
+                    $batchId = (int)$row['batch_id'];
+                    $productId = isset($row['product_id']) && $row['product_id'] !== null ? (int)$row['product_id'] : null;
+                    $availableQuantity = (float)($row['quantity_produced'] ?? 0);
+                    
+                    // خصم فقط الكمية المحجوزة في طلبات النقل المعلقة (pending) من المخزن الرئيسي
+                    if ($batchId > 0 && $availableQuantity > 0) {
+                        $pendingTransfers = $db->queryOne(
+                            "SELECT COALESCE(SUM(wti.quantity), 0) AS pending_quantity
+                             FROM warehouse_transfer_items wti
+                             INNER JOIN warehouse_transfers wt ON wt.id = wti.transfer_id
+                             WHERE wti.batch_id = ? AND wt.from_warehouse_id = ? AND wt.status = 'pending'",
+                            [$batchId, $primaryWarehouse['id']]
+                        );
+                        $availableQuantity -= (float)($pendingTransfers['pending_quantity'] ?? 0);
+                    }
+                    
+                    // استخدام اسم المنتج من finished_products أو products
+                    $productName = $row['product_name'] ?? 'غير محدد';
+                    if ($productName === 'غير محدد' && !empty($row['original_product_name'])) {
+                        $productName = $row['original_product_name'];
+                    }
+                    
+                    if ($availableQuantity > 0) {
+                        $finishedProductOptions[] = [
+                            'batch_id' => $batchId,
+                            'product_id' => $productId,
+                            'product_name' => $productName,
+                            'batch_number' => $row['batch_number'] ?? '',
+                            'production_date' => $row['production_date'] ?? null,
+                            'quantity_produced' => (float)$row['quantity_produced'],
+                            'quantity_available' => max(0, $availableQuantity),
+                            'warehouse_id' => $primaryWarehouse['id'],
+                        ];
+                    }
+                }
+            }
         }
         $hasDestinationWarehouses = !empty($destinationWarehouses);
         $hasFinishedBatches = !empty($finishedProductOptions);
