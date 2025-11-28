@@ -309,12 +309,16 @@
     if (action === 'reply') {
       setReply(message);
     } else if (action === 'edit') {
+      // السماح بالتعديل فقط للرسائل الخاصة بالمستخدم وغير المحذوفة
       if (message.user_id !== currentUser.id || message.deleted) {
+        showToast('يمكنك تعديل رسائلك فقط', true);
         return;
       }
       setEdit(message);
     } else if (action === 'delete') {
+      // السماح بالحذف فقط للرسائل الخاصة بالمستخدم وغير المحذوفة
       if (message.user_id !== currentUser.id || message.deleted) {
+        showToast('يمكنك حذف رسائلك فقط', true);
         return;
       }
       confirmDelete(message);
@@ -428,6 +432,13 @@
   }
 
   async function updateMessage(messageId, message) {
+    // التحقق من أن الرسالة تنتمي للمستخدم الحالي
+    const msgToUpdate = state.messages.find((m) => m.id === messageId);
+    if (!msgToUpdate || msgToUpdate.user_id !== currentUser.id || msgToUpdate.deleted) {
+      showToast('يمكنك تعديل رسائلك فقط', true);
+      return;
+    }
+
     state.isSending = true;
     toggleComposerDisabled(true);
 
@@ -505,6 +516,12 @@
   }
 
   async function confirmDelete(message) {
+    // التحقق من أن الرسالة تنتمي للمستخدم الحالي
+    if (message.user_id !== currentUser.id || message.deleted) {
+      showToast('يمكنك حذف رسائلك فقط', true);
+      return;
+    }
+
     const confirmed = window.confirm('هل أنت متأكد من حذف هذه الرسالة؟');
     if (!confirmed) {
       return;
