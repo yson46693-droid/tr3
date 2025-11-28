@@ -171,13 +171,23 @@ function getInvoice($invoiceId) {
     
     if ($invoice) {
         $invoice['items'] = $db->query(
-            "SELECT ii.*, p.name as product_name, p.unit
+            "SELECT ii.*, p.name as product_name, p.unit,
+                    GROUP_CONCAT(DISTINCT bn.batch_number ORDER BY bn.batch_number SEPARATOR ', ') as batch_numbers
              FROM invoice_items ii
              LEFT JOIN products p ON ii.product_id = p.id
+             LEFT JOIN sales_batch_numbers sbn ON ii.id = sbn.invoice_item_id
+             LEFT JOIN batch_numbers bn ON sbn.batch_number_id = bn.id
              WHERE ii.invoice_id = ?
+             GROUP BY ii.id
              ORDER BY ii.id",
             [$invoiceId]
         );
+        
+        // إضافة batch_number لكل عنصر (أول رقم تشغيلة أو جميع الأرقام)
+        foreach ($invoice['items'] as &$item) {
+            $item['batch_number'] = !empty($item['batch_numbers']) ? $item['batch_numbers'] : null;
+        }
+        unset($item);
     }
     
     return $invoice;
@@ -207,13 +217,23 @@ function getInvoiceByNumberDetailed($invoiceNumber) {
 
     if ($invoice) {
         $invoice['items'] = $db->query(
-            "SELECT ii.*, p.name as product_name, p.unit
+            "SELECT ii.*, p.name as product_name, p.unit,
+                    GROUP_CONCAT(DISTINCT bn.batch_number ORDER BY bn.batch_number SEPARATOR ', ') as batch_numbers
              FROM invoice_items ii
              LEFT JOIN products p ON ii.product_id = p.id
+             LEFT JOIN sales_batch_numbers sbn ON ii.id = sbn.invoice_item_id
+             LEFT JOIN batch_numbers bn ON sbn.batch_number_id = bn.id
              WHERE ii.invoice_id = ?
+             GROUP BY ii.id
              ORDER BY ii.id",
             [$invoice['id']]
         );
+        
+        // إضافة batch_number لكل عنصر (أول رقم تشغيلة أو جميع الأرقام)
+        foreach ($invoice['items'] as &$item) {
+            $item['batch_number'] = !empty($item['batch_numbers']) ? $item['batch_numbers'] : null;
+        }
+        unset($item);
     }
 
     return $invoice;

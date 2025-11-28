@@ -66,21 +66,49 @@ if (!function_exists('storeSalesInvoiceDocument')) {
                 return null;
             }
 
-            $pattern = $salesDir . DIRECTORY_SEPARATOR . 'pos-invoice-*';
-            foreach (glob($pattern) ?: [] as $file) {
-                if (is_string($file)) {
-                    @unlink($file);
-                }
-            }
-
             $token = bin2hex(random_bytes(8));
             $normalizedNumber = preg_replace('/[^A-Za-z0-9_-]+/', '-', (string) ($invoice['invoice_number'] ?? 'INV'));
             // تضمين الـ token في اسم الملف للتحقق من الأمان في reports/view.php
             $filename = sprintf('pos-invoice-%s-%s-%s.html', date('Ymd-His'), $normalizedNumber, $token);
             $fullPath = $salesDir . DIRECTORY_SEPARATOR . $filename;
 
+            // حفظ الملف (للاستخدام الفوري)
             if (@file_put_contents($fullPath, $document) === false) {
                 return null;
+            }
+
+            // حفظ الفاتورة في قاعدة البيانات للوصول إليها لاحقاً
+            try {
+                require_once __DIR__ . '/../../includes/db.php';
+                $db = db();
+                
+                // التأكد من وجود الجدول
+                $tableExists = $db->queryOne("SHOW TABLES LIKE 'telegram_invoices'");
+                if ($tableExists) {
+                    $invoiceId = isset($invoice['id']) ? (int)$invoice['id'] : null;
+                    $invoiceNumber = $invoice['invoice_number'] ?? null;
+                    $summaryJson = !empty($meta['summary']) ? json_encode($meta['summary'], JSON_UNESCAPED_UNICODE) : null;
+                    
+                    $relativePath = 'exports/sales-pos/' . $filename;
+                    
+                    $db->execute(
+                        "INSERT INTO telegram_invoices 
+                        (invoice_id, invoice_number, invoice_type, token, html_content, relative_path, filename, summary, created_at)
+                        VALUES (?, ?, 'sales_pos_invoice', ?, ?, ?, ?, ?, NOW())",
+                        [
+                            $invoiceId,
+                            $invoiceNumber,
+                            $token,
+                            $document,
+                            $relativePath,
+                            $filename,
+                            $summaryJson
+                        ]
+                    );
+                }
+            } catch (Throwable $dbError) {
+                // في حالة فشل حفظ قاعدة البيانات، نستمر في العملية
+                error_log('Failed to save invoice to database: ' . $dbError->getMessage());
             }
 
             $relativePath = 'exports/sales-pos/' . $filename;
@@ -379,6 +407,7 @@ if (!$error && $_SERVER['REQUEST_METHOD'] === 'POST') {
                 if ($customerMode === 'new') {
                     $dueAmount = $baseDueAmount;
                     $creditUsed = 0.0;
+                    $amountAddedToSales = $netTotal; // كامل المبلغ يُضاف إلى خزنة المندوب للعميل الجديد
                     $repIdForCustomer = ($currentUser['role'] ?? '') === 'sales' ? $currentUser['id'] : null;
                     $createdByAdminFlag = $repIdForCustomer ? 0 : 1;
 

@@ -163,13 +163,43 @@ $normalized = str_replace('\\', '/', $relativePath);
 $normalized = ltrim($normalized, '/');
 
 $fullPath = $reportsBaseDir . '/' . $normalized;
-if (!is_file($fullPath)) {
-    renderReportError(404, 'ملف التقرير غير موجود.');
+$contents = false;
+
+// محاولة قراءة الملف أولاً
+if (is_file($fullPath)) {
+    $contents = @file_get_contents($fullPath);
 }
 
-$contents = @file_get_contents($fullPath);
+// إذا لم يكن الملف موجوداً، البحث في قاعدة البيانات
+if ($contents === false && !empty($token)) {
+    try {
+        $db = db();
+        $tableExists = $db->queryOne("SHOW TABLES LIKE 'telegram_invoices'");
+        
+        if ($tableExists) {
+            // استخراج اسم الملف من المسار
+            $fileName = basename($normalized);
+            
+            // البحث في قاعدة البيانات باستخدام الـ token
+            $invoiceRecord = $db->queryOne(
+                "SELECT html_content, filename FROM telegram_invoices WHERE token = ? LIMIT 1",
+                [$token]
+            );
+            
+            if ($invoiceRecord && !empty($invoiceRecord['html_content'])) {
+                // التحقق من أن اسم الملف يطابق (للأمان)
+                if (strpos($fileName, $token) !== false || $invoiceRecord['filename'] === $fileName) {
+                    $contents = $invoiceRecord['html_content'];
+                }
+            }
+        }
+    } catch (Throwable $dbError) {
+        error_log('Failed to retrieve invoice from database: ' . $dbError->getMessage());
+    }
+}
+
 if ($contents === false) {
-    renderReportError(500, 'تعذّر قراءة ملف التقرير.');
+    renderReportError(404, 'ملف التقرير غير موجود.');
 }
 
 header('Content-Type: text/html; charset=UTF-8');

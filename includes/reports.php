@@ -135,6 +135,8 @@ function sendReportAndDelete($report, $reportType, $reportName) {
 
         if (!empty($report['summary']) && is_array($report['summary'])) {
             $summaryLines = [];
+            
+            // ملخصات التقارير (استهلاك المواد)
             if (isset($report['summary']['packaging'])) {
                 $summaryLines[] = 'استهلاك التعبئة: ' . number_format((float)$report['summary']['packaging'], 3) . ' كجم';
             }
@@ -144,6 +146,21 @@ function sendReportAndDelete($report, $reportType, $reportName) {
             if (isset($report['summary']['net'])) {
                 $summaryLines[] = 'الصافي الكلي: ' . number_format((float)$report['summary']['net'], 3) . ' كجم';
             }
+            
+            // ملخصات الفواتير
+            if (isset($report['summary']['net_total'])) {
+                $summaryLines[] = 'الإجمالي: ' . number_format((float)$report['summary']['net_total'], 2) . ' ر.س';
+            }
+            if (isset($report['summary']['paid'])) {
+                $summaryLines[] = 'المدفوع: ' . number_format((float)$report['summary']['paid'], 2) . ' ر.س';
+            }
+            if (isset($report['summary']['due'])) {
+                $summaryLines[] = 'المتبقي: ' . number_format((float)$report['summary']['due'], 2) . ' ر.س';
+            }
+            if (isset($report['summary']['subtotal'])) {
+                $summaryLines[] = 'المجموع الفرعي: ' . number_format((float)$report['summary']['subtotal'], 2) . ' ر.س';
+            }
+            
             if (!empty($summaryLines)) {
                 $message .= implode("\n", array_map(fn($line) => '• ' . $line, $summaryLines)) . "\n";
             }
@@ -170,6 +187,17 @@ function sendReportAndDelete($report, $reportType, $reportName) {
                         "UPDATE reports SET telegram_sent = 1 WHERE file_path = ?",
                         [$report['relative_path']]
                     );
+                }
+                
+                // تحديث جدول telegram_invoices إذا كان التقرير فاتورة
+                if (!empty($report['token'])) {
+                    $tableExists = $db->queryOne("SHOW TABLES LIKE 'telegram_invoices'");
+                    if ($tableExists) {
+                        $db->execute(
+                            "UPDATE telegram_invoices SET telegram_sent = 1, sent_at = NOW() WHERE token = ?",
+                            [$report['token']]
+                        );
+                    }
                 }
             } catch (Throwable $updateError) {
                 error_log('Reports table update failed: ' . $updateError->getMessage());
