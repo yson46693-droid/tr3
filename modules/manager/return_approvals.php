@@ -431,10 +431,24 @@ function approveReturn(returnId, event) {
             // إظهار رسالة النجاح مباشرة
             alert(successMsg);
             
-            // إعادة تحميل الصفحة بعد ثانيتين
-            setTimeout(() => {
-                location.reload();
-            }, 2000);
+            // تحديث حالة الزر لإظهار أنه تمت الموافقة
+            if (btn) {
+                btn.disabled = true;
+                btn.innerHTML = '<i class="bi bi-check-circle-fill me-2"></i>تمت الموافقة';
+                btn.classList.remove('btn-success');
+                btn.classList.add('btn-secondary');
+            }
+            
+            // إزالة الصف من الجدول بعد الموافقة (بدون إعادة تحميل)
+            const row = btn ? btn.closest('tr') : null;
+            if (row) {
+                // إضافة تأثير fade out
+                row.style.transition = 'opacity 0.5s';
+                row.style.opacity = '0';
+                setTimeout(() => {
+                    row.remove();
+                }, 500);
+            }
         } else {
             console.error('Approval failed:', data.message);
             if (btn) {
