@@ -571,11 +571,6 @@ $salesRepInfo = $db->queryOne(
             </div>
         </div>
     </div>
-    
-    <div class="alert alert-info mt-4 mb-0" style="border-radius: 12px;">
-        <i class="bi bi-info-circle me-2"></i>
-        <strong>ملاحظة:</strong> رصيد الخزنة = إجمالي التحصيلات + المبيعات المدفوعة بالكامل (التي تم تحصيل المبلغ بالكامل فوراً دون أي ديون).
-    </div>
 </div>
 
 <!-- جدول الديون القديمة -->
