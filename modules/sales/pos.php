@@ -444,6 +444,7 @@ if (!$error && $_SERVER['REQUEST_METHOD'] === 'POST') {
 
                     $currentBalance = (float) ($customer['balance'] ?? 0);
                     $creditUsed = 0.0;
+                    $amountAddedToSales = 0.0; // المبلغ الذي يُضاف إلى إجمالي المبيعات في خزنة المندوب
                     
                     // التحقق من وجود سجل مشتريات سابق للعميل (قبل إنشاء الفاتورة الحالية)
                     $hasPreviousPurchases = false;
@@ -459,26 +460,50 @@ if (!$error && $_SERVER['REQUEST_METHOD'] === 'POST') {
                         $hasPreviousPurchases = true;
                     }
                     
-                    // حساب المبلغ المتبقي بعد التحصيل الجزئي
-                    $remainingAfterPartialPayment = $baseDueAmount;
-                    
-                    // إذا كان للعميل رصيد دائن (سالب)، يتم استخدامه أولاً لخفض المبلغ المتبقي بعد التحصيل الجزئي
-                    if ($currentBalance < 0 && $remainingAfterPartialPayment > 0) {
+                    // المنطق الجديد: خصم مبلغ البيع بالكامل من الرصيد الدائن أولاً
+                    // ثم إضافة المبلغ الزائد فقط إلى خزنة المندوب
+                    if ($currentBalance < 0) {
+                        // العميل لديه رصيد دائن
                         $creditAvailable = abs($currentBalance);
-                        $creditUsed = min($creditAvailable, $remainingAfterPartialPayment);
-                        $remainingAfterPartialPayment = round($remainingAfterPartialPayment - $creditUsed, 2);
+                        $invoiceTotal = $netTotal; // إجمالي مبلغ الفاتورة
+                        
+                        // خصم مبلغ البيع من الرصيد الدائن
+                        if ($invoiceTotal <= $creditAvailable) {
+                            // مبلغ البيع أقل من أو يساوي الرصيد الدائن
+                            // يتم خصم كامل مبلغ البيع من الرصيد الدائن
+                            $creditUsed = $invoiceTotal;
+                            $amountAddedToSales = 0.0; // لا يُضاف شيء إلى خزنة المندوب
+                            $dueAmount = 0.0; // لا يوجد دين متبقي
+                            
+                            // الرصيد الجديد = الرصيد الدائن الحالي + مبلغ البيع (لأن الرصيد سالب)
+                            // مثال: رصيد دائن -100، بيع 80
+                            // الرصيد الجديد = -100 + 80 = -20 (رصيد دائن متبقي)
+                            $newBalance = round($currentBalance + $creditUsed, 2);
+                        } else {
+                            // مبلغ البيع أكبر من الرصيد الدائن
+                            // يتم خصم الرصيد الدائن بالكامل، والمبلغ الزائد يُضاف كدين
+                            $creditUsed = $creditAvailable;
+                            $excessAmount = round($invoiceTotal - $creditUsed, 2); // المبلغ الزائد
+                            $amountAddedToSales = $excessAmount; // فقط المبلغ الزائد يُضاف إلى خزنة المندوب
+                            $dueAmount = $excessAmount; // المبلغ الزائد هو الدين الجديد
+                            
+                            // الرصيد الجديد = 0 (لا رصيد دائن) + المبلغ الزائد (دين)
+                            // مثال: رصيد دائن -100، بيع 150
+                            // الرصيد الجديد = 0 + 50 = 50 (رصيد مدين)
+                            $newBalance = $dueAmount;
+                        }
+                    } else {
+                        // العميل ليس لديه رصيد دائن
+                        // المنطق العادي: حساب المبلغ المتبقي بعد التحصيل الجزئي
+                        $remainingAfterPartialPayment = $baseDueAmount;
+                        $dueAmount = $remainingAfterPartialPayment;
+                        $amountAddedToSales = $netTotal; // كامل المبلغ يُضاف إلى خزنة المندوب
+                        
+                        // حساب الرصيد الجديد: الرصيد الحالي + الدين الجديد
+                        $newBalance = round($currentBalance + $dueAmount, 2);
                     }
                     
-                    // المبلغ المتبقي بعد التحصيل الجزئي وخصم الرصيد الدائن هو الدين الجديد
-                    $dueAmount = $remainingAfterPartialPayment;
-                    
-                    // حساب الرصيد الجديد:
-                    // الرصيد الحالي (سالب إذا كان دائن) + الرصيد الدائن المستخدم + الدين المتبقي
-                    // مثال: رصيد دائن -50، استخدمنا 30، دين متبقي 20
-                    // الرصيد الجديد = -50 + 30 + 20 = 0 (لا يوجد رصيد دائن ولا مدين)
-                    // مثال آخر: رصيد دائن -100، استخدمنا 50، دين متبقي 0
-                    // الرصيد الجديد = -100 + 50 + 0 = -50 (رصيد دائن متبقي)
-                    $newBalance = round($currentBalance + $creditUsed + $dueAmount, 2);
+                    // تحديث رصيد العميل
                     if (abs($newBalance - $currentBalance) > 0.0001) {
                         $db->execute("UPDATE customers SET balance = ? WHERE id = ?", [$newBalance, $customerId]);
                         $customer['balance'] = $newBalance;
@@ -540,6 +565,23 @@ if (!$error && $_SERVER['REQUEST_METHOD'] === 'POST') {
                 if ($hasPaidFromCreditColumn) {
                     $invoiceUpdateSql .= ", paid_from_credit = ?";
                     $invoiceUpdateParams[] = $isCreditSale ? 1 : 0;
+                }
+                
+                // إضافة المبلغ الذي يُضاف إلى خزنة المندوب (amount_added_to_sales)
+                $hasAmountAddedToSalesColumn = !empty($db->queryOne("SHOW COLUMNS FROM invoices LIKE 'amount_added_to_sales'"));
+                if ($hasAmountAddedToSalesColumn) {
+                    $invoiceUpdateSql .= ", amount_added_to_sales = ?";
+                    $invoiceUpdateParams[] = $amountAddedToSales;
+                } else {
+                    // إضافة العمود إذا لم يكن موجوداً
+                    try {
+                        $db->execute("ALTER TABLE invoices ADD COLUMN amount_added_to_sales DECIMAL(15,2) DEFAULT NULL COMMENT 'المبلغ المضاف إلى خزنة المندوب (بعد خصم الرصيد الدائن)' AFTER paid_from_credit");
+                        $hasAmountAddedToSalesColumn = true;
+                        $invoiceUpdateSql .= ", amount_added_to_sales = ?";
+                        $invoiceUpdateParams[] = $amountAddedToSales;
+                    } catch (Throwable $e) {
+                        error_log('Error adding amount_added_to_sales column: ' . $e->getMessage());
+                    }
                 }
                 
                 $invoiceUpdateParams[] = $invoiceId;
@@ -811,6 +853,9 @@ if (!$error && $_SERVER['REQUEST_METHOD'] === 'POST') {
                     'customer_id'       => $customerId,
                     'is_credit_sale'    => $isCreditSale,
                     'has_previous_purchases' => $hasPreviousPurchases ?? false,
+                    'amount_added_to_sales' => $amountAddedToSales,
+                    'customer_balance_before' => $currentBalance ?? 0,
+                    'customer_balance_after' => $newBalance ?? 0,
                 ]);
 
                 // تحديث عمولة المندوب حسب القواعد:

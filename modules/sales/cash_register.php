@@ -159,14 +159,29 @@ if (!empty($invoicesTableExists)) {
 }
 
 // حساب إجمالي المبيعات من الفواتير
+// استخدام amount_added_to_sales إذا كان موجوداً (للفواتير المدفوعة من رصيد دائن)
+// وإلا استخدام total_amount (للفواتير العادية)
 $totalSalesFromInvoices = 0.0;
 if (!empty($invoicesTableExists)) {
-    $salesResult = $db->queryOne(
-        "SELECT COALESCE(SUM(total_amount), 0) as total_sales
-         FROM invoices
-         WHERE sales_rep_id = ? AND status != 'cancelled'",
-        [$salesRepId]
-    );
+    $hasAmountAddedToSalesColumn = !empty($db->queryOne("SHOW COLUMNS FROM invoices LIKE 'amount_added_to_sales'"));
+    
+    if ($hasAmountAddedToSalesColumn) {
+        // استخدام amount_added_to_sales إذا كان محدداً، وإلا استخدام total_amount
+        $salesResult = $db->queryOne(
+            "SELECT COALESCE(SUM(COALESCE(amount_added_to_sales, total_amount)), 0) as total_sales
+             FROM invoices
+             WHERE sales_rep_id = ? AND status != 'cancelled'",
+            [$salesRepId]
+        );
+    } else {
+        // إذا لم يكن العمود موجوداً، استخدام total_amount
+        $salesResult = $db->queryOne(
+            "SELECT COALESCE(SUM(total_amount), 0) as total_sales
+             FROM invoices
+             WHERE sales_rep_id = ? AND status != 'cancelled'",
+            [$salesRepId]
+        );
+    }
     $totalSalesFromInvoices = (float)($salesResult['total_sales'] ?? 0);
 }
 
@@ -212,22 +227,33 @@ if (!empty($collectionsTableExists)) {
 }
 
 // حساب المبيعات المدفوعة بالكامل (من الفواتير)
-// استبعاد المبيعات المدفوعة من رصيد دائن
+// استخدام amount_added_to_sales إذا كان موجوداً (للفواتير المدفوعة من رصيد دائن)
+// وإلا استخدام total_amount (للفواتير العادية)
 $fullyPaidSales = 0.0;
 if (!empty($invoicesTableExists)) {
-    // التحقق من وجود عمود paid_from_credit
-    $hasPaidFromCreditColumn = !empty($db->queryOne("SHOW COLUMNS FROM invoices LIKE 'paid_from_credit'"));
+    $hasAmountAddedToSalesColumn = !empty($db->queryOne("SHOW COLUMNS FROM invoices LIKE 'amount_added_to_sales'"));
     
-    $fullyPaidSql = "SELECT COALESCE(SUM(total_amount), 0) as fully_paid
-         FROM invoices
-         WHERE sales_rep_id = ? 
-         AND status = 'paid' 
-         AND paid_amount >= total_amount
-         AND status != 'cancelled'";
-    
-    // استبعاد الفواتير المدفوعة من رصيد دائن
-    if ($hasPaidFromCreditColumn) {
-        $fullyPaidSql .= " AND (paid_from_credit IS NULL OR paid_from_credit = 0)";
+    if ($hasAmountAddedToSalesColumn) {
+        // استخدام amount_added_to_sales إذا كان محدداً، وإلا استخدام total_amount
+        $fullyPaidSql = "SELECT COALESCE(SUM(COALESCE(amount_added_to_sales, total_amount)), 0) as fully_paid
+             FROM invoices
+             WHERE sales_rep_id = ? 
+             AND status = 'paid' 
+             AND paid_amount >= total_amount
+             AND status != 'cancelled'";
+    } else {
+        // إذا لم يكن العمود موجوداً، استخدام total_amount مع استبعاد الفواتير المدفوعة من رصيد دائن
+        $hasPaidFromCreditColumn = !empty($db->queryOne("SHOW COLUMNS FROM invoices LIKE 'paid_from_credit'"));
+        $fullyPaidSql = "SELECT COALESCE(SUM(total_amount), 0) as fully_paid
+             FROM invoices
+             WHERE sales_rep_id = ? 
+             AND status = 'paid' 
+             AND paid_amount >= total_amount
+             AND status != 'cancelled'";
+        
+        if ($hasPaidFromCreditColumn) {
+            $fullyPaidSql .= " AND (paid_from_credit IS NULL OR paid_from_credit = 0)";
+        }
     }
     
     $fullyPaidResult = $db->queryOne($fullyPaidSql, [$salesRepId]);
