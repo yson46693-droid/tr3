@@ -131,7 +131,15 @@ if ($page === 'packaging_warehouse' && isset($_GET['ajax']) && $_GET['ajax'] == 
 
 // معالجة AJAX لجلب رصيد المندوب
 if ($page === 'financial' && isset($_GET['ajax']) && $_GET['ajax'] === 'get_sales_rep_balance') {
+    // تنظيف أي output buffer
+    while (ob_get_level() > 0) {
+        ob_end_clean();
+    }
+    
+    // إرسال headers
     header('Content-Type: application/json; charset=utf-8');
+    header('Cache-Control: no-cache, must-revalidate');
+    
     $salesRepId = isset($_GET['sales_rep_id']) ? intval($_GET['sales_rep_id']) : 0;
     
     if ($salesRepId <= 0) {
@@ -140,7 +148,6 @@ if ($page === 'financial' && isset($_GET['ajax']) && $_GET['ajax'] === 'get_sale
     }
     
     try {
-        require_once __DIR__ . '/../includes/approval_system.php';
         $balance = calculateSalesRepCashBalance($salesRepId);
         
         $salesRep = $db->queryOne(
@@ -160,7 +167,7 @@ if ($page === 'financial' && isset($_GET['ajax']) && $_GET['ajax'] === 'get_sale
         ], JSON_UNESCAPED_UNICODE);
     } catch (Throwable $e) {
         error_log('Error getting sales rep balance: ' . $e->getMessage());
-        echo json_encode(['success' => false, 'message' => 'حدث خطأ أثناء جلب رصيد المندوب'], JSON_UNESCAPED_UNICODE);
+        echo json_encode(['success' => false, 'message' => 'حدث خطأ أثناء جلب رصيد المندوب: ' . $e->getMessage()], JSON_UNESCAPED_UNICODE);
     }
     exit;
 }
