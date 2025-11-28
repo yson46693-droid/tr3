@@ -42,12 +42,17 @@ function processReturnFinancials(int $returnId, ?int $processedBy = null): array
         );
         
         if (!$return) {
+            error_log("processReturnFinancials: Return {$returnId} not found");
             return ['success' => false, 'message' => 'المرتجع غير موجود'];
         }
         
         // التحقق من حالة المرتجع (يجب أن يكون معتمد)
-        if ($return['status'] !== 'approved') {
-            return ['success' => false, 'message' => 'المرتجع غير معتمد بعد. لا يمكن معالجة التسويات المالية'];
+        $currentStatus = $return['status'] ?? 'unknown';
+        error_log("processReturnFinancials: Return {$returnId} current status: {$currentStatus}");
+        
+        if ($currentStatus !== 'approved') {
+            error_log("processReturnFinancials: Return {$returnId} status is '{$currentStatus}', expected 'approved'");
+            return ['success' => false, 'message' => 'المرتجع غير معتمد بعد. لا يمكن معالجة التسويات المالية. الحالة الحالية: ' . $currentStatus];
         }
         
         $customerId = (int)$return['customer_id'];

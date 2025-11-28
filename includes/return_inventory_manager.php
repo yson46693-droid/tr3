@@ -40,12 +40,17 @@ function returnProductsToVehicleInventory(int $returnId, ?int $approvedBy = null
         );
         
         if (!$return) {
+            error_log("returnProductsToVehicleInventory: Return {$returnId} not found");
             return ['success' => false, 'message' => 'المرتجع غير موجود'];
         }
         
         // التحقق من حالة المرتجع (يجب أن يكون معتمد)
-        if ($return['status'] !== 'approved') {
-            return ['success' => false, 'message' => 'المرتجع غير معتمد بعد. لا يمكن إرجاع المنتجات للمخزون'];
+        $currentStatus = $return['status'] ?? 'unknown';
+        error_log("returnProductsToVehicleInventory: Return {$returnId} current status: {$currentStatus}");
+        
+        if ($currentStatus !== 'approved') {
+            error_log("returnProductsToVehicleInventory: Return {$returnId} status is '{$currentStatus}', expected 'approved'");
+            return ['success' => false, 'message' => 'المرتجع غير معتمد بعد. لا يمكن إرجاع المنتجات للمخزون. الحالة الحالية: ' . $currentStatus];
         }
         
         $salesRepId = (int)($return['sales_rep_id'] ?? 0);

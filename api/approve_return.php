@@ -120,15 +120,21 @@ try {
     
     // Approve return request
     // Check if return can be approved (only pending returns)
-    if ($return['status'] !== 'pending') {
+    $currentStatus = $return['status'] ?? 'unknown';
+    error_log("approve_return: Processing return {$returnId} with status: {$currentStatus}");
+    
+    if ($currentStatus !== 'pending') {
+        error_log("approve_return: Return {$returnId} cannot be approved - status is '{$currentStatus}', expected 'pending'");
         http_response_code(400);
         echo json_encode(['success' => false, 'message' => 'لا يمكن الموافقة على مرتجع تمت معالجته بالفعل'], JSON_UNESCAPED_UNICODE);
         exit;
     }
     
+    error_log("approve_return: Starting transaction for return {$returnId}");
     $db->beginTransaction();
     
     try {
+        error_log("approve_return: Transaction started. Beginning validation for return {$returnId}");
         // التحقق من صحة البيانات قبل المعالجة
         $customerId = (int)$return['customer_id'];
         $salesRepId = (int)($return['sales_rep_id'] ?? 0);
@@ -201,18 +207,36 @@ try {
             [$currentUser['id'], $notes ?: null, $returnId]
         );
         
+        // التحقق من أن التحديث تم بنجاح
+        $updatedReturn = $db->queryOne(
+            "SELECT status FROM returns WHERE id = ?",
+            [$returnId]
+        );
+        
+        if (!$updatedReturn || $updatedReturn['status'] !== 'approved') {
+            throw new RuntimeException('فشل تحديث حالة المرتجع إلى approved');
+        }
+        
+        error_log("Return {$returnId} status updated to approved. Starting financial processing...");
+        
         // Process financials using new system
         $financialResult = processReturnFinancials($returnId, $currentUser['id']);
         if (!$financialResult['success']) {
+            error_log("Financial processing failed for return {$returnId}: " . ($financialResult['message'] ?? 'خطأ غير معروف'));
             throw new RuntimeException('فشل معالجة التسوية المالية: ' . ($financialResult['message'] ?? 'خطأ غير معروف'));
         }
+        
+        error_log("Financial processing completed for return {$returnId}. Starting inventory processing...");
         
         // Return products to inventory using new system
         // هذا سيضيف الكمية للمخزون إذا كان Batch Number موجود، أو ينشئ سجل جديد
         $inventoryResult = returnProductsToVehicleInventory($returnId, $currentUser['id']);
         if (!$inventoryResult['success']) {
+            error_log("Inventory processing failed for return {$returnId}: " . ($inventoryResult['message'] ?? 'خطأ غير معروف'));
             throw new RuntimeException('فشل إرجاع المنتجات للمخزون: ' . ($inventoryResult['message'] ?? 'خطأ غير معروف'));
         }
+        
+        error_log("Inventory processing completed for return {$returnId}.");
         
         // تسجيل عملية المرتجع في سجلات المرتجعات
         // (تم التسجيل بالفعل في return_inventory_manager.php و return_financial_processor.php)
