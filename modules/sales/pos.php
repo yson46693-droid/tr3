@@ -1830,10 +1830,10 @@ if (!$error) {
                                         <option value="<?php echo (int) $customer['id']; ?>" data-balance="<?php echo htmlspecialchars((string)($customer['balance'] ?? 0)); ?>"><?php echo htmlspecialchars($customer['name']); ?></option>
                                     <?php endforeach; ?>
                                 </select>
-                                <div class="mt-2" id="posCustomerBalanceInfo" style="display: none;">
+                                <div class="mt-2" id="posCustomerBalanceInfo">
                                     <div class="alert alert-info mb-0 py-2 px-3">
                                         <i class="bi bi-info-circle me-1"></i>
-                                        <span id="posCustomerBalanceText">-</span>
+                                        <span id="posCustomerBalanceText">اختر عميلاً لعرض التفاصيل المالية</span>
                                     </div>
                                 </div>
                             </div>
@@ -2525,7 +2525,10 @@ if (!$error) {
         
         const selectedOption = elements.customerSelect.options[elements.customerSelect.selectedIndex];
         if (!selectedOption || !selectedOption.value) {
-            balanceInfo.style.display = 'none';
+            // عرض رسالة افتراضية عند عدم اختيار عميل
+            balanceText.textContent = 'اختر عميلاً لعرض التفاصيل المالية';
+            balanceInfo.querySelector('.alert').className = 'alert alert-info mb-0 py-2 px-3';
+            balanceInfo.style.display = 'block';
             return;
         }
         
@@ -2617,10 +2620,9 @@ if (!$error) {
     
     // عرض معلومات العميل المالية عند تحميل الصفحة
     // استخدام setTimeout لضمان تحميل جميع العناصر
-    document.addEventListener("DOMContentLoaded", () => {
-    updateCustomerBalance();
-});
-
+    setTimeout(function() {
+        updateCustomerBalance();
+    }, 500);
     
     window.posDebugInfo = {
         sanitizeNumber,
