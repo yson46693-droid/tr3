@@ -844,6 +844,17 @@ $pageTitle = isset($lang['manager_dashboard']) ? $lang['manager_dashboard'] : '�
                 }
                 ?>
                 
+            <?php elseif ($page === 'vehicle_inventory'): ?>
+                <!-- صفحة مخزون السيارات -->
+                <?php 
+                $modulePath = __DIR__ . '/../modules/sales/vehicle_inventory.php';
+                if (file_exists($modulePath)) {
+                    include $modulePath;
+                } else {
+                    echo '<div class="alert alert-warning">صفحة مخزون السيارات غير متاحة حالياً</div>';
+                }
+                ?>
+                
             <?php elseif ($page === 'warehouse_transfers'): ?>
                 <!-- صفحة نقل المخازن -->
                 <?php 

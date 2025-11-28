@@ -60,6 +60,10 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 ]);
                 
                 $success = 'تم إنشاء السيارة بنجاح';
+                
+                // Redirect بعد النجاح
+                header('Location: ' . getDashboardUrl('manager') . '?page=vehicles&success=' . urlencode($success));
+                exit;
             }
         }
     } elseif ($action === 'update_vehicle') {
@@ -88,8 +92,20 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                      ['new' => ['vehicle_number' => $vehicleNumber, 'status' => $status]]);
             
             $success = 'تم تحديث السيارة بنجاح';
+            
+            // Redirect بعد النجاح
+            header('Location: ' . getDashboardUrl('manager') . '?page=vehicles&id=' . $vehicleId . '&success=' . urlencode($success));
+            exit;
         }
     }
+}
+
+// قراءة الرسائل من URL (Post-Redirect-Get pattern)
+if (isset($_GET['success'])) {
+    $success = urldecode($_GET['success']);
+}
+if (isset($_GET['error'])) {
+    $error = urldecode($_GET['error']);
 }
 
 // الحصول على السيارات
@@ -138,7 +154,7 @@ if (isset($_GET['id'])) {
     <div class="card shadow-sm mb-4">
         <div class="card-header bg-primary text-white d-flex justify-content-between align-items-center">
             <h5 class="mb-0">سيارة: <?php echo htmlspecialchars($selectedVehicle['vehicle_number']); ?></h5>
-            <a href="?page=vehicles" class="btn btn-light btn-sm">
+            <a href="<?php echo getDashboardUrl('manager'); ?>?page=vehicles" class="btn btn-light btn-sm">
                 <i class="bi bi-x"></i>
             </a>
         </div>
@@ -203,7 +219,7 @@ if (isset($_GET['id'])) {
                         <button type="submit" class="btn btn-primary">
                             <i class="bi bi-save me-2"></i>حفظ التغييرات
                         </button>
-                        <a href="<?php echo getDashboardUrl('sales'); ?>?page=vehicle_inventory&vehicle_id=<?php echo $selectedVehicle['id']; ?>" 
+                        <a href="<?php echo getDashboardUrl('manager'); ?>?page=vehicle_inventory&vehicle_id=<?php echo $selectedVehicle['id']; ?>" 
                            class="btn btn-info">
                             <i class="bi bi-box-seam me-2"></i>عرض المخزون
                         </a>
@@ -263,11 +279,11 @@ if (isset($_GET['id'])) {
                                 </td>
                                 <td>
                                     <div class="btn-group btn-group-sm" role="group">
-                                        <a href="?page=vehicles&id=<?php echo $vehicle['id']; ?>" 
+                                        <a href="<?php echo getDashboardUrl('manager'); ?>?page=vehicles&id=<?php echo $vehicle['id']; ?>" 
                                            class="btn btn-info" title="عرض/تعديل">
                                             <i class="bi bi-eye"></i>
                                         </a>
-                                        <a href="<?php echo getDashboardUrl('sales'); ?>?page=vehicle_inventory&vehicle_id=<?php echo $vehicle['id']; ?>" 
+                                        <a href="<?php echo getDashboardUrl('manager'); ?>?page=vehicle_inventory&vehicle_id=<?php echo $vehicle['id']; ?>" 
                                            class="btn btn-primary" title="المخزون">
                                             <i class="bi bi-box-seam"></i>
                                         </a>
@@ -343,4 +359,5 @@ if (isset($_GET['id'])) {
         </div>
     </div>
 </div>
+
 
