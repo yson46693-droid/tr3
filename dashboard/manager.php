@@ -963,6 +963,17 @@ $pageTitle = isset($lang['manager_dashboard']) ? $lang['manager_dashboard'] : '�
                 }
                 ?>
                 
+            <?php elseif ($page === 'factory_waste_warehouse'): ?>
+                <!-- صفحة مخزن توالف المصنع -->
+                <?php 
+                $modulePath = __DIR__ . '/../modules/warehouse/factory_waste_warehouse.php';
+                if (file_exists($modulePath)) {
+                    include $modulePath;
+                } else {
+                    echo '<div class="alert alert-warning">صفحة مخزن توالف المصنع غير متاحة حالياً</div>';
+                }
+                ?>
+                
             <?php elseif ($page === 'honey_warehouse'): ?>
                 <!-- إعادة توجيه من الرابط القديم -->
                 <?php 

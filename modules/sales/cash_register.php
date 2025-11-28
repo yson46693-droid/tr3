@@ -306,6 +306,28 @@ if (!empty($returnsTableExists)) {
     }
 }
 
+// حساب إجمالي المرتجعات التالفة للمندوب
+$totalDamagedReturns = 0.0;
+$damagedReturnsTableExists = $db->queryOne("SHOW TABLES LIKE 'damaged_returns'");
+if (!empty($damagedReturnsTableExists)) {
+    try {
+        // حساب قيمة المرتجعات التالفة المعتمدة
+        // نحسب القيمة من return_items المرتبطة بالمرتجعات التالفة
+        $damagedReturnsResult = $db->queryOne(
+            "SELECT COALESCE(SUM(ri.total_price), 0) as total_damaged_returns
+             FROM damaged_returns dr
+             INNER JOIN return_items ri ON dr.return_item_id = ri.id
+             WHERE dr.sales_rep_id = ? 
+               AND dr.approval_status = 'approved'",
+            [$salesRepId]
+        );
+        $totalDamagedReturns = (float)($damagedReturnsResult['total_damaged_returns'] ?? 0);
+    } catch (Throwable $damagedReturnsError) {
+        error_log('Damaged returns calculation error: ' . $damagedReturnsError->getMessage());
+        $totalDamagedReturns = 0.0;
+    }
+}
+
 // رصيد الخزنة = التحصيلات + المبيعات المدفوعة بالكامل - المبالغ المحصلة من المندوب - المرتجعات
 $cashRegisterBalance = $totalCollections + $fullyPaidSales - $collectedFromRep - $totalReturns;
 
@@ -767,9 +789,32 @@ $salesRepInfo = $db->queryOne(
                 </div>
                 <div class="glass-card-body">
                     <p class="glass-card-value glass-card-red mb-0">- <?php echo formatCurrency($totalReturns); ?></p>
+                    <?php if ($totalDamagedReturns > 0): ?>
+                    <p class="glass-card-title mt-2 mb-0" style="font-size: 12px;">
+                        منها تالفة: <?php echo formatCurrency($totalDamagedReturns); ?>
+                    </p>
+                    <?php endif; ?>
                 </div>
             </div>
         </div>
+        
+        <!-- المرتجعات التالفة -->
+        <?php if ($totalDamagedReturns > 0): ?>
+        <div class="col-12 col-md-6 col-lg-4">
+            <div class="glass-card">
+                <div class="glass-card-header">
+                    <i class="bi bi-exclamation-triangle glass-card-red"></i>
+                    <h6 class="mb-0 fw-semibold">المرتجعات التالفة</h6>
+                </div>
+                <div class="glass-card-body">
+                    <p class="glass-card-value glass-card-red mb-0">- <?php echo formatCurrency($totalDamagedReturns); ?></p>
+                    <p class="glass-card-title mt-2 mb-0" style="font-size: 12px;">
+                        قيمة المنتجات التالفة المعتمدة
+                    </p>
+                </div>
+            </div>
+        </div>
+        <?php endif; ?>
         
         <!-- رصيد الخزنة الإجمالي -->
         <div class="col-12 col-md-6 col-lg-4">

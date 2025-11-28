@@ -224,6 +224,143 @@ try {
             error_log('Warning: Failed to apply salary deduction: ' . ($penaltyResult['message'] ?? ''));
         }
         
+        // حفظ المرتجعات التالفة في جدول damaged_returns بشكل كامل
+        try {
+            // جلب المنتجات التالفة من return_items
+            $damagedItems = $db->query(
+                "SELECT ri.*, p.name as product_name,
+                        COALESCE(
+                            (SELECT fp2.product_name 
+                             FROM finished_products fp2 
+                             WHERE fp2.product_id = ri.product_id 
+                               AND fp2.product_name IS NOT NULL 
+                               AND TRIM(fp2.product_name) != ''
+                               AND fp2.product_name NOT LIKE 'منتج رقم%'
+                             ORDER BY fp2.id DESC 
+                             LIMIT 1),
+                            NULLIF(TRIM(p.name), ''),
+                            CONCAT('منتج رقم ', ri.product_id)
+                        ) as display_product_name,
+                        b.batch_number,
+                        i.invoice_number,
+                        u.full_name as sales_rep_name
+                 FROM return_items ri
+                 LEFT JOIN products p ON ri.product_id = p.id
+                 LEFT JOIN batch_numbers b ON ri.batch_number_id = b.id
+                 LEFT JOIN returns r ON ri.return_id = r.id
+                 LEFT JOIN invoices i ON r.invoice_id = i.id
+                 LEFT JOIN users u ON r.sales_rep_id = u.id
+                 WHERE ri.return_id = ? AND ri.is_damaged = 1",
+                [$returnId]
+            );
+            
+            if (!empty($damagedItems)) {
+                // التحقق من وجود جدول damaged_returns وإنشاؤه إذا لم يكن موجوداً
+                $damagedReturnsTableExists = $db->queryOne("SHOW TABLES LIKE 'damaged_returns'");
+                if (empty($damagedReturnsTableExists)) {
+                    $db->execute("
+                        CREATE TABLE IF NOT EXISTS `damaged_returns` (
+                          `id` INT(11) NOT NULL AUTO_INCREMENT,
+                          `return_id` INT(11) NOT NULL,
+                          `return_item_id` INT(11) NOT NULL,
+                          `product_id` INT(11) NOT NULL,
+                          `batch_number_id` INT(11) DEFAULT NULL,
+                          `quantity` DECIMAL(10,2) NOT NULL,
+                          `damage_reason` TEXT DEFAULT NULL,
+                          `invoice_id` INT(11) DEFAULT NULL,
+                          `invoice_number` VARCHAR(100) DEFAULT NULL,
+                          `return_date` DATE DEFAULT NULL,
+                          `return_transaction_number` VARCHAR(100) DEFAULT NULL,
+                          `approval_status` VARCHAR(50) DEFAULT 'approved',
+                          `sales_rep_id` INT(11) DEFAULT NULL,
+                          `sales_rep_name` VARCHAR(255) DEFAULT NULL,
+                          `product_name` VARCHAR(255) DEFAULT NULL,
+                          `batch_number` VARCHAR(100) DEFAULT NULL,
+                          `created_at` TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                          PRIMARY KEY (`id`),
+                          KEY `idx_return_id` (`return_id`),
+                          KEY `idx_return_item_id` (`return_item_id`),
+                          KEY `idx_product_id` (`product_id`),
+                          KEY `idx_batch_number_id` (`batch_number_id`),
+                          KEY `idx_sales_rep_id` (`sales_rep_id`),
+                          KEY `idx_approval_status` (`approval_status`)
+                        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
+                    ");
+                }
+                
+                // تحديث السجلات الموجودة أو إدراج سجلات جديدة
+                foreach ($damagedItems as $item) {
+                    // التحقق من وجود سجل سابق
+                    $existingRecord = $db->queryOne(
+                        "SELECT id FROM damaged_returns WHERE return_item_id = ?",
+                        [(int)$item['id']]
+                    );
+                    
+                    if ($existingRecord) {
+                        // تحديث السجل الموجود
+                        $db->execute(
+                            "UPDATE damaged_returns SET
+                             invoice_id = ?,
+                             invoice_number = ?,
+                             return_date = ?,
+                             return_transaction_number = ?,
+                             approval_status = 'approved',
+                             sales_rep_id = ?,
+                             sales_rep_name = ?,
+                             product_name = ?,
+                             batch_number = ?
+                             WHERE return_item_id = ?",
+                            [
+                                (int)$return['invoice_id'],
+                                $item['invoice_number'] ?? $return['invoice_id'] ?? null,
+                                $return['return_date'] ?? date('Y-m-d'),
+                                $return['return_number'],
+                                $salesRepId > 0 ? $salesRepId : null,
+                                $item['sales_rep_name'] ?? null,
+                                $item['display_product_name'] ?? $item['product_name'] ?? null,
+                                $item['batch_number'] ?? null,
+                                (int)$item['id']
+                            ]
+                        );
+                    } else {
+                        // إدراج سجل جديد
+                        $db->execute(
+                            "INSERT INTO damaged_returns 
+                            (return_id, return_item_id, product_id, batch_number_id, quantity, damage_reason,
+                             invoice_id, invoice_number, return_date, return_transaction_number,
+                             approval_status, sales_rep_id, sales_rep_name, product_name, batch_number)
+                            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'approved', ?, ?, ?, ?)",
+                            [
+                                $returnId,
+                                (int)$item['id'],
+                                (int)$item['product_id'],
+                                isset($item['batch_number_id']) && $item['batch_number_id'] ? (int)$item['batch_number_id'] : null,
+                                (float)$item['quantity'],
+                                $item['notes'] ?? null,
+                                (int)$return['invoice_id'],
+                                $item['invoice_number'] ?? null,
+                                $return['return_date'] ?? date('Y-m-d'),
+                                $return['return_number'],
+                                $salesRepId > 0 ? $salesRepId : null,
+                                $item['sales_rep_name'] ?? null,
+                                $item['display_product_name'] ?? $item['product_name'] ?? null,
+                                $item['batch_number'] ?? null
+                            ]
+                        );
+                    }
+                }
+                
+                // تسجيل في سجل التدقيق
+                logAudit($currentUser['id'], 'save_damaged_returns', 'damaged_returns', $returnId, null, [
+                    'return_number' => $return['return_number'],
+                    'damaged_items_count' => count($damagedItems)
+                ]);
+            }
+        } catch (Throwable $e) {
+            // لا نوقف العملية إذا فشل حفظ المرتجعات التالفة، فقط نسجل الخطأ
+            error_log('Warning: Failed to save damaged returns: ' . $e->getMessage());
+        }
+        
         // Approve approval request
         $entityColumn = getApprovalsEntityColumn();
         $approval = $db->queryOne(

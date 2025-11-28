@@ -339,10 +339,15 @@ function createReturnRequest(
             }
             
             // إنشاء طلب موافقة
+            // إذا كان هناك منتجات تالفة، يجب إرسال طلب موافقة
+            // (النظام الحالي يرسل طلب موافقة دائماً للمراجعات)
             $entityColumn = getApprovalsEntityColumn();
             $approvalNotes = "مرتجع فاتورة رقم: {$invoice['invoice_number']}\n";
             $approvalNotes .= "رقم المرتجع: {$returnNumber}\n";
             $approvalNotes .= "المبلغ الإجمالي: " . number_format($totalRefundAmount, 2) . " ج.م";
+            if ($hasDamagedItems) {
+                $approvalNotes .= "\nملاحظة: يحتوي هذا المرتجع على منتجات تالفة تحتاج للموافقة";
+            }
             
             $approvalResult = requestApproval('return_request', $returnId, $createdBy, $approvalNotes);
             

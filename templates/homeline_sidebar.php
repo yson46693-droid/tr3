@@ -139,6 +139,13 @@ switch ($role) {
                 'badge' => null
             ],
             [
+                'title' => 'مخزن توالف المصنع',
+                'icon' => 'bi-trash',
+                'url' => $baseUrl . 'manager.php?page=factory_waste_warehouse',
+                'active' => ($currentPage === 'manager.php' && $currentPageParam === 'factory_waste_warehouse'),
+                'badge' => null
+            ],
+            [
                 'title' => 'قوالب  و وصفات المنتجات',
                 'icon' => 'bi-file-earmark-text',
                 'url' => $baseUrl . 'manager.php?page=product_templates',
@@ -258,6 +265,13 @@ switch ($role) {
                 'icon' => 'bi-box-seam',
                 'url' => $baseUrl . 'accountant.php?page=packaging_warehouse',
                 'active' => ($currentPage === 'accountant.php' && $currentPageParam === 'packaging_warehouse'),
+                'badge' => null
+            ],
+            [
+                'title' => 'مخزن توالف المصنع',
+                'icon' => 'bi-trash',
+                'url' => $baseUrl . 'accountant.php?page=factory_waste_warehouse',
+                'active' => ($currentPage === 'accountant.php' && $currentPageParam === 'factory_waste_warehouse'),
                 'badge' => null
             ],
             [
@@ -442,6 +456,13 @@ switch ($role) {
                 'icon' => 'bi-box-seam',
                 'url' => $baseUrl . 'production.php?page=raw_materials_warehouse',
                 'active' => ($currentPage === 'production.php' && $currentPageParam === 'raw_materials_warehouse'),
+                'badge' => null
+            ],
+            [
+                'title' => 'مخزن توالف المصنع',
+                'icon' => 'bi-trash',
+                'url' => $baseUrl . 'production.php?page=factory_waste_warehouse',
+                'active' => ($currentPage === 'production.php' && $currentPageParam === 'factory_waste_warehouse'),
                 'badge' => null
             ],
             [

@@ -948,6 +948,19 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && trim($_P
                                 <span>المرتجعات</span>
                             </button>
                         </li>
+                        <li class="nav-item" role="presentation">
+                            <button class="nav-link <?php echo $activeTab === 'damaged_returns' ? 'active' : ''; ?>" 
+                                    id="my-damaged-returns-tab" 
+                                    data-bs-toggle="tab" 
+                                    data-bs-target="#my-damaged-returns-section" 
+                                    type="button" 
+                                    role="tab" 
+                                    aria-controls="my-damaged-returns-section" 
+                                    aria-selected="<?php echo $activeTab === 'damaged_returns' ? 'true' : 'false'; ?>">
+                                <i class="bi bi-exclamation-triangle"></i>
+                                <span>المرتجعات التالفة</span>
+                            </button>
+                        </li>
                     </ul>
 
                     <div class="tab-content combined-tab-content" id="myRecordsTabContent">
@@ -1039,6 +1052,26 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && trim($_P
                                     <div class="empty-state-icon"><i class="bi bi-arrow-return-left"></i></div>
                                     <div class="empty-state-title">المرتجعات</div>
                                     <div class="empty-state-description">صفحة المرتجعات - سيتم إضافتها قريباً</div>
+                                </div>
+                                <?php } ?>
+                            </div>
+                        </div>
+
+                        <div class="tab-pane fade <?php echo $activeTab === 'damaged_returns' ? 'show active' : ''; ?> combined-tab-pane" 
+                             id="my-damaged-returns-section" 
+                             role="tabpanel" 
+                             aria-labelledby="my-damaged-returns-tab">
+                            <div id="my-damaged-returns-section-content" class="printable-section">
+                                <?php 
+                                $damagedReturnsModulePath = __DIR__ . '/../modules/sales/damaged_returns.php';
+                                if (file_exists($damagedReturnsModulePath)) {
+                                    include $damagedReturnsModulePath;
+                                } else {
+                                ?>
+                                <div class="empty-state-card">
+                                    <div class="empty-state-icon"><i class="bi bi-exclamation-triangle"></i></div>
+                                    <div class="empty-state-title">المرتجعات التالفة</div>
+                                    <div class="empty-state-description">صفحة المرتجعات التالفة - سيتم إضافتها قريباً</div>
                                 </div>
                                 <?php } ?>
                             </div>
@@ -1905,6 +1938,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && trim($_P
             activeTabId = 'collections-tab';
         } else if (section === 'returns') {
             activeTabId = 'returns-tab';
+        } else if (section === 'damaged_returns') {
+            activeTabId = 'my-damaged-returns-tab';
         }
         
         // تفعيل التبويب النشط
