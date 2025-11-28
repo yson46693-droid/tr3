@@ -1590,6 +1590,7 @@ function getEntityLink($type, $entityId) {
 
 /**
  * الحصول على الموافقات المعلقة
+ * يستثني return_request التي تظهر في قسم returns
  */
 function getPendingApprovals($limit = 50, $offset = 0) {
     $db = db();
@@ -1600,7 +1601,7 @@ function getPendingApprovals($limit = 50, $offset = 0) {
          FROM approvals a
          LEFT JOIN users u1 ON a.requested_by = u1.id
          LEFT JOIN users u2 ON a.approved_by = u2.id
-         WHERE a.status = 'pending'
+         WHERE a.status = 'pending' AND a.type != 'return_request'
          ORDER BY a.created_at DESC
          LIMIT ? OFFSET ?",
         [$limit, $offset]
@@ -1609,11 +1610,12 @@ function getPendingApprovals($limit = 50, $offset = 0) {
 
 /**
  * الحصول على عدد الموافقات المعلقة
+ * يستثني return_request التي تظهر في قسم returns
  */
 function getPendingApprovalsCount() {
     $db = db();
     
-    $result = $db->queryOne("SELECT COUNT(*) as count FROM approvals WHERE status = 'pending'");
+    $result = $db->queryOne("SELECT COUNT(*) as count FROM approvals WHERE status = 'pending' AND type != 'return_request'");
     return $result['count'] ?? 0;
 }
 
