@@ -148,9 +148,9 @@ if (!empty($advance['deducted_from_salary_id'])) {
 }
 
 $companyName = COMPANY_NAME;
-$companyAddress = 'الفرع الرئيسي';
-$companyPhone = 'الهاتف: 0000000000';
-$companyEmail = 'info@example.com';
+$companyAddress = 'نطاق التوزيع :  الاسكندريه - شحن لجميع انحاء الجمهوريه';
+$companyPhone = '01003533905';
+$companyEmail = 'صفحة فيسبوك  : عسل نحل المصطفي';
 
 $advanceDate = formatDate($advance['request_date']);
 $advanceStatus = $advance['status'];

@@ -83,9 +83,9 @@ foreach ($sales as $sale) {
 
 $companyName = COMPANY_NAME;
 $companySubtitle = 'نظام إدارة المبيعات';
-$companyAddress = 'الفرع الرئيسي - العنوان: ابو يوسف الرئيسي';
-$companyPhone = 'الهاتف: 0000000000';
-$companyEmail = 'البريد الإلكتروني: info@example.com';
+$companyAddress = 'نطاق التوزيع :  الاسكندريه - شحن لجميع انحاء الجمهوريه';
+$companyPhone = '01003533905';
+$companyEmail = 'صفحة فيسبوك  : عسل نحل المصطفي';
 
 // تنسيق التواريخ
 $dateFromFormatted = formatDate($dateFrom);
@@ -466,15 +466,6 @@ $generatedAt = formatDateTime(date('Y-m-d H:i:s'));
             <span>طباعة / حفظ كـ PDF</span>
         </button>
     </div>
-
-    <script>
-        // طباعة تلقائية عند التحميل (اختياري - يمكن تعطيله)
-        // window.addEventListener('load', function() {
-        //     setTimeout(function() {
-        //         window.print();
-        //     }, 1000);
-        // });
-    </script>
 </body>
 </html>
 

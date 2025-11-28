@@ -105,10 +105,10 @@ if (!$invoiceData) {
 
 $companyName      = COMPANY_NAME;
 $companySubtitle  = 'نظام إدارة المبيعات';
-$companyAddress   = $invoiceData['company_address'] ?? 'الفرع الرئيسي - العنوان: ابو يوسف الرئيسي';
-$companyPhone     = $invoiceData['company_phone']   ?? 'الهاتف: 0000000000';
-$companyEmail     = $invoiceData['company_email']   ?? ' info@example.com : البريد الإلكتروني  ';
-$companyTaxNumber = $invoiceData['company_tax_number'] ?? 'الرقم الضريبي: غير متوفر';
+$companyAddress   = $invoiceData['company_address'] ?? 'نطاق التوزيع :  الاسكندريه - شحن لجميع انحاء الجمهوريه';
+$companyPhone     = $invoiceData['company_phone']   ?? '01003533905';
+$companyEmail     = $invoiceData['company_email']   ?? 'صفحة فيسبوك  : عسل نحل المصطفي';
+$companyTaxNumber = $invoiceData['company_tax_number'] ?? '';
 
 $issueDate = formatDate($invoiceData['date']);
 $dueDateRaw = $invoiceData['due_date'] ?? null;
@@ -133,7 +133,7 @@ $notes           = trim((string)($invoiceData['notes'] ?? ''));
 $currencyLabel   = CURRENCY . ' ' . CURRENCY_SYMBOL;
 
 // باركود فيسبوك - يمكن تعديل الرابط حسب صفحة الشركة على فيسبوك
-$facebookPageUrl = 'https://www.facebook.com/yourpage'; // يرجى تعديل هذا الرابط
+$facebookPageUrl = 'https://www.facebook.com/share/1AHxSmFhEp/'; // يرجى تعديل هذا الرابط
 $qrUrl = 'https://api.qrserver.com/v1/create-qr-code/?size=180x180&data=' . urlencode($facebookPageUrl);
 
 $statusLabelsMap = [
