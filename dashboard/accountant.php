@@ -246,23 +246,21 @@ if ($page === 'financial' && $_SERVER['REQUEST_METHOD'] === 'POST') {
                         
                         if ($hasStatusColumn) {
                             $db->execute(
-                                "INSERT INTO collections (customer_id, collected_by, amount, date, description, status, created_by)
+                                "INSERT INTO collections (customer_id, collected_by, amount, date, status, created_by)
                                  VALUES (NULL, ?, ?, NOW(), ?, 'approved', ?)",
                                 [
                                     $salesRepId,
                                     -$amount, // قيمة سالبة لخصم المبلغ
-                                    'تحصيل من خزنة المندوب: ' . $finalDescription,
                                     $currentUser['id']
                                 ]
                             );
                         } else {
                             $db->execute(
-                                "INSERT INTO collections (customer_id, collected_by, amount, date, description, created_by)
+                                "INSERT INTO collections (customer_id, collected_by, amount, date, created_by)
                                  VALUES (NULL, ?, ?, NOW(), ?, ?)",
                                 [
                                     $salesRepId,
                                     -$amount, // قيمة سالبة لخصم المبلغ
-                                    'تحصيل من خزنة المندوب: ' . $finalDescription,
                                     $currentUser['id']
                                 ]
                             );
@@ -279,7 +277,6 @@ if ($page === 'financial' && $_SERVER['REQUEST_METHOD'] === 'POST') {
                             'sales_rep_id' => $salesRepId,
                             'sales_rep_name' => $salesRepName,
                             'amount' => $amount,
-                            'description' => $finalDescription
                         ]
                     );
                     
