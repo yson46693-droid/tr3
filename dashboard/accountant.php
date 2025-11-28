@@ -1179,16 +1179,49 @@ $pageTitle = isset($lang['accountant_dashboard']) ? $lang['accountant_dashboard'
                 </div>
                 <div class="card-body">
                     <?php
-                    // جلب جميع الحركات المالية
+                    // جلب جميع الحركات المالية من financial_transactions و accountant_transactions
                     $financialTransactions = $db->query("
                         SELECT 
-                            ft.*,
+                            combined.*,
                             u1.full_name as created_by_name,
                             u2.full_name as approved_by_name
-                        FROM financial_transactions ft
-                        LEFT JOIN users u1 ON ft.created_by = u1.id
-                        LEFT JOIN users u2 ON ft.approved_by = u2.id
-                        ORDER BY ft.created_at DESC
+                        FROM (
+                            SELECT 
+                                id, 
+                                type, 
+                                amount, 
+                                description, 
+                                reference_number, 
+                                status, 
+                                created_by, 
+                                approved_by,
+                                created_at,
+                                'financial_transactions' as source_table
+                            FROM financial_transactions
+                            UNION ALL
+                            SELECT 
+                                id, 
+                                CASE 
+                                    WHEN transaction_type = 'collection_from_sales_rep' THEN 'income'
+                                    WHEN transaction_type = 'expense' THEN 'expense'
+                                    WHEN transaction_type = 'income' THEN 'income'
+                                    WHEN transaction_type = 'transfer' THEN 'transfer'
+                                    WHEN transaction_type = 'payment' THEN 'payment'
+                                    ELSE 'other'
+                                END as type,
+                                amount, 
+                                description, 
+                                reference_number, 
+                                status, 
+                                created_by, 
+                                approved_by,
+                                created_at,
+                                'accountant_transactions' as source_table
+                            FROM accountant_transactions
+                        ) as combined
+                        LEFT JOIN users u1 ON combined.created_by = u1.id
+                        LEFT JOIN users u2 ON combined.approved_by = u2.id
+                        ORDER BY combined.created_at DESC
                         LIMIT 100
                     ") ?: [];
                     
@@ -1196,7 +1229,8 @@ $pageTitle = isset($lang['accountant_dashboard']) ? $lang['accountant_dashboard'
                         'income' => 'إيراد',
                         'expense' => 'مصروف',
                         'transfer' => 'تحويل',
-                        'payment' => 'دفعة'
+                        'payment' => 'دفعة',
+                        'other' => 'أخرى'
                     ];
                     
                     $statusLabels = [
