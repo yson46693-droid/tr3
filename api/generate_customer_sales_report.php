@@ -44,7 +44,14 @@ $sql = "SELECT s.*,
                    NULLIF(TRIM(p.name), ''),
                    CONCAT('منتج رقم ', p.id)
                ) as product_name,
-               u.full_name as salesperson_name
+               u.full_name as salesperson_name,
+               (SELECT COALESCE(i.credit_used, 0)
+                FROM invoices i 
+                WHERE i.customer_id = s.customer_id 
+                  AND DATE(i.date) = DATE(s.date)
+                  AND (i.sales_rep_id = s.salesperson_id OR i.sales_rep_id IS NULL)
+                ORDER BY i.id DESC 
+                LIMIT 1) as credit_used
         FROM sales s
         LEFT JOIN products p ON s.product_id = p.id
         LEFT JOIN users u ON s.salesperson_id = u.id
@@ -298,6 +305,11 @@ $generatedAt = formatDateTime(date('Y-m-d H:i:s'));
             color: #991b1b;
         }
 
+        .badge-warning {
+            background: #fbbf24;
+            color: #78350f;
+        }
+
         .badge-debtor {
             background: #fef3c7;
             color: #92400e;
@@ -501,26 +513,41 @@ $generatedAt = formatDateTime(date('Y-m-d H:i:s'));
                         <tbody>
                             <?php foreach ($sales as $sale): ?>
                                 <?php
-                                $status = strtolower($sale['status'] ?? 'pending');
-                                $statusLabels = [
-                                    'approved' => 'معتمدة',
-                                    'pending' => 'معلقة',
-                                    'rejected' => 'ملغاة'
-                                ];
-                                $statusBadgeClass = [
-                                    'approved' => 'badge-approved',
-                                    'pending' => 'badge-pending',
-                                    'rejected' => 'badge-rejected'
-                                ];
-                                $statusLabel = $statusLabels[$status] ?? 'معلقة';
-                                $badgeClass = $statusBadgeClass[$status] ?? 'badge-pending';
+                                // التحقق من وجود خصم من الرصيد الدائن
+                                $creditUsed = (float)($sale['credit_used'] ?? 0);
+                                $statusDisplay = '';
+                                $badgeClass = '';
+                                
+                                if ($creditUsed > 0.01) {
+                                    $statusDisplay = '<i class="bi bi-credit-card-2-front me-1"></i>خصم: ' . formatCurrency($creditUsed);
+                                    $badgeClass = 'badge-warning';
+                                } else {
+                                    // إذا لم يكن هناك خصم، نعرض حالة العملية
+                                    $status = strtolower($sale['status'] ?? 'pending');
+                                    $statusLabels = [
+                                        'approved' => 'معتمدة',
+                                        'pending' => 'معلقة',
+                                        'rejected' => 'ملغاة'
+                                    ];
+                                    $statusBadgeClass = [
+                                        'approved' => 'badge-approved',
+                                        'pending' => 'badge-pending',
+                                        'rejected' => 'badge-rejected'
+                                    ];
+                                    $statusDisplay = $statusLabels[$status] ?? 'معلقة';
+                                    $badgeClass = $statusBadgeClass[$status] ?? 'badge-pending';
+                                }
                                 ?>
                                 <tr>
                                     <td><?php echo formatDate($sale['date']); ?></td>
                                     <td><?php echo htmlspecialchars($sale['product_name'] ?? 'منتج غير محدد'); ?></td>
                                     <td><?php echo number_format((float)($sale['quantity'] ?? 0), 2); ?></td>
                                     <td><?php echo formatCurrency((float)($sale['total'] ?? 0)); ?></td>
-                                    <td><span class="badge <?php echo $badgeClass; ?>"><?php echo $statusLabel; ?></span></td>
+                                    <td>
+                                        <span class="badge <?php echo $badgeClass; ?>" style="<?php echo $creditUsed > 0.01 ? 'background: #fbbf24; color: #78350f;' : ''; ?>">
+                                            <?php echo $statusDisplay; ?>
+                                        </span>
+                                    </td>
                                     <td><?php echo htmlspecialchars($sale['salesperson_name'] ?? '-'); ?></td>
                                 </tr>
                             <?php endforeach; ?>
