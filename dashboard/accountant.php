@@ -558,41 +558,8 @@ $pageTitle = isset($lang['accountant_dashboard']) ? $lang['accountant_dashboard'
                         <div class="stat-card-value"><?php echo formatCurrency($expenses['total'] ?? 0); ?></div>
                         <div class="stat-card-description">هذا الشهر</div>
                     </div>
-                    
-                    <?php
-                    // التحقق من وجود عمود status في جدول collections
-                    $collectionsQuery = "SELECT COALESCE(SUM(amount), 0) as total FROM collections WHERE 1=1";
-                    
-                    // محاولة استخدام status إذا كان موجوداً
-                    try {
-                        $conn = mysqli_connect(DB_HOST, DB_USER, DB_PASS, DB_NAME);
-                        if ($conn) {
-                            $result = mysqli_query($conn, "SHOW COLUMNS FROM collections LIKE 'status'");
-                            if ($result && mysqli_num_rows($result) > 0) {
-                                $collectionsQuery .= " AND status = 'approved'";
-                            }
-                            mysqli_close($conn);
-                        }
-                    } catch (Exception $e) {
-                        // إذا لم يكن status موجوداً، تجاهل
-                    }
-                    
-                    $collectionsQuery .= " AND MONTH(date) = MONTH(NOW()) AND YEAR(date) = YEAR(NOW())";
-                    $collections = $db->queryOne($collectionsQuery);
-                    ?>
-                    <div class="stat-card">
-                        <div class="stat-card-header">
-                            <div class="stat-card-icon green">
-                                <i class="bi bi-arrow-up-circle"></i>
-                            </div>
-                        </div>
-                        <div class="stat-card-title"><?php echo isset($lang['collections']) ? $lang['collections'] : 'التحصيلات'; ?></div>
-                        <div class="stat-card-value"><?php echo formatCurrency($collections['total'] ?? 0); ?></div>
-                        <div class="stat-card-description">هذا الشهر</div>
-                    </div>
                 </div>
                 
-                <!-- آخر المعاملات -->
                 <?php
                 $pageNum = isset($_GET['p']) ? max(1, intval($_GET['p'])) : 1;
                 $perPageTrans = 10;
