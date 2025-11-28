@@ -297,6 +297,7 @@ function customerHistorySyncForCustomer(int $customerId): array
     ];
 
     foreach ($historyRows as $row) {
+        $invoiceId = (int)$row['invoice_id'];
         $invoiceTotal = (float)($row['invoice_total'] ?? 0.0);
         $paidAmount = (float)($row['paid_amount'] ?? 0.0);
         $returnTotal = (float)($row['return_total'] ?? 0.0);
@@ -311,8 +312,56 @@ function customerHistorySyncForCustomer(int $customerId): array
         $net = $invoiceTotal - $returnTotal + $exchangeTotal;
         $summaryTotals['net_total'] += $net;
 
+        // جلب معلومات المنتجات وأرقام التشغيلات للفاتورة
+        $productsInfo = [];
+        try {
+            $invoiceItems = $db->query(
+                "SELECT 
+                    ii.id as invoice_item_id,
+                    ii.product_id,
+                    COALESCE(
+                        (SELECT fp2.product_name 
+                         FROM finished_products fp2 
+                         INNER JOIN batch_numbers bn2 ON fp2.batch_id = bn2.id
+                         INNER JOIN sales_batch_numbers sbn2 ON bn2.id = sbn2.batch_number_id
+                         WHERE sbn2.invoice_item_id = ii.id
+                           AND fp2.product_name IS NOT NULL 
+                           AND TRIM(fp2.product_name) != ''
+                           AND fp2.product_name NOT LIKE 'منتج رقم%'
+                         ORDER BY fp2.id DESC 
+                         LIMIT 1),
+                        NULLIF(TRIM(p.name), ''),
+                        CONCAT('منتج رقم ', p.id)
+                    ) as product_name,
+                    GROUP_CONCAT(DISTINCT bn.batch_number ORDER BY bn.batch_number SEPARATOR ', ') as batch_numbers
+                FROM invoice_items ii
+                LEFT JOIN products p ON ii.product_id = p.id
+                LEFT JOIN sales_batch_numbers sbn ON ii.id = sbn.invoice_item_id
+                LEFT JOIN batch_numbers bn ON sbn.batch_number_id = bn.id
+                WHERE ii.invoice_id = ?
+                GROUP BY ii.id
+                ORDER BY ii.id ASC",
+                [$invoiceId]
+            );
+            
+            foreach ($invoiceItems as $item) {
+                $productName = $item['product_name'] ?? 'غير معروف';
+                $batchNumbers = !empty($item['batch_numbers']) ? $item['batch_numbers'] : '';
+                
+                if ($batchNumbers) {
+                    $productsInfo[] = $productName . ' (تشغيلة: ' . $batchNumbers . ')';
+                } else {
+                    $productsInfo[] = $productName;
+                }
+            }
+        } catch (Throwable $e) {
+            error_log('Error fetching products for invoice ' . $invoiceId . ': ' . $e->getMessage());
+        }
+        
+        $productsDisplay = !empty($productsInfo) ? implode(' | ', $productsInfo) : '—';
+
         $invoicesPayload[] = [
-            'invoice_id'      => (int)$row['invoice_id'],
+            'invoice_id'      => $invoiceId,
             'invoice_number'  => $row['invoice_number'],
             'invoice_date'    => $row['invoice_date'],
             'invoice_total'   => $invoiceTotal,
@@ -323,6 +372,7 @@ function customerHistorySyncForCustomer(int $customerId): array
             'exchange_total'  => $exchangeTotal,
             'exchange_count'  => (int)($row['exchange_count'] ?? 0),
             'net_total'       => $net,
+            'products_info'   => $productsDisplay, // اسم المنتج ورقم التشغيلة
         ];
     }
 

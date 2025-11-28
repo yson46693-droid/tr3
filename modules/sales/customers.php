@@ -1069,13 +1069,13 @@ $collectionsLabel = $isSalesUser ? 'تحصيلاتي' : 'إجمالي التحص
                                     <thead class="table-light">
                                         <tr>
                                             <th>رقم الفاتورة</th>
+                                            <th>المنتج ورقم التشغيلة</th>
                                             <th>التاريخ</th>
                                             <th>الإجمالي</th>
                                             <th>المدفوع</th>
                                             <th>المرتجعات</th>
                                             <th>الاستبدالات</th>
                                             <th>الصافي</th>
-                                            <th>الحالة</th>
                                         </tr>
                                     </thead>
                                     <tbody></tbody>
@@ -1163,6 +1163,11 @@ document.addEventListener('DOMContentLoaded', function () {
             var tr = document.createElement('tr');
             tr.innerHTML = `
                 <td>${row.invoice_number || '—'}</td>
+                <td>
+                    <div class="text-wrap" style="max-width: 300px;">
+                        ${row.products_info || '—'}
+                    </div>
+                </td>
                 <td>${row.invoice_date || '—'}</td>
                 <td>${formatCurrency(row.invoice_total || 0)}</td>
                 <td>${formatCurrency(row.paid_amount || 0)}</td>
@@ -1175,7 +1180,6 @@ document.addEventListener('DOMContentLoaded', function () {
                     <div class="text-muted small">${row.exchange_count || 0} استبدال</div>
                 </td>
                 <td>${formatCurrency(row.net_total || 0)}</td>
-                <td>${row.invoice_status || '—'}</td>
             `;
             invoicesTableBody.appendChild(tr);
         });
