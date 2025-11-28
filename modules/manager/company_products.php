@@ -22,7 +22,7 @@ require_once __DIR__ . '/../../includes/path_helper.php';
 require_once __DIR__ . '/../../includes/table_styles.php';
 require_once __DIR__ . '/../../includes/audit_log.php';
 
-requireRole('manager');
+requireRole(['manager', 'accountant']);
 
 $currentUser = getCurrentUser();
 $db = db();
