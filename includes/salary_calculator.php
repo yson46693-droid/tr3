@@ -176,18 +176,26 @@ function calculateSalesCollections($userId, $month, $year) {
     
     // الحالة 1: المبيعات بكامل - حساب 2% على إجمالي الفاتورة
     // الفواتير المدفوعة بالكامل (status='paid' و paid_amount = total_amount)
+    // استبعاد الفواتير المدفوعة من رصيد دائن
     $invoicesTableCheck = $db->queryOne("SHOW TABLES LIKE 'invoices'");
     if (!empty($invoicesTableCheck)) {
-        $fullPaymentSales = $db->queryOne(
-            "SELECT COALESCE(SUM(total_amount), 0) as total 
+        // التحقق من وجود عمود paid_from_credit
+        $hasPaidFromCreditColumn = !empty($db->queryOne("SHOW COLUMNS FROM invoices LIKE 'paid_from_credit'"));
+        
+        $fullPaymentSalesSql = "SELECT COALESCE(SUM(total_amount), 0) as total 
              FROM invoices 
              WHERE sales_rep_id = ? 
              AND MONTH(date) = ? 
              AND YEAR(date) = ?
              AND status = 'paid'
-             AND ABS(paid_amount - total_amount) < 0.01",
-            [$userId, $month, $year]
-        );
+             AND ABS(paid_amount - total_amount) < 0.01";
+        
+        // استبعاد الفواتير المدفوعة من رصيد دائن
+        if ($hasPaidFromCreditColumn) {
+            $fullPaymentSalesSql .= " AND (paid_from_credit IS NULL OR paid_from_credit = 0)";
+        }
+        
+        $fullPaymentSales = $db->queryOne($fullPaymentSalesSql, [$userId, $month, $year]);
         $totalCommissionBase += floatval($fullPaymentSales['total'] ?? 0);
     }
     
@@ -207,28 +215,37 @@ function calculateSalesCollections($userId, $month, $year) {
             // الحالة 2: التحصيلات من الفواتير الجزئية
             // التحصيلات التي تمت على فواتير بحالة partial للمندوب
             // نستخدم subquery لتجنب العد المزدوج إذا كان هناك أكثر من فاتورة جزئية للعميل نفسه
-            $partialCollections = $db->queryOne(
-                "SELECT COALESCE(SUM(c.amount), 0) as total 
+            // استبعاد التحصيلات من الفواتير المدفوعة من رصيد دائن
+            $hasPaidFromCreditColumn = !empty($db->queryOne("SHOW COLUMNS FROM invoices LIKE 'paid_from_credit'"));
+            
+            $partialCollectionsSql = "SELECT COALESCE(SUM(c.amount), 0) as total 
                  FROM collections c
                  WHERE c.customer_id IN (
                      SELECT DISTINCT inv.customer_id 
                      FROM invoices inv
                      WHERE inv.sales_rep_id = ?
-                     AND inv.status = 'partial'
+                     AND inv.status = 'partial'";
+            
+            // استبعاد الفواتير المدفوعة من رصيد دائن
+            if ($hasPaidFromCreditColumn) {
+                $partialCollectionsSql .= " AND (inv.paid_from_credit IS NULL OR inv.paid_from_credit = 0)";
+            }
+            
+            $partialCollectionsSql .= "
                  )
                  AND MONTH(c.date) = ?
                  AND YEAR(c.date) = ?" . 
-                 ($hasStatus ? " AND c.status IN ('pending','approved')" : ""),
-                [$userId, $month, $year]
-            );
+                 ($hasStatus ? " AND c.status IN ('pending','approved')" : "");
+            
+            $partialCollections = $db->queryOne($partialCollectionsSql, [$userId, $month, $year]);
             $partialAmount = floatval($partialCollections['total'] ?? 0);
             
             // الحالة 3: التحصيلات من عملاء المندوب (الذين أنشأهم المندوب)
             // نحسب جميع التحصيلات من عملاء المندوب
             // إذا كان التحصيل مؤهلاً للحالتين 2 و 3، سيتم احتسابه مرة واحدة فقط (في الحالة 2)
             // لذلك نستثني التحصيلات التي تم احتسابها في الحالة 2 (من عملاء لديهم فواتير جزئية)
-            $customerCollections = $db->queryOne(
-                "SELECT COALESCE(SUM(c.amount), 0) as total 
+            // استبعاد التحصيلات من العملاء الذين لديهم رصيد دائن وقت التحصيل
+            $customerCollectionsSql = "SELECT COALESCE(SUM(c.amount), 0) as total 
                  FROM collections c
                  INNER JOIN customers cust ON c.customer_id = cust.id
                  WHERE cust.created_by = ?
@@ -238,18 +255,28 @@ function calculateSalesCollections($userId, $month, $year) {
                      SELECT DISTINCT inv.customer_id 
                      FROM invoices inv
                      WHERE inv.sales_rep_id = ?
-                     AND inv.status = 'partial'
-                 )" . 
-                 ($hasStatus ? " AND c.status IN ('pending','approved')" : ""),
-                [$userId, $month, $year, $userId]
-            );
+                     AND inv.status = 'partial'";
+            
+            // استبعاد الفواتير المدفوعة من رصيد دائن
+            if ($hasPaidFromCreditColumn) {
+                $customerCollectionsSql .= " AND (inv.paid_from_credit IS NULL OR inv.paid_from_credit = 0)";
+            }
+            
+            $customerCollectionsSql .= "
+                 )
+                 AND cust.balance >= 0" . // استبعاد العملاء الذين لديهم رصيد دائن
+                 ($hasStatus ? " AND c.status IN ('pending','approved')" : "");
+            
+            $customerCollections = $db->queryOne($customerCollectionsSql, [$userId, $month, $year, $userId]);
             $customerAmount = floatval($customerCollections['total'] ?? 0);
             
             // الحالة 4: التحصيلات التي قام بها المندوب مباشرة (collected_by)
             // نستثني التحصيلات التي تم احتسابها في الحالتين 2 و 3 لتجنب العد المزدوج
+            // استبعاد التحصيلات من العملاء الذين لديهم رصيد دائن
             $collectedByQuery = "
                 SELECT COALESCE(SUM(c.amount), 0) as total 
                 FROM collections c
+                LEFT JOIN customers cust ON c.customer_id = cust.id
                 WHERE c.collected_by = ?
                 AND MONTH(c.date) = ?
                 AND YEAR(c.date) = ?
@@ -257,13 +284,21 @@ function calculateSalesCollections($userId, $month, $year) {
                     SELECT DISTINCT inv.customer_id 
                     FROM invoices inv
                     WHERE inv.sales_rep_id = ?
-                    AND inv.status = 'partial'
+                    AND inv.status = 'partial'";
+            
+            // استبعاد الفواتير المدفوعة من رصيد دائن
+            if ($hasPaidFromCreditColumn) {
+                $collectedByQuery .= " AND (inv.paid_from_credit IS NULL OR inv.paid_from_credit = 0)";
+            }
+            
+            $collectedByQuery .= "
                 )
                 AND (c.customer_id NOT IN (
-                    SELECT DISTINCT cust.id
-                    FROM customers cust
-                    WHERE cust.created_by = ?
-                ) OR c.customer_id IS NULL)" . 
+                    SELECT DISTINCT cust2.id
+                    FROM customers cust2
+                    WHERE cust2.created_by = ?
+                ) OR c.customer_id IS NULL)
+                AND (cust.balance IS NULL OR cust.balance >= 0)" . // استبعاد العملاء الذين لديهم رصيد دائن
                 ($hasStatus ? " AND c.status IN ('pending','approved')" : "");
             
             $collectedByResult = $db->queryOne($collectedByQuery, [$userId, $month, $year, $userId, $userId]);
@@ -272,30 +307,35 @@ function calculateSalesCollections($userId, $month, $year) {
             $totalCommissionBase += $partialAmount + $customerAmount + $collectedByAmount;
         } elseif ($hasCustomers) {
             // إذا لم يكن جدول invoices موجوداً، نحسب التحصيلات من عملاء المندوب
+            // استبعاد التحصيلات من العملاء الذين لديهم رصيد دائن
             $customerCollections = $db->queryOne(
                 "SELECT COALESCE(SUM(c.amount), 0) as total 
                  FROM collections c
                  INNER JOIN customers cust ON c.customer_id = cust.id
                  WHERE cust.created_by = ?
                  AND MONTH(c.date) = ?
-                 AND YEAR(c.date) = ?" . 
+                 AND YEAR(c.date) = ?
+                 AND cust.balance >= 0" . // استبعاد العملاء الذين لديهم رصيد دائن
                  ($hasStatus ? " AND c.status IN ('pending','approved')" : ""),
                 [$userId, $month, $year]
             );
             $customerAmount = floatval($customerCollections['total'] ?? 0);
             
             // التحصيلات التي قام بها المندوب مباشرة (collected_by) من عملاء ليسوا من عملاء المندوب
+            // استبعاد التحصيلات من العملاء الذين لديهم رصيد دائن
             $collectedByQuery = "
                 SELECT COALESCE(SUM(c.amount), 0) as total 
                 FROM collections c
+                LEFT JOIN customers cust ON c.customer_id = cust.id
                 WHERE c.collected_by = ?
                 AND MONTH(c.date) = ?
                 AND YEAR(c.date) = ?
                 AND (c.customer_id NOT IN (
-                    SELECT DISTINCT cust.id
-                    FROM customers cust
-                    WHERE cust.created_by = ?
-                ) OR c.customer_id IS NULL)" . 
+                    SELECT DISTINCT cust2.id
+                    FROM customers cust2
+                    WHERE cust2.created_by = ?
+                ) OR c.customer_id IS NULL)
+                AND (cust.balance IS NULL OR cust.balance >= 0)" . // استبعاد العملاء الذين لديهم رصيد دائن
                 ($hasStatus ? " AND c.status IN ('pending','approved')" : "");
             
             $collectedByResult = $db->queryOne($collectedByQuery, [$userId, $month, $year, $userId]);
