@@ -26,10 +26,13 @@ require_once __DIR__ . '/audit_log.php';
  */
 function returnProductsToVehicleInventory(int $returnId, ?int $approvedBy = null): array
 {
+    error_log(">>> returnProductsToVehicleInventory START - Return ID: {$returnId}, Approved By: " . ($approvedBy ?? 'N/A'));
+    
     try {
         $db = db();
         
         // جلب بيانات المرتجع
+        error_log("Fetching return data from database...");
         $return = $db->queryOne(
             "SELECT r.*, c.name as customer_name, u.id as sales_rep_id, u.full_name as sales_rep_name
              FROM returns r
@@ -40,49 +43,61 @@ function returnProductsToVehicleInventory(int $returnId, ?int $approvedBy = null
         );
         
         if (!$return) {
-            error_log("returnProductsToVehicleInventory: Return {$returnId} not found");
+            error_log("ERROR: Return {$returnId} not found in database");
             return ['success' => false, 'message' => 'المرتجع غير موجود'];
         }
         
         // التحقق من حالة المرتجع (يجب أن يكون معتمد)
         $currentStatus = $return['status'] ?? 'unknown';
-        error_log("returnProductsToVehicleInventory: Return {$returnId} current status: {$currentStatus}");
+        error_log("Return status check: Current='{$currentStatus}', Expected='approved'");
         
         if ($currentStatus !== 'approved') {
-            error_log("returnProductsToVehicleInventory: Return {$returnId} status is '{$currentStatus}', expected 'approved'");
+            error_log("ERROR: Return status is '{$currentStatus}', expected 'approved'");
             return ['success' => false, 'message' => 'المرتجع غير معتمد بعد. لا يمكن إرجاع المنتجات للمخزون. الحالة الحالية: ' . $currentStatus];
         }
         
         $salesRepId = (int)($return['sales_rep_id'] ?? 0);
+        error_log("Sales Rep ID: {$salesRepId}");
+        
         if ($salesRepId <= 0) {
+            error_log("ERROR: Sales rep not specified for return");
             return ['success' => false, 'message' => 'المندوب غير محدد للمرتجع'];
         }
         
         // الحصول على سيارة المندوب
+        error_log("Finding vehicle for sales rep...");
         $vehicle = $db->queryOne(
             "SELECT id FROM vehicles WHERE driver_id = ? AND status = 'active' ORDER BY id DESC LIMIT 1",
             [$salesRepId]
         );
         
         if (!$vehicle) {
+            error_log("ERROR: No active vehicle found for sales rep {$salesRepId}");
             return ['success' => false, 'message' => 'لا توجد سيارة نشطة للمندوب'];
         }
         
         $vehicleId = (int)$vehicle['id'];
+        error_log("Vehicle found: ID={$vehicleId}");
         
         // الحصول على مخزن السيارة (getVehicleWarehouse موجود في vehicle_inventory.php)
+        error_log("Getting vehicle warehouse...");
         $vehicleWarehouse = getVehicleWarehouse($vehicleId);
         if (!$vehicleWarehouse) {
             // إنشاء مخزن السيارة إذا لم يكن موجوداً
+            error_log("Warehouse not found, creating new warehouse...");
             $createResult = createVehicleWarehouse($vehicleId);
             if (!$createResult['success']) {
+                error_log("ERROR: Failed to create vehicle warehouse");
                 return ['success' => false, 'message' => 'تعذر تجهيز مخزن السيارة'];
             }
             $vehicleWarehouse = getVehicleWarehouse($vehicleId);
+            error_log("Warehouse created successfully");
         }
         $warehouseId = $vehicleWarehouse ? (int)$vehicleWarehouse['id'] : null;
+        error_log("Warehouse ID: " . ($warehouseId ?? 'NULL'));
         
         // جلب عناصر المرتجع (استثناء التالف منها - التي سيتم إضافتها لجدول التالف)
+        error_log("Fetching return items (excluding damaged items)...");
         $returnItems = $db->query(
             "SELECT ri.*, p.name as product_name, p.unit
              FROM return_items ri
@@ -93,8 +108,11 @@ function returnProductsToVehicleInventory(int $returnId, ?int $approvedBy = null
         );
         
         if (empty($returnItems)) {
+            error_log("No non-damaged items found - returning success (nothing to process)");
             return ['success' => true, 'message' => 'لا توجد منتجات سليمة للإرجاع للمخزون'];
         }
+        
+        error_log("Found " . count($returnItems) . " non-damaged items to process");
         
         // الحصول على المستخدم الحالي للموافقة
         if ($approvedBy === null) {
@@ -111,11 +129,15 @@ function returnProductsToVehicleInventory(int $returnId, ?int $approvedBy = null
         }
         
         try {
+            $itemIndex = 0;
             foreach ($returnItems as $item) {
+                $itemIndex++;
                 $productId = (int)$item['product_id'];
                 $quantity = (float)$item['quantity'];
                 $batchNumberId = isset($item['batch_number_id']) && $item['batch_number_id'] ? (int)$item['batch_number_id'] : null;
                 $batchNumber = $item['batch_number'] ?? null;
+                
+                error_log("Processing item #{$itemIndex}: Product ID={$productId}, Quantity={$quantity}, Batch ID=" . ($batchNumberId ?? 'NULL') . ", Batch Number=" . ($batchNumber ?? 'NULL'));
                 
                 // البحث عن Batch Number ID إذا كان لدينا batch_number string فقط
                 if (!$batchNumberId && $batchNumber) {
@@ -174,8 +196,11 @@ function returnProductsToVehicleInventory(int $returnId, ?int $approvedBy = null
                 
                 if ($inventoryRow) {
                     // تحديث الكمية الموجودة - إضافة كمية المرتجع للكمية الحالية
+                    error_log("  Item #{$itemIndex}: Found existing inventory row. Updating quantity...");
                     $currentQuantity = (float)$inventoryRow['quantity'];
                     $newQuantity = round($currentQuantity + $quantity, 3);
+                    
+                    error_log("  Item #{$itemIndex}: Current quantity={$currentQuantity}, Adding={$quantity}, New quantity={$newQuantity}");
                     
                     $db->execute(
                         "UPDATE vehicle_inventory 
@@ -186,7 +211,9 @@ function returnProductsToVehicleInventory(int $returnId, ?int $approvedBy = null
                     
                     $quantityBefore = $currentQuantity;
                     $quantityAfter = $newQuantity;
+                    error_log("  Item #{$itemIndex}: Inventory updated successfully");
                 } else {
+                    error_log("  Item #{$itemIndex}: No existing inventory found. Creating new record...");
                     // إنشاء سجل جديد في المخزون
                     // نحتاج لجلب بيانات المنتج
                     $product = $db->queryOne(
@@ -236,10 +263,12 @@ function returnProductsToVehicleInventory(int $returnId, ?int $approvedBy = null
                     
                     $quantityBefore = 0;
                     $quantityAfter = $quantity;
+                    error_log("  Item #{$itemIndex}: New inventory record created successfully");
                 }
                 
                 // تسجيل حركة في inventory_movements
                 if (function_exists('recordInventoryMovement')) {
+                    error_log("  Item #{$itemIndex}: Recording inventory movement...");
                     recordInventoryMovement(
                         $productId,
                         $warehouseId,
@@ -252,8 +281,15 @@ function returnProductsToVehicleInventory(int $returnId, ?int $approvedBy = null
                         "إرجاع منتج من مرتجع رقم: {$return['return_number']}",
                         $approvedBy
                     );
+                    error_log("  Item #{$itemIndex}: Inventory movement recorded");
+                } else {
+                    error_log("  Item #{$itemIndex}: recordInventoryMovement function not available");
                 }
+                
+                error_log("  Item #{$itemIndex}: Processing completed successfully");
             }
+            
+            error_log("All items processed successfully. Total items: {$itemIndex}");
             
             // ملاحظة: لا نقوم بتحديث الحالة إلى 'processed' هنا
             // سيتم تحديثها في api/approve_return.php بعد استدعاء جميع الدوال
@@ -271,8 +307,14 @@ function returnProductsToVehicleInventory(int $returnId, ?int $approvedBy = null
             
             // تأكيد المعاملة فقط إذا بدأناها نحن
             if ($transactionStarted) {
+                error_log("Committing transaction (we started it)...");
                 $db->commit();
+            } else {
+                error_log("Transaction was started by caller, not committing here");
             }
+            
+            error_log(">>> returnProductsToVehicleInventory SUCCESS");
+            error_log("Total items processed: " . count($returnItems));
             
             return [
                 'success' => true,
@@ -283,9 +325,13 @@ function returnProductsToVehicleInventory(int $returnId, ?int $approvedBy = null
         } catch (Throwable $e) {
             // Rollback فقط إذا بدأنا transaction
             if ($transactionStarted) {
+                error_log("ERROR: Rolling back transaction...");
                 $db->rollback();
             }
-            error_log("Error returning products to inventory: " . $e->getMessage());
+            error_log(">>> returnProductsToVehicleInventory ERROR");
+            error_log("Error message: " . $e->getMessage());
+            error_log("Error type: " . get_class($e));
+            error_log("Stack trace: " . $e->getTraceAsString());
             return [
                 'success' => false,
                 'message' => 'حدث خطأ أثناء إرجاع المنتجات للمخزون: ' . $e->getMessage()
@@ -293,7 +339,10 @@ function returnProductsToVehicleInventory(int $returnId, ?int $approvedBy = null
         }
         
     } catch (Throwable $e) {
-        error_log("Error in returnProductsToVehicleInventory: " . $e->getMessage());
+        error_log(">>> returnProductsToVehicleInventory FATAL ERROR");
+        error_log("Error message: " . $e->getMessage());
+        error_log("Error type: " . get_class($e));
+        error_log("Stack trace: " . $e->getTraceAsString());
         return [
             'success' => false,
             'message' => 'حدث خطأ غير متوقع: ' . $e->getMessage()

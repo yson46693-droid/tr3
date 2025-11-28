@@ -39,10 +39,13 @@ require_once __DIR__ . '/audit_log.php';
  */
 function applyReturnSalaryDeduction(int $returnId, ?int $salesRepId = null, ?int $processedBy = null): array
 {
+    error_log(">>> applyReturnSalaryDeduction START - Return ID: {$returnId}, Sales Rep ID: " . ($salesRepId ?? 'NULL') . ", Processed By: " . ($processedBy ?? 'N/A'));
+    
     try {
         $db = db();
         
         // جلب بيانات المرتجع
+        error_log("Fetching return data from database...");
         $return = $db->queryOne(
             "SELECT r.*, c.id as customer_id, c.balance as current_customer_balance
              FROM returns r
@@ -52,15 +55,22 @@ function applyReturnSalaryDeduction(int $returnId, ?int $salesRepId = null, ?int
         );
         
         if (!$return) {
+            error_log("ERROR: Return {$returnId} not found in database");
             return ['success' => false, 'message' => 'المرتجع غير موجود'];
         }
+        
+        error_log("Return found. Customer ID: " . ($return['customer_id'] ?? 'N/A'));
         
         // الحصول على معرف المندوب
         if ($salesRepId === null) {
             $salesRepId = (int)($return['sales_rep_id'] ?? 0);
+            error_log("Sales rep ID from return: {$salesRepId}");
+        } else {
+            error_log("Sales rep ID provided: {$salesRepId}");
         }
         
         if ($salesRepId <= 0) {
+            error_log("No sales rep specified - skipping salary deduction");
             return [
                 'success' => true,
                 'message' => 'لا يوجد مندوب مرتبط بالمرتجع. لا يتم تطبيق خصم.',
@@ -69,6 +79,7 @@ function applyReturnSalaryDeduction(int $returnId, ?int $salesRepId = null, ?int
         }
         
         // الحصول على رصيد العميل قبل معالجة المرتجع من audit_log
+        error_log("Fetching customer balance before return from audit logs...");
         $customerBalanceBeforeReturn = 0.0;
         $auditLog = $db->queryOne(
             "SELECT old_value FROM audit_logs
@@ -83,7 +94,9 @@ function applyReturnSalaryDeduction(int $returnId, ?int $salesRepId = null, ?int
         if ($auditLog && !empty($auditLog['old_value'])) {
             $oldValue = json_decode($auditLog['old_value'], true);
             $customerBalanceBeforeReturn = (float)($oldValue['old_balance'] ?? 0);
+            error_log("Customer balance before return (from audit log): {$customerBalanceBeforeReturn}");
         } else {
+            error_log("Audit log not found, trying alternative method...");
             // إذا لم نجد في audit_log، نحاول حساب الرصيد السابق من الرصيد الحالي
             // نستخدم البيانات من return_financial_processor
             $currentBalance = (float)($return['current_customer_balance'] ?? 0);
@@ -114,18 +127,25 @@ function applyReturnSalaryDeduction(int $returnId, ?int $salesRepId = null, ?int
         }
         
         $returnAmount = (float)$return['refund_amount'];
+        error_log("Return amount: {$returnAmount}");
+        error_log("Customer balance before return: {$customerBalanceBeforeReturn}");
         
         // حساب رصيد الدين (Debit) ورصيد الدائن (Credit) قبل المرتجع
         $customerDebitBeforeReturn = $customerBalanceBeforeReturn > 0 ? $customerBalanceBeforeReturn : 0.0;
         $customerCreditBeforeReturn = $customerBalanceBeforeReturn < 0 ? abs($customerBalanceBeforeReturn) : 0.0;
         
+        error_log("Customer Debit (before return): {$customerDebitBeforeReturn}");
+        error_log("Customer Credit (before return): {$customerCreditBeforeReturn}");
+        
         // تطبيق القواعد الجديدة
+        error_log("Applying salary deduction rules...");
         $amountToDeduct = 0.0;
         $calculationDetails = [];
         
         // القاعدة 1: إذا كان للعميل رصيد دائن (Credit) أكبر من مبلغ المرتجع
         if ($customerCreditBeforeReturn > 0 && $customerCreditBeforeReturn > $returnAmount) {
             // لا يتم خصم أي نسبة (0%)
+            error_log("Rule 1 applied: Credit ({$customerCreditBeforeReturn}) > Return Amount ({$returnAmount})");
             $amountToDeduct = 0.0;
             $calculationDetails = [
                 'rule' => 1,
@@ -140,6 +160,8 @@ function applyReturnSalaryDeduction(int $returnId, ?int $salesRepId = null, ?int
             $difference = $returnAmount - $customerDebitBeforeReturn;
             // خصم = 2% من الفرق
             $amountToDeduct = round($difference * 0.02, 2);
+            error_log("Rule 2 applied: Debit ({$customerDebitBeforeReturn}) < Return Amount ({$returnAmount})");
+            error_log("  Difference: {$difference}, Deduction (2%): {$amountToDeduct}");
             $calculationDetails = [
                 'rule' => 2,
                 'customer_debit' => $customerDebitBeforeReturn,
@@ -153,6 +175,8 @@ function applyReturnSalaryDeduction(int $returnId, ?int $salesRepId = null, ?int
         else {
             // خصم 2% من كامل مبلغ المرتجع
             $amountToDeduct = round($returnAmount * 0.02, 2);
+            error_log("Rule 3 applied: Balance = 0 or Credit <= Return Amount");
+            error_log("  Deduction (2% of return amount): {$amountToDeduct}");
             $calculationDetails = [
                 'rule' => 3,
                 'customer_balance' => $customerBalanceBeforeReturn,
@@ -161,6 +185,8 @@ function applyReturnSalaryDeduction(int $returnId, ?int $salesRepId = null, ?int
                 'reason' => 'رصيد العميل = 0 أو رصيد دائن (Credit <= returnAmount)'
             ];
         }
+        
+        error_log("Deduction calculation completed. Amount to deduct: {$amountToDeduct}");
         
         if ($amountToDeduct <= 0) {
             $reasonMessage = 'لا يتم خصم أي مبلغ من مرتب المندوب';
@@ -171,6 +197,8 @@ function applyReturnSalaryDeduction(int $returnId, ?int $salesRepId = null, ?int
                     $reasonMessage .= ' (حسب القواعد المحددة)';
                 }
             }
+            error_log("No deduction needed. Reason: " . ($calculationDetails['reason'] ?? 'N/A'));
+            error_log(">>> applyReturnSalaryDeduction SUCCESS (no deduction)");
             return [
                 'success' => true,
                 'message' => $reasonMessage,
@@ -178,6 +206,8 @@ function applyReturnSalaryDeduction(int $returnId, ?int $salesRepId = null, ?int
                 'calculation_details' => $calculationDetails
             ];
         }
+        
+        error_log("Deduction required: {$amountToDeduct}. Processing salary update...");
         
         // الحصول على المستخدم الحالي
         if ($processedBy === null) {
@@ -304,8 +334,16 @@ function applyReturnSalaryDeduction(int $returnId, ?int $salesRepId = null, ?int
             
             // تأكيد المعاملة (فقط إذا بدأناها نحن)
             if ($transactionStarted) {
+                error_log("Committing transaction (we started it)...");
                 $db->commit();
+            } else {
+                error_log("Transaction was started by caller, not committing here");
             }
+            
+            error_log(">>> applyReturnSalaryDeduction SUCCESS");
+            error_log("Deduction amount: {$amountToDeduct}");
+            error_log("Salary ID: {$salaryId}");
+            error_log("Month: {$month}, Year: {$year}");
             
             return [
                 'success' => true,
@@ -319,9 +357,13 @@ function applyReturnSalaryDeduction(int $returnId, ?int $salesRepId = null, ?int
         } catch (Throwable $e) {
             // Rollback فقط إذا بدأنا transaction
             if ($transactionStarted) {
+                error_log("ERROR: Rolling back transaction...");
                 $db->rollback();
             }
-            error_log("Error applying salary deduction: " . $e->getMessage());
+            error_log(">>> applyReturnSalaryDeduction ERROR");
+            error_log("Error message: " . $e->getMessage());
+            error_log("Error type: " . get_class($e));
+            error_log("Stack trace: " . $e->getTraceAsString());
             return [
                 'success' => false,
                 'message' => 'حدث خطأ أثناء تطبيق خصم المرتب: ' . $e->getMessage()
@@ -329,7 +371,10 @@ function applyReturnSalaryDeduction(int $returnId, ?int $salesRepId = null, ?int
         }
         
     } catch (Throwable $e) {
-        error_log("Error in applyReturnSalaryDeduction: " . $e->getMessage());
+        error_log(">>> applyReturnSalaryDeduction FATAL ERROR");
+        error_log("Error message: " . $e->getMessage());
+        error_log("Error type: " . get_class($e));
+        error_log("Stack trace: " . $e->getTraceAsString());
         return [
             'success' => false,
             'message' => 'حدث خطأ غير متوقع: ' . $e->getMessage()

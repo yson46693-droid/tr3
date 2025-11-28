@@ -29,10 +29,13 @@ require_once __DIR__ . '/audit_log.php';
  */
 function processReturnFinancials(int $returnId, ?int $processedBy = null): array
 {
+    error_log(">>> processReturnFinancials START - Return ID: {$returnId}, Processed By: " . ($processedBy ?? 'N/A'));
+    
     try {
         $db = db();
         
         // جلب بيانات المرتجع
+        error_log("Fetching return data from database...");
         $return = $db->queryOne(
             "SELECT r.*, c.id as customer_id, c.name as customer_name, c.balance as customer_balance
              FROM returns r
@@ -42,24 +45,32 @@ function processReturnFinancials(int $returnId, ?int $processedBy = null): array
         );
         
         if (!$return) {
-            error_log("processReturnFinancials: Return {$returnId} not found");
+            error_log("ERROR: Return {$returnId} not found in database");
             return ['success' => false, 'message' => 'المرتجع غير موجود'];
         }
         
         // التحقق من حالة المرتجع (يجب أن يكون معتمد)
         $currentStatus = $return['status'] ?? 'unknown';
-        error_log("processReturnFinancials: Return {$returnId} current status: {$currentStatus}");
+        error_log("Return status check: Current='{$currentStatus}', Expected='approved'");
         
         if ($currentStatus !== 'approved') {
-            error_log("processReturnFinancials: Return {$returnId} status is '{$currentStatus}', expected 'approved'");
+            error_log("ERROR: Return status is '{$currentStatus}', expected 'approved'");
             return ['success' => false, 'message' => 'المرتجع غير معتمد بعد. لا يمكن معالجة التسويات المالية. الحالة الحالية: ' . $currentStatus];
         }
+        
+        error_log("Return status validated. Customer ID: " . ($return['customer_id'] ?? 'N/A'));
         
         $customerId = (int)$return['customer_id'];
         $returnAmount = (float)$return['refund_amount'];
         $currentBalance = (float)$return['customer_balance'];
         
+        error_log("Financial calculation parameters:");
+        error_log("  Customer ID: {$customerId}");
+        error_log("  Return Amount: {$returnAmount}");
+        error_log("  Current Balance: {$currentBalance}");
+        
         if ($returnAmount <= 0) {
+            error_log("ERROR: Invalid return amount: {$returnAmount}");
             return ['success' => false, 'message' => 'مبلغ المرتجع غير صالح'];
         }
         
@@ -71,6 +82,7 @@ function processReturnFinancials(int $returnId, ?int $processedBy = null): array
         
         // حفظ الرصيد القديم قبل المعالجة (للاستخدام في حساب خصم المندوب)
         $oldBalance = $currentBalance;
+        error_log("Old balance saved: {$oldBalance}");
         
         // التحقق من وجود transaction نشطة
         $conn = $db->getConnection();
@@ -82,6 +94,7 @@ function processReturnFinancials(int $returnId, ?int $processedBy = null): array
         
         try {
             // حساب الرصيد الجديد حسب القواعد المطلوبة:
+            error_log("Calculating new balance according to rules...");
             // 1. إذا كان للعميل رصيد ديون (Debit): يتم خصم قيمة المرتجع من رصيد الديون
             // 2. إذا لم يكن للعميل رصيد ديون: تتم إضافة المبلغ إلى الرصيد الدائن (Credit)
             // 3. إذا كان رصيد ديون العميل أقل من قيمة المرتجع:
@@ -94,16 +107,20 @@ function processReturnFinancials(int $returnId, ?int $processedBy = null): array
             
             // حساب الدين الحالي (Debit) - الرصيد الموجب
             $currentDebt = $currentBalance > 0 ? $currentBalance : 0.0;
+            error_log("Current debt: {$currentDebt}");
             
             if ($currentDebt > 0) {
                 // الحالة 1 و 3: العميل مدين
+                error_log("Customer has debt. Applying rule 1 or 3...");
                 if ($returnAmount <= $currentDebt) {
                     // الحالة 1: المرتجع يغطي جزء أو كل الدين
+                    error_log("Rule 1: Return amount covers debt");
                     $debtReduction = $returnAmount;
                     $newBalance = round($currentBalance - $returnAmount, 2);
                     $creditAdded = 0.0;
                 } else {
                     // الحالة 3: المرتجع أكبر من الدين
+                    error_log("Rule 3: Return amount exceeds debt");
                     // خصم المتاح من الديون حتى يصل إلى صفر
                     $debtReduction = $currentDebt;
                     // ثم إضافة المبلغ المتبقي إلى الرصيد الدائن
@@ -112,17 +129,25 @@ function processReturnFinancials(int $returnId, ?int $processedBy = null): array
                 }
             } else {
                 // الحالة 2: العميل غير مدين (balance <= 0)
+                error_log("Rule 2: Customer has no debt, adding credit");
                 // إضافة المبلغ كرصيد سالب (Credit)
                 $debtReduction = 0.0;
                 $creditAdded = $returnAmount;
                 $newBalance = round($currentBalance - $returnAmount, 2); // يصبح أكثر سالبية
             }
             
+            error_log("Calculation results:");
+            error_log("  Debt Reduction: {$debtReduction}");
+            error_log("  Credit Added: {$creditAdded}");
+            error_log("  New Balance: {$newBalance}");
+            
             // تحديث رصيد العميل
-            $db->execute(
+            error_log("Updating customer balance in database...");
+            $updateResult = $db->execute(
                 "UPDATE customers SET balance = ? WHERE id = ?",
                 [$newBalance, $customerId]
             );
+            error_log("Customer balance updated. Affected rows: " . ($updateResult['affected_rows'] ?? 0));
             
             // تسجيل في سجل التدقيق - تسجيل عملية المعالجة المالية للمرتجع
             logAudit($processedBy, 'process_return_financials', 'returns', $returnId, [
@@ -147,7 +172,10 @@ function processReturnFinancials(int $returnId, ?int $processedBy = null): array
             
             // تأكيد المعاملة فقط إذا بدأناها نحن
             if ($transactionStarted) {
+                error_log("Committing transaction (we started it)...");
                 $db->commit();
+            } else {
+                error_log("Transaction was started by caller, not committing here");
             }
             
             $message = 'تمت معالجة التسوية المالية بنجاح';
@@ -157,6 +185,9 @@ function processReturnFinancials(int $returnId, ?int $processedBy = null): array
             if ($creditAdded > 0) {
                 $message .= sprintf("\nتم إضافة %.2f جنيه كرصيد دائن للعميل", $creditAdded);
             }
+            
+            error_log(">>> processReturnFinancials SUCCESS");
+            error_log("Final result: Debt Reduction={$debtReduction}, Credit Added={$creditAdded}, New Balance={$newBalance}");
             
             return [
                 'success' => true,
@@ -170,9 +201,13 @@ function processReturnFinancials(int $returnId, ?int $processedBy = null): array
         } catch (Throwable $e) {
             // Rollback فقط إذا بدأنا transaction
             if ($transactionStarted) {
+                error_log("ERROR: Rolling back transaction...");
                 $db->rollback();
             }
-            error_log("Error processing return financials: " . $e->getMessage());
+            error_log(">>> processReturnFinancials ERROR");
+            error_log("Error message: " . $e->getMessage());
+            error_log("Error type: " . get_class($e));
+            error_log("Stack trace: " . $e->getTraceAsString());
             return [
                 'success' => false,
                 'message' => 'حدث خطأ أثناء معالجة التسوية المالية: ' . $e->getMessage()
@@ -180,7 +215,10 @@ function processReturnFinancials(int $returnId, ?int $processedBy = null): array
         }
         
     } catch (Throwable $e) {
-        error_log("Error in processReturnFinancials: " . $e->getMessage());
+        error_log(">>> processReturnFinancials FATAL ERROR");
+        error_log("Error message: " . $e->getMessage());
+        error_log("Error type: " . get_class($e));
+        error_log("Stack trace: " . $e->getTraceAsString());
         return [
             'success' => false,
             'message' => 'حدث خطأ غير متوقع: ' . $e->getMessage()

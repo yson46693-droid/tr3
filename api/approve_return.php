@@ -121,45 +121,63 @@ try {
     // Approve return request
     // Check if return can be approved (only pending returns)
     $currentStatus = $return['status'] ?? 'unknown';
-    error_log("approve_return: Processing return {$returnId} with status: {$currentStatus}");
+    error_log("=== APPROVE RETURN START ===");
+    error_log("Return ID: {$returnId}");
+    error_log("Current Status: {$currentStatus}");
+    error_log("Customer ID: " . ($return['customer_id'] ?? 'N/A'));
+    error_log("Sales Rep ID: " . ($return['sales_rep_id'] ?? 'N/A'));
+    error_log("Return Amount: " . ($return['refund_amount'] ?? 'N/A'));
+    error_log("Approved By: " . ($currentUser['id'] ?? 'N/A') . " (" . ($currentUser['full_name'] ?? 'N/A') . ")");
     
     if ($currentStatus !== 'pending') {
-        error_log("approve_return: Return {$returnId} cannot be approved - status is '{$currentStatus}', expected 'pending'");
+        error_log("ERROR: Return {$returnId} cannot be approved - status is '{$currentStatus}', expected 'pending'");
         http_response_code(400);
         echo json_encode(['success' => false, 'message' => 'لا يمكن الموافقة على مرتجع تمت معالجته بالفعل'], JSON_UNESCAPED_UNICODE);
         exit;
     }
     
-    error_log("approve_return: Starting transaction for return {$returnId}");
+    error_log("Starting database transaction...");
     $db->beginTransaction();
     
     try {
-        error_log("approve_return: Transaction started. Beginning validation for return {$returnId}");
+        error_log("Transaction started successfully. Beginning validation...");
         // التحقق من صحة البيانات قبل المعالجة
         $customerId = (int)$return['customer_id'];
         $salesRepId = (int)($return['sales_rep_id'] ?? 0);
         $returnAmount = (float)$return['refund_amount'];
         $customerBalance = (float)($return['customer_balance'] ?? 0);
         
+        error_log("--- VALIDATION PHASE ---");
+        error_log("Customer ID: {$customerId}");
+        error_log("Sales Rep ID: {$salesRepId}");
+        error_log("Return Amount: {$returnAmount}");
+        error_log("Customer Balance: {$customerBalance}");
+        
         // Validation: التحقق من صحة البيانات
         if ($customerId <= 0) {
+            error_log("VALIDATION ERROR: Invalid customer ID");
             throw new RuntimeException('معرف العميل غير صالح');
         }
         
         if ($returnAmount <= 0) {
+            error_log("VALIDATION ERROR: Return amount is zero or negative");
             throw new RuntimeException('مبلغ المرتجع يجب أن يكون أكبر من صفر');
         }
         
         // التحقق من وجود العميل
+        error_log("Checking if customer exists...");
         $customerExists = $db->queryOne(
             "SELECT id, name, balance FROM customers WHERE id = ?",
             [$customerId]
         );
         if (!$customerExists) {
+            error_log("VALIDATION ERROR: Customer not found in database");
             throw new RuntimeException('العميل غير موجود في النظام');
         }
+        error_log("Customer found: " . ($customerExists['name'] ?? 'N/A') . " (Balance: " . ($customerExists['balance'] ?? 0) . ")");
         
         // Get return items
+        error_log("Fetching return items...");
         $returnItems = $db->query(
             "SELECT ri.*, p.name as product_name, p.id as product_exists
              FROM return_items ri
@@ -169,43 +187,62 @@ try {
         );
         
         if (empty($returnItems)) {
+            error_log("VALIDATION ERROR: No return items found");
             throw new RuntimeException('لا توجد عناصر في طلب المرتجع');
         }
+        error_log("Found " . count($returnItems) . " return items");
         
         // Validation: التحقق من صحة عناصر المرتجع
+        $itemIndex = 0;
         foreach ($returnItems as $item) {
+            $itemIndex++;
             $productId = (int)($item['product_id'] ?? 0);
             $quantity = (float)($item['quantity'] ?? 0);
             
+            error_log("Validating item #{$itemIndex}: Product ID={$productId}, Quantity={$quantity}");
+            
             if ($productId <= 0) {
+                error_log("VALIDATION ERROR: Invalid product ID in item #{$itemIndex}");
                 throw new RuntimeException('معرف المنتج غير صالح في عناصر المرتجع');
             }
             
             if ($quantity <= 0) {
+                error_log("VALIDATION ERROR: Invalid quantity in item #{$itemIndex}");
                 throw new RuntimeException('كمية المنتج يجب أن تكون أكبر من صفر');
             }
             
             if (!$item['product_exists']) {
+                error_log("VALIDATION ERROR: Product {$productId} not found in system");
                 throw new RuntimeException("المنتج برقم {$productId} غير موجود في النظام");
             }
+            error_log("Item #{$itemIndex} validated successfully");
         }
         
         // التحقق من وجود المندوب إذا كان محدداً
         if ($salesRepId > 0) {
+            error_log("Checking if sales rep exists...");
             $salesRepExists = $db->queryOne(
                 "SELECT id FROM users WHERE id = ? AND role = 'sales'",
                 [$salesRepId]
             );
             if (!$salesRepExists) {
+                error_log("VALIDATION ERROR: Sales rep not found or not a sales role");
                 throw new RuntimeException('المندوب المحدد غير موجود أو ليس مندوب مبيعات');
             }
+            error_log("Sales rep validated successfully");
+        } else {
+            error_log("No sales rep specified (optional)");
         }
         
+        error_log("--- VALIDATION COMPLETED SUCCESSFULLY ---");
+        
         // Update return status to approved first (before processing)
-        $db->execute(
+        error_log("--- STEP 1: UPDATING RETURN STATUS TO APPROVED ---");
+        $updateResult = $db->execute(
             "UPDATE returns SET status = 'approved', approved_by = ?, approved_at = NOW(), notes = ? WHERE id = ?",
             [$currentUser['id'], $notes ?: null, $returnId]
         );
+        error_log("Status update executed. Affected rows: " . ($updateResult['affected_rows'] ?? 0));
         
         // التحقق من أن التحديث تم بنجاح
         $updatedReturn = $db->queryOne(
@@ -214,47 +251,74 @@ try {
         );
         
         if (!$updatedReturn || $updatedReturn['status'] !== 'approved') {
+            error_log("ERROR: Failed to update return status. Current status: " . ($updatedReturn['status'] ?? 'NULL'));
             throw new RuntimeException('فشل تحديث حالة المرتجع إلى approved');
         }
-        
-        error_log("Return {$returnId} status updated to approved. Starting financial processing...");
+        error_log("Return status confirmed as 'approved'");
         
         // Process financials using new system
+        error_log("--- STEP 2: PROCESSING FINANCIAL SETTLEMENTS ---");
+        error_log("Calling processReturnFinancials()...");
         $financialResult = processReturnFinancials($returnId, $currentUser['id']);
         if (!$financialResult['success']) {
-            error_log("Financial processing failed for return {$returnId}: " . ($financialResult['message'] ?? 'خطأ غير معروف'));
+            error_log("ERROR: Financial processing failed!");
+            error_log("Error message: " . ($financialResult['message'] ?? 'خطأ غير معروف'));
+            error_log("Financial result: " . json_encode($financialResult, JSON_UNESCAPED_UNICODE));
             throw new RuntimeException('فشل معالجة التسوية المالية: ' . ($financialResult['message'] ?? 'خطأ غير معروف'));
         }
-        
-        error_log("Financial processing completed for return {$returnId}. Starting inventory processing...");
+        error_log("Financial processing completed successfully");
+        error_log("Debt Reduction: " . ($financialResult['debt_reduction'] ?? 0));
+        error_log("Credit Added: " . ($financialResult['credit_added'] ?? 0));
+        error_log("New Balance: " . ($financialResult['new_balance'] ?? 0));
         
         // Return products to inventory using new system
-        // هذا سيضيف الكمية للمخزون إذا كان Batch Number موجود، أو ينشئ سجل جديد
+        error_log("--- STEP 3: RETURNING PRODUCTS TO INVENTORY ---");
+        error_log("Calling returnProductsToVehicleInventory()...");
         $inventoryResult = returnProductsToVehicleInventory($returnId, $currentUser['id']);
         if (!$inventoryResult['success']) {
-            error_log("Inventory processing failed for return {$returnId}: " . ($inventoryResult['message'] ?? 'خطأ غير معروف'));
+            error_log("ERROR: Inventory processing failed!");
+            error_log("Error message: " . ($inventoryResult['message'] ?? 'خطأ غير معروف'));
+            error_log("Inventory result: " . json_encode($inventoryResult, JSON_UNESCAPED_UNICODE));
             throw new RuntimeException('فشل إرجاع المنتجات للمخزون: ' . ($inventoryResult['message'] ?? 'خطأ غير معروف'));
         }
-        
-        error_log("Inventory processing completed for return {$returnId}.");
+        error_log("Inventory processing completed successfully");
+        error_log("Items returned: " . ($inventoryResult['items_count'] ?? 0));
         
         // تسجيل عملية المرتجع في سجلات المرتجعات
         // (تم التسجيل بالفعل في return_inventory_manager.php و return_financial_processor.php)
         
         // Apply salary deduction using new system
-        $penaltyResult = applyReturnSalaryDeduction($returnId, $salesRepId, $currentUser['id']);
-        if (!$penaltyResult['success'] && ($penaltyResult['deduction_amount'] ?? 0) > 0) {
-            // Log but don't fail if penalty fails (it's non-critical)
-            error_log('Warning: Failed to apply salary deduction: ' . ($penaltyResult['message'] ?? ''));
+        error_log("--- STEP 4: APPLYING SALARY DEDUCTION ---");
+        if ($salesRepId > 0) {
+            error_log("Calling applyReturnSalaryDeduction() for sales rep ID: {$salesRepId}");
+            $penaltyResult = applyReturnSalaryDeduction($returnId, $salesRepId, $currentUser['id']);
+            if (!$penaltyResult['success'] && ($penaltyResult['deduction_amount'] ?? 0) > 0) {
+                // Log but don't fail if penalty fails (it's non-critical)
+                error_log("WARNING: Failed to apply salary deduction: " . ($penaltyResult['message'] ?? ''));
+                error_log("Penalty result: " . json_encode($penaltyResult, JSON_UNESCAPED_UNICODE));
+            } else {
+                error_log("Salary deduction processed successfully");
+                error_log("Deduction Amount: " . ($penaltyResult['deduction_amount'] ?? 0));
+            }
+        } else {
+            error_log("No sales rep specified - skipping salary deduction");
+            $penaltyResult = [
+                'success' => true,
+                'message' => 'لا يوجد مندوب مرتبط',
+                'deduction_amount' => 0.0
+            ];
         }
         
         // تحديث حالة المرتجع إلى processed بعد استدعاء جميع الدوال
-        $db->execute(
+        error_log("--- STEP 5: UPDATING RETURN STATUS TO PROCESSED ---");
+        $processResult = $db->execute(
             "UPDATE returns SET status = 'processed', updated_at = NOW() WHERE id = ?",
             [$returnId]
         );
+        error_log("Status updated to 'processed'. Affected rows: " . ($processResult['affected_rows'] ?? 0));
         
         // حفظ المرتجعات التالفة في جدول damaged_returns بشكل كامل
+        error_log("--- STEP 6: PROCESSING DAMAGED RETURNS ---");
         try {
             // جلب المنتجات التالفة من return_items
             $damagedItems = $db->query(
@@ -437,13 +501,18 @@ try {
                     'return_number' => $return['return_number'],
                     'damaged_items_count' => count($damagedItems)
                 ]);
+                error_log("Damaged returns saved successfully. Count: " . count($damagedItems));
+            } else {
+                error_log("No damaged items found");
             }
         } catch (Throwable $e) {
             // لا نوقف العملية إذا فشل حفظ المرتجعات التالفة، فقط نسجل الخطأ
-            error_log('Warning: Failed to save damaged returns: ' . $e->getMessage());
+            error_log("WARNING: Failed to save damaged returns: " . $e->getMessage());
+            error_log("Exception trace: " . $e->getTraceAsString());
         }
         
         // Approve approval request
+        error_log("--- STEP 7: APPROVING APPROVAL REQUEST ---");
         $entityColumn = getApprovalsEntityColumn();
         $approval = $db->queryOne(
             "SELECT id FROM approvals WHERE type = 'return_request' AND {$entityColumn} = ? AND status = 'pending'",
@@ -451,10 +520,15 @@ try {
         );
         
         if ($approval) {
+            error_log("Approval request found. ID: " . $approval['id']);
             approveRequest((int)$approval['id'], $currentUser['id'], $notes ?: 'تمت الموافقة على طلب المرتجع');
+            error_log("Approval request approved successfully");
+        } else {
+            error_log("No pending approval request found");
         }
         
         // Build financial note
+        error_log("--- STEP 8: BUILDING RESPONSE ---");
         $financialNote = '';
         $debtReduction = $financialResult['debt_reduction'] ?? 0;
         $creditAdded = $financialResult['credit_added'] ?? 0;
@@ -475,6 +549,7 @@ try {
             $financialNote .= sprintf("تم خصم 2%% (%.2f ج.م) من راتب المندوب", $deductionAmount);
         }
         
+        error_log("Logging audit trail...");
         logAudit($currentUser['id'], 'approve_return', 'returns', $returnId, null, [
             'return_number' => $return['return_number'],
             'return_amount' => $returnAmount,
@@ -484,7 +559,17 @@ try {
             'notes' => $notes
         ]);
         
+        error_log("--- STEP 9: COMMITTING TRANSACTION ---");
         $db->commit();
+        error_log("Transaction committed successfully");
+        
+        error_log("=== APPROVE RETURN COMPLETED SUCCESSFULLY ===");
+        error_log("Return ID: {$returnId}");
+        error_log("Final Status: processed");
+        error_log("Financial Note: {$financialNote}");
+        error_log("New Balance: " . ($financialResult['new_balance'] ?? $customerBalance));
+        error_log("Penalty Applied: " . ($penaltyResult['deduction_amount'] ?? 0));
+        error_log("=============================================");
         
         echo json_encode([
             'success' => true,
@@ -495,9 +580,15 @@ try {
         ], JSON_UNESCAPED_UNICODE);
         
     } catch (Throwable $e) {
+        error_log("=== APPROVE RETURN ERROR ===");
+        error_log("Return ID: {$returnId}");
+        error_log("Error Message: " . $e->getMessage());
+        error_log("Error Type: " . get_class($e));
+        error_log("Stack Trace: " . $e->getTraceAsString());
+        error_log("=============================================");
+        
         $db->rollback();
-        error_log('approve_return error: ' . $e->getMessage());
-        error_log('Stack trace: ' . $e->getTraceAsString());
+        error_log("Transaction rolled back");
         http_response_code(500);
         echo json_encode([
             'success' => false,
