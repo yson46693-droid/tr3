@@ -166,9 +166,16 @@ if (!empty($invoicesTableExists)) {
     $hasAmountAddedToSalesColumn = !empty($db->queryOne("SHOW COLUMNS FROM invoices LIKE 'amount_added_to_sales'"));
     
     if ($hasAmountAddedToSalesColumn) {
-        // استخدام amount_added_to_sales إذا كان محدداً، وإلا استخدام total_amount
+        // استخدام amount_added_to_sales إذا كان محدداً (ليس NULL)، وإلا استخدام total_amount
+        // للفواتير المدفوعة من رصيد دائن: amount_added_to_sales يحتوي على المبلغ الزائد فقط
+        // للفواتير العادية: amount_added_to_sales = NULL، لذا نستخدم total_amount
         $salesResult = $db->queryOne(
-            "SELECT COALESCE(SUM(COALESCE(amount_added_to_sales, total_amount)), 0) as total_sales
+            "SELECT COALESCE(SUM(
+                CASE 
+                    WHEN amount_added_to_sales IS NOT NULL THEN amount_added_to_sales
+                    ELSE total_amount
+                END
+            ), 0) as total_sales
              FROM invoices
              WHERE sales_rep_id = ? AND status != 'cancelled'",
             [$salesRepId]

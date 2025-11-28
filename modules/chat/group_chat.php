@@ -21,7 +21,7 @@ $currentUserName = $currentUser['full_name'] ?? ($currentUser['username'] ?? 'ع
 $currentUserRole = $currentUser['role'] ?? 'member';
 
 $apiBase = getRelativeUrl('api/chat');
-$roomName = 'غرفة فريق الشركة';
+$roomName = 'شات فريق الشركة';
 
 $chatCssRelative = 'assets/css/chat.css';
 $chatJsRelative = 'assets/js/chat.js';

@@ -568,6 +568,9 @@ if (!$error && $_SERVER['REQUEST_METHOD'] === 'POST') {
                 }
                 
                 // إضافة المبلغ الذي يُضاف إلى خزنة المندوب (amount_added_to_sales)
+                // يجب تسجيل هذا المبلغ لجميع الفواتير (ليس فقط للفواتير المدفوعة من رصيد دائن)
+                // للفواتير العادية: amount_added_to_sales = netTotal
+                // للفواتير المدفوعة من رصيد دائن: amount_added_to_sales = المبلغ الزائد فقط
                 $hasAmountAddedToSalesColumn = !empty($db->queryOne("SHOW COLUMNS FROM invoices LIKE 'amount_added_to_sales'"));
                 if ($hasAmountAddedToSalesColumn) {
                     $invoiceUpdateSql .= ", amount_added_to_sales = ?";
