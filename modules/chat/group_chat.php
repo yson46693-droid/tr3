@@ -56,11 +56,15 @@ $membersCount = count($onlineUsers);
 <link rel="stylesheet" href="<?php echo htmlspecialchars($chatCssUrl, ENT_QUOTES, 'UTF-8'); ?>">
 <?php endif; ?>
 
-<div class="chat-app" data-chat-app
+<div class="chat-app" dir="rtl" data-chat-app
      data-current-user-id="<?php echo $currentUserId; ?>"
      data-current-user-name="<?php echo htmlspecialchars($currentUserName, ENT_QUOTES, 'UTF-8'); ?>"
      data-current-user-role="<?php echo htmlspecialchars($currentUserRole, ENT_QUOTES, 'UTF-8'); ?>">
-    <aside class="chat-sidebar">
+    <button class="chat-sidebar-toggle" type="button" data-chat-sidebar-toggle aria-label="تبديل قائمة الأعضاء">
+        <span class="chat-sidebar-toggle-icon">☰</span>
+    </button>
+    <div class="chat-sidebar-overlay" data-chat-sidebar-overlay></div>
+    <aside class="chat-sidebar" data-chat-sidebar>
         <div class="chat-sidebar-header">
             <h2>الأعضاء</h2>
             <span class="chat-loading">تحديث</span>
@@ -79,8 +83,9 @@ $membersCount = count($onlineUsers);
                 <span data-chat-count><?php echo $onlineCount; ?> متصل / <?php echo $membersCount; ?> أعضاء</span>
             </div>
             <div class="chat-header-actions">
-                <button class="chat-button" type="button" onclick="document.body.classList.toggle('dark-mode')">
-                    تبديل الوضع الليلي
+                <button class="chat-button chat-theme-toggle" type="button" data-chat-theme-toggle aria-label="تبديل الوضع الليلي">
+                    <span class="chat-theme-icon">🌙</span>
+                    <span class="chat-theme-text">الوضع الليلي</span>
                 </button>
             </div>
         </header>
@@ -106,7 +111,12 @@ $membersCount = count($onlineUsers);
                     placeholder="اكتب رسالة ودية..."
                     autocomplete="off"></textarea>
                 <div class="chat-composer-actions">
-                    <button class="chat-icon-button" type="button" title="إرسال" data-chat-send>&#10148;</button>
+                    <button class="chat-icon-button chat-send-button" type="button" title="إرسال" data-chat-send aria-label="إرسال الرسالة">
+                        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                            <line x1="22" y1="2" x2="11" y2="13"></line>
+                            <polygon points="22 2 15 22 11 13 2 9 22 2"></polygon>
+                        </svg>
+                    </button>
                 </div>
             </div>
         </footer>

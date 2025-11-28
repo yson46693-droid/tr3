@@ -19,6 +19,10 @@
     form: '[data-chat-form]',
     search: '[data-chat-search]',
     emptyState: '[data-chat-empty]',
+    sidebarToggle: '[data-chat-sidebar-toggle]',
+    sidebar: '[data-chat-sidebar]',
+    sidebarOverlay: '[data-chat-sidebar-overlay]',
+    themeToggle: '[data-chat-theme-toggle]',
   };
 
   const state = {
@@ -62,11 +66,16 @@
     elements.headerCount = app.querySelector(selectors.headerCount);
     elements.search = app.querySelector(selectors.search);
     elements.emptyState = app.querySelector(selectors.emptyState);
+    elements.sidebarToggle = document.querySelector(selectors.sidebarToggle);
+    elements.sidebar = app.querySelector(selectors.sidebar);
+    elements.sidebarOverlay = document.querySelector(selectors.sidebarOverlay);
+    elements.themeToggle = app.querySelector(selectors.themeToggle);
 
     currentUser.id = parseInt(app.dataset.currentUserId || '0', 10);
     currentUser.name = app.dataset.currentUserName || '';
     currentUser.role = app.dataset.currentUserRole || '';
 
+    initTheme();
     bindEvents();
     fetchMessages(true);
     startPresenceUpdates();
@@ -83,6 +92,9 @@
 
     if (elements.input) {
       elements.input.addEventListener('keydown', handleInputKeydown);
+      elements.input.addEventListener('input', handleInputResize);
+      // Initial resize
+      handleInputResize();
     }
 
     if (elements.replyDismiss) {
@@ -97,8 +109,47 @@
       elements.search.addEventListener('input', handleSearchUsers);
     }
 
+    if (elements.sidebarToggle) {
+      elements.sidebarToggle.addEventListener('click', toggleSidebar);
+    }
+
+    if (elements.sidebarOverlay) {
+      elements.sidebarOverlay.addEventListener('click', closeSidebar);
+    }
+
+    if (elements.themeToggle) {
+      elements.themeToggle.addEventListener('click', toggleTheme);
+    }
+
+    // Close sidebar when clicking outside on mobile
+    document.addEventListener('click', (e) => {
+      if (window.innerWidth <= 1100) {
+        if (elements.sidebar && elements.sidebar.classList.contains('active')) {
+          if (!elements.sidebar.contains(e.target) && 
+              !elements.sidebarToggle.contains(e.target) &&
+              !elements.sidebarOverlay.contains(e.target)) {
+            closeSidebar();
+          }
+        }
+      }
+    });
+
+    // Handle window resize
+    let resizeTimeout;
+    window.addEventListener('resize', () => {
+      clearTimeout(resizeTimeout);
+      resizeTimeout = setTimeout(() => {
+        if (window.innerWidth > 1100) {
+          closeSidebar();
+        }
+      }, 250);
+    });
+
     window.addEventListener('beforeunload', () => {
-      cancelScheduledFetch();
+      if (state.pendingFetchTimeout) {
+        window.clearTimeout(state.pendingFetchTimeout);
+        state.pendingFetchTimeout = null;
+      }
       stopPresenceUpdates();
       stopPolling();
       updatePresence(false).catch(() => null);
@@ -108,6 +159,84 @@
   function handleVisibilityChange() {
     if (!document.hidden) {
       fetchMessages();
+    }
+  }
+
+  function toggleSidebar() {
+    if (!elements.sidebar || !elements.sidebarOverlay) {
+      return;
+    }
+    
+    const isActive = elements.sidebar.classList.contains('active');
+    if (isActive) {
+      closeSidebar();
+    } else {
+      openSidebar();
+    }
+  }
+
+  function openSidebar() {
+    if (elements.sidebar) {
+      elements.sidebar.classList.add('active');
+    }
+    if (elements.sidebarOverlay) {
+      elements.sidebarOverlay.classList.add('active');
+    }
+    document.body.style.overflow = 'hidden';
+  }
+
+  function closeSidebar() {
+    if (elements.sidebar) {
+      elements.sidebar.classList.remove('active');
+    }
+    if (elements.sidebarOverlay) {
+      elements.sidebarOverlay.classList.remove('active');
+    }
+    document.body.style.overflow = '';
+  }
+
+  function initTheme() {
+    // Check for saved theme preference or default to light mode
+    const savedTheme = localStorage.getItem('chat-theme');
+    const prefersDark = window.matchMedia('(prefers-color-scheme: dark)').matches;
+    
+    if (savedTheme === 'dark' || (!savedTheme && prefersDark)) {
+      document.body.classList.add('dark-mode');
+      updateThemeIcon(true);
+    } else {
+      document.body.classList.remove('dark-mode');
+      updateThemeIcon(false);
+    }
+  }
+
+  function toggleTheme() {
+    const isDark = document.body.classList.contains('dark-mode');
+    
+    if (isDark) {
+      document.body.classList.remove('dark-mode');
+      localStorage.setItem('chat-theme', 'light');
+      updateThemeIcon(false);
+    } else {
+      document.body.classList.add('dark-mode');
+      localStorage.setItem('chat-theme', 'dark');
+      updateThemeIcon(true);
+    }
+  }
+
+  function updateThemeIcon(isDark) {
+    if (!elements.themeToggle) {
+      return;
+    }
+    
+    const icon = elements.themeToggle.querySelector('.chat-theme-icon');
+    const text = elements.themeToggle.querySelector('.chat-theme-text');
+    
+    if (icon) {
+      icon.textContent = isDark ? '☀️' : '🌙';
+    }
+    
+    if (text) {
+      text.textContent = isDark ? 'الوضع النهاري' : 'الوضع الليلي';
     }
   }
 
@@ -130,6 +259,14 @@
       event.preventDefault();
       handleSend();
     }
+  }
+
+  function handleInputResize() {
+    if (!elements.input) {
+      return;
+    }
+    elements.input.style.height = 'auto';
+    elements.input.style.height = Math.min(elements.input.scrollHeight, 160) + 'px';
   }
 
   function handleSend() {
