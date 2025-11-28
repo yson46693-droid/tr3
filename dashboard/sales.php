@@ -184,16 +184,22 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && trim($_P
                     // إحصائيات المبيعات - التحقق من وجود جدول sales أولاً
                     $salesTableCheck = $db->queryOne("SHOW TABLES LIKE 'sales'");
                     if (!empty($salesTableCheck)) {
+                        $currentUserId = (int)($currentUser['id'] ?? 0);
                         $todaySales = $db->queryOne(
                             "SELECT COALESCE(SUM(total), 0) as total 
                              FROM sales 
-                             WHERE DATE(date) = CURDATE()"
+                             WHERE DATE(date) = CURDATE() 
+                               AND salesperson_id = ?",
+                            [$currentUserId]
                         );
                         
                         $monthSales = $db->queryOne(
                             "SELECT COALESCE(SUM(total), 0) as total 
                              FROM sales 
-                             WHERE MONTH(date) = MONTH(NOW()) AND YEAR(date) = YEAR(NOW())"
+                             WHERE MONTH(date) = MONTH(NOW()) 
+                               AND YEAR(date) = YEAR(NOW())
+                               AND salesperson_id = ?",
+                            [$currentUserId]
                         );
                     } else {
                         $todaySales = ['total' => 0];
@@ -393,8 +399,16 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && trim($_P
             <?php elseif ($page === 'sales'): ?>
                 <!-- صفحة المبيعات -->
                 <?php
-                // الحصول على قائمة العملاء للنماذج
-                $reportCustomers = $db->query("SELECT id, name, phone FROM customers WHERE status = 'active' ORDER BY name");
+                // الحصول على قائمة العملاء للنماذج - فقط عملاء المندوب الحالي
+                $currentUserId = (int)($currentUser['id'] ?? 0);
+                $reportCustomers = $db->query(
+                    "SELECT id, name, phone 
+                     FROM customers 
+                     WHERE status = 'active' 
+                       AND created_by = ?
+                     ORDER BY name",
+                    [$currentUserId]
+                );
                 ?>
                 <!-- Page Header -->
                 <div class="page-header">
@@ -507,8 +521,16 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && trim($_P
             <?php elseif ($page === 'collections'): ?>
                 <!-- صفحة التحصيلات -->
                 <?php
-                // الحصول على قائمة العملاء للنماذج
-                $reportCustomers = $db->query("SELECT id, name, phone FROM customers WHERE status = 'active' ORDER BY name");
+                // الحصول على قائمة العملاء للنماذج - فقط عملاء المندوب الحالي
+                $currentUserId = (int)($currentUser['id'] ?? 0);
+                $reportCustomers = $db->query(
+                    "SELECT id, name, phone 
+                     FROM customers 
+                     WHERE status = 'active' 
+                       AND created_by = ?
+                     ORDER BY name",
+                    [$currentUserId]
+                );
                 ?>
                 <!-- Page Header -->
                 <div class="page-header">
@@ -797,8 +819,16 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && trim($_P
             <?php elseif ($page === 'my_records'): ?>
                 <!-- صفحة سجلات المندوب -->
                 <?php
-                // الحصول على قائمة العملاء للنماذج
-                $reportCustomers = $db->query("SELECT id, name, phone FROM customers WHERE status = 'active' ORDER BY name");
+                // الحصول على قائمة العملاء للنماذج - فقط عملاء المندوب الحالي
+                $currentUserId = (int)($currentUser['id'] ?? 0);
+                $reportCustomers = $db->query(
+                    "SELECT id, name, phone 
+                     FROM customers 
+                     WHERE status = 'active' 
+                       AND created_by = ?
+                     ORDER BY name",
+                    [$currentUserId]
+                );
                 
                 // تحديد التبويب النشط
                 $activeTab = $_GET['section'] ?? 'sales';
@@ -1412,8 +1442,16 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && trim($_P
 
             <?php elseif ($page === 'sales_records'): ?>
                 <?php
-                // الحصول على قائمة العملاء للنماذج
-                $reportCustomers = $db->query("SELECT id, name, phone FROM customers WHERE status = 'active' ORDER BY name");
+                // الحصول على قائمة العملاء للنماذج - فقط عملاء المندوب الحالي
+                $currentUserId = (int)($currentUser['id'] ?? 0);
+                $reportCustomers = $db->query(
+                    "SELECT id, name, phone 
+                     FROM customers 
+                     WHERE status = 'active' 
+                       AND created_by = ?
+                     ORDER BY name",
+                    [$currentUserId]
+                );
                 
                 // تحديد التبويب النشط
                 $activeTab = $_GET['section'] ?? 'sales';

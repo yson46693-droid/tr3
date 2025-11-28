@@ -3331,6 +3331,67 @@ if (!window.transferFormInitialized) {
     const batchDetailsEndpoint = <?php echo json_encode(getRelativeUrl('api/production/get_batch_details.php')); ?>;
     let batchDetailsIsLoading = false;
 
+    // تخزين مؤقت (Cache) لتفاصيل التشغيلات
+    const batchDetailsCache = new Map();
+    const CACHE_DURATION = 10 * 60 * 1000; // 10 دقائق بالملي ثانية
+    const MAX_CACHE_SIZE = 50; // أقصى عدد من التشغيلات في cache
+
+    /**
+     * تنظيف cache من البيانات المنتهية الصلاحية
+     */
+    function cleanBatchDetailsCache() {
+        const now = Date.now();
+        const keysToDelete = [];
+        
+        batchDetailsCache.forEach((value, key) => {
+            if (now - value.timestamp > CACHE_DURATION) {
+                keysToDelete.push(key);
+            }
+        });
+        
+        keysToDelete.forEach(key => batchDetailsCache.delete(key));
+        
+        // إذا كان حجم cache كبيراً، احذف أقدم العناصر
+        if (batchDetailsCache.size > MAX_CACHE_SIZE) {
+            const entries = Array.from(batchDetailsCache.entries());
+            entries.sort((a, b) => a[1].timestamp - b[1].timestamp);
+            
+            const toRemove = entries.slice(0, entries.length - MAX_CACHE_SIZE);
+            toRemove.forEach(([key]) => batchDetailsCache.delete(key));
+        }
+    }
+
+    /**
+     * الحصول على تفاصيل التشغيلة من cache
+     */
+    function getBatchDetailsFromCache(batchNumber) {
+        cleanBatchDetailsCache();
+        const cached = batchDetailsCache.get(batchNumber);
+        
+        if (cached) {
+            const now = Date.now();
+            if (now - cached.timestamp < CACHE_DURATION) {
+                return cached.data;
+            } else {
+                // حذف البيانات المنتهية الصلاحية
+                batchDetailsCache.delete(batchNumber);
+            }
+        }
+        
+        return null;
+    }
+
+    /**
+     * حفظ تفاصيل التشغيلة في cache
+     */
+    function setBatchDetailsInCache(batchNumber, data) {
+        cleanBatchDetailsCache();
+        batchDetailsCache.set(batchNumber, {
+            data: data,
+            timestamp: Date.now()
+        });
+    }
+
     function createBatchDetailsModal() {
         if (document.getElementById('batchDetailsModal')) {
             return; // النموذج موجود بالفعل
@@ -3541,6 +3602,19 @@ if (!window.transferFormInitialized) {
             modalTitle.textContent = productName ? `تفاصيل التشغيلة - ${productName}` : 'تفاصيل التشغيلة';
         }
         
+        // التحقق من وجود البيانات في cache
+        const cachedData = getBatchDetailsFromCache(batchNumber);
+        if (cachedData) {
+            // استخدام البيانات من cache مباشرة
+            loader.classList.add('d-none');
+            errorAlert.classList.add('d-none');
+            renderBatchDetails(cachedData);
+            contentWrapper.classList.remove('d-none');
+            modalInstance.show();
+            return;
+        }
+        
+        // إذا لم تكن البيانات موجودة في cache، جلبها من الخادم
         loader.classList.remove('d-none');
         errorAlert.classList.add('d-none');
         contentWrapper.classList.add('d-none');
@@ -3560,6 +3634,9 @@ if (!window.transferFormInitialized) {
             batchDetailsIsLoading = false;
             
             if (data.success && data.batch) {
+                // حفظ البيانات في cache
+                setBatchDetailsInCache(batchNumber, data.batch);
+                
                 renderBatchDetails(data.batch);
                 contentWrapper.classList.remove('d-none');
             } else {
@@ -3778,7 +3855,31 @@ if (!window.transferFormInitialized) {
     }
     
     // جعل الدالة متاحة عالمياً
+    // دالة لمسح cache يدوياً
+    function clearBatchDetailsCache(batchNumber = null) {
+        if (batchNumber) {
+            // مسح تشغيلة محددة
+            batchDetailsCache.delete(batchNumber);
+        } else {
+            // مسح جميع البيانات من cache
+            batchDetailsCache.clear();
+        }
+    }
+
+    // تنظيف cache تلقائياً كل 5 دقائق
+    setInterval(() => {
+        cleanBatchDetailsCache();
+    }, 5 * 60 * 1000); // 5 دقائق
+
+    // تنظيف cache عند تحميل الصفحة
+    if (document.readyState === 'loading') {
+        document.addEventListener('DOMContentLoaded', cleanBatchDetailsCache);
+    } else {
+        cleanBatchDetailsCache();
+    }
+
     window.showBatchDetailsModal = showBatchDetailsModal;
+    window.clearBatchDetailsCache = clearBatchDetailsCache;
     
     // تهيئة الأحداث عند تحميل الصفحة
     if (document.readyState === 'loading') {
