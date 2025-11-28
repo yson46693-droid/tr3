@@ -1153,7 +1153,11 @@ $pageTitle = isset($lang['accountant_dashboard']) ? $lang['accountant_dashboard'
                                     </tr>
                                 <?php else: ?>
                                     <?php foreach ($financialTransactions as $trans): ?>
-                                        <tr>
+                                        <?php 
+                                        $isExpense = $trans['type'] === 'expense';
+                                        $rowClass = $isExpense ? 'table-danger' : ($trans['type'] === 'income' ? 'table-success' : '');
+                                        ?>
+                                        <tr class="<?php echo $rowClass; ?>">
                                             <td><?php echo formatDateTime($trans['created_at']); ?></td>
                                             <td>
                                                 <span class="badge bg-<?php echo $trans['type'] === 'income' ? 'success' : ($trans['type'] === 'expense' ? 'danger' : 'info'); ?>">
