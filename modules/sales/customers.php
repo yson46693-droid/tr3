@@ -1794,10 +1794,7 @@ function openCreateReturnModal() {
                 <option value="other">أخرى</option>
             </select>
         </div>
-        <div class="mb-3">
-            <label class="form-label">وصف تفصيلي (اختياري)</label>
-            <textarea class="form-control" name="reason_description" rows="3"></textarea>
-        </div>
+        
         <div class="mb-3">
             <label class="form-label">ملاحظات (اختياري)</label>
             <textarea class="form-control" name="notes" rows="2"></textarea>
@@ -1805,24 +1802,36 @@ function openCreateReturnModal() {
         <input type="hidden" name="invoice_id" value="${Object.keys(itemsByInvoice)[0]}">
     </form>`;
     
-    // Set available quantities from stored purchase history data
+    document.getElementById('createReturnContent').innerHTML = html;
+    
+    // Set available quantities from stored purchase history data (after HTML is added to DOM)
     selectedItemsForReturn.forEach(function(item) {
+        // First try to get from purchaseHistoryData (most up-to-date)
         const historyItem = purchaseHistoryData.find(function(h) {
             return h.invoice_item_id === item.invoice_item_id;
         });
+        
+        // Use available_to_return from historyItem if found, otherwise use from item
+        // This ensures we use the most recent data from the API
+        const availableQty = historyItem 
+            ? (parseFloat(historyItem.available_to_return) || 0) 
+            : (parseFloat(item.available_to_return) || 0);
+        
         const availableCell = document.getElementById(`available-qty-${item.invoice_item_id}`);
-        if (availableCell && historyItem) {
-            availableCell.textContent = parseFloat(historyItem.available_to_return || 0).toFixed(2);
-            
-            // Set max attribute for quantity input
-            const qtyInput = document.querySelector(`.return-qty[data-invoice-item-id="${item.invoice_item_id}"]`);
-            if (qtyInput) {
-                qtyInput.max = historyItem.available_to_return || 0;
-            }
+        if (availableCell) {
+            const formattedQty = availableQty.toFixed(2);
+            availableCell.textContent = formattedQty;
+        }
+        
+        // Set max attribute for quantity input
+        const qtyInput = document.querySelector(`.return-qty[data-invoice-item-id="${item.invoice_item_id}"]`);
+        if (qtyInput) {
+            qtyInput.max = availableQty;
+            qtyInput.setAttribute('max', availableQty);
+            // Also set as data attribute for reference
+            qtyInput.setAttribute('data-available-qty', availableQty);
         }
     });
-    
-    document.getElementById('createReturnContent').innerHTML = html;
     
     // Enable/disable damage reason based on checkbox
     document.querySelectorAll('.is-damaged-checkbox').forEach(function(checkbox) {
