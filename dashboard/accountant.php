@@ -606,40 +606,100 @@ $pageTitle = isset($lang['accountant_dashboard']) ? $lang['accountant_dashboard'
 
                 $searchTerm = isset($_GET['search']) ? trim($_GET['search']) : '';
 
-                $whereParts = [];
+                // بناء شروط WHERE لكل جدول
+                $wherePartsFt = [];
+                $wherePartsAt = [];
                 $whereParams = [];
 
                 if ($transactionTypeFilter !== '') {
-                    $whereParts[] = 'ft.type = ?';
+                    $wherePartsFt[] = 'type = ?';
+                    // تحويل transaction_type في accountant_transactions
+                    if ($transactionTypeFilter === 'income') {
+                        $wherePartsAt[] = "transaction_type IN ('collection_from_sales_rep', 'income')";
+                    } else {
+                        $wherePartsAt[] = 'transaction_type = ?';
+                        $whereParams[] = $transactionTypeFilter;
+                    }
                     $whereParams[] = $transactionTypeFilter;
                 }
 
                 if ($transactionStatusFilter !== '') {
-                    $whereParts[] = 'ft.status = ?';
+                    $wherePartsFt[] = 'status = ?';
+                    $wherePartsAt[] = 'status = ?';
+                    $whereParams[] = $transactionStatusFilter;
                     $whereParams[] = $transactionStatusFilter;
                 }
 
                 if ($fromDate !== '') {
-                    $whereParts[] = 'DATE(ft.created_at) >= ?';
+                    $wherePartsFt[] = 'DATE(created_at) >= ?';
+                    $wherePartsAt[] = 'DATE(created_at) >= ?';
+                    $whereParams[] = $fromDate;
                     $whereParams[] = $fromDate;
                 }
 
                 if ($toDate !== '') {
-                    $whereParts[] = 'DATE(ft.created_at) <= ?';
+                    $wherePartsFt[] = 'DATE(created_at) <= ?';
+                    $wherePartsAt[] = 'DATE(created_at) <= ?';
+                    $whereParams[] = $toDate;
                     $whereParams[] = $toDate;
                 }
 
                 if ($searchTerm !== '') {
-                    $whereParts[] = '(ft.description LIKE ? OR ft.reference_number LIKE ?)';
                     $likeValue = '%' . $searchTerm . '%';
+                    $wherePartsFt[] = '(description LIKE ? OR reference_number LIKE ?)';
+                    $wherePartsAt[] = '(description LIKE ? OR reference_number LIKE ?)';
+                    $whereParams[] = $likeValue;
+                    $whereParams[] = $likeValue;
                     $whereParams[] = $likeValue;
                     $whereParams[] = $likeValue;
                 }
 
-                $whereClause = $whereParts ? 'WHERE ' . implode(' AND ', $whereParts) : '';
+                $whereClauseFt = $wherePartsFt ? 'WHERE ' . implode(' AND ', $wherePartsFt) : '';
+                $whereClauseAt = $wherePartsAt ? 'WHERE ' . implode(' AND ', $wherePartsAt) : '';
 
-                $countQuery = "SELECT COUNT(*) as total FROM financial_transactions ft $whereClause";
-                $totalTransRow = $db->queryOne($countQuery, $whereParams);
+                // بناء استعلام UNION لجمع البيانات من financial_transactions و accountant_transactions
+                $unionQuery = "
+                    SELECT 
+                        id, 
+                        type, 
+                        amount, 
+                        description, 
+                        reference_number, 
+                        status, 
+                        created_by, 
+                        created_at,
+                        'financial_transactions' as source_table
+                    FROM financial_transactions
+                    $whereClauseFt
+                    UNION ALL
+                    SELECT 
+                        id, 
+                        CASE 
+                            WHEN transaction_type = 'collection_from_sales_rep' THEN 'income'
+                            WHEN transaction_type = 'expense' THEN 'expense'
+                            WHEN transaction_type = 'income' THEN 'income'
+                            WHEN transaction_type = 'transfer' THEN 'transfer'
+                            WHEN transaction_type = 'payment' THEN 'payment'
+                            ELSE 'other'
+                        END as type,
+                        amount, 
+                        description, 
+                        reference_number, 
+                        status, 
+                        created_by, 
+                        created_at,
+                        'accountant_transactions' as source_table
+                    FROM accountant_transactions
+                    $whereClauseAt
+                ";
+
+                // حساب العدد الإجمالي
+                $countUnionQuery = "
+                    SELECT COUNT(*) as total FROM (
+                        $unionQuery
+                    ) as combined_transactions
+                ";
+                $totalTransRow = $db->queryOne($countUnionQuery, $whereParams);
                 $totalTrans = $totalTransRow['total'] ?? 0;
                 $totalPagesTrans = max(1, (int) ceil($totalTrans / $perPageTrans));
                 if ($pageNum > $totalPagesTrans) {
@@ -647,12 +707,17 @@ $pageTitle = isset($lang['accountant_dashboard']) ? $lang['accountant_dashboard'
                 }
                 $offsetTrans = ($pageNum - 1) * $perPageTrans;
 
+                // استعلام نهائي مع JOIN للمستخدمين والترتيب
                 $transactionsQuery = "
-                    SELECT ft.*, creator.full_name AS creator_name, creator.username AS creator_username
-                    FROM financial_transactions ft
-                    LEFT JOIN users creator ON ft.created_by = creator.id
-                    $whereClause
-                    ORDER BY ft.created_at DESC
+                    SELECT 
+                        ct.*, 
+                        creator.full_name AS creator_name, 
+                        creator.username AS creator_username
+                    FROM (
+                        $unionQuery
+                    ) as ct
+                    LEFT JOIN users creator ON ct.created_by = creator.id
+                    ORDER BY ct.created_at DESC
                     LIMIT ? OFFSET ?
                 ";
                 $transactionsParams = array_merge($whereParams, [$perPageTrans, $offsetTrans]);
