@@ -899,74 +899,7 @@ $pageTitle = isset($lang['accountant_dashboard']) ? $lang['accountant_dashboard'
                     </div>
                 <?php endif; ?>
                 
-                <!-- لوحة مالية -->
-                <div class="cards-grid">
-                    <?php
-                    // حساب رصيد الخزينة من financial_transactions و accountant_transactions
-                    $cashBalance = $db->queryOne(
-                        "SELECT COALESCE(
-                            (SELECT SUM(CASE WHEN type = 'income' THEN amount ELSE -amount END) 
-                             FROM financial_transactions WHERE status = 'approved') +
-                            (SELECT SUM(CASE 
-                                WHEN transaction_type IN ('collection_from_sales_rep', 'income') THEN amount
-                                WHEN transaction_type IN ('expense') THEN -amount
-                                ELSE 0 END)
-                             FROM accountant_transactions WHERE status = 'approved'),
-                            0
-                        ) as balance"
-                    );
-                    ?>
-                    <div class="stat-card">
-                        <div class="stat-card-header">
-                            <div class="stat-card-icon blue">
-                                <i class="bi bi-cash-stack"></i>
-                            </div>
-                        </div>
-                        <div class="stat-card-title"><?php echo (isset($lang) && isset($lang['cash_balance'])) ? $lang['cash_balance'] : 'رصيد الخزينة'; ?></div>
-                        <div class="stat-card-value"><?php echo formatCurrency($cashBalance['balance'] ?? 0); ?></div>
-                    </div>
-                    
-                    <?php
-                    // حساب المصروفات من financial_transactions و accountant_transactions
-                    $expenses = $db->queryOne(
-                        "SELECT COALESCE(
-                            (SELECT SUM(amount) FROM financial_transactions 
-                             WHERE type = 'expense' AND status = 'approved' 
-                             AND MONTH(created_at) = MONTH(NOW())) +
-                            (SELECT SUM(amount) FROM accountant_transactions 
-                             WHERE transaction_type = 'expense' AND status = 'approved' 
-                             AND MONTH(created_at) = MONTH(NOW())),
-                            0
-                        ) as total"
-                    );
-                    ?>
-                    <?php
-                    // حساب الإيرادات من financial_transactions و accountant_transactions
-                    $income = $db->queryOne(
-                        "SELECT COALESCE(
-                            (SELECT SUM(amount) FROM financial_transactions 
-                             WHERE type = 'income' AND status = 'approved' 
-                             AND MONTH(created_at) = MONTH(NOW())) +
-                            (SELECT SUM(amount) FROM accountant_transactions 
-                             WHERE transaction_type IN ('collection_from_sales_rep', 'income') 
-                             AND status = 'approved' 
-                             AND MONTH(created_at) = MONTH(NOW())),
-                            0
-                        ) as total"
-                    );
-                    ?>
-                    <div class="stat-card">
-                    <div class="stat-card-header">
-                            <div class="stat-card-icon green">
-                                <i class="bi bi-arrow-up-circle"></i>
-                            </div>
-                        </div>
-                        <div class="stat-card-title"><?php echo isset($lang['income']) ? $lang['income'] : 'الإيرادات'; ?></div>
-                        <div class="stat-card-value"><?php echo formatCurrency($income['total'] ?? 0); ?></div>
-                        <div class="stat-card-description">هذا الشهر</div>
-                    </div>
-                </div>
-            
+                
             <?php
             // حساب ملخص الخزينة من financial_transactions و accountant_transactions
             $treasurySummary = $db->queryOne("
