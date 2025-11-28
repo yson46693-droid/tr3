@@ -193,7 +193,6 @@ if ($page === 'financial' && $_SERVER['REQUEST_METHOD'] === 'POST') {
     if ($action === 'collect_from_sales_rep') {
         $salesRepId = isset($_POST['sales_rep_id']) ? intval($_POST['sales_rep_id']) : 0;
         $amount = isset($_POST['amount']) ? floatval($_POST['amount']) : 0;
-        $description = trim($_POST['description'] ?? '');
         
         if ($salesRepId <= 0) {
             $_SESSION['financial_error'] = 'يرجى اختيار مندوب صحيح.';
@@ -224,7 +223,7 @@ if ($page === 'financial' && $_SERVER['REQUEST_METHOD'] === 'POST') {
                     
                     // إضافة إيراد معتمد في financial_transactions
                     $db->execute(
-                        "INSERT INTO financial_transactions (type, amount, supplier_id, description, reference_number, status, approved_by, created_by, approved_at)
+                        "INSERT INTO financial_transactions (type, amount, supplier_id, reference_number, status, approved_by, created_by, approved_at)
                          VALUES (?, ?, NULL, ?, ?, 'approved', ?, ?, NOW())",
                         [
                             'income',
