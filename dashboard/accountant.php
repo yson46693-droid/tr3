@@ -236,7 +236,7 @@ if ($page === 'financial' && $_SERVER['REQUEST_METHOD'] === 'POST') {
                         ]
                     );
                     
-                    $transactionId = $db->lastInsertId();
+                    $transactionId = $db->getLastInsertId();
                     
                     // إدراج تحصيل سالب لخصم المبلغ من خزنة المندوب
                     // نحتاج لإدراج في جدول collections بقيمة سالبة
