@@ -255,6 +255,14 @@ if ($page === 'financial' && $_SERVER['REQUEST_METHOD'] === 'POST') {
                         $placeholders = ['NULL', '?', '?', 'NOW()'];
                         $values = [$salesRepId, -$amount]; // قيمة سالبة لخصم المبلغ
                         
+                        // إضافة payment_method إذا كان موجوداً
+                        $paymentMethodColumnCheck = $db->queryOne("SHOW COLUMNS FROM collections LIKE 'payment_method'");
+                        $hasPaymentMethodColumn = !empty($paymentMethodColumnCheck);
+                        if ($hasPaymentMethodColumn) {
+                            $columns[] = 'payment_method';
+                            $placeholders[] = "'cash'";
+                        }
+                        
                         if ($hasNotesColumn) {
                             $columns[] = 'notes';
                             $placeholders[] = '?';
