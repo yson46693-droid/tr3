@@ -751,48 +751,7 @@ $pageTitle = isset($lang['accountant_dashboard']) ? $lang['accountant_dashboard'
                         <h5 class="mb-0"><i class="bi bi-list-ul me-2"></i>المعاملات المالية (<?php echo $totalTrans; ?>)</h5>
                     </div>
                     <div class="card-body">
-                        <form method="GET" class="row g-3 align-items-end mb-4">
-                            <input type="hidden" name="page" value="financial">
-                            <div class="col-md-3 col-lg-2">
-                                <label class="form-label">نوع المعاملة</label>
-                                <select name="type" class="form-select">
-                                    <option value="" <?php echo $transactionTypeFilter === '' ? 'selected' : ''; ?>>جميع الأنواع</option>
-                                    <option value="income" <?php echo $transactionTypeFilter === 'income' ? 'selected' : ''; ?>><?php echo $lang['income'] ?? 'إيراد'; ?></option>
-                                    <option value="expense" <?php echo $transactionTypeFilter === 'expense' ? 'selected' : ''; ?>><?php echo $lang['expense'] ?? 'مصروف'; ?></option>
-                                    <option value="transfer" <?php echo $transactionTypeFilter === 'transfer' ? 'selected' : ''; ?>><?php echo $typeLabelMap['transfer']; ?></option>
-                                    <option value="payment" <?php echo $transactionTypeFilter === 'payment' ? 'selected' : ''; ?>><?php echo $typeLabelMap['payment']; ?></option>
-                                </select>
-                            </div>
-                            <div class="col-md-3 col-lg-2">
-                                <label class="form-label">حالة الاعتماد</label>
-                                <select name="status" class="form-select">
-                                    <option value="" <?php echo $transactionStatusFilter === '' ? 'selected' : ''; ?>>الكل</option>
-                                    <option value="approved" <?php echo $transactionStatusFilter === 'approved' ? 'selected' : ''; ?>><?php echo $lang['approved'] ?? 'موافق عليه'; ?></option>
-                                    <option value="pending" <?php echo $transactionStatusFilter === 'pending' ? 'selected' : ''; ?>><?php echo $lang['pending'] ?? 'قيد الانتظار'; ?></option>
-                                    <option value="rejected" <?php echo $transactionStatusFilter === 'rejected' ? 'selected' : ''; ?>><?php echo $lang['rejected'] ?? 'مرفوض'; ?></option>
-                                </select>
-                            </div>
-                            <div class="col-md-3 col-lg-2">
-                                <label class="form-label">من تاريخ</label>
-                                <input type="date" name="from_date" class="form-control" value="<?php echo htmlspecialchars($fromDate, ENT_QUOTES, 'UTF-8'); ?>">
-                            </div>
-                            <div class="col-md-3 col-lg-2">
-                                <label class="form-label">حتى تاريخ</label>
-                                <input type="date" name="to_date" class="form-control" value="<?php echo htmlspecialchars($toDate, ENT_QUOTES, 'UTF-8'); ?>">
-                            </div>
-                            <div class="col-md-4 col-lg-3">
-                                <label class="form-label">بحث نصي</label>
-                                <input type="text" name="search" class="form-control" placeholder="وصف أو رقم مرجعي" value="<?php echo htmlspecialchars($searchTerm, ENT_QUOTES, 'UTF-8'); ?>">
-                            </div>
-                            <div class="col-md-5 col-lg-3 d-flex gap-2">
-                                <button type="submit" class="btn btn-primary flex-fill">
-                                    <i class="bi bi-filter me-1"></i>تطبيق التصفية
-                                </button>
-                                <a href="?page=financial" class="btn btn-outline-secondary flex-fill">
-                                    <i class="bi bi-arrow-counterclockwise me-1"></i>إعادة ضبط
-                                </a>
-                            </div>
-                        </form>
+                        
                         <div class="table-responsive dashboard-table-wrapper">
                             <table class="table table-striped table-hover align-middle text-nowrap">
                                 <thead>
