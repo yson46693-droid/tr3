@@ -1398,7 +1398,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     );
                 }
 
-                $packagingDamageLogId = $db->execute(
+                $db->execute(
                     "INSERT INTO packaging_damage_logs 
                      (material_id, material_name, source_table, quantity_before, damaged_quantity, quantity_after, unit, reason, recorded_by) 
                      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",

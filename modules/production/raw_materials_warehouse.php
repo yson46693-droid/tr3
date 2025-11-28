@@ -2333,7 +2333,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
                     if (empty($error)) {
                         try {
-                            $rawMaterialDamageLogId = $db->execute(
+                            $db->execute(
                                 "INSERT INTO raw_material_damage_logs (material_category, stock_id, supplier_id, item_label, variety, quantity, unit, reason, created_by) 
                                  VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
                                 [
