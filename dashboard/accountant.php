@@ -19,6 +19,63 @@ $currentUser = getCurrentUser();
 $db = db();
 $page = $_GET['page'] ?? 'dashboard';
 
+// معالجة AJAX لجلب رصيد المندوب - يجب أن يكون في البداية قبل أي output
+if ($page === 'financial' && isset($_GET['ajax']) && $_GET['ajax'] === 'get_sales_rep_balance') {
+    // تعطيل عرض الأخطاء في المتصفح
+    ini_set('display_errors', 0);
+    error_reporting(E_ALL);
+    
+    // تنظيف أي output buffer
+    while (ob_get_level() > 0) {
+        ob_end_clean();
+    }
+    
+    // إرسال headers
+    header('Content-Type: application/json; charset=utf-8');
+    header('Cache-Control: no-cache, must-revalidate');
+    header('X-Content-Type-Options: nosniff');
+    
+    $response = ['success' => false, 'message' => ''];
+    $salesRepId = isset($_GET['sales_rep_id']) ? intval($_GET['sales_rep_id']) : 0;
+    
+    if ($salesRepId <= 0) {
+        $response['message'] = 'معرف المندوب غير صحيح';
+        echo json_encode($response, JSON_UNESCAPED_UNICODE | JSON_PARTIAL_OUTPUT_ON_ERROR);
+        exit;
+    }
+    
+    try {
+        $balance = calculateSalesRepCashBalance($salesRepId);
+        
+        $salesRep = $db->queryOne(
+            "SELECT id, username, full_name FROM users WHERE id = ? AND role = 'sales' AND status = 'active'",
+            [$salesRepId]
+        );
+        
+        if (empty($salesRep)) {
+            $response['message'] = 'المندوب غير موجود أو غير نشط';
+            echo json_encode($response, JSON_UNESCAPED_UNICODE | JSON_PARTIAL_OUTPUT_ON_ERROR);
+            exit;
+        }
+        
+        $response = [
+            'success' => true,
+            'balance' => floatval($balance),
+            'sales_rep_name' => htmlspecialchars($salesRep['full_name'] ?? $salesRep['username'], ENT_QUOTES, 'UTF-8')
+        ];
+        
+        echo json_encode($response, JSON_UNESCAPED_UNICODE | JSON_PARTIAL_OUTPUT_ON_ERROR);
+    } catch (Throwable $e) {
+        // تسجيل الخطأ في ملف log بدلاً من إرساله للمتصفح
+        error_log('Error getting sales rep balance [ID: ' . $salesRepId . ']: ' . $e->getMessage() . ' | Trace: ' . $e->getTraceAsString());
+        
+        $response['message'] = 'حدث خطأ أثناء جلب رصيد المندوب. يرجى المحاولة مرة أخرى.';
+        echo json_encode($response, JSON_UNESCAPED_UNICODE | JSON_PARTIAL_OUTPUT_ON_ERROR);
+    }
+    
+    exit;
+}
+
 $customersModulePath = __DIR__ . '/../modules/sales/customers.php';
 if (
     isset($_GET['ajax'], $_GET['action']) &&
@@ -129,48 +186,6 @@ if ($page === 'packaging_warehouse' && isset($_GET['ajax']) && $_GET['ajax'] == 
     }
 }
 
-// معالجة AJAX لجلب رصيد المندوب
-if ($page === 'financial' && isset($_GET['ajax']) && $_GET['ajax'] === 'get_sales_rep_balance') {
-    // تنظيف أي output buffer
-    while (ob_get_level() > 0) {
-        ob_end_clean();
-    }
-    
-    // إرسال headers
-    header('Content-Type: application/json; charset=utf-8');
-    header('Cache-Control: no-cache, must-revalidate');
-    
-    $salesRepId = isset($_GET['sales_rep_id']) ? intval($_GET['sales_rep_id']) : 0;
-    
-    if ($salesRepId <= 0) {
-        echo json_encode(['success' => false, 'message' => 'معرف المندوب غير صحيح'], JSON_UNESCAPED_UNICODE);
-        exit;
-    }
-    
-    try {
-        $balance = calculateSalesRepCashBalance($salesRepId);
-        
-        $salesRep = $db->queryOne(
-            "SELECT id, username, full_name FROM users WHERE id = ? AND role = 'sales' AND status = 'active'",
-            [$salesRepId]
-        );
-        
-        if (empty($salesRep)) {
-            echo json_encode(['success' => false, 'message' => 'المندوب غير موجود أو غير نشط'], JSON_UNESCAPED_UNICODE);
-            exit;
-        }
-        
-        echo json_encode([
-            'success' => true,
-            'balance' => floatval($balance),
-            'sales_rep_name' => htmlspecialchars($salesRep['full_name'] ?? $salesRep['username'], ENT_QUOTES, 'UTF-8')
-        ], JSON_UNESCAPED_UNICODE);
-    } catch (Throwable $e) {
-        error_log('Error getting sales rep balance: ' . $e->getMessage());
-        echo json_encode(['success' => false, 'message' => 'حدث خطأ أثناء جلب رصيد المندوب: ' . $e->getMessage()], JSON_UNESCAPED_UNICODE);
-    }
-    exit;
-}
 
 if ($page === 'financial' && $_SERVER['REQUEST_METHOD'] === 'POST') {
     $action = $_POST['action'] ?? '';
@@ -1459,32 +1474,86 @@ document.addEventListener('DOMContentLoaded', function() {
             const salesRepId = this.value;
             
             if (salesRepId && salesRepId !== '') {
+                // إظهار loading state
+                if (balanceDisplay) {
+                    balanceDisplay.style.display = 'block';
+                    repBalanceAmount.textContent = 'جاري التحميل...';
+                }
+                
                 // جلب رصيد المندوب
-                fetch('?page=financial&ajax=get_sales_rep_balance&sales_rep_id=' + encodeURIComponent(salesRepId))
-                    .then(response => response.json())
-                    .then(data => {
-                        if (data.success) {
-                            repBalanceAmount.textContent = parseFloat(data.balance).toLocaleString('ar-EG', {
-                                minimumFractionDigits: 2,
-                                maximumFractionDigits: 2
-                            });
-                            balanceDisplay.style.display = 'block';
-                            
-                            // تعيين الحد الأقصى للمبلغ
-                            collectAmount.max = data.balance;
-                            collectAmount.setAttribute('data-max-balance', data.balance);
-                        } else {
-                            alert('خطأ: ' + (data.message || 'فشل جلب رصيد المندوب'));
+                fetch('?page=financial&ajax=get_sales_rep_balance&sales_rep_id=' + encodeURIComponent(salesRepId), {
+                    method: 'GET',
+                    headers: {
+                        'Accept': 'application/json',
+                        'X-Requested-With': 'XMLHttpRequest'
+                    },
+                    cache: 'no-cache'
+                })
+                .then(response => {
+                    // التحقق من content type
+                    const contentType = response.headers.get('content-type');
+                    if (!contentType || !contentType.includes('application/json')) {
+                        throw new Error('Invalid response type. Expected JSON but got: ' + contentType);
+                    }
+                    
+                    // التحقق من حالة الاستجابة
+                    if (!response.ok) {
+                        throw new Error('HTTP error! status: ' + response.status);
+                    }
+                    
+                    // محاولة parsing JSON
+                    return response.text().then(text => {
+                        if (!text || text.trim() === '') {
+                            throw new Error('Empty response from server');
+                        }
+                        
+                        try {
+                            return JSON.parse(text);
+                        } catch (parseError) {
+                            console.error('JSON Parse Error:', parseError);
+                            console.error('Response text:', text.substring(0, 200));
+                            throw new Error('Invalid JSON response: ' + parseError.message);
+                        }
+                    });
+                })
+                .then(data => {
+                    if (!data || typeof data !== 'object') {
+                        throw new Error('Invalid response format');
+                    }
+                    
+                    if (data.success) {
+                        const balance = parseFloat(data.balance) || 0;
+                        repBalanceAmount.textContent = balance.toLocaleString('ar-EG', {
+                            minimumFractionDigits: 2,
+                            maximumFractionDigits: 2
+                        });
+                        balanceDisplay.style.display = 'block';
+                        
+                        // تعيين الحد الأقصى للمبلغ
+                        if (collectAmount) {
+                            collectAmount.max = balance;
+                            collectAmount.setAttribute('data-max-balance', balance);
+                        }
+                    } else {
+                        const errorMsg = data.message || 'فشل جلب رصيد المندوب';
+                        alert('خطأ: ' + errorMsg);
+                        if (balanceDisplay) {
                             balanceDisplay.style.display = 'none';
                         }
-                    })
-                    .catch(error => {
-                        console.error('Error:', error);
-                        alert('حدث خطأ أثناء جلب رصيد المندوب');
+                    }
+                })
+                .catch(error => {
+                    console.error('Fetch Error:', error);
+                    const errorMsg = error.message || 'حدث خطأ أثناء جلب رصيد المندوب';
+                    alert('خطأ: ' + errorMsg);
+                    if (balanceDisplay) {
                         balanceDisplay.style.display = 'none';
-                    });
+                    }
+                });
             } else {
-                balanceDisplay.style.display = 'none';
+                if (balanceDisplay) {
+                    balanceDisplay.style.display = 'none';
+                }
             }
         });
     }
@@ -1544,4 +1613,3 @@ document.addEventListener('DOMContentLoaded', function() {
 
 <?php include __DIR__ . '/../templates/footer.php'; ?>
 <script src="<?php echo ASSETS_URL; ?>js/reports.js"></script>
-
