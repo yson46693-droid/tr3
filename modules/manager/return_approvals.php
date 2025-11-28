@@ -519,7 +519,24 @@ function rejectReturn(returnId, event) {
     .then(data => {
         if (data.success) {
             alert('تم رفض الطلب بنجاح');
-            location.reload();
+            
+            // تحديث حالة الزر
+            if (btn) {
+                btn.disabled = true;
+                btn.innerHTML = '<i class="bi bi-x-circle-fill me-2"></i>تم الرفض';
+                btn.classList.remove('btn-danger');
+                btn.classList.add('btn-secondary');
+            }
+            
+            // إزالة الصف من الجدول
+            const row = btn ? btn.closest('tr') : null;
+            if (row) {
+                row.style.transition = 'opacity 0.5s';
+                row.style.opacity = '0';
+                setTimeout(() => {
+                    row.remove();
+                }, 500);
+            }
         } else {
             if (btn) {
                 btn.disabled = false;
