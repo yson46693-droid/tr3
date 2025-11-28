@@ -651,7 +651,19 @@ try {
 </div>
 
 <script>
+// متغير لتخزين آخر AbortController لإلغاء الطلبات السابقة
+let currentRepDetailsAbortController = null;
+
 function loadRepDetails(repId, repName) {
+    // إلغاء أي طلب سابق إذا كان موجوداً
+    if (currentRepDetailsAbortController) {
+        currentRepDetailsAbortController.abort();
+        currentRepDetailsAbortController = null;
+    }
+    
+    // إنشاء AbortController جديد للطلب الحالي
+    currentRepDetailsAbortController = new AbortController();
+    
     // تحديث اسم المندوب في الـ modal
     const modalNameEl = document.getElementById('repModalName');
     if (modalNameEl) {
@@ -661,7 +673,10 @@ function loadRepDetails(repId, repName) {
     // إظهار loading وإخفاء المحتوى
     const loadingEl = document.getElementById('repDetailsLoading');
     const contentEl = document.getElementById('repDetailsContent');
-    if (loadingEl) loadingEl.style.display = 'block';
+    if (loadingEl) {
+        loadingEl.style.display = 'block';
+        loadingEl.innerHTML = '<div class="text-center py-4"><div class="spinner-border text-primary" role="status"><span class="visually-hidden">جاري التحميل...</span></div></div>';
+    }
     if (contentEl) contentEl.style.display = 'none';
     
     // تعريف baseUrl لاستخدامه في الدالة
@@ -675,7 +690,14 @@ function loadRepDetails(repId, repName) {
     
     // جلب البيانات من API
     const apiUrl = '<?php echo getRelativeUrl("api/get_rep_details.php"); ?>';
-    fetch(apiUrl + '?rep_id=' + repId)
+    fetch(apiUrl + '?rep_id=' + repId, {
+        signal: currentRepDetailsAbortController.signal,
+        credentials: 'same-origin',
+        headers: {
+            'Accept': 'application/json',
+            'X-Requested-With': 'XMLHttpRequest'
+        }
+    })
         .then(response => response.json())
         .then(data => {
             if (data.success) {
@@ -824,9 +846,21 @@ function loadRepDetails(repId, repName) {
             }
         })
         .catch(error => {
+            // تجاهل الأخطاء الناتجة عن إلغاء الطلب
+            if (error.name === 'AbortError') {
+                console.log('Request aborted');
+                return;
+            }
+            
             console.error('Error loading rep details:', error);
             if (loadingEl) {
-                loadingEl.innerHTML = '<div class="alert alert-danger">حدث خطأ أثناء تحميل البيانات</div>';
+                loadingEl.innerHTML = '<div class="alert alert-danger">حدث خطأ أثناء تحميل البيانات: ' + (error.message || 'خطأ غير معروف') + '</div>';
+            }
+        })
+        .finally(() => {
+            // تنظيف AbortController بعد اكتمال الطلب
+            if (currentRepDetailsAbortController) {
+                currentRepDetailsAbortController = null;
             }
         });
 }
@@ -1081,6 +1115,20 @@ function viewRepReturnItemDetails(invoiceItemId) {
     // يمكن إضافة وظيفة لعرض تفاصيل العنصر
     console.log('View details for item:', invoiceItemId);
 }
+
+    // تهيئة modal تفاصيل المندوب - تنظيف الطلبات عند إغلاق الـ modal
+document.addEventListener('DOMContentLoaded', function() {
+    const repDetailsModal = document.getElementById('repDetailsModal');
+    if (repDetailsModal) {
+        repDetailsModal.addEventListener('hidden.bs.modal', function() {
+            // إلغاء أي طلبات جارية عند إغلاق الـ modal
+            if (currentRepDetailsAbortController) {
+                currentRepDetailsAbortController.abort();
+                currentRepDetailsAbortController = null;
+            }
+        });
+    }
+});
 
     // تهيئة modal التحصيل
 document.addEventListener('DOMContentLoaded', function() {

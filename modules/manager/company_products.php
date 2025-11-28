@@ -1190,6 +1190,13 @@ function showBatchDetailsModal(batchNumber, productName) {
     const contentWrapper = modalElement.querySelector('#batchDetailsContent');
     const modalTitle = modalElement.querySelector('.modal-title');
     
+    // التحقق من وجود العناصر المطلوبة
+    if (!loader || !errorAlert || !contentWrapper) {
+        console.error('Required modal elements not found');
+        alert('تعذر فتح تفاصيل التشغيلة. يرجى تحديث الصفحة.');
+        return;
+    }
+    
     if (modalTitle) {
         modalTitle.textContent = productName ? `تفاصيل التشغيلة - ${productName}` : 'تفاصيل التشغيلة';
     }
@@ -1206,23 +1213,35 @@ function showBatchDetailsModal(batchNumber, productName) {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ batch_number: batchNumber })
     })
-    .then(response => response.json())
+    .then(response => {
+        if (!response.ok) {
+            throw new Error('Network response was not ok');
+        }
+        return response.json();
+    })
     .then(data => {
-        loader.classList.add('d-none');
+        if (loader) loader.classList.add('d-none');
         batchDetailsIsLoading = false;
         
         if (data.success && data.batch) {
             renderBatchDetails(data.batch);
-            contentWrapper.classList.remove('d-none');
+            if (contentWrapper) contentWrapper.classList.remove('d-none');
+            if (errorAlert) errorAlert.classList.add('d-none');
         } else {
-            errorAlert.textContent = data.message || 'تعذر تحميل تفاصيل التشغيلة';
-            errorAlert.classList.remove('d-none');
+            if (errorAlert) {
+                errorAlert.textContent = data.message || 'تعذر تحميل تفاصيل التشغيلة';
+                errorAlert.classList.remove('d-none');
+            }
+            if (contentWrapper) contentWrapper.classList.add('d-none');
         }
     })
     .catch(error => {
-        loader.classList.add('d-none');
-        errorAlert.textContent = 'حدث خطأ أثناء تحميل التفاصيل';
-        errorAlert.classList.remove('d-none');
+        if (loader) loader.classList.add('d-none');
+        if (errorAlert) {
+            errorAlert.textContent = 'حدث خطأ أثناء تحميل التفاصيل: ' + (error.message || 'خطأ غير معروف');
+            errorAlert.classList.remove('d-none');
+        }
+        if (contentWrapper) contentWrapper.classList.add('d-none');
         batchDetailsIsLoading = false;
         console.error('Error loading batch details:', error);
     });
@@ -1366,8 +1385,27 @@ function renderBatchDetails(data) {
 
 window.showBatchDetailsModal = showBatchDetailsModal;
 
-// ربط الأحداث للأزرار
-document.addEventListener('click', function(event) {
+// ربط الأحداث للأزرار - انتظار تحميل DOM بالكامل
+if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', function() {
+        initBatchDetailsEventListeners();
+    });
+} else {
+    // DOM محمل بالفعل
+    initBatchDetailsEventListeners();
+}
+
+function initBatchDetailsEventListeners() {
+    // انتظار تحميل CSS قبل ربط الأحداث
+    if (document.readyState === 'complete' || (document.readyState === 'interactive' && document.querySelector('link[rel="stylesheet"]'))) {
+        attachBatchDetailsListeners();
+    } else {
+        window.addEventListener('load', attachBatchDetailsListeners);
+    }
+}
+
+function attachBatchDetailsListeners() {
+    document.addEventListener('click', function(event) {
     // زر تفاصيل التشغيلة
     const detailsButton = event.target.closest('.js-batch-details');
     if (detailsButton) {
@@ -1402,10 +1440,20 @@ document.addEventListener('click', function(event) {
         }
         return;
     }
-});
+    });
+}
 
 // معالجة تعديل المنتجات الخارجية
-document.querySelectorAll('.js-edit-external').forEach(btn => {
+if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', function() {
+        initEditExternalButtons();
+    });
+} else {
+    initEditExternalButtons();
+}
+
+function initEditExternalButtons() {
+    document.querySelectorAll('.js-edit-external').forEach(btn => {
     btn.addEventListener('click', function() {
         const id = this.dataset.id;
         const name = this.dataset.name;

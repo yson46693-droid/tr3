@@ -3,6 +3,12 @@
  * لوحة التحكم للمحاسب
  */
 
+// التأكد من عدم وجود output قبل DOCTYPE
+if (ob_get_level() > 0) {
+    ob_clean();
+}
+ob_start();
+
 define('ACCESS_ALLOWED', true);
 require_once __DIR__ . '/../includes/config.php';
 require_once __DIR__ . '/../includes/db.php';
