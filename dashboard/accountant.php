@@ -345,7 +345,7 @@ if ($page === 'financial' && $_SERVER['REQUEST_METHOD'] === 'POST') {
                     ]
                 );
 
-                $transactionId = $db->lastInsertId();
+                $transactionId = $db->getLastInsertId();
 
                 logAudit(
                     $currentUser['id'],
