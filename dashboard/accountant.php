@@ -219,7 +219,7 @@ if ($page === 'financial' && $_SERVER['REQUEST_METHOD'] === 'POST') {
                     }
                     
                     $salesRepName = $salesRep['full_name'] ?? $salesRep['username'];
-                    $finalDescription = $description ?: 'تحصيل من مندوب: ' . $salesRepName;
+                    $finalDescription = 'تحصيل من مندوب: ' . $salesRepName;
                     
                     // إضافة إيراد معتمد في financial_transactions
                     $db->execute(
@@ -252,8 +252,8 @@ if ($page === 'financial' && $_SERVER['REQUEST_METHOD'] === 'POST') {
                         
                         // بناء الاستعلام بشكل ديناميكي
                         $columns = ['customer_id', 'collected_by', 'amount', 'date'];
-                        $placeholders = ['NULL', '?', '?', 'NOW()'];
-                        $values = [$salesRepId, -$amount]; // قيمة سالبة لخصم المبلغ
+                        $placeholders = ['NULL', '?', '?', '?'];
+                        $values = [$salesRepId, -$amount, date('Y-m-d')]; // قيمة سالبة لخصم المبلغ
                         
                         // إضافة payment_method إذا كان موجوداً
                         $paymentMethodColumnCheck = $db->queryOne("SHOW COLUMNS FROM collections LIKE 'payment_method'");
@@ -280,7 +280,18 @@ if ($page === 'financial' && $_SERVER['REQUEST_METHOD'] === 'POST') {
                             $values[] = $currentUser['id'];
                         }
                         
+                        // بناء SQL مع التأكد من تطابق عدد ? مع عدد القيم
                         $sql = "INSERT INTO collections (" . implode(', ', $columns) . ") VALUES (" . implode(', ', $placeholders) . ")";
+                        
+                        // التحقق من تطابق عدد placeholders مع عدد القيم
+                        $placeholderCount = substr_count($sql, '?');
+                        if ($placeholderCount !== count($values)) {
+                            error_log("SQL placeholder mismatch: SQL has $placeholderCount placeholders but " . count($values) . " values provided");
+                            error_log("SQL: $sql");
+                            error_log("Values: " . print_r($values, true));
+                            throw new Exception("SQL placeholder count mismatch");
+                        }
+                        
                         $db->execute($sql, $values);
                     }
                     
