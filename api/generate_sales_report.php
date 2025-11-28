@@ -51,9 +51,14 @@ $sql = "SELECT s.*, c.name as customer_name,
                 LEFT JOIN batch_numbers bn ON sbn.batch_number_id = bn.id
                 WHERE i.customer_id = s.customer_id 
                   AND DATE(i.date) = DATE(s.date)
-                  AND (i.sales_rep_id = s.salesperson_id OR i.sales_rep_id IS NULL)
                   AND ii.product_id = s.product_id
+                  AND bn.batch_number IS NOT NULL
                 GROUP BY ii.id
+                ORDER BY 
+                  CASE WHEN i.sales_rep_id = s.salesperson_id THEN 0 ELSE 1 END,
+                  CASE WHEN ABS(ii.quantity - s.quantity) < 0.01 AND ABS(ii.unit_price - s.price) < 0.01 THEN 0 ELSE 1 END,
+                  i.id DESC, 
+                  ii.id DESC
                 LIMIT 1) as batch_numbers
         FROM sales s
         LEFT JOIN customers c ON s.customer_id = c.id
