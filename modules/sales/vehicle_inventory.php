@@ -101,6 +101,8 @@ if (!defined('VEHICLE_INVENTORY_AJAX')) {
     require_once __DIR__ . '/table_styles.php';
 }
 
+require_once __DIR__ . '/../../includes/path_helper.php';
+
 requireRole(['sales', 'accountant', 'production', 'manager']);
 
 $currentUser = getCurrentUser();
@@ -333,9 +335,20 @@ foreach ($vehicleInventory as $item) {
             <i class="bi bi-plus-circle me-2"></i>إضافة سيارة جديدة
         </button>
         <?php endif; ?>
-        <button class="btn btn-primary" data-bs-toggle="modal" data-bs-target="#createTransferModal">
-            <i class="bi bi-arrow-left-right me-2"></i>طلب نقل منتجات
-        </button>
+        <?php
+        // التحقق من أن الصفحة مفتوحة من manager.php
+        $isFromManager = (basename($_SERVER['PHP_SELF']) === 'manager.php' || 
+                         (isset($_SERVER['HTTP_REFERER']) && strpos($_SERVER['HTTP_REFERER'], 'manager.php') !== false));
+        
+        if ($isFromManager && $currentUser['role'] === 'manager'): ?>
+            <a href="<?php echo getDashboardUrl('manager'); ?>?page=vehicles" class="btn btn-secondary">
+                <i class="bi bi-arrow-right me-2"></i>الرجوع للخلف
+            </a>
+        <?php else: ?>
+            <button class="btn btn-primary" data-bs-toggle="modal" data-bs-target="#createTransferModal">
+                <i class="bi bi-arrow-left-right me-2"></i>طلب نقل منتجات
+            </button>
+        <?php endif; ?>
     </div>
 </div>
 
