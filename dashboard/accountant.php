@@ -883,13 +883,7 @@ $pageTitle = isset($lang['accountant_dashboard']) ? $lang['accountant_dashboard'
                     $collectionsQuery .= " AND MONTH(date) = MONTH(NOW()) AND YEAR(date) = YEAR(NOW())";
                     $collections = $db->queryOne($collectionsQuery);
                     ?>
-                    <div class="stat-card">
-                        <div class="stat-card-header">
-                            <div class="stat-card-icon green">
-                                <i class="bi bi-arrow-up-circle"></i>
-                            </div>
-                        </div>
-                    </div>
+                    
                     
                     <?php
                     $income = $db->queryOne(
