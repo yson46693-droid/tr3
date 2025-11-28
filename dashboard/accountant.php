@@ -406,10 +406,9 @@ if ($page === 'financial' && $_SERVER['REQUEST_METHOD'] === 'POST') {
                 $approvedAt = $markAsApproved ? date('Y-m-d H:i:s') : null;
 
                 $db->execute(
-                    "INSERT INTO financial_transactions (id, type, amount, supplier_id, description, reference_number, status, approved_by, created_by, approved_at)
+                    "INSERT INTO financial_transactions ( type, amount, supplier_id, description, reference_number, status, approved_by, created_by, approved_at)
                      VALUES (?, ?, ?, NULL, ?, ?, ?, ?, ?, ?, NOW(), NOW())",
                     [
-                        $id,
                         'expense',
                         $amount,
                         $description,
