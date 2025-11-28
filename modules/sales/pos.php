@@ -2617,9 +2617,10 @@ if (!$error) {
     
     // عرض معلومات العميل المالية عند تحميل الصفحة
     // استخدام setTimeout لضمان تحميل جميع العناصر
-    setTimeout(function() {
-        updateCustomerBalance();
-    }, 500);
+    document.addEventListener("DOMContentLoaded", () => {
+    updateCustomerBalance();
+});
+
     
     window.posDebugInfo = {
         sanitizeNumber,
