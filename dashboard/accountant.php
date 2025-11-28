@@ -271,8 +271,9 @@ if ($page === 'financial' && $_SERVER['REQUEST_METHOD'] === 'POST') {
                     
                     $salesRepName = $salesRep['full_name'] ?? $salesRep['username'];
                     $finalDescription = 'تحصيل من مندوب: ' . $salesRepName;
+                    $referenceNumber = 'COL-REP-' . $salesRepId . '-' . date('YmdHis');
                     
-                    // إضافة تحصيل في جدول accountant_transactions
+                    // 1. إضافة تحصيل في جدول accountant_transactions
                     $db->execute(
                         "INSERT INTO accountant_transactions (transaction_type, amount, sales_rep_id, description, reference_number, status, approved_by, created_by, approved_at)
                          VALUES (?, ?, ?, ?, ?, 'approved', ?, ?, NOW())",
@@ -281,16 +282,72 @@ if ($page === 'financial' && $_SERVER['REQUEST_METHOD'] === 'POST') {
                             $amount,
                             $salesRepId,
                             $finalDescription,
-                            'COL-REP-' . $salesRepId . '-' . date('YmdHis'),
+                            $referenceNumber,
                             $currentUser['id'],
                             $currentUser['id']
                         ]
                     );
                     
-                    $transactionId = $db->getLastInsertId();
+                    $accountantTransactionId = $db->getLastInsertId();
                     
-                    // تم إدراج الإيراد في financial_transactions
-                    // لا حاجة لإدراج في collections لأن هذا تحصيل من المندوب وليس من عميل
+                    // 2. إضافة إيراد في financial_transactions لتسجيل الحركة المالية
+                    $db->execute(
+                        "INSERT INTO financial_transactions (type, amount, supplier_id, description, reference_number, status, approved_by, created_by, approved_at)
+                         VALUES (?, ?, NULL, ?, ?, 'approved', ?, ?, NOW())",
+                        [
+                            'income',
+                            $amount,
+                            $finalDescription,
+                            $referenceNumber,
+                            $currentUser['id'],
+                            $currentUser['id']
+                        ]
+                    );
+                    
+                    $financialTransactionId = $db->getLastInsertId();
+                    
+                    // 3. إدراج تحصيل سالب في collections لخصم المبلغ من خزنة المندوب
+                    $collectionsTableExists = $db->queryOne("SHOW TABLES LIKE 'collections'");
+                    if (!empty($collectionsTableExists)) {
+                        // التحقق من وجود الأعمدة
+                        $statusColumnCheck = $db->queryOne("SHOW COLUMNS FROM collections LIKE 'status'");
+                        $hasStatusColumn = !empty($statusColumnCheck);
+                        
+                        $notesColumnCheck = $db->queryOne("SHOW COLUMNS FROM collections LIKE 'notes'");
+                        $hasNotesColumn = !empty($notesColumnCheck);
+                        
+                        $paymentMethodColumnCheck = $db->queryOne("SHOW COLUMNS FROM collections LIKE 'payment_method'");
+                        $hasPaymentMethodColumn = !empty($paymentMethodColumnCheck);
+                        
+                        // بناء الاستعلام بشكل ديناميكي
+                        // customer_id = NULL (لأن هذا تحصيل من المندوب وليس من عميل)
+                        // collected_by = salesRepId (المندوب الذي سيتم خصم المبلغ من خزنته)
+                        // amount = -$amount (قيمة سالبة لخصم المبلغ)
+                        $columns = ['customer_id', 'collected_by', 'amount', 'date'];
+                        $placeholders = ['NULL', '?', '?', '?'];
+                        $values = [$salesRepId, -$amount, date('Y-m-d')]; // قيمة سالبة لخصم المبلغ
+                        
+                        if ($hasPaymentMethodColumn) {
+                            $columns[] = 'payment_method';
+                            $placeholders[] = "'cash'";
+                        }
+                        
+                        if ($hasNotesColumn) {
+                            $columns[] = 'notes';
+                            $placeholders[] = '?';
+                            $values[] = 'تحصيل من خزنة المندوب: ' . $finalDescription;
+                        }
+                        
+                        if ($hasStatusColumn) {
+                            $columns[] = 'status';
+                            $placeholders[] = "'approved'";
+                        }
+                        
+                        $sql = "INSERT INTO collections (" . implode(', ', $columns) . ") VALUES (" . implode(', ', $placeholders) . ")";
+                        $db->execute($sql, $values);
+                    }
+                    
+                    $transactionId = $financialTransactionId; // استخدام معرف الحركة المالية
                     
                     logAudit(
                         $currentUser['id'],
