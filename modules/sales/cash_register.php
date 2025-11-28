@@ -207,6 +207,9 @@ if (!empty($salesTableExists)) {
 // إجمالي المبيعات (نستخدم الفواتير إذا كانت موجودة، وإلا نستخدم جدول sales)
 $totalSales = $totalSalesFromInvoices > 0 ? $totalSalesFromInvoices : $totalSalesFromSalesTable;
 
+// حساب صافي المبيعات (إجمالي المبيعات - المرتجعات)
+$netSales = $totalSales - $totalReturns;
+
 // حساب إجمالي التحصيلات
 $totalCollections = 0.0;
 if (!empty($collectionsTableExists)) {
@@ -693,15 +696,20 @@ $salesRepInfo = $db->queryOne(
 
 <div class="mb-4">
     <div class="row g-4">
-        <!-- إجمالي المبيعات -->
+        <!-- إجمالي المبيعات (صافي بعد خصم المرتجعات) -->
         <div class="col-12 col-md-6 col-lg-4">
             <div class="glass-card">
                 <div class="glass-card-header">
                     <i class="bi bi-bar-chart-fill glass-card-blue"></i>
-                    <h6 class="mb-0 fw-semibold">إجمالي المبيعات</h6>
+                    <h6 class="mb-0 fw-semibold">إجمالي المبيعات (صافي)</h6>
                 </div>
                 <div class="glass-card-body">
-                    <p class="glass-card-value glass-card-blue mb-0"><?php echo formatCurrency($totalSales); ?></p>
+                    <p class="glass-card-value glass-card-blue mb-0"><?php echo formatCurrency($netSales); ?></p>
+                    <?php if ($totalReturns > 0): ?>
+                    <p class="glass-card-title mt-2 mb-0" style="font-size: 12px;">
+                        إجمالي المبيعات: <?php echo formatCurrency($totalSales); ?> - المرتجعات: <?php echo formatCurrency($totalReturns); ?>
+                    </p>
+                    <?php endif; ?>
                 </div>
             </div>
         </div>
