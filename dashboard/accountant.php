@@ -581,8 +581,218 @@ $pageTitle = isset($lang['accountant_dashboard']) ? $lang['accountant_dashboard'
                     </div>
                 </div>
                 
+                <?php
+                $pageNum = isset($_GET['p']) ? max(1, intval($_GET['p'])) : 1;
+                $perPageTrans = 10;
+
+                $validTypes = ['income', 'expense', 'transfer', 'payment'];
+                $validStatuses = ['pending', 'approved', 'rejected'];
+
+                $transactionTypeFilter = isset($_GET['type']) ? trim($_GET['type']) : '';
+                if (!in_array($transactionTypeFilter, $validTypes, true)) {
+                    $transactionTypeFilter = '';
+                }
+
+                $transactionStatusFilter = isset($_GET['status']) ? trim($_GET['status']) : '';
+                if (!in_array($transactionStatusFilter, $validStatuses, true)) {
+                    $transactionStatusFilter = '';
+                }
+
+                $fromDate = isset($_GET['from_date']) ? trim($_GET['from_date']) : '';
+                if (!preg_match('/^\d{4}-\d{2}-\d{2}$/', $fromDate)) {
+                    $fromDate = '';
+                }
+
+                $toDate = isset($_GET['to_date']) ? trim($_GET['to_date']) : '';
+                if (!preg_match('/^\d{4}-\d{2}-\d{2}$/', $toDate)) {
+                    $toDate = '';
+                }
+
+                $searchTerm = isset($_GET['search']) ? trim($_GET['search']) : '';
+
+                // بناء شروط WHERE لكل جدول
+                $wherePartsFt = [];
+                $wherePartsAt = [];
+                $whereParams = [];
+
+                if ($transactionTypeFilter !== '') {
+                    $wherePartsFt[] = 'type = ?';
+                    // تحويل transaction_type في accountant_transactions
+                    if ($transactionTypeFilter === 'income') {
+                        $wherePartsAt[] = "transaction_type IN ('collection_from_sales_rep', 'income')";
+                    } else {
+                        $wherePartsAt[] = 'transaction_type = ?';
+                        $whereParams[] = $transactionTypeFilter;
+                    }
+                    $whereParams[] = $transactionTypeFilter;
+                }
+
+                if ($transactionStatusFilter !== '') {
+                    $wherePartsFt[] = 'status = ?';
+                    $wherePartsAt[] = 'status = ?';
+                    $whereParams[] = $transactionStatusFilter;
+                    $whereParams[] = $transactionStatusFilter;
+                }
+
+                if ($fromDate !== '') {
+                    $wherePartsFt[] = 'DATE(created_at) >= ?';
+                    $wherePartsAt[] = 'DATE(created_at) >= ?';
+                    $whereParams[] = $fromDate;
+                    $whereParams[] = $fromDate;
+                }
+
+                if ($toDate !== '') {
+                    $wherePartsFt[] = 'DATE(created_at) <= ?';
+                    $wherePartsAt[] = 'DATE(created_at) <= ?';
+                    $whereParams[] = $toDate;
+                    $whereParams[] = $toDate;
+                }
+
+                if ($searchTerm !== '') {
+                    $likeValue = '%' . $searchTerm . '%';
+                    $wherePartsFt[] = '(description LIKE ? OR reference_number LIKE ?)';
+                    $wherePartsAt[] = '(description LIKE ? OR reference_number LIKE ?)';
+                    $whereParams[] = $likeValue;
+                    $whereParams[] = $likeValue;
+                    $whereParams[] = $likeValue;
+                    $whereParams[] = $likeValue;
+                }
+
+                $whereClauseFt = $wherePartsFt ? 'WHERE ' . implode(' AND ', $wherePartsFt) : '';
+                $whereClauseAt = $wherePartsAt ? 'WHERE ' . implode(' AND ', $wherePartsAt) : '';
+
+                // بناء استعلام UNION لجمع البيانات من financial_transactions و accountant_transactions
+                $unionQuery = "
+                    SELECT 
+                        id, 
+                        type, 
+                        amount, 
+                        description, 
+                        reference_number, 
+                        status, 
+                        created_by, 
+                        created_at,
+                        'financial_transactions' as source_table
+                    FROM financial_transactions
+                    $whereClauseFt
+                    UNION ALL
+                    SELECT 
+                        id, 
+                        CASE 
+                            WHEN transaction_type = 'collection_from_sales_rep' THEN 'income'
+                            WHEN transaction_type = 'expense' THEN 'expense'
+                            WHEN transaction_type = 'income' THEN 'income'
+                            WHEN transaction_type = 'transfer' THEN 'transfer'
+                            WHEN transaction_type = 'payment' THEN 'payment'
+                            ELSE 'other'
+                        END as type,
+                        amount, 
+                        description, 
+                        reference_number, 
+                        status, 
+                        created_by, 
+                        created_at,
+                        'accountant_transactions' as source_table
+                    FROM accountant_transactions
+                    $whereClauseAt
+                ";
+
+                // حساب العدد الإجمالي
+                $countUnionQuery = "
+                    SELECT COUNT(*) as total FROM (
+                        $unionQuery
+                    ) as combined_transactions
+                ";
+                $totalTransRow = $db->queryOne($countUnionQuery, $whereParams);
+                $totalTrans = $totalTransRow['total'] ?? 0;
+                $totalPagesTrans = max(1, (int) ceil($totalTrans / $perPageTrans));
+                if ($pageNum > $totalPagesTrans) {
+                    $pageNum = $totalPagesTrans;
+                }
+                $offsetTrans = ($pageNum - 1) * $perPageTrans;
+
+                // استعلام نهائي مع JOIN للمستخدمين والترتيب
+                $transactionsQuery = "
+                    SELECT 
+                        ct.*, 
+                        creator.full_name AS creator_name, 
+                        creator.username AS creator_username
+                    FROM (
+                        $unionQuery
+                    ) as ct
+                    LEFT JOIN users creator ON ct.created_by = creator.id
+                    ORDER BY ct.created_at DESC
+                    LIMIT ? OFFSET ?
+                ";
+                $transactionsParams = array_merge($whereParams, [$perPageTrans, $offsetTrans]);
+                $transactions = $db->query($transactionsQuery, $transactionsParams);
+
+                $filterQueryParams = ['page' => 'financial'];
+                if ($transactionTypeFilter !== '') {
+                    $filterQueryParams['type'] = $transactionTypeFilter;
+                }
+                if ($transactionStatusFilter !== '') {
+                    $filterQueryParams['status'] = $transactionStatusFilter;
+                }
+                if ($fromDate !== '') {
+                    $filterQueryParams['from_date'] = $fromDate;
+                }
+                if ($toDate !== '') {
+                    $filterQueryParams['to_date'] = $toDate;
+                }
+                if ($searchTerm !== '') {
+                    $filterQueryParams['search'] = $searchTerm;
+                }
+                $filterBaseQuery = http_build_query($filterQueryParams);
+                ?>
                 
                 <div class="card shadow-sm mt-4">
+                    <div class="card-header bg-primary text-white d-flex justify-content-between align-items-center">
+                        <h5 class="mb-0"><i class="bi bi-list-ul me-2"></i>المعاملات المالية (<?php echo $totalTrans; ?>)</h5>
+                    </div>
+                    <div class="card-body">
+                        <form method="GET" class="row g-3 align-items-end mb-4">
+                            <input type="hidden" name="page" value="financial">
+                            <div class="col-md-3 col-lg-2">
+                                <label class="form-label">نوع المعاملة</label>
+                                <select name="type" class="form-select">
+                                    <option value="" <?php echo $transactionTypeFilter === '' ? 'selected' : ''; ?>>جميع الأنواع</option>
+                                    <option value="income" <?php echo $transactionTypeFilter === 'income' ? 'selected' : ''; ?>><?php echo $lang['income'] ?? 'إيراد'; ?></option>
+                                    <option value="expense" <?php echo $transactionTypeFilter === 'expense' ? 'selected' : ''; ?>><?php echo $lang['expense'] ?? 'مصروف'; ?></option>
+                                    <option value="transfer" <?php echo $transactionTypeFilter === 'transfer' ? 'selected' : ''; ?>><?php echo $typeLabelMap['transfer']; ?></option>
+                                    <option value="payment" <?php echo $transactionTypeFilter === 'payment' ? 'selected' : ''; ?>><?php echo $typeLabelMap['payment']; ?></option>
+                                </select>
+                            </div>
+                            <div class="col-md-3 col-lg-2">
+                                <label class="form-label">حالة الاعتماد</label>
+                                <select name="status" class="form-select">
+                                    <option value="" <?php echo $transactionStatusFilter === '' ? 'selected' : ''; ?>>الكل</option>
+                                    <option value="approved" <?php echo $transactionStatusFilter === 'approved' ? 'selected' : ''; ?>><?php echo $lang['approved'] ?? 'موافق عليه'; ?></option>
+                                    <option value="pending" <?php echo $transactionStatusFilter === 'pending' ? 'selected' : ''; ?>><?php echo $lang['pending'] ?? 'قيد الانتظار'; ?></option>
+                                    <option value="rejected" <?php echo $transactionStatusFilter === 'rejected' ? 'selected' : ''; ?>><?php echo $lang['rejected'] ?? 'مرفوض'; ?></option>
+                                </select>
+                            </div>
+                            <div class="col-md-3 col-lg-2">
+                                <label class="form-label">من تاريخ</label>
+                                <input type="date" name="from_date" class="form-control" value="<?php echo htmlspecialchars($fromDate, ENT_QUOTES, 'UTF-8'); ?>">
+                            </div>
+                            <div class="col-md-3 col-lg-2">
+                                <label class="form-label">حتى تاريخ</label>
+                                <input type="date" name="to_date" class="form-control" value="<?php echo htmlspecialchars($toDate, ENT_QUOTES, 'UTF-8'); ?>">
+                            </div>
+                            <div class="col-md-4 col-lg-3">
+                                <label class="form-label">بحث نصي</label>
+                                <input type="text" name="search" class="form-control" placeholder="وصف أو رقم مرجعي" value="<?php echo htmlspecialchars($searchTerm, ENT_QUOTES, 'UTF-8'); ?>">
+                            </div>
+                            <div class="col-md-5 col-lg-3 d-flex gap-2">
+                                <button type="submit" class="btn btn-primary flex-fill">
+                                    <i class="bi bi-filter me-1"></i>تطبيق التصفية
+                                </button>
+                                <a href="?page=financial" class="btn btn-outline-secondary flex-fill">
+                                    <i class="bi bi-arrow-counterclockwise me-1"></i>إعادة ضبط
+                                </a>
+                            </div>
+                        </form>
                         <div class="table-responsive dashboard-table-wrapper">
                             <table class="table table-striped table-hover align-middle text-nowrap">
                                 <thead>
