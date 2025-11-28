@@ -282,8 +282,29 @@ if (!empty($accountantTransactionsExists)) {
     $collectedFromRep = (float)($collectedResult['total_collected'] ?? 0);
 }
 
-// رصيد الخزنة = التحصيلات + المبيعات المدفوعة بالكامل - المبالغ المحصلة من المندوب
-$cashRegisterBalance = $totalCollections + $fullyPaidSales - $collectedFromRep;
+// حساب إجمالي المرتجعات للمندوب
+$totalReturns = 0.0;
+$returnsTableExists = $db->queryOne("SHOW TABLES LIKE 'returns'");
+if (!empty($returnsTableExists)) {
+    try {
+        // حساب المرتجعات المعتمدة والمعالجة فقط
+        $returnsResult = $db->queryOne(
+            "SELECT COALESCE(SUM(refund_amount), 0) as total_returns
+             FROM returns
+             WHERE sales_rep_id = ? 
+               AND status IN ('approved', 'processed')
+               AND refund_amount > 0",
+            [$salesRepId]
+        );
+        $totalReturns = (float)($returnsResult['total_returns'] ?? 0);
+    } catch (Throwable $returnsError) {
+        error_log('Returns calculation error: ' . $returnsError->getMessage());
+        $totalReturns = 0.0;
+    }
+}
+
+// رصيد الخزنة = التحصيلات + المبيعات المدفوعة بالكامل - المبالغ المحصلة من المندوب - المرتجعات
+$cashRegisterBalance = $totalCollections + $fullyPaidSales - $collectedFromRep - $totalReturns;
 
 // حساب المبيعات المعلقة (الديون) بالاعتماد على أرصدة العملاء لضمان التطابق مع صفحة العملاء
 $pendingSales = 0.0;
@@ -725,6 +746,19 @@ $salesRepInfo = $db->queryOne(
                         ديون بدون سجل مشتريات: <?php echo formatCurrency($oldDebtsTotal); ?>
                     </p>
                     <?php endif; ?>
+                </div>
+            </div>
+        </div>
+        
+        <!-- إجمالي المرتجعات -->
+        <div class="col-12 col-md-6 col-lg-4">
+            <div class="glass-card">
+                <div class="glass-card-header">
+                    <i class="bi bi-arrow-return-left glass-card-red"></i>
+                    <h6 class="mb-0 fw-semibold">إجمالي المرتجعات</h6>
+                </div>
+                <div class="glass-card-body">
+                    <p class="glass-card-value glass-card-red mb-0">- <?php echo formatCurrency($totalReturns); ?></p>
                 </div>
             </div>
         </div>
