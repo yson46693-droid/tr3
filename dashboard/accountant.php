@@ -240,31 +240,40 @@ if ($page === 'financial' && $_SERVER['REQUEST_METHOD'] === 'POST') {
                     // نحتاج لإدراج في جدول collections بقيمة سالبة
                     $collectionsTableExists = $db->queryOne("SHOW TABLES LIKE 'collections'");
                     if (!empty($collectionsTableExists)) {
-                        // التحقق من وجود عمود status
+                        // التحقق من وجود الأعمدة
                         $statusColumnCheck = $db->queryOne("SHOW COLUMNS FROM collections LIKE 'status'");
                         $hasStatusColumn = !empty($statusColumnCheck);
                         
-                        if ($hasStatusColumn) {
-                            $db->execute(
-                                "INSERT INTO collections (customer_id, collected_by, amount, date, status, created_by)
-                                 VALUES (NULL, ?, ?, NOW(), ?, 'approved', ?)",
-                                [
-                                    $salesRepId,
-                                    -$amount, // قيمة سالبة لخصم المبلغ
-                                    $currentUser['id']
-                                ]
-                            );
-                        } else {
-                            $db->execute(
-                                "INSERT INTO collections (customer_id, collected_by, amount, date, created_by)
-                                 VALUES (NULL, ?, ?, NOW(), ?, ?)",
-                                [
-                                    $salesRepId,
-                                    -$amount, // قيمة سالبة لخصم المبلغ
-                                    $currentUser['id']
-                                ]
-                            );
+                        $createdByColumnCheck = $db->queryOne("SHOW COLUMNS FROM collections LIKE 'created_by'");
+                        $hasCreatedByColumn = !empty($createdByColumnCheck);
+                        
+                        $notesColumnCheck = $db->queryOne("SHOW COLUMNS FROM collections LIKE 'notes'");
+                        $hasNotesColumn = !empty($notesColumnCheck);
+                        
+                        // بناء الاستعلام بشكل ديناميكي
+                        $columns = ['customer_id', 'collected_by', 'amount', 'date'];
+                        $placeholders = ['NULL', '?', '?', 'NOW()'];
+                        $values = [$salesRepId, -$amount]; // قيمة سالبة لخصم المبلغ
+                        
+                        if ($hasNotesColumn) {
+                            $columns[] = 'notes';
+                            $placeholders[] = '?';
+                            $values[] = 'تحصيل من خزنة المندوب: ' . $finalDescription;
                         }
+                        
+                        if ($hasStatusColumn) {
+                            $columns[] = 'status';
+                            $placeholders[] = "'approved'";
+                        }
+                        
+                        if ($hasCreatedByColumn) {
+                            $columns[] = 'created_by';
+                            $placeholders[] = '?';
+                            $values[] = $currentUser['id'];
+                        }
+                        
+                        $sql = "INSERT INTO collections (" . implode(', ', $columns) . ") VALUES (" . implode(', ', $placeholders) . ")";
+                        $db->execute($sql, $values);
                     }
                     
                     logAudit(
