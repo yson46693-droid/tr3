@@ -700,17 +700,12 @@ $hasStatusColumn = !empty($statusColumnCheck);
                             <label class="form-label">طريقة الدفع</label>
                             <select class="form-select" name="payment_method">
                                 <option value="cash">نقدي</option>
-                                <option value="bank">بنكي</option>
-                                <option value="cheque">شيك</option>
+                                <option value="bank">محفظه الكترونيهٍ</option>
                                 <option value="other">أخرى</option>
                             </select>
                         </div>
                         
-                        <div class="col-md-6">
-                            <label class="form-label">رقم المرجع</label>
-                            <input type="text" class="form-control" name="reference_number" placeholder="رقم المرجع أو رقم الشيك">
-                        </div>
-                        
+                       
                         <div class="col-md-12">
                             <label class="form-label">ملاحظات</label>
                             <textarea class="form-control" name="notes" rows="3" placeholder="ملاحظات إضافية"></textarea>
@@ -753,8 +748,7 @@ $hasStatusColumn = !empty($statusColumnCheck);
                             <label class="form-label">طريقة الدفع</label>
                             <select class="form-select" name="payment_method" id="edit_payment_method">
                                 <option value="cash">نقدي</option>
-                                <option value="bank">بنكي</option>
-                                <option value="cheque">شيك</option>
+                                <option value="bank">محفظه الكترونيه</option>
                                 <option value="other">أخرى</option>
                             </select>
                         </div>
