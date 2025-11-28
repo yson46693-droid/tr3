@@ -97,8 +97,13 @@ function returnProductsToVehicleInventory(int $returnId, ?int $approvedBy = null
             $approvedBy = $currentUser ? (int)$currentUser['id'] : null;
         }
         
+        // التحقق من وجود transaction نشطة
         $conn = $db->getConnection();
-        $conn->begin_transaction();
+        $transactionStarted = false;
+        if (!$db->inTransaction()) {
+            $conn->begin_transaction();
+            $transactionStarted = true;
+        }
         
         try {
             foreach ($returnItems as $item) {
@@ -263,7 +268,10 @@ function returnProductsToVehicleInventory(int $returnId, ?int $approvedBy = null
                 'details' => 'تم إرجاع جميع المنتجات المرتجعة إلى مخزن سيارة المندوب'
             ]);
             
-            $conn->commit();
+            // تأكيد المعاملة فقط إذا بدأناها نحن
+            if ($transactionStarted) {
+                $conn->commit();
+            }
             
             return [
                 'success' => true,
@@ -272,7 +280,10 @@ function returnProductsToVehicleInventory(int $returnId, ?int $approvedBy = null
             ];
             
         } catch (Throwable $e) {
-            $conn->rollback();
+            // Rollback فقط إذا بدأنا transaction
+            if ($transactionStarted) {
+                $conn->rollback();
+            }
             error_log("Error returning products to inventory: " . $e->getMessage());
             return [
                 'success' => false,

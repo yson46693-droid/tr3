@@ -67,9 +67,13 @@ function processReturnFinancials(int $returnId, ?int $processedBy = null): array
         // حفظ الرصيد القديم قبل المعالجة (للاستخدام في حساب خصم المندوب)
         $oldBalance = $currentBalance;
         
-        // بدء المعاملة
+        // التحقق من وجود transaction نشطة
         $conn = $db->getConnection();
-        $conn->begin_transaction();
+        $transactionStarted = false;
+        if (!$db->inTransaction()) {
+            $conn->begin_transaction();
+            $transactionStarted = true;
+        }
         
         try {
             // حساب الرصيد الجديد حسب القواعد المطلوبة:
@@ -136,8 +140,10 @@ function processReturnFinancials(int $returnId, ?int $processedBy = null): array
                 'customer_name' => $return['customer_name'] ?? null
             ]);
             
-            // تأكيد المعاملة
-            $conn->commit();
+            // تأكيد المعاملة فقط إذا بدأناها نحن
+            if ($transactionStarted) {
+                $conn->commit();
+            }
             
             $message = 'تمت معالجة التسوية المالية بنجاح';
             if ($debtReduction > 0) {
@@ -157,7 +163,10 @@ function processReturnFinancials(int $returnId, ?int $processedBy = null): array
             ];
             
         } catch (Throwable $e) {
-            $conn->rollback();
+            // Rollback فقط إذا بدأنا transaction
+            if ($transactionStarted) {
+                $conn->rollback();
+            }
             error_log("Error processing return financials: " . $e->getMessage());
             return [
                 'success' => false,
