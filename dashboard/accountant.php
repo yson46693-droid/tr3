@@ -900,11 +900,7 @@ $pageTitle = isset($lang['accountant_dashboard']) ? $lang['accountant_dashboard'
                     );
                     ?>
                     <div class="stat-card">
-                        <div class="stat-card-header">
-                            <div class="stat-card-icon green">
-                                <i class="bi bi-arrow-up-circle"></i>
-                            </div>
-                        </div>
+                        
                         <div class="stat-card-title"><?php echo isset($lang['income']) ? $lang['income'] : 'الإيرادات'; ?></div>
                         <div class="stat-card-value"><?php echo formatCurrency($income['total'] ?? 0); ?></div>
                         <div class="stat-card-description">هذا الشهر</div>
@@ -947,11 +943,25 @@ $pageTitle = isset($lang['accountant_dashboard']) ? $lang['accountant_dashboard'
             $approvedIncome = (float) ($treasurySummary['approved_income'] ?? 0);
             $approvedExpense = (float) ($treasurySummary['approved_expense'] ?? 0);
             $approvedPayment = (float) ($treasurySummary['approved_payment'] ?? 0);
-            $movementTotal = $approvedIncome + $approvedExpense + $approvedPayment;
+            
+            // حساب إجمالي المرتبات (المعتمدة والمدفوعة)
+            $totalSalaries = 0.0;
+            $salariesTableExists = $db->queryOne("SHOW TABLES LIKE 'salaries'");
+            if (!empty($salariesTableExists)) {
+                $salariesResult = $db->queryOne(
+                    "SELECT COALESCE(SUM(total_amount), 0) as total_salaries
+                     FROM salaries
+                     WHERE status IN ('approved', 'paid')"
+                );
+                $totalSalaries = (float) ($salariesResult['total_salaries'] ?? 0);
+            }
+            
+            $movementTotal = $approvedIncome + $approvedExpense + $approvedPayment + $totalSalaries;
             $shareDenominator = $movementTotal > 0 ? $movementTotal : 1;
             $incomeShare = $shareDenominator > 0 ? round(($approvedIncome / $shareDenominator) * 100) : 0;
             $expenseShare = $shareDenominator > 0 ? round(($approvedExpense / $shareDenominator) * 100) : 0;
             $paymentShare = $shareDenominator > 0 ? round(($approvedPayment / $shareDenominator) * 100) : 0;
+            $salariesShare = $shareDenominator > 0 ? round(($totalSalaries / $shareDenominator) * 100) : 0;
             $pendingCount = intval($pendingStats['total_pending'] ?? 0);
             $pendingAmount = (float) ($pendingStats['pending_amount'] ?? 0);
             $pendingPreview = array_slice($pendingTransactions, 0, 3);
@@ -1033,38 +1043,21 @@ $pageTitle = isset($lang['accountant_dashboard']) ? $lang['accountant_dashboard'
                                         <small class="text-muted d-block mt-2"><?php echo max(0, min(100, $paymentShare)); ?>% من إجمالي الحركة</small>
                                     </div>
                                 </div>
-                            </div>
-                            <div class="border-top pt-3 mt-4">
-                                <div class="d-flex flex-wrap justify-content-between align-items-center gap-3">
-                                    <div>
-                                        <span class="text-muted small">مبالغ بانتظار الاعتماد</span>
-                                        <div class="fw-semibold text-warning mt-1"><?php echo formatCurrency($pendingAmount); ?></div>
+                                <div class="col-12 col-md-4">
+                                    <div class="border rounded-3 p-3 h-100">
+                                        <div class="d-flex justify-content-between align-items-center">
+                                            <span class="text-muted small">إجمالي المرتبات</span>
+                                            <i class="bi bi-cash-stack text-danger"></i>
+                                        </div>
+                                        <div class="h5 text-danger mt-2"><?php echo formatCurrency($totalSalaries); ?></div>
+                                        <div class="progress mt-3" style="height: 6px;">
+                                            <div class="progress-bar bg-danger" role="progressbar" style="width: <?php echo max(0, min(100, $salariesShare)); ?>%;"></div>
+                                        </div>
+                                        <small class="text-muted d-block mt-2"><?php echo max(0, min(100, $salariesShare)); ?>% من إجمالي الحركة</small>
                                     </div>
-                                    <span class="badge bg-warning text-dark fw-semibold"><?php echo $pendingCount; ?> معاملات معلقة</span>
                                 </div>
-                                <?php if (!empty($pendingPreview)): ?>
-                                    <ul class="list-unstyled small mt-3 mb-0">
-                                        <?php foreach ($pendingPreview as $pending): ?>
-                                            <?php 
-                                                $pendingType = $pending['type'] ?? '';
-                                                $pendingColor = $typeColorMap[$pendingType] ?? 'secondary';
-                                                $pendingLabel = $typeLabelMap[$pendingType] ?? $pendingType;
-                                            ?>
-                                            <li class="d-flex justify-content-between align-items-center gap-2 mb-2">
-                                                <div class="text-truncate">
-                                                    <span class="badge bg-<?php echo $pendingColor; ?> me-2">
-                                                        <?php echo htmlspecialchars($pendingLabel, ENT_QUOTES, 'UTF-8'); ?>
-                                                    </span>
-                                                    <?php echo htmlspecialchars($pending['description'] ?? '-', ENT_QUOTES, 'UTF-8'); ?>
-                                                </div>
-                                                <span class="text-muted text-nowrap"><?php echo formatDateTime($pending['created_at']); ?></span>
-                                            </li>
-                                        <?php endforeach; ?>
-                                    </ul>
-                                <?php else: ?>
-                                    <p class="text-muted small mb-0 mt-3">لا توجد معاملات بانتظار الاعتماد.</p>
-                                <?php endif; ?>
                             </div>
+                           
                         </div>
                     </div>
                 </div>
