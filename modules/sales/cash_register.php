@@ -39,6 +39,125 @@ $invoicesTableExists = $db->queryOne("SHOW TABLES LIKE 'invoices'");
 $collectionsTableExists = $db->queryOne("SHOW TABLES LIKE 'collections'");
 $salesTableExists = $db->queryOne("SHOW TABLES LIKE 'sales'");
 
+// التحقق من وجود عمود paid_from_credit وإضافته إذا لم يكن موجوداً
+$hasPaidFromCreditColumn = false;
+if (!empty($invoicesTableExists)) {
+    $hasPaidFromCreditColumn = !empty($db->queryOne("SHOW COLUMNS FROM invoices LIKE 'paid_from_credit'"));
+    
+    if (!$hasPaidFromCreditColumn) {
+        try {
+            $db->execute("ALTER TABLE invoices ADD COLUMN paid_from_credit TINYINT(1) DEFAULT 0 AFTER status");
+            $hasPaidFromCreditColumn = true;
+            error_log('Added paid_from_credit column to invoices table');
+        } catch (Throwable $e) {
+            error_log('Error adding paid_from_credit column: ' . $e->getMessage());
+        }
+    }
+    
+    // التحقق بأثر رجعي من الفواتير المدفوعة بالكامل وتحديثها إذا كانت مدفوعة من رصيد دائن
+    if ($hasPaidFromCreditColumn) {
+        try {
+            // جلب الفواتير المدفوعة بالكامل التي لم يتم تحديدها كمدفوعة من رصيد دائن
+            $invoicesToCheck = $db->query(
+                "SELECT i.id, i.customer_id, i.date, i.total_amount, i.paid_amount, i.status, i.paid_from_credit
+                 FROM invoices i
+                 WHERE i.sales_rep_id = ?
+                 AND i.status = 'paid'
+                 AND i.paid_amount >= i.total_amount
+                 AND i.status != 'cancelled'
+                 AND (i.paid_from_credit IS NULL OR i.paid_from_credit = 0)
+                 ORDER BY i.date ASC, i.id ASC",
+                [$salesRepId]
+            );
+            
+            $updatedCount = 0;
+            foreach ($invoicesToCheck as $invoice) {
+                $customerId = (int)$invoice['customer_id'];
+                $invoiceDate = $invoice['date'];
+                $invoiceId = (int)$invoice['id'];
+                $invoiceTotal = (float)$invoice['total_amount'];
+                
+                // حساب الرصيد التراكمي للعميل قبل هذه الفاتورة
+                // نحسب الرصيد من جميع الفواتير السابقة لهذا العميل (بترتيب زمني)
+                $previousInvoices = $db->query(
+                    "SELECT id, date, total_amount, paid_amount, status, paid_from_credit
+                     FROM invoices
+                     WHERE customer_id = ?
+                     AND (date < ? OR (date = ? AND id < ?))
+                     AND status != 'cancelled'
+                     ORDER BY date ASC, id ASC",
+                    [$customerId, $invoiceDate, $invoiceDate, $invoiceId]
+                );
+                
+                // حساب الرصيد التراكمي قبل هذه الفاتورة
+                // نبدأ من رصيد العميل الحالي ونرجع للخلف
+                $currentCustomer = $db->queryOne(
+                    "SELECT balance FROM customers WHERE id = ?",
+                    [$customerId]
+                );
+                $currentBalance = (float)($currentCustomer['balance'] ?? 0);
+                
+                // حساب الرصيد قبل هذه الفاتورة عن طريق طرح تأثير الفواتير اللاحقة
+                $balanceBeforeInvoice = $currentBalance;
+                
+                // جلب جميع الفواتير بعد هذه الفاتورة (بترتيب زمني عكسي)
+                $laterInvoices = $db->query(
+                    "SELECT id, date, total_amount, paid_amount, status, paid_from_credit
+                     FROM invoices
+                     WHERE customer_id = ?
+                     AND (date > ? OR (date = ? AND id > ?))
+                     AND status != 'cancelled'
+                     ORDER BY date ASC, id ASC",
+                    [$customerId, $invoiceDate, $invoiceDate, $invoiceId]
+                );
+                
+                // طرح تأثير الفواتير اللاحقة من الرصيد الحالي
+                foreach ($laterInvoices as $laterInv) {
+                    $laterTotal = (float)($laterInv['total_amount'] ?? 0);
+                    $laterPaid = (float)($laterInv['paid_amount'] ?? 0);
+                    $laterCreditUsed = (int)($laterInv['paid_from_credit'] ?? 0);
+                    
+                    if ($laterCreditUsed) {
+                        // إذا كانت الفاتورة اللاحقة مدفوعة من رصيد دائن، لا نطرحها
+                        continue;
+                    }
+                    
+                    // طرح الفرق بين المبلغ الإجمالي والمبلغ المدفوع من الرصيد
+                    $balanceBeforeInvoice -= ($laterTotal - $laterPaid);
+                }
+                
+                // طرح تأثير هذه الفاتورة نفسها
+                $balanceBeforeInvoice -= ($invoiceTotal - (float)($invoice['paid_amount'] ?? 0));
+                
+                // إذا كان الرصيد قبل الفاتورة سالب (رصيد دائن) وكانت الفاتورة مدفوعة بالكامل
+                // فهذا يعني أنها دفعت من الرصيد الدائن
+                if ($balanceBeforeInvoice < -0.01 && $invoiceTotal > 0.01) {
+                    // التحقق من أن الفاتورة استهلكت الرصيد الدائن
+                    // الرصيد المتوقع بعد الفاتورة = الرصيد قبل + قيمة الفاتورة
+                    $expectedBalanceAfter = $balanceBeforeInvoice + $invoiceTotal;
+                    
+                    // إذا كان الرصيد المتوقع قريب من الرصيد الفعلي (مع هامش خطأ صغير)
+                    // فهذا يعني أن الفاتورة دفعت من رصيد دائن
+                    if (abs($expectedBalanceAfter - $currentBalance) < 0.02) {
+                        // تحديث الفاتورة لتحديدها كمدفوعة من رصيد دائن
+                        $db->execute(
+                            "UPDATE invoices SET paid_from_credit = 1 WHERE id = ?",
+                            [$invoiceId]
+                        );
+                        $updatedCount++;
+                    }
+                }
+            }
+            
+            if ($updatedCount > 0) {
+                error_log("Retroactively updated $updatedCount invoices as paid_from_credit for sales rep $salesRepId");
+            }
+        } catch (Throwable $retroCheckError) {
+            error_log('Error in retroactive credit check: ' . $retroCheckError->getMessage());
+        }
+    }
+}
+
 // حساب إجمالي المبيعات من الفواتير
 $totalSalesFromInvoices = 0.0;
 if (!empty($invoicesTableExists)) {
