@@ -2333,7 +2333,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
                     if (empty($error)) {
                         try {
-                            $db->execute(
+                            $rawMaterialDamageLogId = $db->execute(
                                 "INSERT INTO raw_material_damage_logs (material_category, stock_id, supplier_id, item_label, variety, quantity, unit, reason, created_by) 
                                  VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
                                 [
@@ -2348,6 +2348,47 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                                     $currentUser['id']
                                 ]
                             );
+                            
+                            // إضافة إلى مخزن توالف المصنع (factory_waste_raw_materials)
+                            try {
+                                $rawMaterialDamageLogId = $db->getLastInsertId();
+                                $tableExists = $db->queryOne("SHOW TABLES LIKE 'factory_waste_raw_materials'");
+                                if ($tableExists) {
+                                    $userName = $currentUser['full_name'] ?? $currentUser['username'] ?? 'مستخدم';
+                                    $materialName = $logDetails['item_label'] ?? 'مادة خام';
+                                    if (!empty($logDetails['variety'])) {
+                                        $materialName .= ' - ' . $logDetails['variety'];
+                                    }
+                                    
+                                    // التحقق من عدم وجود سجل مسبق
+                                    $existingWaste = $db->queryOne(
+                                        "SELECT id FROM factory_waste_raw_materials WHERE raw_material_damage_log_id = ?",
+                                        [$rawMaterialDamageLogId]
+                                    );
+                                    
+                                    if (!$existingWaste) {
+                                        $db->execute(
+                                            "INSERT INTO factory_waste_raw_materials 
+                                            (raw_material_damage_log_id, material_name, wasted_quantity, unit, waste_reason, 
+                                             added_date, recorded_by_user_id, recorded_by_user_name)
+                                            VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+                                            [
+                                                $rawMaterialDamageLogId,
+                                                $materialName,
+                                                $quantity,
+                                                $logDetails['unit'] ?? 'كجم',
+                                                mb_substr($reason, 0, 500, 'UTF-8') ?: null,
+                                                date('Y-m-d'),
+                                                $currentUser['id'],
+                                                $userName
+                                            ]
+                                        );
+                                    }
+                                }
+                            } catch (Throwable $wasteError) {
+                                // لا نوقف العملية إذا فشل حفظ في مخزن التوالف، فقط نسجل الخطأ
+                                error_log('Warning: Failed to save to factory_waste_raw_materials: ' . $wasteError->getMessage());
+                            }
                         } catch (Exception $e) {
                             error_log("Error logging raw material damage: " . $e->getMessage());
                         }

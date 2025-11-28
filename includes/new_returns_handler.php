@@ -298,25 +298,57 @@ function createReturnRequest(
                 $condition = $item['condition'] ?? ($isDamaged ? 'damaged' : 'new');
                 
                 // إدراج عنصر المرتجع
-                $db->execute(
-                    "INSERT INTO return_items 
-                    (return_id, invoice_item_id, product_id, quantity, unit_price, total_price, 
-                     batch_number_id, batch_number, condition, is_damaged, notes) 
-                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
-                    [
-                        $returnId,
-                        $invoiceItemId,
-                        $productId,
-                        $quantity,
-                        $unitPrice,
-                        $totalPrice,
-                        $batchNumberId,
-                        $batchNumber,
-                        $condition,
-                        $isDamaged,
-                        isset($item['damage_reason']) ? $item['damage_reason'] : null
-                    ]
-                );
+                // Check if is_damaged column exists in return_items table
+                $hasIsDamagedCol = false;
+                try {
+                    $colCheck = $db->queryOne("SHOW COLUMNS FROM return_items LIKE 'is_damaged'");
+                    $hasIsDamagedCol = !empty($colCheck);
+                } catch (Throwable $e) {
+                    $hasIsDamagedCol = false;
+                }
+                
+                if ($hasIsDamagedCol) {
+                    // Insert with is_damaged column
+                    $db->execute(
+                        "INSERT INTO return_items 
+                        (return_id, invoice_item_id, product_id, quantity, unit_price, total_price, 
+                         batch_number_id, batch_number, `condition`, is_damaged, notes) 
+                        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                        [
+                            $returnId,
+                            $invoiceItemId,
+                            $productId,
+                            $quantity,
+                            $unitPrice,
+                            $totalPrice,
+                            $batchNumberId,
+                            $batchNumber,
+                            $condition,
+                            $isDamaged,
+                            isset($item['damage_reason']) ? $item['damage_reason'] : null
+                        ]
+                    );
+                } else {
+                    // Insert without is_damaged column
+                    $db->execute(
+                        "INSERT INTO return_items 
+                        (return_id, invoice_item_id, product_id, quantity, unit_price, total_price, 
+                         batch_number_id, batch_number, `condition`, notes) 
+                        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                        [
+                            $returnId,
+                            $invoiceItemId,
+                            $productId,
+                            $quantity,
+                            $unitPrice,
+                            $totalPrice,
+                            $batchNumberId,
+                            $batchNumber,
+                            $condition,
+                            isset($item['damage_reason']) ? $item['damage_reason'] : null
+                        ]
+                    );
+                }
                 
                 $returnItemId = (int)$db->getLastInsertId();
                 

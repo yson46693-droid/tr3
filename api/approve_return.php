@@ -296,6 +296,7 @@ try {
                         [(int)$item['id']]
                     );
                     
+                    $damagedReturnId = null;
                     if ($existingRecord) {
                         // تحديث السجل الموجود
                         $db->execute(
@@ -322,6 +323,7 @@ try {
                                 (int)$item['id']
                             ]
                         );
+                        $damagedReturnId = (int)$existingRecord['id'];
                     } else {
                         // إدراج سجل جديد
                         $db->execute(
@@ -347,6 +349,56 @@ try {
                                 $item['batch_number'] ?? null
                             ]
                         );
+                        $damagedReturnId = $db->getLastInsertId();
+                    }
+                    
+                    // إضافة إلى مخزن توالف المصنع (factory_waste_products)
+                    try {
+                        // التحقق من وجود جدول factory_waste_products
+                        $tableExists = $db->queryOne("SHOW TABLES LIKE 'factory_waste_products'");
+                        if ($tableExists) {
+                            // جلب معلومات المنتج
+                            $product = $db->queryOne(
+                                "SELECT id, name, code, purchase_price FROM products WHERE id = ?",
+                                [(int)$item['product_id']]
+                            );
+                            
+                            // حساب قيمة التوالف
+                            $wasteValue = 0;
+                            if ($product && isset($product['purchase_price'])) {
+                                $wasteValue = (float)$item['quantity'] * (float)$product['purchase_price'];
+                            }
+                            
+                            // التحقق من عدم وجود سجل مسبق
+                            $existingWaste = $db->queryOne(
+                                "SELECT id FROM factory_waste_products WHERE damaged_return_id = ?",
+                                [$damagedReturnId]
+                            );
+                            
+                            if (!$existingWaste) {
+                                $db->execute(
+                                    "INSERT INTO factory_waste_products 
+                                    (damaged_return_id, product_id, product_name, product_code, batch_number, 
+                                     batch_number_id, damaged_quantity, waste_value, source, transaction_number, added_date)
+                                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'damaged_returns', ?, ?)",
+                                    [
+                                        $damagedReturnId,
+                                        (int)$item['product_id'],
+                                        $item['display_product_name'] ?? $item['product_name'] ?? 'منتج رقم ' . $item['product_id'],
+                                        $product['code'] ?? null,
+                                        $item['batch_number'] ?? null,
+                                        isset($item['batch_number_id']) && $item['batch_number_id'] ? (int)$item['batch_number_id'] : null,
+                                        (float)$item['quantity'],
+                                        $wasteValue,
+                                        $return['return_number'],
+                                        $return['return_date'] ?? date('Y-m-d')
+                                    ]
+                                );
+                            }
+                        }
+                    } catch (Throwable $wasteError) {
+                        // لا نوقف العملية إذا فشل حفظ في مخزن التوالف، فقط نسجل الخطأ
+                        error_log('Warning: Failed to save to factory_waste_products: ' . $wasteError->getMessage());
                     }
                 }
                 

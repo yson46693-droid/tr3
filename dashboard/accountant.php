@@ -1455,6 +1455,17 @@ $pageTitle = isset($lang['accountant_dashboard']) ? $lang['accountant_dashboard'
                 }
                 ?>
                 
+            <?php elseif ($page === 'factory_waste_warehouse'): ?>
+                <!-- صفحة مخزن توالف المصنع -->
+                <?php 
+                $modulePath = __DIR__ . '/../modules/warehouse/factory_waste_warehouse.php';
+                if (file_exists($modulePath)) {
+                    include $modulePath;
+                } else {
+                    echo '<div class="alert alert-warning">صفحة مخزن توالف المصنع غير متاحة حالياً</div>';
+                }
+                ?>
+                
             <?php elseif ($page === 'batch_reader'): ?>
                 <!-- صفحة قارئ أرقام التشغيلات -->
                 <div class="container-fluid p-0" style="height: 100vh; overflow: hidden;">

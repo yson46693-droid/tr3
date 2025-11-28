@@ -1398,7 +1398,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     );
                 }
 
-                $db->execute(
+                $packagingDamageLogId = $db->execute(
                     "INSERT INTO packaging_damage_logs 
                      (material_id, material_name, source_table, quantity_before, damaged_quantity, quantity_after, unit, reason, recorded_by) 
                      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
@@ -1414,6 +1414,42 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                         $currentUser['id']
                     ]
                 );
+                
+                // إضافة إلى مخزن توالف المصنع (factory_waste_packaging)
+                try {
+                    $packagingDamageLogId = $db->getLastInsertId();
+                    $tableExists = $db->queryOne("SHOW TABLES LIKE 'factory_waste_packaging'");
+                    if ($tableExists) {
+                        $userName = $currentUser['full_name'] ?? $currentUser['username'] ?? 'مستخدم';
+                        
+                        // التحقق من عدم وجود سجل مسبق
+                        $existingWaste = $db->queryOne(
+                            "SELECT id FROM factory_waste_packaging WHERE packaging_damage_log_id = ?",
+                            [$packagingDamageLogId]
+                        );
+                        
+                        if (!$existingWaste) {
+                            $db->execute(
+                                "INSERT INTO factory_waste_packaging 
+                                (packaging_damage_log_id, tool_type, damaged_quantity, unit, added_date, 
+                                 recorded_by_user_id, recorded_by_user_name)
+                                VALUES (?, ?, ?, ?, ?, ?, ?)",
+                                [
+                                    $packagingDamageLogId,
+                                    $material['name'] ?? 'أداة غير معروفة',
+                                    $damagedQuantity,
+                                    $material['unit'] ?? null,
+                                    date('Y-m-d'),
+                                    $currentUser['id'],
+                                    $userName
+                                ]
+                            );
+                        }
+                    }
+                } catch (Throwable $wasteError) {
+                    // لا نوقف العملية إذا فشل حفظ في مخزن التوالف، فقط نسجل الخطأ
+                    error_log('Warning: Failed to save to factory_waste_packaging: ' . $wasteError->getMessage());
+                }
 
                 logAudit(
                     $currentUser['id'],
