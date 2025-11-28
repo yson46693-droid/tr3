@@ -362,8 +362,9 @@ function approveReturn($returnId, $approvedBy = null) {
                 }
             }
             
-            // خصم 2% من عمولة المندوب من المبلغ المدفوع (only for paid invoices)
-            if ($salesRepId > 0 && $amountPaid > 0.0001) {
+            // تعطيل خصم العمولة - لا يتم خصم أي مبلغ من تحصيلات المندوب
+            // خصم 2% من عمولة المندوب من المبلغ المدفوع (only for paid invoices) - DISABLED
+            if (false && $salesRepId > 0 && $amountPaid > 0.0001) {
                 // Use the amount that was actually refunded (considering debt reduction)
                 $amountToRefund = min($amountPaid, $returnAmount);
                 require_once __DIR__ . '/salary_calculator.php';

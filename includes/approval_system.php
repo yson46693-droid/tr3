@@ -991,8 +991,10 @@ function updateEntityStatus($type, $entityId, $status, $approvedBy) {
                 insertNegativeCollection($customerId, $salesRepId, $refundAmount, $returnNumber, $approvedBy);
             }
             
-            // إذا تمت الموافقة، خصم 2% من إجمالي مبلغ المرتجع من راتب المندوب
-            if ($status === 'approved' && !empty($return['sales_rep_id']) && !empty($return['refund_amount'])) {
+            // تعطيل خصم المرتب - لا يتم خصم أي مبلغ من تحصيلات المندوب
+            // إذا تمت الموافقة، خصم 2% من إجمالي مبلغ المرتجع من راتب المندوب - DISABLED
+            // if ($status === 'approved' && !empty($return['sales_rep_id']) && !empty($return['refund_amount'])) {
+            if (false && $status === 'approved' && !empty($return['sales_rep_id']) && !empty($return['refund_amount'])) {
                 require_once __DIR__ . '/salary_calculator.php';
                 
                 $salesRepId = (int)$return['sales_rep_id'];

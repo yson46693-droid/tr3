@@ -217,12 +217,20 @@ try {
         // تسجيل عملية المرتجع في سجلات المرتجعات
         // (تم التسجيل بالفعل في return_inventory_manager.php و return_financial_processor.php)
         
-        // Apply salary deduction using new system
-        $penaltyResult = applyReturnSalaryDeduction($returnId, $salesRepId, $currentUser['id']);
-        if (!$penaltyResult['success'] && $penaltyResult['deduction_amount'] > 0) {
-            // Log but don't fail if penalty fails (it's non-critical)
-            error_log('Warning: Failed to apply salary deduction: ' . ($penaltyResult['message'] ?? ''));
-        }
+        // تعطيل خصم المرتب - لا يتم خصم أي مبلغ من تحصيلات المندوب
+        // Apply salary deduction using new system - DISABLED
+        // $penaltyResult = applyReturnSalaryDeduction($returnId, $salesRepId, $currentUser['id']);
+        // if (!$penaltyResult['success'] && $penaltyResult['deduction_amount'] > 0) {
+        //     // Log but don't fail if penalty fails (it's non-critical)
+        //     error_log('Warning: Failed to apply salary deduction: ' . ($penaltyResult['message'] ?? ''));
+        // }
+        
+        // إرجاع نتيجة بدون خصم
+        $penaltyResult = [
+            'success' => true,
+            'message' => 'لا يتم خصم أي مبلغ من تحصيلات المندوب',
+            'deduction_amount' => 0.0
+        ];
         
         // حفظ المرتجعات التالفة في جدول damaged_returns بشكل كامل
         try {
