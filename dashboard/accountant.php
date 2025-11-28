@@ -290,29 +290,14 @@ if ($page === 'financial' && $_SERVER['REQUEST_METHOD'] === 'POST') {
                     
                     $accountantTransactionId = $db->getLastInsertId();
                     
-                    // 2. إضافة إيراد في financial_transactions لتسجيل الحركة المالية
-                    $db->execute(
-                        "INSERT INTO financial_transactions (type, amount, supplier_id, description, reference_number, status, approved_by, created_by, approved_at)
-                         VALUES (?, ?, NULL, ?, ?, 'approved', ?, ?, NOW())",
-                        [
-                            'income',
-                            $amount,
-                            $finalDescription,
-                            $referenceNumber,
-                            $currentUser['id'],
-                            $currentUser['id']
-                        ]
-                    );
-                    
-                    $financialTransactionId = $db->getLastInsertId();
-                    
-                    // ملاحظة: لا نضيف سجل في collections لأن:
-                    // 1. collections مخصص للتحصيلات من العملاء فقط (customer_id مطلوب NOT NULL)
-                    // 2. التحصيل من المندوب يتم تسجيله في accountant_transactions فقط
-                    // 3. خصم المبلغ من رصيد المندوب يتم حسابه من خلال calculateSalesRepCashBalance
+                    // ملاحظة: لا نضيف سجل في financial_transactions لأن:
+                    // 1. التحصيل من المندوب يُسجل فقط في accountant_transactions
+                    // 2. عند حساب الإيرادات، يتم حسابها من accountant_transactions (collection_from_sales_rep)
+                    // 3. إضافة سجل في financial_transactions سيؤدي إلى حساب المبلغ مرتين (مرة من كل جدول)
+                    // 4. خصم المبلغ من رصيد المندوب يتم حسابه من خلال calculateSalesRepCashBalance
                     //    الذي يحسب: (collections + invoices) - (accountant_transactions collection_from_sales_rep)
                     
-                    $transactionId = $financialTransactionId; // استخدام معرف الحركة المالية
+                    $transactionId = $accountantTransactionId; // استخدام معرف المعاملة المحاسبية
                     
                     logAudit(
                         $currentUser['id'],
