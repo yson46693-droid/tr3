@@ -568,6 +568,53 @@ if (!$error && $_SERVER['REQUEST_METHOD'] === 'POST') {
                 $invoiceId = (int) $invoiceResult['invoice_id'];
                 $invoiceNumber = $invoiceResult['invoice_number'] ?? '';
 
+                // ربط أرقام التشغيلة بعناصر الفاتورة
+                $invoiceItems = $db->query(
+                    "SELECT id, product_id FROM invoice_items WHERE invoice_id = ? ORDER BY id",
+                    [$invoiceId]
+                );
+                
+                // إنشاء خريطة للمطابقة بين invoice_items و normalizedCart
+                $invoiceItemsMap = [];
+                foreach ($invoiceItems as $invItem) {
+                    $productId = (int)$invItem['product_id'];
+                    if (!isset($invoiceItemsMap[$productId])) {
+                        $invoiceItemsMap[$productId] = [];
+                    }
+                    $invoiceItemsMap[$productId][] = (int)$invItem['id'];
+                }
+                
+                // ربط أرقام التشغيلة
+                foreach ($normalizedCart as $item) {
+                    $productId = (int)$item['product_id'];
+                    $finishedBatchId = isset($item['finished_batch_id']) && $item['finished_batch_id'] > 0 ? (int)$item['finished_batch_id'] : null;
+                    
+                    if ($finishedBatchId && isset($invoiceItemsMap[$productId]) && !empty($invoiceItemsMap[$productId])) {
+                        // استخدام أول invoice_item_id متطابق
+                        $invoiceItemId = array_shift($invoiceItemsMap[$productId]);
+                        
+                        // التحقق من وجود batch_number في جدول batch_numbers
+                        $batchNumber = $db->queryOne(
+                            "SELECT id FROM batch_numbers WHERE id = ?",
+                            [$finishedBatchId]
+                        );
+                        
+                        if ($batchNumber) {
+                            // ربط رقم التشغيلة بعنصر الفاتورة
+                            try {
+                                $db->execute(
+                                    "INSERT INTO sales_batch_numbers (invoice_item_id, batch_number_id, quantity) 
+                                     VALUES (?, ?, ?)
+                                     ON DUPLICATE KEY UPDATE quantity = quantity + ?",
+                                    [$invoiceItemId, $finishedBatchId, $item['quantity'], $item['quantity']]
+                                );
+                            } catch (Throwable $batchError) {
+                                error_log('Error linking batch number to invoice item: ' . $batchError->getMessage());
+                            }
+                        }
+                    }
+                }
+
                 // تحديد حالة الفاتورة
                 // إذا كان الدين = 0 (إما دفعة كاملة نقداً أو استخدام الرصيد الدائن بالكامل)، تكون الفاتورة مدفوعة
                 $invoiceStatus = 'sent';
@@ -594,6 +641,23 @@ if (!$error && $_SERVER['REQUEST_METHOD'] === 'POST') {
                 if ($hasPaidFromCreditColumn) {
                     $invoiceUpdateSql .= ", paid_from_credit = ?";
                     $invoiceUpdateParams[] = $isCreditSale ? 1 : 0;
+                }
+                
+                // إضافة مبلغ credit_used إذا كان هناك عمود credit_used
+                $hasCreditUsedColumn = !empty($db->queryOne("SHOW COLUMNS FROM invoices LIKE 'credit_used'"));
+                if ($hasCreditUsedColumn) {
+                    $invoiceUpdateSql .= ", credit_used = ?";
+                    $invoiceUpdateParams[] = $creditUsed;
+                } else {
+                    // إضافة العمود إذا لم يكن موجوداً
+                    try {
+                        $db->execute("ALTER TABLE invoices ADD COLUMN credit_used DECIMAL(15,2) DEFAULT 0.00 COMMENT 'المبلغ المخصوم من الرصيد الدائن' AFTER paid_from_credit");
+                        $hasCreditUsedColumn = true;
+                        $invoiceUpdateSql .= ", credit_used = ?";
+                        $invoiceUpdateParams[] = $creditUsed;
+                    } catch (Throwable $e) {
+                        error_log('Error adding credit_used column: ' . $e->getMessage());
+                    }
                 }
                 
                 // إضافة المبلغ الذي يُضاف إلى خزنة المندوب (amount_added_to_sales)

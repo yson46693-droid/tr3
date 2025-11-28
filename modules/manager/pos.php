@@ -630,10 +630,29 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     $invoiceStatus = 'partial';
                 }
 
-                $db->execute(
-                    "UPDATE invoices SET paid_amount = ?, remaining_amount = ?, status = ?, updated_at = NOW() WHERE id = ?",
-                    [$effectivePaidAmount, $dueAmount, $invoiceStatus, $invoiceId]
-                );
+                // تحديث الفاتورة بالمبلغ المدفوع والمبلغ المتبقي
+                $invoiceUpdateSql = "UPDATE invoices SET paid_amount = ?, remaining_amount = ?, status = ?, updated_at = NOW()";
+                $invoiceUpdateParams = [$effectivePaidAmount, $dueAmount, $invoiceStatus];
+                
+                // إضافة مبلغ credit_used إذا كان هناك عمود credit_used
+                $hasCreditUsedColumn = !empty($db->queryOne("SHOW COLUMNS FROM invoices LIKE 'credit_used'"));
+                if ($hasCreditUsedColumn) {
+                    $invoiceUpdateSql .= ", credit_used = ?";
+                    $invoiceUpdateParams[] = $creditUsed;
+                } else {
+                    // إضافة العمود إذا لم يكن موجوداً
+                    try {
+                        $db->execute("ALTER TABLE invoices ADD COLUMN credit_used DECIMAL(15,2) DEFAULT 0.00 COMMENT 'المبلغ المخصوم من الرصيد الدائن' AFTER paid_from_credit");
+                        $hasCreditUsedColumn = true;
+                        $invoiceUpdateSql .= ", credit_used = ?";
+                        $invoiceUpdateParams[] = $creditUsed;
+                    } catch (Throwable $e) {
+                        error_log('Error adding credit_used column: ' . $e->getMessage());
+                    }
+                }
+                
+                $invoiceUpdateParams[] = $invoiceId;
+                $db->execute($invoiceUpdateSql . " WHERE id = ?", $invoiceUpdateParams);
 
                 foreach ($normalizedCart as $item) {
                     $productId = $item['product_id'];

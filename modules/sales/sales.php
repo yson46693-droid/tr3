@@ -53,6 +53,16 @@ if (empty($salesTableCheck)) {
         return $value !== '';
     });
 
+    // التأكد من وجود عمود credit_used في جدول invoices
+    try {
+        $hasCreditUsedColumn = !empty($db->queryOne("SHOW COLUMNS FROM invoices LIKE 'credit_used'"));
+        if (!$hasCreditUsedColumn) {
+            $db->execute("ALTER TABLE invoices ADD COLUMN credit_used DECIMAL(15,2) DEFAULT 0.00 COMMENT 'المبلغ المخصوم من الرصيد الدائن' AFTER paid_from_credit");
+        }
+    } catch (Throwable $e) {
+        error_log('Error checking/adding credit_used column: ' . $e->getMessage());
+    }
+
     // بناء استعلام SQL - جلب اسم المنتج من finished_products إذا كان متوفراً
     $sql = "SELECT s.*, c.name as customer_name, 
                    COALESCE(
@@ -81,7 +91,14 @@ if (empty($salesTableCheck)) {
                       AND DATE(i.date) = DATE(s.date)
                       AND (i.sales_rep_id = s.salesperson_id OR i.sales_rep_id IS NULL)
                     ORDER BY i.id DESC 
-                    LIMIT 1) as invoice_id
+                    LIMIT 1) as invoice_id,
+                   (SELECT COALESCE(i.credit_used, 0)
+                    FROM invoices i 
+                    WHERE i.customer_id = s.customer_id 
+                      AND DATE(i.date) = DATE(s.date)
+                      AND (i.sales_rep_id = s.salesperson_id OR i.sales_rep_id IS NULL)
+                    ORDER BY i.id DESC 
+                    LIMIT 1) as credit_used
             FROM sales s
             LEFT JOIN customers c ON s.customer_id = c.id
             LEFT JOIN products p ON s.product_id = p.id
@@ -305,7 +322,20 @@ $tableHeaderStyle = $isSalesRecords ? 'background: linear-gradient(135deg, #667e
                                 <td style="<?php echo $isSalesRecords ? 'padding: 1rem; font-weight: 500;' : ''; ?>"><?php echo formatDate($sale['date']); ?></td>
                                 <td style="<?php echo $isSalesRecords ? 'padding: 1rem;' : ''; ?>">
                                     <?php if (!empty($sale['invoice_number'])): ?>
-                                        <span class="badge <?php echo $isSalesRecords ? 'bg-gradient shadow-sm' : 'bg-info'; ?>" style="<?php echo $isSalesRecords ? 'background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); padding: 0.5rem 0.75rem; font-weight: 600; color: #000;' : ''; ?>"><?php echo htmlspecialchars($sale['invoice_number']); ?></span>
+                                        <div class="d-flex align-items-center gap-2 flex-wrap">
+                                            <span class="badge <?php echo $isSalesRecords ? 'bg-gradient shadow-sm' : 'bg-info'; ?>" style="<?php echo $isSalesRecords ? 'background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); padding: 0.5rem 0.75rem; font-weight: 600; color: #000;' : ''; ?>"><?php echo htmlspecialchars($sale['invoice_number']); ?></span>
+                                            <?php 
+                                            $creditUsed = (float)($sale['credit_used'] ?? 0);
+                                            if ($creditUsed > 0.01): 
+                                            ?>
+                                                <span class="badge bg-warning text-dark shadow-sm" 
+                                                      style="padding: 0.4rem 0.6rem; font-weight: 600; font-size: 0.75rem;"
+                                                      title="تم خصم <?php echo formatCurrency($creditUsed); ?> من رصيد العميل الدائن">
+                                                    <i class="bi bi-credit-card-2-front me-1"></i>
+                                                    خصم: <?php echo formatCurrency($creditUsed); ?>
+                                                </span>
+                                            <?php endif; ?>
+                                        </div>
                                     <?php else: ?>
                                         <span class="text-muted">-</span>
                                     <?php endif; ?>
