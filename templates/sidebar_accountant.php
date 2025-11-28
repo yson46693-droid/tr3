@@ -75,29 +75,18 @@ $baseUrl = getDashboardUrl();
                     </a>
                 </li>
             </div>
-            
-            <div class="sidebar-section">
-                <div class="sidebar-section-title">Inventory</div>
-                
-                <li class="nav-item">
-                    <a class="nav-link" href="<?php echo $baseUrl; ?>accountant.php?page=inventory">
-                        <i class="bi bi-boxes"></i>
-                        <span>المخزون</span>
-                    </a>
-                </li>
-                
-                <li class="nav-item">
-                    <a class="nav-link" href="<?php echo $baseUrl; ?>accountant.php?page=inventory_movements">
-                        <i class="bi bi-arrows-move"></i>
-                        <span>حركات المخزون</span>
-                    </a>
-                </li>
-            </div>
-            
             <li class="nav-item">
                 <a class="nav-link" href="<?php echo $baseUrl; ?>accountant.php?page=invoices">
                     <i class="bi bi-receipt"></i>
                     <span>الفواتير</span>
+                </a>
+            </li>
+            
+            <li class="nav-item">
+                <a class="nav-link <?php echo (isset($_GET['page']) && $_GET['page'] === 'company_products') ? 'active' : ''; ?>" 
+                   href="<?php echo $baseUrl; ?>accountant.php?page=company_products">
+                    <i class="bi bi-box-seam"></i>
+                    <span>منتجات الشركة</span>
                 </a>
             </li>
             
