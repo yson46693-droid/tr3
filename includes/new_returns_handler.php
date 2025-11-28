@@ -221,27 +221,67 @@ function createReturnRequest(
         
         try {
             // إنشاء سجل المرتجع
-            $db->execute(
-                "INSERT INTO returns 
-                (return_number, invoice_id, customer_id, sales_rep_id, return_date, return_type, 
-                 reason, reason_description, refund_amount, refund_method, status, 
-                 return_quantity, condition_type, notes, created_by) 
-                VALUES (?, ?, ?, ?, CURDATE(), ?, ?, ?, ?, 'credit', 'pending', ?, ?, ?, ?)",
-                [
-                    $returnNumber,
-                    $invoiceId,
-                    $customerId,
-                    $salesRepId ?: null,
-                    $returnType,
-                    $reason,
-                    $reasonDescription,
-                    $totalRefundAmount,
-                    $totalQuantity,
-                    $hasDamagedItems ? 'damaged' : 'normal',
-                    $notes,
-                    $createdBy
-                ]
-            );
+            // Check if return_quantity and condition_type columns exist
+            $hasReturnQuantity = false;
+            $hasConditionType = false;
+            try {
+                $columns = $db->query("SHOW COLUMNS FROM returns LIKE 'return_quantity'");
+                $hasReturnQuantity = !empty($columns);
+            } catch (Throwable $e) {
+                $hasReturnQuantity = false;
+            }
+            
+            try {
+                $columns = $db->query("SHOW COLUMNS FROM returns LIKE 'condition_type'");
+                $hasConditionType = !empty($columns);
+            } catch (Throwable $e) {
+                $hasConditionType = false;
+            }
+            
+            // Build INSERT statement dynamically based on available columns
+            if ($hasReturnQuantity && $hasConditionType) {
+                $db->execute(
+                    "INSERT INTO returns 
+                    (return_number, invoice_id, customer_id, sales_rep_id, return_date, return_type, 
+                     reason, reason_description, refund_amount, refund_method, status, 
+                     return_quantity, condition_type, notes, created_by) 
+                    VALUES (?, ?, ?, ?, CURDATE(), ?, ?, ?, ?, 'credit', 'pending', ?, ?, ?, ?)",
+                    [
+                        $returnNumber,
+                        $invoiceId,
+                        $customerId,
+                        $salesRepId ?: null,
+                        $returnType,
+                        $reason,
+                        $reasonDescription,
+                        $totalRefundAmount,
+                        $totalQuantity,
+                        $hasDamagedItems ? 'damaged' : 'normal',
+                        $notes,
+                        $createdBy
+                    ]
+                );
+            } else {
+                // Standard INSERT without return_quantity and condition_type
+                $db->execute(
+                    "INSERT INTO returns 
+                    (return_number, invoice_id, customer_id, sales_rep_id, return_date, return_type, 
+                     reason, reason_description, refund_amount, refund_method, status, notes, created_by) 
+                    VALUES (?, ?, ?, ?, CURDATE(), ?, ?, ?, ?, 'credit', 'pending', ?, ?)",
+                    [
+                        $returnNumber,
+                        $invoiceId,
+                        $customerId,
+                        $salesRepId ?: null,
+                        $returnType,
+                        $reason,
+                        $reasonDescription,
+                        $totalRefundAmount,
+                        $notes,
+                        $createdBy
+                    ]
+                );
+            }
             
             $returnId = (int)$db->getLastInsertId();
             
