@@ -282,6 +282,13 @@ switch ($role) {
                 'badge' => null
             ],
             [
+                'title' => 'عملاء المندوبين',
+                'icon' => 'bi-people-fill',
+                'url' => $baseUrl . 'accountant.php?page=representatives_customers',
+                'active' => ($currentPage === 'accountant.php' && $currentPageParam === 'representatives_customers'),
+                'badge' => null
+            ],
+            [
                 'title' => 'طلبات العملاء',
                 'icon' => 'bi-bag-check',
                 'url' => $baseUrl . 'accountant.php?page=orders',

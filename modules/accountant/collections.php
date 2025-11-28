@@ -699,8 +699,9 @@ $hasStatusColumn = !empty($statusColumnCheck);
                         <div class="col-md-6">
                             <label class="form-label">طريقة الدفع</label>
                             <select class="form-select" name="payment_method">
-                                <option value="cash">نقدي</option>
-                                <option value="bank">محفظه الكترونيهٍ</option>
+                      
+                                <option value="bank">نقدا</option>
+                                <option value="cheque">محفظه الكترونيه</option>
                                 <option value="other">أخرى</option>
                             </select>
                         </div>

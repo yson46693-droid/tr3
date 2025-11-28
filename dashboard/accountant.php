@@ -1051,6 +1051,22 @@ $pageTitle = isset($lang['accountant_dashboard']) ? $lang['accountant_dashboard'
                 }
                 ?>
                 
+            <?php elseif ($page === 'representatives_customers'): ?>
+                <!-- صفحة عملاء المندوبين -->
+                <?php 
+                $modulePath = __DIR__ . '/../modules/manager/representatives_customers.php';
+                if (file_exists($modulePath)) {
+                    try {
+                        include $modulePath;
+                    } catch (Throwable $e) {
+                        error_log('Accountant representatives customers module error: ' . $e->getMessage());
+                        echo '<div class="alert alert-danger">حدث خطأ أثناء تحميل صفحة عملاء المندوبين: ' . htmlspecialchars($e->getMessage()) . '</div>';
+                    }
+                } else {
+                    echo '<div class="alert alert-warning">صفحة عملاء المندوبين غير متاحة حالياً</div>';
+                }
+                ?>
+                
             <?php elseif ($page === 'attendance'): ?>
                 <!-- صفحة الحضور -->
                 <?php 
