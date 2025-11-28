@@ -64,6 +64,9 @@ function processReturnFinancials(int $returnId, ?int $processedBy = null): array
             $processedBy = $currentUser ? (int)$currentUser['id'] : null;
         }
         
+        // حفظ الرصيد القديم قبل المعالجة (للاستخدام في حساب خصم المندوب)
+        $oldBalance = $currentBalance;
+        
         // بدء المعاملة
         $conn = $db->getConnection();
         $conn->begin_transaction();

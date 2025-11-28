@@ -19,12 +19,18 @@ require_once __DIR__ . '/notifications.php';
 require_once __DIR__ . '/audit_log.php';
 
 /**
- * تطبيق خصم مرتب المندوب حسب قواعد المرتجعات
+ * تطبيق خصم مرتب المندوب حسب قواعد المرتجعات الجديدة
  * 
- * القواعد:
- * 1. إذا كان العميل مدين قبل المرتجع: لا يتم خصم أي مبلغ
- * 2. إذا كان العميل غير مدين: خصم 2% من إجمالي مبلغ المرتجع
- * 3. إذا كان جزء يغطي الدين والجزء الآخر رصيد دائن: خصم 2% من جزء الرصيد الدائن فقط
+ * القواعد الجديدة:
+ * 1. إذا كان للعميل رصيد دائن (Credit) أكبر من إجمالي مبلغ المرتجعات:
+ *    - لا يتم خصم أي نسبة من تحصيلات المندوب (0%)
+ * 
+ * 2. إذا كان العميل لديه رصيد مدين (Debit) أقل من إجمالي مبلغ المرتجعات:
+ *    - احسب الفرق بين إجمالي مبلغ المرتجعات والرصيد المدين للعميل (x)
+ *    - نسبة خصم المندوب = 2% من قيمة (x)
+ * 
+ * 3. إذا كان رصيد العميل = 0 أو كان لديه رصيد دائن:
+ *    - يتم تطبيق خصم 2% من إجمالي مبلغ المرتجعات في العملية بالكامل
  * 
  * @param int $returnId معرف المرتجع
  * @param int|null $salesRepId معرف المندوب (null يعني جلب من المرتجع)
@@ -38,7 +44,7 @@ function applyReturnSalaryDeduction(int $returnId, ?int $salesRepId = null, ?int
         
         // جلب بيانات المرتجع
         $return = $db->queryOne(
-            "SELECT r.*, c.balance as customer_balance_before_return
+            "SELECT r.*, c.id as customer_id, c.balance as current_customer_balance
              FROM returns r
              LEFT JOIN customers c ON r.customer_id = c.id
              WHERE r.id = ?",
@@ -62,8 +68,7 @@ function applyReturnSalaryDeduction(int $returnId, ?int $salesRepId = null, ?int
             ];
         }
         
-        // الحصول على رصيد العميل قبل معالجة المرتجع
-        // نحتاج للحصول على الرصيد من audit_log
+        // الحصول على رصيد العميل قبل معالجة المرتجع من audit_log
         $customerBalanceBeforeReturn = 0.0;
         $auditLog = $db->queryOne(
             "SELECT old_value FROM audit_logs
@@ -79,67 +84,98 @@ function applyReturnSalaryDeduction(int $returnId, ?int $salesRepId = null, ?int
             $oldValue = json_decode($auditLog['old_value'], true);
             $customerBalanceBeforeReturn = (float)($oldValue['old_balance'] ?? 0);
         } else {
-            // إذا لم نجد في audit_log، نحسب من رصيد العميل الحالي
-            // نحتاج لعكس العملية: إذا كان الرصيد الحالي تم تعديله بسبب المرتجع
-            $customer = $db->queryOne(
-                "SELECT balance FROM customers WHERE id = ?",
-                [(int)$return['customer_id']]
+            // إذا لم نجد في audit_log، نحاول حساب الرصيد السابق من الرصيد الحالي
+            // نستخدم البيانات من return_financial_processor
+            $currentBalance = (float)($return['current_customer_balance'] ?? 0);
+            $returnAmount = (float)$return['refund_amount'];
+            
+            // محاولة عكس العملية المالية
+            // إذا كان الرصيد الحالي سالب (رصيد دائن)، كان الرصيد السابق = الرصيد الحالي + المرتجع
+            // إذا كان الرصيد الحالي موجب (دين)، كان الرصيد السابق = الرصيد الحالي + المرتجع (إذا كان المرتجع خصم من الدين)
+            // لكن هذا معقد، لذا سنستخدم طريقة أبسط: نفحص من audit log
+            $financialAudit = $db->queryOne(
+                "SELECT old_value FROM audit_logs
+                 WHERE action = 'process_return_financials'
+                 AND entity_type = 'returns'
+                 AND entity_id = ?
+                 ORDER BY created_at DESC
+                 LIMIT 1",
+                [$returnId]
             );
             
-            if ($customer) {
-                $currentBalance = (float)$customer['balance'];
-                $returnAmount = (float)$return['refund_amount'];
-                // حساب الرصيد السابق: نحتاج لعكس العملية المالية
-                // إذا كان المرتجع خصم من الدين، كان الرصيد السابق = الرصيد الحالي + المرتجع
-                // إذا كان المرتجع أضاف رصيد دائن، كان الرصيد السابق = الرصيد الحالي - المرتجع (لكن المرتجع يكون سالباً)
-                // لكن هذا معقد، لذا سنحاول طريقة أبسط: نفحص من audit log للمعالجة المالية
-                $financialAudit = $db->queryOne(
-                    "SELECT old_value FROM audit_logs
-                     WHERE action = 'process_return_financials'
-                     AND entity_type = 'returns'
-                     AND entity_id = ?
-                     ORDER BY created_at DESC
-                     LIMIT 1",
-                    [$returnId]
-                );
-                
-                if ($financialAudit && !empty($financialAudit['old_value'])) {
-                    $financialData = json_decode($financialAudit['old_value'], true);
-                    $customerBalanceBeforeReturn = (float)($financialData['old_balance'] ?? 0);
-                } else {
-                    // استخدام طريقة تقديرية: نفترض أن الرصيد الحالي = الرصيد السابق + التأثير المالي
-                    // لكن هذا غير دقيق، لذا سنستخدم 0 كقيمة افتراضية ونحسب من القواعد
-                    $customerBalanceBeforeReturn = 0.0;
-                }
+            if ($financialAudit && !empty($financialAudit['old_value'])) {
+                $financialData = json_decode($financialAudit['old_value'], true);
+                $customerBalanceBeforeReturn = (float)($financialData['old_balance'] ?? 0);
+            } else {
+                // إذا لم نجد، نستخدم الرصيد الحالي كتقدير (قد يكون غير دقيق)
+                // لكن سنحسب من القواعد بناءً على الرصيد الحالي
+                $customerBalanceBeforeReturn = $currentBalance;
             }
         }
         
         $returnAmount = (float)$return['refund_amount'];
         
-        // تحديد المبلغ المطلوب خصمه حسب القواعد
-        $amountToDeduct = 0.0;
+        // حساب رصيد الدين (Debit) ورصيد الدائن (Credit) قبل المرتجع
+        $customerDebitBeforeReturn = $customerBalanceBeforeReturn > 0 ? $customerBalanceBeforeReturn : 0.0;
+        $customerCreditBeforeReturn = $customerBalanceBeforeReturn < 0 ? abs($customerBalanceBeforeReturn) : 0.0;
         
-        if ($customerBalanceBeforeReturn > 0) {
-            // الحالة 1: العميل كان مدين
-            // الحالة 3: جزء يغطي الدين والجزء الآخر رصيد دائن
-            if ($returnAmount > $customerBalanceBeforeReturn) {
-                // الحالة 3: جزء يغطي الدين والجزء الآخر رصيد دائن
-                $creditPortion = $returnAmount - $customerBalanceBeforeReturn;
-                $amountToDeduct = round($creditPortion * 0.02, 2); // 2% من جزء الرصيد الدائن
-            } else {
-                // الحالة 1: المرتجع يغطي الدين بالكامل - لا خصم
-                $amountToDeduct = 0.0;
-            }
-        } else {
-            // الحالة 2: العميل غير مدين (balance <= 0)
-            $amountToDeduct = round($returnAmount * 0.02, 2); // 2% من إجمالي المرتجع
+        // تطبيق القواعد الجديدة
+        $amountToDeduct = 0.0;
+        $calculationDetails = [];
+        
+        // القاعدة 1: إذا كان للعميل رصيد دائن (Credit) أكبر من مبلغ المرتجع
+        if ($customerCreditBeforeReturn > 0 && $customerCreditBeforeReturn > $returnAmount) {
+            // لا يتم خصم أي نسبة (0%)
+            $amountToDeduct = 0.0;
+            $calculationDetails = [
+                'rule' => 1,
+                'customer_credit' => $customerCreditBeforeReturn,
+                'return_amount' => $returnAmount,
+                'reason' => 'رصيد العميل الدائن أكبر من مبلغ المرتجع'
+            ];
+        }
+        // القاعدة 2: إذا كان للعميل رصيد مدين (Debit) أقل من مبلغ المرتجع
+        elseif ($customerDebitBeforeReturn > 0 && $customerDebitBeforeReturn < $returnAmount) {
+            // حساب الفرق (x) = مبلغ المرتجع - رصيد المدين
+            $difference = $returnAmount - $customerDebitBeforeReturn;
+            // خصم = 2% من الفرق
+            $amountToDeduct = round($difference * 0.02, 2);
+            $calculationDetails = [
+                'rule' => 2,
+                'customer_debit' => $customerDebitBeforeReturn,
+                'return_amount' => $returnAmount,
+                'difference' => $difference,
+                'deduction_percentage' => 2,
+                'reason' => 'رصيد العميل المدين أقل من مبلغ المرتجع'
+            ];
+        }
+        // القاعدة 3: إذا كان رصيد العميل = 0 أو رصيد دائن (ولكن Credit <= returnAmount)
+        else {
+            // خصم 2% من كامل مبلغ المرتجع
+            $amountToDeduct = round($returnAmount * 0.02, 2);
+            $calculationDetails = [
+                'rule' => 3,
+                'customer_balance' => $customerBalanceBeforeReturn,
+                'return_amount' => $returnAmount,
+                'deduction_percentage' => 2,
+                'reason' => 'رصيد العميل = 0 أو رصيد دائن (Credit <= returnAmount)'
+            ];
         }
         
         if ($amountToDeduct <= 0) {
+            $reasonMessage = 'لا يتم خصم أي مبلغ من مرتب المندوب';
+            if (!empty($calculationDetails)) {
+                if ($calculationDetails['rule'] == 1) {
+                    $reasonMessage .= ' (رصيد العميل الدائن أكبر من مبلغ المرتجع)';
+                } else {
+                    $reasonMessage .= ' (حسب القواعد المحددة)';
+                }
+            }
             return [
                 'success' => true,
-                'message' => 'لا يتم خصم أي مبلغ من مرتب المندوب (العميل كان مدين)',
-                'deduction_amount' => 0.0
+                'message' => $reasonMessage,
+                'deduction_amount' => 0.0,
+                'calculation_details' => $calculationDetails
             ];
         }
         
@@ -219,7 +255,7 @@ function applyReturnSalaryDeduction(int $returnId, ?int $salesRepId = null, ?int
                 [$newDeductions, $newTotal, $salaryId]
             );
             
-            // تسجيل في سجل التدقيق
+            // تسجيل في سجل التدقيق مع تفاصيل الحساب
             logAudit($processedBy, 'return_salary_deduction', 'returns', $returnId, [
                 'salary_id' => $salaryId,
                 'sales_rep_id' => $salesRepId,
@@ -227,11 +263,15 @@ function applyReturnSalaryDeduction(int $returnId, ?int $salesRepId = null, ?int
                 'old_deductions' => $currentDeductions,
                 'new_deductions' => $newDeductions,
                 'old_total' => $currentTotal,
-                'new_total' => $newTotal
+                'new_total' => $newTotal,
+                'calculation_details' => $calculationDetails,
+                'customer_balance_before_return' => $customerBalanceBeforeReturn,
+                'return_amount' => $returnAmount
             ], [
                 'return_number' => $return['return_number'],
                 'month' => $month,
-                'year' => $year
+                'year' => $year,
+                'customer_id' => (int)$return['customer_id']
             ]);
             
             // إرسال تنبيه للمندوب
