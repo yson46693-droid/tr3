@@ -238,61 +238,13 @@ if ($page === 'financial' && $_SERVER['REQUEST_METHOD'] === 'POST') {
                     
                     // إدراج تحصيل سالب لخصم المبلغ من خزنة المندوب
                     // نحتاج لإدراج في جدول collections بقيمة سالبة
+                    // استخدام الأعمدة الأساسية فقط: customer_id, collected_by, amount, date
                     $collectionsTableExists = $db->queryOne("SHOW TABLES LIKE 'collections'");
                     if (!empty($collectionsTableExists)) {
-                        // التحقق من وجود الأعمدة
-                        $statusColumnCheck = $db->queryOne("SHOW COLUMNS FROM collections LIKE 'status'");
-                        $hasStatusColumn = !empty($statusColumnCheck);
-                        
-                        $createdByColumnCheck = $db->queryOne("SHOW COLUMNS FROM collections LIKE 'created_by'");
-                        $hasCreatedByColumn = !empty($createdByColumnCheck);
-                        
-                        $notesColumnCheck = $db->queryOne("SHOW COLUMNS FROM collections LIKE 'notes'");
-                        $hasNotesColumn = !empty($notesColumnCheck);
-                        
-                        // بناء الاستعلام بشكل ديناميكي
-                        $columns = ['customer_id', 'collected_by', 'amount', 'date'];
-                        $placeholders = ['NULL', '?', '?', '?'];
-                        $values = [$salesRepId, -$amount, date('Y-m-d')]; // قيمة سالبة لخصم المبلغ
-                        
-                        // إضافة payment_method إذا كان موجوداً
-                        $paymentMethodColumnCheck = $db->queryOne("SHOW COLUMNS FROM collections LIKE 'payment_method'");
-                        $hasPaymentMethodColumn = !empty($paymentMethodColumnCheck);
-                        if ($hasPaymentMethodColumn) {
-                            $columns[] = 'payment_method';
-                            $placeholders[] = "'cash'";
-                        }
-                        
-                        if ($hasNotesColumn) {
-                            $columns[] = 'notes';
-                            $placeholders[] = '?';
-                            $values[] = 'تحصيل من خزنة المندوب: ' . $finalDescription;
-                        }
-                        
-                        if ($hasStatusColumn) {
-                            $columns[] = 'status';
-                            $placeholders[] = "'approved'";
-                        }
-                        
-                        if ($hasCreatedByColumn) {
-                            $columns[] = 'created_by';
-                            $placeholders[] = '?';
-                            $values[] = $currentUser['id'];
-                        }
-                        
-                        // بناء SQL مع التأكد من تطابق عدد ? مع عدد القيم
-                        $sql = "INSERT INTO collections (" . implode(', ', $columns) . ") VALUES (" . implode(', ', $placeholders) . ")";
-                        
-                        // التحقق من تطابق عدد placeholders مع عدد القيم
-                        $placeholderCount = substr_count($sql, '?');
-                        if ($placeholderCount !== count($values)) {
-                            error_log("SQL placeholder mismatch: SQL has $placeholderCount placeholders but " . count($values) . " values provided");
-                            error_log("SQL: $sql");
-                            error_log("Values: " . print_r($values, true));
-                            throw new Exception("SQL placeholder count mismatch");
-                        }
-                        
-                        $db->execute($sql, $values);
+                        $db->execute(
+                            "INSERT INTO collections (customer_id, collected_by, amount, date) VALUES (NULL, ?, ?, ?)",
+                            [$salesRepId, -$amount, date('Y-m-d')]
+                        );
                     }
                     
                     logAudit(
