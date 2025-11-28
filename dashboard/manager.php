@@ -1138,33 +1138,12 @@ function approveRequest(id, event) {
         if (data.success) {
             if (btn) {
                 btn.innerHTML = '<i class="bi bi-check-circle me-2"></i>تمت الموافقة';
-                btn.disabled = true;
-                btn.classList.remove('btn-success');
-                btn.classList.add('btn-secondary');
             }
             // إرسال حدث لتحديث العداد
             document.dispatchEvent(new CustomEvent('approvalUpdated'));
-            
-            // التحقق من أننا في صفحة الموافقات - لا نعيد التحميل
-            const currentUrl = window.location.href;
-            const isApprovalsPage = currentUrl.includes('page=approvals');
-            
-            if (!isApprovalsPage) {
-                // إعادة التحميل فقط إذا لم نكن في صفحة الموافقات
-                setTimeout(() => {
-                    location.reload();
-                }, 1000);
-            } else {
-                // في صفحة الموافقات: إزالة الصف من الجدول
-                const row = btn ? btn.closest('tr') : null;
-                if (row) {
-                    row.style.transition = 'opacity 0.5s';
-                    row.style.opacity = '0';
-                    setTimeout(() => {
-                        row.remove();
-                    }, 500);
-                }
-            }
+            setTimeout(() => {
+                location.reload();
+            }, 1000);
         } else {
             if (btn) {
                 btn.disabled = false;
