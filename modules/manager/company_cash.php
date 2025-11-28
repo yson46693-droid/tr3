@@ -13,7 +13,7 @@ require_once __DIR__ . '/../../includes/auth.php';
 require_once __DIR__ . '/../../includes/table_styles.php';
 require_once __DIR__ . '/../../includes/lang/' . getCurrentLanguage() . '.php';
 
-requireRole('manager');
+requireRole(['manager', 'accountant']);
 
 $db = db();
 $lang = isset($translations) ? $translations : [];

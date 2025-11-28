@@ -129,8 +129,163 @@ if ($page === 'packaging_warehouse' && isset($_GET['ajax']) && $_GET['ajax'] == 
     }
 }
 
+// معالجة AJAX لجلب رصيد المندوب
+if ($page === 'financial' && isset($_GET['ajax']) && $_GET['ajax'] === 'get_sales_rep_balance') {
+    header('Content-Type: application/json; charset=utf-8');
+    $salesRepId = isset($_GET['sales_rep_id']) ? intval($_GET['sales_rep_id']) : 0;
+    
+    if ($salesRepId <= 0) {
+        echo json_encode(['success' => false, 'message' => 'معرف المندوب غير صحيح'], JSON_UNESCAPED_UNICODE);
+        exit;
+    }
+    
+    try {
+        require_once __DIR__ . '/../includes/approval_system.php';
+        $balance = calculateSalesRepCashBalance($salesRepId);
+        
+        $salesRep = $db->queryOne(
+            "SELECT id, username, full_name FROM users WHERE id = ? AND role = 'sales' AND status = 'active'",
+            [$salesRepId]
+        );
+        
+        if (empty($salesRep)) {
+            echo json_encode(['success' => false, 'message' => 'المندوب غير موجود أو غير نشط'], JSON_UNESCAPED_UNICODE);
+            exit;
+        }
+        
+        echo json_encode([
+            'success' => true,
+            'balance' => floatval($balance),
+            'sales_rep_name' => htmlspecialchars($salesRep['full_name'] ?? $salesRep['username'], ENT_QUOTES, 'UTF-8')
+        ], JSON_UNESCAPED_UNICODE);
+    } catch (Throwable $e) {
+        error_log('Error getting sales rep balance: ' . $e->getMessage());
+        echo json_encode(['success' => false, 'message' => 'حدث خطأ أثناء جلب رصيد المندوب'], JSON_UNESCAPED_UNICODE);
+    }
+    exit;
+}
+
 if ($page === 'financial' && $_SERVER['REQUEST_METHOD'] === 'POST') {
     $action = $_POST['action'] ?? '';
+
+    if ($action === 'collect_from_sales_rep') {
+        $salesRepId = isset($_POST['sales_rep_id']) ? intval($_POST['sales_rep_id']) : 0;
+        $amount = isset($_POST['amount']) ? floatval($_POST['amount']) : 0;
+        $description = trim($_POST['description'] ?? '');
+        
+        if ($salesRepId <= 0) {
+            $_SESSION['financial_error'] = 'يرجى اختيار مندوب صحيح.';
+        } elseif ($amount <= 0) {
+            $_SESSION['financial_error'] = 'يرجى إدخال مبلغ صحيح أكبر من الصفر.';
+        } elseif ($description === '') {
+            $_SESSION['financial_error'] = 'وصف التحصيل مطلوب.';
+        } else {
+            try {
+                require_once __DIR__ . '/../includes/approval_system.php';
+                $currentBalance = calculateSalesRepCashBalance($salesRepId);
+                
+                if ($amount > $currentBalance) {
+                    $_SESSION['financial_error'] = 'المبلغ المطلوب (' . formatCurrency($amount) . ') أكبر من رصيد المندوب (' . formatCurrency($currentBalance) . ').';
+                } else {
+                    $db->beginTransaction();
+                    
+                    // الحصول على بيانات المندوب
+                    $salesRep = $db->queryOne(
+                        "SELECT id, username, full_name FROM users WHERE id = ? AND role = 'sales' AND status = 'active'",
+                        [$salesRepId]
+                    );
+                    
+                    if (empty($salesRep)) {
+                        throw new Exception('المندوب غير موجود أو غير نشط');
+                    }
+                    
+                    $salesRepName = $salesRep['full_name'] ?? $salesRep['username'];
+                    $finalDescription = $description ?: 'تحصيل من مندوب: ' . $salesRepName;
+                    
+                    // إضافة إيراد معتمد في financial_transactions
+                    $db->execute(
+                        "INSERT INTO financial_transactions (type, amount, supplier_id, description, reference_number, status, approved_by, created_by, approved_at)
+                         VALUES (?, ?, NULL, ?, ?, 'approved', ?, ?, NOW())",
+                        [
+                            'income',
+                            $amount,
+                            $finalDescription,
+                            'COL-REP-' . $salesRepId . '-' . date('YmdHis'),
+                            $currentUser['id'],
+                            $currentUser['id']
+                        ]
+                    );
+                    
+                    $transactionId = $db->lastInsertId();
+                    
+                    // إدراج تحصيل سالب لخصم المبلغ من خزنة المندوب
+                    // نحتاج لإدراج في جدول collections بقيمة سالبة
+                    $collectionsTableExists = $db->queryOne("SHOW TABLES LIKE 'collections'");
+                    if (!empty($collectionsTableExists)) {
+                        // التحقق من وجود عمود status
+                        $statusColumnCheck = $db->queryOne("SHOW COLUMNS FROM collections LIKE 'status'");
+                        $hasStatusColumn = !empty($statusColumnCheck);
+                        
+                        if ($hasStatusColumn) {
+                            $db->execute(
+                                "INSERT INTO collections (customer_id, collected_by, amount, date, description, status, created_by)
+                                 VALUES (NULL, ?, ?, NOW(), ?, 'approved', ?)",
+                                [
+                                    $salesRepId,
+                                    -$amount, // قيمة سالبة لخصم المبلغ
+                                    'تحصيل من خزنة المندوب: ' . $finalDescription,
+                                    $currentUser['id']
+                                ]
+                            );
+                        } else {
+                            $db->execute(
+                                "INSERT INTO collections (customer_id, collected_by, amount, date, description, created_by)
+                                 VALUES (NULL, ?, ?, NOW(), ?, ?)",
+                                [
+                                    $salesRepId,
+                                    -$amount, // قيمة سالبة لخصم المبلغ
+                                    'تحصيل من خزنة المندوب: ' . $finalDescription,
+                                    $currentUser['id']
+                                ]
+                            );
+                        }
+                    }
+                    
+                    logAudit(
+                        $currentUser['id'],
+                        'collect_from_sales_rep',
+                        'financial_transaction',
+                        $transactionId,
+                        null,
+                        [
+                            'sales_rep_id' => $salesRepId,
+                            'sales_rep_name' => $salesRepName,
+                            'amount' => $amount,
+                            'description' => $finalDescription
+                        ]
+                    );
+                    
+                    $db->commit();
+                    
+                    $_SESSION['financial_success'] = 'تم تحصيل ' . formatCurrency($amount) . ' من مندوب: ' . htmlspecialchars($salesRepName) . ' بنجاح.';
+                }
+            } catch (Throwable $e) {
+                if ($db->inTransaction()) {
+                    $db->rollBack();
+                }
+                error_log('Collect from sales rep failed: ' . $e->getMessage());
+                $_SESSION['financial_error'] = 'حدث خطأ أثناء التحصيل: ' . $e->getMessage();
+            }
+        }
+        
+        $redirectTarget = strtok($_SERVER['REQUEST_URI'] ?? '?page=financial', '#');
+        if (!headers_sent()) {
+            header('Location: ' . $redirectTarget);
+        } else {
+            echo '<script>window.location.href = ' . json_encode($redirectTarget) . ';</script>';
+        }
+        exit;
+    }
 
     if ($action === 'add_quick_expense') {
         $amount = isset($_POST['amount']) ? floatval($_POST['amount']) : 0;
@@ -625,8 +780,11 @@ $pageTitle = isset($lang['accountant_dashboard']) ? $lang['accountant_dashboard'
 
             <?php elseif ($page === 'financial'): ?>
                 <!-- صفحة الخزنة -->
-                <div class="page-header mb-4">
+                <div class="page-header mb-4 d-flex justify-content-between align-items-center">
                     <h2><i class="bi bi-safe me-2"></i><?php echo isset($lang['menu_financial']) ? $lang['menu_financial'] : 'الخزنة'; ?></h2>
+                    <button type="button" class="btn btn-primary" data-bs-toggle="modal" data-bs-target="#collectFromRepModal">
+                        <i class="bi bi-cash-coin me-1"></i>تحصيل من مندوب
+                    </button>
                 </div>
 
                 <?php if ($financialError): ?>
@@ -709,9 +867,6 @@ $pageTitle = isset($lang['accountant_dashboard']) ? $lang['accountant_dashboard'
                                 <i class="bi bi-arrow-up-circle"></i>
                             </div>
                         </div>
-                        <div class="stat-card-title"><?php echo isset($lang['collections']) ? $lang['collections'] : 'التحصيلات'; ?></div>
-                        <div class="stat-card-value"><?php echo formatCurrency($collections['total'] ?? 0); ?></div>
-                        <div class="stat-card-description">هذا الشهر</div>
                     </div>
                     
                     <?php
@@ -934,6 +1089,169 @@ $pageTitle = isset($lang['accountant_dashboard']) ? $lang['accountant_dashboard'
                     </div>
                 </div>
             </div>
+            
+            <!-- جدول الحركات المالية -->
+            <div class="card shadow-sm mt-4">
+                <div class="card-header bg-light fw-bold">
+                    <i class="bi bi-list-ul me-2 text-primary"></i>الحركات المالية
+                </div>
+                <div class="card-body">
+                    <?php
+                    // جلب جميع الحركات المالية
+                    $financialTransactions = $db->query("
+                        SELECT 
+                            ft.*,
+                            u1.full_name as created_by_name,
+                            u2.full_name as approved_by_name
+                        FROM financial_transactions ft
+                        LEFT JOIN users u1 ON ft.created_by = u1.id
+                        LEFT JOIN users u2 ON ft.approved_by = u2.id
+                        ORDER BY ft.created_at DESC
+                        LIMIT 100
+                    ") ?: [];
+                    
+                    $typeLabels = [
+                        'income' => 'إيراد',
+                        'expense' => 'مصروف',
+                        'transfer' => 'تحويل',
+                        'payment' => 'دفعة'
+                    ];
+                    
+                    $statusLabels = [
+                        'pending' => 'معلق',
+                        'approved' => 'معتمد',
+                        'rejected' => 'مرفوض'
+                    ];
+                    
+                    $statusColors = [
+                        'pending' => 'warning',
+                        'approved' => 'success',
+                        'rejected' => 'danger'
+                    ];
+                    ?>
+                    
+                    <div class="table-responsive">
+                        <table class="table table-hover table-striped">
+                            <thead class="table-light">
+                                <tr>
+                                    <th>التاريخ</th>
+                                    <th>النوع</th>
+                                    <th>المبلغ</th>
+                                    <th>الوصف</th>
+                                    <th>الرقم المرجعي</th>
+                                    <th>الحالة</th>
+                                    <th>أنشأه</th>
+                                    <th>اعتمده</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                <?php if (empty($financialTransactions)): ?>
+                                    <tr>
+                                        <td colspan="8" class="text-center text-muted py-4">
+                                            <i class="bi bi-inbox me-2"></i>لا توجد حركات مالية حالياً
+                                        </td>
+                                    </tr>
+                                <?php else: ?>
+                                    <?php foreach ($financialTransactions as $trans): ?>
+                                        <tr>
+                                            <td><?php echo formatDateTime($trans['created_at']); ?></td>
+                                            <td>
+                                                <span class="badge bg-<?php echo $trans['type'] === 'income' ? 'success' : ($trans['type'] === 'expense' ? 'danger' : 'info'); ?>">
+                                                    <?php echo htmlspecialchars($typeLabels[$trans['type']] ?? $trans['type'], ENT_QUOTES, 'UTF-8'); ?>
+                                                </span>
+                                            </td>
+                                            <td class="fw-bold <?php echo $trans['type'] === 'income' ? 'text-success' : 'text-danger'; ?>">
+                                                <?php echo $trans['type'] === 'income' ? '+' : '-'; ?><?php echo formatCurrency($trans['amount']); ?>
+                                            </td>
+                                            <td><?php echo htmlspecialchars($trans['description'], ENT_QUOTES, 'UTF-8'); ?></td>
+                                            <td>
+                                                <?php if ($trans['reference_number']): ?>
+                                                    <span class="text-muted small"><?php echo htmlspecialchars($trans['reference_number'], ENT_QUOTES, 'UTF-8'); ?></span>
+                                                <?php else: ?>
+                                                    <span class="text-muted">-</span>
+                                                <?php endif; ?>
+                                            </td>
+                                            <td>
+                                                <span class="badge bg-<?php echo $statusColors[$trans['status']] ?? 'secondary'; ?>">
+                                                    <?php echo htmlspecialchars($statusLabels[$trans['status']] ?? $trans['status'], ENT_QUOTES, 'UTF-8'); ?>
+                                                </span>
+                                            </td>
+                                            <td><?php echo htmlspecialchars($trans['created_by_name'] ?? '-', ENT_QUOTES, 'UTF-8'); ?></td>
+                                            <td><?php echo htmlspecialchars($trans['approved_by_name'] ?? '-', ENT_QUOTES, 'UTF-8'); ?></td>
+                                        </tr>
+                                    <?php endforeach; ?>
+                                <?php endif; ?>
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            </div>
+            
+            <!-- Modal تحصيل من مندوب -->
+            <div class="modal fade" id="collectFromRepModal" tabindex="-1" aria-labelledby="collectFromRepModalLabel" aria-hidden="true">
+                <div class="modal-dialog modal-dialog-centered">
+                    <div class="modal-content">
+                        <div class="modal-header">
+                            <h5 class="modal-title" id="collectFromRepModalLabel">
+                                <i class="bi bi-cash-coin me-2"></i>تحصيل من مندوب
+                            </h5>
+                            <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+                        </div>
+                        <form method="POST" id="collectFromRepForm">
+                            <input type="hidden" name="action" value="collect_from_sales_rep">
+                            <div class="modal-body">
+                                <div class="mb-3">
+                                    <label for="salesRepSelect" class="form-label">اختر المندوب <span class="text-danger">*</span></label>
+                                    <select class="form-select" id="salesRepSelect" name="sales_rep_id" required>
+                                        <option value="">-- اختر المندوب --</option>
+                                        <?php
+                                        $salesReps = $db->query("
+                                            SELECT id, username, full_name 
+                                            FROM users 
+                                            WHERE role = 'sales' AND status = 'active'
+                                            ORDER BY full_name ASC, username ASC
+                                        ") ?: [];
+                                        foreach ($salesReps as $rep):
+                                        ?>
+                                            <option value="<?php echo $rep['id']; ?>">
+                                                <?php echo htmlspecialchars($rep['full_name'] ?? $rep['username'], ENT_QUOTES, 'UTF-8'); ?>
+                                            </option>
+                                        <?php endforeach; ?>
+                                    </select>
+                                </div>
+                                
+                                <div class="mb-3" id="balanceDisplay" style="display: none;">
+                                    <div class="alert alert-info">
+                                        <i class="bi bi-wallet2 me-2"></i>
+                                        <strong>رصيد المندوب:</strong> 
+                                        <span id="repBalanceAmount" class="fw-bold">0.00</span> ج.م
+                                    </div>
+                                </div>
+                                
+                                <div class="mb-3">
+                                    <label for="collectAmount" class="form-label">مبلغ التحصيل <span class="text-danger">*</span></label>
+                                    <div class="input-group">
+                                        <span class="input-group-text">ج.م</span>
+                                        <input type="number" step="0.01" min="0.01" class="form-control" id="collectAmount" name="amount" required placeholder="أدخل المبلغ">
+                                    </div>
+                                    <small class="text-muted">يجب أن يكون المبلغ أقل من أو يساوي رصيد المندوب</small>
+                                </div>
+                                
+                                <div class="mb-3">
+                                    <label for="collectDescription" class="form-label">وصف التحصيل</label>
+                                    <textarea class="form-control" id="collectDescription" name="description" rows="3" placeholder="مثال: تحصيل مبلغ من مندوب المبيعات"></textarea>
+                                </div>
+                            </div>
+                            <div class="modal-footer">
+                                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">إلغاء</button>
+                                <button type="submit" class="btn btn-primary" id="submitCollectBtn">
+                                    <i class="bi bi-check-circle me-1"></i>تحصيل
+                                </button>
+                            </div>
+                        </form>
+                    </div>
+                </div>
+            </div>
                 
             <?php elseif ($page === 'accountant_cash'): ?>
                 <?php 
@@ -1113,6 +1431,96 @@ $pageTitle = isset($lang['accountant_dashboard']) ? $lang['accountant_dashboard'
                 </div>
                 
             <?php endif; ?>
+
+<?php if ($page === 'financial'): ?>
+<script>
+// معالجة تحصيل من مندوب
+document.addEventListener('DOMContentLoaded', function() {
+    const salesRepSelect = document.getElementById('salesRepSelect');
+    const balanceDisplay = document.getElementById('balanceDisplay');
+    const repBalanceAmount = document.getElementById('repBalanceAmount');
+    const collectAmount = document.getElementById('collectAmount');
+    const collectForm = document.getElementById('collectFromRepForm');
+    const submitBtn = document.getElementById('submitCollectBtn');
+    
+    if (salesRepSelect) {
+        salesRepSelect.addEventListener('change', function() {
+            const salesRepId = this.value;
+            
+            if (salesRepId && salesRepId !== '') {
+                // جلب رصيد المندوب
+                fetch('?page=financial&ajax=get_sales_rep_balance&sales_rep_id=' + encodeURIComponent(salesRepId))
+                    .then(response => response.json())
+                    .then(data => {
+                        if (data.success) {
+                            repBalanceAmount.textContent = parseFloat(data.balance).toLocaleString('ar-EG', {
+                                minimumFractionDigits: 2,
+                                maximumFractionDigits: 2
+                            });
+                            balanceDisplay.style.display = 'block';
+                            
+                            // تعيين الحد الأقصى للمبلغ
+                            collectAmount.max = data.balance;
+                            collectAmount.setAttribute('data-max-balance', data.balance);
+                        } else {
+                            alert('خطأ: ' + (data.message || 'فشل جلب رصيد المندوب'));
+                            balanceDisplay.style.display = 'none';
+                        }
+                    })
+                    .catch(error => {
+                        console.error('Error:', error);
+                        alert('حدث خطأ أثناء جلب رصيد المندوب');
+                        balanceDisplay.style.display = 'none';
+                    });
+            } else {
+                balanceDisplay.style.display = 'none';
+            }
+        });
+    }
+    
+    // التحقق من المبلغ قبل الإرسال
+    if (collectForm) {
+        collectForm.addEventListener('submit', function(e) {
+            const amount = parseFloat(collectAmount.value);
+            const maxBalance = parseFloat(collectAmount.getAttribute('data-max-balance') || '0');
+            
+            if (amount <= 0) {
+                e.preventDefault();
+                alert('يرجى إدخال مبلغ صحيح أكبر من الصفر');
+                collectAmount.focus();
+                return false;
+            }
+            
+            if (maxBalance > 0 && amount > maxBalance) {
+                e.preventDefault();
+                alert('المبلغ المطلوب (' + amount.toLocaleString('ar-EG') + ' ج.م) أكبر من رصيد المندوب (' + maxBalance.toLocaleString('ar-EG') + ' ج.م)');
+                collectAmount.focus();
+                return false;
+            }
+            
+            // تعطيل الزر أثناء الإرسال
+            submitBtn.disabled = true;
+            submitBtn.innerHTML = '<span class="spinner-border spinner-border-sm me-1"></span>جاري التحصيل...';
+        });
+    }
+    
+    // إعادة تعيين النموذج عند إغلاق Modal
+    const collectModal = document.getElementById('collectFromRepModal');
+    if (collectModal) {
+        collectModal.addEventListener('hidden.bs.modal', function() {
+            if (collectForm) {
+                collectForm.reset();
+            }
+            balanceDisplay.style.display = 'none';
+            if (submitBtn) {
+                submitBtn.disabled = false;
+                submitBtn.innerHTML = '<i class="bi bi-check-circle me-1"></i>تحصيل';
+            }
+        });
+    }
+});
+</script>
+<?php endif; ?>
 
 <script>
     // تمرير بيانات المستخدم للـ JavaScript
