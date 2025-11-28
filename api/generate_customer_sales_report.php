@@ -31,7 +31,20 @@ if (!$customer) {
 }
 
 // بناء استعلام SQL لجلب جميع مبيعات العميل مع أرقام التشغيلة
-$sql = "SELECT s.*, 
+// نستخدم invoices و invoice_items مباشرة للحصول على أرقام التشغيلة بدقة
+$sql = "SELECT 
+               s.id,
+               s.customer_id,
+               s.product_id,
+               s.quantity,
+               s.price,
+               s.total,
+               s.date,
+               s.salesperson_id,
+               s.status,
+               s.approved_by,
+               s.approved_at,
+               s.created_at,
                COALESCE(
                    (SELECT fp2.product_name 
                     FROM finished_products fp2 
@@ -52,9 +65,18 @@ $sql = "SELECT s.*,
                 LEFT JOIN batch_numbers bn ON sbn.batch_number_id = bn.id
                 WHERE i.customer_id = s.customer_id 
                   AND DATE(i.date) = DATE(s.date)
-                  AND (i.sales_rep_id = s.salesperson_id OR i.sales_rep_id IS NULL)
+                  AND (
+                    i.sales_rep_id = s.salesperson_id 
+                    OR (i.sales_rep_id IS NULL AND s.salesperson_id IS NOT NULL)
+                    OR (i.sales_rep_id IS NOT NULL AND s.salesperson_id IS NULL)
+                    OR (i.sales_rep_id IS NULL AND s.salesperson_id IS NULL)
+                  )
                   AND ii.product_id = s.product_id
                 GROUP BY ii.id
+                ORDER BY 
+                  CASE WHEN i.sales_rep_id = s.salesperson_id THEN 0 ELSE 1 END,
+                  i.id DESC, 
+                  ii.id DESC
                 LIMIT 1) as batch_numbers
         FROM sales s
         LEFT JOIN products p ON s.product_id = p.id
