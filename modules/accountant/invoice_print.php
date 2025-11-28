@@ -244,22 +244,22 @@ $returnTypeLabel = $isReturnDocument ? ($returnTypeLabels[$returnMetadata['retur
                         <th style="width: 30%;">المنتج</th>
                         <?php if ($isReturnDocument): ?>
                             <th style="width: 15%; text-align: center;">الحالة</th>
-                        <?php else: ?>
-                            <th style="width: 20%;">الوصف</th>
-                        <?php endif; ?>
-                        <?php 
-                        // عرض عمود رقم التشغيلة إذا كان هناك أي عنصر يحتوي على رقم تشغيلة
-                        $hasBatchNumbers = false;
-                        if (!empty($invoiceData['items']) && is_array($invoiceData['items'])) {
-                            foreach ($invoiceData['items'] as $item) {
-                                if (!empty($item['batch_number'])) {
-                                    $hasBatchNumbers = true;
-                                    break;
+                            <?php 
+                            // عرض عمود رقم التشغيلة إذا كان هناك أي عنصر يحتوي على رقم تشغيلة
+                            $hasBatchNumbers = false;
+                            if (!empty($invoiceData['items']) && is_array($invoiceData['items'])) {
+                                foreach ($invoiceData['items'] as $item) {
+                                    if (!empty($item['batch_number'])) {
+                                        $hasBatchNumbers = true;
+                                        break;
+                                    }
                                 }
                             }
-                        }
-                        if ($hasBatchNumbers): ?>
-                            <th style="width: 15%; text-align: center;">رقم التشغيلة</th>
+                            if ($hasBatchNumbers): ?>
+                                <th style="width: 15%; text-align: center;">رقم التشغيلة</th>
+                            <?php endif; ?>
+                        <?php else: ?>
+                            <th style="width: 20%; text-align: center;">رقم التشغيلة</th>
                         <?php endif; ?>
                         <th style="width: 12%; text-align: center;">الكمية</th>
                         <th style="width: 15%; text-align: end;">سعر الوحدة</th>
@@ -279,9 +279,13 @@ $returnTypeLabel = $isReturnDocument ? ($returnTypeLabels[$returnMetadata['retur
                         }
                     }
                     
-                    $colspan = 5; // المنتج، الوصف/الحالة، الكمية، سعر الوحدة، الإجمالي
-                    if ($hasBatchNumbers) {
-                        $colspan = 6; // إضافة عمود رقم التشغيلة
+                    if ($isReturnDocument) {
+                        $colspan = 5; // المنتج، الحالة، الكمية، سعر الوحدة، الإجمالي
+                        if ($hasBatchNumbers) {
+                            $colspan = 6; // إضافة عمود رقم التشغيلة
+                        }
+                    } else {
+                        $colspan = 5; // المنتج، رقم التشغيلة، الكمية، سعر الوحدة، الإجمالي
                     }
                     
                     if (empty($invoiceData['items']) || !is_array($invoiceData['items'])) {
@@ -326,18 +330,18 @@ $returnTypeLabel = $isReturnDocument ? ($returnTypeLabels[$returnMetadata['retur
                                     <span style="color: #9ca3af;">-</span>
                                 <?php endif; ?>
                             </td>
+                            <?php if ($hasBatchNumbers): ?>
+                                <td style="text-align: center; vertical-align: middle;">
+                                    <?php if (!empty($batchNumber)): ?>
+                                        <span style="font-size: 12px; color: #0f4c81; font-weight: 600; background: #e0f2fe; padding: 4px 8px; border-radius: 6px; display: inline-block;">
+                                            <?php echo htmlspecialchars($batchNumber); ?>
+                                        </span>
+                                    <?php else: ?>
+                                        <span style="color: #9ca3af;">-</span>
+                                    <?php endif; ?>
+                                </td>
+                            <?php endif; ?>
                         <?php else: ?>
-                            <td>
-                                <?php if ($description): ?>
-                                    <div style="font-size: 13px; color: #475569; line-height: 1.5;">
-                                        <?php echo nl2br(htmlspecialchars($description)); ?>
-                                    </div>
-                                <?php else: ?>
-                                    <span class="muted" style="color: #9ca3af; font-size: 13px;">لا يوجد وصف</span>
-                                <?php endif; ?>
-                            </td>
-                        <?php endif; ?>
-                        <?php if ($hasBatchNumbers): ?>
                             <td style="text-align: center; vertical-align: middle;">
                                 <?php if (!empty($batchNumber)): ?>
                                     <span style="font-size: 12px; color: #0f4c81; font-weight: 600; background: #e0f2fe; padding: 4px 8px; border-radius: 6px; display: inline-block;">

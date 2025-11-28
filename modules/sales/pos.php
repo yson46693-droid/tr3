@@ -588,25 +588,44 @@ if (!$error && $_SERVER['REQUEST_METHOD'] === 'POST') {
                 foreach ($normalizedCart as $item) {
                     $productId = (int)$item['product_id'];
                     $finishedBatchId = isset($item['finished_batch_id']) && $item['finished_batch_id'] > 0 ? (int)$item['finished_batch_id'] : null;
+                    $finishedBatchNumber = isset($item['finished_batch_number']) ? trim($item['finished_batch_number']) : null;
                     
-                    if ($finishedBatchId && isset($invoiceItemsMap[$productId]) && !empty($invoiceItemsMap[$productId])) {
+                    if (isset($invoiceItemsMap[$productId]) && !empty($invoiceItemsMap[$productId])) {
                         // استخدام أول invoice_item_id متطابق
                         $invoiceItemId = array_shift($invoiceItemsMap[$productId]);
                         
-                        // التحقق من وجود batch_number في جدول batch_numbers
-                        $batchNumber = $db->queryOne(
-                            "SELECT id FROM batch_numbers WHERE id = ?",
-                            [$finishedBatchId]
-                        );
+                        // البحث عن batch_number_id من جدول batch_numbers
+                        $batchNumberId = null;
+                        if ($finishedBatchId) {
+                            // محاولة استخدام finished_batch_id مباشرة كـ batch_number_id
+                            $batchCheck = $db->queryOne(
+                                "SELECT id FROM batch_numbers WHERE id = ?",
+                                [$finishedBatchId]
+                            );
+                            if ($batchCheck) {
+                                $batchNumberId = (int)$batchCheck['id'];
+                            }
+                        }
                         
-                        if ($batchNumber) {
-                            // ربط رقم التشغيلة بعنصر الفاتورة
+                        // إذا لم نجد batch_number_id من finished_batch_id، نبحث باستخدام batch_number string
+                        if (!$batchNumberId && $finishedBatchNumber) {
+                            $batchCheck = $db->queryOne(
+                                "SELECT id FROM batch_numbers WHERE batch_number = ?",
+                                [$finishedBatchNumber]
+                            );
+                            if ($batchCheck) {
+                                $batchNumberId = (int)$batchCheck['id'];
+                            }
+                        }
+                        
+                        // ربط رقم التشغيلة بعنصر الفاتورة إذا وُجد
+                        if ($batchNumberId) {
                             try {
                                 $db->execute(
                                     "INSERT INTO sales_batch_numbers (invoice_item_id, batch_number_id, quantity) 
                                      VALUES (?, ?, ?)
                                      ON DUPLICATE KEY UPDATE quantity = quantity + ?",
-                                    [$invoiceItemId, $finishedBatchId, $item['quantity'], $item['quantity']]
+                                    [$invoiceItemId, $batchNumberId, $item['quantity'], $item['quantity']]
                                 );
                             } catch (Throwable $batchError) {
                                 error_log('Error linking batch number to invoice item: ' . $batchError->getMessage());
