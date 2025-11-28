@@ -468,6 +468,7 @@ function calculateSalesRepCashBalance(int $salesRepId): float
 
     $invoicesExists = $db->queryOne("SHOW TABLES LIKE 'invoices'");
     $collectionsExists = $db->queryOne("SHOW TABLES LIKE 'collections'");
+    $accountantTransactionsExists = $db->queryOne("SHOW TABLES LIKE 'accountant_transactions'");
 
     $totalCollections = 0.0;
     if (!empty($collectionsExists)) {
@@ -493,7 +494,21 @@ function calculateSalesRepCashBalance(int $salesRepId): float
         $fullyPaidSales = (float)($fullyPaidResult['fully_paid'] ?? 0);
     }
 
-    return $totalCollections + $fullyPaidSales;
+    // خصم المبالغ المحصلة من المندوب (من accountant_transactions)
+    $collectedFromRep = 0.0;
+    if (!empty($accountantTransactionsExists)) {
+        $collectedResult = $db->queryOne(
+            "SELECT COALESCE(SUM(amount), 0) as total_collected
+             FROM accountant_transactions
+             WHERE sales_rep_id = ? 
+             AND transaction_type = 'collection_from_sales_rep'
+             AND status = 'approved'",
+            [$salesRepId]
+        );
+        $collectedFromRep = (float)($collectedResult['total_collected'] ?? 0);
+    }
+
+    return $totalCollections + $fullyPaidSales - $collectedFromRep;
 }
 
 function insertNegativeCollection(int $customerId, int $salesRepId, float $amount, string $returnNumber, int $approvedBy): void

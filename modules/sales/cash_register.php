@@ -107,8 +107,23 @@ if (!empty($invoicesTableExists)) {
     $fullyPaidSales = (float)($fullyPaidResult['fully_paid'] ?? 0);
 }
 
-// رصيد الخزنة = التحصيلات + المبيعات المدفوعة بالكامل
-$cashRegisterBalance = $totalCollections + $fullyPaidSales;
+// حساب المبالغ المحصلة من المندوب (من accountant_transactions) لخصمها من الرصيد
+$collectedFromRep = 0.0;
+$accountantTransactionsExists = $db->queryOne("SHOW TABLES LIKE 'accountant_transactions'");
+if (!empty($accountantTransactionsExists)) {
+    $collectedResult = $db->queryOne(
+        "SELECT COALESCE(SUM(amount), 0) as total_collected
+         FROM accountant_transactions
+         WHERE sales_rep_id = ? 
+         AND transaction_type = 'collection_from_sales_rep'
+         AND status = 'approved'",
+        [$salesRepId]
+    );
+    $collectedFromRep = (float)($collectedResult['total_collected'] ?? 0);
+}
+
+// رصيد الخزنة = التحصيلات + المبيعات المدفوعة بالكامل - المبالغ المحصلة من المندوب
+$cashRegisterBalance = $totalCollections + $fullyPaidSales - $collectedFromRep;
 
 // حساب المبيعات المعلقة (الديون) بالاعتماد على أرصدة العملاء لضمان التطابق مع صفحة العملاء
 $pendingSales = 0.0;
