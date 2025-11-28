@@ -1085,7 +1085,9 @@ $pageTitle = isset($lang['accountant_dashboard']) ? $lang['accountant_dashboard'
                                 </div>
                                 <div class="col-12 col-sm-6">
                                     <label for="quickExpenseReference" class="form-label">رقم مرجعي</label>
-                                    <input type="text" class="form-control" id="quickExpenseReference" name="reference_number" placeholder="مثال: INV-2035" value="<?php echo htmlspecialchars($financialFormData['reference_number'] ?? '', ENT_QUOTES, 'UTF-8'); ?>">
+                                    <?php
+                                    $generatedRef = 'REF-' . mt_rand(100000, 999999);?>
+                                    <input type="text" class="form-control" id="quickExpenseReference" name="reference_number" value="<?php echo $generatedRef; ?>" readonly style="background:#f5f5f5; cursor:not-allowed;">
                                 </div>
                                 <div class="col-12">
                                     <label for="quickExpenseDescription" class="form-label">وصف المصروف <span class="text-danger">*</span></label>
@@ -1246,11 +1248,12 @@ $pageTitle = isset($lang['accountant_dashboard']) ? $lang['accountant_dashboard'
                                     </select>
                                 </div>
                                 
-                                <div class="mb-3" id="balanceDisplay" style="display: none;">
-                                    <div class="alert alert-info">
-                                        <i class="bi bi-wallet2 me-2"></i>
-                                        <strong>رصيد المندوب:</strong> 
-                                        <span id="repBalanceAmount" class="fw-bold">0.00</span> ج.م
+                                <div class="mb-3">
+                                    <label for="repBalanceAmount" class="form-label">رصيد المندوب</label>
+                                    <div class="input-group">
+                                        <span class="input-group-text"><i class="bi bi-wallet2 me-1"></i>رصيد المندوب</span>
+                                        <input type="text" class="form-control" id="repBalanceAmount" readonly value="-- اختر مندوب أولاً --" style="background-color: #f8f9fa; font-weight: bold;">
+                                        <span class="input-group-text">ج.م</span>
                                     </div>
                                 </div>
                                 
@@ -1463,7 +1466,6 @@ $pageTitle = isset($lang['accountant_dashboard']) ? $lang['accountant_dashboard'
 // معالجة تحصيل من مندوب
 document.addEventListener('DOMContentLoaded', function() {
     const salesRepSelect = document.getElementById('salesRepSelect');
-    const balanceDisplay = document.getElementById('balanceDisplay');
     const repBalanceAmount = document.getElementById('repBalanceAmount');
     const collectAmount = document.getElementById('collectAmount');
     const collectForm = document.getElementById('collectFromRepForm');
@@ -1475,9 +1477,9 @@ document.addEventListener('DOMContentLoaded', function() {
             
             if (salesRepId && salesRepId !== '') {
                 // إظهار loading state
-                if (balanceDisplay) {
-                    balanceDisplay.style.display = 'block';
-                    repBalanceAmount.textContent = 'جاري التحميل...';
+                if (repBalanceAmount) {
+                    repBalanceAmount.value = 'جاري التحميل...';
+                    repBalanceAmount.style.color = '#6c757d';
                 }
                 
                 // جلب رصيد المندوب
@@ -1523,11 +1525,15 @@ document.addEventListener('DOMContentLoaded', function() {
                     
                     if (data.success) {
                         const balance = parseFloat(data.balance) || 0;
-                        repBalanceAmount.textContent = balance.toLocaleString('ar-EG', {
+                        const formattedBalance = balance.toLocaleString('ar-EG', {
                             minimumFractionDigits: 2,
                             maximumFractionDigits: 2
                         });
-                        balanceDisplay.style.display = 'block';
+                        
+                        if (repBalanceAmount) {
+                            repBalanceAmount.value = formattedBalance;
+                            repBalanceAmount.style.color = balance > 0 ? '#198754' : '#6c757d';
+                        }
                         
                         // تعيين الحد الأقصى للمبلغ
                         if (collectAmount) {
@@ -1536,23 +1542,30 @@ document.addEventListener('DOMContentLoaded', function() {
                         }
                     } else {
                         const errorMsg = data.message || 'فشل جلب رصيد المندوب';
-                        alert('خطأ: ' + errorMsg);
-                        if (balanceDisplay) {
-                            balanceDisplay.style.display = 'none';
+                        if (repBalanceAmount) {
+                            repBalanceAmount.value = 'خطأ: ' + errorMsg;
+                            repBalanceAmount.style.color = '#dc3545';
                         }
+                        console.error('Error:', errorMsg);
                     }
                 })
                 .catch(error => {
                     console.error('Fetch Error:', error);
                     const errorMsg = error.message || 'حدث خطأ أثناء جلب رصيد المندوب';
-                    alert('خطأ: ' + errorMsg);
-                    if (balanceDisplay) {
-                        balanceDisplay.style.display = 'none';
+                    if (repBalanceAmount) {
+                        repBalanceAmount.value = 'خطأ في الاتصال';
+                        repBalanceAmount.style.color = '#dc3545';
                     }
                 });
             } else {
-                if (balanceDisplay) {
-                    balanceDisplay.style.display = 'none';
+                // إعادة تعيين الحقل عند عدم اختيار مندوب
+                if (repBalanceAmount) {
+                    repBalanceAmount.value = '-- اختر مندوب أولاً --';
+                    repBalanceAmount.style.color = '#6c757d';
+                }
+                if (collectAmount) {
+                    collectAmount.max = '';
+                    collectAmount.removeAttribute('data-max-balance');
                 }
             }
         });
@@ -1591,7 +1604,11 @@ document.addEventListener('DOMContentLoaded', function() {
             if (collectForm) {
                 collectForm.reset();
             }
-            balanceDisplay.style.display = 'none';
+            // إعادة تعيين حقل الرصيد
+            if (repBalanceAmount) {
+                repBalanceAmount.value = '-- اختر مندوب أولاً --';
+                repBalanceAmount.style.color = '#6c757d';
+            }
             if (submitBtn) {
                 submitBtn.disabled = false;
                 submitBtn.innerHTML = '<i class="bi bi-check-circle me-1"></i>تحصيل';
