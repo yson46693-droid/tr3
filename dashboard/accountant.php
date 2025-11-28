@@ -236,16 +236,8 @@ if ($page === 'financial' && $_SERVER['REQUEST_METHOD'] === 'POST') {
                     
                     $transactionId = $db->getLastInsertId();
                     
-                    // إدراج تحصيل سالب لخصم المبلغ من خزنة المندوب
-                    // نحتاج لإدراج في جدول collections بقيمة سالبة
-                    // استخدام الأعمدة الأساسية فقط: customer_id, collected_by, amount, date
-                    $collectionsTableExists = $db->queryOne("SHOW TABLES LIKE 'collections'");
-                    if (!empty($collectionsTableExists)) {
-                        $db->execute(
-                            "INSERT INTO collections (customer_id, collected_by, amount, date) VALUES (NULL, ?, ?, ?)",
-                            [$salesRepId, -$amount, date('Y-m-d')]
-                        );
-                    }
+                    // تم إدراج الإيراد في financial_transactions
+                    // لا حاجة لإدراج في collections لأن هذا تحصيل من المندوب وليس من عميل
                     
                     logAudit(
                         $currentUser['id'],
