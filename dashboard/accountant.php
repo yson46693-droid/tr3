@@ -422,6 +422,23 @@ if ($page === 'financial' && $_SERVER['REQUEST_METHOD'] === 'POST') {
 
                 $transactionId = $db->getLastInsertId();
 
+                // إذا كانت الحالة pending، إرسال طلب موافقة للمدير
+                if ($status === 'pending') {
+                    $approvalNotes = sprintf(
+                        "مصروف سريع\nالمبلغ: %s ج.م\nالوصف: %s%s",
+                        formatCurrency($amount),
+                        $description,
+                        $referenceNumber !== '' ? "\nالرقم المرجعي: " . $referenceNumber : ''
+                    );
+                    
+                    $approvalResult = requestApproval('financial', $transactionId, $currentUser['id'], $approvalNotes);
+                    
+                    if (!$approvalResult['success']) {
+                        // إذا فشل إرسال طلب الموافقة، تسجيل الخطأ ولكن لا نمنع حفظ المعاملة
+                        error_log('Failed to create approval request for expense: ' . ($approvalResult['message'] ?? 'Unknown error'));
+                    }
+                }
+
                 logAudit(
                     $currentUser['id'],
                     'quick_expense_create',

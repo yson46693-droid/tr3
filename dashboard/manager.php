@@ -421,6 +421,38 @@ $pageTitle = isset($lang['manager_dashboard']) ? $lang['manager_dashboard'] : '�
                                                                 } else {
                                                                     echo '<span class="text-muted small">' . htmlspecialchars($entityName) . '</span>';
                                                                 }
+                                                            } elseif ($approval['type'] === 'financial') {
+                                                                // عرض تفاصيل المعاملة المالية
+                                                                $financialTransaction = $db->queryOne(
+                                                                    "SELECT ft.*, u.full_name as created_by_name
+                                                                     FROM financial_transactions ft
+                                                                     LEFT JOIN users u ON ft.created_by = u.id
+                                                                     WHERE ft.id = ?",
+                                                                    [$entityId]
+                                                                );
+                                                                if ($financialTransaction) {
+                                                                    $typeLabels = [
+                                                                        'income' => 'إيراد',
+                                                                        'expense' => 'مصروف',
+                                                                        'transfer' => 'تحويل',
+                                                                        'payment' => 'دفعة'
+                                                                    ];
+                                                                    $typeLabel = $typeLabels[$financialTransaction['type']] ?? $financialTransaction['type'];
+                                                                    $typeColor = $financialTransaction['type'] === 'expense' ? 'danger' : ($financialTransaction['type'] === 'income' ? 'success' : 'info');
+                                                                    
+                                                                    echo '<div class="small">';
+                                                                    echo '<span class="badge bg-' . $typeColor . ' me-1">' . htmlspecialchars($typeLabel) . '</span>';
+                                                                    echo '<strong class="text-' . ($financialTransaction['type'] === 'expense' ? 'danger' : 'success') . '">';
+                                                                    echo ($financialTransaction['type'] === 'expense' ? '-' : '+') . formatCurrency($financialTransaction['amount']);
+                                                                    echo '</strong><br>';
+                                                                    echo '<span class="text-muted">' . htmlspecialchars($financialTransaction['description']) . '</span>';
+                                                                    if ($financialTransaction['reference_number']) {
+                                                                        echo '<br><small class="text-muted">مرجع: ' . htmlspecialchars($financialTransaction['reference_number']) . '</small>';
+                                                                    }
+                                                                    echo '</div>';
+                                                                } else {
+                                                                    echo '<span class="text-muted small">' . htmlspecialchars($entityName) . '</span>';
+                                                                }
                                                             } else {
                                                                 // للأنواع الأخرى، عرض اسم الكيان فقط
                                                                 echo '<span class="text-muted small">' . htmlspecialchars($entityName) . '</span>';
