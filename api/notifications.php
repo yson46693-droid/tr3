@@ -117,6 +117,11 @@ try {
                 echo json_encode(['success' => false, 'error' => 'Invalid notification ID']);
             }
             
+        } elseif ($action === 'delete_all') {
+            deleteAllNotifications($currentUser['id']);
+            
+            echo json_encode(['success' => true]);
+            
         } else {
             http_response_code(400);
             echo json_encode(['success' => false, 'error' => 'Invalid action']);

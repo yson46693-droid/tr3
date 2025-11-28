@@ -249,6 +249,20 @@ function deleteNotification($notificationId, $userId) {
 }
 
 /**
+ * حذف جميع إشعارات المستخدم
+ */
+function deleteAllNotifications($userId) {
+    $db = db();
+    
+    $db->execute(
+        "DELETE FROM notifications WHERE user_id = ?",
+        [$userId]
+    );
+    
+    return true;
+}
+
+/**
  * إرسال إشعار متصفح (Browser Notification)
  */
 function sendBrowserNotification($title, $body, $icon = null, $tag = null) {

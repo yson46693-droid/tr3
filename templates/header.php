@@ -820,7 +820,12 @@ if (ob_get_level() > 0) {
                         <span class="badge" id="notificationBadge">0</span>
                     </a>
                     <ul class="dropdown-menu dropdown-menu-end notifications-dropdown" aria-labelledby="notificationsDropdown">
-                        <li><h6 class="dropdown-header"><?php echo isset($lang['notifications']) ? $lang['notifications'] : 'الإشعارات'; ?></h6></li>
+                        <li><h6 class="dropdown-header">
+                            <?php echo isset($lang['notifications']) ? $lang['notifications'] : 'الإشعارات'; ?>
+                            <button type="button" class="btn btn-sm btn-link text-danger float-end p-0 ms-2" id="clearAllNotificationsBtn" title="مسح كل الإشعارات" style="font-size: 11px; text-decoration: none;">
+                                <i class="bi bi-trash"></i> مسح الكل
+                            </button>
+                        </h6></li>
                         <li><hr class="dropdown-divider"></li>
                         <li><div class="dropdown-item-text text-center" id="notificationsList">
                             <small class="text-muted"><?php echo isset($lang['loading']) ? $lang['loading'] : 'جاري التحميل...'; ?></small>

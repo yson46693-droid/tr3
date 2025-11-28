@@ -555,6 +555,51 @@ async function deleteNotification(notificationId) {
 }
 
 /**
+ * حذف جميع الإشعارات
+ */
+async function deleteAllNotifications() {
+    try {
+        const apiPath = getApiPath('api/notifications.php');
+        const response = await fetch(apiPath, {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/x-www-form-urlencoded',
+            },
+            body: new URLSearchParams({
+                action: 'delete_all'
+            })
+        });
+        
+        const data = await response.json();
+        
+        if (data.success) {
+            // مسح قائمة الإشعارات
+            const notificationsList = document.getElementById('notificationsList');
+            if (notificationsList) {
+                notificationsList.innerHTML = '<small class="text-muted">لا توجد إشعارات</small>';
+            }
+            
+            // تحديث العداد
+            await updateNotificationBadge(0);
+            
+            // إعادة تحميل الإشعارات للتأكد
+            loadNotifications();
+            
+            return { success: true };
+        } else {
+            throw new Error(data.error || 'فشل حذف الإشعارات');
+        }
+    } catch (error) {
+        if (error.name === 'TypeError' && error.message.includes('CORS')) {
+            console.log('CORS error ignored when deleting all notifications');
+            return;
+        }
+        console.error('Error deleting all notifications:', error);
+        throw error;
+    }
+}
+
+/**
  * تحديد جميع الإشعارات كمقروءة
  */
 async function markAllNotificationsAsRead() {
@@ -694,6 +739,29 @@ document.addEventListener('DOMContentLoaded', function() {
                 });
             }
         }, { once: false, passive: true });
+    }
+    
+    // إضافة event listener لزر مسح كل الإشعارات
+    const clearAllBtn = document.getElementById('clearAllNotificationsBtn');
+    if (clearAllBtn) {
+        clearAllBtn.addEventListener('click', async function(e) {
+            e.preventDefault();
+            e.stopPropagation();
+            
+            if (!confirm('هل أنت متأكد من رغبتك في مسح جميع الإشعارات؟')) {
+                return;
+            }
+            
+            try {
+                await deleteAllNotifications();
+                // إعادة تحميل الإشعارات بعد الحذف
+                if (typeof loadNotifications === 'function') {
+                    await loadNotifications();
+                }
+            } catch (error) {
+                alert('حدث خطأ أثناء حذف الإشعارات: ' + (error.message || 'خطأ غير معروف'));
+            }
+        });
     }
 });
 
