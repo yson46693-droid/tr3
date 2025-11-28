@@ -532,8 +532,8 @@ $hasStatusColumn = !empty($statusColumnCheck);
                 <select class="form-select" name="payment_method">
                     <option value="">جميع الطرق</option>
                     <option value="cash" <?php echo ($filters['payment_method'] ?? '') == 'cash' ? 'selected' : ''; ?>>نقدي</option>
-                    <option value="bank" <?php echo ($filters['payment_method'] ?? '') == 'bank' ? 'selected' : ''; ?>>بنكي</option>
-                    <option value="cheque" <?php echo ($filters['payment_method'] ?? '') == 'cheque' ? 'selected' : ''; ?>>شيك</option>
+                    <option value="bank" <?php echo ($filters['payment_method'] ?? '') == 'bank' ? 'selected' : ''; ?>>نقدا</option>
+                    <option value="cheque" <?php echo ($filters['payment_method'] ?? '') == 'cheque' ? 'selected' : ''; ?>>محفظه الكترونيه</option>
                     <option value="other" <?php echo ($filters['payment_method'] ?? '') == 'other' ? 'selected' : ''; ?>>أخرى</option>
                 </select>
             </div>
@@ -573,12 +573,12 @@ $hasStatusColumn = !empty($statusColumnCheck);
                         <th>العميل</th>
                         <th>المبلغ</th>
                         <th>طريقة الدفع</th>
-                        <th>رقم المرجع</th>
+       
                         <th>المحصل</th>
                         <?php if ($hasStatusColumn): ?>
                         <th>الحالة</th>
                         <?php endif; ?>
-                        <th>الإجراءات</th>
+                      
                     </tr>
                 </thead>
                 <tbody>
@@ -602,53 +602,14 @@ $hasStatusColumn = !empty($statusColumnCheck);
                                     <?php
                                     $paymentMethods = [
                                         'cash' => 'نقدي',
-                                        'bank' => 'بنكي',
+                                        'bank' => 'نقدا',
                                         'cheque' => 'شيك',
                                         'other' => 'أخرى'
                                     ];
                                     echo $paymentMethods[$collection['payment_method']] ?? $collection['payment_method'];
                                     ?>
                                 </td>
-                                <td data-label="رقم المرجع"><?php echo htmlspecialchars($collection['reference_number'] ?? '-'); ?></td>
                                 <td data-label="المحصل"><?php echo htmlspecialchars($collection['collected_by_name'] ?? 'غير محدد'); ?></td>
-                                <?php if ($hasStatusColumn): ?>
-                                <td data-label="الحالة">
-                                    <?php
-                                    $status = $collection['status'] ?? 'pending';
-                                    $statusBadges = [
-                                        'pending' => '<span class="badge bg-warning">معلق</span>',
-                                        'approved' => '<span class="badge bg-success">موافق عليه</span>',
-                                        'rejected' => '<span class="badge bg-danger">مرفوض</span>'
-                                    ];
-                                    echo $statusBadges[$status] ?? '<span class="badge bg-secondary">' . $status . '</span>';
-                                    ?>
-                                </td>
-                                <?php endif; ?>
-                                <td data-label="الإجراءات">
-                                    <div class="btn-group btn-group-sm" role="group">
-                                        <button class="btn btn-info" onclick="viewCollection(<?php echo $collection['id']; ?>)" title="عرض">
-                                            <i class="bi bi-eye"></i>
-                                            <span class="d-none d-md-inline">عرض</span>
-                                        </button>
-                                        <?php if (hasRole('accountant') || hasRole('manager')): ?>
-                                            <button class="btn btn-warning" onclick="editCollection(<?php echo $collection['id']; ?>)" title="تعديل">
-                                                <i class="bi bi-pencil"></i>
-                                                <span class="d-none d-md-inline">تعديل</span>
-                                            </button>
-                                            <?php if ($hasStatusColumn && $status === 'pending' && hasRole('manager')): ?>
-                                                <button class="btn btn-success" onclick="approveCollection(<?php echo $collection['id']; ?>)" title="موافقة">
-                                                    <i class="bi bi-check"></i>
-                                                </button>
-                                                <button class="btn btn-danger" onclick="rejectCollection(<?php echo $collection['id']; ?>)" title="رفض">
-                                                    <i class="bi bi-x"></i>
-                                                </button>
-                                            <?php endif; ?>
-                                            <button class="btn btn-danger" onclick="deleteCollection(<?php echo $collection['id']; ?>)" title="حذف">
-                                                <i class="bi bi-trash"></i>
-                                            </button>
-                                        <?php endif; ?>
-                                    </div>
-                                </td>
                             </tr>
                         <?php endforeach; ?>
                     <?php endif; ?>
