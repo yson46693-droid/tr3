@@ -306,46 +306,11 @@ if ($page === 'financial' && $_SERVER['REQUEST_METHOD'] === 'POST') {
                     
                     $financialTransactionId = $db->getLastInsertId();
                     
-                    // 3. إدراج تحصيل سالب في collections لخصم المبلغ من خزنة المندوب
-                    $collectionsTableExists = $db->queryOne("SHOW TABLES LIKE 'collections'");
-                    if (!empty($collectionsTableExists)) {
-                        // التحقق من وجود الأعمدة
-                        $statusColumnCheck = $db->queryOne("SHOW COLUMNS FROM collections LIKE 'status'");
-                        $hasStatusColumn = !empty($statusColumnCheck);
-                        
-                        $notesColumnCheck = $db->queryOne("SHOW COLUMNS FROM collections LIKE 'notes'");
-                        $hasNotesColumn = !empty($notesColumnCheck);
-                        
-                        $paymentMethodColumnCheck = $db->queryOne("SHOW COLUMNS FROM collections LIKE 'payment_method'");
-                        $hasPaymentMethodColumn = !empty($paymentMethodColumnCheck);
-                        
-                        // بناء الاستعلام بشكل ديناميكي
-                        // customer_id = NULL (لأن هذا تحصيل من المندوب وليس من عميل)
-                        // collected_by = salesRepId (المندوب الذي سيتم خصم المبلغ من خزنته)
-                        // amount = -$amount (قيمة سالبة لخصم المبلغ)
-                        $columns = ['customer_id', 'collected_by', 'amount', 'date'];
-                        $placeholders = ['NULL', '?', '?', '?'];
-                        $values = [$salesRepId, -$amount, date('Y-m-d')]; // قيمة سالبة لخصم المبلغ
-                        
-                        if ($hasPaymentMethodColumn) {
-                            $columns[] = 'payment_method';
-                            $placeholders[] = "'cash'";
-                        }
-                        
-                        if ($hasNotesColumn) {
-                            $columns[] = 'notes';
-                            $placeholders[] = '?';
-                            $values[] = 'تحصيل من خزنة المندوب: ' . $finalDescription;
-                        }
-                        
-                        if ($hasStatusColumn) {
-                            $columns[] = 'status';
-                            $placeholders[] = "'approved'";
-                        }
-                        
-                        $sql = "INSERT INTO collections (" . implode(', ', $columns) . ") VALUES (" . implode(', ', $placeholders) . ")";
-                        $db->execute($sql, $values);
-                    }
+                    // ملاحظة: لا نضيف سجل في collections لأن:
+                    // 1. collections مخصص للتحصيلات من العملاء فقط (customer_id مطلوب NOT NULL)
+                    // 2. التحصيل من المندوب يتم تسجيله في accountant_transactions فقط
+                    // 3. خصم المبلغ من رصيد المندوب يتم حسابه من خلال calculateSalesRepCashBalance
+                    //    الذي يحسب: (collections + invoices) - (accountant_transactions collection_from_sales_rep)
                     
                     $transactionId = $financialTransactionId; // استخدام معرف الحركة المالية
                     
@@ -1025,9 +990,6 @@ $pageTitle = isset($lang['accountant_dashboard']) ? $lang['accountant_dashboard'
                                 <div class="text-end">
                                     <div class="badge bg-success text-white fw-semibold px-3 py-2">
                                         <?php echo formatCurrency($approvedIncome); ?> إيرادات
-                                    </div>
-                                    <div class="small text-muted mt-2">
-                                        إجمالي الحركة المعتمدة: <?php echo formatCurrency($movementTotal); ?>
                                     </div>
                                 </div>
                             </div>
