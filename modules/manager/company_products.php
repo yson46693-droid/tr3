@@ -1295,7 +1295,9 @@ function renderBatchDetails(data) {
         </div>
     `;
 
-    const packagingItems = Array.isArray(data.packaging_materials) ? data.packaging_materials : [];
+    const packagingItems = Array.isArray(data.packaging_materials) 
+        ? data.packaging_materials 
+        : (Array.isArray(data.materials) ? data.materials : []);
     materialsSection.innerHTML = `
         <div class="card shadow-sm">
             <div class="card-header bg-light">
@@ -1314,11 +1316,20 @@ function renderBatchDetails(data) {
                             <tbody>
                                 ${packagingItems.map(item => {
                                     const materialName = item.name ?? item.material_name ?? '—';
-                                    const quantity = item.quantity_used ?? item.quantity ?? null;
-                                    const unit = item.unit ?? '';
-                                    const quantityDisplay = quantity !== null && quantity !== undefined 
-                                        ? `${quantity} ${unit}`.trim() 
-                                        : '—';
+                                    let quantityDisplay = '—';
+                                    
+                                    if (item.details) {
+                                        // إذا كان الحقل details موجود (من materials)
+                                        quantityDisplay = item.details;
+                                    } else {
+                                        // إذا كانت البيانات منفصلة (من packaging_materials)
+                                        const quantity = item.quantity_used ?? item.quantity ?? null;
+                                        const unit = item.unit ?? '';
+                                        quantityDisplay = quantity !== null && quantity !== undefined 
+                                            ? `${quantity} ${unit}`.trim() 
+                                            : '—';
+                                    }
+                                    
                                     return `
                                     <tr>
                                         <td>${materialName}</td>
