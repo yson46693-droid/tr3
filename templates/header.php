@@ -168,9 +168,68 @@ if (ob_get_level() > 0) {
     <?php if ($dir === 'rtl'): ?>
     <link href="<?php echo $assetsUrl; ?>css/rtl.css?v=<?php echo $cacheVersion; ?>" rel="stylesheet">
     <?php endif; ?>
+    <style>
+        /* منع Layout forced - إخفاء المحتوى حتى تحميل CSS */
+        body:not(.css-loaded) {
+            visibility: hidden;
+        }
+        body.css-loaded {
+            visibility: visible;
+        }
+    </style>
     <script>
         window.APP_CONFIG = window.APP_CONFIG || {};
         window.APP_CONFIG.passwordMinLength = <?php echo json_encode(getPasswordMinLength(), JSON_UNESCAPED_UNICODE); ?>;
+        
+        // دالة للتحقق من تحميل جميع stylesheets
+        window.stylesheetsLoaded = false;
+        (function() {
+            function checkStylesheets() {
+                const stylesheets = document.querySelectorAll('link[rel="stylesheet"]');
+                let allLoaded = true;
+                
+                stylesheets.forEach(function(link) {
+                    if (!link.sheet && link.href && !link.href.startsWith('data:')) {
+                        allLoaded = false;
+                    }
+                });
+                
+                if (allLoaded && stylesheets.length > 0) {
+                    window.stylesheetsLoaded = true;
+                    document.dispatchEvent(new CustomEvent('stylesheetsLoaded'));
+                } else if (stylesheets.length === 0) {
+                    window.stylesheetsLoaded = true;
+                    document.dispatchEvent(new CustomEvent('stylesheetsLoaded'));
+                } else {
+                    setTimeout(checkStylesheets, 50);
+                }
+            }
+            
+            if (document.readyState === 'loading') {
+                document.addEventListener('DOMContentLoaded', function() {
+                    setTimeout(checkStylesheets, 100);
+                });
+            } else {
+                setTimeout(checkStylesheets, 100);
+            }
+            
+            // Fallback: اعتبارها محملة بعد وقت معقول
+            window.addEventListener('load', function() {
+                setTimeout(function() {
+                    if (!window.stylesheetsLoaded) {
+                        window.stylesheetsLoaded = true;
+                        document.dispatchEvent(new CustomEvent('stylesheetsLoaded'));
+                    }
+                    // إظهار المحتوى بعد تحميل CSS
+                    document.body.classList.add('css-loaded');
+                }, 300);
+            });
+            
+            // عند تحميل stylesheets، أظهر المحتوى
+            document.addEventListener('stylesheetsLoaded', function() {
+                document.body.classList.add('css-loaded');
+            });
+        })();
     </script>
     
     <!-- Favicon -->

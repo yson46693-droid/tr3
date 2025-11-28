@@ -1004,6 +1004,64 @@ $pageTitle = isset($lang['manager_dashboard']) ? $lang['manager_dashboard'] : '�
 <?php include __DIR__ . '/../templates/footer.php'; ?>
 <script src="<?php echo ASSETS_URL; ?>js/reports.js" defer></script>
 <script>
+// الانتظار حتى تحميل جميع الموارد قبل تنفيذ الكود
+(function() {
+    function waitForStylesheets(callback) {
+        if (typeof callback !== 'function') return;
+        
+        // إذا كانت stylesheets محملة بالفعل (من header.php)
+        if (window.stylesheetsLoaded === true) {
+            setTimeout(callback, 50);
+            return;
+        }
+        
+        // الانتظار حتى event stylesheetsLoaded
+        const handler = function() {
+            document.removeEventListener('stylesheetsLoaded', handler);
+            setTimeout(callback, 50);
+        };
+        
+        document.addEventListener('stylesheetsLoaded', handler);
+        
+        // Fallback: انتظر window.load
+        window.addEventListener('load', function() {
+            setTimeout(function() {
+                if (!window.stylesheetsLoaded) {
+                    window.stylesheetsLoaded = true;
+                    callback();
+                }
+            }, 300);
+        });
+    }
+    
+    function initWhenReady() {
+        // الانتظار حتى window.load + stylesheets محملة
+        if (document.readyState === 'complete') {
+            waitForStylesheets(initManagerCode);
+        } else {
+            window.addEventListener('load', function() {
+                waitForStylesheets(initManagerCode);
+            });
+        }
+    }
+    
+    function initManagerCode() {
+        // جعل الدوال متاحة عالمياً
+        window.approveRequest = approveRequest;
+        window.rejectRequest = rejectRequest;
+        window.updateApprovalBadge = updateApprovalBadge;
+        
+        // تهيئة العداد
+        initApprovalBadgeUpdater();
+    }
+    
+    if (document.readyState === 'loading') {
+        document.addEventListener('DOMContentLoaded', initWhenReady);
+    } else {
+        initWhenReady();
+    }
+})();
+
 function approveRequest(id, event) {
     // استخدام event الممرر أو window.event
     const evt = event || window.event;
@@ -1228,53 +1286,24 @@ async function updateApprovalBadge() {
     }
 }
 
-// جعل الدوال متاحة عالمياً
-window.approveRequest = approveRequest;
-window.rejectRequest = rejectRequest;
-window.updateApprovalBadge = updateApprovalBadge;
+// دالة تهيئة جميع الدوال
+function initFunctions() {
+    // الدوال معرّفة بالفعل في النطاق
+}
 
-// تحديث العداد عند تحميل الصفحة - تأخير حتى تحميل CSS
-(function() {
-    function initApprovalBadgeUpdater() {
-        // التأكد من تحميل جميع الموارد (CSS + JS)
-        if (document.readyState !== 'complete') {
-            window.addEventListener('load', function() {
-                setTimeout(function() {
-                    if (typeof updateApprovalBadge === 'function') {
-                        updateApprovalBadge();
-                        
-                        // تحديث العداد كل 30 ثانية
-                        setInterval(updateApprovalBadge, 30000);
-                        
-                        // تحديث العداد بعد الموافقة أو الرفض
-                        document.addEventListener('approvalUpdated', function() {
-                            setTimeout(updateApprovalBadge, 1000);
-                        });
-                    }
-                }, 200);
-            });
-        } else {
-            setTimeout(function() {
-                if (typeof updateApprovalBadge === 'function') {
-                    updateApprovalBadge();
-                    
-                    // تحديث العداد كل 30 ثانية
-                    setInterval(updateApprovalBadge, 30000);
-                    
-                    // تحديث العداد بعد الموافقة أو الرفض
-                    document.addEventListener('approvalUpdated', function() {
-                        setTimeout(updateApprovalBadge, 1000);
-                    });
-                }
-            }, 200);
-        }
+// دالة تحديث عداد الموافقات
+function initApprovalBadgeUpdater() {
+    if (typeof updateApprovalBadge === 'function') {
+        updateApprovalBadge();
+        
+        // تحديث العداد كل 30 ثانية
+        setInterval(updateApprovalBadge, 30000);
+        
+        // تحديث العداد بعد الموافقة أو الرفض
+        document.addEventListener('approvalUpdated', function() {
+            setTimeout(updateApprovalBadge, 1000);
+        });
     }
-    
-    if (document.readyState === 'loading') {
-        document.addEventListener('DOMContentLoaded', initApprovalBadgeUpdater);
-    } else {
-        initApprovalBadgeUpdater();
-    }
-})();
+}
 </script>
 

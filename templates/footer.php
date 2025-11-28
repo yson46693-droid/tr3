@@ -55,23 +55,30 @@ if (!defined('ACCESS_ALLOWED')) {
     $cacheVersion = time();
     ?>
     <!-- jQuery MUST be loaded FIRST -->
-    <script src="https://code.jquery.com/jquery-3.7.0.min.js"></script>
+    <script src="https://code.jquery.com/jquery-3.7.0.min.js" defer></script>
     <script>
-        // التأكد من تحميل jQuery بشكل صحيح
-        if (typeof jQuery === 'undefined' && typeof $ === 'undefined') {
-            console.error('jQuery failed to load!');
-        } else {
-            // التأكد من أن jQuery متاح عالمياً
-            if (typeof window.jQuery === 'undefined') {
-                window.jQuery = typeof jQuery !== 'undefined' ? jQuery : (typeof $ !== 'undefined' ? $ : null);
+        // الانتظار حتى تحميل jQuery
+        (function() {
+            function initJQuery() {
+                if (typeof jQuery === 'undefined' && typeof $ === 'undefined') {
+                    setTimeout(initJQuery, 50);
+                    return;
+                }
+                // التأكد من أن jQuery متاح عالمياً
+                if (typeof window.jQuery === 'undefined') {
+                    window.jQuery = typeof jQuery !== 'undefined' ? jQuery : (typeof $ !== 'undefined' ? $ : null);
+                }
+                if (typeof window.$ === 'undefined') {
+                    window.$ = typeof $ !== 'undefined' ? $ : (typeof jQuery !== 'undefined' ? jQuery : null);
+                }
             }
-            if (typeof window.$ === 'undefined') {
-                window.$ = typeof $ !== 'undefined' ? $ : (typeof jQuery !== 'undefined' ? jQuery : null);
-            }
-        }
+            window.addEventListener('load', function() {
+                setTimeout(initJQuery, 100);
+            });
+        })();
     </script>
     <!-- Bootstrap 5 JS -->
-    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js" defer></script>
     <!-- Custom JS -->
     <?php
     // التأكد من أن ASSETS_URL صحيح
@@ -117,7 +124,7 @@ if (!defined('ACCESS_ALLOWED')) {
     
     <?php if (isset($extraScripts)): ?>
         <?php foreach ($extraScripts as $script): ?>
-            <script src="<?php echo $script; ?>"></script>
+            <script src="<?php echo $script; ?>" defer></script>
         <?php endforeach; ?>
     <?php endif; ?>
     

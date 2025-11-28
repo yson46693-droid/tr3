@@ -1296,13 +1296,13 @@ function renderBatchDetails(data) {
     `;
 
     const packagingItems = Array.isArray(data.packaging_materials) ? data.packaging_materials : [];
-    if (packagingItems.length > 0) {
-        materialsSection.innerHTML = `
-            <div class="card shadow-sm">
-                <div class="card-header bg-light">
-                    <h6 class="mb-0"><i class="bi bi-box-seam me-2"></i>مواد التعبئة</h6>
-                </div>
-                <div class="card-body">
+    materialsSection.innerHTML = `
+        <div class="card shadow-sm">
+            <div class="card-header bg-light">
+                <h6 class="mb-0"><i class="bi bi-box-seam me-2"></i>مواد التعبئة</h6>
+            </div>
+            <div class="card-body">
+                ${packagingItems.length > 0 ? `
                     <div class="table-responsive dashboard-table-wrapper">
                         <table class="table dashboard-table dashboard-table--compact align-middle mb-0">
                             <thead>
@@ -1312,30 +1312,41 @@ function renderBatchDetails(data) {
                                 </tr>
                             </thead>
                             <tbody>
-                                ${packagingItems.map(item => `
+                                ${packagingItems.map(item => {
+                                    const materialName = item.name ?? item.material_name ?? '—';
+                                    const quantity = item.quantity_used ?? item.quantity ?? null;
+                                    const unit = item.unit ?? '';
+                                    const quantityDisplay = quantity !== null && quantity !== undefined 
+                                        ? `${quantity} ${unit}`.trim() 
+                                        : '—';
+                                    return `
                                     <tr>
-                                        <td>${item.material_name ?? '—'}</td>
-                                        <td>${item.quantity ?? '—'} ${item.unit ?? ''}</td>
+                                        <td>${materialName}</td>
+                                        <td>${quantityDisplay}</td>
                                     </tr>
-                                `).join('')}
+                                `;
+                                }).join('')}
                             </tbody>
                         </table>
                     </div>
-                </div>
+                ` : `
+                    <div class="text-center text-muted py-3">
+                        <i class="bi bi-inbox fs-4 d-block mb-2"></i>
+                        لا توجد مواد تعبئة مسجلة
+                    </div>
+                `}
             </div>
-        `;
-    } else {
-        materialsSection.innerHTML = '';
-    }
+        </div>
+    `;
 
     const rawMaterialsItems = Array.isArray(data.raw_materials) ? data.raw_materials : [];
-    if (rawMaterialsItems.length > 0) {
-        rawMaterialsSection.innerHTML = `
-            <div class="card shadow-sm">
-                <div class="card-header bg-light">
-                    <h6 class="mb-0"><i class="bi bi-flower1 me-2"></i>الخامات</h6>
-                </div>
-                <div class="card-body">
+    rawMaterialsSection.innerHTML = `
+        <div class="card shadow-sm">
+            <div class="card-header bg-light">
+                <h6 class="mb-0"><i class="bi bi-flower1 me-2"></i>الخامات</h6>
+            </div>
+            <div class="card-body">
+                ${rawMaterialsItems.length > 0 ? `
                     <div class="table-responsive dashboard-table-wrapper">
                         <table class="table dashboard-table dashboard-table--compact align-middle mb-0">
                             <thead>
@@ -1345,44 +1356,61 @@ function renderBatchDetails(data) {
                                 </tr>
                             </thead>
                             <tbody>
-                                ${rawMaterialsItems.map(item => `
+                                ${rawMaterialsItems.map(item => {
+                                    const materialName = item.name ?? item.material_name ?? '—';
+                                    const quantity = item.quantity_used ?? item.quantity ?? null;
+                                    const unit = item.unit ?? '';
+                                    const quantityDisplay = quantity !== null && quantity !== undefined 
+                                        ? `${quantity} ${unit}`.trim() 
+                                        : '—';
+                                    return `
                                     <tr>
-                                        <td>${item.material_name ?? '—'}</td>
-                                        <td>${item.quantity ?? '—'} ${item.unit ?? ''}</td>
+                                        <td>${materialName}</td>
+                                        <td>${quantityDisplay}</td>
                                     </tr>
-                                `).join('')}
+                                `;
+                                }).join('')}
                             </tbody>
                         </table>
                     </div>
-                </div>
+                ` : `
+                    <div class="text-center text-muted py-3">
+                        <i class="bi bi-inbox fs-4 d-block mb-2"></i>
+                        لا توجد خامات مسجلة
+                    </div>
+                `}
             </div>
-        `;
-    } else {
-        rawMaterialsSection.innerHTML = '';
-    }
+        </div>
+    `;
 
     const workers = Array.isArray(data.workers) ? data.workers : [];
-    if (workers.length > 0) {
-        workersSection.innerHTML = `
-            <div class="card shadow-sm">
-                <div class="card-header bg-light">
-                    <h6 class="mb-0"><i class="bi bi-people me-2"></i>العمال</h6>
-                </div>
-                <div class="card-body">
+    workersSection.innerHTML = `
+        <div class="card shadow-sm">
+            <div class="card-header bg-light">
+                <h6 class="mb-0"><i class="bi bi-people me-2"></i>العمال</h6>
+            </div>
+            <div class="card-body">
+                ${workers.length > 0 ? `
                     <ul class="list-unstyled mb-0">
-                        ${workers.map(worker => `
+                        ${workers.map(worker => {
+                            const workerName = worker.full_name ?? worker.name ?? '—';
+                            return `
                             <li class="mb-2">
                                 <i class="bi bi-person-circle me-2 text-primary"></i>
-                                ${worker.name ?? '—'}
+                                ${workerName}
                             </li>
-                        `).join('')}
+                        `;
+                        }).join('')}
                     </ul>
-                </div>
+                ` : `
+                    <div class="text-center text-muted py-3">
+                        <i class="bi bi-inbox fs-4 d-block mb-2"></i>
+                        لا يوجد عمال مسجلون
+                    </div>
+                `}
             </div>
-        `;
-    } else {
-        workersSection.innerHTML = '';
-    }
+        </div>
+    `;
 }
 
 // جعل الدوال متاحة عالمياً
