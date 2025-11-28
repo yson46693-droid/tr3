@@ -6,6 +6,19 @@
 
 define('ACCESS_ALLOWED', true);
 
+// إضافة تسجيل فوري للتأكد من استدعاء الملف
+$logFile = __DIR__ . '/../private/storage/logs/php-errors.log';
+$logMessage = "[" . date('Y-m-d H:i:s') . "] === APPROVE RETURN API CALLED ===\n";
+$logMessage .= "Request Method: " . ($_SERVER['REQUEST_METHOD'] ?? 'UNKNOWN') . "\n";
+$logMessage .= "Request URI: " . ($_SERVER['REQUEST_URI'] ?? 'UNKNOWN') . "\n";
+$logMessage .= "Script Name: " . ($_SERVER['SCRIPT_NAME'] ?? 'UNKNOWN') . "\n";
+$logMessage .= "Remote Addr: " . ($_SERVER['REMOTE_ADDR'] ?? 'UNKNOWN') . "\n";
+$phpInput = @file_get_contents('php://input');
+$logMessage .= "PHP Input: " . ($phpInput ?: 'EMPTY') . "\n";
+$logMessage .= "========================================\n";
+@file_put_contents($logFile, $logMessage, FILE_APPEND);
+error_log("=== APPROVE RETURN API CALLED ===");
+
 require_once __DIR__ . '/../includes/config.php';
 require_once __DIR__ . '/../includes/db.php';
 require_once __DIR__ . '/../includes/auth.php';
@@ -17,25 +30,34 @@ require_once __DIR__ . '/../includes/return_financial_processor.php';
 require_once __DIR__ . '/../includes/return_salary_deduction.php';
 
 header('Content-Type: application/json; charset=utf-8');
-
+error_log("Headers set. Starting authentication check...");
+error_log("Checking user role...");
 requireRole(['manager']);
 
+error_log("Getting current user...");
 $currentUser = getCurrentUser();
 if (!$currentUser) {
+    error_log("ERROR: No current user found - session expired");
     http_response_code(401);
     echo json_encode(['success' => false, 'message' => 'انتهت جلسة العمل، يرجى إعادة تسجيل الدخول'], JSON_UNESCAPED_UNICODE);
     exit;
 }
+error_log("Current user: " . ($currentUser['id'] ?? 'N/A') . " (" . ($currentUser['full_name'] ?? 'N/A') . ")");
 
+error_log("Checking request method...");
 if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
+    error_log("ERROR: Invalid request method: " . ($_SERVER['REQUEST_METHOD'] ?? 'UNKNOWN'));
     http_response_code(405);
     echo json_encode(['success' => false, 'message' => 'يجب استخدام طلب POST'], JSON_UNESCAPED_UNICODE);
     exit;
 }
 
+error_log("Parsing JSON payload...");
 $payload = json_decode(file_get_contents('php://input'), true);
+error_log("Payload decoded: " . json_encode($payload, JSON_UNESCAPED_UNICODE));
 
 if (!is_array($payload)) {
+    error_log("ERROR: Invalid payload format");
     http_response_code(400);
     echo json_encode(['success' => false, 'message' => 'صيغة البيانات غير صحيحة'], JSON_UNESCAPED_UNICODE);
     exit;
@@ -45,17 +67,24 @@ $returnId = isset($payload['return_id']) ? (int)$payload['return_id'] : 0;
 $action = $payload['action'] ?? 'approve'; // 'approve' or 'reject'
 $notes = trim($payload['notes'] ?? '');
 
+error_log("Extracted values - Return ID: {$returnId}, Action: {$action}, Notes: " . (strlen($notes) > 0 ? 'provided' : 'empty'));
+
 if ($returnId <= 0) {
+    error_log("ERROR: Invalid return_id: {$returnId}");
     http_response_code(422);
     echo json_encode(['success' => false, 'message' => 'معرف المرتجع غير صالح'], JSON_UNESCAPED_UNICODE);
     exit;
 }
 
+error_log("Starting main processing...");
 try {
+    error_log("Getting database connection...");
     $db = db();
     $conn = $db->getConnection();
+    error_log("Database connection established");
     
     // Get return request
+    error_log("Fetching return data from database for ID: {$returnId}");
     $return = $db->queryOne(
         "SELECT r.*, c.name as customer_name, c.balance as customer_balance,
                 u.full_name as sales_rep_name
@@ -67,10 +96,12 @@ try {
     );
     
     if (!$return) {
+        error_log("ERROR: Return not found in database for ID: {$returnId}");
         http_response_code(404);
         echo json_encode(['success' => false, 'message' => 'طلب المرتجع غير موجود'], JSON_UNESCAPED_UNICODE);
         exit;
     }
+    error_log("Return found: " . ($return['return_number'] ?? 'N/A') . ", Status: " . ($return['status'] ?? 'N/A'));
     
     if ($action === 'reject') {
         // Check if return can be rejected (only pending returns)
