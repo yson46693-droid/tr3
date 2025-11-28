@@ -935,15 +935,6 @@ $pageTitle = isset($lang['accountant_dashboard']) ? $lang['accountant_dashboard'
             ");
             $pendingTransactions = is_array($pendingTransactionsRaw) ? $pendingTransactionsRaw : [];
             
-            $netApprovedBalance = 
-                ($treasurySummary['approved_income'] ?? 0) 
-                - ($treasurySummary['approved_expense'] ?? 0)
-                - ($treasurySummary['approved_payment'] ?? 0);
-            
-            $approvedIncome = (float) ($treasurySummary['approved_income'] ?? 0);
-            $approvedExpense = (float) ($treasurySummary['approved_expense'] ?? 0);
-            $approvedPayment = (float) ($treasurySummary['approved_payment'] ?? 0);
-            
             // حساب إجمالي المرتبات (المعتمدة والمدفوعة)
             $totalSalaries = 0.0;
             $salariesTableExists = $db->queryOne("SHOW TABLES LIKE 'salaries'");
@@ -955,6 +946,16 @@ $pageTitle = isset($lang['accountant_dashboard']) ? $lang['accountant_dashboard'
                 );
                 $totalSalaries = (float) ($salariesResult['total_salaries'] ?? 0);
             }
+            
+            $netApprovedBalance = 
+                ($treasurySummary['approved_income'] ?? 0) 
+                - ($treasurySummary['approved_expense'] ?? 0)
+                - ($treasurySummary['approved_payment'] ?? 0)
+                - $totalSalaries;
+            
+            $approvedIncome = (float) ($treasurySummary['approved_income'] ?? 0);
+            $approvedExpense = (float) ($treasurySummary['approved_expense'] ?? 0);
+            $approvedPayment = (float) ($treasurySummary['approved_payment'] ?? 0);
             
             $movementTotal = $approvedIncome + $approvedExpense + $approvedPayment + $totalSalaries;
             $shareDenominator = $movementTotal > 0 ? $movementTotal : 1;
