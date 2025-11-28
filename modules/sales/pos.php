@@ -1832,12 +1832,15 @@ if (!$error) {
                                 </select>
                             </div>
                             
-                            <!-- معلومات العميل المالية - ثابتة دائماً -->
-                            <div class="mb-3" id="posCustomerBalanceInfo">
-                                <div class="alert alert-info mb-0 py-2 px-3">
-                                    <i class="bi bi-info-circle me-1"></i>
-                                    <span id="posCustomerBalanceText">اختر عميلاً لعرض التفاصيل المالية</span>
-                                </div>
+                            <!-- معلومات العميل المالية - حقل يتحدث تلقائياً -->
+                            <div class="mb-3">
+                                <label class="form-label">الحالة المالية للعميل</label>
+                                <input type="text" 
+                                       class="form-control" 
+                                       id="posCustomerBalanceText" 
+                                       readonly 
+                                       value="اختر عميلاً لعرض التفاصيل المالية"
+                                       style="background-color: #f8f9fa; cursor: default;">
                             </div>
 
                             <div class="mb-3 d-none" id="posNewCustomerWrap">
@@ -2518,36 +2521,39 @@ if (!$error) {
 
     // دالة تحديث حالة رصيد العميل
     function updateCustomerBalance() {
-        const balanceInfo = document.getElementById('posCustomerBalanceInfo');
         const balanceText = document.getElementById('posCustomerBalanceText');
         
-        if (!elements.customerSelect || !balanceInfo || !balanceText) {
+        if (!elements.customerSelect || !balanceText) {
             return;
         }
         
         const selectedOption = elements.customerSelect.options[elements.customerSelect.selectedIndex];
         if (!selectedOption || !selectedOption.value) {
             // عرض رسالة افتراضية عند عدم اختيار عميل
-            balanceText.textContent = 'اختر عميلاً لعرض التفاصيل المالية';
-            balanceInfo.querySelector('.alert').className = 'alert alert-info mb-0 py-2 px-3';
-            balanceInfo.style.display = 'block';
+            balanceText.value = 'اختر عميلاً لعرض التفاصيل المالية';
+            balanceText.className = 'form-control';
+            balanceText.style.backgroundColor = '#f8f9fa';
+            balanceText.style.borderColor = '#dee2e6';
             return;
         }
         
         const balance = parseFloat(selectedOption.getAttribute('data-balance') || '0');
         
         if (balance > 0) {
-            balanceText.textContent = 'ديون العميل: ' + formatCurrency(balance);
-            balanceInfo.querySelector('.alert').className = 'alert alert-warning mb-0 py-2 px-3';
-            balanceInfo.style.display = 'block';
+            balanceText.value = 'ديون العميل: ' + formatCurrency(balance);
+            balanceText.className = 'form-control border-warning';
+            balanceText.style.backgroundColor = '#fff3cd';
+            balanceText.style.borderColor = '#ffc107';
         } else if (balance < 0) {
-            balanceText.textContent = 'رصيد دائن: ' + formatCurrency(Math.abs(balance));
-            balanceInfo.querySelector('.alert').className = 'alert alert-success mb-0 py-2 px-3';
-            balanceInfo.style.display = 'block';
+            balanceText.value = 'رصيد دائن: ' + formatCurrency(Math.abs(balance));
+            balanceText.className = 'form-control border-success';
+            balanceText.style.backgroundColor = '#d1e7dd';
+            balanceText.style.borderColor = '#198754';
         } else {
-            balanceText.textContent = 'الرصيد: 0';
-            balanceInfo.querySelector('.alert').className = 'alert alert-info mb-0 py-2 px-3';
-            balanceInfo.style.display = 'block';
+            balanceText.value = 'الرصيد: 0';
+            balanceText.className = 'form-control border-info';
+            balanceText.style.backgroundColor = '#cff4fc';
+            balanceText.style.borderColor = '#0dcaf0';
         }
     }
     
