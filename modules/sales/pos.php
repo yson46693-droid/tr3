@@ -1830,11 +1830,13 @@ if (!$error) {
                                         <option value="<?php echo (int) $customer['id']; ?>" data-balance="<?php echo htmlspecialchars((string)($customer['balance'] ?? 0)); ?>"><?php echo htmlspecialchars($customer['name']); ?></option>
                                     <?php endforeach; ?>
                                 </select>
-                                <div class="mt-2" id="posCustomerBalanceInfo">
-                                    <div class="alert alert-info mb-0 py-2 px-3">
-                                        <i class="bi bi-info-circle me-1"></i>
-                                        <span id="posCustomerBalanceText">اختر عميلاً لعرض التفاصيل المالية</span>
-                                    </div>
+                            </div>
+                            
+                            <!-- معلومات العميل المالية - ثابتة دائماً -->
+                            <div class="mb-3" id="posCustomerBalanceInfo">
+                                <div class="alert alert-info mb-0 py-2 px-3">
+                                    <i class="bi bi-info-circle me-1"></i>
+                                    <span id="posCustomerBalanceText">اختر عميلاً لعرض التفاصيل المالية</span>
                                 </div>
                             </div>
 
