@@ -44,13 +44,17 @@ $sql = "SELECT s.*, c.name as customer_name,
                    CONCAT('منتج رقم ', p.id)
                ) as product_name,
                u.full_name as salesperson_name,
-               (SELECT COALESCE(i.credit_used, 0)
-                FROM invoices i 
+               (SELECT GROUP_CONCAT(DISTINCT bn.batch_number ORDER BY bn.batch_number SEPARATOR ', ')
+                FROM invoices i
+                INNER JOIN invoice_items ii ON i.id = ii.invoice_id
+                LEFT JOIN sales_batch_numbers sbn ON ii.id = sbn.invoice_item_id
+                LEFT JOIN batch_numbers bn ON sbn.batch_number_id = bn.id
                 WHERE i.customer_id = s.customer_id 
                   AND DATE(i.date) = DATE(s.date)
                   AND (i.sales_rep_id = s.salesperson_id OR i.sales_rep_id IS NULL)
-                ORDER BY i.id DESC 
-                LIMIT 1) as credit_used
+                  AND ii.product_id = s.product_id
+                GROUP BY ii.id
+                LIMIT 1) as batch_numbers
         FROM sales s
         LEFT JOIN customers c ON s.customer_id = c.id
         LEFT JOIN products p ON s.product_id = p.id
@@ -271,6 +275,11 @@ $generatedAt = formatDateTime(date('Y-m-d H:i:s'));
             color: #78350f;
         }
 
+        .badge-info {
+            background: #0dcaf0;
+            color: #055160;
+        }
+
         .print-actions {
             position: fixed;
             bottom: 20px;
@@ -426,37 +435,15 @@ $generatedAt = formatDateTime(date('Y-m-d H:i:s'));
                                 <th>المنتج</th>
                                 <th>الكمية</th>
                                 <th>المبلغ</th>
-                                <th>الحالة</th>
+                                <th>رقم التشغيلة</th>
                                 <th>مندوب المبيعات</th>
                             </tr>
                         </thead>
                         <tbody>
                             <?php foreach ($sales as $sale): ?>
                                 <?php
-                                // التحقق من وجود خصم من الرصيد الدائن
-                                $creditUsed = (float)($sale['credit_used'] ?? 0);
-                                $statusDisplay = '';
-                                $badgeClass = '';
-                                
-                                if ($creditUsed > 0.01) {
-                                    $statusDisplay = '<i class="bi bi-credit-card-2-front me-1"></i>خصم: ' . formatCurrency($creditUsed);
-                                    $badgeClass = 'badge-warning';
-                                } else {
-                                    // إذا لم يكن هناك خصم، نعرض حالة العملية
-                                    $status = strtolower($sale['status'] ?? 'pending');
-                                    $statusLabels = [
-                                        'approved' => 'معتمدة',
-                                        'pending' => 'معلقة',
-                                        'rejected' => 'ملغاة'
-                                    ];
-                                    $statusBadgeClass = [
-                                        'approved' => 'badge-approved',
-                                        'pending' => 'badge-pending',
-                                        'rejected' => 'badge-rejected'
-                                    ];
-                                    $statusDisplay = $statusLabels[$status] ?? 'معلقة';
-                                    $badgeClass = $statusBadgeClass[$status] ?? 'badge-pending';
-                                }
+                                // جلب أرقام التشغيلة
+                                $batchNumbers = !empty($sale['batch_numbers']) ? trim($sale['batch_numbers']) : '';
                                 ?>
                                 <tr>
                                     <td><?php echo formatDate($sale['date']); ?></td>
@@ -465,9 +452,13 @@ $generatedAt = formatDateTime(date('Y-m-d H:i:s'));
                                     <td><?php echo number_format((float)($sale['quantity'] ?? 0), 2); ?></td>
                                     <td><?php echo formatCurrency((float)($sale['total'] ?? 0)); ?></td>
                                     <td>
-                                        <span class="badge <?php echo $badgeClass; ?>" style="<?php echo $creditUsed > 0.01 ? 'background: #fbbf24; color: #78350f;' : ''; ?>">
-                                            <?php echo $statusDisplay; ?>
-                                        </span>
+                                        <?php if (!empty($batchNumbers)): ?>
+                                            <span class="badge badge-info" style="background: #0dcaf0; color: #055160; font-size: 11px;">
+                                                <?php echo htmlspecialchars($batchNumbers); ?>
+                                            </span>
+                                        <?php else: ?>
+                                            <span class="text-muted" style="font-size: 12px;">-</span>
+                                        <?php endif; ?>
                                     </td>
                                     <td><?php echo htmlspecialchars($sale['salesperson_name'] ?? '-'); ?></td>
                                 </tr>
