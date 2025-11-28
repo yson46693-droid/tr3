@@ -199,8 +199,6 @@ if ($page === 'financial' && $_SERVER['REQUEST_METHOD'] === 'POST') {
             $_SESSION['financial_error'] = 'يرجى اختيار مندوب صحيح.';
         } elseif ($amount <= 0) {
             $_SESSION['financial_error'] = 'يرجى إدخال مبلغ صحيح أكبر من الصفر.';
-        } elseif ($description === '') {
-            $_SESSION['financial_error'] = 'وصف التحصيل مطلوب.';
         } else {
             try {
                 require_once __DIR__ . '/../includes/approval_system.php';
@@ -1234,7 +1232,6 @@ $pageTitle = isset($lang['accountant_dashboard']) ? $lang['accountant_dashboard'
                                     <small class="text-muted">يجب أن يكون المبلغ أقل من أو يساوي رصيد المندوب</small>
                                 </div>
                                 
-                                
                             </div>
                             <div class="modal-footer">
                                 <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">إلغاء</button>
@@ -1281,23 +1278,6 @@ $pageTitle = isset($lang['accountant_dashboard']) ? $lang['accountant_dashboard'
                 }
                 ?>
                 
-            <?php elseif ($page === 'inventory'): ?>
-                <!-- صفحة المخزون -->
-                <?php 
-                $modulePath = __DIR__ . '/../modules/accountant/inventory.php';
-                if (file_exists($modulePath)) {
-                    include $modulePath;
-                }
-                ?>
-                
-            <?php elseif ($page === 'inventory_movements'): ?>
-                <!-- صفحة حركات المخزون -->
-                <?php 
-                $modulePath = __DIR__ . '/../modules/accountant/inventory_movements.php';
-                if (file_exists($modulePath)) {
-                    include $modulePath;
-                }
-                ?>
                 
             <?php elseif ($page === 'invoices'): ?>
                 <!-- صفحة الفواتير -->
