@@ -902,9 +902,18 @@ $pageTitle = isset($lang['accountant_dashboard']) ? $lang['accountant_dashboard'
                 <!-- لوحة مالية -->
                 <div class="cards-grid">
                     <?php
+                    // حساب رصيد الخزينة من financial_transactions و accountant_transactions
                     $cashBalance = $db->queryOne(
-                        "SELECT COALESCE(SUM(CASE WHEN type = 'income' THEN amount ELSE -amount END), 0) as balance
-                         FROM financial_transactions WHERE status = 'approved'"
+                        "SELECT COALESCE(
+                            (SELECT SUM(CASE WHEN type = 'income' THEN amount ELSE -amount END) 
+                             FROM financial_transactions WHERE status = 'approved') +
+                            (SELECT SUM(CASE 
+                                WHEN transaction_type IN ('collection_from_sales_rep', 'income') THEN amount
+                                WHEN transaction_type IN ('expense') THEN -amount
+                                ELSE 0 END)
+                             FROM accountant_transactions WHERE status = 'approved'),
+                            0
+                        ) as balance"
                     );
                     ?>
                     <div class="stat-card">
@@ -918,29 +927,32 @@ $pageTitle = isset($lang['accountant_dashboard']) ? $lang['accountant_dashboard'
                     </div>
                     
                     <?php
+                    // حساب المصروفات من financial_transactions و accountant_transactions
                     $expenses = $db->queryOne(
-                        "SELECT COALESCE(SUM(amount), 0) as total
-                         FROM financial_transactions 
-                         WHERE type = 'expense' AND status = 'approved' 
-                         AND MONTH(created_at) = MONTH(NOW())"
+                        "SELECT COALESCE(
+                            (SELECT SUM(amount) FROM financial_transactions 
+                             WHERE type = 'expense' AND status = 'approved' 
+                             AND MONTH(created_at) = MONTH(NOW())) +
+                            (SELECT SUM(amount) FROM accountant_transactions 
+                             WHERE transaction_type = 'expense' AND status = 'approved' 
+                             AND MONTH(created_at) = MONTH(NOW())),
+                            0
+                        ) as total"
                     );
                     ?>
-                    <div class="stat-card">
-                        <div class="stat-card-header">
-                            <div class="stat-card-icon red">
-                                <i class="bi bi-arrow-down-circle"></i>
-                            </div>
-                        </div>
-                        <div class="stat-card-title"><?php echo isset($lang['expenses']) ? $lang['expenses'] : 'المصروفات'; ?></div>
-                        <div class="stat-card-value"><?php echo formatCurrency($expenses['total'] ?? 0); ?></div>
-                        <div class="stat-card-description">هذا الشهر</div>
-                    </div>
                     <?php
+                    // حساب الإيرادات من financial_transactions و accountant_transactions
                     $income = $db->queryOne(
-                        "SELECT COALESCE(SUM(amount), 0) as total
-                         FROM financial_transactions 
-                         WHERE type = 'income' AND status = 'approved' 
-                         AND MONTH(created_at) = MONTH(NOW())"
+                        "SELECT COALESCE(
+                            (SELECT SUM(amount) FROM financial_transactions 
+                             WHERE type = 'income' AND status = 'approved' 
+                             AND MONTH(created_at) = MONTH(NOW())) +
+                            (SELECT SUM(amount) FROM accountant_transactions 
+                             WHERE transaction_type IN ('collection_from_sales_rep', 'income') 
+                             AND status = 'approved' 
+                             AND MONTH(created_at) = MONTH(NOW())),
+                            0
+                        ) as total"
                     );
                     ?>
                     <div class="stat-card">
@@ -956,22 +968,28 @@ $pageTitle = isset($lang['accountant_dashboard']) ? $lang['accountant_dashboard'
                 </div>
             
             <?php
+            // حساب ملخص الخزينة من financial_transactions و accountant_transactions
             $treasurySummary = $db->queryOne("
                 SELECT
-                    SUM(CASE WHEN type = 'income' AND status = 'approved' THEN amount ELSE 0 END) AS approved_income,
-                    SUM(CASE WHEN type = 'expense' AND status = 'approved' THEN amount ELSE 0 END) AS approved_expense,
-                    SUM(CASE WHEN type = 'transfer' AND status = 'approved' THEN amount ELSE 0 END) AS approved_transfer,
-                    SUM(CASE WHEN type = 'payment' AND status = 'approved' THEN amount ELSE 0 END) AS approved_payment,
-                    SUM(CASE WHEN status = 'pending' THEN amount ELSE 0 END) AS pending_total
-                FROM financial_transactions
+                    (SELECT COALESCE(SUM(CASE WHEN type = 'income' AND status = 'approved' THEN amount ELSE 0 END), 0) FROM financial_transactions) +
+                    (SELECT COALESCE(SUM(CASE WHEN transaction_type IN ('collection_from_sales_rep', 'income') AND status = 'approved' THEN amount ELSE 0 END), 0) FROM accountant_transactions) AS approved_income,
+                    (SELECT COALESCE(SUM(CASE WHEN type = 'expense' AND status = 'approved' THEN amount ELSE 0 END), 0) FROM financial_transactions) +
+                    (SELECT COALESCE(SUM(CASE WHEN transaction_type = 'expense' AND status = 'approved' THEN amount ELSE 0 END), 0) FROM accountant_transactions) AS approved_expense,
+                    (SELECT COALESCE(SUM(CASE WHEN type = 'transfer' AND status = 'approved' THEN amount ELSE 0 END), 0) FROM financial_transactions) +
+                    (SELECT COALESCE(SUM(CASE WHEN transaction_type = 'transfer' AND status = 'approved' THEN amount ELSE 0 END), 0) FROM accountant_transactions) AS approved_transfer,
+                    (SELECT COALESCE(SUM(CASE WHEN type = 'payment' AND status = 'approved' THEN amount ELSE 0 END), 0) FROM financial_transactions) +
+                    (SELECT COALESCE(SUM(CASE WHEN transaction_type = 'payment' AND status = 'approved' THEN amount ELSE 0 END), 0) FROM accountant_transactions) AS approved_payment,
+                    (SELECT COALESCE(SUM(CASE WHEN status = 'pending' THEN amount ELSE 0 END), 0) FROM financial_transactions) +
+                    (SELECT COALESCE(SUM(CASE WHEN status = 'pending' THEN amount ELSE 0 END), 0) FROM accountant_transactions) AS pending_total
             ");
             
+            // حساب المعاملات المعلقة من financial_transactions و accountant_transactions
             $pendingStats = $db->queryOne("
                 SELECT 
-                    COUNT(*) AS total_pending,
-                    SUM(amount) AS pending_amount
-                FROM financial_transactions
-                WHERE status = 'pending'
+                    (SELECT COUNT(*) FROM financial_transactions WHERE status = 'pending') +
+                    (SELECT COUNT(*) FROM accountant_transactions WHERE status = 'pending') AS total_pending,
+                    (SELECT COALESCE(SUM(amount), 0) FROM financial_transactions WHERE status = 'pending') +
+                    (SELECT COALESCE(SUM(amount), 0) FROM accountant_transactions WHERE status = 'pending') AS pending_amount
             ");
             
             $pendingTransactionsRaw = $db->query("
