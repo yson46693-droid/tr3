@@ -228,7 +228,6 @@ if ($page === 'financial' && $_SERVER['REQUEST_METHOD'] === 'POST') {
                         [
                             'income',
                             $amount,
-                            $finalDescription,
                             'COL-REP-' . $salesRepId . '-' . date('YmdHis'),
                             $currentUser['id'],
                             $currentUser['id']
