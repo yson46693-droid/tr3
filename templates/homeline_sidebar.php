@@ -247,17 +247,10 @@ switch ($role) {
                 'badge' => null
             ],
             [
-                'title' => 'مخزن المنتجات',
-                'icon' => 'bi-boxes',
-                'url' => $baseUrl . 'accountant.php?page=inventory',
-                'active' => ($currentPage === 'accountant.php' && $currentPageParam === 'inventory'),
-                'badge' => null
-            ],
-            [
-                'title' => 'حركات المخزون',
-                'icon' => 'bi-arrow-left-right',
-                'url' => $baseUrl . 'accountant.php?page=inventory_movements',
-                'active' => ($currentPage === 'accountant.php' && $currentPageParam === 'inventory_movements'),
+                'title' => 'منتجات الشركة',
+                'icon' => 'bi-box-seam',
+                'url' => $baseUrl . 'accountant.php?page=company_products',
+                'active' => ($currentPage === 'accountant.php' && $currentPageParam === 'company_products'),
                 'badge' => null
             ],
             [
