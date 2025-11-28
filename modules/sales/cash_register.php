@@ -93,17 +93,25 @@ if (!empty($collectionsTableExists)) {
 }
 
 // حساب المبيعات المدفوعة بالكامل (من الفواتير)
+// استبعاد المبيعات المدفوعة من رصيد دائن
 $fullyPaidSales = 0.0;
 if (!empty($invoicesTableExists)) {
-    $fullyPaidResult = $db->queryOne(
-        "SELECT COALESCE(SUM(total_amount), 0) as fully_paid
+    // التحقق من وجود عمود paid_from_credit
+    $hasPaidFromCreditColumn = !empty($db->queryOne("SHOW COLUMNS FROM invoices LIKE 'paid_from_credit'"));
+    
+    $fullyPaidSql = "SELECT COALESCE(SUM(total_amount), 0) as fully_paid
          FROM invoices
          WHERE sales_rep_id = ? 
          AND status = 'paid' 
          AND paid_amount >= total_amount
-         AND status != 'cancelled'",
-        [$salesRepId]
-    );
+         AND status != 'cancelled'";
+    
+    // استبعاد الفواتير المدفوعة من رصيد دائن
+    if ($hasPaidFromCreditColumn) {
+        $fullyPaidSql .= " AND (paid_from_credit IS NULL OR paid_from_credit = 0)";
+    }
+    
+    $fullyPaidResult = $db->queryOne($fullyPaidSql, [$salesRepId]);
     $fullyPaidSales = (float)($fullyPaidResult['fully_paid'] ?? 0);
 }
 
@@ -156,23 +164,34 @@ $todayCollections = 0.0;
 $monthCollections = 0.0;
 
 if (!empty($invoicesTableExists)) {
-    $todaySalesResult = $db->queryOne(
-        "SELECT COALESCE(SUM(total_amount), 0) as total
+    // التحقق من وجود عمود paid_from_credit
+    $hasPaidFromCreditColumn = !empty($db->queryOne("SHOW COLUMNS FROM invoices LIKE 'paid_from_credit'"));
+    
+    // استبعاد المبيعات المدفوعة من رصيد دائن من مبيعات اليوم
+    $todaySalesSql = "SELECT COALESCE(SUM(total_amount), 0) as total
          FROM invoices
-         WHERE sales_rep_id = ? AND DATE(date) = CURDATE() AND status != 'cancelled'",
-        [$salesRepId]
-    );
+         WHERE sales_rep_id = ? AND DATE(date) = CURDATE() AND status != 'cancelled'";
+    
+    if ($hasPaidFromCreditColumn) {
+        $todaySalesSql .= " AND (paid_from_credit IS NULL OR paid_from_credit = 0)";
+    }
+    
+    $todaySalesResult = $db->queryOne($todaySalesSql, [$salesRepId]);
     $todaySales = (float)($todaySalesResult['total'] ?? 0);
     
-    $monthSalesResult = $db->queryOne(
-        "SELECT COALESCE(SUM(total_amount), 0) as total
+    // استبعاد المبيعات المدفوعة من رصيد دائن من مبيعات الشهر
+    $monthSalesSql = "SELECT COALESCE(SUM(total_amount), 0) as total
          FROM invoices
          WHERE sales_rep_id = ? 
          AND MONTH(date) = MONTH(NOW()) 
          AND YEAR(date) = YEAR(NOW())
-         AND status != 'cancelled'",
-        [$salesRepId]
-    );
+         AND status != 'cancelled'";
+    
+    if ($hasPaidFromCreditColumn) {
+        $monthSalesSql .= " AND (paid_from_credit IS NULL OR paid_from_credit = 0)";
+    }
+    
+    $monthSalesResult = $db->queryOne($monthSalesSql, [$salesRepId]);
     $monthSales = (float)($monthSalesResult['total'] ?? 0);
 }
 
@@ -545,7 +564,7 @@ $salesRepInfo = $db->queryOne(
             <div class="glass-card">
                 <div class="glass-card-header">
                     <i class="bi bi-exclamation-triangle-fill glass-card-orange"></i>
-                    <h6 class="mb-0 fw-semibold">المبيعات المعلقة (يشمل الديون القديمه)</h6>
+                    <h6 class="mb-0 fw-semibold">الديون المعلقة (يشمل الديون القديمه)</h6>
                 </div>
                 <div class="glass-card-body">
                     <p class="glass-card-value glass-card-orange mb-0">- <?php echo formatCurrency($pendingSales); ?></p>
