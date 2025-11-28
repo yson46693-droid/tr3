@@ -272,43 +272,97 @@ function showSuccessMessage(mainMessage, financialNote, itemsReturned, returnNum
     });
 }
 
-// دالة لإظهار رسالة الخطأ
+// دالة لإظهار رسالة الخطأ - مع دعم Bootstrap Alert كبديل
 function showErrorMessage(message) {
-    const toastContainer = document.getElementById('toast-container') || createToastContainer();
-    
-    const toastId = 'error-toast-' + Date.now();
-    const toastHtml = `
-        <div id="${toastId}" class="toast align-items-center text-white bg-danger border-0" role="alert" aria-live="assertive" aria-atomic="true" data-bs-autohide="true" data-bs-delay="5000">
-            <div class="d-flex">
-                <div class="toast-body">
-                    <div class="d-flex align-items-center">
-                        <i class="bi bi-exclamation-triangle-fill fs-4 me-2"></i>
-                        <strong class="me-auto">خطأ</strong>
+    try {
+        // محاولة 1: استخدام Bootstrap Toast
+        if (typeof bootstrap !== 'undefined' && bootstrap.Toast) {
+            const toastContainer = document.getElementById('toast-container') || createToastContainer();
+            
+            const toastId = 'error-toast-' + Date.now();
+            const toastHtml = `
+                <div id="${toastId}" class="toast align-items-center text-white bg-danger border-0" role="alert" aria-live="assertive" aria-atomic="true" data-bs-autohide="true" data-bs-delay="5000">
+                    <div class="d-flex">
+                        <div class="toast-body">
+                            <div class="d-flex align-items-center">
+                                <i class="bi bi-exclamation-triangle-fill fs-4 me-2"></i>
+                                <strong class="me-auto">خطأ</strong>
+                            </div>
+                            <div class="mt-2">${message}</div>
+                        </div>
+                        <button type="button" class="btn-close btn-close-white me-2 m-auto" data-bs-dismiss="toast" aria-label="Close"></button>
                     </div>
-                    <div class="mt-2">${message}</div>
                 </div>
-                <button type="button" class="btn-close btn-close-white me-2 m-auto" data-bs-dismiss="toast" aria-label="Close"></button>
+            `;
+            
+            toastContainer.insertAdjacentHTML('beforeend', toastHtml);
+            const toastElement = document.getElementById(toastId);
+            const toast = new bootstrap.Toast(toastElement);
+            toast.show();
+            
+            toastElement.addEventListener('hidden.bs.toast', function() {
+                toastElement.remove();
+            });
+            return;
+        }
+    } catch (e) {
+        console.warn('Bootstrap Toast not available, using Alert fallback:', e);
+    }
+    
+    // محاولة 2: استخدام Bootstrap Alert
+    try {
+        const alertContainer = document.getElementById('alert-container') || createAlertContainer();
+        const alertId = 'error-alert-' + Date.now();
+        
+        const alertHtml = `
+            <div id="${alertId}" class="alert alert-danger alert-dismissible fade show" role="alert">
+                <strong>❌ خطأ:</strong> ${message}
+                <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close"></button>
             </div>
-        </div>
-    `;
+        `;
+        
+        alertContainer.insertAdjacentHTML('afterbegin', alertHtml);
+        
+        setTimeout(() => {
+            const alertEl = document.getElementById(alertId);
+            if (alertEl) {
+                alertEl.remove();
+            }
+        }, 5000);
+        return;
+    } catch (e) {
+        console.warn('Bootstrap Alert not available, using native alert:', e);
+    }
     
-    toastContainer.insertAdjacentHTML('beforeend', toastHtml);
-    const toastElement = document.getElementById(toastId);
-    const toast = new bootstrap.Toast(toastElement);
-    toast.show();
-    
-    toastElement.addEventListener('hidden.bs.toast', function() {
-        toastElement.remove();
-    });
+    // Fallback 3: استخدام Alert الأصلي
+    alert('❌ خطأ: ' + message);
 }
 
 // إنشاء حاوية Toast إذا لم تكن موجودة
 function createToastContainer() {
-    const container = document.createElement('div');
-    container.id = 'toast-container';
-    container.className = 'toast-container position-fixed top-0 end-0 p-3';
-    container.style.zIndex = '9999';
-    document.body.appendChild(container);
+    let container = document.getElementById('toast-container');
+    if (!container) {
+        container = document.createElement('div');
+        container.id = 'toast-container';
+        container.className = 'toast-container position-fixed top-0 end-0 p-3';
+        container.style.zIndex = '9999';
+        document.body.appendChild(container);
+    }
+    return container;
+}
+
+// إنشاء حاوية Alert إذا لم تكن موجودة
+function createAlertContainer() {
+    let container = document.getElementById('alert-container');
+    if (!container) {
+        container = document.createElement('div');
+        container.id = 'alert-container';
+        container.className = 'position-fixed top-0 start-50 translate-middle-x mt-3';
+        container.style.zIndex = '9999';
+        container.style.width = '90%';
+        container.style.maxWidth = '600px';
+        document.body.appendChild(container);
+    }
     return container;
 }
 
@@ -359,15 +413,25 @@ function approveReturn(returnId, event) {
         if (data.success) {
             console.log('Approval successful!');
             
-            // إظهار رسالة نجاح جميلة
-            showSuccessMessage(
-                data.success_message || 'تمت الموافقة على طلب المرتجع بنجاح!',
-                data.financial_note,
-                data.items_returned,
-                data.return_number
-            );
+            // بناء رسالة النجاح التفصيلية
+            let successMsg = '✅ تمت الموافقة على طلب المرتجع بنجاح!\n\n';
             
-            // إعادة تحميل الصفحة بعد 2 ثانية لإعطاء المستخدم وقت لرؤية الرسالة
+            if (data.financial_note) {
+                successMsg += '📊 التفاصيل المالية:\n' + data.financial_note + '\n\n';
+            }
+            
+            if (data.items_returned && data.items_returned > 0) {
+                successMsg += '📦 تم إرجاع ' + data.items_returned + ' منتج(ات) إلى مخزن السيارة\n\n';
+            }
+            
+            if (data.return_number) {
+                successMsg += '🔢 رقم المرتجع: ' + data.return_number;
+            }
+            
+            // إظهار رسالة النجاح مباشرة
+            alert(successMsg);
+            
+            // إعادة تحميل الصفحة بعد ثانيتين
             setTimeout(() => {
                 location.reload();
             }, 2000);
@@ -377,7 +441,9 @@ function approveReturn(returnId, event) {
                 btn.disabled = false;
                 btn.innerHTML = originalHTML;
             }
-            showErrorMessage(data.message || 'حدث خطأ غير معروف');
+            
+            // إظهار رسالة الخطأ مباشرة
+            alert('❌ خطأ: ' + (data.message || 'حدث خطأ غير معروف'));
         }
     })
     .catch(error => {
@@ -390,7 +456,17 @@ function approveReturn(returnId, event) {
             btn.disabled = false;
             btn.innerHTML = originalHTML;
         }
-        showErrorMessage('حدث خطأ في الاتصال بالخادم. يرجى المحاولة مرة أخرى.');
+        // محاولة استخدام Toast، ثم Alert كبديل
+        try {
+            if (typeof showErrorMessage === 'function') {
+                showErrorMessage('حدث خطأ في الاتصال بالخادم. يرجى المحاولة مرة أخرى.');
+            } else {
+                alert('❌ حدث خطأ في الاتصال بالخادم. يرجى المحاولة مرة أخرى.');
+            }
+        } catch (e) {
+            console.error('Error showing error message:', e);
+            alert('❌ حدث خطأ في الاتصال بالخادم. يرجى المحاولة مرة أخرى.');
+        }
     });
 }
 
