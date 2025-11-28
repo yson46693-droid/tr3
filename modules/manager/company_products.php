@@ -1089,9 +1089,11 @@ foreach ($factoryProducts as $product) {
 </div>
 
 <script>
-// وظيفة طباعة الباركود
+// تهيئة المتغيرات والدوال
 const PRINT_BARCODE_URL = <?php echo json_encode(getRelativeUrl('print_barcode.php')); ?>;
-window.PRINT_BARCODE_URL = PRINT_BARCODE_URL;
+if (typeof window !== 'undefined') {
+    window.PRINT_BARCODE_URL = PRINT_BARCODE_URL;
+}
 
 function showBarcodePrintModal(batchNumber, productName, defaultQuantity) {
     const modalElement = document.getElementById('printBarcodesModal');
@@ -1383,63 +1385,78 @@ function renderBatchDetails(data) {
     }
 }
 
+// جعل الدوال متاحة عالمياً
 window.showBatchDetailsModal = showBatchDetailsModal;
+window.showBarcodePrintModal = showBarcodePrintModal;
+window.printBarcodes = printBarcodes;
 
 // ربط الأحداث للأزرار - انتظار تحميل DOM بالكامل
-if (document.readyState === 'loading') {
-    document.addEventListener('DOMContentLoaded', function() {
-        initBatchDetailsEventListeners();
-    });
-} else {
-    // DOM محمل بالفعل
-    initBatchDetailsEventListeners();
-}
-
 function initBatchDetailsEventListeners() {
-    // انتظار تحميل CSS قبل ربط الأحداث
-    if (document.readyState === 'complete' || (document.readyState === 'interactive' && document.querySelector('link[rel="stylesheet"]'))) {
-        attachBatchDetailsListeners();
+    // انتظار تحميل الصفحة بالكامل (CSS + JS) قبل ربط الأحداث
+    function waitForResources() {
+        if (document.readyState === 'complete') {
+            setTimeout(attachBatchDetailsListeners, 200);
+        } else {
+            window.addEventListener('load', function() {
+                setTimeout(attachBatchDetailsListeners, 200);
+            });
+        }
+    }
+    
+    if (document.readyState === 'loading') {
+        document.addEventListener('DOMContentLoaded', waitForResources);
     } else {
-        window.addEventListener('load', attachBatchDetailsListeners);
+        waitForResources();
     }
 }
+
+// تهيئة الأحداث
+initBatchDetailsEventListeners();
+
+let batchDetailsListenerAttached = false;
 
 function attachBatchDetailsListeners() {
+    // التأكد من إضافة المستمع مرة واحدة فقط
+    if (batchDetailsListenerAttached) {
+        return;
+    }
+    batchDetailsListenerAttached = true;
+    
     document.addEventListener('click', function(event) {
-    // زر تفاصيل التشغيلة
-    const detailsButton = event.target.closest('.js-batch-details');
-    if (detailsButton) {
-        event.preventDefault();
-        event.stopPropagation();
-        const batchNumber = detailsButton.getAttribute('data-batch') || detailsButton.dataset.batch;
-        const productName = detailsButton.getAttribute('data-product') || detailsButton.dataset.product || '';
-        if (batchNumber && batchNumber.trim() !== '') {
-            if (typeof showBatchDetailsModal === 'function') {
-                showBatchDetailsModal(batchNumber, productName);
-            } else {
-                console.error('showBatchDetailsModal function not found');
+        // زر تفاصيل التشغيلة
+        const detailsButton = event.target.closest('.js-batch-details');
+        if (detailsButton) {
+            event.preventDefault();
+            event.stopPropagation();
+            const batchNumber = detailsButton.getAttribute('data-batch') || detailsButton.dataset.batch;
+            const productName = detailsButton.getAttribute('data-product') || detailsButton.dataset.product || '';
+            if (batchNumber && batchNumber.trim() !== '') {
+                if (typeof showBatchDetailsModal === 'function') {
+                    showBatchDetailsModal(batchNumber, productName);
+                } else {
+                    console.error('showBatchDetailsModal function not found');
+                }
             }
+            return;
         }
-        return;
-    }
 
-    // زر طباعة الباركود
-    const printButton = event.target.closest('.js-print-barcode');
-    if (printButton) {
-        event.preventDefault();
-        event.stopPropagation();
-        const batchNumber = printButton.getAttribute('data-batch') || printButton.dataset.batch;
-        const productName = printButton.getAttribute('data-product') || printButton.dataset.product || '';
-        const quantity = parseFloat(printButton.getAttribute('data-quantity') || printButton.dataset.quantity || '1');
-        if (batchNumber && batchNumber.trim() !== '') {
-            if (typeof window.showBarcodePrintModal === 'function') {
-                window.showBarcodePrintModal(batchNumber, productName, quantity);
-            } else {
-                console.error('showBarcodePrintModal function not found');
+        // زر طباعة الباركود
+        const printButton = event.target.closest('.js-print-barcode');
+        if (printButton) {
+            event.preventDefault();
+            event.stopPropagation();
+            const batchNumber = printButton.getAttribute('data-batch') || printButton.dataset.batch;
+            const productName = printButton.getAttribute('data-product') || printButton.dataset.product || '';
+            const quantity = parseFloat(printButton.getAttribute('data-quantity') || printButton.dataset.quantity || '1');
+            if (batchNumber && batchNumber.trim() !== '') {
+                if (typeof window.showBarcodePrintModal === 'function') {
+                    window.showBarcodePrintModal(batchNumber, productName, quantity);
+                } else {
+                    console.error('showBarcodePrintModal function not found');
+                }
             }
+            return;
         }
-        return;
-    }
     });
 }
 
@@ -1454,34 +1471,43 @@ if (document.readyState === 'loading') {
 
 function initEditExternalButtons() {
     document.querySelectorAll('.js-edit-external').forEach(btn => {
-    btn.addEventListener('click', function() {
-        const id = this.dataset.id;
-        const name = this.dataset.name;
-        const quantity = this.dataset.quantity;
-        const unit = this.dataset.unit;
-        const price = this.dataset.price;
-        
-        document.getElementById('edit_product_id').value = id;
-        document.getElementById('edit_product_name').value = name;
-        document.getElementById('edit_quantity').value = quantity;
-        document.getElementById('edit_unit').value = unit;
-        document.getElementById('edit_unit_price').value = price;
-        
-        new bootstrap.Modal(document.getElementById('editExternalProductModal')).show();
+        btn.addEventListener('click', function() {
+            const id = this.dataset.id;
+            const name = this.dataset.name;
+            const quantity = this.dataset.quantity;
+            const unit = this.dataset.unit;
+            const price = this.dataset.price;
+            
+            document.getElementById('edit_product_id').value = id;
+            document.getElementById('edit_product_name').value = name;
+            document.getElementById('edit_quantity').value = quantity;
+            document.getElementById('edit_unit').value = unit;
+            document.getElementById('edit_unit_price').value = price;
+            
+            if (typeof bootstrap !== 'undefined' && bootstrap.Modal) {
+                new bootstrap.Modal(document.getElementById('editExternalProductModal')).show();
+            } else {
+                console.error('Bootstrap Modal not available');
+            }
+        });
     });
-});
 
-// معالجة حذف المنتجات الخارجية
-document.querySelectorAll('.js-delete-external').forEach(btn => {
-    btn.addEventListener('click', function() {
-        const id = this.dataset.id;
-        const name = this.dataset.name;
-        
-        document.getElementById('delete_product_id').value = id;
-        document.getElementById('delete_product_name').textContent = name;
-        
-        new bootstrap.Modal(document.getElementById('deleteExternalProductModal')).show();
+    // معالجة حذف المنتجات الخارجية
+    document.querySelectorAll('.js-delete-external').forEach(btn => {
+        btn.addEventListener('click', function() {
+            const id = this.dataset.id;
+            const name = this.dataset.name;
+            
+            document.getElementById('delete_product_id').value = id;
+            document.getElementById('delete_product_name').textContent = name;
+            
+            if (typeof bootstrap !== 'undefined' && bootstrap.Modal) {
+                new bootstrap.Modal(document.getElementById('deleteExternalProductModal')).show();
+            } else {
+                console.error('Bootstrap Modal not available');
+            }
+        });
     });
-});
+}
 </script>
 

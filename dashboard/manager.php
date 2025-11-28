@@ -1002,7 +1002,7 @@ $pageTitle = isset($lang['manager_dashboard']) ? $lang['manager_dashboard'] : '�
             <?php endif; ?>
 
 <?php include __DIR__ . '/../templates/footer.php'; ?>
-<script src="<?php echo ASSETS_URL; ?>js/reports.js"></script>
+<script src="<?php echo ASSETS_URL; ?>js/reports.js" defer></script>
 <script>
 function approveRequest(id, event) {
     // استخدام event الممرر أو window.event
@@ -1228,17 +1228,53 @@ async function updateApprovalBadge() {
     }
 }
 
-// تحديث العداد عند تحميل الصفحة
-document.addEventListener('DOMContentLoaded', function() {
-    updateApprovalBadge();
+// جعل الدوال متاحة عالمياً
+window.approveRequest = approveRequest;
+window.rejectRequest = rejectRequest;
+window.updateApprovalBadge = updateApprovalBadge;
+
+// تحديث العداد عند تحميل الصفحة - تأخير حتى تحميل CSS
+(function() {
+    function initApprovalBadgeUpdater() {
+        // التأكد من تحميل جميع الموارد (CSS + JS)
+        if (document.readyState !== 'complete') {
+            window.addEventListener('load', function() {
+                setTimeout(function() {
+                    if (typeof updateApprovalBadge === 'function') {
+                        updateApprovalBadge();
+                        
+                        // تحديث العداد كل 30 ثانية
+                        setInterval(updateApprovalBadge, 30000);
+                        
+                        // تحديث العداد بعد الموافقة أو الرفض
+                        document.addEventListener('approvalUpdated', function() {
+                            setTimeout(updateApprovalBadge, 1000);
+                        });
+                    }
+                }, 200);
+            });
+        } else {
+            setTimeout(function() {
+                if (typeof updateApprovalBadge === 'function') {
+                    updateApprovalBadge();
+                    
+                    // تحديث العداد كل 30 ثانية
+                    setInterval(updateApprovalBadge, 30000);
+                    
+                    // تحديث العداد بعد الموافقة أو الرفض
+                    document.addEventListener('approvalUpdated', function() {
+                        setTimeout(updateApprovalBadge, 1000);
+                    });
+                }
+            }, 200);
+        }
+    }
     
-    // تحديث العداد كل 30 ثانية
-    setInterval(updateApprovalBadge, 30000);
-    
-    // تحديث العداد بعد الموافقة أو الرفض
-    document.addEventListener('approvalUpdated', function() {
-        setTimeout(updateApprovalBadge, 1000);
-    });
-});
+    if (document.readyState === 'loading') {
+        document.addEventListener('DOMContentLoaded', initApprovalBadgeUpdater);
+    } else {
+        initApprovalBadgeUpdater();
+    }
+})();
 </script>
 
