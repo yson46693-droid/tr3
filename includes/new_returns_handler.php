@@ -24,8 +24,35 @@ function generateNewReturnNumber(): string
 {
     $db = db();
     $prefix = 'RET-' . date('Ym');
+    
+    // تحديد الجدول الصحيح للاستخدام
+    $returnsTable = 'returns';
+    try {
+        $tableCheck = $db->queryOne("SHOW TABLES LIKE 'sales_returns'");
+        if (!empty($tableCheck)) {
+            // التحقق من foreign key constraint
+            $fkCheck = $db->query("
+                SELECT REFERENCED_TABLE_NAME 
+                FROM INFORMATION_SCHEMA.KEY_COLUMN_USAGE 
+                WHERE TABLE_SCHEMA = DATABASE() 
+                AND TABLE_NAME = 'return_items' 
+                AND CONSTRAINT_NAME = 'return_items_ibfk_1'
+                AND REFERENCED_TABLE_NAME IS NOT NULL
+                LIMIT 1
+            ");
+            if (!empty($fkCheck)) {
+                $fkRow = reset($fkCheck);
+                if (isset($fkRow['REFERENCED_TABLE_NAME']) && $fkRow['REFERENCED_TABLE_NAME'] === 'sales_returns') {
+                    $returnsTable = 'sales_returns';
+                }
+            }
+        }
+    } catch (Throwable $e) {
+        // استخدم returns كافتراضي
+    }
+    
     $lastReturn = $db->queryOne(
-        "SELECT return_number FROM returns WHERE return_number LIKE ? ORDER BY return_number DESC LIMIT 1",
+        "SELECT return_number FROM {$returnsTable} WHERE return_number LIKE ? ORDER BY return_number DESC LIMIT 1",
         [$prefix . '%']
     );
     
@@ -220,68 +247,149 @@ function createReturnRequest(
         $conn->begin_transaction();
         
         try {
+            // تحديد الجدول الصحيح للاستخدام (returns أو sales_returns)
+            $returnsTable = 'returns';
+            $salesReturnsExists = false;
+            try {
+                $tableCheck = $db->queryOne("SHOW TABLES LIKE 'sales_returns'");
+                $salesReturnsExists = !empty($tableCheck);
+                
+                // التحقق من foreign key constraint في return_items
+                if ($salesReturnsExists) {
+                    $fkCheck = $db->query("
+                        SELECT REFERENCED_TABLE_NAME 
+                        FROM INFORMATION_SCHEMA.KEY_COLUMN_USAGE 
+                        WHERE TABLE_SCHEMA = DATABASE() 
+                        AND TABLE_NAME = 'return_items' 
+                        AND CONSTRAINT_NAME = 'return_items_ibfk_1'
+                        AND REFERENCED_TABLE_NAME IS NOT NULL
+                    ");
+                    if (!empty($fkCheck)) {
+                        $fkRow = reset($fkCheck);
+                        if (isset($fkRow['REFERENCED_TABLE_NAME']) && $fkRow['REFERENCED_TABLE_NAME'] === 'sales_returns') {
+                            $returnsTable = 'sales_returns';
+                        }
+                    }
+                }
+            } catch (Throwable $e) {
+                // استخدم returns كافتراضي
+                $returnsTable = 'returns';
+            }
+            
             // إنشاء سجل المرتجع
             // Check if return_quantity and condition_type columns exist
             $hasReturnQuantity = false;
             $hasConditionType = false;
             try {
-                $columns = $db->query("SHOW COLUMNS FROM returns LIKE 'return_quantity'");
+                $columns = $db->query("SHOW COLUMNS FROM {$returnsTable} LIKE 'return_quantity'");
                 $hasReturnQuantity = !empty($columns);
             } catch (Throwable $e) {
                 $hasReturnQuantity = false;
             }
             
             try {
-                $columns = $db->query("SHOW COLUMNS FROM returns LIKE 'condition_type'");
+                $columns = $db->query("SHOW COLUMNS FROM {$returnsTable} LIKE 'condition_type'");
                 $hasConditionType = !empty($columns);
             } catch (Throwable $e) {
                 $hasConditionType = false;
             }
             
-            // Build INSERT statement dynamically based on available columns
-            if ($hasReturnQuantity && $hasConditionType) {
-                $db->execute(
-                    "INSERT INTO returns 
-                    (return_number, invoice_id, customer_id, sales_rep_id, return_date, return_type, 
-                     reason, reason_description, refund_amount, refund_method, status, 
-                     return_quantity, condition_type, notes, created_by) 
-                    VALUES (?, ?, ?, ?, CURDATE(), ?, ?, ?, ?, 'credit', 'pending', ?, ?, ?, ?)",
-                    [
-                        $returnNumber,
-                        $invoiceId,
-                        $customerId,
-                        $salesRepId ?: null,
-                        $returnType,
-                        $reason,
-                        $reasonDescription,
-                        $totalRefundAmount,
-                        $totalQuantity,
-                        $hasDamagedItems ? 'damaged' : 'normal',
-                        $notes,
-                        $createdBy
-                    ]
-                );
-            } else {
-                // Standard INSERT without return_quantity and condition_type
-                $db->execute(
-                    "INSERT INTO returns 
-                    (return_number, invoice_id, customer_id, sales_rep_id, return_date, return_type, 
-                     reason, reason_description, refund_amount, refund_method, status, notes, created_by) 
-                    VALUES (?, ?, ?, ?, CURDATE(), ?, ?, ?, ?, 'credit', 'pending', ?, ?)",
-                    [
-                        $returnNumber,
-                        $invoiceId,
-                        $customerId,
-                        $salesRepId ?: null,
-                        $returnType,
-                        $reason,
-                        $reasonDescription,
-                        $totalRefundAmount,
-                        $notes,
-                        $createdBy
-                    ]
-                );
+            // Check if sale_id column exists (required for sales_returns)
+            $hasSaleId = false;
+            $saleIdNullable = true;
+            try {
+                $columns = $db->query("SHOW COLUMNS FROM {$returnsTable} WHERE Field = 'sale_id'");
+                if (!empty($columns)) {
+                    $col = reset($columns);
+                    $hasSaleId = true;
+                    // Check if NULL is allowed
+                    $saleIdNullable = (strtoupper($col['Null'] ?? 'YES') === 'YES');
+                }
+            } catch (Throwable $e) {
+                $hasSaleId = false;
             }
+            
+            // Check if sales_rep_id is required (NOT NULL)
+            $salesRepIdRequired = false;
+            try {
+                $columns = $db->query("SHOW COLUMNS FROM {$returnsTable} WHERE Field = 'sales_rep_id'");
+                if (!empty($columns)) {
+                    $col = reset($columns);
+                    $salesRepIdRequired = (strtoupper($col['Null'] ?? 'YES') === 'NO');
+                }
+            } catch (Throwable $e) {
+                // افتراضي
+            }
+            
+            // Build INSERT statement dynamically based on available columns
+            $insertColumns = ['return_number'];
+            $insertValues = [$returnNumber];
+            
+            // Add invoice_id if column exists
+            try {
+                $columns = $db->query("SHOW COLUMNS FROM {$returnsTable} WHERE Field = 'invoice_id'");
+                if (!empty($columns)) {
+                    $insertColumns[] = 'invoice_id';
+                    $insertValues[] = $invoiceId;
+                }
+            } catch (Throwable $e) {
+                // تجاهل
+            }
+            
+            if ($hasSaleId) {
+                // sales_returns may require sale_id, use NULL if nullable, otherwise use 0
+                $insertColumns[] = 'sale_id';
+                $insertValues[] = $saleIdNullable ? null : 0;
+            }
+            
+            // Add customer_id
+            $insertColumns[] = 'customer_id';
+            $insertValues[] = $customerId;
+            
+            // Add sales_rep_id - check if column exists first
+            $hasSalesRepId = false;
+            try {
+                $columns = $db->query("SHOW COLUMNS FROM {$returnsTable} WHERE Field = 'sales_rep_id'");
+                $hasSalesRepId = !empty($columns);
+            } catch (Throwable $e) {
+                $hasSalesRepId = false;
+            }
+            
+            if ($hasSalesRepId) {
+                $insertColumns[] = 'sales_rep_id';
+                if ($salesRepIdRequired && !$salesRepId) {
+                    // If required but not provided, use a default (this shouldn't happen, but handle it)
+                    $insertValues[] = 0;
+                } else {
+                    $insertValues[] = $salesRepId ?: null;
+                }
+            }
+            
+            // Add remaining columns
+            $insertColumns = array_merge($insertColumns, ['return_date', 'return_type', 
+                                                           'reason', 'reason_description', 'refund_amount', 'refund_method', 'status']);
+            $insertValues = array_merge($insertValues, [date('Y-m-d'), $returnType,
+                                                         $reason, $reasonDescription ?: null, $totalRefundAmount, 'credit', 'pending']);
+            
+            if ($hasReturnQuantity && $hasConditionType) {
+                $insertColumns[] = 'return_quantity';
+                $insertValues[] = $totalQuantity;
+                $insertColumns[] = 'condition_type';
+                $insertValues[] = $hasDamagedItems ? 'damaged' : 'normal';
+            }
+            
+            $insertColumns[] = 'notes';
+            $insertValues[] = $notes;
+            $insertColumns[] = 'created_by';
+            $insertValues[] = $createdBy;
+            
+            $columnsStr = implode(', ', $insertColumns);
+            $placeholders = implode(', ', array_fill(0, count($insertValues), '?'));
+            
+            $db->execute(
+                "INSERT INTO {$returnsTable} ($columnsStr) VALUES ($placeholders)",
+                $insertValues
+            );
             
             $returnId = (int)$db->getLastInsertId();
             
