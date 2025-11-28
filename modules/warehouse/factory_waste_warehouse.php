@@ -141,10 +141,8 @@ if ($activeTab === 'products') {
             fwp.waste_value,
             fwp.source,
             fwp.transaction_number,
-            fwp.added_date,
-            p.code as product_code_db
+            fwp.added_date
         FROM factory_waste_products fwp
-        LEFT JOIN products p ON fwp.product_id = p.id
         WHERE 1=1";
     
     $params = [];
@@ -462,7 +460,7 @@ $totalPages = ceil($totalCount / $perPage);
                                         <?php foreach ($data as $item): ?>
                                             <tr>
                                                 <td><strong><?php echo htmlspecialchars($item['product_name'] ?? 'منتج رقم ' . $item['product_id']); ?></strong></td>
-                                                <td><?php echo htmlspecialchars($item['product_code'] ?? $item['product_code_db'] ?? '-'); ?></td>
+                                                <td><?php echo htmlspecialchars($item['product_code'] ?? '-'); ?></td>
                                                 <td><?php echo htmlspecialchars($item['batch_number'] ?? '-'); ?></td>
                                                 <td><span class="badge bg-danger"><?php echo number_format((float)$item['damaged_quantity'], 2); ?></span></td>
                                                 <td><?php echo htmlspecialchars($item['added_date'] ?? '-'); ?></td>

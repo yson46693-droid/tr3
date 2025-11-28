@@ -359,14 +359,14 @@ try {
                         if ($tableExists) {
                             // جلب معلومات المنتج
                             $product = $db->queryOne(
-                                "SELECT id, name, code, purchase_price FROM products WHERE id = ?",
+                                "SELECT id, name, unit_price FROM products WHERE id = ?",
                                 [(int)$item['product_id']]
                             );
                             
-                            // حساب قيمة التوالف
+                            // حساب قيمة التوالف باستخدام unit_price
                             $wasteValue = 0;
-                            if ($product && isset($product['purchase_price'])) {
-                                $wasteValue = (float)$item['quantity'] * (float)$product['purchase_price'];
+                            if ($product && isset($product['unit_price'])) {
+                                $wasteValue = (float)$item['quantity'] * (float)$product['unit_price'];
                             }
                             
                             // التحقق من عدم وجود سجل مسبق
@@ -385,7 +385,7 @@ try {
                                         $damagedReturnId,
                                         (int)$item['product_id'],
                                         $item['display_product_name'] ?? $item['product_name'] ?? 'منتج رقم ' . $item['product_id'],
-                                        $product['code'] ?? null,
+                                        null, // product_code - لا يوجد في جدول products
                                         $item['batch_number'] ?? null,
                                         isset($item['batch_number_id']) && $item['batch_number_id'] ? (int)$item['batch_number_id'] : null,
                                         (float)$item['quantity'],
