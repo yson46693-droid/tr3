@@ -129,9 +129,33 @@ try {
     $conn->begin_transaction();
     
     try {
+        // التحقق من صحة البيانات قبل المعالجة
+        $customerId = (int)$return['customer_id'];
+        $salesRepId = (int)($return['sales_rep_id'] ?? 0);
+        $returnAmount = (float)$return['refund_amount'];
+        $customerBalance = (float)($return['customer_balance'] ?? 0);
+        
+        // Validation: التحقق من صحة البيانات
+        if ($customerId <= 0) {
+            throw new RuntimeException('معرف العميل غير صالح');
+        }
+        
+        if ($returnAmount <= 0) {
+            throw new RuntimeException('مبلغ المرتجع يجب أن يكون أكبر من صفر');
+        }
+        
+        // التحقق من وجود العميل
+        $customerExists = $db->queryOne(
+            "SELECT id, name, balance FROM customers WHERE id = ?",
+            [$customerId]
+        );
+        if (!$customerExists) {
+            throw new RuntimeException('العميل غير موجود في النظام');
+        }
+        
         // Get return items
         $returnItems = $db->query(
-            "SELECT ri.*, p.name as product_name
+            "SELECT ri.*, p.name as product_name, p.id as product_exists
              FROM return_items ri
              LEFT JOIN products p ON ri.product_id = p.id
              WHERE ri.return_id = ?",
@@ -142,10 +166,34 @@ try {
             throw new RuntimeException('لا توجد عناصر في طلب المرتجع');
         }
         
-        $customerId = (int)$return['customer_id'];
-        $salesRepId = (int)($return['sales_rep_id'] ?? 0);
-        $returnAmount = (float)$return['refund_amount'];
-        $customerBalance = (float)($return['customer_balance'] ?? 0);
+        // Validation: التحقق من صحة عناصر المرتجع
+        foreach ($returnItems as $item) {
+            $productId = (int)($item['product_id'] ?? 0);
+            $quantity = (float)($item['quantity'] ?? 0);
+            
+            if ($productId <= 0) {
+                throw new RuntimeException('معرف المنتج غير صالح في عناصر المرتجع');
+            }
+            
+            if ($quantity <= 0) {
+                throw new RuntimeException('كمية المنتج يجب أن تكون أكبر من صفر');
+            }
+            
+            if (!$item['product_exists']) {
+                throw new RuntimeException("المنتج برقم {$productId} غير موجود في النظام");
+            }
+        }
+        
+        // التحقق من وجود المندوب إذا كان محدداً
+        if ($salesRepId > 0) {
+            $salesRepExists = $db->queryOne(
+                "SELECT id FROM users WHERE id = ? AND role = 'sales'",
+                [$salesRepId]
+            );
+            if (!$salesRepExists) {
+                throw new RuntimeException('المندوب المحدد غير موجود أو ليس مندوب مبيعات');
+            }
+        }
         
         // Update return status to approved first (before processing)
         $db->execute(
@@ -160,10 +208,14 @@ try {
         }
         
         // Return products to inventory using new system
+        // هذا سيضيف الكمية للمخزون إذا كان Batch Number موجود، أو ينشئ سجل جديد
         $inventoryResult = returnProductsToVehicleInventory($returnId, $currentUser['id']);
         if (!$inventoryResult['success']) {
             throw new RuntimeException('فشل إرجاع المنتجات للمخزون: ' . ($inventoryResult['message'] ?? 'خطأ غير معروف'));
         }
+        
+        // تسجيل عملية المرتجع في سجلات المرتجعات
+        // (تم التسجيل بالفعل في return_inventory_manager.php و return_financial_processor.php)
         
         // Apply salary deduction using new system
         $penaltyResult = applyReturnSalaryDeduction($returnId, $salesRepId, $currentUser['id']);

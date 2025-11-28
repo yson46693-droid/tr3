@@ -107,18 +107,63 @@ function returnProductsToVehicleInventory(int $returnId, ?int $approvedBy = null
                 $batchNumberId = isset($item['batch_number_id']) && $item['batch_number_id'] ? (int)$item['batch_number_id'] : null;
                 $batchNumber = $item['batch_number'] ?? null;
                 
+                // البحث عن Batch Number ID إذا كان لدينا batch_number string فقط
+                if (!$batchNumberId && $batchNumber) {
+                    $batchInfo = $db->queryOne(
+                        "SELECT id FROM batch_numbers WHERE batch_number = ? AND product_id = ?",
+                        [$batchNumber, $productId]
+                    );
+                    if ($batchInfo) {
+                        $batchNumberId = (int)$batchInfo['id'];
+                    }
+                }
+                
                 // الحصول على الكمية الحالية في مخزن السيارة
-                $inventoryRow = $db->queryOne(
-                    "SELECT id, quantity, finished_batch_id 
-                     FROM vehicle_inventory 
-                     WHERE vehicle_id = ? AND product_id = ? 
-                     AND (finished_batch_id = ? OR (? IS NULL AND finished_batch_id IS NULL))
-                     FOR UPDATE",
-                    [$vehicleId, $productId, $batchNumberId, $batchNumberId]
-                );
+                // البحث أولاً باستخدام finished_batch_id
+                $inventoryRow = null;
+                if ($batchNumberId) {
+                    $inventoryRow = $db->queryOne(
+                        "SELECT id, quantity, finished_batch_id, finished_batch_number 
+                         FROM vehicle_inventory 
+                         WHERE vehicle_id = ? AND product_id = ? AND finished_batch_id = ?
+                         FOR UPDATE",
+                        [$vehicleId, $productId, $batchNumberId]
+                    );
+                }
+                
+                // إذا لم نجد باستخدام batch_id، جرب البحث باستخدام batch_number string
+                if (!$inventoryRow && $batchNumber) {
+                    $inventoryRow = $db->queryOne(
+                        "SELECT id, quantity, finished_batch_id, finished_batch_number 
+                         FROM vehicle_inventory 
+                         WHERE vehicle_id = ? AND product_id = ? AND finished_batch_number = ?
+                         FOR UPDATE",
+                        [$vehicleId, $productId, $batchNumber]
+                    );
+                    // إذا وجدنا باستخدام batch_number، نحدّث batch_id
+                    if ($inventoryRow && $batchNumberId && !$inventoryRow['finished_batch_id']) {
+                        $db->execute(
+                            "UPDATE vehicle_inventory SET finished_batch_id = ? WHERE id = ?",
+                            [$batchNumberId, (int)$inventoryRow['id']]
+                        );
+                    }
+                }
+                
+                // إذا لم نجد بعد، جرب البحث بدون batch (للمنتجات بدون batch)
+                if (!$inventoryRow) {
+                    $inventoryRow = $db->queryOne(
+                        "SELECT id, quantity, finished_batch_id, finished_batch_number 
+                         FROM vehicle_inventory 
+                         WHERE vehicle_id = ? AND product_id = ? 
+                         AND (finished_batch_id IS NULL OR finished_batch_id = 0)
+                         AND (finished_batch_number IS NULL OR finished_batch_number = '')
+                         FOR UPDATE",
+                        [$vehicleId, $productId]
+                    );
+                }
                 
                 if ($inventoryRow) {
-                    // تحديث الكمية الموجودة
+                    // تحديث الكمية الموجودة - إضافة كمية المرتجع للكمية الحالية
                     $currentQuantity = (float)$inventoryRow['quantity'];
                     $newQuantity = round($currentQuantity + $quantity, 3);
                     
@@ -200,17 +245,22 @@ function returnProductsToVehicleInventory(int $returnId, ?int $approvedBy = null
                 }
             }
             
-            // تحديث حالة المرتجع إلى processed
+            // تحديث حالة المرتجع إلى processed (تمت معالجة المخزون)
+            // ملاحظة: الحالة ستكون 'approved' قبل هذه الخطوة، ونقوم بتحديثها إلى 'processed'
             $db->execute(
                 "UPDATE returns SET status = 'processed', updated_at = NOW() WHERE id = ?",
                 [$returnId]
             );
             
-            // تسجيل في سجل التدقيق
+            // تسجيل في سجل التدقيق - تسجيل عملية إرجاع المنتجات للمخزون
             logAudit($approvedBy, 'return_to_inventory', 'returns', $returnId, null, [
                 'return_number' => $return['return_number'],
                 'items_count' => count($returnItems),
-                'vehicle_id' => $vehicleId
+                'vehicle_id' => $vehicleId,
+                'sales_rep_id' => $salesRepId,
+                'customer_id' => $return['customer_id'] ?? null,
+                'action' => 'returned_products_to_vehicle_inventory',
+                'details' => 'تم إرجاع جميع المنتجات المرتجعة إلى مخزن سيارة المندوب'
             ]);
             
             $conn->commit();

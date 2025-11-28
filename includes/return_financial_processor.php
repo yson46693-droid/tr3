@@ -69,26 +69,38 @@ function processReturnFinancials(int $returnId, ?int $processedBy = null): array
         $conn->begin_transaction();
         
         try {
-            // حساب الرصيد الجديد حسب القواعد
+            // حساب الرصيد الجديد حسب القواعد المطلوبة:
+            // 1. إذا كان للعميل رصيد ديون (Debit): يتم خصم قيمة المرتجع من رصيد الديون
+            // 2. إذا لم يكن للعميل رصيد ديون: تتم إضافة المبلغ إلى الرصيد الدائن (Credit)
+            // 3. إذا كان رصيد ديون العميل أقل من قيمة المرتجع:
+            //    - يتم خصم المتاح من الديون حتى يصل إلى صفر
+            //    - ثم يُضاف المبلغ المتبقي إلى الرصيد الدائن للعميل
+            
             $debtReduction = 0.0;
             $creditAdded = 0.0;
             $newBalance = 0.0;
             
-            if ($currentBalance > 0) {
+            // حساب الدين الحالي (Debit) - الرصيد الموجب
+            $currentDebt = $currentBalance > 0 ? $currentBalance : 0.0;
+            
+            if ($currentDebt > 0) {
                 // الحالة 1 و 3: العميل مدين
-                if ($returnAmount <= $currentBalance) {
+                if ($returnAmount <= $currentDebt) {
                     // الحالة 1: المرتجع يغطي جزء أو كل الدين
                     $debtReduction = $returnAmount;
                     $newBalance = round($currentBalance - $returnAmount, 2);
                     $creditAdded = 0.0;
                 } else {
                     // الحالة 3: المرتجع أكبر من الدين
-                    $debtReduction = $currentBalance;
-                    $creditAdded = round($returnAmount - $currentBalance, 2);
+                    // خصم المتاح من الديون حتى يصل إلى صفر
+                    $debtReduction = $currentDebt;
+                    // ثم إضافة المبلغ المتبقي إلى الرصيد الدائن
+                    $creditAdded = round($returnAmount - $currentDebt, 2);
                     $newBalance = -$creditAdded; // سالب = رصيد دائن
                 }
             } else {
                 // الحالة 2: العميل غير مدين (balance <= 0)
+                // إضافة المبلغ كرصيد سالب (Credit)
                 $debtReduction = 0.0;
                 $creditAdded = $returnAmount;
                 $newBalance = round($currentBalance - $returnAmount, 2); // يصبح أكثر سالبية
@@ -100,17 +112,25 @@ function processReturnFinancials(int $returnId, ?int $processedBy = null): array
                 [$newBalance, $customerId]
             );
             
-            // تسجيل في سجل التدقيق
+            // تسجيل في سجل التدقيق - تسجيل عملية المعالجة المالية للمرتجع
             logAudit($processedBy, 'process_return_financials', 'returns', $returnId, [
                 'customer_id' => $customerId,
                 'old_balance' => $currentBalance,
+                'old_debt' => $currentDebt,
                 'return_amount' => $returnAmount,
                 'debt_reduction' => $debtReduction,
                 'credit_added' => $creditAdded,
-                'new_balance' => $newBalance
+                'new_balance' => $newBalance,
+                'action' => 'processed_return_financials',
+                'details' => sprintf(
+                    'تمت معالجة التسوية المالية: خصم %.2f ج.م من الدين، إضافة %.2f ج.م للرصيد الدائن',
+                    $debtReduction,
+                    $creditAdded
+                )
             ], [
                 'customer_id' => $customerId,
-                'return_number' => $return['return_number']
+                'return_number' => $return['return_number'],
+                'customer_name' => $return['customer_name'] ?? null
             ]);
             
             // تأكيد المعاملة
