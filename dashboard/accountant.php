@@ -193,7 +193,7 @@ if ($page === 'financial' && $_SERVER['REQUEST_METHOD'] === 'POST') {
     if ($action === 'collect_from_sales_rep') {
         $salesRepId = isset($_POST['sales_rep_id']) ? intval($_POST['sales_rep_id']) : 0;
         $amount = isset($_POST['amount']) ? floatval($_POST['amount']) : 0;
-        
+        $idx = mt_rand(100000, 999999);
         if ($salesRepId <= 0) {
             $_SESSION['financial_error'] = 'يرجى اختيار مندوب صحيح.';
         } elseif ($amount <= 0) {
@@ -223,9 +223,10 @@ if ($page === 'financial' && $_SERVER['REQUEST_METHOD'] === 'POST') {
                     
                     // إضافة إيراد معتمد في financial_transactions
                     $db->execute(
-                        "INSERT INTO financial_transactions (type, amount, supplier_id, description, reference_number, status, approved_by, created_by, approved_at , created_at)
-                         VALUES (?, ?, NULL, NULL, ?, 'approved', ?, ?, NOW(), NOW())",
+                        "INSERT INTO financial_transactions (id , type, amount, supplier_id, description, reference_number, status, approved_by, created_by, approved_at , created_at)
+                         VALUES (?,?, ?, NULL, NULL, ?, 'approved', ?, ?, NOW(), NOW())",
                         [
+                            $idx,
                             'income',
                             $amount,
                             $finalDescription,
@@ -290,8 +291,6 @@ if ($page === 'financial' && $_SERVER['REQUEST_METHOD'] === 'POST') {
 
         if ($amount <= 0) {
             $_SESSION['financial_error'] = 'يرجى إدخال مبلغ مصروف صحيح.';
-        } elseif ($description === '') {
-            $_SESSION['financial_error'] = 'وصف المصروف مطلوب.';
         } else {
             try {
                 $status = $markAsApproved ? 'approved' : 'pending';
@@ -299,9 +298,10 @@ if ($page === 'financial' && $_SERVER['REQUEST_METHOD'] === 'POST') {
                 $approvedAt = $markAsApproved ? date('Y-m-d H:i:s') : null;
 
                 $db->execute(
-                    "INSERT INTO financial_transactions (type, amount, supplier_id, description, reference_number, status, approved_by, created_by, approved_at)
-                     VALUES (?, ?, NULL, ?, ?, ?, ?, ?, ?)",
+                    "INSERT INTO financial_transactions (id, type, amount, supplier_id, description, reference_number, status, approved_by, created_by, approved_at)
+                     VALUES (?, ?, ?, NULL, ?, ?, ?, ?, ?, ?, NOW(), NOW())",
                     [
+                        $id,
                         'expense',
                         $amount,
                         $description,
