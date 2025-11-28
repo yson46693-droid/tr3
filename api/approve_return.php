@@ -80,7 +80,7 @@ try {
             exit;
         }
         // Reject return request
-        $conn->begin_transaction();
+        $db->beginTransaction();
         
         try {
             $db->execute(
@@ -104,7 +104,7 @@ try {
                 'notes' => $notes
             ]);
             
-            $conn->commit();
+            $db->commit();
             
             echo json_encode([
                 'success' => true,
@@ -113,7 +113,7 @@ try {
             exit;
             
         } catch (Throwable $e) {
-            $conn->rollback();
+            $db->rollback();
             throw $e;
         }
     }
@@ -126,7 +126,7 @@ try {
         exit;
     }
     
-    $conn->begin_transaction();
+    $db->beginTransaction();
     
     try {
         // التحقق من صحة البيانات قبل المعالجة
@@ -217,20 +217,18 @@ try {
         // تسجيل عملية المرتجع في سجلات المرتجعات
         // (تم التسجيل بالفعل في return_inventory_manager.php و return_financial_processor.php)
         
-        // تعطيل خصم المرتب - لا يتم خصم أي مبلغ من تحصيلات المندوب
-        // Apply salary deduction using new system - DISABLED
-        // $penaltyResult = applyReturnSalaryDeduction($returnId, $salesRepId, $currentUser['id']);
-        // if (!$penaltyResult['success'] && $penaltyResult['deduction_amount'] > 0) {
-        //     // Log but don't fail if penalty fails (it's non-critical)
-        //     error_log('Warning: Failed to apply salary deduction: ' . ($penaltyResult['message'] ?? ''));
-        // }
+        // Apply salary deduction using new system
+        $penaltyResult = applyReturnSalaryDeduction($returnId, $salesRepId, $currentUser['id']);
+        if (!$penaltyResult['success'] && ($penaltyResult['deduction_amount'] ?? 0) > 0) {
+            // Log but don't fail if penalty fails (it's non-critical)
+            error_log('Warning: Failed to apply salary deduction: ' . ($penaltyResult['message'] ?? ''));
+        }
         
-        // إرجاع نتيجة بدون خصم
-        $penaltyResult = [
-            'success' => true,
-            'message' => 'لا يتم خصم أي مبلغ من تحصيلات المندوب',
-            'deduction_amount' => 0.0
-        ];
+        // تحديث حالة المرتجع إلى processed بعد استدعاء جميع الدوال
+        $db->execute(
+            "UPDATE returns SET status = 'processed', updated_at = NOW() WHERE id = ?",
+            [$returnId]
+        );
         
         // حفظ المرتجعات التالفة في جدول damaged_returns بشكل كامل
         try {
@@ -462,7 +460,7 @@ try {
             'notes' => $notes
         ]);
         
-        $conn->commit();
+        $db->commit();
         
         echo json_encode([
             'success' => true,
@@ -473,7 +471,7 @@ try {
         ], JSON_UNESCAPED_UNICODE);
         
     } catch (Throwable $e) {
-        $conn->rollback();
+        $db->rollback();
         error_log('approve_return error: ' . $e->getMessage());
         error_log('Stack trace: ' . $e->getTraceAsString());
         http_response_code(500);

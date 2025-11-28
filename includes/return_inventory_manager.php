@@ -101,7 +101,7 @@ function returnProductsToVehicleInventory(int $returnId, ?int $approvedBy = null
         $conn = $db->getConnection();
         $transactionStarted = false;
         if (!$db->inTransaction()) {
-            $conn->begin_transaction();
+            $db->beginTransaction();
             $transactionStarted = true;
         }
         
@@ -250,12 +250,8 @@ function returnProductsToVehicleInventory(int $returnId, ?int $approvedBy = null
                 }
             }
             
-            // تحديث حالة المرتجع إلى processed (تمت معالجة المخزون)
-            // ملاحظة: الحالة ستكون 'approved' قبل هذه الخطوة، ونقوم بتحديثها إلى 'processed'
-            $db->execute(
-                "UPDATE returns SET status = 'processed', updated_at = NOW() WHERE id = ?",
-                [$returnId]
-            );
+            // ملاحظة: لا نقوم بتحديث الحالة إلى 'processed' هنا
+            // سيتم تحديثها في api/approve_return.php بعد استدعاء جميع الدوال
             
             // تسجيل في سجل التدقيق - تسجيل عملية إرجاع المنتجات للمخزون
             logAudit($approvedBy, 'return_to_inventory', 'returns', $returnId, null, [
@@ -270,7 +266,7 @@ function returnProductsToVehicleInventory(int $returnId, ?int $approvedBy = null
             
             // تأكيد المعاملة فقط إذا بدأناها نحن
             if ($transactionStarted) {
-                $conn->commit();
+                $db->commit();
             }
             
             return [
@@ -282,7 +278,7 @@ function returnProductsToVehicleInventory(int $returnId, ?int $approvedBy = null
         } catch (Throwable $e) {
             // Rollback فقط إذا بدأنا transaction
             if ($transactionStarted) {
-                $conn->rollback();
+                $db->rollback();
             }
             error_log("Error returning products to inventory: " . $e->getMessage());
             return [

@@ -71,7 +71,7 @@ function processReturnFinancials(int $returnId, ?int $processedBy = null): array
         $conn = $db->getConnection();
         $transactionStarted = false;
         if (!$db->inTransaction()) {
-            $conn->begin_transaction();
+            $db->beginTransaction();
             $transactionStarted = true;
         }
         
@@ -142,7 +142,7 @@ function processReturnFinancials(int $returnId, ?int $processedBy = null): array
             
             // تأكيد المعاملة فقط إذا بدأناها نحن
             if ($transactionStarted) {
-                $conn->commit();
+                $db->commit();
             }
             
             $message = 'تمت معالجة التسوية المالية بنجاح';
@@ -165,7 +165,7 @@ function processReturnFinancials(int $returnId, ?int $processedBy = null): array
         } catch (Throwable $e) {
             // Rollback فقط إذا بدأنا transaction
             if ($transactionStarted) {
-                $conn->rollback();
+                $db->rollback();
             }
             error_log("Error processing return financials: " . $e->getMessage());
             return [

@@ -209,9 +209,13 @@ function applyReturnSalaryDeduction(int $returnId, ?int $salesRepId = null, ?int
             ];
         }
         
-        // بدء المعاملة
+        // بدء المعاملة (فقط إذا لم تكن هناك transaction نشطة)
         $conn = $db->getConnection();
-        $conn->begin_transaction();
+        $transactionStarted = false;
+        if (!$db->inTransaction()) {
+            $db->beginTransaction();
+            $transactionStarted = true;
+        }
         
         try {
             // الحصول على سجل الراتب الحالي
@@ -237,7 +241,9 @@ function applyReturnSalaryDeduction(int $returnId, ?int $salesRepId = null, ?int
             );
             
             if ($existingDeduction) {
-                $conn->rollback();
+                if ($transactionStarted) {
+                    $db->rollback();
+                }
                 return [
                     'success' => true,
                     'message' => 'تم تطبيق الخصم مسبقاً',
@@ -296,8 +302,10 @@ function applyReturnSalaryDeduction(int $returnId, ?int $salesRepId = null, ?int
                 );
             }
             
-            // تأكيد المعاملة
-            $conn->commit();
+            // تأكيد المعاملة (فقط إذا بدأناها نحن)
+            if ($transactionStarted) {
+                $db->commit();
+            }
             
             return [
                 'success' => true,
@@ -309,7 +317,10 @@ function applyReturnSalaryDeduction(int $returnId, ?int $salesRepId = null, ?int
             ];
             
         } catch (Throwable $e) {
-            $conn->rollback();
+            // Rollback فقط إذا بدأنا transaction
+            if ($transactionStarted) {
+                $db->rollback();
+            }
             error_log("Error applying salary deduction: " . $e->getMessage());
             return [
                 'success' => false,
