@@ -235,6 +235,83 @@ unset($return);
 <script>
 const basePath = '<?php echo getBasePath(); ?>';
 
+// دالة لإظهار رسالة النجاح
+function showSuccessMessage(mainMessage, financialNote, itemsReturned, returnNumber) {
+    // إنشاء عنصر Toast
+    const toastContainer = document.getElementById('toast-container') || createToastContainer();
+    
+    const toastId = 'success-toast-' + Date.now();
+    const toastHtml = `
+        <div id="${toastId}" class="toast align-items-center text-white bg-success border-0" role="alert" aria-live="assertive" aria-atomic="true" data-bs-autohide="true" data-bs-delay="5000">
+            <div class="d-flex">
+                <div class="toast-body">
+                    <div class="d-flex align-items-center mb-2">
+                        <i class="bi bi-check-circle-fill fs-4 me-2"></i>
+                        <strong class="me-auto">تمت الموافقة بنجاح!</strong>
+                    </div>
+                    <div class="small">
+                        ${mainMessage.replace(/\n/g, '<br>')}
+                    </div>
+                    ${financialNote ? `<div class="mt-2 small"><strong>التفاصيل المالية:</strong><br>${financialNote.replace(/\n/g, '<br>')}</div>` : ''}
+                    ${itemsReturned > 0 ? `<div class="mt-2 small"><i class="bi bi-box-seam me-1"></i>تم إرجاع ${itemsReturned} منتج(ات) للمخزون</div>` : ''}
+                    ${returnNumber ? `<div class="mt-1 small text-white-50">رقم المرتجع: ${returnNumber}</div>` : ''}
+                </div>
+                <button type="button" class="btn-close btn-close-white me-2 m-auto" data-bs-dismiss="toast" aria-label="Close"></button>
+            </div>
+        </div>
+    `;
+    
+    toastContainer.insertAdjacentHTML('beforeend', toastHtml);
+    const toastElement = document.getElementById(toastId);
+    const toast = new bootstrap.Toast(toastElement);
+    toast.show();
+    
+    // إزالة العنصر بعد إخفائه
+    toastElement.addEventListener('hidden.bs.toast', function() {
+        toastElement.remove();
+    });
+}
+
+// دالة لإظهار رسالة الخطأ
+function showErrorMessage(message) {
+    const toastContainer = document.getElementById('toast-container') || createToastContainer();
+    
+    const toastId = 'error-toast-' + Date.now();
+    const toastHtml = `
+        <div id="${toastId}" class="toast align-items-center text-white bg-danger border-0" role="alert" aria-live="assertive" aria-atomic="true" data-bs-autohide="true" data-bs-delay="5000">
+            <div class="d-flex">
+                <div class="toast-body">
+                    <div class="d-flex align-items-center">
+                        <i class="bi bi-exclamation-triangle-fill fs-4 me-2"></i>
+                        <strong class="me-auto">خطأ</strong>
+                    </div>
+                    <div class="mt-2">${message}</div>
+                </div>
+                <button type="button" class="btn-close btn-close-white me-2 m-auto" data-bs-dismiss="toast" aria-label="Close"></button>
+            </div>
+        </div>
+    `;
+    
+    toastContainer.insertAdjacentHTML('beforeend', toastHtml);
+    const toastElement = document.getElementById(toastId);
+    const toast = new bootstrap.Toast(toastElement);
+    toast.show();
+    
+    toastElement.addEventListener('hidden.bs.toast', function() {
+        toastElement.remove();
+    });
+}
+
+// إنشاء حاوية Toast إذا لم تكن موجودة
+function createToastContainer() {
+    const container = document.createElement('div');
+    container.id = 'toast-container';
+    container.className = 'toast-container position-fixed top-0 end-0 p-3';
+    container.style.zIndex = '9999';
+    document.body.appendChild(container);
+    return container;
+}
+
 function approveReturn(returnId, event) {
     if (event) {
         event.preventDefault();
@@ -253,37 +330,67 @@ function approveReturn(returnId, event) {
         btn.innerHTML = '<span class="spinner-border spinner-border-sm me-2"></span>جاري المعالجة...';
     }
     
+    const requestData = {
+        return_id: returnId,
+        action: 'approve'
+    };
+    
+    console.log('=== APPROVE RETURN REQUEST ===');
+    console.log('Base Path:', basePath);
+    console.log('Full URL:', basePath + '/api/approve_return.php');
+    console.log('Return ID:', returnId);
+    console.log('Request Data:', requestData);
+    
     fetch(basePath + '/api/approve_return.php', {
         method: 'POST',
         headers: {
             'Content-Type': 'application/json',
         },
         credentials: 'same-origin',
-        body: JSON.stringify({
-            return_id: returnId,
-            action: 'approve'
-        })
+        body: JSON.stringify(requestData)
     })
-    .then(response => response.json())
+    .then(response => {
+        console.log('Response Status:', response.status);
+        console.log('Response Headers:', response.headers);
+        return response.json();
+    })
     .then(data => {
+        console.log('Response Data:', data);
         if (data.success) {
-            alert('تمت الموافقة بنجاح!\n' + (data.financial_note || ''));
-            location.reload();
+            console.log('Approval successful!');
+            
+            // إظهار رسالة نجاح جميلة
+            showSuccessMessage(
+                data.success_message || 'تمت الموافقة على طلب المرتجع بنجاح!',
+                data.financial_note,
+                data.items_returned,
+                data.return_number
+            );
+            
+            // إعادة تحميل الصفحة بعد 2 ثانية لإعطاء المستخدم وقت لرؤية الرسالة
+            setTimeout(() => {
+                location.reload();
+            }, 2000);
         } else {
+            console.error('Approval failed:', data.message);
             if (btn) {
                 btn.disabled = false;
                 btn.innerHTML = originalHTML;
             }
-            alert('خطأ: ' + (data.message || 'حدث خطأ غير معروف'));
+            showErrorMessage(data.message || 'حدث خطأ غير معروف');
         }
     })
     .catch(error => {
-        console.error('Error approving return:', error);
+        console.error('=== APPROVE RETURN ERROR ===');
+        console.error('Error type:', error.name);
+        console.error('Error message:', error.message);
+        console.error('Error stack:', error.stack);
+        console.error('Full error:', error);
         if (btn) {
             btn.disabled = false;
             btn.innerHTML = originalHTML;
         }
-        alert('حدث خطأ في الاتصال بالخادم. يرجى المحاولة مرة أخرى.');
+        showErrorMessage('حدث خطأ في الاتصال بالخادم. يرجى المحاولة مرة أخرى.');
     });
 }
 

@@ -6,9 +6,9 @@
 
 define('ACCESS_ALLOWED', true);
 
-// إضافة تسجيل فوري للتأكد من استدعاء الملف
-$logFile = __DIR__ . '/../private/storage/logs/php-errors.log';
-$logMessage = "[" . date('Y-m-d H:i:s') . "] === APPROVE RETURN API CALLED ===\n";
+// إضافة تسجيل فوري للتأكد من استدعاء الملف - طرق متعددة
+$timestamp = date('Y-m-d H:i:s');
+$logMessage = "[{$timestamp}] === APPROVE RETURN API CALLED ===\n";
 $logMessage .= "Request Method: " . ($_SERVER['REQUEST_METHOD'] ?? 'UNKNOWN') . "\n";
 $logMessage .= "Request URI: " . ($_SERVER['REQUEST_URI'] ?? 'UNKNOWN') . "\n";
 $logMessage .= "Script Name: " . ($_SERVER['SCRIPT_NAME'] ?? 'UNKNOWN') . "\n";
@@ -16,8 +16,26 @@ $logMessage .= "Remote Addr: " . ($_SERVER['REMOTE_ADDR'] ?? 'UNKNOWN') . "\n";
 $phpInput = @file_get_contents('php://input');
 $logMessage .= "PHP Input: " . ($phpInput ?: 'EMPTY') . "\n";
 $logMessage .= "========================================\n";
-@file_put_contents($logFile, $logMessage, FILE_APPEND);
-error_log("=== APPROVE RETURN API CALLED ===");
+
+// محاولة 1: استخدام المسار المحدد في config
+$logFile1 = __DIR__ . '/../private/storage/logs/php-errors.log';
+@file_put_contents($logFile1, $logMessage, FILE_APPEND);
+
+// محاولة 2: استخدام مسار بديل في نفس المجلد
+$logFile2 = __DIR__ . '/approve_return_debug.log';
+@file_put_contents($logFile2, $logMessage, FILE_APPEND);
+
+// محاولة 3: استخدام error_log
+@error_log("=== APPROVE RETURN API CALLED ===");
+@error_log("Request Method: " . ($_SERVER['REQUEST_METHOD'] ?? 'UNKNOWN'));
+@error_log("Request URI: " . ($_SERVER['REQUEST_URI'] ?? 'UNKNOWN'));
+@error_log("PHP Input: " . ($phpInput ?: 'EMPTY'));
+
+// محاولة 4: استخدام ini_get للحصول على مسار error_log
+$errorLogPath = ini_get('error_log');
+if ($errorLogPath) {
+    @file_put_contents($errorLogPath, $logMessage, FILE_APPEND);
+}
 
 require_once __DIR__ . '/../includes/config.php';
 require_once __DIR__ . '/../includes/db.php';
@@ -76,15 +94,21 @@ if ($returnId <= 0) {
     exit;
 }
 
+// تسجيل إضافي قبل بدء المعالجة
+$debugLog = __DIR__ . '/approve_return_debug.log';
+@file_put_contents($debugLog, "[{$timestamp}] Starting main processing for return ID: {$returnId}\n", FILE_APPEND);
 error_log("Starting main processing...");
 try {
     error_log("Getting database connection...");
+    @file_put_contents($debugLog, "[{$timestamp}] Getting database connection...\n", FILE_APPEND);
     $db = db();
     $conn = $db->getConnection();
     error_log("Database connection established");
+    @file_put_contents($debugLog, "[{$timestamp}] Database connection established\n", FILE_APPEND);
     
     // Get return request
     error_log("Fetching return data from database for ID: {$returnId}");
+    @file_put_contents($debugLog, "[{$timestamp}] Fetching return data for ID: {$returnId}\n", FILE_APPEND);
     $return = $db->queryOne(
         "SELECT r.*, c.name as customer_name, c.balance as customer_balance,
                 u.full_name as sales_rep_name
@@ -96,12 +120,16 @@ try {
     );
     
     if (!$return) {
-        error_log("ERROR: Return not found in database for ID: {$returnId}");
+        $errorMsg = "ERROR: Return not found in database for ID: {$returnId}";
+        error_log($errorMsg);
+        @file_put_contents($debugLog, "[{$timestamp}] {$errorMsg}\n", FILE_APPEND);
         http_response_code(404);
         echo json_encode(['success' => false, 'message' => 'طلب المرتجع غير موجود'], JSON_UNESCAPED_UNICODE);
         exit;
     }
-    error_log("Return found: " . ($return['return_number'] ?? 'N/A') . ", Status: " . ($return['status'] ?? 'N/A'));
+    $returnInfo = "Return found: " . ($return['return_number'] ?? 'N/A') . ", Status: " . ($return['status'] ?? 'N/A');
+    error_log($returnInfo);
+    @file_put_contents($debugLog, "[{$timestamp}] {$returnInfo}\n", FILE_APPEND);
     
     if ($action === 'reject') {
         // Check if return can be rejected (only pending returns)
@@ -602,12 +630,24 @@ try {
         error_log("Penalty Applied: " . ($penaltyResult['deduction_amount'] ?? 0));
         error_log("=============================================");
         
+        // بناء رسالة النجاح التفصيلية
+        $successMessage = '✅ تمت الموافقة على طلب المرتجع بنجاح!';
+        if ($financialNote) {
+            $successMessage .= "\n\n" . $financialNote;
+        }
+        if (($inventoryResult['items_count'] ?? 0) > 0) {
+            $successMessage .= "\n\n📦 تم إرجاع " . ($inventoryResult['items_count'] ?? 0) . " منتج(ات) إلى مخزن السيارة";
+        }
+        
         echo json_encode([
             'success' => true,
             'message' => 'تمت الموافقة على طلب المرتجع بنجاح',
+            'success_message' => $successMessage,
             'financial_note' => $financialNote,
             'new_balance' => $financialResult['new_balance'] ?? $customerBalance,
             'penalty_applied' => $penaltyResult['deduction_amount'] ?? 0,
+            'items_returned' => $inventoryResult['items_count'] ?? 0,
+            'return_number' => $return['return_number'] ?? '',
         ], JSON_UNESCAPED_UNICODE);
         
     } catch (Throwable $e) {
