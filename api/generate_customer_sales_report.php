@@ -72,6 +72,7 @@ $sql = "SELECT
                     OR (i.sales_rep_id IS NULL AND s.salesperson_id IS NULL)
                   )
                   AND ii.product_id = s.product_id
+                  AND bn.batch_number IS NOT NULL
                 GROUP BY ii.id
                 ORDER BY 
                   CASE WHEN i.sales_rep_id = s.salesperson_id THEN 0 ELSE 1 END,
