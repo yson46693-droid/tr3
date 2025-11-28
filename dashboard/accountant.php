@@ -1234,10 +1234,7 @@ $pageTitle = isset($lang['accountant_dashboard']) ? $lang['accountant_dashboard'
                                     <small class="text-muted">يجب أن يكون المبلغ أقل من أو يساوي رصيد المندوب</small>
                                 </div>
                                 
-                                <div class="mb-3">
-                                    <label for="collectDescription" class="form-label">وصف التحصيل</label>
-                                    <textarea class="form-control" id="collectDescription" name="description" rows="3" placeholder="مثال: تحصيل مبلغ من مندوب المبيعات"></textarea>
-                                </div>
+                                
                             </div>
                             <div class="modal-footer">
                                 <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">إلغاء</button>
