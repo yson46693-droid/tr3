@@ -223,11 +223,12 @@ if ($page === 'financial' && $_SERVER['REQUEST_METHOD'] === 'POST') {
                     
                     // إضافة إيراد معتمد في financial_transactions
                     $db->execute(
-                        "INSERT INTO financial_transactions (type, amount, supplier_id, reference_number, status, approved_by, created_by, approved_at)
+                        "INSERT INTO financial_transactions (type, amount, supplier_id, description, reference_number, status, approved_by, created_by, approved_at)
                          VALUES (?, ?, NULL, ?, ?, 'approved', ?, ?, NOW())",
                         [
                             'income',
                             $amount,
+                            $finalDescription,
                             'COL-REP-' . $salesRepId . '-' . date('YmdHis'),
                             $currentUser['id'],
                             $currentUser['id']
