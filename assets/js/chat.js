@@ -338,6 +338,7 @@
     state.replyTo = null;
     renderReplyBar();
     elements.input.value = message.deleted ? '' : message.message_text;
+    handleInputResize();
     focusInput(true);
   }
 
@@ -409,6 +410,7 @@
       }
 
       elements.input.value = '';
+      handleInputResize();
       clearReplyAndEdit();
       appendMessages([data.data], true);
       showToast('تم إرسال الرسالة');
@@ -447,6 +449,7 @@
       }
 
       elements.input.value = '';
+      handleInputResize();
       clearReplyAndEdit();
       applyMessageUpdate(data.data);
       showToast('تم تحديث الرسالة');
