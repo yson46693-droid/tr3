@@ -428,10 +428,86 @@ $typeColorMap = [
 ];
 ?>
 
-<div class="row g-3 mt-4">
-    <div class="col-12 col-lg-5 col-xxl-5">
-        <button type="button" class="btn btn-primary mb-3 w-100" data-bs-toggle="modal" data-bs-target="#collectFromRepModal">
-            <i class="bi bi-cash-coin me-1"></i>تحصيل من مندوب
+<div class="row g-4 mt-4">
+    <div class="col-12 col-xxl-7">
+        <div class="card shadow-sm h-100">
+            <div class="card-header bg-light fw-bold d-flex justify-content-between align-items-center">
+                <span><i class="bi bi-graph-up-arrow me-2 text-primary"></i>ملخص الخزنة</span>
+                <span class="badge bg-primary text-white">محدّث</span>
+            </div>
+            <div class="card-body">
+                <div class="d-flex flex-wrap justify-content-between align-items-start gap-3 mb-4">
+                    <div>
+                        <span class="text-muted text-uppercase small d-block mb-2">صافي الرصيد المعتمد</span>
+                        <div class="display-4 fw-bold"><?php echo formatCurrency($netApprovedBalance); ?></div>
+                    </div>
+                    <div class="text-end">
+                        <div class="badge bg-success text-white fw-semibold px-4 py-3 fs-6">
+                            <?php echo formatCurrency($approvedIncome); ?> إيرادات
+                        </div>
+                    </div>
+                </div>
+                <div class="row g-4 mt-2">
+                    <div class="col-12 col-md-6 col-lg-3">
+                        <div class="border rounded-3 p-4 h-100 bg-light">
+                            <div class="d-flex justify-content-between align-items-center mb-3">
+                                <span class="text-muted small fw-semibold">إيرادات معتمدة</span>
+                                <i class="bi bi-arrow-up-right-circle text-success fs-5"></i>
+                            </div>
+                            <div class="h4 text-success fw-bold mb-3"><?php echo formatCurrency($approvedIncome); ?></div>
+                            <div class="progress mb-2" style="height: 8px;">
+                                <div class="progress-bar bg-success" role="progressbar" style="width: <?php echo max(0, min(100, $incomeShare)); ?>%;"></div>
+                            </div>
+                            <small class="text-muted d-block"><?php echo max(0, min(100, $incomeShare)); ?>% من إجمالي الحركة</small>
+                        </div>
+                    </div>
+                    <div class="col-12 col-md-6 col-lg-3">
+                        <div class="border rounded-3 p-4 h-100 bg-light">
+                            <div class="d-flex justify-content-between align-items-center mb-3">
+                                <span class="text-muted small fw-semibold">مصروفات معتمدة</span>
+                                <i class="bi bi-arrow-down-right-circle text-danger fs-5"></i>
+                            </div>
+                            <div class="h4 text-danger fw-bold mb-3"><?php echo formatCurrency($approvedExpense); ?></div>
+                            <div class="progress mb-2" style="height: 8px;">
+                                <div class="progress-bar bg-danger" role="progressbar" style="width: <?php echo max(0, min(100, $expenseShare)); ?>%;"></div>
+                            </div>
+                            <small class="text-muted d-block"><?php echo max(0, min(100, $expenseShare)); ?>% من إجمالي الحركة</small>
+                        </div>
+                    </div>
+                    <div class="col-12 col-md-6 col-lg-3">
+                        <div class="border rounded-3 p-4 h-100 bg-light">
+                            <div class="d-flex justify-content-between align-items-center mb-3">
+                                <span class="text-muted small fw-semibold">مدفوعات الموردين</span>
+                                <i class="bi bi-credit-card-2-back text-warning fs-5"></i>
+                            </div>
+                            <div class="h4 text-warning fw-bold mb-3"><?php echo formatCurrency($approvedPayment); ?></div>
+                            <div class="progress mb-2" style="height: 8px;">
+                                <div class="progress-bar bg-warning" role="progressbar" style="width: <?php echo max(0, min(100, $paymentShare)); ?>%;"></div>
+                            </div>
+                            <small class="text-muted d-block"><?php echo max(0, min(100, $paymentShare)); ?>% من إجمالي الحركة</small>
+                        </div>
+                    </div>
+                    <div class="col-12 col-md-6 col-lg-3">
+                        <div class="border rounded-3 p-4 h-100 bg-light">
+                            <div class="d-flex justify-content-between align-items-center mb-3">
+                                <span class="text-muted small fw-semibold">إجمالي المرتبات</span>
+                                <i class="bi bi-cash-stack text-danger fs-5"></i>
+                            </div>
+                            <div class="h4 text-danger fw-bold mb-3"><?php echo formatCurrency($totalSalaries); ?></div>
+                            <div class="progress mb-2" style="height: 8px;">
+                                <div class="progress-bar bg-danger" role="progressbar" style="width: <?php echo max(0, min(100, $salariesShare)); ?>%;"></div>
+                            </div>
+                            <small class="text-muted d-block"><?php echo max(0, min(100, $salariesShare)); ?>% من إجمالي الحركة</small>
+                        </div>
+                    </div>
+                </div>
+               
+            </div>
+        </div>
+    </div>
+    <div class="col-12 col-xxl-5">
+        <button type="button" class="btn btn-primary btn-lg mb-3 w-100" data-bs-toggle="modal" data-bs-target="#collectFromRepModal">
+            <i class="bi bi-cash-coin me-2"></i>تحصيل من مندوب
         </button>
         <div class="card shadow-sm h-100">
             <div class="card-header bg-light fw-bold">
@@ -441,21 +517,21 @@ $typeColorMap = [
                 <form method="POST" class="row g-3">
                     <input type="hidden" name="action" value="add_quick_expense">
                     <div class="col-12 col-sm-6">
-                        <label for="quickExpenseAmount" class="form-label">قيمة المصروف <span class="text-danger">*</span></label>
-                        <div class="input-group">
+                        <label for="quickExpenseAmount" class="form-label fw-semibold">قيمة المصروف <span class="text-danger">*</span></label>
+                        <div class="input-group input-group-lg">
                             <span class="input-group-text">ج.م</span>
                             <input type="number" step="0.01" min="0.01" class="form-control" id="quickExpenseAmount" name="amount" required value="<?php echo htmlspecialchars($financialFormData['amount'] ?? '', ENT_QUOTES, 'UTF-8'); ?>">
                         </div>
                     </div>
                     <div class="col-12 col-sm-6">
-                        <label for="quickExpenseReference" class="form-label">رقم مرجعي</label>
+                        <label for="quickExpenseReference" class="form-label fw-semibold">رقم مرجعي</label>
                         <?php
                         $generatedRef = 'REF-' . mt_rand(100000, 999999);?>
-                        <input type="text" class="form-control" id="quickExpenseReference" name="reference_number" value="<?php echo $generatedRef; ?>" readonly style="background:#f5f5f5; cursor:not-allowed;">
+                        <input type="text" class="form-control form-control-lg" id="quickExpenseReference" name="reference_number" value="<?php echo $generatedRef; ?>" readonly style="background:#f5f5f5; cursor:not-allowed;">
                     </div>
                     <div class="col-12">
-                        <label for="quickExpenseDescription" class="form-label">وصف المصروف <span class="text-danger">*</span></label>
-                        <textarea class="form-control" id="quickExpenseDescription" name="description" rows="3" required placeholder="أدخل تفاصيل المصروف..."><?php echo htmlspecialchars($financialFormData['description'] ?? '', ENT_QUOTES, 'UTF-8'); ?></textarea>
+                        <label for="quickExpenseDescription" class="form-label fw-semibold">وصف المصروف <span class="text-danger">*</span></label>
+                        <textarea class="form-control" id="quickExpenseDescription" name="description" rows="4" required placeholder="أدخل تفاصيل المصروف..."><?php echo htmlspecialchars($financialFormData['description'] ?? '', ENT_QUOTES, 'UTF-8'); ?></textarea>
                     </div>
                     <div class="col-12">
                         <div class="form-check">
@@ -466,89 +542,13 @@ $typeColorMap = [
                         </div>
                         <small class="text-muted d-block mt-1">إذا تُرك غير محدد فسيتم إرسال المصروف للموافقة لاحقاً.</small>
                     </div>
-                    <div class="col-12 d-flex justify-content-end gap-2">
-                        <button type="reset" class="btn btn-outline-secondary">تفريغ الحقول</button>
-                        <button type="submit" class="btn btn-success">
+                    <div class="col-12 d-flex justify-content-end gap-2 mt-3">
+                        <button type="reset" class="btn btn-outline-secondary btn-lg">تفريغ الحقول</button>
+                        <button type="submit" class="btn btn-success btn-lg">
                             <i class="bi bi-send me-1"></i>حفظ المصروف
                         </button>
                     </div>
                 </form>
-            </div>
-        </div>
-    </div>
-    <div class="col-12 col-lg-7 col-xxl-7">
-        <div class="card shadow-sm h-100">
-            <div class="card-header bg-light fw-bold d-flex justify-content-between align-items-center">
-                <span><i class="bi bi-graph-up-arrow me-2 text-primary"></i>ملخص الخزنة</span>
-                <span class="badge bg-primary text-white">محدّث</span>
-            </div>
-            <div class="card-body">
-                <div class="d-flex flex-wrap justify-content-between align-items-start gap-3">
-                    <div>
-                        <span class="text-muted text-uppercase small">صافي الرصيد المعتمد</span>
-                        <div class="display-6 fw-bold mt-1"><?php echo formatCurrency($netApprovedBalance); ?></div>
-                    </div>
-                    <div class="text-end">
-                        <div class="badge bg-success text-white fw-semibold px-3 py-2">
-                            <?php echo formatCurrency($approvedIncome); ?> إيرادات
-                        </div>
-                    </div>
-                </div>
-                <div class="row g-3 mt-3">
-                    <div class="col-12 col-md-4">
-                        <div class="border rounded-3 p-3 h-100">
-                            <div class="d-flex justify-content-between align-items-center">
-                                <span class="text-muted small">إيرادات معتمدة</span>
-                                <i class="bi bi-arrow-up-right-circle text-success"></i>
-                            </div>
-                            <div class="h5 text-success mt-2"><?php echo formatCurrency($approvedIncome); ?></div>
-                            <div class="progress mt-3" style="height: 6px;">
-                                <div class="progress-bar bg-success" role="progressbar" style="width: <?php echo max(0, min(100, $incomeShare)); ?>%;"></div>
-                            </div>
-                            <small class="text-muted d-block mt-2"><?php echo max(0, min(100, $incomeShare)); ?>% من إجمالي الحركة</small>
-                        </div>
-                    </div>
-                    <div class="col-12 col-md-4">
-                        <div class="border rounded-3 p-3 h-100">
-                            <div class="d-flex justify-content-between align-items-center">
-                                <span class="text-muted small">مصروفات معتمدة</span>
-                                <i class="bi bi-arrow-down-right-circle text-danger"></i>
-                            </div>
-                            <div class="h5 text-danger mt-2"><?php echo formatCurrency($approvedExpense); ?></div>
-                            <div class="progress mt-3" style="height: 6px;">
-                                <div class="progress-bar bg-danger" role="progressbar" style="width: <?php echo max(0, min(100, $expenseShare)); ?>%;"></div>
-                            </div>
-                            <small class="text-muted d-block mt-2"><?php echo max(0, min(100, $expenseShare)); ?>% من إجمالي الحركة</small>
-                        </div>
-                    </div>
-                    <div class="col-12 col-md-4">
-                        <div class="border rounded-3 p-3 h-100">
-                            <div class="d-flex justify-content-between align-items-center">
-                                <span class="text-muted small">مدفوعات الموردين</span>
-                                <i class="bi bi-credit-card-2-back text-warning"></i>
-                            </div>
-                            <div class="h5 text-warning mt-2"><?php echo formatCurrency($approvedPayment); ?></div>
-                            <div class="progress mt-3" style="height: 6px;">
-                                <div class="progress-bar bg-warning" role="progressbar" style="width: <?php echo max(0, min(100, $paymentShare)); ?>%;"></div>
-                            </div>
-                            <small class="text-muted d-block mt-2"><?php echo max(0, min(100, $paymentShare)); ?>% من إجمالي الحركة</small>
-                        </div>
-                    </div>
-                    <div class="col-12 col-md-4">
-                        <div class="border rounded-3 p-3 h-100">
-                            <div class="d-flex justify-content-between align-items-center">
-                                <span class="text-muted small">إجمالي المرتبات</span>
-                                <i class="bi bi-cash-stack text-danger"></i>
-                            </div>
-                            <div class="h5 text-danger mt-2"><?php echo formatCurrency($totalSalaries); ?></div>
-                            <div class="progress mt-3" style="height: 6px;">
-                                <div class="progress-bar bg-danger" role="progressbar" style="width: <?php echo max(0, min(100, $salariesShare)); ?>%;"></div>
-                            </div>
-                            <small class="text-muted d-block mt-2"><?php echo max(0, min(100, $salariesShare)); ?>% من إجمالي الحركة</small>
-                        </div>
-                    </div>
-                </div>
-               
             </div>
         </div>
     </div>
