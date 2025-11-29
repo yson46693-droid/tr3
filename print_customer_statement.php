@@ -251,7 +251,7 @@ function getCustomerStatementData($customerId) {
             align-items: center;
             justify-content: center;
             color: white;
-            font-size: 32px;
+            font-size: 64px;
             font-weight: bold;
             overflow: hidden;
             position: relative;
@@ -261,7 +261,7 @@ function getCustomerStatementData($customerId) {
             width: 100%;
             height: 100%;
             object-fit: contain;
-            padding: 8px;
+            padding: 4px;
         }
         
         .logo-letter {
