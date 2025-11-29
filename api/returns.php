@@ -1,26 +1,31 @@
 <?php
 /**
- * API for Return Requests
- * Handles return request creation, customer selection, and purchase history
+ * API موحد لنظام المرتجعات
+ * Unified Returns API
+ * 
+ * هذا الملف يحتوي على جميع طلبات API للمرتجعات:
+ * - إنشاء طلبات المرتجعات
+ * - جلب العملاء وسجل المشتريات
+ * - الموافقة/الرفض على المرتجعات
+ * - جلب تفاصيل المرتجعات
+ * 
+ * تاريخ الإنشاء: 2024
  */
 
 define('ACCESS_ALLOWED', true);
-define('IS_API_REQUEST', true); // علامة لتحديد أن هذا طلب API
+define('IS_API_REQUEST', true);
 
-// تعيين header للـ JSON قبل أي شيء آخر لتجنب أي redirect
 header('Content-Type: application/json; charset=utf-8');
-
-// منع أي output غير متوقع
 ob_start();
 
 require_once __DIR__ . '/../includes/config.php';
 require_once __DIR__ . '/../includes/db.php';
 require_once __DIR__ . '/../includes/auth.php';
+require_once __DIR__ . '/../includes/returns_system.php';
 require_once __DIR__ . '/../includes/approval_system.php';
 require_once __DIR__ . '/../includes/path_helper.php';
 require_once __DIR__ . '/../includes/product_name_helper.php';
 
-// تنظيف أي output غير متوقع
 ob_clean();
 
 $action = $_GET['action'] ?? $_POST['action'] ?? null;
@@ -30,12 +35,11 @@ if (!$action) {
     returnJson(['success' => false, 'message' => 'الإجراء غير معروف'], 400);
 }
 
-// التحقق من تسجيل الدخول أولاً (بدون redirect)
+// التحقق من تسجيل الدخول
 if (!isLoggedIn()) {
     returnJson(['success' => false, 'message' => 'انتهت جلسة العمل، يرجى إعادة تسجيل الدخول'], 401);
 }
 
-// التحقق من الدور مباشرة (بدون استخدام requireRole لتجنب redirect)
 $currentUser = getCurrentUser();
 if (!$currentUser) {
     returnJson(['success' => false, 'message' => 'انتهت جلسة العمل، يرجى إعادة تسجيل الدخول'], 401);
@@ -50,35 +54,49 @@ try {
     switch ($action) {
         case 'get_customers':
             if ($method !== 'GET') {
-                returnJson(['success' => false, 'message' => 'يجب استخدام طلب GET لهذا الإجراء'], 405);
+                returnJson(['success' => false, 'message' => 'يجب استخدام طلب GET'], 405);
             }
             handleGetCustomers();
             break;
             
         case 'get_purchase_history':
             if ($method !== 'GET') {
-                returnJson(['success' => false, 'message' => 'يجب استخدام طلب GET لهذا الإجراء'], 405);
+                returnJson(['success' => false, 'message' => 'يجب استخدام طلب GET'], 405);
             }
             handleGetPurchaseHistory();
             break;
             
         case 'create':
             if ($method !== 'POST') {
-                returnJson(['success' => false, 'message' => 'يجب استخدام طلب POST لهذا الإجراء'], 405);
+                returnJson(['success' => false, 'message' => 'يجب استخدام طلب POST'], 405);
             }
-            handleCreateReturnRequest();
+            handleCreateReturn();
             break;
             
         case 'get_return_details':
             if ($method !== 'GET') {
-                returnJson(['success' => false, 'message' => 'يجب استخدام طلب GET لهذا الإجراء'], 405);
+                returnJson(['success' => false, 'message' => 'يجب استخدام طلب GET'], 405);
             }
             handleGetReturnDetails();
             break;
             
+        case 'approve':
+            if ($method !== 'POST') {
+                returnJson(['success' => false, 'message' => 'يجب استخدام طلب POST'], 405);
+            }
+            handleApproveReturn();
+            break;
+            
+        case 'reject':
+            if ($method !== 'POST') {
+                returnJson(['success' => false, 'message' => 'يجب استخدام طلب POST'], 405);
+            }
+            handleRejectReturn();
+            break;
+            
         case 'get_recent_requests':
             if ($method !== 'GET') {
-                returnJson(['success' => false, 'message' => 'يجب استخدام طلب GET لهذا الإجراء'], 405);
+                returnJson(['success' => false, 'message' => 'يجب استخدام طلب GET'], 405);
             }
             handleGetRecentRequests();
             break;
@@ -87,50 +105,34 @@ try {
             returnJson(['success' => false, 'message' => 'إجراء غير مدعوم'], 400);
     }
 } catch (Throwable $e) {
-    error_log('return_requests API error: ' . $e->getMessage());
+    error_log('returns API error: ' . $e->getMessage());
     error_log('Stack trace: ' . $e->getTraceAsString());
-    returnJson(['success' => false, 'message' => 'حدث خطأ غير متوقع أثناء المعالجة: ' . $e->getMessage()], 500);
+    returnJson(['success' => false, 'message' => 'حدث خطأ غير متوقع: ' . $e->getMessage()], 500);
 }
 
 function returnJson(array $data, int $status = 200): void
 {
-    // تنظيف أي output سابق
     if (ob_get_level() > 0) {
         ob_clean();
     }
-    
-    // التأكد من أن header JSON تم تعيينه
     header('Content-Type: application/json; charset=utf-8', true);
-    
-    // منع أي output إضافي
     http_response_code($status);
-    
-    // إخراج JSON فقط
-    echo json_encode($data, JSON_UNESCAPED_UNICODE);
-    
-    // إنهاء التنفيذ
+    echo json_encode($data, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
     if (ob_get_level() > 0) {
         ob_end_flush();
     }
-    
     exit;
 }
 
 /**
- * Get customers assigned to current sales rep
+ * جلب العملاء
  */
 function handleGetCustomers(): void
 {
     global $currentUser;
     
-    if (!$currentUser) {
-        returnJson(['success' => false, 'message' => 'انتهت جلسة العمل، يرجى إعادة تسجيل الدخول'], 401);
-    }
-    
     $db = db();
     
-    // For sales rep, only show their customers
-    // For manager/accountant, show all customers
     $salesRepId = null;
     if ($currentUser['role'] === 'sales') {
         $salesRepId = (int)$currentUser['id'];
@@ -180,15 +182,11 @@ function handleGetCustomers(): void
 }
 
 /**
- * Get customer purchase history with batch numbers
+ * جلب سجل مشتريات العميل
  */
 function handleGetPurchaseHistory(): void
 {
     global $currentUser;
-    
-    if (!$currentUser) {
-        returnJson(['success' => false, 'message' => 'انتهت جلسة العمل، يرجى إعادة تسجيل الدخول'], 401);
-    }
     
     $customerId = isset($_GET['customer_id']) ? (int)$_GET['customer_id'] : 0;
     
@@ -198,7 +196,7 @@ function handleGetPurchaseHistory(): void
     
     $db = db();
     
-    // Verify customer exists and belongs to sales rep (if sales rep)
+    // التحقق من العميل
     $customer = $db->queryOne(
         "SELECT id, name, created_by FROM customers WHERE id = ?",
         [$customerId]
@@ -215,7 +213,7 @@ function handleGetPurchaseHistory(): void
         }
     }
     
-    // Get purchase history from invoices with real product names
+    // جلب سجل المشتريات
     $purchaseHistory = $db->query(
         "SELECT 
             i.id as invoice_id,
@@ -257,10 +255,8 @@ function handleGetPurchaseHistory(): void
         [$customerId]
     );
     
-    // Calculate already returned quantities
+    // حساب الكميات المرتجعة
     $returnedQuantities = [];
-    
-    // Check if invoice_item_id column exists
     $hasInvoiceItemId = false;
     try {
         $columnCheck = $db->queryOne("SHOW COLUMNS FROM return_items LIKE 'invoice_item_id'");
@@ -287,41 +283,18 @@ function handleGetPurchaseHistory(): void
             $key = "{$invoiceItemId}_{$productId}";
             $returnedQuantities[$key] = (float)$row['returned_quantity'];
         }
-    } else {
-        // Fallback: group by product_id only
-        $returnedRows = $db->query(
-            "SELECT ri.product_id, COALESCE(SUM(ri.quantity), 0) AS returned_quantity
-             FROM return_items ri
-             INNER JOIN returns r ON r.id = ri.return_id
-             INNER JOIN invoices i ON r.invoice_id = i.id
-             WHERE r.customer_id = ?
-               AND r.status IN ('pending', 'approved', 'processed', 'completed')
-             GROUP BY ri.product_id",
-            [$customerId]
-        );
-        
-        foreach ($returnedRows as $row) {
-            $productId = (int)$row['product_id'];
-            $key = "product_{$productId}";
-            $returnedQuantities[$key] = (float)$row['returned_quantity'];
-        }
     }
     
-    // تجميع المنتجات حسب المنتج (وليس حسب الفاتورة)
+    // تجميع المنتجات
     $productsMap = [];
     
     foreach ($purchaseHistory as $item) {
         $invoiceItemId = (int)$item['invoice_item_id'];
         $productId = (int)$item['product_id'];
         
-        // Calculate returned quantity
         $returnedQty = 0.0;
         if ($hasInvoiceItemId) {
             $key = "{$invoiceItemId}_{$productId}";
-            $returnedQty = $returnedQuantities[$key] ?? 0.0;
-        } else {
-            // Fallback: use product_id only
-            $key = "product_{$productId}";
             $returnedQty = $returnedQuantities[$key] ?? 0.0;
         }
         
@@ -329,32 +302,11 @@ function handleGetPurchaseHistory(): void
         $remainingQty = max(0, round($purchasedQty - $returnedQty, 3));
         
         if ($remainingQty <= 0) {
-            continue; // Skip fully returned items
+            continue;
         }
         
-        // تجميع حسب المنتج
         if (!isset($productsMap[$productId])) {
-            // محاولة جلب اسم المنتج الحقيقي من جدول products أولاً
-            $productName = null;
-            if ($productId > 0) {
-                try {
-                    $productRow = $db->queryOne(
-                        "SELECT name FROM products WHERE id = ?",
-                        [$productId]
-                    );
-                    if ($productRow && !empty($productRow['name'])) {
-                        $productName = trim($productRow['name']);
-                    }
-                } catch (Throwable $e) {
-                    // في حالة الخطأ، نستخدم الاسم من الاستعلام الأصلي
-                }
-            }
-            
-            // استخدام resolveProductName للحصول على الاسم الحقيقي
-            $finalProductName = resolveProductName([
-                $item['product_name'] ?? null,
-                $productName
-            ], 'اسم المنتج غير متوفر');
+            $finalProductName = resolveProductName([$item['product_name'] ?? null], 'اسم المنتج غير متوفر');
             
             $productsMap[$productId] = [
                 'product_id' => $productId,
@@ -386,7 +338,6 @@ function handleGetPurchaseHistory(): void
             }
         }
         
-        // إضافة معلومات الفاتورة
         $productsMap[$productId]['invoices'][] = [
             'invoice_id' => (int)$item['invoice_id'],
             'invoice_number' => $item['invoice_number'],
@@ -395,88 +346,15 @@ function handleGetPurchaseHistory(): void
         ];
     }
     
-    // تحويل الخريطة إلى مصفوفة
+    // تحويل إلى مصفوفة
     $result = [];
     foreach ($productsMap as $productId => $product) {
         if ($product['quantity_remaining'] > 0) {
-            // استخدام أول invoice_item_id من المنتج
             $firstInvoiceItemId = !empty($product['invoice_item_ids']) ? $product['invoice_item_ids'][0] : 0;
-            
-            // جمع جميع الأسماء المرشحة للحصول على الاسم الحقيقي
-            $nameCandidates = [];
-            
-            // 1. الاسم الحالي من productsMap
-            if (!empty($product['product_name']) && !isPlaceholderProductName($product['product_name'])) {
-                $nameCandidates[] = $product['product_name'];
-            }
-            
-            // 2. محاولة جلب اسم المنتج من finished_products
-            if ($productId > 0 && !empty($product['invoice_item_ids'])) {
-                try {
-                    $finishedProduct = $db->queryOne(
-                        "SELECT fp.product_name 
-                         FROM finished_products fp
-                         INNER JOIN batch_numbers bn ON fp.batch_id = bn.id
-                         INNER JOIN sales_batch_numbers sbn ON bn.id = sbn.batch_number_id
-                         WHERE sbn.invoice_item_id IN (" . implode(',', array_map('intval', $product['invoice_item_ids'])) . ")
-                           AND fp.product_name IS NOT NULL 
-                           AND TRIM(fp.product_name) != ''
-                           AND fp.product_name NOT LIKE 'منتج رقم%'
-                         ORDER BY fp.id DESC 
-                         LIMIT 1"
-                    );
-                    
-                    if ($finishedProduct && !empty($finishedProduct['product_name'])) {
-                        $nameCandidates[] = trim($finishedProduct['product_name']);
-                    }
-                } catch (Throwable $e) {
-                    // في حالة الخطأ، نتخطى هذا المصدر
-                }
-            }
-            
-            // 3. محاولة جلب اسم المنتج مباشرة من جدول products (فقط إذا لم نجد اسماً صالحاً بعد)
-            if (empty($nameCandidates) && $productId > 0) {
-                try {
-                    $productRow = $db->queryOne(
-                        "SELECT name FROM products WHERE id = ?",
-                        [$productId]
-                    );
-                    if ($productRow && !empty($productRow['name'])) {
-                        $nameFromTable = trim($productRow['name']);
-                        if (!isPlaceholderProductName($nameFromTable)) {
-                            $nameCandidates[] = $nameFromTable;
-                        }
-                    }
-                } catch (Throwable $e) {
-                    // في حالة الخطأ، نتخطى هذا المصدر
-                }
-            }
-            
-            // استخدام resolveProductName للتأكد من الحصول على الاسم الحقيقي
-            // استخدام الاسم من productsMap كقيمة افتراضية إذا لم نجد أي اسم صالح
-            if (empty($nameCandidates) && !empty($product['product_name'])) {
-                $nameCandidates[] = $product['product_name'];
-            }
-            
-            $finalProductName = resolveProductName($nameCandidates, 'اسم المنتج غير متوفر');
-            
-            // إذا كان الاسم النهائي لا يزال "غير معروف" أو placeholder، حاول مرة أخرى من جدول products
-            if (isPlaceholderProductName($finalProductName) && $productId > 0) {
-                try {
-                    $productRow = $db->queryOne(
-                        "SELECT name FROM products WHERE id = ?",
-                        [$productId]
-                    );
-                    if ($productRow && !empty($productRow['name'])) {
-                        $finalProductName = trim($productRow['name']);
-                    }
-                } catch (Throwable $e) {
-                    // في حالة الخطأ، نستخدم الاسم الحالي
-                }
-            }
+            $finalProductName = resolveProductName([$product['product_name']], 'اسم المنتج غير متوفر');
             
             $result[] = [
-                'invoice_item_id' => $firstInvoiceItemId, // للتوافق مع الكود الحالي
+                'invoice_item_id' => $firstInvoiceItemId,
                 'product_id' => $productId,
                 'product_name' => $finalProductName,
                 'unit' => $product['unit'],
@@ -486,8 +364,8 @@ function handleGetPurchaseHistory(): void
                 'unit_price' => $product['unit_price'],
                 'total_price' => round($product['total_price'], 2),
                 'batch_numbers' => implode(', ', $product['batch_numbers']),
-                'invoices' => $product['invoices'], // معلومات إضافية عن الفواتير
-                'invoice_item_ids' => $product['invoice_item_ids'] // جميع invoice_item_ids المرتبطة
+                'invoices' => $product['invoices'],
+                'invoice_item_ids' => $product['invoice_item_ids']
             ];
         }
     }
@@ -496,15 +374,11 @@ function handleGetPurchaseHistory(): void
 }
 
 /**
- * Create return request
+ * إنشاء طلب مرتجع
  */
-function handleCreateReturnRequest(): void
+function handleCreateReturn(): void
 {
     global $currentUser;
-    
-    if (!$currentUser) {
-        returnJson(['success' => false, 'message' => 'انتهت جلسة العمل، يرجى إعادة تسجيل الدخول'], 401);
-    }
     
     $payload = json_decode(file_get_contents('php://input'), true);
     
@@ -527,7 +401,7 @@ function handleCreateReturnRequest(): void
     $db = db();
     $conn = $db->getConnection();
     
-    // Verify customer
+    // التحقق من العميل
     $customer = $db->queryOne(
         "SELECT id, name, created_by FROM customers WHERE id = ?",
         [$customerId]
@@ -537,41 +411,44 @@ function handleCreateReturnRequest(): void
         returnJson(['success' => false, 'message' => 'العميل غير موجود'], 404);
     }
     
-    // Verify sales rep ownership
+    // التحقق من ملكية العميل
     $salesRepId = (int)($customer['created_by'] ?? 0);
     if ($currentUser['role'] === 'sales' && $salesRepId !== (int)$currentUser['id']) {
         returnJson(['success' => false, 'message' => 'هذا العميل غير مرتبط بك'], 403);
     }
     
-    // Get sales rep ID (use customer's created_by or current user if manager/accountant)
-    if ($salesRepId <= 0 && in_array($currentUser['role'], ['manager', 'accountant'], true)) {
-        // Try to get from first invoice
-        $firstInvoice = $db->queryOne(
-            "SELECT sales_rep_id FROM invoices WHERE customer_id = ? ORDER BY id ASC LIMIT 1",
-            [$customerId]
-        );
-        $salesRepId = (int)($firstInvoice['sales_rep_id'] ?? 0);
+    // الحصول على invoice_id من أول عنصر
+    $firstInvoiceItemId = 0;
+    foreach ($items as $item) {
+        if (isset($item['invoice_item_id']) && $item['invoice_item_id'] > 0) {
+            $firstInvoiceItemId = (int)$item['invoice_item_id'];
+            break;
+        }
     }
+    
+    if ($firstInvoiceItemId <= 0) {
+        returnJson(['success' => false, 'message' => 'يجب تحديد عنصر فاتورة صالح'], 422);
+    }
+    
+    // جلب invoice_id
+    $invoiceItem = $db->queryOne(
+        "SELECT invoice_id FROM invoice_items WHERE id = ?",
+        [$firstInvoiceItemId]
+    );
+    
+    if (!$invoiceItem) {
+        returnJson(['success' => false, 'message' => 'عنصر الفاتورة غير موجود'], 404);
+    }
+    
+    $invoiceId = (int)$invoiceItem['invoice_id'];
     
     $conn->begin_transaction();
     
     try {
-        // Generate return number
-        $year = date('Y');
-        $month = date('m');
-        $lastReturn = $db->queryOne(
-            "SELECT return_number FROM returns WHERE return_number LIKE ? ORDER BY return_number DESC LIMIT 1",
-            ["RET-{$year}{$month}-%"]
-        );
+        // توليد رقم المرتجع
+        $returnNumber = generateReturnNumber();
         
-        $serial = 1;
-        if ($lastReturn) {
-            $parts = explode('-', $lastReturn['return_number']);
-            $serial = intval($parts[2] ?? 0) + 1;
-        }
-        $returnNumber = sprintf("RET-%s%s-%04d", $year, $month, $serial);
-        
-        // Validate and process items
+        // معالجة العناصر
         $selectedItems = [];
         $totalRefund = 0.0;
         $invoiceIds = [];
@@ -588,7 +465,7 @@ function handleCreateReturnRequest(): void
                 continue;
             }
             
-            // Get invoice item details
+            // جلب تفاصيل عنصر الفاتورة
             $invoiceItem = $db->queryOne(
                 "SELECT ii.*, i.id as invoice_id, i.invoice_number, i.customer_id, i.sales_rep_id,
                         p.name as product_name, p.unit
@@ -603,38 +480,9 @@ function handleCreateReturnRequest(): void
                 throw new RuntimeException('عنصر الفاتورة غير موجود أو غير مرتبط بهذا العميل');
             }
             
-            // Check already returned quantity
-            // Check if invoice_item_id column exists
-            $hasInvoiceItemIdCol = false;
-            try {
-                $colCheck = $db->queryOne("SHOW COLUMNS FROM return_items LIKE 'invoice_item_id'");
-                $hasInvoiceItemIdCol = !empty($colCheck);
-            } catch (Throwable $e) {
-                $hasInvoiceItemIdCol = false;
-            }
-            
-            if ($hasInvoiceItemIdCol) {
-                $alreadyReturned = $db->queryOne(
-                    "SELECT COALESCE(SUM(ri.quantity), 0) AS returned_quantity
-                     FROM return_items ri
-                     INNER JOIN returns r ON r.id = ri.return_id
-                     WHERE ri.invoice_item_id = ?
-                       AND r.status IN ('pending', 'approved', 'processed', 'completed')",
-                    [$invoiceItemId]
-                );
-            } else {
-                // Fallback: check by invoice_id and product_id
-                $alreadyReturned = $db->queryOne(
-                    "SELECT COALESCE(SUM(ri.quantity), 0) AS returned_quantity
-                     FROM return_items ri
-                     INNER JOIN returns r ON r.id = ri.return_id
-                     WHERE r.invoice_id = ? AND ri.product_id = ?
-                       AND r.status IN ('pending', 'approved', 'processed', 'completed')",
-                    [$invoiceItem['invoice_id'], $invoiceItem['product_id']]
-                );
-            }
-            
-            $returnedQty = (float)($alreadyReturned['returned_quantity'] ?? 0);
+            // التحقق من الكمية المرتجعة
+            $alreadyReturned = getAlreadyReturnedQuantity($invoiceItemId, (int)$invoiceItem['product_id']);
+            $returnedQty = (float)$alreadyReturned;
             $purchasedQty = (float)$invoiceItem['quantity'];
             $remainingQty = max(0, round($purchasedQty - $returnedQty, 3));
             
@@ -642,7 +490,7 @@ function handleCreateReturnRequest(): void
                 throw new RuntimeException("الكمية المطلوبة للمنتج {$invoiceItem['product_name']} تتجاوز الحد المتاح ({$remainingQty})");
             }
             
-            // Get batch numbers for this invoice item
+            // جلب أرقام التشغيلات
             $batchNumbers = $db->query(
                 "SELECT sbn.batch_number_id, bn.batch_number
                  FROM sales_batch_numbers sbn
@@ -672,6 +520,8 @@ function handleCreateReturnRequest(): void
                 'total_price' => $lineTotal,
                 'batch_number_ids' => $batchNumberIds,
                 'batch_numbers' => implode(', ', $batchNumberStrings),
+                'is_damaged' => !empty($item['is_damaged']),
+                'damage_reason' => $item['damage_reason'] ?? null,
             ];
             
             if (!in_array((int)$invoiceItem['invoice_id'], $invoiceIds)) {
@@ -685,7 +535,7 @@ function handleCreateReturnRequest(): void
         
         $totalRefund = round($totalRefund, 2);
         
-        // Use first invoice's sales rep if not set
+        // استخدام sales_rep_id من العميل أو من الفاتورة
         if ($salesRepId <= 0 && !empty($invoiceIds)) {
             $firstInvoice = $db->queryOne(
                 "SELECT sales_rep_id FROM invoices WHERE id = ?",
@@ -694,7 +544,7 @@ function handleCreateReturnRequest(): void
             $salesRepId = (int)($firstInvoice['sales_rep_id'] ?? 0);
         }
         
-        // Create return record
+        // إنشاء سجل المرتجع
         $db->execute(
             "INSERT INTO returns
              (return_number, invoice_id, customer_id, sales_rep_id, return_date, return_type,
@@ -702,7 +552,7 @@ function handleCreateReturnRequest(): void
              VALUES (?, ?, ?, ?, CURDATE(), 'partial', 'customer_request', ?, 'credit', 'pending', ?, ?)",
             [
                 $returnNumber,
-                $invoiceIds[0] ?? null, // Use first invoice ID
+                $invoiceId,
                 $customerId,
                 $salesRepId ?: null,
                 $totalRefund,
@@ -713,50 +563,83 @@ function handleCreateReturnRequest(): void
         
         $returnId = (int)$db->getLastInsertId();
         
-        // Create return items
+        // إنشاء عناصر المرتجع
         foreach ($selectedItems as $item) {
             $batchNumberId = !empty($item['batch_number_ids']) ? $item['batch_number_ids'][0] : null;
             $batchNumber = $item['batch_numbers'] ?? null;
             
+            // التحقق من وجود الأعمدة
+            $hasInvoiceItemId = false;
+            $hasBatchNumberId = false;
+            $hasIsDamaged = false;
+            
+            try {
+                $colCheck = $db->queryOne("SHOW COLUMNS FROM return_items LIKE 'invoice_item_id'");
+                $hasInvoiceItemId = !empty($colCheck);
+                
+                $colCheck = $db->queryOne("SHOW COLUMNS FROM return_items LIKE 'batch_number_id'");
+                $hasBatchNumberId = !empty($colCheck);
+                
+                $colCheck = $db->queryOne("SHOW COLUMNS FROM return_items LIKE 'is_damaged'");
+                $hasIsDamaged = !empty($colCheck);
+            } catch (Throwable $e) {
+                // تجاهل
+            }
+            
+            $columns = ['return_id', 'product_id', 'quantity', 'unit_price', 'total_price', '`condition`'];
+            $values = [$returnId, $item['product_id'], $item['quantity'], $item['unit_price'], $item['total_price'], 'new'];
+            
+            if ($hasInvoiceItemId) {
+                $columns[] = 'invoice_item_id';
+                $values[] = $item['invoice_item_id'];
+            }
+            
+            if ($hasBatchNumberId && $batchNumberId) {
+                $columns[] = 'batch_number_id';
+                $values[] = $batchNumberId;
+            }
+            
+            if ($batchNumber) {
+                $columns[] = 'batch_number';
+                $values[] = $batchNumber;
+            }
+            
+            if ($hasIsDamaged) {
+                $columns[] = 'is_damaged';
+                $values[] = $item['is_damaged'] ? 1 : 0;
+            }
+            
+            $columns[] = 'notes';
+            $values[] = $item['damage_reason'] ?? null;
+            
+            $columnsStr = implode(', ', $columns);
+            $placeholders = implode(', ', array_fill(0, count($values), '?'));
+            
             $db->execute(
-                "INSERT INTO return_items
-                 (return_id, invoice_item_id, product_id, quantity, unit_price, total_price, 
-                  batch_number_id, batch_number, condition)
-                 VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'new')",
-                [
-                    $returnId,
-                    $item['invoice_item_id'],
-                    $item['product_id'],
-                    $item['quantity'],
-                    $item['unit_price'],
-                    $item['total_price'],
-                    $batchNumberId,
-                    $batchNumber,
-                ]
+                "INSERT INTO return_items ($columnsStr) VALUES ($placeholders)",
+                $values
             );
         }
         
-        // Create approval request
+        // إنشاء طلب الموافقة
         $approvalNotes = "مرتجع فاتورة رقم: {$returnNumber}\n";
         $approvalNotes .= "العميل: {$customer['name']}\n";
         $approvalNotes .= "المبلغ: " . number_format($totalRefund, 2) . " ج.م\n";
         $approvalNotes .= "عدد المنتجات: " . count($selectedItems);
         
-        // Request approval - verify it was successful
         $approvalResult = requestApproval('return_request', $returnId, $currentUser['id'], $approvalNotes);
         
         if (isset($approvalResult['success']) && !$approvalResult['success']) {
             throw new RuntimeException('فشل إرسال طلب الموافقة: ' . ($approvalResult['message'] ?? 'خطأ غير معروف'));
         }
         
-        // التأكد من أن المرتجع لا يزال في حالة 'pending' بعد طلب الموافقة
+        // التأكد من أن الحالة pending
         $returnStatus = $db->queryOne(
             "SELECT status FROM returns WHERE id = ?",
             [$returnId]
         );
         
         if (!$returnStatus || $returnStatus['status'] !== 'pending') {
-            // إذا لم تكن الحالة 'pending'، قم بإعادة تعيينها
             $db->execute(
                 "UPDATE returns SET status = 'pending' WHERE id = ?",
                 [$returnId]
@@ -765,7 +648,6 @@ function handleCreateReturnRequest(): void
         
         $conn->commit();
         
-        // إنشاء رابط الطباعة
         $printUrl = getRelativeUrl('print_return_invoice.php?id=' . $returnId);
         
         returnJson([
@@ -781,7 +663,6 @@ function handleCreateReturnRequest(): void
     } catch (Throwable $e) {
         $conn->rollback();
         error_log('Error creating return request: ' . $e->getMessage());
-        error_log('Stack trace: ' . $e->getTraceAsString());
         returnJson([
             'success' => false,
             'message' => 'حدث خطأ أثناء إنشاء طلب المرتجع: ' . $e->getMessage()
@@ -790,15 +671,11 @@ function handleCreateReturnRequest(): void
 }
 
 /**
- * Get return details by ID
+ * جلب تفاصيل المرتجع
  */
 function handleGetReturnDetails(): void
 {
     global $currentUser;
-    
-    if (!$currentUser) {
-        returnJson(['success' => false, 'message' => 'انتهت جلسة العمل، يرجى إعادة تسجيل الدخول'], 401);
-    }
     
     $returnId = isset($_GET['return_id']) ? (int)$_GET['return_id'] : 0;
     
@@ -808,7 +685,6 @@ function handleGetReturnDetails(): void
     
     $db = db();
     
-    // Get return details
     $return = $db->queryOne(
         "SELECT r.*, c.name as customer_name, c.balance as customer_balance,
                 u.full_name as sales_rep_name,
@@ -827,7 +703,7 @@ function handleGetReturnDetails(): void
         returnJson(['success' => false, 'message' => 'المرتجع غير موجود'], 404);
     }
     
-    // Get return items
+    // جلب عناصر المرتجع
     $items = $db->query(
         "SELECT ri.*, p.name as product_name, p.unit
          FROM return_items ri
@@ -869,19 +745,128 @@ function handleGetReturnDetails(): void
 }
 
 /**
- * Get recent return and exchange requests for current sales rep
+ * الموافقة على المرتجع
+ */
+function handleApproveReturn(): void
+{
+    global $currentUser;
+    
+    if ($currentUser['role'] !== 'manager') {
+        returnJson(['success' => false, 'message' => 'فقط المدير يمكنه الموافقة على المرتجعات'], 403);
+    }
+    
+    $payload = json_decode(file_get_contents('php://input'), true);
+    
+    if (!is_array($payload)) {
+        returnJson(['success' => false, 'message' => 'صيغة البيانات غير صحيحة'], 400);
+    }
+    
+    $returnId = isset($payload['return_id']) ? (int)$payload['return_id'] : 0;
+    $notes = trim($payload['notes'] ?? '');
+    
+    if ($returnId <= 0) {
+        returnJson(['success' => false, 'message' => 'معرف المرتجع غير صالح'], 422);
+    }
+    
+    // استخدام دالة الموافقة الشاملة
+    $result = approveReturn($returnId, (int)$currentUser['id'], $notes);
+    
+    returnJson($result, $result['success'] ? 200 : 400);
+}
+
+/**
+ * رفض المرتجع
+ */
+function handleRejectReturn(): void
+{
+    global $currentUser;
+    
+    if ($currentUser['role'] !== 'manager') {
+        returnJson(['success' => false, 'message' => 'فقط المدير يمكنه رفض المرتجعات'], 403);
+    }
+    
+    $payload = json_decode(file_get_contents('php://input'), true);
+    
+    if (!is_array($payload)) {
+        returnJson(['success' => false, 'message' => 'صيغة البيانات غير صحيحة'], 400);
+    }
+    
+    $returnId = isset($payload['return_id']) ? (int)$payload['return_id'] : 0;
+    $notes = trim($payload['notes'] ?? '');
+    
+    if ($returnId <= 0) {
+        returnJson(['success' => false, 'message' => 'معرف المرتجع غير صالح'], 422);
+    }
+    
+    $db = db();
+    
+    // التحقق من المرتجع
+    $return = $db->queryOne(
+        "SELECT status FROM returns WHERE id = ?",
+        [$returnId]
+    );
+    
+    if (!$return) {
+        returnJson(['success' => false, 'message' => 'المرتجع غير موجود'], 404);
+    }
+    
+    if ($return['status'] !== 'pending') {
+        returnJson(['success' => false, 'message' => 'لا يمكن رفض مرتجع تمت معالجته بالفعل'], 400);
+    }
+    
+    $db->beginTransaction();
+    
+    try {
+        // تحديث حالة المرتجع
+        $db->execute(
+            "UPDATE returns SET status = 'rejected', approved_by = ?, approved_at = NOW(), notes = ? WHERE id = ?",
+            [$currentUser['id'], $notes ?: 'تم رفض الطلب', $returnId]
+        );
+        
+        // رفض طلب الموافقة
+        $entityColumn = getApprovalsEntityColumn();
+        $approval = $db->queryOne(
+            "SELECT id FROM approvals WHERE type = 'return_request' AND {$entityColumn} = ? AND status = 'pending'",
+            [$returnId]
+        );
+        
+        if ($approval) {
+            rejectRequest((int)$approval['id'], $currentUser['id'], $notes ?: 'تم رفض طلب المرتجع');
+        }
+        
+        // تسجيل في audit_logs
+        require_once __DIR__ . '/../includes/audit_log.php';
+        logAudit($currentUser['id'], 'reject_return', 'returns', $returnId, null, [
+            'return_number' => $return['return_number'] ?? '',
+            'notes' => $notes
+        ]);
+        
+        $db->commit();
+        
+        returnJson([
+            'success' => true,
+            'message' => 'تم رفض طلب المرتجع بنجاح'
+        ]);
+        
+    } catch (Throwable $e) {
+        $db->rollback();
+        error_log('Error rejecting return: ' . $e->getMessage());
+        returnJson([
+            'success' => false,
+            'message' => 'حدث خطأ أثناء رفض المرتجع: ' . $e->getMessage()
+        ], 500);
+    }
+}
+
+/**
+ * جلب الطلبات الأخيرة
  */
 function handleGetRecentRequests(): void
 {
     global $currentUser;
     
-    if (!$currentUser) {
-        returnJson(['success' => false, 'message' => 'انتهت جلسة العمل، يرجى إعادة تسجيل الدخول'], 401);
-    }
-    
     $db = db();
     
-    // Get sales rep ID (if sales rep, use their ID; if manager/accountant, get all)
     $salesRepId = null;
     if ($currentUser['role'] === 'sales') {
         $salesRepId = (int)$currentUser['id'];
@@ -894,7 +879,7 @@ function handleGetRecentRequests(): void
         'exchanges' => []
     ];
     
-    // Get recent return requests
+    // جلب المرتجعات الأخيرة
     $returnsSql = "SELECT 
                         r.id,
                         r.return_number,
@@ -922,14 +907,22 @@ function handleGetRecentRequests(): void
     
     $returns = $db->query($returnsSql, $params);
     
+    $statusLabels = [
+        'pending' => 'قيد الانتظار',
+        'approved' => 'موافق عليه',
+        'rejected' => 'مرفوض',
+        'completed' => 'مكتمل',
+        'processed' => 'تم المعالجة'
+    ];
+    
     foreach ($returns as $return) {
-        $statusLabel = getReturnStatusLabel($return['status']);
+        $status = $return['status'] ?? 'pending';
         $result['returns'][] = [
             'id' => (int)$return['id'],
             'return_number' => $return['return_number'],
             'return_date' => $return['return_date'],
-            'status' => $return['status'],
-            'status_label' => $statusLabel,
+            'status' => $status,
+            'status_label' => $statusLabels[$status] ?? $status,
             'refund_amount' => (float)$return['refund_amount'],
             'customer_name' => $return['customer_name'] ?? 'غير معروف',
             'invoice_number' => $return['invoice_number'] ?? '-',
@@ -939,88 +932,9 @@ function handleGetRecentRequests(): void
         ];
     }
     
-    // Get recent exchange requests
-    // Check which exchange table exists
-    $exchangesTableExists = $db->queryOne("SHOW TABLES LIKE 'exchanges'");
-    $productExchangesTableExists = $db->queryOne("SHOW TABLES LIKE 'product_exchanges'");
-    
-    if (!empty($exchangesTableExists) || !empty($productExchangesTableExists)) {
-        $tableName = !empty($exchangesTableExists) ? 'exchanges' : 'product_exchanges';
-        $exchangeDateCol = ($tableName === 'exchanges') ? 'exchange_date' : 'exchange_date';
-        $originalTotalCol = ($tableName === 'exchanges') ? 'original_total' : 'original_total';
-        
-        $exchangesSql = "SELECT 
-                            e.id,
-                            e.exchange_number,
-                            e.{$exchangeDateCol} as exchange_date,
-                            e.status,
-                            e.{$originalTotalCol} as original_total,
-                            e.new_total,
-                            e.difference_amount,
-                            e.notes,
-                            c.name as customer_name,
-                            e.created_at
-                        FROM {$tableName} e
-                        LEFT JOIN customers c ON e.customer_id = c.id
-                        WHERE e.created_by = ?";
-        
-        $exParams = [$currentUser['id']];
-        
-        if ($salesRepId) {
-            $exchangesSql .= " AND e.sales_rep_id = ?";
-            $exParams[] = $salesRepId;
-        }
-        
-        $exchangesSql .= " ORDER BY e.created_at DESC LIMIT ?";
-        $exParams[] = $limit;
-        
-        $exchanges = $db->query($exchangesSql, $exParams);
-        
-        foreach ($exchanges as $exchange) {
-            $statusLabel = getExchangeStatusLabel($exchange['status']);
-            $result['exchanges'][] = [
-                'id' => (int)$exchange['id'],
-                'exchange_number' => $exchange['exchange_number'],
-                'exchange_date' => $exchange['exchange_date'],
-                'status' => $exchange['status'],
-                'status_label' => $statusLabel,
-                'original_total' => (float)($exchange['original_total'] ?? 0),
-                'new_total' => (float)($exchange['new_total'] ?? 0),
-                'difference_amount' => (float)($exchange['difference_amount'] ?? 0),
-                'customer_name' => $exchange['customer_name'] ?? 'غير معروف',
-                'notes' => $exchange['notes'] ?? '',
-                'created_at' => $exchange['created_at'],
-                'type' => 'exchange'
-            ];
-        }
-    }
-    
     returnJson([
         'success' => true,
         'data' => $result
     ]);
-}
-
-function getReturnStatusLabel($status): string
-{
-    $labels = [
-        'pending' => 'قيد الانتظار',
-        'approved' => 'موافق عليه',
-        'rejected' => 'مرفوض',
-        'completed' => 'مكتمل',
-        'processed' => 'تم المعالجة'
-    ];
-    return $labels[$status] ?? $status;
-}
-
-function getExchangeStatusLabel($status): string
-{
-    $labels = [
-        'pending' => 'قيد الانتظار',
-        'approved' => 'موافق عليه',
-        'rejected' => 'مرفوض',
-        'completed' => 'مكتمل'
-    ];
-    return $labels[$status] ?? $status;
 }
 

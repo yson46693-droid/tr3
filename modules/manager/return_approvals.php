@@ -12,7 +12,7 @@ require_once __DIR__ . '/../../includes/config.php';
 require_once __DIR__ . '/../../includes/db.php';
 require_once __DIR__ . '/../../includes/auth.php';
 require_once __DIR__ . '/../../includes/approval_system.php';
-require_once __DIR__ . '/../../includes/return_processor.php';
+require_once __DIR__ . '/../../includes/returns_system.php';
 require_once __DIR__ . '/../../includes/path_helper.php';
 
 $db = db();
@@ -391,11 +391,11 @@ function approveReturn(returnId, event) {
     
     console.log('=== APPROVE RETURN REQUEST ===');
     console.log('Base Path:', basePath);
-    console.log('Full URL:', basePath + '/api/approve_return.php');
+    console.log('Full URL:', basePath + '/api/returns.php?action=approve');
     console.log('Return ID:', returnId);
     console.log('Request Data:', requestData);
     
-    fetch(basePath + '/api/approve_return.php', {
+    fetch(basePath + '/api/returns.php?action=approve', {
         method: 'POST',
         headers: {
             'Content-Type': 'application/json',
@@ -503,7 +503,7 @@ function rejectReturn(returnId, event) {
         btn.innerHTML = '<span class="spinner-border spinner-border-sm me-2"></span>جاري المعالجة...';
     }
     
-    fetch(basePath + '/api/approve_return.php', {
+    fetch(basePath + '/api/returns.php?action=reject', {
         method: 'POST',
         headers: {
             'Content-Type': 'application/json',
@@ -511,7 +511,6 @@ function rejectReturn(returnId, event) {
         credentials: 'same-origin',
         body: JSON.stringify({
             return_id: returnId,
-            action: 'reject',
             notes: notes || ''
         })
     })
@@ -545,7 +544,7 @@ function viewReturnDetails(returnId) {
     content.innerHTML = '<div class="text-center"><div class="spinner-border" role="status"><span class="visually-hidden">جاري التحميل...</span></div></div>';
     modal.show();
     
-    fetch(basePath + '/api/new_returns_api.php?action=details&id=' + returnId, {
+    fetch(basePath + '/api/returns.php?action=get_return_details&return_id=' + returnId, {
         credentials: 'same-origin',
         headers: {
             'Accept': 'application/json'

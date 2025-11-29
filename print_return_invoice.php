@@ -8,7 +8,7 @@ define('ACCESS_ALLOWED', true);
 require_once __DIR__ . '/includes/config.php';
 require_once __DIR__ . '/includes/db.php';
 require_once __DIR__ . '/includes/auth.php';
-require_once __DIR__ . '/includes/returns.php';
+require_once __DIR__ . '/includes/returns_system.php';
 require_once __DIR__ . '/includes/path_helper.php';
 
 requireRole(['manager', 'accountant', 'sales']);
