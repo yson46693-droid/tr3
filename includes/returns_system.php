@@ -185,6 +185,90 @@ function ensureReturnSchemaCompatibility(): void
             // تجاهل الخطأ
         }
         
+        // إضافة دعم return_request في approvals type enum
+        try {
+            $approvalsTableExists = $db->queryOne("SHOW TABLES LIKE 'approvals'");
+            if (!empty($approvalsTableExists)) {
+                // الحصول على معلومات عمود type
+                $typeColumn = $db->queryOne(
+                    "SELECT COLUMN_TYPE 
+                     FROM information_schema.COLUMNS 
+                     WHERE TABLE_SCHEMA = DATABASE() 
+                     AND TABLE_NAME = 'approvals' 
+                     AND COLUMN_NAME = 'type'"
+                );
+                
+                if (!empty($typeColumn)) {
+                    $currentEnum = $typeColumn['COLUMN_TYPE'] ?? '';
+                    
+                    // التحقق إذا كان 'return_request' موجوداً
+                    if (stripos($currentEnum, 'return_request') === false) {
+                        error_log("Adding 'return_request' to approvals.type enum. Current enum: {$currentEnum}");
+                        
+                        // القيم الشائعة في enum
+                        $commonTypes = [
+                            'financial', 'sales', 'production', 'collection', 'salary',
+                            'return_request', 'warehouse_transfer', 'exchange_request',
+                            'invoice_return_company', 'salary_modification', 'inventory', 'other'
+                        ];
+                        
+                        // محاولة استخراج القيم الموجودة
+                        $existingValues = [];
+                        if (preg_match_all("/'([^']+)'/", $currentEnum, $matches)) {
+                            if (!empty($matches[1])) {
+                                $existingValues = $matches[1];
+                            }
+                        }
+                        
+                        // إضافة return_request إذا لم يكن موجوداً
+                        if (!in_array('return_request', $existingValues)) {
+                            $existingValues[] = 'return_request';
+                        }
+                        
+                        // إضافة أنواع أخرى مفقودة من القائمة الشائعة
+                        foreach ($commonTypes as $type) {
+                            if (!in_array($type, $existingValues)) {
+                                $existingValues[] = $type;
+                            }
+                        }
+                        
+                        // إنشاء enum جديد
+                        $newEnum = "enum('" . implode("','", $existingValues) . "')";
+                        
+                        // تحديث عمود type
+                        try {
+                            $db->execute(
+                                "ALTER TABLE approvals MODIFY COLUMN `type` {$newEnum} NOT NULL"
+                            );
+                            error_log("Successfully added 'return_request' to approvals.type enum");
+                        } catch (Throwable $e) {
+                            error_log("Error updating approvals.type enum: " . $e->getMessage());
+                            // محاولة طريقة أبسط - إضافة return_request فقط
+                            try {
+                                // استخراج enum الحالي وإضافة return_request
+                                if (preg_match("/enum\s*\(\s*'([^']+)'(\s*,\s*'[^']+')*\s*\)/i", $currentEnum, $enumMatch)) {
+                                    $currentTypes = array_filter(explode("','", str_replace(["enum('", "')", " "], "", $currentEnum)));
+                                    if (!in_array('return_request', $currentTypes)) {
+                                        $currentTypes[] = 'return_request';
+                                        $simpleEnum = "enum('" . implode("','", $currentTypes) . "')";
+                                        $db->execute("ALTER TABLE approvals MODIFY COLUMN `type` {$simpleEnum} NOT NULL");
+                                        error_log("Successfully added 'return_request' using simple method");
+                                    }
+                                }
+                            } catch (Throwable $e2) {
+                                error_log("Error in simple enum update: " . $e2->getMessage());
+                            }
+                        }
+                    } else {
+                        error_log("'return_request' already exists in approvals.type enum");
+                    }
+                }
+            }
+        } catch (Throwable $e) {
+            error_log("Error ensuring return_request approval type: " . $e->getMessage());
+            // لا نوقف العملية
+        }
+        
         $ensured = true;
     } catch (Throwable $e) {
         error_log('ensureReturnSchemaCompatibility error: ' . $e->getMessage());
