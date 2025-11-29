@@ -9,7 +9,7 @@ define('ACCESS_ALLOWED', true);
 require_once __DIR__ . '/../includes/config.php';
 require_once __DIR__ . '/../includes/db.php';
 require_once __DIR__ . '/../includes/auth.php';
-require_once __DIR__ . '/../includes/return_processor.php';
+require_once __DIR__ . '/../includes/returns_system.php';
 require_once __DIR__ . '/../includes/vehicle_inventory.php';
 require_once __DIR__ . '/../includes/path_helper.php';
 

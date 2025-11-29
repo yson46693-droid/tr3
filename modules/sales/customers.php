@@ -1553,74 +1553,8 @@ document.addEventListener('DOMContentLoaded', function() {
         });
     }
     
-    // Add event listener to reload latest data when create return modal is shown
+    // Clear content when create return modal is hidden
     if (createReturnModalElement) {
-        createReturnModalElement.addEventListener('shown.bs.modal', function() {
-            // Reload purchase history data to get latest available quantities
-            if (currentCustomerId && selectedItemsForReturn.length > 0) {
-                // Fetch latest purchase history data
-                fetch(basePath + '/api/returns.php?action=get_purchase_history&customer_id=' + currentCustomerId, {
-                    credentials: 'same-origin',
-                    headers: {
-                        'Accept': 'application/json'
-                    }
-                })
-                .then(response => {
-                    const contentType = response.headers.get('content-type') || '';
-                    if (!contentType.includes('application/json')) {
-                        return response.text().then(text => {
-                            console.error('Expected JSON but got:', contentType, text.substring(0, 500));
-                            throw new Error('استجابة غير صحيحة من الخادم');
-                        });
-                    }
-                    if (!response.ok) {
-                        return response.json().then(errorData => {
-                            throw new Error(errorData.message || 'خطأ في الطلب: ' + response.status);
-                        }).catch(() => {
-                            throw new Error('حدث خطأ في الطلب: ' + response.status);
-                        });
-                    }
-                    return response.json();
-                })
-                .then(data => {
-                    if (data.success && data.purchase_history) {
-                        // Update purchaseHistoryData with latest data
-                        purchaseHistoryData = data.purchase_history || [];
-                        
-                        // Update available quantities in the modal
-                        selectedItemsForReturn.forEach(function(item) {
-                            const historyItem = purchaseHistoryData.find(function(h) {
-                                return h.invoice_item_id === item.invoice_item_id;
-                            });
-                            
-                            if (historyItem) {
-                                const availableQty = parseFloat(historyItem.available_to_return) || 0;
-                                
-                                // Update available quantity display
-                                const availableCell = document.getElementById(`available-qty-${item.invoice_item_id}`);
-                                if (availableCell) {
-                                    availableCell.textContent = availableQty.toFixed(2);
-                                }
-                                
-                                // Update max attribute for quantity input
-                                const qtyInput = document.querySelector(`.return-qty[data-invoice-item-id="${item.invoice_item_id}"]`);
-                                if (qtyInput) {
-                                    qtyInput.max = availableQty;
-                                    qtyInput.setAttribute('max', availableQty);
-                                    qtyInput.setAttribute('data-available-qty', availableQty);
-                                }
-                            }
-                        });
-                    }
-                })
-                .catch(error => {
-                    console.error('Error reloading purchase history in return modal:', error);
-                    // Don't show error to user, just log it - modal will use existing data
-                });
-            }
-        });
-        
-        // Clear content when modal is hidden
         createReturnModalElement.addEventListener('hidden.bs.modal', function() {
             const contentElement = document.getElementById('createReturnContent');
             if (contentElement) {
@@ -1865,6 +1799,81 @@ function openCreateReturnModal() {
         return;
     }
     
+    if (!currentCustomerId) {
+        alert('خطأ: لم يتم تحديد العميل');
+        return;
+    }
+    
+    // Show loading state
+    const contentElement = document.getElementById('createReturnContent');
+    contentElement.innerHTML = '<div class="text-center py-5"><div class="spinner-border text-success" role="status"><span class="visually-hidden">جاري التحميل...</span></div><p class="mt-3 text-muted">جاري تحميل أحدث البيانات...</p></div>';
+    
+    // Show modal first
+    const modal = new bootstrap.Modal(document.getElementById('createReturnModal'));
+    modal.show();
+    
+    // Reload latest purchase history data before building modal content
+    fetch(basePath + '/api/returns.php?action=get_purchase_history&customer_id=' + currentCustomerId, {
+        credentials: 'same-origin',
+        headers: {
+            'Accept': 'application/json'
+        }
+    })
+    .then(response => {
+        const contentType = response.headers.get('content-type') || '';
+        if (!contentType.includes('application/json')) {
+            return response.text().then(text => {
+                console.error('Expected JSON but got:', contentType, text.substring(0, 500));
+                throw new Error('استجابة غير صحيحة من الخادم');
+            });
+        }
+        if (!response.ok) {
+            return response.json().then(errorData => {
+                throw new Error(errorData.message || 'خطأ في الطلب: ' + response.status);
+            }).catch(() => {
+                throw new Error('حدث خطأ في الطلب: ' + response.status);
+            });
+        }
+        return response.json();
+    })
+    .then(data => {
+        if (data.success && data.purchase_history) {
+            // Update purchaseHistoryData with latest data
+            purchaseHistoryData = data.purchase_history || [];
+            
+            // Update selectedItemsForReturn with latest available quantities
+            selectedItemsForReturn = selectedItemsForReturn.map(function(item) {
+                const historyItem = purchaseHistoryData.find(function(h) {
+                    return h.invoice_item_id === item.invoice_item_id;
+                });
+                
+                if (historyItem) {
+                    return {
+                        ...item,
+                        available_to_return: parseFloat(historyItem.available_to_return) || 0
+                    };
+                }
+                return item;
+            });
+            
+            // Build modal content with updated data
+            buildReturnModalContent();
+        } else {
+            contentElement.innerHTML = '<div class="alert alert-danger">خطأ: ' + (data.message || 'حدث خطأ أثناء تحميل البيانات') + '</div>';
+        }
+    })
+    .catch(error => {
+        console.error('Error loading purchase history:', error);
+        contentElement.innerHTML = '<div class="alert alert-danger">خطأ: ' + (error.message || 'حدث خطأ في الاتصال بالخادم') + '</div>';
+    });
+}
+
+function buildReturnModalContent() {
+    if (selectedItemsForReturn.length === 0) {
+        document.getElementById('createReturnContent').innerHTML = '<div class="alert alert-warning">لا توجد منتجات محددة للإرجاع</div>';
+        return;
+    }
+    
     // Group items by invoice
     const itemsByInvoice = {};
     selectedItemsForReturn.forEach(function(item) {
@@ -1897,11 +1906,12 @@ function openCreateReturnModal() {
         
         itemsByInvoice[invoiceId].forEach(function(item, index) {
             const batchNumbers = (item.batch_numbers || []).join(', ') || '-';
+            const availableQty = parseFloat(item.available_to_return) || 0;
             html += `
                 <tr>
                     <td>${item.product_name}</td>
                     <td>${batchNumbers}</td>
-                    <td id="available-qty-${item.invoice_item_id}">0</td>
+                    <td id="available-qty-${item.invoice_item_id}">${availableQty.toFixed(2)}</td>
                     <td>
                         <input type="number" 
                                class="form-control form-control-sm return-qty" 
@@ -1910,7 +1920,9 @@ function openCreateReturnModal() {
                                data-unit-price="${item.unit_price}"
                                data-batch-number-id="${item.batch_number_ids[0] || ''}"
                                min="0" 
+                               max="${availableQty}"
                                step="0.01" 
+                               data-available-qty="${availableQty}"
                                required>
                     </td>
                     <td>
@@ -1954,35 +1966,6 @@ function openCreateReturnModal() {
     
     document.getElementById('createReturnContent').innerHTML = html;
     
-    // Set available quantities from stored purchase history data (after HTML is added to DOM)
-    selectedItemsForReturn.forEach(function(item) {
-        // First try to get from purchaseHistoryData (most up-to-date)
-        const historyItem = purchaseHistoryData.find(function(h) {
-            return h.invoice_item_id === item.invoice_item_id;
-        });
-        
-        // Use available_to_return from historyItem if found, otherwise use from item
-        // This ensures we use the most recent data from the API
-        const availableQty = historyItem 
-            ? (parseFloat(historyItem.available_to_return) || 0) 
-            : (parseFloat(item.available_to_return) || 0);
-        
-        const availableCell = document.getElementById(`available-qty-${item.invoice_item_id}`);
-        if (availableCell) {
-            const formattedQty = availableQty.toFixed(2);
-            availableCell.textContent = formattedQty;
-        }
-        
-        // Set max attribute for quantity input
-        const qtyInput = document.querySelector(`.return-qty[data-invoice-item-id="${item.invoice_item_id}"]`);
-        if (qtyInput) {
-            qtyInput.max = availableQty;
-            qtyInput.setAttribute('max', availableQty);
-            // Also set as data attribute for reference
-            qtyInput.setAttribute('data-available-qty', availableQty);
-        }
-    });
-    
     // Enable/disable damage reason based on checkbox
     document.querySelectorAll('.is-damaged-checkbox').forEach(function(checkbox) {
         checkbox.addEventListener('change', function() {
@@ -1995,9 +1978,6 @@ function openCreateReturnModal() {
             }
         });
     });
-    
-    const modal = new bootstrap.Modal(document.getElementById('createReturnModal'));
-    modal.show();
 }
 
 function goBackToPurchaseHistory() {
