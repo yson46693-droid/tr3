@@ -26,9 +26,20 @@ while (ob_get_level() > 0) {
 }
 
 try {
+    // التحقق من أن الطلب GET
+    if ($_SERVER['REQUEST_METHOD'] !== 'GET') {
+        http_response_code(405);
+        echo json_encode([
+            'success' => false,
+            'message' => 'طريقة الطلب غير مدعومة'
+        ], JSON_UNESCAPED_UNICODE);
+        exit;
+    }
+    
     $customerId = isset($_GET['customer_id']) ? (int)$_GET['customer_id'] : 0;
     
     if ($customerId <= 0) {
+        http_response_code(400);
         echo json_encode([
             'success' => false,
             'message' => 'معرف العميل غير صالح'
@@ -264,9 +275,23 @@ try {
     
 } catch (Throwable $e) {
     error_log('get_replacement_data error: ' . $e->getMessage());
+    error_log('get_replacement_data trace: ' . $e->getTraceAsString());
+    
+    // إرجاع رسالة خطأ واضحة
+    $errorMessage = 'حدث خطأ أثناء جلب البيانات';
+    if ($e instanceof InvalidArgumentException || $e instanceof RuntimeException) {
+        $errorMessage = $e->getMessage();
+    } else {
+        // في بيئة التطوير، يمكن عرض تفاصيل الخطأ
+        $errorMessage .= ': ' . $e->getMessage();
+    }
+    
     echo json_encode([
         'success' => false,
-        'message' => 'حدث خطأ أثناء جلب البيانات: ' . $e->getMessage()
+        'message' => $errorMessage,
+        'error' => $e->getMessage(),
+        'file' => $e->getFile(),
+        'line' => $e->getLine()
     ], JSON_UNESCAPED_UNICODE);
 }
 
