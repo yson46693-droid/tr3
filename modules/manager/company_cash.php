@@ -429,7 +429,7 @@ $typeColorMap = [
 ?>
 
 <div class="row g-3 mt-4">
-    <div class="col-12 col-xxl-5">
+    <div class="col-12 col-lg-5 col-xxl-5">
         <button type="button" class="btn btn-primary mb-3 w-100" data-bs-toggle="modal" data-bs-target="#collectFromRepModal">
             <i class="bi bi-cash-coin me-1"></i>تحصيل من مندوب
         </button>
@@ -476,7 +476,7 @@ $typeColorMap = [
             </div>
         </div>
     </div>
-    <div class="col-12 col-xxl-7">
+    <div class="col-12 col-lg-7 col-xxl-7">
         <div class="card shadow-sm h-100">
             <div class="card-header bg-light fw-bold d-flex justify-content-between align-items-center">
                 <span><i class="bi bi-graph-up-arrow me-2 text-primary"></i>ملخص الخزنة</span>
