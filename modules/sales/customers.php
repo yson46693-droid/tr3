@@ -3828,6 +3828,9 @@ document.addEventListener('DOMContentLoaded', function () {
             const tr = document.createElement('tr');
             const checked = selectedCustomerItems.some(sel => sel.invoice_item_id === item.invoice_item_id);
             
+            const batchNumberIds = Array.isArray(item.batch_number_ids) ? item.batch_number_ids : [];
+            const finishedBatchIds = Array.isArray(item.finished_batch_ids) ? item.finished_batch_ids : [];
+            
             tr.innerHTML = `
                 <td>
                     <input type="checkbox" class="form-check-input customer-item-checkbox" 
@@ -3836,11 +3839,14 @@ document.addEventListener('DOMContentLoaded', function () {
                            data-quantity="${item.available_quantity}"
                            data-unit-price="${item.unit_price}"
                            data-total-price="${item.available_quantity * item.unit_price}"
+                           data-batch-number-ids='${JSON.stringify(batchNumberIds)}'
+                           data-finished-batch-ids='${JSON.stringify(finishedBatchIds)}'
                            ${checked ? 'checked' : ''}>
                 </td>
                 <td>
                     <div>${item.product_name || 'غير معروف'}</div>
                     <small class="text-muted">فاتورة: ${item.invoice_number}</small>
+                    ${item.batch_numbers && item.batch_numbers.length > 0 ? `<br><small class="text-info">تشغيلة: ${item.batch_numbers.join(', ')}</small>` : ''}
                 </td>
                 <td>${item.available_quantity} ${item.unit || 'قطعة'}</td>
                 <td>${formatCurrency(item.unit_price)}</td>
@@ -3856,12 +3862,19 @@ document.addEventListener('DOMContentLoaded', function () {
                 const invoiceItemId = parseInt(this.getAttribute('data-invoice-item-id'));
                 
                 if (this.checked) {
+                    const batchNumberIdsStr = this.getAttribute('data-batch-number-ids') || '[]';
+                    const finishedBatchIdsStr = this.getAttribute('data-finished-batch-ids') || '[]';
+                    const batchNumberIds = JSON.parse(batchNumberIdsStr);
+                    const finishedBatchIds = JSON.parse(finishedBatchIdsStr);
+                    
                     selectedCustomerItems.push({
                         invoice_item_id: invoiceItemId,
                         product_id: parseInt(this.getAttribute('data-product-id')),
                         quantity: parseFloat(this.getAttribute('data-quantity')),
                         unit_price: parseFloat(this.getAttribute('data-unit-price')),
-                        total_price: parseFloat(this.getAttribute('data-total-price'))
+                        total_price: parseFloat(this.getAttribute('data-total-price')),
+                        batch_number_ids: batchNumberIds,
+                        finished_batch_ids: finishedBatchIds
                     });
                 } else {
                     selectedCustomerItems = selectedCustomerItems.filter(

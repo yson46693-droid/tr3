@@ -117,6 +117,48 @@ try {
                 throw new InvalidArgumentException('منتج من مشتريات العميل غير موجود: ' . $invoiceItemId);
             }
             
+            // جلب معلومات batch_number من invoice_item
+            // محاولة استخدام البيانات المرسلة من JavaScript أولاً
+            $batchNumberId = null;
+            $batchNumber = null;
+            $finishedBatchId = null;
+            
+            if (isset($item['finished_batch_ids']) && is_array($item['finished_batch_ids']) && !empty($item['finished_batch_ids'])) {
+                // استخدام finished_batch_id المرسل من JavaScript
+                $finishedBatchId = (int)$item['finished_batch_ids'][0];
+                
+                // جلب batch_number_id من finished_batch_id
+                $finishedBatch = $db->queryOne(
+                    "SELECT fp.batch_id, bn.batch_number 
+                     FROM finished_products fp
+                     LEFT JOIN batch_numbers bn ON bn.id = fp.batch_id
+                     WHERE fp.id = ?",
+                    [$finishedBatchId]
+                );
+                
+                if ($finishedBatch) {
+                    $batchNumberId = isset($finishedBatch['batch_id']) ? (int)$finishedBatch['batch_id'] : null;
+                    $batchNumber = $finishedBatch['batch_number'] ?? null;
+                }
+            } else {
+                // جلب من قاعدة البيانات
+                $batchInfo = $db->queryOne(
+                    "SELECT sbn.batch_number_id, bn.batch_number, fp.id as finished_batch_id, fp.product_name as finished_product_name
+                     FROM sales_batch_numbers sbn
+                     INNER JOIN batch_numbers bn ON bn.id = sbn.batch_number_id
+                     LEFT JOIN finished_products fp ON fp.batch_id = bn.id
+                     WHERE sbn.invoice_item_id = ?
+                     LIMIT 1",
+                    [$invoiceItemId]
+                );
+                
+                if ($batchInfo) {
+                    $batchNumberId = (int)($batchInfo['batch_number_id'] ?? 0);
+                    $batchNumber = $batchInfo['batch_number'] ?? null;
+                    $finishedBatchId = isset($batchInfo['finished_batch_id']) ? (int)$batchInfo['finished_batch_id'] : null;
+                }
+            }
+            
             // التحقق من الكمية المتاحة
             $availableQty = (float)$invoiceItem['quantity'];
             
@@ -168,7 +210,10 @@ try {
                 'unit_price' => $unitPrice,
                 'total_price' => $lineTotal,
                 'invoice_id' => (int)$invoiceItem['invoice_id'],
-                'invoice_number' => $invoiceItem['invoice_number']
+                'invoice_number' => $invoiceItem['invoice_number'],
+                'batch_number_id' => $batchNumberId > 0 ? $batchNumberId : null,
+                'batch_number' => $batchNumber,
+                'finished_batch_id' => $finishedBatchId > 0 ? $finishedBatchId : null
             ];
         }
         
@@ -269,36 +314,113 @@ try {
         foreach ($customerItemsProcessed as $item) {
             $productId = $item['product_id'];
             $quantity = $item['quantity'];
+            $finishedBatchId = $item['finished_batch_id'] ?? null;
+            $batchNumber = $item['batch_number'] ?? null;
+            $batchNumberId = $item['batch_number_id'] ?? null;
             
-            // البحث عن المنتج في مخزن السيارة
-            $existingInventory = $db->queryOne(
-                "SELECT * FROM vehicle_inventory WHERE vehicle_id = ? AND product_id = ?",
-                [$vehicleId, $productId]
-            );
-            
-            if ($existingInventory) {
-                // تحديث الكمية
-                $db->execute(
-                    "UPDATE vehicle_inventory SET quantity = quantity + ? WHERE vehicle_id = ? AND product_id = ?",
-                    [$quantity, $vehicleId, $productId]
+            // إذا كان المنتج يحتوي على batch number، نبحث عن نفس التشغيلة في مخزن السيارة
+            if ($finishedBatchId && $finishedBatchId > 0) {
+                // البحث عن نفس التشغيلة في مخزن السيارة
+                $existingInventory = $db->queryOne(
+                    "SELECT * FROM vehicle_inventory 
+                     WHERE vehicle_id = ? AND product_id = ? AND finished_batch_id = ?",
+                    [$vehicleId, $productId, $finishedBatchId]
                 );
-            } else {
-                // الحصول على بيانات المنتج
-                $product = $db->queryOne("SELECT * FROM products WHERE id = ?", [$productId]);
-                if ($product) {
-                    // إضافة سجل جديد
+                
+                if ($existingInventory) {
+                    // تحديث الكمية في نفس التشغيلة
                     $db->execute(
-                        "INSERT INTO vehicle_inventory (vehicle_id, product_id, product_name, product_unit, product_unit_price, quantity, created_at)
-                         VALUES (?, ?, ?, ?, ?, ?, NOW())",
+                        "UPDATE vehicle_inventory SET quantity = quantity + ? WHERE id = ?",
+                        [$quantity, $existingInventory['id']]
+                    );
+                } else {
+                    // إنشاء سجل جديد مع معلومات التشغيلة
+                    $finishedProduct = $db->queryOne(
+                        "SELECT fp.*, bn.batch_number 
+                         FROM finished_products fp
+                         LEFT JOIN batch_numbers bn ON bn.id = fp.batch_id
+                         WHERE fp.id = ?",
+                        [$finishedBatchId]
+                    );
+                    
+                    $product = $db->queryOne("SELECT * FROM products WHERE id = ?", [$productId]);
+                    $warehouseId = null;
+                    
+                    // الحصول على warehouse_id للسيارة
+                    $warehouse = $db->queryOne(
+                        "SELECT id FROM warehouses WHERE vehicle_id = ? AND warehouse_type = 'vehicle' LIMIT 1",
+                        [$vehicleId]
+                    );
+                    if ($warehouse) {
+                        $warehouseId = (int)$warehouse['id'];
+                    }
+                    
+                    $db->execute(
+                        "INSERT INTO vehicle_inventory (
+                            vehicle_id, warehouse_id, product_id, product_name, product_unit, 
+                            product_unit_price, finished_batch_id, finished_batch_number,
+                            finished_production_date, finished_quantity_produced, quantity, created_at
+                        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NOW())",
                         [
                             $vehicleId,
+                            $warehouseId,
                             $productId,
-                            $product['name'] ?? null,
-                            $product['unit'] ?? 'قطعة',
+                            $finishedProduct['product_name'] ?? ($product['name'] ?? null),
+                            $finishedProduct['unit'] ?? ($product['unit'] ?? 'قطعة'),
                             $item['unit_price'],
+                            $finishedBatchId,
+                            $batchNumber,
+                            $finishedProduct['production_date'] ?? null,
+                            $finishedProduct['quantity_produced'] ?? null,
                             $quantity
                         ]
                     );
+                }
+            } else {
+                // المنتج بدون batch number - البحث عن أي سجل بنفس product_id بدون batch
+                $existingInventory = $db->queryOne(
+                    "SELECT * FROM vehicle_inventory 
+                     WHERE vehicle_id = ? AND product_id = ? 
+                     AND (finished_batch_id IS NULL OR finished_batch_id = 0)",
+                    [$vehicleId, $productId]
+                );
+                
+                if ($existingInventory) {
+                    // تحديث الكمية
+                    $db->execute(
+                        "UPDATE vehicle_inventory SET quantity = quantity + ? WHERE id = ?",
+                        [$quantity, $existingInventory['id']]
+                    );
+                } else {
+                    // الحصول على بيانات المنتج
+                    $product = $db->queryOne("SELECT * FROM products WHERE id = ?", [$productId]);
+                    if ($product) {
+                        $warehouseId = null;
+                        
+                        // الحصول على warehouse_id للسيارة
+                        $warehouse = $db->queryOne(
+                            "SELECT id FROM warehouses WHERE vehicle_id = ? AND warehouse_type = 'vehicle' LIMIT 1",
+                            [$vehicleId]
+                        );
+                        if ($warehouse) {
+                            $warehouseId = (int)$warehouse['id'];
+                        }
+                        
+                        // إضافة سجل جديد
+                        $db->execute(
+                            "INSERT INTO vehicle_inventory (vehicle_id, warehouse_id, product_id, product_name, product_unit, product_unit_price, quantity, created_at)
+                             VALUES (?, ?, ?, ?, ?, ?, ?, NOW())",
+                            [
+                                $vehicleId,
+                                $warehouseId,
+                                $productId,
+                                $product['name'] ?? null,
+                                $product['unit'] ?? 'قطعة',
+                                $item['unit_price'],
+                                $quantity
+                            ]
+                        );
+                    }
                 }
             }
         }
@@ -307,16 +429,57 @@ try {
         foreach ($carItemsProcessed as $item) {
             $productId = $item['product_id'];
             $quantity = $item['quantity'];
+            $finishedBatchId = $item['finished_batch_id'] ?? null;
             
-            $db->execute(
-                "UPDATE vehicle_inventory SET quantity = quantity - ? WHERE vehicle_id = ? AND product_id = ?",
-                [$quantity, $vehicleId, $productId]
-            );
+            if ($finishedBatchId && $finishedBatchId > 0) {
+                // خصم من نفس التشغيلة
+                $inventory = $db->queryOne(
+                    "SELECT * FROM vehicle_inventory 
+                     WHERE vehicle_id = ? AND product_id = ? AND finished_batch_id = ? FOR UPDATE",
+                    [$vehicleId, $productId, $finishedBatchId]
+                );
+                
+                if (!$inventory) {
+                    throw new RuntimeException('التشغيلة غير موجودة في مخزن السيارة');
+                }
+                
+                $currentQty = (float)$inventory['quantity'];
+                if ($quantity > $currentQty) {
+                    throw new RuntimeException('الكمية المطلوبة (' . $quantity . ') أكبر من الكمية المتاحة في التشغيلة (' . $currentQty . ')');
+                }
+                
+                $db->execute(
+                    "UPDATE vehicle_inventory SET quantity = quantity - ? WHERE id = ?",
+                    [$quantity, $inventory['id']]
+                );
+            } else {
+                // خصم من أي سجل بدون batch number
+                $inventory = $db->queryOne(
+                    "SELECT * FROM vehicle_inventory 
+                     WHERE vehicle_id = ? AND product_id = ? 
+                     AND (finished_batch_id IS NULL OR finished_batch_id = 0) FOR UPDATE",
+                    [$vehicleId, $productId]
+                );
+                
+                if (!$inventory) {
+                    throw new RuntimeException('المنتج غير موجود في مخزن السيارة');
+                }
+                
+                $currentQty = (float)$inventory['quantity'];
+                if ($quantity > $currentQty) {
+                    throw new RuntimeException('الكمية المطلوبة (' . $quantity . ') أكبر من الكمية المتاحة (' . $currentQty . ')');
+                }
+                
+                $db->execute(
+                    "UPDATE vehicle_inventory SET quantity = quantity - ? WHERE id = ?",
+                    [$quantity, $inventory['id']]
+                );
+            }
             
             // التحقق من أن الكمية لا تصبح سالبة
             $updatedInventory = $db->queryOne(
-                "SELECT quantity FROM vehicle_inventory WHERE vehicle_id = ? AND product_id = ?",
-                [$vehicleId, $productId]
+                "SELECT quantity FROM vehicle_inventory WHERE id = ?",
+                [$inventory['id']]
             );
             
             if ($updatedInventory && (float)$updatedInventory['quantity'] < 0) {
@@ -373,52 +536,117 @@ try {
                     }
                     
                     foreach ($customerItemsProcessed as $item) {
-                        if ($hasInvoiceItemIdColumn) {
-                            $db->execute(
-                                "INSERT INTO exchange_return_items (
-                                    exchange_id, product_id, invoice_item_id, quantity, unit_price, total_price, created_at
-                                ) VALUES (?, ?, ?, ?, ?, ?, NOW())",
-                                [
-                                    $exchangeId,
-                                    $item['product_id'],
-                                    $item['invoice_item_id'],
-                                    $item['quantity'],
-                                    $item['unit_price'],
-                                    $item['total_price']
-                                ]
-                            );
-                        } else {
-                            $db->execute(
-                                "INSERT INTO exchange_return_items (
-                                    exchange_id, product_id, quantity, unit_price, total_price, created_at
-                                ) VALUES (?, ?, ?, ?, ?, NOW())",
-                                [
-                                    $exchangeId,
-                                    $item['product_id'],
-                                    $item['quantity'],
-                                    $item['unit_price'],
-                                    $item['total_price']
-                                ]
-                            );
+                        // التحقق من وجود عمود batch_number_id
+                        $hasBatchNumberIdColumn = false;
+                        try {
+                            $batchColumnCheck = $db->queryOne("SHOW COLUMNS FROM exchange_return_items LIKE 'batch_number_id'");
+                            $hasBatchNumberIdColumn = !empty($batchColumnCheck);
+                        } catch (Throwable $e) {
+                            $hasBatchNumberIdColumn = false;
                         }
+                        
+                        $fields = [];
+                        $placeholders = [];
+                        $values = [];
+                        
+                        $fields[] = 'exchange_id';
+                        $placeholders[] = '?';
+                        $values[] = $exchangeId;
+                        
+                        $fields[] = 'product_id';
+                        $placeholders[] = '?';
+                        $values[] = $item['product_id'];
+                        
+                        if ($hasInvoiceItemIdColumn) {
+                            $fields[] = 'invoice_item_id';
+                            $placeholders[] = '?';
+                            $values[] = $item['invoice_item_id'];
+                        }
+                        
+                        if ($hasBatchNumberIdColumn && isset($item['batch_number_id']) && $item['batch_number_id'] > 0) {
+                            $fields[] = 'batch_number_id';
+                            $placeholders[] = '?';
+                            $values[] = $item['batch_number_id'];
+                        }
+                        
+                        $fields[] = 'quantity';
+                        $placeholders[] = '?';
+                        $values[] = $item['quantity'];
+                        
+                        $fields[] = 'unit_price';
+                        $placeholders[] = '?';
+                        $values[] = $item['unit_price'];
+                        
+                        $fields[] = 'total_price';
+                        $placeholders[] = '?';
+                        $values[] = $item['total_price'];
+                        
+                        $fields[] = 'created_at';
+                        $placeholders[] = 'NOW()';
+                        
+                        $db->execute(
+                            "INSERT INTO exchange_return_items (" . implode(', ', $fields) . ") VALUES (" . implode(', ', $placeholders) . ")",
+                            $values
+                        );
                     }
                 }
                 
                 // تسجيل عناصر الاستبدال الجديدة (من السيارة)
                 $hasExchangeNewItems = !empty($db->queryOne("SHOW TABLES LIKE 'exchange_new_items'"));
                 if ($hasExchangeNewItems && $exchangeId) {
+                    // التحقق من وجود عمود batch_number_id
+                    $hasBatchNumberIdColumn = false;
+                    try {
+                        $batchColumnCheck = $db->queryOne("SHOW COLUMNS FROM exchange_new_items LIKE 'batch_number_id'");
+                        $hasBatchNumberIdColumn = !empty($batchColumnCheck);
+                    } catch (Throwable $e) {
+                        $hasBatchNumberIdColumn = false;
+                    }
+                    
                     foreach ($carItemsProcessed as $item) {
+                        $fields = [];
+                        $placeholders = [];
+                        $values = [];
+                        
+                        $fields[] = 'exchange_id';
+                        $placeholders[] = '?';
+                        $values[] = $exchangeId;
+                        
+                        $fields[] = 'product_id';
+                        $placeholders[] = '?';
+                        $values[] = $item['product_id'];
+                        
+                        if ($hasBatchNumberIdColumn && isset($item['finished_batch_id']) && $item['finished_batch_id'] > 0) {
+                            // الحصول على batch_number_id من finished_batch_id
+                            $batchInfo = $db->queryOne(
+                                "SELECT batch_id FROM finished_products WHERE id = ?",
+                                [$item['finished_batch_id']]
+                            );
+                            if ($batchInfo && isset($batchInfo['batch_id']) && $batchInfo['batch_id'] > 0) {
+                                $fields[] = 'batch_number_id';
+                                $placeholders[] = '?';
+                                $values[] = (int)$batchInfo['batch_id'];
+                            }
+                        }
+                        
+                        $fields[] = 'quantity';
+                        $placeholders[] = '?';
+                        $values[] = $item['quantity'];
+                        
+                        $fields[] = 'unit_price';
+                        $placeholders[] = '?';
+                        $values[] = $item['unit_price'];
+                        
+                        $fields[] = 'total_price';
+                        $placeholders[] = '?';
+                        $values[] = $item['total_price'];
+                        
+                        $fields[] = 'created_at';
+                        $placeholders[] = 'NOW()';
+                        
                         $db->execute(
-                            "INSERT INTO exchange_new_items (
-                                exchange_id, product_id, quantity, unit_price, total_price, created_at
-                            ) VALUES (?, ?, ?, ?, ?, NOW())",
-                            [
-                                $exchangeId,
-                                $item['product_id'],
-                                $item['quantity'],
-                                $item['unit_price'],
-                                $item['total_price']
-                            ]
+                            "INSERT INTO exchange_new_items (" . implode(', ', $fields) . ") VALUES (" . implode(', ', $placeholders) . ")",
+                            $values
                         );
                     }
                 }

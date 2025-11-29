@@ -99,12 +99,15 @@ try {
             ii.quantity,
             ii.unit_price,
             ii.total_price,
-            GROUP_CONCAT(DISTINCT bn.batch_number ORDER BY bn.batch_number SEPARATOR ', ') as batch_numbers
+            GROUP_CONCAT(DISTINCT bn.batch_number ORDER BY bn.batch_number SEPARATOR ', ') as batch_numbers,
+            GROUP_CONCAT(DISTINCT bn.id ORDER BY bn.id SEPARATOR ',') as batch_number_ids,
+            GROUP_CONCAT(DISTINCT fp.id ORDER BY fp.id SEPARATOR ',') as finished_batch_ids
         FROM invoices i
         INNER JOIN invoice_items ii ON i.id = ii.invoice_id
         LEFT JOIN products p ON ii.product_id = p.id
         LEFT JOIN sales_batch_numbers sbn ON ii.id = sbn.invoice_item_id
         LEFT JOIN batch_numbers bn ON sbn.batch_number_id = bn.id
+        LEFT JOIN finished_products fp ON fp.batch_id = bn.id
         WHERE i.customer_id = ? AND i.status != 'cancelled'
         GROUP BY i.id, ii.id
         ORDER BY i.date DESC, i.id DESC, ii.id ASC",
@@ -193,7 +196,9 @@ try {
                 'available_quantity' => $availableQty,
                 'unit_price' => (float)$item['unit_price'],
                 'total_price' => (float)$item['total_price'],
-                'batch_numbers' => !empty($item['batch_numbers']) ? explode(', ', $item['batch_numbers']) : []
+                'batch_numbers' => !empty($item['batch_numbers']) ? explode(', ', $item['batch_numbers']) : [],
+                'batch_number_ids' => !empty($item['batch_number_ids']) ? array_map('intval', explode(',', $item['batch_number_ids'])) : [],
+                'finished_batch_ids' => !empty($item['finished_batch_ids']) ? array_map('intval', explode(',', $item['finished_batch_ids'])) : []
             ];
         }
     }
