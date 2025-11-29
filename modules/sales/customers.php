@@ -1528,17 +1528,28 @@ document.addEventListener('DOMContentLoaded', function() {
     // Add event listener to reload data every time modal is shown
     if (modalElement) {
         modalElement.addEventListener('shown.bs.modal', function() {
-            // Reset filters and selected items
-            document.getElementById('purchaseHistorySearchProduct').value = '';
-            document.getElementById('purchaseHistorySearchBatch').value = '';
-            selectedItemsForReturn = [];
-            document.getElementById('createReturnBtn').style.display = 'none';
-            document.getElementById('selectAllItems').checked = false;
-            
-            // Reload purchase history if customer ID is set
-            if (currentCustomerId) {
-                loadPurchaseHistory(currentCustomerId);
-            }
+            // استخدام requestAnimationFrame لضمان أن النموذج أصبح مرئياً بالكامل في DOM
+            requestAnimationFrame(function() {
+                requestAnimationFrame(function() {
+                    // التحقق من وجود العناصر قبل الوصول إليها
+                    const productSearch = document.getElementById('purchaseHistorySearchProduct');
+                    const batchSearch = document.getElementById('purchaseHistorySearchBatch');
+                    const createBtn = document.getElementById('createReturnBtn');
+                    const selectAll = document.getElementById('selectAllItems');
+                    
+                    // Reset filters and selected items
+                    if (productSearch) productSearch.value = '';
+                    if (batchSearch) batchSearch.value = '';
+                    selectedItemsForReturn = [];
+                    if (createBtn) createBtn.style.display = 'none';
+                    if (selectAll) selectAll.checked = false;
+                    
+                    // Reload purchase history if customer ID is set
+                    if (currentCustomerId) {
+                        loadPurchaseHistory(currentCustomerId);
+                    }
+                });
+            });
         });
         
         // Reset state when modal is hidden
@@ -1592,7 +1603,7 @@ document.addEventListener('DOMContentLoaded', function() {
 });
 
 // Overload function to support calling without parameters (uses currentCustomerId)
-function loadPurchaseHistory(customerIdParam) {
+function loadPurchaseHistory(customerIdParam, retryCount = 0) {
     const customerId = customerIdParam || currentCustomerId;
     
     if (!customerId) {
@@ -1607,9 +1618,33 @@ function loadPurchaseHistory(customerIdParam) {
     const productSearchInput = document.getElementById('purchaseHistorySearchProduct');
     const batchSearchInput = document.getElementById('purchaseHistorySearchBatch');
     
+    // التحقق من وجود النموذج نفسه أولاً
+    const modalElement = document.getElementById('customerPurchaseHistoryModal');
+    if (!modalElement) {
+        if (retryCount < 3) {
+            setTimeout(function() {
+                loadPurchaseHistory(customerIdParam, retryCount + 1);
+            }, 200);
+            return;
+        }
+        console.error('Modal element not found in DOM');
+        return;
+    }
+    
     // التحقق من وجود العناصر قبل استخدامها
     if (!loading || !tableDiv || !errorDiv) {
-        console.error('Required elements not found in DOM');
+        // محاولة مرة أخرى بعد فترة قصيرة إذا كانت العناصر غير موجودة
+        if (retryCount < 3) {
+            setTimeout(function() {
+                loadPurchaseHistory(customerIdParam, retryCount + 1);
+            }, 200);
+            return;
+        }
+        console.error('Required elements not found in DOM after retries', {
+            loading: !!loading,
+            tableDiv: !!tableDiv,
+            errorDiv: !!errorDiv
+        });
         return;
     }
     
