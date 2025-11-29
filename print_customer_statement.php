@@ -253,6 +253,23 @@ function getCustomerStatementData($customerId) {
             color: white;
             font-size: 32px;
             font-weight: bold;
+            overflow: hidden;
+            position: relative;
+        }
+        
+        .company-logo-img {
+            width: 100%;
+            height: 100%;
+            object-fit: contain;
+            padding: 8px;
+        }
+        
+        .logo-letter {
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            width: 100%;
+            height: 100%;
         }
         
         .company-name {
@@ -422,7 +439,7 @@ function getCustomerStatementData($customerId) {
             position: fixed;
             bottom: 20px;
             left: 20px;
-            background: #667eea;
+            background: #2563eb;
             color: white;
             border: none;
             padding: 12px 24px;
@@ -430,12 +447,12 @@ function getCustomerStatementData($customerId) {
             font-size: 16px;
             font-weight: 600;
             cursor: pointer;
-            box-shadow: 0 4px 12px rgba(102, 126, 234, 0.4);
+            box-shadow: 0 4px 12px rgba(37, 99, 235, 0.4);
             z-index: 1000;
         }
         
         .print-button:hover {
-            background: #5568d3;
+            background: #1d4ed8;
         }
     </style>
 </head>
@@ -448,7 +465,8 @@ function getCustomerStatementData($customerId) {
         <header class="statement-header">
             <div class="brand-block">
                 <div class="logo-placeholder">
-                    <?php echo mb_substr($companyName, 0, 1); ?>
+                    <img src="<?php echo getRelativeUrl('assets/icons/icon-192x192.svg'); ?>" alt="Logo" class="company-logo-img" onerror="this.onerror=null; this.src='<?php echo getRelativeUrl('assets/icons/icon-192x192.png'); ?>'; this.onerror=function(){this.style.display='none'; this.nextElementSibling.style.display='flex';};">
+                    <span class="logo-letter" style="display:none;"><?php echo mb_substr($companyName, 0, 1); ?></span>
                 </div>
                 <div>
                     <h1 class="company-name"><?php echo htmlspecialchars($companyName); ?></h1>
