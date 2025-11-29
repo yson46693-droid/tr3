@@ -3621,6 +3621,7 @@ document.addEventListener('DOMContentLoaded', function () {
                                                     </th>
                                                     <th>المنتج</th>
                                                     <th>الكمية المتاحة</th>
+                                                    <th>الكمية المطلوبة</th>
                                                     <th>السعر</th>
                                                     <th>الإجمالي</th>
                                                 </tr>
@@ -3657,6 +3658,7 @@ document.addEventListener('DOMContentLoaded', function () {
                                                     </th>
                                                     <th>المنتج</th>
                                                     <th>الكمية المتاحة</th>
+                                                    <th>الكمية المطلوبة</th>
                                                     <th>السعر</th>
                                                     <th>الإجمالي</th>
                                                 </tr>
@@ -3880,21 +3882,76 @@ document.addEventListener('DOMContentLoaded', function () {
         }) + ' ج.م';
     }
     
-    // دالة حساب الإجماليات
+    // دالة حساب الإجماليات مع التحقق من الكميات
     function calculateTotals() {
         let customerTotal = 0;
         let carTotal = 0;
+        let hasErrors = false;
+        let errorMessages = [];
         
+        // حساب إجمالي منتجات العميل مع التحقق
         selectedCustomerItems.forEach(item => {
+            const invoiceItemId = item.invoice_item_id;
+            const quantityInput = document.querySelector(`.customer-quantity-input[data-invoice-item-id="${invoiceItemId}"]`);
+            const checkbox = document.querySelector(`.customer-item-checkbox[data-invoice-item-id="${invoiceItemId}"]`);
+            
+            if (quantityInput && checkbox) {
+                const availableQty = parseFloat(checkbox.getAttribute('data-available-quantity'));
+                let quantity = parseFloat(quantityInput.value) || 0;
+                
+                // التحقق من الكمية
+                if (quantity <= 0) {
+                    hasErrors = true;
+                    errorMessages.push('يجب إدخال كمية أكبر من صفر');
+                    quantityInput.classList.add('is-invalid');
+                } else if (quantity > availableQty) {
+                    hasErrors = true;
+                    errorMessages.push('الكمية المدخلة (' + quantity + ') أكبر من الكمية المتاحة (' + availableQty + ')');
+                    quantityInput.classList.add('is-invalid');
+                } else {
+                    quantityInput.classList.remove('is-invalid');
+                    // تحديث القيمة في selectedCustomerItems
+                    item.quantity = quantity;
+                    item.total_price = quantity * item.unit_price;
+                }
+            }
+            
             customerTotal += parseFloat(item.total_price || 0);
         });
         
+        // حساب إجمالي منتجات السيارة مع التحقق
         selectedCarItems.forEach(item => {
+            const productId = item.product_id;
+            const quantityInput = document.querySelector(`.car-quantity-input[data-product-id="${productId}"]`);
+            const checkbox = document.querySelector(`.car-item-checkbox[data-product-id="${productId}"]`);
+            
+            if (quantityInput && checkbox) {
+                const availableQty = parseFloat(checkbox.getAttribute('data-available-quantity'));
+                let quantity = parseFloat(quantityInput.value) || 0;
+                
+                // التحقق من الكمية
+                if (quantity <= 0) {
+                    hasErrors = true;
+                    errorMessages.push('يجب إدخال كمية أكبر من صفر');
+                    quantityInput.classList.add('is-invalid');
+                } else if (quantity > availableQty) {
+                    hasErrors = true;
+                    errorMessages.push('الكمية المدخلة (' + quantity + ') أكبر من الكمية المتاحة (' + availableQty + ')');
+                    quantityInput.classList.add('is-invalid');
+                } else {
+                    quantityInput.classList.remove('is-invalid');
+                    // تحديث القيمة في selectedCarItems
+                    item.quantity = quantity;
+                    item.total_price = quantity * item.unit_price;
+                }
+            }
+            
             carTotal += parseFloat(item.total_price || 0);
         });
         
         const difference = customerTotal - carTotal;
         
+        // تحديث الإجماليات في الجداول
         document.getElementById('customerTotal').textContent = formatCurrency(customerTotal);
         document.getElementById('carTotal').textContent = formatCurrency(carTotal);
         document.getElementById('summaryCustomerTotal').textContent = formatCurrency(customerTotal);
@@ -3915,7 +3972,10 @@ document.addEventListener('DOMContentLoaded', function () {
         const infoEl = document.getElementById('replacementInfo');
         infoEl.classList.remove('d-none');
         
-        if (Math.abs(difference) < 0.01) {
+        if (hasErrors) {
+            infoEl.className = 'alert alert-danger mt-3 mb-0';
+            infoEl.innerHTML = '<i class="bi bi-exclamation-triangle me-2"></i><strong>تحذير:</strong> ' + errorMessages.join('<br>');
+        } else if (Math.abs(difference) < 0.01) {
             infoEl.className = 'alert alert-info mt-3 mb-0';
             infoEl.innerHTML = '<i class="bi bi-info-circle me-2"></i>لا يوجد فرق في القيمة. لن يتأثر رصيد العميل أو خزنة المندوب.';
         } else if (difference < 0) {
@@ -3928,7 +3988,7 @@ document.addEventListener('DOMContentLoaded', function () {
         
         // تفعيل/تعطيل زر التنفيذ
         const executeBtn = document.getElementById('executeReplacementBtn');
-        executeBtn.disabled = selectedCustomerItems.length === 0 || selectedCarItems.length === 0;
+        executeBtn.disabled = selectedCustomerItems.length === 0 || selectedCarItems.length === 0 || hasErrors;
     }
     
     // فتح المودال - استخدام event delegation
@@ -4194,13 +4254,15 @@ document.addEventListener('DOMContentLoaded', function () {
         tbody.innerHTML = '';
         
         if (customerPurchases.length === 0) {
-            tbody.innerHTML = '<tr><td colspan="5" class="text-center text-muted py-3">لا توجد مشتريات متاحة للاستبدال</td></tr>';
+            tbody.innerHTML = '<tr><td colspan="6" class="text-center text-muted py-3">لا توجد مشتريات متاحة للاستبدال</td></tr>';
             return;
         }
         
         customerPurchases.forEach(item => {
             const tr = document.createElement('tr');
-            const checked = selectedCustomerItems.some(sel => sel.invoice_item_id === item.invoice_item_id);
+            const existingItem = selectedCustomerItems.find(sel => sel.invoice_item_id === item.invoice_item_id);
+            const checked = existingItem !== undefined;
+            const selectedQty = existingItem ? existingItem.quantity : item.available_quantity;
             
             const batchNumberIds = Array.isArray(item.batch_number_ids) ? item.batch_number_ids : [];
             const finishedBatchIds = Array.isArray(item.finished_batch_ids) ? item.finished_batch_ids : [];
@@ -4210,9 +4272,8 @@ document.addEventListener('DOMContentLoaded', function () {
                     <input type="checkbox" class="form-check-input customer-item-checkbox" 
                            data-invoice-item-id="${item.invoice_item_id}"
                            data-product-id="${item.product_id}"
-                           data-quantity="${item.available_quantity}"
+                           data-available-quantity="${item.available_quantity}"
                            data-unit-price="${item.unit_price}"
-                           data-total-price="${item.available_quantity * item.unit_price}"
                            data-batch-number-ids='${JSON.stringify(batchNumberIds)}'
                            data-finished-batch-ids='${JSON.stringify(finishedBatchIds)}'
                            ${checked ? 'checked' : ''}>
@@ -4223,34 +4284,64 @@ document.addEventListener('DOMContentLoaded', function () {
                     ${item.batch_numbers && item.batch_numbers.length > 0 ? `<br><small class="text-info">تشغيلة: ${item.batch_numbers.join(', ')}</small>` : ''}
                 </td>
                 <td>${item.available_quantity} ${item.unit || 'قطعة'}</td>
+                <td>
+                    <input type="number" 
+                           class="form-control form-control-sm customer-quantity-input" 
+                           data-invoice-item-id="${item.invoice_item_id}"
+                           min="0.01" 
+                           max="${item.available_quantity}" 
+                           step="0.01" 
+                           value="${selectedQty}"
+                           ${!checked ? 'disabled' : ''}
+                           style="width: 100px;">
+                    <small class="text-muted d-block">${item.unit || 'قطعة'}</small>
+                </td>
                 <td>${formatCurrency(item.unit_price)}</td>
-                <td>${formatCurrency(item.available_quantity * item.unit_price)}</td>
+                <td class="customer-item-total">${formatCurrency(selectedQty * item.unit_price)}</td>
             `;
             
             tbody.appendChild(tr);
         });
         
-        // إضافة مستمعات
+        // إضافة مستمعات للـ checkboxes
         document.querySelectorAll('.customer-item-checkbox').forEach(checkbox => {
             checkbox.addEventListener('change', function() {
                 const invoiceItemId = parseInt(this.getAttribute('data-invoice-item-id'));
+                const quantityInput = document.querySelector(`.customer-quantity-input[data-invoice-item-id="${invoiceItemId}"]`);
                 
                 if (this.checked) {
+                    if (quantityInput) {
+                        quantityInput.disabled = false;
+                        quantityInput.focus();
+                    }
+                    
                     const batchNumberIdsStr = this.getAttribute('data-batch-number-ids') || '[]';
                     const finishedBatchIdsStr = this.getAttribute('data-finished-batch-ids') || '[]';
                     const batchNumberIds = JSON.parse(batchNumberIdsStr);
                     const finishedBatchIds = JSON.parse(finishedBatchIdsStr);
+                    const availableQty = parseFloat(this.getAttribute('data-available-quantity'));
+                    const unitPrice = parseFloat(this.getAttribute('data-unit-price'));
+                    const quantity = quantityInput ? parseFloat(quantityInput.value) || availableQty : availableQty;
+                    
+                    // التحقق من أن الكمية <= المتاحة
+                    const validQuantity = Math.min(quantity, availableQty);
+                    if (quantityInput) {
+                        quantityInput.value = validQuantity;
+                    }
                     
                     selectedCustomerItems.push({
                         invoice_item_id: invoiceItemId,
                         product_id: parseInt(this.getAttribute('data-product-id')),
-                        quantity: parseFloat(this.getAttribute('data-quantity')),
-                        unit_price: parseFloat(this.getAttribute('data-unit-price')),
-                        total_price: parseFloat(this.getAttribute('data-total-price')),
+                        quantity: validQuantity,
+                        unit_price: unitPrice,
+                        total_price: validQuantity * unitPrice,
                         batch_number_ids: batchNumberIds,
                         finished_batch_ids: finishedBatchIds
                     });
                 } else {
+                    if (quantityInput) {
+                        quantityInput.disabled = true;
+                    }
                     selectedCustomerItems = selectedCustomerItems.filter(
                         item => item.invoice_item_id !== invoiceItemId
                     );
@@ -4261,6 +4352,63 @@ document.addEventListener('DOMContentLoaded', function () {
                 document.getElementById('selectAllCustomerItems').checked = allChecked;
                 
                 calculateTotals();
+            });
+        });
+        
+        // إضافة مستمعات لحقول الكمية
+        document.querySelectorAll('.customer-quantity-input').forEach(input => {
+            input.addEventListener('input', function() {
+                const invoiceItemId = parseInt(this.getAttribute('data-invoice-item-id'));
+                const checkbox = document.querySelector(`.customer-item-checkbox[data-invoice-item-id="${invoiceItemId}"]`);
+                const availableQty = parseFloat(checkbox.getAttribute('data-available-quantity'));
+                const unitPrice = parseFloat(checkbox.getAttribute('data-unit-price'));
+                
+                let quantity = parseFloat(this.value) || 0;
+                
+                // التحقق من أن الكمية <= المتاحة
+                if (quantity > availableQty) {
+                    quantity = availableQty;
+                    this.value = availableQty;
+                    alert('الكمية المدخلة (' + this.value + ') أكبر من الكمية المتاحة (' + availableQty + '). تم تعديلها تلقائياً.');
+                }
+                
+                if (quantity <= 0) {
+                    quantity = 0;
+                    this.value = '';
+                }
+                
+                // تحديث الإجمالي في الجدول
+                const totalCell = this.closest('tr').querySelector('.customer-item-total');
+                if (totalCell) {
+                    totalCell.textContent = formatCurrency(quantity * unitPrice);
+                }
+                
+                // تحديث selectedCustomerItems
+                const itemIndex = selectedCustomerItems.findIndex(item => item.invoice_item_id === invoiceItemId);
+                if (itemIndex !== -1 && checkbox.checked) {
+                    selectedCustomerItems[itemIndex].quantity = quantity;
+                    selectedCustomerItems[itemIndex].total_price = quantity * unitPrice;
+                }
+                
+                calculateTotals();
+            });
+            
+            input.addEventListener('blur', function() {
+                const invoiceItemId = parseInt(this.getAttribute('data-invoice-item-id'));
+                const checkbox = document.querySelector(`.customer-item-checkbox[data-invoice-item-id="${invoiceItemId}"]`);
+                const availableQty = parseFloat(checkbox.getAttribute('data-available-quantity'));
+                
+                let quantity = parseFloat(this.value) || 0;
+                
+                if (quantity <= 0) {
+                    quantity = availableQty;
+                    this.value = availableQty;
+                }
+                
+                if (quantity > availableQty) {
+                    quantity = availableQty;
+                    this.value = availableQty;
+                }
             });
         });
         
@@ -4280,49 +4428,81 @@ document.addEventListener('DOMContentLoaded', function () {
         tbody.innerHTML = '';
         
         if (carInventory.length === 0) {
-            tbody.innerHTML = '<tr><td colspan="5" class="text-center text-muted py-3">لا توجد منتجات في مخزن السيارة</td></tr>';
+            tbody.innerHTML = '<tr><td colspan="6" class="text-center text-muted py-3">لا توجد منتجات في مخزن السيارة</td></tr>';
             return;
         }
         
         carInventory.forEach(item => {
             const tr = document.createElement('tr');
-            const checked = selectedCarItems.some(sel => sel.product_id === item.product_id);
+            const existingItem = selectedCarItems.find(sel => sel.product_id === item.product_id);
+            const checked = existingItem !== undefined;
+            const selectedQty = existingItem ? existingItem.quantity : item.quantity;
             
             tr.innerHTML = `
                 <td>
                     <input type="checkbox" class="form-check-input car-item-checkbox" 
                            data-product-id="${item.product_id}"
-                           data-quantity="${item.quantity}"
+                           data-available-quantity="${item.quantity}"
                            data-unit-price="${item.unit_price}"
-                           data-total-price="${item.total_value}"
                            data-finished-batch-id="${item.finished_batch_id || ''}"
                            data-finished-batch-number="${item.finished_batch_number || ''}"
                            ${checked ? 'checked' : ''}>
                 </td>
                 <td>${item.product_name || 'غير معروف'}</td>
                 <td>${item.quantity} ${item.unit || 'قطعة'}</td>
+                <td>
+                    <input type="number" 
+                           class="form-control form-control-sm car-quantity-input" 
+                           data-product-id="${item.product_id}"
+                           min="0.01" 
+                           max="${item.quantity}" 
+                           step="0.01" 
+                           value="${selectedQty}"
+                           ${!checked ? 'disabled' : ''}
+                           style="width: 100px;">
+                    <small class="text-muted d-block">${item.unit || 'قطعة'}</small>
+                </td>
                 <td>${formatCurrency(item.unit_price)}</td>
-                <td>${formatCurrency(item.total_value)}</td>
+                <td class="car-item-total">${formatCurrency(selectedQty * item.unit_price)}</td>
             `;
             
             tbody.appendChild(tr);
         });
         
-        // إضافة مستمعات
+        // إضافة مستمعات للـ checkboxes
         document.querySelectorAll('.car-item-checkbox').forEach(checkbox => {
             checkbox.addEventListener('change', function() {
                 const productId = parseInt(this.getAttribute('data-product-id'));
+                const quantityInput = document.querySelector(`.car-quantity-input[data-product-id="${productId}"]`);
                 
                 if (this.checked) {
+                    if (quantityInput) {
+                        quantityInput.disabled = false;
+                        quantityInput.focus();
+                    }
+                    
+                    const availableQty = parseFloat(this.getAttribute('data-available-quantity'));
+                    const unitPrice = parseFloat(this.getAttribute('data-unit-price'));
+                    const quantity = quantityInput ? parseFloat(quantityInput.value) || availableQty : availableQty;
+                    
+                    // التحقق من أن الكمية <= المتاحة
+                    const validQuantity = Math.min(quantity, availableQty);
+                    if (quantityInput) {
+                        quantityInput.value = validQuantity;
+                    }
+                    
                     selectedCarItems.push({
                         product_id: productId,
-                        quantity: parseFloat(this.getAttribute('data-quantity')),
-                        unit_price: parseFloat(this.getAttribute('data-unit-price')),
-                        total_price: parseFloat(this.getAttribute('data-total-price')),
+                        quantity: validQuantity,
+                        unit_price: unitPrice,
+                        total_price: validQuantity * unitPrice,
                         finished_batch_id: this.getAttribute('data-finished-batch-id') || null,
                         finished_batch_number: this.getAttribute('data-finished-batch-number') || null
                     });
                 } else {
+                    if (quantityInput) {
+                        quantityInput.disabled = true;
+                    }
                     selectedCarItems = selectedCarItems.filter(
                         item => item.product_id !== productId
                     );
@@ -4333,6 +4513,63 @@ document.addEventListener('DOMContentLoaded', function () {
                 document.getElementById('selectAllCarItems').checked = allChecked;
                 
                 calculateTotals();
+            });
+        });
+        
+        // إضافة مستمعات لحقول الكمية
+        document.querySelectorAll('.car-quantity-input').forEach(input => {
+            input.addEventListener('input', function() {
+                const productId = parseInt(this.getAttribute('data-product-id'));
+                const checkbox = document.querySelector(`.car-item-checkbox[data-product-id="${productId}"]`);
+                const availableQty = parseFloat(checkbox.getAttribute('data-available-quantity'));
+                const unitPrice = parseFloat(checkbox.getAttribute('data-unit-price'));
+                
+                let quantity = parseFloat(this.value) || 0;
+                
+                // التحقق من أن الكمية <= المتاحة
+                if (quantity > availableQty) {
+                    quantity = availableQty;
+                    this.value = availableQty;
+                    alert('الكمية المدخلة (' + this.value + ') أكبر من الكمية المتاحة (' + availableQty + '). تم تعديلها تلقائياً.');
+                }
+                
+                if (quantity <= 0) {
+                    quantity = 0;
+                    this.value = '';
+                }
+                
+                // تحديث الإجمالي في الجدول
+                const totalCell = this.closest('tr').querySelector('.car-item-total');
+                if (totalCell) {
+                    totalCell.textContent = formatCurrency(quantity * unitPrice);
+                }
+                
+                // تحديث selectedCarItems
+                const itemIndex = selectedCarItems.findIndex(item => item.product_id === productId);
+                if (itemIndex !== -1 && checkbox.checked) {
+                    selectedCarItems[itemIndex].quantity = quantity;
+                    selectedCarItems[itemIndex].total_price = quantity * unitPrice;
+                }
+                
+                calculateTotals();
+            });
+            
+            input.addEventListener('blur', function() {
+                const productId = parseInt(this.getAttribute('data-product-id'));
+                const checkbox = document.querySelector(`.car-item-checkbox[data-product-id="${productId}"]`);
+                const availableQty = parseFloat(checkbox.getAttribute('data-available-quantity'));
+                
+                let quantity = parseFloat(this.value) || 0;
+                
+                if (quantity <= 0) {
+                    quantity = availableQty;
+                    this.value = availableQty;
+                }
+                
+                if (quantity > availableQty) {
+                    quantity = availableQty;
+                    this.value = availableQty;
+                }
             });
         });
         
@@ -4353,7 +4590,67 @@ document.addEventListener('DOMContentLoaded', function () {
             return;
         }
         
-        if (!confirm('هل أنت متأكد من تنفيذ عملية الاستبدال؟')) {
+        // التحقق من الكميات قبل التنفيذ
+        let validationErrors = [];
+        
+        selectedCustomerItems.forEach(item => {
+            const invoiceItemId = item.invoice_item_id;
+            const quantityInput = document.querySelector(`.customer-quantity-input[data-invoice-item-id="${invoiceItemId}"]`);
+            const checkbox = document.querySelector(`.customer-item-checkbox[data-invoice-item-id="${invoiceItemId}"]`);
+            
+            if (quantityInput && checkbox) {
+                const availableQty = parseFloat(checkbox.getAttribute('data-available-quantity'));
+                const quantity = parseFloat(quantityInput.value) || 0;
+                
+                if (quantity <= 0) {
+                    validationErrors.push('يجب إدخال كمية أكبر من صفر للمنتج من مشتريات العميل');
+                } else if (quantity > availableQty) {
+                    validationErrors.push('الكمية المدخلة (' + quantity + ') أكبر من الكمية المتاحة (' + availableQty + ')');
+                }
+            }
+        });
+        
+        selectedCarItems.forEach(item => {
+            const productId = item.product_id;
+            const quantityInput = document.querySelector(`.car-quantity-input[data-product-id="${productId}"]`);
+            const checkbox = document.querySelector(`.car-item-checkbox[data-product-id="${productId}"]`);
+            
+            if (quantityInput && checkbox) {
+                const availableQty = parseFloat(checkbox.getAttribute('data-available-quantity'));
+                const quantity = parseFloat(quantityInput.value) || 0;
+                
+                if (quantity <= 0) {
+                    validationErrors.push('يجب إدخال كمية أكبر من صفر للمنتج من مخزن السيارة');
+                } else if (quantity > availableQty) {
+                    validationErrors.push('الكمية المدخلة (' + quantity + ') أكبر من الكمية المتاحة (' + availableQty + ')');
+                }
+            }
+        });
+        
+        if (validationErrors.length > 0) {
+            alert('يرجى تصحيح الأخطاء التالية:\n\n' + validationErrors.join('\n'));
+            return;
+        }
+        
+        // عرض ملخص العملية
+        const customerTotal = selectedCustomerItems.reduce((sum, item) => sum + (item.total_price || 0), 0);
+        const carTotal = selectedCarItems.reduce((sum, item) => sum + (item.total_price || 0), 0);
+        const difference = customerTotal - carTotal;
+        
+        let confirmMessage = 'هل أنت متأكد من تنفيذ عملية الاستبدال؟\n\n';
+        confirmMessage += 'إجمالي منتجات العميل: ' + formatCurrency(customerTotal) + '\n';
+        confirmMessage += 'إجمالي منتجات السيارة: ' + formatCurrency(carTotal) + '\n';
+        confirmMessage += 'الفرق: ' + formatCurrency(Math.abs(difference)) + '\n\n';
+        
+        if (Math.abs(difference) < 0.01) {
+            confirmMessage += 'لا يوجد فرق في القيمة.';
+        } else if (difference < 0) {
+            confirmMessage += 'سيتم إضافة ' + formatCurrency(Math.abs(difference)) + ' إلى رصيد العميل المدين.';
+        } else {
+            confirmMessage += 'سيتم خصم ' + formatCurrency(difference) + ' من رصيد العميل وخصم 2% من راتب المندوب.';
+        }
+        
+        if (!confirm(confirmMessage)) {
             return;
         }
         
