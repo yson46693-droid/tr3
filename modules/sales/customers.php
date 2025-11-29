@@ -4358,9 +4358,12 @@ document.addEventListener('DOMContentLoaded', function () {
         
         // إضافة مستمعات لحقول الكمية
         document.querySelectorAll('.customer-quantity-input').forEach(input => {
+            // event listener للكتابة الفورية
             input.addEventListener('input', function() {
                 const invoiceItemId = parseInt(this.getAttribute('data-invoice-item-id'));
                 const checkbox = document.querySelector(`.customer-item-checkbox[data-invoice-item-id="${invoiceItemId}"]`);
+                if (!checkbox) return;
+                
                 const availableQty = parseFloat(checkbox.getAttribute('data-available-quantity'));
                 const unitPrice = parseFloat(checkbox.getAttribute('data-unit-price'));
                 
@@ -4370,18 +4373,45 @@ document.addEventListener('DOMContentLoaded', function () {
                 if (quantity > availableQty) {
                     quantity = availableQty;
                     this.value = availableQty;
-                    alert('الكمية المدخلة (' + this.value + ') أكبر من الكمية المتاحة (' + availableQty + '). تم تعديلها تلقائياً.');
                 }
                 
-                if (quantity <= 0) {
-                    quantity = 0;
-                    this.value = '';
-                }
-                
-                // تحديث الإجمالي في الجدول
+                // تحديث الإجمالي في الجدول فوراً
                 const totalCell = this.closest('tr').querySelector('.customer-item-total');
                 if (totalCell) {
-                    totalCell.textContent = formatCurrency(quantity * unitPrice);
+                    const itemTotal = quantity > 0 ? quantity * unitPrice : 0;
+                    totalCell.textContent = formatCurrency(itemTotal);
+                }
+                
+                // تحديث selectedCustomerItems
+                const itemIndex = selectedCustomerItems.findIndex(item => item.invoice_item_id === invoiceItemId);
+                if (itemIndex !== -1 && checkbox.checked) {
+                    selectedCustomerItems[itemIndex].quantity = quantity > 0 ? quantity : 0;
+                    selectedCustomerItems[itemIndex].total_price = quantity > 0 ? quantity * unitPrice : 0;
+                }
+                
+                // تحديث الإجماليات الكلية فوراً
+                updateTotalsImmediately();
+            });
+            
+            // event listener للتغيير (عند فقدان التركيز)
+            input.addEventListener('change', function() {
+                const invoiceItemId = parseInt(this.getAttribute('data-invoice-item-id'));
+                const checkbox = document.querySelector(`.customer-item-checkbox[data-invoice-item-id="${invoiceItemId}"]`);
+                if (!checkbox) return;
+                
+                const availableQty = parseFloat(checkbox.getAttribute('data-available-quantity'));
+                const unitPrice = parseFloat(checkbox.getAttribute('data-unit-price'));
+                
+                let quantity = parseFloat(this.value) || 0;
+                
+                if (quantity <= 0) {
+                    quantity = availableQty;
+                    this.value = availableQty;
+                }
+                
+                if (quantity > availableQty) {
+                    quantity = availableQty;
+                    this.value = availableQty;
                 }
                 
                 // تحديث selectedCustomerItems
@@ -4391,9 +4421,8 @@ document.addEventListener('DOMContentLoaded', function () {
                     selectedCustomerItems[itemIndex].total_price = quantity * unitPrice;
                 }
                 
-                // تحديث حالة زر التنفيذ
-                updateExecuteButtonState();
-                calculateTotals();
+                // تحديث الإجماليات
+                updateTotalsImmediately();
             });
             
             input.addEventListener('blur', function() {
@@ -4523,9 +4552,12 @@ document.addEventListener('DOMContentLoaded', function () {
         
         // إضافة مستمعات لحقول الكمية
         document.querySelectorAll('.car-quantity-input').forEach(input => {
+            // event listener للكتابة الفورية
             input.addEventListener('input', function() {
                 const productId = parseInt(this.getAttribute('data-product-id'));
                 const checkbox = document.querySelector(`.car-item-checkbox[data-product-id="${productId}"]`);
+                if (!checkbox) return;
+                
                 const availableQty = parseFloat(checkbox.getAttribute('data-available-quantity'));
                 const unitPrice = parseFloat(checkbox.getAttribute('data-unit-price'));
                 
@@ -4535,36 +4567,34 @@ document.addEventListener('DOMContentLoaded', function () {
                 if (quantity > availableQty) {
                     quantity = availableQty;
                     this.value = availableQty;
-                    alert('الكمية المدخلة (' + this.value + ') أكبر من الكمية المتاحة (' + availableQty + '). تم تعديلها تلقائياً.');
                 }
                 
-                if (quantity <= 0) {
-                    quantity = 0;
-                    this.value = '';
-                }
-                
-                // تحديث الإجمالي في الجدول
+                // تحديث الإجمالي في الجدول فوراً
                 const totalCell = this.closest('tr').querySelector('.car-item-total');
                 if (totalCell) {
-                    totalCell.textContent = formatCurrency(quantity * unitPrice);
+                    const itemTotal = quantity > 0 ? quantity * unitPrice : 0;
+                    totalCell.textContent = formatCurrency(itemTotal);
                 }
                 
                 // تحديث selectedCarItems
                 const itemIndex = selectedCarItems.findIndex(item => item.product_id === productId);
                 if (itemIndex !== -1 && checkbox.checked) {
-                    selectedCarItems[itemIndex].quantity = quantity;
-                    selectedCarItems[itemIndex].total_price = quantity * unitPrice;
+                    selectedCarItems[itemIndex].quantity = quantity > 0 ? quantity : 0;
+                    selectedCarItems[itemIndex].total_price = quantity > 0 ? quantity * unitPrice : 0;
                 }
                 
-                // تحديث حالة زر التنفيذ
-                updateExecuteButtonState();
-                calculateTotals();
+                // تحديث الإجماليات الكلية فوراً
+                updateTotalsImmediately();
             });
             
-            input.addEventListener('blur', function() {
+            // event listener للتغيير (عند فقدان التركيز)
+            input.addEventListener('change', function() {
                 const productId = parseInt(this.getAttribute('data-product-id'));
                 const checkbox = document.querySelector(`.car-item-checkbox[data-product-id="${productId}"]`);
+                if (!checkbox) return;
+                
                 const availableQty = parseFloat(checkbox.getAttribute('data-available-quantity'));
+                const unitPrice = parseFloat(checkbox.getAttribute('data-unit-price'));
                 
                 let quantity = parseFloat(this.value) || 0;
                 
@@ -4577,7 +4607,18 @@ document.addEventListener('DOMContentLoaded', function () {
                     quantity = availableQty;
                     this.value = availableQty;
                 }
+                
+                // تحديث selectedCarItems
+                const itemIndex = selectedCarItems.findIndex(item => item.product_id === productId);
+                if (itemIndex !== -1 && checkbox.checked) {
+                    selectedCarItems[itemIndex].quantity = quantity;
+                    selectedCarItems[itemIndex].total_price = quantity * unitPrice;
+                }
+                
+                // تحديث الإجماليات
+                updateTotalsImmediately();
             });
+            
         });
         
         // select all للمخزن
