@@ -692,8 +692,10 @@ $lang = $translations;
         
         // تسجيل الدخول عبر WebAuthn بدون اسم مستخدم
         document.getElementById('webauthnLoginBtn')?.addEventListener('click', async function() {
-            this.disabled = true;
-            this.innerHTML = '<span class="spinner-border spinner-border-sm me-2"></span>جاري التحقق...';
+            const btn = this;
+            btn.disabled = true;
+            const originalText = btn.innerHTML;
+            btn.innerHTML = '<span class="spinner-border spinner-border-sm me-2"></span>جاري التحقق...';
             
             try {
                 // استخدام simpleWebAuthn مباشرة أو webauthnManager
@@ -704,20 +706,51 @@ $lang = $translations;
                         : null;
                 
                 if (!authManager) {
-                    throw new Error('نظام البصمة غير متاح. يرجى تحديث الصفحة (Ctrl+F5).');
-                }
-                
-                const result = await authManager.loginWithoutUsername();
-                if (result && result.success) {
-                    // سيتم إعادة التوجيه تلقائياً من داخل loginWithoutUsername()
-                    console.log('Login successful, redirecting...');
+                    // محاولة انتظار قليلاً في حالة كان الملف لم يتم تحميله بعد
+                    await new Promise(resolve => setTimeout(resolve, 500));
+                    
+                    const retryManager = (typeof simpleWebAuthn !== 'undefined' && typeof simpleWebAuthn.loginWithoutUsername === 'function') 
+                        ? simpleWebAuthn 
+                        : (typeof webauthnManager !== 'undefined' && typeof webauthnManager.loginWithoutUsername === 'function')
+                            ? webauthnManager
+                            : null;
+                    
+                    if (!retryManager) {
+                        throw new Error('نظام البصمة غير متاح. يرجى:\n1. تحديث الصفحة (Ctrl+F5)\n2. التأكد من أن JavaScript مفعّل\n3. استخدام متصفح حديث');
+                    }
+                    
+                    const result = await retryManager.loginWithoutUsername();
+                    if (result && result.success) {
+                        console.log('Login successful, redirecting...');
+                    }
+                } else {
+                    const result = await authManager.loginWithoutUsername();
+                    if (result && result.success) {
+                        // سيتم إعادة التوجيه تلقائياً من داخل loginWithoutUsername()
+                        console.log('Login successful, redirecting...');
+                    }
                 }
             } catch (error) {
                 console.error('Login error:', error);
-                alert(error.message || 'حدث خطأ أثناء تسجيل الدخول');
+                
+                // رسالة خطأ واضحة
+                let errorMessage = error.message || 'حدث خطأ أثناء تسجيل الدخول';
+                
+                // تحسين رسائل الخطأ للموبايل
+                if (errorMessage.includes('HTTPS') || errorMessage.includes('SecurityError')) {
+                    errorMessage = 'WebAuthn يتطلب HTTPS. إذا كنت على شبكة محلية، قد يعمل HTTP.\n\n' + errorMessage;
+                } else if (errorMessage.includes('NotSupported')) {
+                    errorMessage = 'الجهاز أو المتصفح لا يدعم WebAuthn.\n\nيرجى استخدام:\n- Chrome 67+\n- Safari 14+ (iOS 14+)\n- Firefox 60+';
+                } else if (errorMessage.includes('NotAllowed')) {
+                    errorMessage = 'تم إلغاء العملية.\n\nتأكد من:\n1. السماح للموقع بالوصول إلى البصمة\n2. الضغط على "Allow" عند ظهور نافذة البصمة\n3. تفعيل Face ID/Touch ID في إعدادات الجهاز';
+                } else if (errorMessage.includes('InvalidState')) {
+                    errorMessage = 'لا توجد بصمة مسجلة على هذا الجهاز.\n\nيرجى تسجيل بصمة أولاً من إعدادات الحساب.';
+                }
+                
+                alert(errorMessage);
             } finally {
-                this.disabled = false;
-                this.innerHTML = '<i class="bi bi-fingerprint me-2"></i>تسجيل الدخول بالبصمة / المفتاح الأمني';
+                btn.disabled = false;
+                btn.innerHTML = originalText;
             }
         });
     </script>

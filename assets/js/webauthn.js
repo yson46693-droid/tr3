@@ -492,7 +492,7 @@ class SimpleWebAuthn {
 
     /**
      * تسجيل الدخول باستخدام WebAuthn بدون اسم مستخدم
-     * يعرض جميع البصمات المسجلة على الجهاز
+     * يتحقق أولاً من البصمة على الجهاز، ثم يعرض الحسابات المرتبطة بها
      */
     async loginWithoutUsername() {
         try {
@@ -501,9 +501,16 @@ class SimpleWebAuthn {
                 throw new Error('WebAuthn غير مدعوم في هذا المتصفح. يرجى استخدام متصفح حديث.');
             }
 
-            // التحقق من HTTPS
-            if (window.location.protocol !== 'https:' && window.location.hostname !== 'localhost') {
-                throw new Error('WebAuthn يتطلب HTTPS. الموقع الحالي: ' + window.location.protocol);
+            // التحقق من HTTPS (أكثر مرونة للموبايل)
+            const isLocalhost = window.location.hostname === 'localhost' || 
+                               window.location.hostname === '127.0.0.1' ||
+                               window.location.hostname.startsWith('192.168.') ||
+                               window.location.hostname.startsWith('10.') ||
+                               window.location.hostname.startsWith('172.');
+            
+            if (window.location.protocol !== 'https:' && !isLocalhost) {
+                // على الموبايل، قد يعمل HTTP في بعض الحالات
+                console.warn('WebAuthn يتطلب HTTPS عادة، لكن سنحاول المتابعة...');
             }
 
             // الحصول على مسار API لتسجيل الدخول
@@ -517,35 +524,7 @@ class SimpleWebAuthn {
                 loginApiPath = '/' + pathParts[0] + '/api/webauthn_login.php';
             }
             
-            // أولاً: التحقق من عدد المستخدمين الذين لديهم بصمات
-            const usersData = await this.getUsersWithCredentials();
-            
-            if (!usersData.success || usersData.users.length === 0) {
-                throw new Error('لا توجد حسابات مسجلة بالبصمة');
-            }
-            
-            // إذا كان هناك أكثر من مستخدم، نعرض قائمة للاختيار
-            if (usersData.users.length > 1) {
-                try {
-                    const selectedUsername = await this.showAccountSelectionModal(usersData.users);
-                    // استخدام login العادي مع اسم المستخدم المختار
-                    return await this.login(selectedUsername);
-                } catch (error) {
-                    if (error.message === 'تم إلغاء العملية') {
-                        throw error;
-                    }
-                    throw new Error('حدث خطأ أثناء اختيار الحساب');
-                }
-            }
-            
-            // إذا كان هناك مستخدم واحد فقط، نستخدم login العادي مع اسم المستخدم
-            if (usersData.users.length === 1) {
-                return await this.login(usersData.users[0].username);
-            }
-            
-            // إذا لم يكن هناك مستخدمين، نتابع مع loginWithoutUsername (للحالات الخاصة)
-
-            // 1. الحصول على challenge بدون اسم مستخدم
+            // 1. أولاً: الحصول على challenge بدون اسم مستخدم للتحقق من البصمة
             const challengeResponse = await fetch(loginApiPath, {
                 method: 'POST',
                 headers: {
@@ -558,7 +537,8 @@ class SimpleWebAuthn {
             });
 
             if (!challengeResponse.ok) {
-                throw new Error(`خطأ في الاتصال بالخادم: ${challengeResponse.status}`);
+                const errorText = await challengeResponse.text();
+                throw new Error(`خطأ في الاتصال بالخادم: ${challengeResponse.status} - ${errorText}`);
             }
 
             const challengeData = await challengeResponse.json();
@@ -580,17 +560,36 @@ class SimpleWebAuthn {
             // 4. إعدادات للموبايل
             const isMobile = /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent);
             if (isMobile) {
-                challenge.timeout = 180000;
+                challenge.timeout = 180000; // 3 دقائق للموبايل
                 challenge.userVerification = 'preferred';
             }
 
-            // 5. الحصول على الاعتماد (بدون allowCredentials - سيظهر جميع البصمات)
-            const credential = await navigator.credentials.get({
-                publicKey: challenge
-            });
+            // 5. الحصول على الاعتماد (بدون allowCredentials - سيطلب من المستخدم التحقق من البصمة)
+            // هذا سيظهر جميع البصمات المسجلة على الجهاز لهذا الموقع فقط
+            let credential;
+            try {
+                credential = await navigator.credentials.get({
+                    publicKey: challenge
+                });
+            } catch (error) {
+                console.error('WebAuthn get error:', error);
+                
+                // معالجة الأخطاء الشائعة
+                if (error.name === 'NotAllowedError') {
+                    throw new Error('تم إلغاء العملية أو رفض الطلب. يرجى المحاولة مرة أخرى.');
+                } else if (error.name === 'NotSupportedError') {
+                    throw new Error('الجهاز أو المتصفح لا يدعم WebAuthn. يرجى استخدام متصفح حديث.');
+                } else if (error.name === 'InvalidStateError') {
+                    throw new Error('لا توجد بصمة مسجلة على هذا الجهاز لهذا الموقع.');
+                } else if (error.name === 'SecurityError') {
+                    throw new Error('خطأ أمني. تأكد من أن الموقع يستخدم HTTPS.');
+                } else {
+                    throw new Error('فشل في التحقق من البصمة: ' + (error.message || error.name));
+                }
+            }
 
             if (!credential) {
-                throw new Error('فشل في الحصول على الاعتماد');
+                throw new Error('لم يتم العثور على بصمة مسجلة على هذا الجهاز.');
             }
 
             // 6. تحويل البيانات
@@ -654,12 +653,21 @@ class SimpleWebAuthn {
             console.error('WebAuthn Login Without Username Error:', error);
             
             let errorMessage = 'خطأ في تسجيل الدخول';
-            if (error.message) {
+            
+            // إذا كانت رسالة الخطأ موجودة ومفيدة، نستخدمها
+            if (error.message && error.message !== 'خطأ في تسجيل الدخول') {
                 errorMessage = error.message;
             } else if (error.name === 'NotAllowedError') {
                 errorMessage = 'تم إلغاء العملية. يرجى المحاولة مرة أخرى.';
             } else if (error.name === 'NotSupportedError') {
-                errorMessage = 'الجهاز أو المتصفح لا يدعم WebAuthn';
+                errorMessage = 'الجهاز أو المتصفح لا يدعم WebAuthn. يرجى استخدام متصفح حديث مثل Chrome أو Safari.';
+            } else if (error.name === 'InvalidStateError') {
+                errorMessage = 'لا توجد بصمة مسجلة على هذا الجهاز. يرجى تسجيل بصمة أولاً.';
+            } else if (error.name === 'SecurityError') {
+                errorMessage = 'خطأ أمني. تأكد من أن الموقع يستخدم HTTPS.';
+            } else if (error.message && error.message.includes('HTTPS')) {
+                // على الموبايل، قد يعمل HTTP في بعض الحالات
+                errorMessage = 'WebAuthn يتطلب HTTPS عادة. إذا كنت على شبكة محلية، قد يعمل HTTP.';
             }
 
             throw new Error(errorMessage);
