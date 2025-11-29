@@ -3986,9 +3986,8 @@ document.addEventListener('DOMContentLoaded', function () {
             infoEl.innerHTML = '<i class="bi bi-exclamation-circle me-2"></i>سيتم خصم ' + formatCurrency(difference) + ' من رصيد العميل وخصم المبلغ من خزنة المندوب وخصم 2% من راتب المندوب.';
         }
         
-        // تفعيل/تعطيل زر التنفيذ
-        const executeBtn = document.getElementById('executeReplacementBtn');
-        executeBtn.disabled = selectedCustomerItems.length === 0 || selectedCarItems.length === 0 || hasErrors;
+        // تحديث حالة زر التنفيذ
+        updateExecuteButtonState();
     }
     
     // فتح المودال - استخدام event delegation
@@ -4351,6 +4350,8 @@ document.addEventListener('DOMContentLoaded', function () {
                 const allChecked = document.querySelectorAll('.customer-item-checkbox:checked').length === customerPurchases.length;
                 document.getElementById('selectAllCustomerItems').checked = allChecked;
                 
+                // تحديث حالة زر التنفيذ
+                updateExecuteButtonState();
                 calculateTotals();
             });
         });
@@ -4390,6 +4391,8 @@ document.addEventListener('DOMContentLoaded', function () {
                     selectedCustomerItems[itemIndex].total_price = quantity * unitPrice;
                 }
                 
+                // تحديث حالة زر التنفيذ
+                updateExecuteButtonState();
                 calculateTotals();
             });
             
@@ -4512,6 +4515,8 @@ document.addEventListener('DOMContentLoaded', function () {
                 const allChecked = document.querySelectorAll('.car-item-checkbox:checked').length === carInventory.length;
                 document.getElementById('selectAllCarItems').checked = allChecked;
                 
+                // تحديث حالة زر التنفيذ
+                updateExecuteButtonState();
                 calculateTotals();
             });
         });
@@ -4551,6 +4556,8 @@ document.addEventListener('DOMContentLoaded', function () {
                     selectedCarItems[itemIndex].total_price = quantity * unitPrice;
                 }
                 
+                // تحديث حالة زر التنفيذ
+                updateExecuteButtonState();
                 calculateTotals();
             });
             
