@@ -280,11 +280,24 @@ function requestApproval($type, $entityId, $requestedBy, $notes = null) {
             $notificationMessage = "تم طلب موافقة على {$entityName} من نوع {$type}";
         }
         
+        // بناء رابط الإشعار بناءً على نوع الموافقة
+        // للمرتجعات (return_request و invoice_return_company)، استخدم رابط صفحة المرتجعات
+        if ($type === 'return_request' || $type === 'invoice_return_company') {
+            require_once __DIR__ . '/path_helper.php';
+            $basePath = getBasePath();
+            $notificationLink = $basePath . '/dashboard/manager.php?page=returns&id=' . $entityId;
+        } else {
+            // للموافقات الأخرى، استخدم رابط صفحة الموافقات مع معرف الموافقة
+            require_once __DIR__ . '/path_helper.php';
+            $basePath = getBasePath();
+            $notificationLink = $basePath . '/dashboard/manager.php?page=approvals&id=' . $result['insert_id'];
+        }
+        
         notifyManagers(
             $notificationTitle,
             $notificationMessage,
             'approval',
-            "dashboard/manager.php?page=approvals&id={$result['insert_id']}"
+            $notificationLink
         );
         
         // تسجيل سجل التدقيق
@@ -1428,7 +1441,9 @@ function getEntityName($type, $entityId) {
  * الحصول على رابط الكيان
  */
 function getEntityLink($type, $entityId) {
-    $baseUrl = '/dashboard/';
+    require_once __DIR__ . '/path_helper.php';
+    $basePath = getBasePath();
+    $baseUrl = $basePath . '/dashboard/';
     
     switch ($type) {
         case 'financial':
@@ -1450,10 +1465,11 @@ function getEntityLink($type, $entityId) {
             return $baseUrl . 'manager.php?page=warehouse_transfers&id=' . $entityId;
 
         case 'invoice_return_company':
+        case 'return_request':
             return $baseUrl . 'manager.php?page=returns&id=' . $entityId;
             
         default:
-            return $baseUrl . 'manager.php?page=approvals';
+            return $baseUrl . 'manager.php?page=approvals&id=' . $entityId;
     }
 }
 
