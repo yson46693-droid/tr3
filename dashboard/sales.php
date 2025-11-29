@@ -949,6 +949,19 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && trim($_P
                             </button>
                         </li>
                         <li class="nav-item" role="presentation">
+                            <button class="nav-link <?php echo $activeTab === 'exchanges' ? 'active' : ''; ?>" 
+                                    id="my-exchanges-tab" 
+                                    data-bs-toggle="tab" 
+                                    data-bs-target="#my-exchanges-section" 
+                                    type="button" 
+                                    role="tab" 
+                                    aria-controls="my-exchanges-section" 
+                                    aria-selected="<?php echo $activeTab === 'exchanges' ? 'true' : 'false'; ?>">
+                                <i class="bi bi-arrow-left-right"></i>
+                                <span>الاستبدالات</span>
+                            </button>
+                        </li>
+                        <li class="nav-item" role="presentation">
                             <button class="nav-link <?php echo $activeTab === 'damaged_returns' ? 'active' : ''; ?>" 
                                     id="my-damaged-returns-tab" 
                                     data-bs-toggle="tab" 
@@ -1052,6 +1065,28 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && trim($_P
                                     <div class="empty-state-icon"><i class="bi bi-arrow-return-left"></i></div>
                                     <div class="empty-state-title">المرتجعات</div>
                                     <div class="empty-state-description">صفحة المرتجعات - سيتم إضافتها قريباً</div>
+                                </div>
+                                <?php } ?>
+                            </div>
+                        </div>
+
+                        <div class="tab-pane fade <?php echo $activeTab === 'exchanges' ? 'show active' : ''; ?> combined-tab-pane" 
+                             id="my-exchanges-section" 
+                             role="tabpanel" 
+                             aria-labelledby="my-exchanges-tab">
+                            <div id="my-exchanges-section-content" class="printable-section">
+                                <?php 
+                                $salesModulePath = __DIR__ . '/../modules/sales/sales.php';
+                                if (file_exists($salesModulePath)) {
+                                    $_GET['page'] = 'sales_records';
+                                    $_GET['tab'] = 'exchanges';
+                                    include $salesModulePath;
+                                } else {
+                                ?>
+                                <div class="empty-state-card">
+                                    <div class="empty-state-icon"><i class="bi bi-arrow-left-right"></i></div>
+                                    <div class="empty-state-title">الاستبدالات</div>
+                                    <div class="empty-state-description">صفحة الاستبدالات - سيتم إضافتها</div>
                                 </div>
                                 <?php } ?>
                             </div>
@@ -1306,6 +1341,10 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && trim($_P
             section = 'collections';
         } else if (targetId === '#my-returns-section') {
             section = 'returns';
+        } else if (targetId === '#my-exchanges-section') {
+            section = 'exchanges';
+        } else if (targetId === '#my-damaged-returns-section') {
+            section = 'damaged_returns';
         }
         const url = new URL(window.location);
         url.searchParams.set('section', section);

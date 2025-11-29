@@ -235,26 +235,13 @@ $exchangeFilters = array_filter($exchangeFilters, function($value) {
     </script>
 <?php endif; ?>
 
-<!-- التبويبات -->
 <?php 
 $isSalesRecords = isset($_GET['page']) && $_GET['page'] === 'sales_records';
-$activeTab = isset($_GET['tab']) ? $_GET['tab'] : 'sales';
+$activeTab = isset($_GET['tab']) ? $_GET['tab'] : 'exchanges';
 if ($activeTab !== 'exchanges' && $activeTab !== 'sales') {
-    $activeTab = 'sales';
+    $activeTab = 'exchanges';
 }
 ?>
-<ul class="nav nav-pills mb-4 gap-2">
-    <li class="nav-item">
-        <a class="nav-link <?php echo $activeTab === 'sales' ? 'active' : ''; ?>" href="?page=<?php echo $isSalesRecords ? 'sales_records' : 'sales_collections'; ?>&tab=sales<?php echo !empty($filters['customer_id']) ? '&customer_id=' . urlencode($filters['customer_id']) : ''; ?><?php echo !empty($filters['status']) ? '&status=' . urlencode($filters['status']) : ''; ?><?php echo !empty($filters['date_from']) ? '&date_from=' . urlencode($filters['date_from']) : ''; ?><?php echo !empty($filters['date_to']) ? '&date_to=' . urlencode($filters['date_to']) : ''; ?>">
-            <i class="bi bi-cart-check me-2"></i>المبيعات
-        </a>
-    </li>
-    <li class="nav-item">
-        <a class="nav-link <?php echo $activeTab === 'exchanges' ? 'active' : ''; ?>" href="?page=<?php echo $isSalesRecords ? 'sales_records' : 'sales_collections'; ?>&tab=exchanges<?php echo !empty($exchangeFilters['customer_id']) ? '&customer_id=' . urlencode($exchangeFilters['customer_id']) : ''; ?><?php echo !empty($exchangeFilters['status']) ? '&status=' . urlencode($exchangeFilters['status']) : ''; ?><?php echo !empty($exchangeFilters['date_from']) ? '&date_from=' . urlencode($exchangeFilters['date_from']) : ''; ?><?php echo !empty($exchangeFilters['date_to']) ? '&date_to=' . urlencode($exchangeFilters['date_to']) : ''; ?>">
-            <i class="bi bi-arrow-left-right me-2"></i>الاستبدالات
-        </a>
-    </li>
-</ul>
 
 <!-- الفلاتر -->
 <?php 
@@ -309,8 +296,69 @@ $filterCardStyle = $isSalesRecords ? 'background: linear-gradient(135deg,rgb(12,
     </div>
 </div>
 
-<!-- قائمة المبيعات -->
-<?php if ($activeTab === 'sales'): ?>
+<?php if ($activeTab === 'exchanges'): ?>
+<?php
+// ========== قسم سجلات الاستبدال ==========
+// جلب عمليات الاستبدال للمندوب
+$exchangesPageNum = isset($_GET['p']) ? max(1, intval($_GET['p'])) : 1;
+$exchangesPerPage = 20;
+$exchangesOffset = ($exchangesPageNum - 1) * $exchangesPerPage;
+
+// التأكد من وجود جدول exchanges
+$exchangesTableCheck = $db->queryOne("SHOW TABLES LIKE 'exchanges'");
+$exchanges = [];
+$totalExchanges = 0;
+$totalExchangePages = 0;
+
+if (!empty($exchangesTableCheck)) {
+    // استخدام دالة getExchanges من includes/exchanges.php
+    ensureExchangeSchema();
+    
+    // حساب العدد الإجمالي
+    $exchangeCountSql = "SELECT COUNT(*) as total FROM exchanges e WHERE 1=1";
+    $exchangeCountParams = [];
+    
+    if ($currentUser['role'] === 'sales') {
+        $exchangeCountSql .= " AND e.sales_rep_id = ?";
+        $exchangeCountParams[] = $currentUser['id'];
+    }
+    
+    if (!empty($exchangeFilters['customer_id'])) {
+        $exchangeCountSql .= " AND e.customer_id = ?";
+        $exchangeCountParams[] = $exchangeFilters['customer_id'];
+    }
+    
+    if (!empty($exchangeFilters['status'])) {
+        $exchangeCountSql .= " AND e.status = ?";
+        $exchangeCountParams[] = $exchangeFilters['status'];
+    }
+    
+    if (!empty($exchangeFilters['date_from'])) {
+        $exchangeCountSql .= " AND DATE(e.exchange_date) >= ?";
+        $exchangeCountParams[] = $exchangeFilters['date_from'];
+    }
+    
+    if (!empty($exchangeFilters['date_to'])) {
+        $exchangeCountSql .= " AND DATE(e.exchange_date) <= ?";
+        $exchangeCountParams[] = $exchangeFilters['date_to'];
+    }
+    
+    $totalExchangeResult = $db->queryOne($exchangeCountSql, $exchangeCountParams);
+    $totalExchanges = $totalExchangeResult['total'] ?? 0;
+    $totalExchangePages = ceil($totalExchanges / $exchangesPerPage);
+    
+    // جلب الاستبدالات
+    $exchanges = getExchanges($exchangeFilters, $exchangesPerPage, $exchangesOffset);
+}
+?>
+
+<!-- قسم سجلات الاستبدال -->
+<?php 
+$tableCardClass = $isSalesRecords ? 'border-0 shadow-lg' : 'shadow-sm';
+$tableHeaderClass = $isSalesRecords ? 'bg-gradient' : 'bg-primary';
+$tableHeaderStyle = $isSalesRecords ? 'background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); border-radius: 12px 12px 0 0;' : '';
+?>
+<div class="card <?php echo $tableCardClass; ?>" style="<?php echo $isSalesRecords ? 'border-radius: 12px; overflow: hidden;' : ''; ?>">
 <?php 
 $tableCardClass = $isSalesRecords ? 'border-0 shadow-lg' : 'shadow-sm';
 $tableHeaderClass = $isSalesRecords ? 'bg-gradient' : 'bg-primary';
