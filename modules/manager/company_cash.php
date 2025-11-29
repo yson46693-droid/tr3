@@ -3,7 +3,7 @@
  * صفحة خزنة الشركة - نسخة من صفحة المعاملات المالية للمحاسب
  */
 
- if (!defined('ACCESS_ALLOWED')) {
+if (!defined('ACCESS_ALLOWED')) {
     die('Direct access not allowed');
 }
 
@@ -82,6 +82,9 @@ if (isset($_GET['ajax']) && $_GET['ajax'] === 'get_sales_rep_balance') {
         ob_end_clean();
     }
     
+    // بدء output buffering جديد
+    ob_start();
+    
     // إرسال headers
     header('Content-Type: application/json; charset=utf-8');
     header('Cache-Control: no-cache, must-revalidate');
@@ -90,39 +93,36 @@ if (isset($_GET['ajax']) && $_GET['ajax'] === 'get_sales_rep_balance') {
     $response = ['success' => false, 'message' => ''];
     $salesRepId = isset($_GET['sales_rep_id']) ? intval($_GET['sales_rep_id']) : 0;
     
-    if ($salesRepId <= 0) {
-        $response['message'] = 'معرف المندوب غير صحيح';
-        echo json_encode($response, JSON_UNESCAPED_UNICODE | JSON_PARTIAL_OUTPUT_ON_ERROR);
-        exit;
-    }
-    
     try {
-        $balance = calculateSalesRepCashBalance($salesRepId);
-        
-        $salesRep = $db->queryOne(
-            "SELECT id, username, full_name FROM users WHERE id = ? AND role = 'sales' AND status = 'active'",
-            [$salesRepId]
-        );
-        
-        if (empty($salesRep)) {
-            $response['message'] = 'المندوب غير موجود أو غير نشط';
-            echo json_encode($response, JSON_UNESCAPED_UNICODE | JSON_PARTIAL_OUTPUT_ON_ERROR);
-            exit;
+        if ($salesRepId <= 0) {
+            $response['message'] = 'معرف المندوب غير صحيح';
+        } else {
+            $balance = calculateSalesRepCashBalance($salesRepId);
+            
+            $salesRep = $db->queryOne(
+                "SELECT id, username, full_name FROM users WHERE id = ? AND role = 'sales' AND status = 'active'",
+                [$salesRepId]
+            );
+            
+            if (empty($salesRep)) {
+                $response['message'] = 'المندوب غير موجود أو غير نشط';
+            } else {
+                $response = [
+                    'success' => true,
+                    'balance' => floatval($balance),
+                    'sales_rep_name' => htmlspecialchars($salesRep['full_name'] ?? $salesRep['username'], ENT_QUOTES, 'UTF-8')
+                ];
+            }
         }
-        
-        $response = [
-            'success' => true,
-            'balance' => floatval($balance),
-            'sales_rep_name' => htmlspecialchars($salesRep['full_name'] ?? $salesRep['username'], ENT_QUOTES, 'UTF-8')
-        ];
-        
-        echo json_encode($response, JSON_UNESCAPED_UNICODE | JSON_PARTIAL_OUTPUT_ON_ERROR);
     } catch (Throwable $e) {
         error_log('Error getting sales rep balance [ID: ' . $salesRepId . ']: ' . $e->getMessage() . ' | Trace: ' . $e->getTraceAsString());
         $response['message'] = 'حدث خطأ أثناء جلب رصيد المندوب. يرجى المحاولة مرة أخرى.';
-        echo json_encode($response, JSON_UNESCAPED_UNICODE | JSON_PARTIAL_OUTPUT_ON_ERROR);
     }
     
+    // تنظيف output buffer وإرسال JSON
+    ob_clean();
+    echo json_encode($response, JSON_UNESCAPED_UNICODE | JSON_PARTIAL_OUTPUT_ON_ERROR);
+    ob_end_flush();
     exit;
 }
 
@@ -772,8 +772,12 @@ document.addEventListener('DOMContentLoaded', function() {
                 }
                 
                 // جلب رصيد المندوب
-                const currentUrl = window.location.pathname;
-                fetch(currentUrl + '?ajax=get_sales_rep_balance&sales_rep_id=' + encodeURIComponent(salesRepId), {
+                // بناء URL بشكل صحيح
+                const url = new URL(window.location.href);
+                url.searchParams.set('ajax', 'get_sales_rep_balance');
+                url.searchParams.set('sales_rep_id', salesRepId);
+                
+                fetch(url.toString(), {
                     method: 'GET',
                     headers: {
                         'Accept': 'application/json',
@@ -782,16 +786,20 @@ document.addEventListener('DOMContentLoaded', function() {
                     cache: 'no-cache'
                 })
                 .then(response => {
-                    const contentType = response.headers.get('content-type');
-                    if (!contentType || !contentType.includes('application/json')) {
-                        throw new Error('Invalid response type. Expected JSON but got: ' + contentType);
-                    }
-                    
-                    if (!response.ok) {
-                        throw new Error('HTTP error! status: ' + response.status);
-                    }
+                    // التحقق من content-type أولاً
+                    const contentType = response.headers.get('content-type') || '';
                     
                     return response.text().then(text => {
+                        // إذا لم يكن JSON، عرض الخطأ
+                        if (!contentType.includes('application/json')) {
+                            console.error('Server response (first 500 chars):', text.substring(0, 500));
+                            throw new Error('Invalid response type. Expected JSON but got: ' + contentType);
+                        }
+                        
+                        if (!response.ok) {
+                            throw new Error('HTTP error! status: ' + response.status);
+                        }
+                        
                         if (!text || text.trim() === '') {
                             throw new Error('Empty response from server');
                         }
@@ -800,7 +808,7 @@ document.addEventListener('DOMContentLoaded', function() {
                             return JSON.parse(text);
                         } catch (parseError) {
                             console.error('JSON Parse Error:', parseError);
-                            console.error('Response text:', text.substring(0, 200));
+                            console.error('Response text:', text.substring(0, 500));
                             throw new Error('Invalid JSON response: ' + parseError.message);
                         }
                     });
