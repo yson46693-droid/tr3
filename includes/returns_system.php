@@ -1045,10 +1045,16 @@ function approveReturn(int $returnId, ?int $approvedBy = null, ?string $notes = 
         
         try {
             // 1. تحديث حالة المرتجع إلى approved
-            $db->execute(
+            $updateResult = $db->execute(
                 "UPDATE returns SET status = 'approved', approved_by = ?, approved_at = NOW(), notes = ? WHERE id = ?",
                 [$approvedBy, $notes ?: null, $returnId]
             );
+            
+            if (($updateResult['affected_rows'] ?? 0) === 0) {
+                throw new RuntimeException('فشل تحديث حالة المرتجع إلى approved');
+            }
+            
+            error_log("Return {$returnId} status updated to 'approved', affected rows: " . ($updateResult['affected_rows'] ?? 0));
             
             // 2. معالجة التسوية المالية
             $financialResult = processReturnFinancials($returnId, $approvedBy);
@@ -1201,12 +1207,16 @@ function approveReturn(int $returnId, ?int $approvedBy = null, ?string $notes = 
             }
             
             // 6. تحديث الحالة إلى processed
-            $db->execute(
+            $updateResult = $db->execute(
                 "UPDATE returns SET status = 'processed', updated_at = NOW() WHERE id = ?",
                 [$returnId]
             );
             
-            error_log("Return {$returnId} status updated to 'processed' in transaction");
+            if (($updateResult['affected_rows'] ?? 0) === 0) {
+                throw new RuntimeException('فشل تحديث حالة المرتجع إلى processed');
+            }
+            
+            error_log("Return {$returnId} status updated to 'processed' in transaction, affected rows: " . ($updateResult['affected_rows'] ?? 0));
             
             // 7. الموافقة على طلب الموافقة
             $entityColumn = getApprovalsEntityColumn();
@@ -1229,7 +1239,28 @@ function approveReturn(int $returnId, ?int $approvedBy = null, ?string $notes = 
                 'notes' => $notes
             ]);
             
+            // Commit المعاملة
             $db->commit();
+            
+            // التحقق من أن الحالة تم تحديثها بشكل صحيح بعد commit
+            $verifyReturn = $db->queryOne(
+                "SELECT status FROM returns WHERE id = ?",
+                [$returnId]
+            );
+            
+            if (empty($verifyReturn)) {
+                error_log("ERROR: Return {$returnId} not found after commit!");
+                throw new RuntimeException('المرتجع غير موجود بعد المعاملة');
+            }
+            
+            $finalStatus = $verifyReturn['status'] ?? 'unknown';
+            if ($finalStatus !== 'processed') {
+                error_log("ERROR: Return {$returnId} status is '{$finalStatus}' instead of 'processed' after commit!");
+                // لا نرمي خطأ هنا لأن المعاملة تم commit بالفعل
+                // لكن نسجل الخطأ للمتابعة
+            } else {
+                error_log("SUCCESS: Return {$returnId} status confirmed as 'processed' after commit");
+            }
             
             // بناء رسالة النجاح
             $financialNote = '';

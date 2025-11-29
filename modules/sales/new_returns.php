@@ -95,7 +95,7 @@ if ($batchFilter) {
 }
 
 $sql .= " GROUP BY r.id
-          ORDER BY r.created_at DESC
+          ORDER BY COALESCE(r.updated_at, r.approved_at, r.created_at) DESC, r.id DESC
           LIMIT ? OFFSET ?";
 
 $params[] = $perPage;
