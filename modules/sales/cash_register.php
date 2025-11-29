@@ -328,8 +328,9 @@ if (!empty($damagedReturnsTableExists)) {
     }
 }
 
-// رصيد الخزنة = التحصيلات + المبيعات المدفوعة بالكامل - المبالغ المحصلة من المندوب - المرتجعات
-$cashRegisterBalance = $totalCollections + $fullyPaidSales - $collectedFromRep - $totalReturns;
+// رصيد الخزنة = التحصيلات + المبيعات المدفوعة بالكامل - المبالغ المحصلة من المندوب
+// لا يتم خصم المرتجعات من رصيد الخزنة الإجمالي
+$cashRegisterBalance = $totalCollections + $fullyPaidSales - $collectedFromRep;
 
 // حساب المبيعات المعلقة (الديون) بالاعتماد على أرصدة العملاء لضمان التطابق مع صفحة العملاء
 $pendingSales = 0.0;
@@ -391,6 +392,44 @@ if (!empty($invoicesTableExists)) {
     
     $monthSalesResult = $db->queryOne($monthSalesSql, [$salesRepId]);
     $monthSales = (float)($monthSalesResult['total'] ?? 0);
+}
+
+// خصم قيمة المرتجعات من مبيعات اليوم والشهر
+if (!empty($returnsTableExists)) {
+    try {
+        // حساب المرتجعات اليومية
+        $todayReturnsResult = $db->queryOne(
+            "SELECT COALESCE(SUM(refund_amount), 0) as total_returns
+             FROM returns
+             WHERE sales_rep_id = ? 
+               AND DATE(return_date) = CURDATE()
+               AND status IN ('approved', 'processed')
+               AND refund_amount > 0",
+            [$salesRepId]
+        );
+        $todayReturns = (float)($todayReturnsResult['total_returns'] ?? 0);
+        
+        // خصم المرتجعات اليومية من مبيعات اليوم
+        $todaySales = max(0, $todaySales - $todayReturns);
+        
+        // حساب المرتجعات الشهرية
+        $monthReturnsResult = $db->queryOne(
+            "SELECT COALESCE(SUM(refund_amount), 0) as total_returns
+             FROM returns
+             WHERE sales_rep_id = ? 
+               AND MONTH(return_date) = MONTH(NOW()) 
+               AND YEAR(return_date) = YEAR(NOW())
+               AND status IN ('approved', 'processed')
+               AND refund_amount > 0",
+            [$salesRepId]
+        );
+        $monthReturns = (float)($monthReturnsResult['total_returns'] ?? 0);
+        
+        // خصم المرتجعات الشهرية من مبيعات الشهر
+        $monthSales = max(0, $monthSales - $monthReturns);
+    } catch (Throwable $returnsError) {
+        error_log('Returns calculation error for daily/monthly sales: ' . $returnsError->getMessage());
+    }
 }
 
 if (!empty($collectionsTableExists)) {
