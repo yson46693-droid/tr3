@@ -245,13 +245,13 @@ function getCustomerStatementData($customerId) {
         .logo-placeholder {
             width: 80px;
             height: 80px;
-            border-radius: 48px;
+            border-radius: 24px;
             background: linear-gradient(135deg,rgb(6, 59, 134) 0%,rgb(3, 71, 155) 100%);
             display: flex;
             align-items: center;
             justify-content: center;
             color: white;
-            font-size: 80px;
+            font-size: 64px;
             font-weight: bold;
             overflow: hidden;
             position: relative;
