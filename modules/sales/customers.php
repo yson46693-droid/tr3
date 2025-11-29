@@ -3849,6 +3849,9 @@ document.addEventListener('DOMContentLoaded', function () {
                     renderCustomerPurchases();
                     renderCarInventory();
                     
+                    // تحديث الإجماليات بعد عرض البيانات
+                    calculateTotals();
+                    
                     if (loadingEl) loadingEl.classList.add('d-none');
                     if (contentEl) contentEl.classList.remove('d-none');
                     if (errorEl) errorEl.classList.add('d-none');
@@ -3895,8 +3898,9 @@ document.addEventListener('DOMContentLoaded', function () {
             const quantityInput = document.querySelector(`.customer-quantity-input[data-invoice-item-id="${invoiceItemId}"]`);
             const checkbox = document.querySelector(`.customer-item-checkbox[data-invoice-item-id="${invoiceItemId}"]`);
             
-            if (quantityInput && checkbox) {
+            if (quantityInput && checkbox && checkbox.checked) {
                 const availableQty = parseFloat(checkbox.getAttribute('data-available-quantity'));
+                const unitPrice = parseFloat(item.unit_price) || parseFloat(checkbox.getAttribute('data-unit-price')) || 0;
                 let quantity = parseFloat(quantityInput.value) || 0;
                 
                 // التحقق من الكمية
@@ -3904,19 +3908,23 @@ document.addEventListener('DOMContentLoaded', function () {
                     hasErrors = true;
                     errorMessages.push('يجب إدخال كمية أكبر من صفر');
                     quantityInput.classList.add('is-invalid');
+                    quantity = 0;
                 } else if (quantity > availableQty) {
                     hasErrors = true;
                     errorMessages.push('الكمية المدخلة (' + quantity + ') أكبر من الكمية المتاحة (' + availableQty + ')');
                     quantityInput.classList.add('is-invalid');
+                    quantity = availableQty; // استخدام الكمية المتاحة كحد أقصى
                 } else {
                     quantityInput.classList.remove('is-invalid');
-                    // تحديث القيمة في selectedCustomerItems
-                    item.quantity = quantity;
-                    item.total_price = quantity * item.unit_price;
                 }
+                
+                // تحديث القيمة في selectedCustomerItems
+                item.quantity = quantity;
+                item.total_price = quantity * unitPrice;
+                
+                // إضافة للإجمالي
+                customerTotal += item.total_price;
             }
-            
-            customerTotal += parseFloat(item.total_price || 0);
         });
         
         // حساب إجمالي منتجات السيارة مع التحقق
@@ -3925,8 +3933,9 @@ document.addEventListener('DOMContentLoaded', function () {
             const quantityInput = document.querySelector(`.car-quantity-input[data-product-id="${productId}"]`);
             const checkbox = document.querySelector(`.car-item-checkbox[data-product-id="${productId}"]`);
             
-            if (quantityInput && checkbox) {
+            if (quantityInput && checkbox && checkbox.checked) {
                 const availableQty = parseFloat(checkbox.getAttribute('data-available-quantity'));
+                const unitPrice = parseFloat(item.unit_price) || parseFloat(checkbox.getAttribute('data-unit-price')) || 0;
                 let quantity = parseFloat(quantityInput.value) || 0;
                 
                 // التحقق من الكمية
@@ -3934,19 +3943,23 @@ document.addEventListener('DOMContentLoaded', function () {
                     hasErrors = true;
                     errorMessages.push('يجب إدخال كمية أكبر من صفر');
                     quantityInput.classList.add('is-invalid');
+                    quantity = 0;
                 } else if (quantity > availableQty) {
                     hasErrors = true;
                     errorMessages.push('الكمية المدخلة (' + quantity + ') أكبر من الكمية المتاحة (' + availableQty + ')');
                     quantityInput.classList.add('is-invalid');
+                    quantity = availableQty; // استخدام الكمية المتاحة كحد أقصى
                 } else {
                     quantityInput.classList.remove('is-invalid');
-                    // تحديث القيمة في selectedCarItems
-                    item.quantity = quantity;
-                    item.total_price = quantity * item.unit_price;
                 }
+                
+                // تحديث القيمة في selectedCarItems
+                item.quantity = quantity;
+                item.total_price = quantity * unitPrice;
+                
+                // إضافة للإجمالي
+                carTotal += item.total_price;
             }
-            
-            carTotal += parseFloat(item.total_price || 0);
         });
         
         const difference = customerTotal - carTotal;
@@ -4093,6 +4106,9 @@ document.addEventListener('DOMContentLoaded', function () {
                         renderCustomerPurchases();
                         renderCarInventory();
                         
+                        // تحديث الإجماليات بعد عرض البيانات
+                        calculateTotals();
+                        
                         const loadingEl = modalElement.querySelector('.replacement-loading');
                         const contentEl = modalElement.querySelector('.replacement-content');
                         const errorEl = modalElement.querySelector('.replacement-error');
@@ -4218,6 +4234,9 @@ document.addEventListener('DOMContentLoaded', function () {
                             // عرض البيانات
                             renderCustomerPurchases();
                             renderCarInventory();
+                            
+                            // تحديث الإجماليات بعد عرض البيانات
+                            calculateTotals();
                             
                             if (loadingEl) loadingEl.classList.add('d-none');
                             if (contentEl) contentEl.classList.remove('d-none');
@@ -4428,7 +4447,10 @@ document.addEventListener('DOMContentLoaded', function () {
             input.addEventListener('blur', function() {
                 const invoiceItemId = parseInt(this.getAttribute('data-invoice-item-id'));
                 const checkbox = document.querySelector(`.customer-item-checkbox[data-invoice-item-id="${invoiceItemId}"]`);
+                if (!checkbox) return;
+                
                 const availableQty = parseFloat(checkbox.getAttribute('data-available-quantity'));
+                const unitPrice = parseFloat(checkbox.getAttribute('data-unit-price'));
                 
                 let quantity = parseFloat(this.value) || 0;
                 
@@ -4441,6 +4463,16 @@ document.addEventListener('DOMContentLoaded', function () {
                     quantity = availableQty;
                     this.value = availableQty;
                 }
+                
+                // تحديث selectedCustomerItems
+                const itemIndex = selectedCustomerItems.findIndex(item => item.invoice_item_id === invoiceItemId);
+                if (itemIndex !== -1 && checkbox.checked) {
+                    selectedCustomerItems[itemIndex].quantity = quantity;
+                    selectedCustomerItems[itemIndex].total_price = quantity * unitPrice;
+                }
+                
+                // تحديث الإجماليات
+                calculateTotals();
             });
         });
         
