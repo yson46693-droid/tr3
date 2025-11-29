@@ -1226,7 +1226,7 @@ function setBatchDetailsInCache(batchNumber, data) {
     });
 }
 
-function showBatchDetailsModal(batchNumber, productName) {
+function showBatchDetailsModal(batchNumber, productName, retryCount = 0) {
     if (!batchNumber || typeof batchNumber !== 'string' || batchNumber.trim() === '') {
         console.error('Invalid batch number');
         return;
@@ -1243,7 +1243,14 @@ function showBatchDetailsModal(batchNumber, productName) {
     
     const modalElement = document.getElementById('batchDetailsModal');
     if (!modalElement) {
-        console.error('batchDetailsModal not found');
+        // محاولة مرة أخرى بعد فترة قصيرة إذا كان النموذج غير موجود
+        if (retryCount < 3) {
+            setTimeout(function() {
+                showBatchDetailsModal(batchNumber, productName, retryCount + 1);
+            }, 200);
+            return;
+        }
+        console.error('batchDetailsModal not found after retries');
         return;
     }
     
@@ -1254,11 +1261,42 @@ function showBatchDetailsModal(batchNumber, productName) {
     const modalTitle = modalElement.querySelector('.modal-title');
     
     // التحقق من وجود العناصر المطلوبة
-    if (!loader || !errorAlert || !contentWrapper) {
-        console.error('Required modal elements not found');
+    // loader و contentWrapper ضروريان، errorAlert اختياري
+    if (!loader || !contentWrapper) {
+        // محاولة مرة أخرى بعد فترة قصيرة إذا كانت العناصر غير موجودة
+        if (retryCount < 3) {
+            setTimeout(function() {
+                showBatchDetailsModal(batchNumber, productName, retryCount + 1);
+            }, 200);
+            return;
+        }
+        console.error('Required modal elements not found after retries', {
+            loader: !!loader,
+            errorAlert: !!errorAlert,
+            contentWrapper: !!contentWrapper
+        });
         alert('تعذر فتح تفاصيل التشغيلة. يرجى تحديث الصفحة.');
         return;
     }
+    
+    // إنشاء errorAlert ديناميكياً إذا لم يكن موجوداً
+    if (!errorAlert) {
+        const modalBody = modalElement.querySelector('.modal-body');
+        if (modalBody) {
+            const errorDivElement = document.createElement('div');
+            errorDivElement.className = 'alert alert-danger d-none';
+            errorDivElement.id = 'batchDetailsError';
+            errorDivElement.setAttribute('role', 'alert');
+            // إدراجه بعد loader
+            if (loader.nextSibling) {
+                modalBody.insertBefore(errorDivElement, loader.nextSibling);
+            } else {
+                modalBody.appendChild(errorDivElement);
+            }
+        }
+    }
+    
+    const finalErrorAlert = modalElement.querySelector('#batchDetailsError');
     
     if (modalTitle) {
         modalTitle.textContent = productName ? `تفاصيل التشغيلة - ${productName}` : 'تفاصيل التشغيلة';
@@ -1269,7 +1307,7 @@ function showBatchDetailsModal(batchNumber, productName) {
     if (cachedData) {
         // استخدام البيانات من cache مباشرة
         loader.classList.add('d-none');
-        errorAlert.classList.add('d-none');
+        if (finalErrorAlert) finalErrorAlert.classList.add('d-none');
         renderBatchDetails(cachedData);
         if (contentWrapper) contentWrapper.classList.remove('d-none');
         modalInstance.show();
@@ -1278,7 +1316,7 @@ function showBatchDetailsModal(batchNumber, productName) {
     
     // إذا لم تكن البيانات موجودة في cache، جلبها من الخادم
     loader.classList.remove('d-none');
-    errorAlert.classList.add('d-none');
+    if (finalErrorAlert) finalErrorAlert.classList.add('d-none');
     contentWrapper.classList.add('d-none');
     batchDetailsIsLoading = true;
     
@@ -1299,26 +1337,29 @@ function showBatchDetailsModal(batchNumber, productName) {
         if (loader) loader.classList.add('d-none');
         batchDetailsIsLoading = false;
         
+        const errorAlertEl = modalElement.querySelector('#batchDetailsError');
+        
         if (data.success && data.batch) {
             // حفظ البيانات في cache
             setBatchDetailsInCache(batchNumber, data.batch);
             
             renderBatchDetails(data.batch);
             if (contentWrapper) contentWrapper.classList.remove('d-none');
-            if (errorAlert) errorAlert.classList.add('d-none');
+            if (errorAlertEl) errorAlertEl.classList.add('d-none');
         } else {
-            if (errorAlert) {
-                errorAlert.textContent = data.message || 'تعذر تحميل تفاصيل التشغيلة';
-                errorAlert.classList.remove('d-none');
+            if (errorAlertEl) {
+                errorAlertEl.textContent = data.message || 'تعذر تحميل تفاصيل التشغيلة';
+                errorAlertEl.classList.remove('d-none');
             }
             if (contentWrapper) contentWrapper.classList.add('d-none');
         }
     })
     .catch(error => {
         if (loader) loader.classList.add('d-none');
-        if (errorAlert) {
-            errorAlert.textContent = 'حدث خطأ أثناء تحميل التفاصيل: ' + (error.message || 'خطأ غير معروف');
-            errorAlert.classList.remove('d-none');
+        const errorAlertEl = modalElement.querySelector('#batchDetailsError');
+        if (errorAlertEl) {
+            errorAlertEl.textContent = 'حدث خطأ أثناء تحميل التفاصيل: ' + (error.message || 'خطأ غير معروف');
+            errorAlertEl.classList.remove('d-none');
         }
         if (contentWrapper) contentWrapper.classList.add('d-none');
         batchDetailsIsLoading = false;
@@ -1547,6 +1588,41 @@ function initBatchDetailsEventListeners() {
         document.addEventListener('DOMContentLoaded', waitForResources);
     } else {
         waitForResources();
+    }
+    
+    // إضافة event listener للنموذج عند فتحه لضمان جاهزية العناصر
+    const modalElement = document.getElementById('batchDetailsModal');
+    if (modalElement) {
+        modalElement.addEventListener('shown.bs.modal', function() {
+            // استخدام requestAnimationFrame لضمان أن النموذج أصبح مرئياً بالكامل في DOM
+            requestAnimationFrame(function() {
+                requestAnimationFrame(function() {
+                    // التأكد من وجود العناصر
+                    const loader = modalElement.querySelector('#batchDetailsLoading');
+                    const errorAlert = modalElement.querySelector('#batchDetailsError');
+                    const contentWrapper = modalElement.querySelector('#batchDetailsContent');
+                    
+                    // إنشاء errorAlert ديناميكياً إذا لم يكن موجوداً
+                    if (!errorAlert) {
+                        const modalBody = modalElement.querySelector('.modal-body');
+                        if (modalBody) {
+                            const errorDivElement = document.createElement('div');
+                            errorDivElement.className = 'alert alert-danger d-none';
+                            errorDivElement.id = 'batchDetailsError';
+                            errorDivElement.setAttribute('role', 'alert');
+                            // إدراجه بعد loader
+                            if (loader && loader.nextSibling) {
+                                modalBody.insertBefore(errorDivElement, loader.nextSibling);
+                            } else if (loader) {
+                                modalBody.insertBefore(errorDivElement, loader);
+                            } else {
+                                modalBody.appendChild(errorDivElement);
+                            }
+                        }
+                    }
+                });
+            });
+        });
     }
 }
 
