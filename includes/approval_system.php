@@ -1004,6 +1004,48 @@ function updateEntityStatus($type, $entityId, $status, $approvedBy) {
                 insertNegativeCollection($customerId, $salesRepId, $refundAmount, $returnNumber, $approvedBy);
             }
             
+            // إرسال إشعار للمندوب عند الموافقة على المرتجع
+            if ($status === 'approved' && !empty($return['sales_rep_id'])) {
+                try {
+                    require_once __DIR__ . '/notifications.php';
+                    require_once __DIR__ . '/path_helper.php';
+                    
+                    $salesRepId = (int)$return['sales_rep_id'];
+                    $returnNumber = $return['return_number'] ?? 'RET-' . $entityId;
+                    $refundAmount = (float)($return['refund_amount'] ?? 0);
+                    
+                    // جلب اسم العميل
+                    $customer = $db->queryOne(
+                        "SELECT name FROM customers WHERE id = ?",
+                        [$return['customer_id'] ?? 0]
+                    );
+                    $customerName = $customer['name'] ?? 'غير معروف';
+                    
+                    $notificationTitle = 'تمت الموافقة على طلب المرتجع';
+                    $notificationMessage = sprintf(
+                        "تمت الموافقة على طلب المرتجع رقم %s\n\nالعميل: %s\nالمبلغ: %s ج.م",
+                        $returnNumber,
+                        $customerName,
+                        number_format($refundAmount, 2)
+                    );
+                    
+                    $basePath = getBasePath();
+                    $notificationLink = $basePath . '/dashboard/sales.php?page=returns&id=' . $entityId;
+                    
+                    createNotification(
+                        $salesRepId,
+                        $notificationTitle,
+                        $notificationMessage,
+                        'success',
+                        $notificationLink,
+                        false
+                    );
+                } catch (Exception $notifException) {
+                    // لا نسمح لفشل الإشعار بإلغاء نجاح الموافقة
+                    error_log('Notification creation exception during invoice_return_company approval: ' . $notifException->getMessage());
+                }
+            }
+            
             // تعطيل خصم المرتب - لا يتم خصم أي مبلغ من تحصيلات المندوب
             // إذا تمت الموافقة، خصم 2% من إجمالي مبلغ المرتجع من راتب المندوب - DISABLED
             // if ($status === 'approved' && !empty($return['sales_rep_id']) && !empty($return['refund_amount'])) {
@@ -1130,7 +1172,7 @@ function updateEntityStatus($type, $entityId, $status, $approvedBy) {
         case 'return_request':
             // الحصول على بيانات المرتجع
             $return = $db->queryOne(
-                "SELECT r.*, c.balance as customer_balance
+                "SELECT r.*, c.balance as customer_balance, c.name as customer_name
                  FROM returns r
                  LEFT JOIN customers c ON r.customer_id = c.id
                  WHERE r.id = ?",
@@ -1157,6 +1199,42 @@ function updateEntityStatus($type, $entityId, $status, $approvedBy) {
                 
                 if (!$result['success']) {
                     throw new Exception($result['message'] ?? 'فشل معالجة المرتجع');
+                }
+                
+                // إرسال إشعار للمندوب عند الموافقة على المرتجع
+                $salesRepId = (int)($return['sales_rep_id'] ?? 0);
+                if ($salesRepId > 0) {
+                    try {
+                        require_once __DIR__ . '/notifications.php';
+                        require_once __DIR__ . '/path_helper.php';
+                        
+                        $returnNumber = $return['return_number'] ?? 'RET-' . $entityId;
+                        $customerName = $return['customer_name'] ?? 'غير معروف';
+                        $refundAmount = (float)($return['refund_amount'] ?? 0);
+                        
+                        $notificationTitle = 'تمت الموافقة على طلب المرتجع';
+                        $notificationMessage = sprintf(
+                            "تمت الموافقة على طلب المرتجع رقم %s\n\nالعميل: %s\nالمبلغ: %s ج.م",
+                            $returnNumber,
+                            $customerName,
+                            number_format($refundAmount, 2)
+                        );
+                        
+                        $basePath = getBasePath();
+                        $notificationLink = $basePath . '/dashboard/sales.php?page=returns&id=' . $entityId;
+                        
+                        createNotification(
+                            $salesRepId,
+                            $notificationTitle,
+                            $notificationMessage,
+                            'success',
+                            $notificationLink,
+                            false
+                        );
+                    } catch (Exception $notifException) {
+                        // لا نسمح لفشل الإشعار بإلغاء نجاح الموافقة
+                        error_log('Notification creation exception during return approval: ' . $notifException->getMessage());
+                    }
                 }
                 
                 // تسجيل سجل التدقيق
