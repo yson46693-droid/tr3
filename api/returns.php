@@ -307,6 +307,7 @@ function handleGetPurchaseHistory(): void
             $invoiceItemId = (int)$row['invoice_item_id'];
             $returnedQuantities[$invoiceItemId] = (float)$row['returned_quantity'];
         }
+        error_log("Returned quantities for customer {$customerId}: " . json_encode($returnedQuantities));
     }
     
     // ... لاحقاً في الكود ...
