@@ -189,7 +189,7 @@ if ($activeTab === 'products') {
             dr.id,
             dr.product_id,
             COALESCE(p.name, CONCAT('منتج رقم ', dr.product_id)) as product_name,
-            p.code as product_code,
+            NULL as product_code,
             COALESCE(bn.batch_number, '') as batch_number,
             dr.quantity as damaged_quantity,
             COALESCE(ri.total_price, 0) as waste_value,
