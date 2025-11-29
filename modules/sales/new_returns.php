@@ -288,11 +288,19 @@ if ($currentUser['role'] === 'sales') {
                                                 </span>
                                             </td>
                                             <td>
-                                                <button class="btn btn-sm btn-info" 
-                                                        onclick="viewReturnDetails(<?php echo $return['id']; ?>)"
-                                                        title="عرض التفاصيل">
-                                                    <i class="bi bi-eye"></i>
-                                                </button>
+                                                <div class="btn-group" role="group">
+                                                    <button class="btn btn-sm btn-info" 
+                                                            onclick="viewReturnDetails(<?php echo $return['id']; ?>)"
+                                                            title="عرض التفاصيل">
+                                                        <i class="bi bi-eye"></i>
+                                                    </button>
+                                                    <a href="<?php echo getRelativeUrl('print_return_invoice.php?id=' . (int)$return['id']); ?>" 
+                                                       target="_blank" 
+                                                       class="btn btn-sm btn-primary"
+                                                       title="طباعة فاتورة المرتجع">
+                                                        <i class="bi bi-printer"></i>
+                                                    </a>
+                                                </div>
                                             </td>
                                         </tr>
                                     <?php endforeach; ?>
