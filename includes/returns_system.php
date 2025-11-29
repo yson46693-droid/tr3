@@ -1001,19 +1001,27 @@ function applyReturnSalaryDeduction(int $returnId, ?int $salesRepId = null, ?int
             );
             
             if ($salesRep) {
-                sendNotification(
-                    $salesRepId,
-                    'خصم من المرتب - مرتجع',
-                    sprintf(
-                        "تم خصم %.2f جنيه من مرتبك بسبب مرتجع رقم %s.\nالشهر: %d/%d",
-                        $amountToDeduct,
-                        $return['return_number'],
-                        $month,
-                        $year
-                    ),
-                    'warning',
-                    null
-                );
+                // محاولة إرسال إشعار إذا كانت الدالة موجودة
+                if (function_exists('sendNotification')) {
+                    try {
+                        sendNotification(
+                            $salesRepId,
+                            'خصم من المرتب - مرتجع',
+                            sprintf(
+                                "تم خصم %.2f جنيه من مرتبك بسبب مرتجع رقم %s.\nالشهر: %d/%d",
+                                $amountToDeduct,
+                                $return['return_number'],
+                                $month,
+                                $year
+                            ),
+                            'warning',
+                            null
+                        );
+                    } catch (Throwable $e) {
+                        // تجاهل خطأ الإشعارات - لا يجب أن يمنع الخصم
+                        error_log("Failed to send notification for return salary deduction: " . $e->getMessage());
+                    }
+                }
             }
             
             if ($transactionStarted) {

@@ -257,6 +257,11 @@ function handleGetPurchaseHistory(): void
         [$customerId]
     );
     
+    // تأكد من أن $purchaseHistory هو array
+    if (!is_array($purchaseHistory)) {
+        $purchaseHistory = [];
+    }
+
     error_log("Purchase history query returned " . count($purchaseHistory) . " items for customer ID: {$customerId}");
     
     // إرجاع معلومات العميل
