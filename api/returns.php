@@ -919,13 +919,19 @@ function handleGetRecentRequests(): void
                     FROM returns r
                     LEFT JOIN customers c ON r.customer_id = c.id
                     LEFT JOIN invoices i ON r.invoice_id = i.id
-                    WHERE r.created_by = ?";
+                    WHERE 1=1";
     
-    $params = [$currentUser['id']];
+    $params = [];
     
+    // للمندوب: عرض المرتجعات المرتبطة به
     if ($salesRepId) {
-        $returnsSql .= " AND r.sales_rep_id = ?";
+        $returnsSql .= " AND (r.sales_rep_id = ? OR r.created_by = ?)";
         $params[] = $salesRepId;
+        $params[] = $currentUser['id'];
+    } else {
+        // للمدير: عرض جميع المرتجعات
+        $returnsSql .= " AND r.created_by = ?";
+        $params[] = $currentUser['id'];
     }
     
     $returnsSql .= " ORDER BY r.created_at DESC LIMIT ?";
@@ -934,7 +940,7 @@ function handleGetRecentRequests(): void
     $returns = $db->query($returnsSql, $params);
     
     $statusLabels = [
-        'pending' => 'قيد الانتظار',
+        'pending' => 'قيد المراجعة',
         'approved' => 'موافق عليه',
         'rejected' => 'مرفوض',
         'completed' => 'مكتمل',

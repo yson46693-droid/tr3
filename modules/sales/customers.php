@@ -1523,6 +1523,7 @@ let purchaseHistoryData = []; // Store original purchase history data
 // Open purchase history modal - using event delegation for dynamic content
 document.addEventListener('DOMContentLoaded', function() {
     const modalElement = document.getElementById('customerPurchaseHistoryModal');
+    const createReturnModalElement = document.getElementById('createReturnModal');
     
     // Add event listener to reload data every time modal is shown
     if (modalElement) {
@@ -1549,6 +1550,82 @@ document.addEventListener('DOMContentLoaded', function() {
             }
             selectedItemsForReturn = [];
             purchaseHistoryData = [];
+        });
+    }
+    
+    // Add event listener to reload latest data when create return modal is shown
+    if (createReturnModalElement) {
+        createReturnModalElement.addEventListener('shown.bs.modal', function() {
+            // Reload purchase history data to get latest available quantities
+            if (currentCustomerId && selectedItemsForReturn.length > 0) {
+                // Fetch latest purchase history data
+                fetch(basePath + '/api/returns.php?action=get_purchase_history&customer_id=' + currentCustomerId, {
+                    credentials: 'same-origin',
+                    headers: {
+                        'Accept': 'application/json'
+                    }
+                })
+                .then(response => {
+                    const contentType = response.headers.get('content-type') || '';
+                    if (!contentType.includes('application/json')) {
+                        return response.text().then(text => {
+                            console.error('Expected JSON but got:', contentType, text.substring(0, 500));
+                            throw new Error('استجابة غير صحيحة من الخادم');
+                        });
+                    }
+                    if (!response.ok) {
+                        return response.json().then(errorData => {
+                            throw new Error(errorData.message || 'خطأ في الطلب: ' + response.status);
+                        }).catch(() => {
+                            throw new Error('حدث خطأ في الطلب: ' + response.status);
+                        });
+                    }
+                    return response.json();
+                })
+                .then(data => {
+                    if (data.success && data.purchase_history) {
+                        // Update purchaseHistoryData with latest data
+                        purchaseHistoryData = data.purchase_history || [];
+                        
+                        // Update available quantities in the modal
+                        selectedItemsForReturn.forEach(function(item) {
+                            const historyItem = purchaseHistoryData.find(function(h) {
+                                return h.invoice_item_id === item.invoice_item_id;
+                            });
+                            
+                            if (historyItem) {
+                                const availableQty = parseFloat(historyItem.available_to_return) || 0;
+                                
+                                // Update available quantity display
+                                const availableCell = document.getElementById(`available-qty-${item.invoice_item_id}`);
+                                if (availableCell) {
+                                    availableCell.textContent = availableQty.toFixed(2);
+                                }
+                                
+                                // Update max attribute for quantity input
+                                const qtyInput = document.querySelector(`.return-qty[data-invoice-item-id="${item.invoice_item_id}"]`);
+                                if (qtyInput) {
+                                    qtyInput.max = availableQty;
+                                    qtyInput.setAttribute('max', availableQty);
+                                    qtyInput.setAttribute('data-available-qty', availableQty);
+                                }
+                            }
+                        });
+                    }
+                })
+                .catch(error => {
+                    console.error('Error reloading purchase history in return modal:', error);
+                    // Don't show error to user, just log it - modal will use existing data
+                });
+            }
+        });
+        
+        // Clear content when modal is hidden
+        createReturnModalElement.addEventListener('hidden.bs.modal', function() {
+            const contentElement = document.getElementById('createReturnContent');
+            if (contentElement) {
+                contentElement.innerHTML = '<!-- Content will be filled by JavaScript -->';
+            }
         });
     }
     
@@ -1734,17 +1811,32 @@ function updateSelectedItems() {
         const row = checkbox.closest('tr');
         const available = parseFloat(row.querySelector('td:nth-child(7)').textContent.trim());
         const invoiceNumber = row.querySelector('td:nth-child(2)').textContent.trim();
-        if (available > 0) {
+        
+        // Get invoice_item_id to find latest data from purchaseHistoryData
+        const invoiceItemId = parseInt(checkbox.dataset.invoiceItemId);
+        
+        // Try to get latest available quantity from purchaseHistoryData
+        let latestAvailable = available;
+        if (purchaseHistoryData && purchaseHistoryData.length > 0) {
+            const historyItem = purchaseHistoryData.find(function(h) {
+                return h.invoice_item_id === invoiceItemId;
+            });
+            if (historyItem) {
+                latestAvailable = parseFloat(historyItem.available_to_return) || 0;
+            }
+        }
+        
+        if (latestAvailable > 0) {
             selectedItemsForReturn.push({
                 invoice_id: parseInt(checkbox.dataset.invoiceId),
                 invoice_number: invoiceNumber,
-                invoice_item_id: parseInt(checkbox.dataset.invoiceItemId),
+                invoice_item_id: invoiceItemId,
                 product_id: parseInt(checkbox.dataset.productId),
                 product_name: checkbox.dataset.productName,
                 unit_price: parseFloat(checkbox.dataset.unitPrice),
                 batch_number_ids: JSON.parse(checkbox.dataset.batchNumberIds || '[]'),
                 batch_numbers: JSON.parse(checkbox.dataset.batchNumbers || '[]'),
-                available_to_return: available
+                available_to_return: latestAvailable
             });
         }
     });

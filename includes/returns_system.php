@@ -1206,6 +1206,8 @@ function approveReturn(int $returnId, ?int $approvedBy = null, ?string $notes = 
                 [$returnId]
             );
             
+            error_log("Return {$returnId} status updated to 'processed' in transaction");
+            
             // 7. الموافقة على طلب الموافقة
             $entityColumn = getApprovalsEntityColumn();
             $approval = $db->queryOne(
