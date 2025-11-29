@@ -309,3 +309,142 @@ function calculateReturnCreditPortion(int $returnId): float
     }
 }
 
+/**
+ * دالة متوافقة مع النظام القديم - تعالج التسوية المالية للمرتجع
+ * هذه الدالة wrapper للدالة الجديدة processReturnFinancials()
+ * 
+ * @param int $customerId معرف العميل
+ * @param float $invoiceTotal إجمالي الفاتورة
+ * @param float $amountPaid المبلغ المدفوع
+ * @param float $customerBalance رصيد العميل الحالي
+ * @param float $returnAmount مبلغ المرتجع
+ * @param string $refundMethod طريقة الاسترداد
+ * @param int|null $salesRepId معرف المندوب
+ * @param string $returnNumber رقم المرتجع
+ * @param int|null $processedBy معرف المستخدم الذي قام بالمعالجة
+ * @return array ['success' => bool, 'message' => string, 'financialNote' => string]
+ */
+function processReturnFinancial(
+    int $customerId,
+    float $invoiceTotal,
+    float $amountPaid,
+    float $customerBalance,
+    float $returnAmount,
+    string $refundMethod = 'credit',
+    ?int $salesRepId = null,
+    string $returnNumber = '',
+    ?int $processedBy = null
+): array {
+    error_log(">>> processReturnFinancial (Legacy) START");
+    error_log("Customer ID: {$customerId}, Return Amount: {$returnAmount}, Balance: {$customerBalance}");
+    
+    try {
+        $db = db();
+        
+        // البحث عن المرتجع بالرقم أو إنشاء واحد مؤقت إذا لم يكن موجوداً
+        $returnId = null;
+        if ($returnNumber) {
+            $return = $db->queryOne(
+                "SELECT id, status FROM returns WHERE return_number = ?",
+                [$returnNumber]
+            );
+            if ($return) {
+                $returnId = (int)$return['id'];
+            }
+        }
+        
+        // إذا لم نجد المرتجع، نحسب مباشرة (للسيناريوهات القديمة)
+        if (!$returnId) {
+            // حساب الرصيد الجديد حسب القواعد
+            $debtReduction = 0.0;
+            $creditAdded = 0.0;
+            $newBalance = 0.0;
+            
+            $currentDebt = $customerBalance > 0 ? $customerBalance : 0.0;
+            
+            if ($currentDebt > 0) {
+                if ($returnAmount <= $currentDebt) {
+                    // المرتجع يغطي جزء أو كل الدين
+                    $debtReduction = $returnAmount;
+                    $newBalance = round($customerBalance - $returnAmount, 2);
+                    $creditAdded = 0.0;
+                } else {
+                    // المرتجع أكبر من الدين
+                    $debtReduction = $currentDebt;
+                    $creditAdded = round($returnAmount - $currentDebt, 2);
+                    $newBalance = -$creditAdded;
+                }
+            } else {
+                // العميل غير مدين
+                $debtReduction = 0.0;
+                $creditAdded = $returnAmount;
+                $newBalance = round($customerBalance - $returnAmount, 2);
+            }
+            
+            // تحديث رصيد العميل
+            $db->execute(
+                "UPDATE customers SET balance = ? WHERE id = ?",
+                [$newBalance, $customerId]
+            );
+            
+            // بناء رسالة النتيجة
+            $financialNote = '';
+            if ($debtReduction > 0 && $creditAdded > 0) {
+                $financialNote = sprintf("تم خصم %.2f ج.م من دين العميل وإضافة %.2f ج.م لرصيده الدائن", $debtReduction, $creditAdded);
+            } elseif ($debtReduction > 0) {
+                $financialNote = sprintf("تم خصم %.2f ج.م من دين العميل", $debtReduction);
+            } elseif ($creditAdded > 0) {
+                $financialNote = sprintf("تم إضافة %.2f ج.م لرصيد العميل الدائن", $creditAdded);
+            }
+            
+            error_log(">>> processReturnFinancial (Legacy) SUCCESS");
+            
+            return [
+                'success' => true,
+                'message' => 'تمت معالجة التسوية المالية بنجاح',
+                'financialNote' => $financialNote,
+                'debt_reduction' => $debtReduction,
+                'credit_added' => $creditAdded,
+                'new_balance' => $newBalance
+            ];
+        }
+        
+        // إذا كان المرتجع موجوداً، استخدم الدالة الجديدة
+        $result = processReturnFinancials($returnId, $processedBy);
+        
+        if ($result['success']) {
+            // بناء financialNote
+            $financialNote = '';
+            $debtReduction = $result['debt_reduction'] ?? 0.0;
+            $creditAdded = $result['credit_added'] ?? 0.0;
+            
+            if ($debtReduction > 0 && $creditAdded > 0) {
+                $financialNote = sprintf("تم خصم %.2f ج.م من دين العميل وإضافة %.2f ج.م لرصيده الدائن", $debtReduction, $creditAdded);
+            } elseif ($debtReduction > 0) {
+                $financialNote = sprintf("تم خصم %.2f ج.م من دين العميل", $debtReduction);
+            } elseif ($creditAdded > 0) {
+                $financialNote = sprintf("تم إضافة %.2f ج.م لرصيد العميل الدائن", $creditAdded);
+            }
+            
+            return [
+                'success' => true,
+                'message' => $result['message'] ?? 'تمت معالجة التسوية المالية بنجاح',
+                'financialNote' => $financialNote,
+                'debt_reduction' => $debtReduction,
+                'credit_added' => $creditAdded,
+                'new_balance' => $result['new_balance'] ?? 0.0
+            ];
+        }
+        
+        return $result;
+        
+    } catch (Throwable $e) {
+        error_log(">>> processReturnFinancial (Legacy) ERROR: " . $e->getMessage());
+        return [
+            'success' => false,
+            'message' => 'حدث خطأ أثناء معالجة التسوية المالية: ' . $e->getMessage(),
+            'financialNote' => ''
+        ];
+    }
+}
+

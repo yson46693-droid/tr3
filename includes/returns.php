@@ -13,6 +13,7 @@ require_once __DIR__ . '/audit_log.php';
 require_once __DIR__ . '/notifications.php';
 require_once __DIR__ . '/inventory_movements.php';
 require_once __DIR__ . '/return_processor.php';
+require_once __DIR__ . '/return_financial_processor.php';
 
 /**
  * ضمان توافق جدول المرتجعات مع متطلبات مرتجعات الفواتير

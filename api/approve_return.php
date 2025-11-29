@@ -40,7 +40,6 @@ if ($errorLogPath) {
 require_once __DIR__ . '/../includes/config.php';
 require_once __DIR__ . '/../includes/db.php';
 require_once __DIR__ . '/../includes/auth.php';
-require_once __DIR__ . '/../includes/return_processor.php';
 require_once __DIR__ . '/../includes/approval_system.php';
 require_once __DIR__ . '/../includes/audit_log.php';
 require_once __DIR__ . '/../includes/return_inventory_manager.php';

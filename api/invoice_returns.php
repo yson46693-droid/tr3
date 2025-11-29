@@ -11,6 +11,7 @@ require_once __DIR__ . '/../includes/inventory_movements.php';
 require_once __DIR__ . '/../includes/approval_system.php';
 require_once __DIR__ . '/../includes/path_helper.php';
 require_once __DIR__ . '/../includes/return_processor.php';
+require_once __DIR__ . '/../includes/return_financial_processor.php';
 
 requireRole(['manager']);
 
