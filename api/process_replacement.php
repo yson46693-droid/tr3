@@ -37,8 +37,29 @@ if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
 try {
     // التحقق من البيانات
     $customerId = isset($_POST['customer_id']) ? (int)$_POST['customer_id'] : 0;
-    $customerItems = isset($_POST['customer_items']) && is_array($_POST['customer_items']) ? $_POST['customer_items'] : [];
-    $carItems = isset($_POST['car_items']) && is_array($_POST['car_items']) ? $_POST['car_items'] : [];
+    
+    // تحويل JSON strings إلى arrays
+    $customerItemsRaw = $_POST['customer_items'] ?? '';
+    $carItemsRaw = $_POST['car_items'] ?? '';
+    
+    // محاولة تحويل JSON string إلى array
+    if (is_string($customerItemsRaw) && !empty($customerItemsRaw)) {
+        $decodedCustomerItems = json_decode($customerItemsRaw, true);
+        $customerItems = (is_array($decodedCustomerItems)) ? $decodedCustomerItems : [];
+    } elseif (is_array($customerItemsRaw)) {
+        $customerItems = $customerItemsRaw;
+    } else {
+        $customerItems = [];
+    }
+    
+    if (is_string($carItemsRaw) && !empty($carItemsRaw)) {
+        $decodedCarItems = json_decode($carItemsRaw, true);
+        $carItems = (is_array($decodedCarItems)) ? $decodedCarItems : [];
+    } elseif (is_array($carItemsRaw)) {
+        $carItems = $carItemsRaw;
+    } else {
+        $carItems = [];
+    }
     
     if ($customerId <= 0) {
         throw new InvalidArgumentException('معرف العميل غير صالح');
