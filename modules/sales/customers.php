@@ -1109,6 +1109,9 @@ $collectionsLabel = $isSalesUser ? 'تحصيلاتي' : 'إجمالي التحص
                 </div>
             </div>
             <div class="modal-footer">
+                <button type="button" class="btn btn-primary" id="printHistoryStatementBtn" onclick="printCustomerStatementFromHistory()">
+                    <i class="bi bi-printer me-1"></i>طباعة كشف الحساب
+                </button>
                 <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">إغلاق</button>
             </div>
         </div>
@@ -1118,6 +1121,21 @@ $collectionsLabel = $isSalesUser ? 'تحصيلاتي' : 'إجمالي التحص
 
 <?php if (in_array($currentRole, ['manager', 'sales'], true)): ?>
 <script>
+// متغير عام لتخزين معرف العميل الحالي في customerHistoryModal
+var currentHistoryCustomerId = null;
+
+// دالة طباعة كشف حساب من customerHistoryModal
+function printCustomerStatementFromHistory() {
+    if (!currentHistoryCustomerId) {
+        alert('يرجى فتح سجل مشتريات عميل أولاً');
+        return;
+    }
+    
+    const basePath = '<?php echo getBasePath(); ?>';
+    const printUrl = basePath + '/print_customer_statement.php?customer_id=' + encodeURIComponent(currentHistoryCustomerId);
+    window.open(printUrl, '_blank');
+}
+
 document.addEventListener('DOMContentLoaded', function () {
     var historyModal = document.getElementById('customerHistoryModal');
     if (!historyModal) {
@@ -1291,6 +1309,9 @@ document.addEventListener('DOMContentLoaded', function () {
         button.addEventListener('click', function () {
             var customerId = button.getAttribute('data-customer-id');
             var customerName = button.getAttribute('data-customer-name') || '-';
+            
+            // حفظ معرف العميل في المتغير العام
+            currentHistoryCustomerId = customerId;
 
             if (nameTarget) {
                 nameTarget.textContent = customerName;
@@ -3375,6 +3396,7 @@ document.addEventListener('DOMContentLoaded', function () {
                                             data-customer-id="<?php echo (int)$customer['id']; ?>"
                                             data-customer-name="<?php echo htmlspecialchars($customer['name']); ?>"
                                             title="استبدال منتجات"
+                                            onclick="openReplacementModal(this)"
                                         >
                                             <i class="bi bi-arrow-repeat me-1"></i>استبدال
                                         </button>
@@ -3724,6 +3746,7 @@ document.addEventListener('DOMContentLoaded', function () {
 (function() {
     const replacementModal = document.getElementById('replacementModal');
     if (!replacementModal) {
+        console.warn('Replacement modal not found');
         return;
     }
     
@@ -3732,6 +3755,85 @@ document.addEventListener('DOMContentLoaded', function () {
     let carInventory = [];
     let selectedCustomerItems = [];
     let selectedCarItems = [];
+    
+    // دالة عامة لفتح مودال الاستبدال (يمكن استدعاؤها من onclick)
+    window.openReplacementModal = function(btn) {
+        if (!btn) {
+            console.error('Button element is required');
+            return;
+        }
+        
+        currentCustomerId = parseInt(btn.getAttribute('data-customer-id'));
+        const customerName = btn.getAttribute('data-customer-name');
+        
+        if (!currentCustomerId) {
+            alert('خطأ: لم يتم تحديد معرف العميل');
+            return;
+        }
+        
+        // تعيين اسم العميل
+        const customerNameEl = replacementModal.querySelector('.replacement-customer-name');
+        if (customerNameEl) {
+            customerNameEl.textContent = customerName;
+        }
+        
+        // إعادة تعيين
+        selectedCustomerItems = [];
+        selectedCarItems = [];
+        customerPurchases = [];
+        carInventory = [];
+        
+        // إظهار التحميل وإخفاء المحتوى
+        const loadingEl = replacementModal.querySelector('.replacement-loading');
+        const contentEl = replacementModal.querySelector('.replacement-content');
+        const errorEl = replacementModal.querySelector('.replacement-error');
+        
+        if (loadingEl) loadingEl.classList.remove('d-none');
+        if (contentEl) contentEl.classList.add('d-none');
+        if (errorEl) {
+            errorEl.classList.add('d-none');
+            errorEl.textContent = '';
+        }
+        
+        // فتح المودال
+        const modal = new bootstrap.Modal(replacementModal);
+        modal.show();
+        
+        // تحميل البيانات
+        fetch('api/get_replacement_data.php?customer_id=' + currentCustomerId)
+            .then(response => {
+                if (!response.ok) {
+                    throw new Error('فشل تحميل البيانات من الخادم');
+                }
+                return response.json();
+            })
+            .then(data => {
+                if (data.success) {
+                    customerPurchases = data.customer_purchases || [];
+                    carInventory = data.car_inventory || [];
+                    
+                    // عرض البيانات
+                    renderCustomerPurchases();
+                    renderCarInventory();
+                    
+                    if (loadingEl) loadingEl.classList.add('d-none');
+                    if (contentEl) contentEl.classList.remove('d-none');
+                } else {
+                    throw new Error(data.message || 'فشل تحميل البيانات');
+                }
+            })
+            .catch(error => {
+                console.error('Replacement data loading error:', error);
+                
+                if (loadingEl) loadingEl.classList.add('d-none');
+                if (errorEl) {
+                    errorEl.textContent = error.message || 'حدث خطأ أثناء تحميل البيانات';
+                    errorEl.classList.remove('d-none');
+                } else {
+                    alert('خطأ: ' + (error.message || 'حدث خطأ أثناء تحميل البيانات'));
+                }
+            });
+    };
     
     // دالة تنسيق العملة
     function formatCurrency(value) {
@@ -3793,14 +3895,34 @@ document.addEventListener('DOMContentLoaded', function () {
         executeBtn.disabled = selectedCustomerItems.length === 0 || selectedCarItems.length === 0;
     }
     
-    // فتح المودال
+    // فتح المودال - استخدام event delegation
     document.addEventListener('click', function(e) {
-        if (e.target.closest('.js-replacement-btn')) {
-            const btn = e.target.closest('.js-replacement-btn');
+        const replacementBtn = e.target.closest('.js-replacement-btn');
+        if (replacementBtn) {
+            e.preventDefault();
+            e.stopPropagation();
+            
+            const btn = replacementBtn;
             currentCustomerId = parseInt(btn.getAttribute('data-customer-id'));
             const customerName = btn.getAttribute('data-customer-name');
             
-            document.querySelector('.replacement-customer-name').textContent = customerName;
+            if (!currentCustomerId) {
+                alert('خطأ: لم يتم تحديد معرف العميل');
+                return;
+            }
+            
+            // التأكد من وجود المودال
+            const modalElement = document.getElementById('replacementModal');
+            if (!modalElement) {
+                alert('خطأ: لم يتم العثور على المودال');
+                return;
+            }
+            
+            // تعيين اسم العميل
+            const customerNameEl = modalElement.querySelector('.replacement-customer-name');
+            if (customerNameEl) {
+                customerNameEl.textContent = customerName;
+            }
             
             // إعادة تعيين
             selectedCustomerItems = [];
@@ -3808,14 +3930,31 @@ document.addEventListener('DOMContentLoaded', function () {
             customerPurchases = [];
             carInventory = [];
             
-            // إظهار التحميل
-            document.querySelector('.replacement-loading').classList.remove('d-none');
-            document.querySelector('.replacement-content').classList.add('d-none');
-            document.querySelector('.replacement-error').classList.add('d-none');
+            // إظهار التحميل وإخفاء المحتوى
+            const loadingEl = modalElement.querySelector('.replacement-loading');
+            const contentEl = modalElement.querySelector('.replacement-content');
+            const errorEl = modalElement.querySelector('.replacement-error');
+            
+            if (loadingEl) loadingEl.classList.remove('d-none');
+            if (contentEl) contentEl.classList.add('d-none');
+            if (errorEl) {
+                errorEl.classList.add('d-none');
+                errorEl.textContent = '';
+            }
+            
+            // فتح المودال
+            const modal = new bootstrap.Modal(modalElement);
+            modal.show();
             
             // تحميل البيانات
             fetch('api/get_replacement_data.php?customer_id=' + currentCustomerId)
                 .then(response => response.json())
+                .then(response => {
+                    if (!response.ok) {
+                        throw new Error('فشل تحميل البيانات من الخادم');
+                    }
+                    return response.json();
+                })
                 .then(data => {
                     if (data.success) {
                         customerPurchases = data.customer_purchases || [];
@@ -3825,19 +3964,120 @@ document.addEventListener('DOMContentLoaded', function () {
                         renderCustomerPurchases();
                         renderCarInventory();
                         
-                        document.querySelector('.replacement-loading').classList.add('d-none');
-                        document.querySelector('.replacement-content').classList.remove('d-none');
+                        const loadingEl = modalElement.querySelector('.replacement-loading');
+                        const contentEl = modalElement.querySelector('.replacement-content');
+                        
+                        if (loadingEl) loadingEl.classList.add('d-none');
+                        if (contentEl) contentEl.classList.remove('d-none');
                     } else {
                         throw new Error(data.message || 'فشل تحميل البيانات');
                     }
                 })
                 .catch(error => {
-                    document.querySelector('.replacement-loading').classList.add('d-none');
-                    const errorEl = document.querySelector('.replacement-error');
-                    errorEl.textContent = error.message || 'حدث خطأ أثناء تحميل البيانات';
-                    errorEl.classList.remove('d-none');
+                    console.error('Replacement data loading error:', error);
+                    
+                    const loadingEl = modalElement.querySelector('.replacement-loading');
+                    const errorEl = modalElement.querySelector('.replacement-error');
+                    
+                    if (loadingEl) loadingEl.classList.add('d-none');
+                    if (errorEl) {
+                        errorEl.textContent = error.message || 'حدث خطأ أثناء تحميل البيانات';
+                        errorEl.classList.remove('d-none');
+                    } else {
+                        alert('خطأ: ' + (error.message || 'حدث خطأ أثناء تحميل البيانات'));
+                    }
                 });
         }
+    });
+    
+    // بديل: استخدام event listener مباشر على الأزرار الموجودة
+    document.addEventListener('DOMContentLoaded', function() {
+        // إضافة event listeners للأزرار الموجودة حالياً
+        document.querySelectorAll('.js-replacement-btn').forEach(btn => {
+            btn.addEventListener('click', function(e) {
+                e.preventDefault();
+                e.stopPropagation();
+                
+                const replacementBtn = e.currentTarget;
+                currentCustomerId = parseInt(replacementBtn.getAttribute('data-customer-id'));
+                const customerName = replacementBtn.getAttribute('data-customer-name');
+                
+                if (!currentCustomerId) {
+                    alert('خطأ: لم يتم تحديد معرف العميل');
+                    return;
+                }
+                
+                // فتح المودال
+                const modalElement = document.getElementById('replacementModal');
+                if (!modalElement) {
+                    alert('خطأ: لم يتم العثور على المودال');
+                    return;
+                }
+                
+                // تعيين اسم العميل
+                const customerNameEl = modalElement.querySelector('.replacement-customer-name');
+                if (customerNameEl) {
+                    customerNameEl.textContent = customerName;
+                }
+                
+                // إعادة تعيين
+                selectedCustomerItems = [];
+                selectedCarItems = [];
+                customerPurchases = [];
+                carInventory = [];
+                
+                // إظهار التحميل وإخفاء المحتوى
+                const loadingEl = modalElement.querySelector('.replacement-loading');
+                const contentEl = modalElement.querySelector('.replacement-content');
+                const errorEl = modalElement.querySelector('.replacement-error');
+                
+                if (loadingEl) loadingEl.classList.remove('d-none');
+                if (contentEl) contentEl.classList.add('d-none');
+                if (errorEl) {
+                    errorEl.classList.add('d-none');
+                    errorEl.textContent = '';
+                }
+                
+                // فتح المودال
+                const modal = new bootstrap.Modal(modalElement);
+                modal.show();
+                
+                // تحميل البيانات
+                fetch('api/get_replacement_data.php?customer_id=' + currentCustomerId)
+                    .then(response => {
+                        if (!response.ok) {
+                            throw new Error('فشل تحميل البيانات من الخادم');
+                        }
+                        return response.json();
+                    })
+                    .then(data => {
+                        if (data.success) {
+                            customerPurchases = data.customer_purchases || [];
+                            carInventory = data.car_inventory || [];
+                            
+                            // عرض البيانات
+                            renderCustomerPurchases();
+                            renderCarInventory();
+                            
+                            if (loadingEl) loadingEl.classList.add('d-none');
+                            if (contentEl) contentEl.classList.remove('d-none');
+                        } else {
+                            throw new Error(data.message || 'فشل تحميل البيانات');
+                        }
+                    })
+                    .catch(error => {
+                        console.error('Replacement data loading error:', error);
+                        
+                        if (loadingEl) loadingEl.classList.add('d-none');
+                        if (errorEl) {
+                            errorEl.textContent = error.message || 'حدث خطأ أثناء تحميل البيانات';
+                            errorEl.classList.remove('d-none');
+                        } else {
+                            alert('خطأ: ' + (error.message || 'حدث خطأ أثناء تحميل البيانات'));
+                        }
+                    });
+            });
+        });
     });
     
     // عرض مشتريات العميل
