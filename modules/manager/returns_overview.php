@@ -40,7 +40,7 @@ $sql = "SELECT
         r.return_date,
         r.refund_amount,
         r.status,
-        r.return_quantity,
+        COALESCE(SUM(ri.quantity), 0) as return_quantity,
         r.reason,
         c.id as customer_id,
         c.name as customer_name,
