@@ -63,84 +63,81 @@ if (empty($salesTableCheck)) {
         error_log('Error checking/adding credit_used column: ' . $e->getMessage());
     }
 
-    // بناء استعلام SQL - جلب اسم المنتج من finished_products إذا كان متوفراً
-    $sql = "SELECT s.*, c.name as customer_name, 
+    // بناء استعلام SQL - استخدام invoice_items بدلاً من sales لضمان ربط كل عنصر بفاتورته الصحيحة
+    // هذا يمنع تكرار أرقام الفواتير عند إعادة بيع منتج مرتجع
+    $sql = "SELECT 
+                   ii.id as sale_id,
+                   ii.invoice_id,
+                   i.invoice_number,
+                   i.date,
+                   i.customer_id,
+                   i.sales_rep_id as salesperson_id,
+                   ii.product_id,
+                   ii.quantity,
+                   ii.unit_price as price,
+                   ii.total_price as total,
+                   i.status,
+                   c.name as customer_name,
                    COALESCE(
                        (SELECT fp2.product_name 
                         FROM finished_products fp2 
-                        WHERE fp2.product_id = p.id 
+                        WHERE fp2.product_id = ii.product_id 
                           AND fp2.product_name IS NOT NULL 
                           AND TRIM(fp2.product_name) != ''
                           AND fp2.product_name NOT LIKE 'منتج رقم%'
                         ORDER BY fp2.id DESC 
                         LIMIT 1),
                        NULLIF(TRIM(p.name), ''),
-                       CONCAT('منتج رقم ', p.id)
+                       CONCAT('منتج رقم ', ii.product_id)
                    ) as product_name,
                    u.full_name as salesperson_name,
-                   (SELECT i.invoice_number 
-                    FROM invoices i 
-                    WHERE i.customer_id = s.customer_id 
-                      AND DATE(i.date) = DATE(s.date)
-                      AND (i.sales_rep_id = s.salesperson_id OR i.sales_rep_id IS NULL)
-                    ORDER BY i.id DESC 
-                    LIMIT 1) as invoice_number,
-                   (SELECT i.id 
-                    FROM invoices i 
-                    WHERE i.customer_id = s.customer_id 
-                      AND DATE(i.date) = DATE(s.date)
-                      AND (i.sales_rep_id = s.salesperson_id OR i.sales_rep_id IS NULL)
-                    ORDER BY i.id DESC 
-                    LIMIT 1) as invoice_id,
-                   (SELECT COALESCE(i.credit_used, 0)
-                    FROM invoices i 
-                    WHERE i.customer_id = s.customer_id 
-                      AND DATE(i.date) = DATE(s.date)
-                      AND (i.sales_rep_id = s.salesperson_id OR i.sales_rep_id IS NULL)
-                    ORDER BY i.id DESC 
-                    LIMIT 1) as credit_used
-            FROM sales s
-            LEFT JOIN customers c ON s.customer_id = c.id
-            LEFT JOIN products p ON s.product_id = p.id
-            LEFT JOIN users u ON s.salesperson_id = u.id
-            WHERE 1=1";
+                   COALESCE(i.credit_used, 0) as credit_used
+            FROM invoice_items ii
+            INNER JOIN invoices i ON ii.invoice_id = i.id
+            LEFT JOIN customers c ON i.customer_id = c.id
+            LEFT JOIN products p ON ii.product_id = p.id
+            LEFT JOIN users u ON i.sales_rep_id = u.id
+            WHERE i.status != 'cancelled'";
 
-    $countSql = "SELECT COUNT(*) as total FROM sales WHERE 1=1";
+    $countSql = "SELECT COUNT(*) as total 
+                 FROM invoice_items ii
+                 INNER JOIN invoices i ON ii.invoice_id = i.id
+                 WHERE i.status != 'cancelled'";
     $params = [];
     $countParams = [];
 
-    // إذا كان المستخدم مندوب مبيعات، فلتر حسب salesperson_id
+    // إذا كان المستخدم مندوب مبيعات، فلتر حسب sales_rep_id
     if ($currentUser['role'] === 'sales') {
-        $sql .= " AND s.salesperson_id = ?";
-        $countSql .= " AND salesperson_id = ?";
+        $sql .= " AND i.sales_rep_id = ?";
+        $countSql .= " AND i.sales_rep_id = ?";
         $params[] = $currentUser['id'];
         $countParams[] = $currentUser['id'];
     }
 
     if (!empty($filters['customer_id'])) {
-        $sql .= " AND s.customer_id = ?";
-        $countSql .= " AND customer_id = ?";
+        $sql .= " AND i.customer_id = ?";
+        $countSql .= " AND i.customer_id = ?";
         $params[] = $filters['customer_id'];
         $countParams[] = $filters['customer_id'];
     }
 
     if (!empty($filters['status'])) {
-        $sql .= " AND s.status = ?";
-        $countSql .= " AND status = ?";
+        $sql .= " AND i.status = ?";
+        $countSql .= " AND i.status = ?";
         $params[] = $filters['status'];
         $countParams[] = $filters['status'];
     }
 
     if (!empty($filters['date_from'])) {
-        $sql .= " AND DATE(s.date) >= ?";
-        $countSql .= " AND DATE(date) >= ?";
+        $sql .= " AND DATE(i.date) >= ?";
+        $countSql .= " AND DATE(i.date) >= ?";
         $params[] = $filters['date_from'];
         $countParams[] = $filters['date_from'];
     }
 
     if (!empty($filters['date_to'])) {
-        $sql .= " AND DATE(s.date) <= ?";
-        $countSql .= " AND DATE(date) <= ?";
+        $sql .= " AND DATE(i.date) <= ?";
+        $countSql .= " AND DATE(i.date) <= ?";
         $params[] = $filters['date_to'];
         $countParams[] = $filters['date_to'];
     }
@@ -149,7 +146,7 @@ if (empty($salesTableCheck)) {
     $totalSales = $totalResult['total'] ?? 0;
     $totalPages = ceil($totalSales / $perPage);
 
-    $sql .= " ORDER BY s.date DESC, s.created_at DESC LIMIT ? OFFSET ?";
+    $sql .= " ORDER BY i.date DESC, i.id DESC, ii.id DESC LIMIT ? OFFSET ?";
     $params[] = $perPage;
     $params[] = $offset;
 
