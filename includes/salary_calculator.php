@@ -790,16 +790,18 @@ function createOrUpdateSalary($userId, $month, $year, $bonus = 0, $deductions = 
     
     if ($existingSalary) {
         // تحديث الراتب الموجود
-        // الحصول على المبلغ التراكمي الحالي والسلفات المخصومة
+        // الحصول على المبلغ التراكمي الحالي والسلفات المخصومة والخصومات الموجودة
         $currentAccumulated = 0.00;
         $hasDeductedAdvances = false;
         $currentTotalAmount = 0.00;
+        $currentDeductions = 0.00;
         
         if ($hasAccumulatedColumn) {
-            $currentSalary = $db->queryOne("SELECT accumulated_amount, total_amount, advances_deduction FROM salaries WHERE id = ?", [$existingSalary['id']]);
+            $currentSalary = $db->queryOne("SELECT accumulated_amount, total_amount, advances_deduction, deductions FROM salaries WHERE id = ?", [$existingSalary['id']]);
             $currentAccumulated = floatval($currentSalary['accumulated_amount'] ?? 0);
             $currentTotalAmount = floatval($currentSalary['total_amount'] ?? 0);
             $currentAdvancesDeduction = floatval($currentSalary['advances_deduction'] ?? 0);
+            $currentDeductions = floatval($currentSalary['deductions'] ?? 0);
             
             // التحقق من وجود سلفات مخصومة بالفعل
             if ($currentAdvancesDeduction > 0) {
@@ -826,10 +828,11 @@ function createOrUpdateSalary($userId, $month, $year, $bonus = 0, $deductions = 
                 }
             }
         } else {
-            // إذا لم يكن هناك عمود accumulated_amount، احصل على total_amount الحالي
-            $currentSalary = $db->queryOne("SELECT total_amount, advances_deduction FROM salaries WHERE id = ?", [$existingSalary['id']]);
+            // إذا لم يكن هناك عمود accumulated_amount، احصل على total_amount الحالي والخصومات
+            $currentSalary = $db->queryOne("SELECT total_amount, advances_deduction, deductions FROM salaries WHERE id = ?", [$existingSalary['id']]);
             $currentTotalAmount = floatval($currentSalary['total_amount'] ?? 0);
             $currentAdvancesDeduction = floatval($currentSalary['advances_deduction'] ?? 0);
+            $currentDeductions = floatval($currentSalary['deductions'] ?? 0);
             
             // التحقق من وجود سلفات مخصومة بالفعل
             if ($currentAdvancesDeduction > 0) {
@@ -847,10 +850,9 @@ function createOrUpdateSalary($userId, $month, $year, $bonus = 0, $deductions = 
             }
         }
         
-        // إذا كانت هناك سلفات مخصومة، احسب total_amount بشكل صحيح
+        // الحصول على إجمالي السلفات المخصومة (إذا كانت موجودة) لاستخدامها لاحقاً
+        $deductedAdvancesTotal = 0;
         if ($hasDeductedAdvances) {
-            // الحصول على إجمالي السلفات المخصومة من هذا الراتب
-            $deductedAdvancesTotal = 0;
             if ($currentAdvancesDeduction > 0) {
                 $deductedAdvancesTotal = $currentAdvancesDeduction;
             } else {
@@ -861,7 +863,25 @@ function createOrUpdateSalary($userId, $month, $year, $bonus = 0, $deductions = 
                 );
                 $deductedAdvancesTotal = floatval($deductedAdvancesQuery['total'] ?? 0);
             }
-            
+        }
+        
+        // الحفاظ على الخصومات التراكمية: إذا كان $deductions الممرر = 0 وكانت هناك خصومات موجودة، استخدم الخصومات الموجودة
+        // هذا يضمن أن الخصومات من المرتجعات تبقى تراكمية ولا يتم تصفيرها عند إعادة البيع
+        if ($deductions == 0 && $currentDeductions > 0) {
+            // إذا كانت هناك سلفات مخصومة، تأكد من أننا نحافظ على الخصومات الأخرى (غير السلفات)
+            if ($hasDeductedAdvances && $deductedAdvancesTotal > 0) {
+                // الخصومات الحالية = خصومات أخرى + سلفات (إذا كانت مضمنة)
+                // نحتاج للحفاظ على الخصومات الأخرى فقط
+                $otherDeductionsFromDB = max(0, $currentDeductions - $deductedAdvancesTotal);
+                $calculation['deductions'] = $otherDeductionsFromDB;
+            } else {
+                // لا توجد سلفات، استخدم الخصومات الموجودة بالكامل
+                $calculation['deductions'] = $currentDeductions;
+            }
+        }
+        
+        // إذا كانت هناك سلفات مخصومة، احسب total_amount بشكل صحيح
+        if ($hasDeductedAdvances && $deductedAdvancesTotal > 0) {
             // حساب الراتب الإجمالي قبل خصم السلفات
             // يجب طرح السلفة من deductions لأنها قد تكون مضمنة فيها
             $baseAmount = $calculation['base_amount'];
@@ -876,6 +896,9 @@ function createOrUpdateSalary($userId, $month, $year, $bonus = 0, $deductions = 
             if ($calculation['deductions'] >= $deductedAdvancesTotal) {
                 $calculation['deductions'] = $otherDeductions;
             }
+        } else if ($deductions == 0 && $currentDeductions > 0) {
+            // إعادة حساب total_amount مع الخصومات التراكمية (إذا لم تكن هناك سلفات)
+            $calculation['total_amount'] = round($calculation['base_amount'] + $calculation['total_bonus'] - $calculation['deductions'] - $calculation['advances_deduction'], 2);
         }
         
         if ($hasBonusColumn) {
