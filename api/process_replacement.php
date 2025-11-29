@@ -188,14 +188,25 @@ try {
             $hasExchangeItemsTable = !empty($db->queryOne("SHOW TABLES LIKE 'exchange_return_items'"));
             
             if ($hasExchangeItemsTable) {
-                $exchanged = $db->queryOne(
-                    "SELECT COALESCE(SUM(eri.quantity), 0) AS exchanged_quantity
-                     FROM exchange_return_items eri
-                     INNER JOIN product_exchanges pe ON pe.id = eri.exchange_id
-                     WHERE eri.invoice_item_id = ? AND pe.status IN ('pending', 'approved', 'completed')",
-                    [$invoiceItemId]
-                );
-                $exchangedQty = (float)($exchanged['exchanged_quantity'] ?? 0);
+                // التحقق من وجود عمود invoice_item_id قبل استخدامه
+                $hasInvoiceItemIdColumn = false;
+                try {
+                    $columnCheck = $db->queryOne("SHOW COLUMNS FROM exchange_return_items LIKE 'invoice_item_id'");
+                    $hasInvoiceItemIdColumn = !empty($columnCheck);
+                } catch (Throwable $e) {
+                    $hasInvoiceItemIdColumn = false;
+                }
+                
+                if ($hasInvoiceItemIdColumn) {
+                    $exchanged = $db->queryOne(
+                        "SELECT COALESCE(SUM(eri.quantity), 0) AS exchanged_quantity
+                         FROM exchange_return_items eri
+                         INNER JOIN product_exchanges pe ON pe.id = eri.exchange_id
+                         WHERE eri.invoice_item_id = ? AND pe.status IN ('pending', 'approved', 'completed')",
+                        [$invoiceItemId]
+                    );
+                    $exchangedQty = (float)($exchanged['exchanged_quantity'] ?? 0);
+                }
             }
             
             // حساب الكميات المرتجعة
