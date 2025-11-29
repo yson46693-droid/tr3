@@ -185,6 +185,25 @@ function ensureReturnSchemaCompatibility(): void
             // تجاهل الخطأ
         }
         
+        // إضافة عمود is_damaged إلى return_items إذا لم يكن موجوداً
+        try {
+            $columnCheck = $db->queryOne("SHOW COLUMNS FROM return_items LIKE 'is_damaged'");
+            if (empty($columnCheck)) {
+                // التحقق من وجود عمود condition لتحديد الموضع
+                $conditionColumn = $db->queryOne("SHOW COLUMNS FROM return_items LIKE 'condition'");
+                if (!empty($conditionColumn)) {
+                    $db->execute("ALTER TABLE `return_items` ADD COLUMN `is_damaged` TINYINT(1) NOT NULL DEFAULT 0 AFTER `condition`");
+                } else {
+                    // إذا لم يكن هناك عمود condition، أضفه في النهاية
+                    $db->execute("ALTER TABLE `return_items` ADD COLUMN `is_damaged` TINYINT(1) NOT NULL DEFAULT 0");
+                }
+                error_log("Successfully added is_damaged column to return_items table");
+            }
+        } catch (Throwable $e) {
+            error_log("Error adding is_damaged column: " . $e->getMessage());
+            // لا نوقف العملية
+        }
+        
         // إضافة دعم return_request في approvals type enum
         try {
             $approvalsTableExists = $db->queryOne("SHOW TABLES LIKE 'approvals'");
@@ -540,14 +559,35 @@ function returnProductsToVehicleInventory(int $returnId, ?int $approvedBy = null
         $warehouseId = $vehicleWarehouse ? (int)$vehicleWarehouse['id'] : null;
         
         // جلب عناصر المرتجع (استثناء التالف)
-        $returnItems = $db->query(
-            "SELECT ri.*, p.name as product_name, p.unit
-             FROM return_items ri
-             LEFT JOIN products p ON ri.product_id = p.id
-             WHERE ri.return_id = ? AND (ri.is_damaged = 0 OR ri.is_damaged IS NULL)
-             ORDER BY ri.id",
-            [$returnId]
-        );
+        // التحقق من وجود عمود is_damaged أولاً
+        $hasIsDamaged = false;
+        try {
+            $columnCheck = $db->queryOne("SHOW COLUMNS FROM return_items LIKE 'is_damaged'");
+            $hasIsDamaged = !empty($columnCheck);
+        } catch (Throwable $e) {
+            $hasIsDamaged = false;
+        }
+        
+        if ($hasIsDamaged) {
+            $returnItems = $db->query(
+                "SELECT ri.*, p.name as product_name, p.unit
+                 FROM return_items ri
+                 LEFT JOIN products p ON ri.product_id = p.id
+                 WHERE ri.return_id = ? AND (ri.is_damaged = 0 OR ri.is_damaged IS NULL)
+                 ORDER BY ri.id",
+                [$returnId]
+            );
+        } else {
+            // إذا لم يكن العمود موجوداً، جلب جميع العناصر
+            $returnItems = $db->query(
+                "SELECT ri.*, p.name as product_name, p.unit
+                 FROM return_items ri
+                 LEFT JOIN products p ON ri.product_id = p.id
+                 WHERE ri.return_id = ?
+                 ORDER BY ri.id",
+                [$returnId]
+            );
+        }
         
         if (empty($returnItems)) {
             return ['success' => true, 'message' => 'لا توجد منتجات سليمة للإرجاع للمخزون'];
@@ -1165,32 +1205,72 @@ function approveReturn(int $returnId, ?int $approvedBy = null, ?string $notes = 
             
             // 5. حفظ المرتجعات التالفة
             try {
-                $damagedItems = $db->query(
-                    "SELECT ri.*, p.name as product_name,
-                            COALESCE(
-                                (SELECT fp2.product_name 
-                                 FROM finished_products fp2 
-                                 WHERE fp2.product_id = ri.product_id 
-                                   AND fp2.product_name IS NOT NULL 
-                                   AND TRIM(fp2.product_name) != ''
-                                   AND fp2.product_name NOT LIKE 'منتج رقم%'
-                                 ORDER BY fp2.id DESC 
-                                 LIMIT 1),
-                                NULLIF(TRIM(p.name), ''),
-                                CONCAT('منتج رقم ', ri.product_id)
-                            ) as display_product_name,
-                            b.batch_number,
-                            i.invoice_number,
-                            u.full_name as sales_rep_name
-                     FROM return_items ri
-                     LEFT JOIN products p ON ri.product_id = p.id
-                     LEFT JOIN batch_numbers b ON ri.batch_number_id = b.id
-                     LEFT JOIN returns r ON ri.return_id = r.id
-                     LEFT JOIN invoices i ON r.invoice_id = i.id
-                     LEFT JOIN users u ON r.sales_rep_id = u.id
-                     WHERE ri.return_id = ? AND (ri.is_damaged = 1 OR ri.is_damaged = '1')",
-                    [$returnId]
-                );
+                // التحقق من وجود عمود is_damaged
+                $hasIsDamaged = false;
+                try {
+                    $columnCheck = $db->queryOne("SHOW COLUMNS FROM return_items LIKE 'is_damaged'");
+                    $hasIsDamaged = !empty($columnCheck);
+                } catch (Throwable $e) {
+                    $hasIsDamaged = false;
+                }
+                
+                $damagedItems = [];
+                if ($hasIsDamaged) {
+                    $damagedItems = $db->query(
+                        "SELECT ri.*, p.name as product_name,
+                                COALESCE(
+                                    (SELECT fp2.product_name 
+                                     FROM finished_products fp2 
+                                     WHERE fp2.product_id = ri.product_id 
+                                       AND fp2.product_name IS NOT NULL 
+                                       AND TRIM(fp2.product_name) != ''
+                                       AND fp2.product_name NOT LIKE 'منتج رقم%'
+                                     ORDER BY fp2.id DESC 
+                                     LIMIT 1),
+                                    NULLIF(TRIM(p.name), ''),
+                                    CONCAT('منتج رقم ', ri.product_id)
+                                ) as display_product_name,
+                                b.batch_number,
+                                i.invoice_number,
+                                u.full_name as sales_rep_name
+                         FROM return_items ri
+                         LEFT JOIN products p ON ri.product_id = p.id
+                         LEFT JOIN batch_numbers b ON ri.batch_number_id = b.id
+                         LEFT JOIN returns r ON ri.return_id = r.id
+                         LEFT JOIN invoices i ON r.invoice_id = i.id
+                         LEFT JOIN users u ON r.sales_rep_id = u.id
+                         WHERE ri.return_id = ? AND (ri.is_damaged = 1 OR ri.is_damaged = '1')",
+                        [$returnId]
+                    );
+                } else {
+                    // إذا لم يكن العمود موجوداً، نحاول استخدام condition column كبديل
+                    $damagedItems = $db->query(
+                        "SELECT ri.*, p.name as product_name,
+                                COALESCE(
+                                    (SELECT fp2.product_name 
+                                     FROM finished_products fp2 
+                                     WHERE fp2.product_id = ri.product_id 
+                                       AND fp2.product_name IS NOT NULL 
+                                       AND TRIM(fp2.product_name) != ''
+                                       AND fp2.product_name NOT LIKE 'منتج رقم%'
+                                     ORDER BY fp2.id DESC 
+                                     LIMIT 1),
+                                    NULLIF(TRIM(p.name), ''),
+                                    CONCAT('منتج رقم ', ri.product_id)
+                                ) as display_product_name,
+                                b.batch_number,
+                                i.invoice_number,
+                                u.full_name as sales_rep_name
+                         FROM return_items ri
+                         LEFT JOIN products p ON ri.product_id = p.id
+                         LEFT JOIN batch_numbers b ON ri.batch_number_id = b.id
+                         LEFT JOIN returns r ON ri.return_id = r.id
+                         LEFT JOIN invoices i ON r.invoice_id = i.id
+                         LEFT JOIN users u ON r.sales_rep_id = u.id
+                         WHERE ri.return_id = ? AND (ri.condition = 'damaged' OR ri.condition = 'defective')",
+                        [$returnId]
+                    );
+                }
                 
                 if (!empty($damagedItems)) {
                     // التحقق من وجود جدول damaged_returns
