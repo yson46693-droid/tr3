@@ -1604,13 +1604,21 @@ function loadPurchaseHistory(customerIdParam) {
     const tableDiv = document.getElementById('purchaseHistoryTable');
     const errorDiv = document.getElementById('purchaseHistoryError');
     const tableBody = document.getElementById('purchaseHistoryTableBody');
+    const productSearchInput = document.getElementById('purchaseHistorySearchProduct');
+    const batchSearchInput = document.getElementById('purchaseHistorySearchBatch');
+    
+    // التحقق من وجود العناصر قبل استخدامها
+    if (!loading || !tableDiv || !errorDiv) {
+        console.error('Required elements not found in DOM');
+        return;
+    }
     
     loading.classList.remove('d-none');
     tableDiv.classList.add('d-none');
     errorDiv.classList.add('d-none');
     
-    const productFilter = document.getElementById('purchaseHistorySearchProduct').value;
-    const batchFilter = document.getElementById('purchaseHistorySearchBatch').value;
+    const productFilter = productSearchInput ? productSearchInput.value : '';
+    const batchFilter = batchSearchInput ? batchSearchInput.value : '';
     
     let url = basePath + '/api/returns.php?action=get_purchase_history&customer_id=' + customerId;
     
@@ -1649,37 +1657,49 @@ function loadPurchaseHistory(customerIdParam) {
         return response.json();
     })
     .then(data => {
-        loading.classList.add('d-none');
+        if (loading) loading.classList.add('d-none');
         
         console.log('Purchase history data:', data); // للتشخيص
         
         if (data.success) {
             // Update customer info
             if (data.customer) {
-                document.getElementById('purchaseHistoryCustomerPhone').textContent = data.customer.phone || '-';
-                document.getElementById('purchaseHistoryCustomerAddress').textContent = data.customer.address || '-';
+                const phoneEl = document.getElementById('purchaseHistoryCustomerPhone');
+                const addressEl = document.getElementById('purchaseHistoryCustomerAddress');
+                if (phoneEl) phoneEl.textContent = data.customer.phone || '-';
+                if (addressEl) addressEl.textContent = data.customer.address || '-';
             }
             
             // Store purchase history data
             purchaseHistoryData = data.purchase_history || [];
             console.log('Purchase history items:', purchaseHistoryData.length); // للتشخيص
             displayPurchaseHistory(purchaseHistoryData);
-            tableDiv.classList.remove('d-none');
+            if (tableDiv) tableDiv.classList.remove('d-none');
         } else {
-            errorDiv.textContent = data.message || 'حدث خطأ أثناء تحميل سجل المشتريات';
-            errorDiv.classList.remove('d-none');
+            if (errorDiv) {
+                errorDiv.textContent = data.message || 'حدث خطأ أثناء تحميل سجل المشتريات';
+                errorDiv.classList.remove('d-none');
+            }
         }
     })
     .catch(error => {
-        loading.classList.add('d-none');
-        errorDiv.textContent = 'خطأ: ' + (error.message || 'حدث خطأ في الاتصال بالخادم');
-        errorDiv.classList.remove('d-none');
+        if (loading) loading.classList.add('d-none');
+        if (errorDiv) {
+            errorDiv.textContent = 'خطأ: ' + (error.message || 'حدث خطأ في الاتصال بالخادم');
+            errorDiv.classList.remove('d-none');
+        }
         console.error('Error loading purchase history:', error);
     });
 }
 
 function displayPurchaseHistory(history) {
     const tableBody = document.getElementById('purchaseHistoryTableBody');
+    
+    if (!tableBody) {
+        console.error('purchaseHistoryTableBody element not found');
+        return;
+    }
+    
     tableBody.innerHTML = '';
     
     if (!history || history.length === 0) {

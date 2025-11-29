@@ -14,7 +14,6 @@
 ini_set('display_errors', 1);
 ini_set('display_startup_errors', 1);
 error_reporting(E_ALL);
-
 define('ACCESS_ALLOWED', true);
 define('IS_API_REQUEST', true);
 
@@ -378,6 +377,11 @@ function handleGetPurchaseHistory(): void
             'batch_number_ids' => $batchNumberIdsArray, // array
             'can_return' => true // يمكن الإرجاع إذا كان هناك كمية متاحة
         ];
+    }
+    
+    // التأكد من أن $result هو array قبل استخدام count()
+    if (!is_array($result)) {
+        $result = [];
     }
     
     error_log("Processed " . count($result) . " items after filtering for customer ID: {$customerId}");
