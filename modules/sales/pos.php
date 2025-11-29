@@ -2389,8 +2389,24 @@ if (!$error) {
             paidAmount = 0;
         }
 
-        const dueAmount = sanitizeNumber(Math.max(0, netTotal - paidAmount));
-
+        // حساب المتبقي بعد خصم الرصيد الدائن إن وجد
+        let dueAmount = sanitizeNumber(Math.max(0, netTotal - paidAmount));
+        
+        // الحصول على رصيد العميل المحدد (إذا كان موجوداً)
+        let customerCreditBalance = 0;
+        if (elements.customerSelect && elements.customerSelect.value) {
+            const selectedOption = elements.customerSelect.options[elements.customerSelect.selectedIndex];
+            if (selectedOption) {
+                const balance = parseFloat(selectedOption.getAttribute('data-balance') || '0');
+                // إذا كان الرصيد سالب (رصيد دائن)، نخصمه من المتبقي
+                if (balance < 0) {
+                    customerCreditBalance = Math.abs(balance); // القيمة المطلقة للرصيد الدائن
+                    // خصم الرصيد الدائن من المتبقي
+                    dueAmount = sanitizeNumber(Math.max(0, dueAmount - customerCreditBalance));
+                }
+            }
+        }
+        
         // تحديث العناصر في الواجهة بشكل فوري
         if (elements.netTotal) {
             elements.netTotal.textContent = formatCurrency(netTotal);

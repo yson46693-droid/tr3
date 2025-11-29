@@ -3799,8 +3799,21 @@ document.addEventListener('DOMContentLoaded', function () {
             errorEl.textContent = '';
         }
         
+        // إزالة أي backdrop موجود مسبقاً
+        const existingBackdrop = document.querySelector('.modal-backdrop');
+        if (existingBackdrop) {
+            existingBackdrop.remove();
+        }
+        document.body.classList.remove('modal-open');
+        document.body.style.overflow = '';
+        document.body.style.paddingRight = '';
+        
         // فتح المودال
-        const modal = new bootstrap.Modal(replacementModal);
+        const modal = new bootstrap.Modal(replacementModal, {
+            backdrop: true,
+            keyboard: true,
+            focus: true
+        });
         modal.show();
         
         // تحميل البيانات
@@ -3946,8 +3959,21 @@ document.addEventListener('DOMContentLoaded', function () {
                 errorEl.textContent = '';
             }
             
+            // إزالة أي backdrop موجود مسبقاً
+            const existingBackdrop = document.querySelector('.modal-backdrop');
+            if (existingBackdrop) {
+                existingBackdrop.remove();
+            }
+            document.body.classList.remove('modal-open');
+            document.body.style.overflow = '';
+            document.body.style.paddingRight = '';
+            
             // فتح المودال
-            const modal = new bootstrap.Modal(modalElement);
+            const modal = new bootstrap.Modal(modalElement, {
+                backdrop: true,
+                keyboard: true,
+                focus: true
+            });
             modal.show();
             
             // تحميل البيانات
@@ -4275,11 +4301,22 @@ document.addEventListener('DOMContentLoaded', function () {
                 if (data.success) {
                     alert('تم تنفيذ عملية الاستبدال بنجاح!\nرقم العملية: ' + (data.exchange_number || ''));
                     
-                    // إغلاق المودال
+                    // إغلاق المودال وإزالة backdrop
                     const modal = bootstrap.Modal.getInstance(replacementModal);
                     if (modal) {
                         modal.hide();
                     }
+                    
+                    // إزالة backdrop يدوياً
+                    setTimeout(function() {
+                        const backdrop = document.querySelector('.modal-backdrop');
+                        if (backdrop) {
+                            backdrop.remove();
+                        }
+                        document.body.classList.remove('modal-open');
+                        document.body.style.overflow = '';
+                        document.body.style.paddingRight = '';
+                    }, 300);
                     
                     // إعادة تحميل الصفحة
                     window.location.reload();
@@ -4302,6 +4339,47 @@ document.addEventListener('DOMContentLoaded', function () {
         carInventory = [];
         document.getElementById('selectAllCustomerItems').checked = false;
         document.getElementById('selectAllCarItems').checked = false;
+        
+        // إزالة جميع backdrops إذا بقيت موجودة
+        const backdrops = document.querySelectorAll('.modal-backdrop');
+        backdrops.forEach(function(backdrop) {
+            backdrop.remove();
+        });
+        
+        // إزالة class modal-open من body إذا بقي موجوداً
+        document.body.classList.remove('modal-open');
+        
+        // إزالة style overflow: hidden من body
+        document.body.style.overflow = '';
+        document.body.style.paddingRight = '';
+    });
+    
+    // إزالة backdrop عند بدء إخفاء المودال أيضاً
+    replacementModal.addEventListener('hide.bs.modal', function() {
+        // التأكد من إزالة backdrop عند الإغلاق
+        setTimeout(function() {
+            const backdrops = document.querySelectorAll('.modal-backdrop');
+            backdrops.forEach(function(backdrop) {
+                backdrop.remove();
+            });
+            document.body.classList.remove('modal-open');
+            document.body.style.overflow = '';
+            document.body.style.paddingRight = '';
+        }, 100);
+    });
+    
+    // إزالة backdrop عند بدء إخفاء المودال أيضاً
+    replacementModal.addEventListener('hide.bs.modal', function() {
+        // التأكد من إزالة backdrop عند الإغلاق
+        setTimeout(function() {
+            const backdrop = document.querySelector('.modal-backdrop');
+            if (backdrop) {
+                backdrop.remove();
+            }
+            document.body.classList.remove('modal-open');
+            document.body.style.overflow = '';
+            document.body.style.paddingRight = '';
+        }, 100);
     });
 })();
 </script>
