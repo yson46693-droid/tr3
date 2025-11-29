@@ -245,7 +245,7 @@ function getCustomerStatementData($customerId) {
         .logo-placeholder {
             width: 80px;
             height: 80px;
-            border-radius: 6px;
+            border-radius: 24px;
             background: linear-gradient(135deg,rgb(6, 59, 134) 0%,rgb(3, 71, 155) 100%);
             display: flex;
             align-items: center;
