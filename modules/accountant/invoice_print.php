@@ -371,33 +371,35 @@ $returnTypeLabel = $isReturnDocument ? ($returnTypeLabels[$returnMetadata['retur
         </section>
 
         <section class="summary-grid">
-            <div class="summary-card">
-                <div class="summary-title"><?php echo htmlspecialchars($summaryTitleText); ?></div>
-                <div class="summary-row">
-                    <span>المجموع الفرعي</span>
-                    <strong><?php echo formatCurrency($subtotal); ?></strong>
-                </div>
-                <?php if ($discount > 0): ?>
+            <?php if (!$isReturnDocument): ?>
+                <div class="summary-card">
+                    <div class="summary-title"><?php echo htmlspecialchars($summaryTitleText); ?></div>
                     <div class="summary-row">
-                        <span>الخصم</span>
-                        <strong class="text-danger">-<?php echo formatCurrency($discount); ?></strong>
+                        <span>المجموع الفرعي</span>
+                        <strong><?php echo formatCurrency($subtotal); ?></strong>
                     </div>
-                <?php endif; ?>
-                <div class="summary-row total">
-                    <span>الإجمالي النهائي</span>
-                    <strong><?php echo formatCurrency($total); ?></strong>
+                    <?php if ($discount > 0): ?>
+                        <div class="summary-row">
+                            <span>الخصم</span>
+                            <strong class="text-danger">-<?php echo formatCurrency($discount); ?></strong>
+                        </div>
+                    <?php endif; ?>
+                    <div class="summary-row total">
+                        <span>الإجمالي النهائي</span>
+                        <strong><?php echo formatCurrency($total); ?></strong>
+                    </div>
+                    <div class="summary-row">
+                        <span>المدفوع</span>
+                        <strong class="text-success"><?php echo formatCurrency($paidAmount); ?></strong>
+                    </div>
+                    <div class="summary-row due">
+                        <span>المتبقي</span>
+                        <strong class="<?php echo $dueAmount > 0 ? 'text-danger' : 'text-success'; ?>">
+                            <?php echo formatCurrency($dueAmount); ?>
+                        </strong>
+                    </div>
                 </div>
-                <div class="summary-row">
-                    <span>المدفوع</span>
-                    <strong class="text-success"><?php echo formatCurrency($paidAmount); ?></strong>
-                </div>
-                <div class="summary-row due">
-                    <span>المتبقي</span>
-                    <strong class="<?php echo $dueAmount > 0 ? 'text-danger' : 'text-success'; ?>">
-                        <?php echo formatCurrency($dueAmount); ?>
-                    </strong>
-                </div>
-            </div>
+            <?php endif; ?>
             <?php if ($isReturnDocument): ?>
                 <div class="summary-card">
                     <div class="summary-title">تفاصيل الإرجاع</div>
