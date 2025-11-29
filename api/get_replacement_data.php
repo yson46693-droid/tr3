@@ -14,16 +14,17 @@ require_once __DIR__ . '/../includes/vehicle_inventory.php';
 
 requireRole(['sales', 'accountant', 'manager']);
 
-header('Content-Type: application/json; charset=utf-8');
-header('Cache-Control: no-cache, must-revalidate');
-
-$currentUser = getCurrentUser();
-$db = db();
-
-// تنظيف أي output buffer
+// تنظيف أي output buffer قبل إرسال headers
 while (ob_get_level() > 0) {
     ob_end_clean();
 }
+
+header('Content-Type: application/json; charset=utf-8');
+header('Cache-Control: no-cache, must-revalidate');
+header('X-Content-Type-Options: nosniff');
+
+$currentUser = getCurrentUser();
+$db = db();
 
 try {
     // التحقق من أن الطلب GET

@@ -3819,13 +3819,27 @@ document.addEventListener('DOMContentLoaded', function () {
         // تحميل البيانات
         fetch(apiPath + '?customer_id=' + currentCustomerId)
             .then(response => {
-                if (!response.ok) {
-                    throw new Error('فشل تحميل البيانات من الخادم');
+                // التحقق من نوع المحتوى
+                const contentType = response.headers.get('content-type');
+                if (!contentType || !contentType.includes('application/json')) {
+                    return response.text().then(text => {
+                        console.error('Invalid content type. Response:', text.substring(0, 200));
+                        throw new Error('استجابة غير صالحة من الخادم');
+                    });
                 }
+                
+                if (!response.ok) {
+                    return response.json().then(errData => {
+                        throw new Error(errData.message || 'فشل تحميل البيانات من الخادم');
+                    }).catch(() => {
+                        throw new Error('فشل تحميل البيانات من الخادم (HTTP ' + response.status + ')');
+                    });
+                }
+                
                 return response.json();
             })
             .then(data => {
-                if (data.success) {
+                if (data && data.success) {
                     customerPurchases = data.customer_purchases || [];
                     carInventory = data.car_inventory || [];
                     
@@ -3835,6 +3849,7 @@ document.addEventListener('DOMContentLoaded', function () {
                     
                     if (loadingEl) loadingEl.classList.add('d-none');
                     if (contentEl) contentEl.classList.remove('d-none');
+                    if (errorEl) errorEl.classList.add('d-none');
                 } else {
                     throw new Error(data.message || 'فشل تحميل البيانات');
                 }
@@ -3846,6 +3861,10 @@ document.addEventListener('DOMContentLoaded', function () {
                 if (errorEl) {
                     errorEl.textContent = error.message || 'حدث خطأ أثناء تحميل البيانات';
                     errorEl.classList.remove('d-none');
+                    // إظهار المحتوى حتى لو كان هناك خطأ (ربما البيانات موجودة)
+                    if (contentEl && (customerPurchases.length > 0 || carInventory.length > 0)) {
+                        contentEl.classList.remove('d-none');
+                    }
                 } else {
                     alert('خطأ: ' + (error.message || 'حدث خطأ أثناء تحميل البيانات'));
                 }
@@ -3980,15 +3999,34 @@ document.addEventListener('DOMContentLoaded', function () {
             const basePath = '<?php echo getBasePath(); ?>';
             const apiPath = basePath + '/api/get_replacement_data.php';
             fetch(apiPath + '?customer_id=' + currentCustomerId)
-                .then(response => response.json())
                 .then(response => {
-                    if (!response.ok) {
-                        throw new Error('فشل تحميل البيانات من الخادم');
+                    // التحقق من نوع المحتوى
+                    const contentType = response.headers.get('content-type') || '';
+                    if (!contentType.includes('application/json')) {
+                        return response.text().then(text => {
+                            console.error('Invalid content type. Response:', text.substring(0, 300));
+                            // محاولة parsing JSON يدوياً
+                            try {
+                                const jsonData = JSON.parse(text);
+                                return jsonData;
+                            } catch (e) {
+                                throw new Error('استجابة غير صالحة من الخادم: ' + text.substring(0, 100));
+                            }
+                        });
                     }
+                    
+                    if (!response.ok) {
+                        return response.json().then(errData => {
+                            throw new Error(errData.message || 'فشل تحميل البيانات من الخادم');
+                        }).catch(() => {
+                            throw new Error('فشل تحميل البيانات من الخادم (HTTP ' + response.status + ')');
+                        });
+                    }
+                    
                     return response.json();
                 })
                 .then(data => {
-                    if (data.success) {
+                    if (data && data.success) {
                         customerPurchases = data.customer_purchases || [];
                         carInventory = data.car_inventory || [];
                         
@@ -3998,9 +4036,11 @@ document.addEventListener('DOMContentLoaded', function () {
                         
                         const loadingEl = modalElement.querySelector('.replacement-loading');
                         const contentEl = modalElement.querySelector('.replacement-content');
+                        const errorEl = modalElement.querySelector('.replacement-error');
                         
                         if (loadingEl) loadingEl.classList.add('d-none');
                         if (contentEl) contentEl.classList.remove('d-none');
+                        if (errorEl) errorEl.classList.add('d-none');
                     } else {
                         throw new Error(data.message || 'فشل تحميل البيانات');
                     }
@@ -4009,14 +4049,21 @@ document.addEventListener('DOMContentLoaded', function () {
                     console.error('Replacement data loading error:', error);
                     
                     const loadingEl = modalElement.querySelector('.replacement-loading');
+                    const contentEl = modalElement.querySelector('.replacement-content');
                     const errorEl = modalElement.querySelector('.replacement-error');
                     
                     if (loadingEl) loadingEl.classList.add('d-none');
+                    
+                    // إذا كانت البيانات موجودة، نعرضها رغم الخطأ
+                    if (customerPurchases.length > 0 || carInventory.length > 0) {
+                        renderCustomerPurchases();
+                        renderCarInventory();
+                        if (contentEl) contentEl.classList.remove('d-none');
+                    }
+                    
                     if (errorEl) {
                         errorEl.textContent = error.message || 'حدث خطأ أثناء تحميل البيانات';
                         errorEl.classList.remove('d-none');
-                    } else {
-                        alert('خطأ: ' + (error.message || 'حدث خطأ أثناء تحميل البيانات'));
                     }
                 });
         }
@@ -4075,15 +4122,37 @@ document.addEventListener('DOMContentLoaded', function () {
                 modal.show();
                 
                 // تحميل البيانات
-                fetch('api/get_replacement_data.php?customer_id=' + currentCustomerId)
+                const basePath = '<?php echo getBasePath(); ?>';
+                const apiPath = basePath + '/api/get_replacement_data.php';
+                fetch(apiPath + '?customer_id=' + currentCustomerId)
                     .then(response => {
-                        if (!response.ok) {
-                            throw new Error('فشل تحميل البيانات من الخادم');
+                        // التحقق من نوع المحتوى
+                        const contentType = response.headers.get('content-type') || '';
+                        if (!contentType.includes('application/json')) {
+                            return response.text().then(text => {
+                                console.error('Invalid content type. Response:', text.substring(0, 300));
+                                // محاولة parsing JSON يدوياً
+                                try {
+                                    const jsonData = JSON.parse(text);
+                                    return jsonData;
+                                } catch (e) {
+                                    throw new Error('استجابة غير صالحة من الخادم: ' + text.substring(0, 100));
+                                }
+                            });
                         }
+                        
+                        if (!response.ok) {
+                            return response.json().then(errData => {
+                                throw new Error(errData.message || 'فشل تحميل البيانات من الخادم');
+                            }).catch(() => {
+                                throw new Error('فشل تحميل البيانات من الخادم (HTTP ' + response.status + ')');
+                            });
+                        }
+                        
                         return response.json();
                     })
                     .then(data => {
-                        if (data.success) {
+                        if (data && data.success) {
                             customerPurchases = data.customer_purchases || [];
                             carInventory = data.car_inventory || [];
                             
@@ -4093,6 +4162,7 @@ document.addEventListener('DOMContentLoaded', function () {
                             
                             if (loadingEl) loadingEl.classList.add('d-none');
                             if (contentEl) contentEl.classList.remove('d-none');
+                            if (errorEl) errorEl.classList.add('d-none');
                         } else {
                             throw new Error(data.message || 'فشل تحميل البيانات');
                         }
@@ -4101,11 +4171,17 @@ document.addEventListener('DOMContentLoaded', function () {
                         console.error('Replacement data loading error:', error);
                         
                         if (loadingEl) loadingEl.classList.add('d-none');
+                        
+                        // إذا كانت البيانات موجودة، نعرضها رغم الخطأ
+                        if (customerPurchases.length > 0 || carInventory.length > 0) {
+                            renderCustomerPurchases();
+                            renderCarInventory();
+                            if (contentEl) contentEl.classList.remove('d-none');
+                        }
+                        
                         if (errorEl) {
                             errorEl.textContent = error.message || 'حدث خطأ أثناء تحميل البيانات';
                             errorEl.classList.remove('d-none');
-                        } else {
-                            alert('خطأ: ' + (error.message || 'حدث خطأ أثناء تحميل البيانات'));
                         }
                     });
             });
