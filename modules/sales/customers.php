@@ -1478,6 +1478,9 @@ document.addEventListener('DOMContentLoaded', function () {
                 </div>
             </div>
             <div class="modal-footer">
+                <button type="button" class="btn btn-primary" id="printStatementBtn" onclick="printCustomerStatement()" style="display: none;">
+                    <i class="bi bi-printer me-1"></i>طباعة كشف الحساب
+                </button>
                 <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">إلغاء</button>
                 <button type="button" class="btn btn-success" id="createReturnBtn" onclick="openCreateReturnModal()" style="display: none;">
                     <i class="bi bi-arrow-return-left me-1"></i>إنشاء مرتجع
@@ -1543,6 +1546,12 @@ document.addEventListener('DOMContentLoaded', function() {
                     selectedItemsForReturn = [];
                     if (createBtn) createBtn.style.display = 'none';
                     if (selectAll) selectAll.checked = false;
+                    
+                    // إخفاء زر الطباعة حتى يتم تحميل البيانات
+                    const printBtn = document.getElementById('printStatementBtn');
+                    if (printBtn) {
+                        printBtn.style.display = 'none';
+                    }
                     
                     // Reload purchase history if customer ID is set
                     if (currentCustomerId) {
@@ -1729,6 +1738,12 @@ function loadPurchaseHistory(customerIdParam, retryCount = 0) {
             console.log('Purchase history items:', purchaseHistoryData.length); // للتشخيص
             displayPurchaseHistory(purchaseHistoryData);
             if (tableDiv) tableDiv.classList.remove('d-none');
+            
+            // إظهار زر الطباعة
+            const printBtn = document.getElementById('printStatementBtn');
+            if (printBtn) {
+                printBtn.style.display = 'inline-block';
+            }
         } else {
             const errorDivEl = document.getElementById('purchaseHistoryError');
             if (errorDivEl) {
@@ -1746,6 +1761,17 @@ function loadPurchaseHistory(customerIdParam, retryCount = 0) {
         }
         console.error('Error loading purchase history:', error);
     });
+}
+
+// دالة طباعة كشف حساب العميل
+function printCustomerStatement() {
+    if (!currentCustomerId) {
+        alert('يرجى تحديد عميل أولاً');
+        return;
+    }
+    
+    const printUrl = basePath + '/print_customer_statement.php?customer_id=' + encodeURIComponent(currentCustomerId);
+    window.open(printUrl, '_blank');
 }
 
 function displayPurchaseHistory(history) {
