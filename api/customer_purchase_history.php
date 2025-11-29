@@ -161,22 +161,21 @@ function handleGetHistory(): void
     }
     
     if ($hasInvoiceItemId) {
+        // حساب الكمية المرتجعة لكل invoice_item_id (مجموع الكميات بغض النظر عن batch_number_id)
         $returnedRows = $db->query(
-            "SELECT ri.invoice_item_id, ri.batch_number_id, COALESCE(SUM(ri.quantity), 0) AS returned_quantity
+            "SELECT ri.invoice_item_id, COALESCE(SUM(ri.quantity), 0) AS returned_quantity
              FROM return_items ri
              INNER JOIN returns r ON r.id = ri.return_id
              WHERE r.customer_id = ?
                AND r.status IN ('pending', 'approved', 'processed', 'completed')
                AND ri.invoice_item_id IS NOT NULL
-             GROUP BY ri.invoice_item_id, ri.batch_number_id",
+             GROUP BY ri.invoice_item_id",
             [$customerId]
         );
         
         foreach ($returnedRows as $row) {
             $invoiceItemId = (int)$row['invoice_item_id'];
-            $batchNumberId = isset($row['batch_number_id']) && $row['batch_number_id'] ? (int)$row['batch_number_id'] : null;
-            $key = $batchNumberId ? "{$invoiceItemId}_{$batchNumberId}" : "{$invoiceItemId}_null";
-            $returnedQuantities[$key] = (float)$row['returned_quantity'];
+            $returnedQuantities[$invoiceItemId] = (float)$row['returned_quantity'];
         }
     }
     
@@ -188,20 +187,10 @@ function handleGetHistory(): void
         $batchNumberIds = !empty($item['batch_number_ids']) ? explode(',', $item['batch_number_ids']) : [];
         $batchNumbers = !empty($item['batch_numbers']) ? explode(', ', $item['batch_numbers']) : [];
         
-        // Calculate returned quantity
+        // Calculate returned quantity - مجموع الكميات المرتجعة لكل invoice_item_id
         $returnedQuantity = 0.0;
         if ($hasInvoiceItemId) {
-            if (!empty($batchNumberIds)) {
-                foreach ($batchNumberIds as $batchId) {
-                    $batchId = trim($batchId);
-                    if (!$batchId) continue;
-                    $key = "{$invoiceItemId}_{$batchId}";
-                    $returnedQuantity += $returnedQuantities[$key] ?? 0;
-                }
-            } else {
-                $key = "{$invoiceItemId}_null";
-                $returnedQuantity = $returnedQuantities[$key] ?? 0;
-            }
+            $returnedQuantity = $returnedQuantities[$invoiceItemId] ?? 0.0;
         }
         
         $availableToReturn = max(0, $quantity - $returnedQuantity);

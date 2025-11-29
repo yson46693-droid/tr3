@@ -67,26 +67,63 @@ function handleFetchInvoice(): void
 
     $db = db();
     $alreadyReturned = [];
+    $alreadyReturnedByInvoiceItem = [];
 
-    $rows = $db->query(
-        "SELECT ri.product_id, COALESCE(SUM(ri.quantity), 0) AS returned_quantity
-         FROM return_items ri
-         INNER JOIN returns r ON r.id = ri.return_id
-         WHERE r.invoice_id = ?
-           AND r.status IN ('pending','approved','processed','completed')
-         GROUP BY ri.product_id",
-        [$invoice['id']]
-    );
+    // التحقق من وجود عمود invoice_item_id
+    $hasInvoiceItemId = false;
+    try {
+        $colCheck = $db->queryOne("SHOW COLUMNS FROM return_items LIKE 'invoice_item_id'");
+        $hasInvoiceItemId = !empty($colCheck);
+    } catch (Throwable $e) {
+        $hasInvoiceItemId = false;
+    }
 
-    foreach ($rows as $row) {
-        $alreadyReturned[(int)$row['product_id']] = (float)$row['returned_quantity'];
+    // حساب الكمية المرتجعة بناءً على invoice_item_id إن كان متوفراً
+    if ($hasInvoiceItemId) {
+        $rows = $db->query(
+            "SELECT ri.invoice_item_id, COALESCE(SUM(ri.quantity), 0) AS returned_quantity
+             FROM return_items ri
+             INNER JOIN returns r ON r.id = ri.return_id
+             WHERE r.invoice_id = ?
+               AND r.status IN ('pending','approved','processed','completed')
+               AND ri.invoice_item_id IS NOT NULL
+             GROUP BY ri.invoice_item_id",
+            [$invoice['id']]
+        );
+
+        foreach ($rows as $row) {
+            $alreadyReturnedByInvoiceItem[(int)$row['invoice_item_id']] = (float)$row['returned_quantity'];
+        }
+    } else {
+        // Fallback: حساب بناءً على product_id فقط
+        $rows = $db->query(
+            "SELECT ri.product_id, COALESCE(SUM(ri.quantity), 0) AS returned_quantity
+             FROM return_items ri
+             INNER JOIN returns r ON r.id = ri.return_id
+             WHERE r.invoice_id = ?
+               AND r.status IN ('pending','approved','processed','completed')
+             GROUP BY ri.product_id",
+            [$invoice['id']]
+        );
+
+        foreach ($rows as $row) {
+            $alreadyReturned[(int)$row['product_id']] = (float)$row['returned_quantity'];
+        }
     }
 
     $items = [];
     foreach ($invoice['items'] as $item) {
+        $invoiceItemId = (int)$item['id'];
         $productId = (int)$item['product_id'];
         $soldQuantity = (float)$item['quantity'];
-        $returnedQuantity = $alreadyReturned[$productId] ?? 0.0;
+        
+        // حساب الكمية المرتجعة بناءً على invoice_item_id إن كان متوفراً
+        if ($hasInvoiceItemId) {
+            $returnedQuantity = $alreadyReturnedByInvoiceItem[$invoiceItemId] ?? 0.0;
+        } else {
+            $returnedQuantity = $alreadyReturned[$productId] ?? 0.0;
+        }
+        
         $remaining = max(0, round($soldQuantity - $returnedQuantity, 3));
 
         $items[] = [
@@ -168,19 +205,48 @@ function handleSubmitReturn(): void
 
     $db = db();
     $alreadyReturned = [];
+    $alreadyReturnedByInvoiceItem = [];
 
-    $rows = $db->query(
-        "SELECT ri.product_id, COALESCE(SUM(ri.quantity), 0) AS returned_quantity
-         FROM return_items ri
-         INNER JOIN returns r ON r.id = ri.return_id
-         WHERE r.invoice_id = ?
-           AND r.status IN ('pending','approved','processed','completed')
-         GROUP BY ri.product_id",
-        [$invoice['id']]
-    );
+    // التحقق من وجود عمود invoice_item_id
+    $hasInvoiceItemId = false;
+    try {
+        $colCheck = $db->queryOne("SHOW COLUMNS FROM return_items LIKE 'invoice_item_id'");
+        $hasInvoiceItemId = !empty($colCheck);
+    } catch (Throwable $e) {
+        $hasInvoiceItemId = false;
+    }
 
-    foreach ($rows as $row) {
-        $alreadyReturned[(int)$row['product_id']] = (float)$row['returned_quantity'];
+    // حساب الكمية المرتجعة بناءً على invoice_item_id إن كان متوفراً
+    if ($hasInvoiceItemId) {
+        $rows = $db->query(
+            "SELECT ri.invoice_item_id, COALESCE(SUM(ri.quantity), 0) AS returned_quantity
+             FROM return_items ri
+             INNER JOIN returns r ON r.id = ri.return_id
+             WHERE r.invoice_id = ?
+               AND r.status IN ('pending','approved','processed','completed')
+               AND ri.invoice_item_id IS NOT NULL
+             GROUP BY ri.invoice_item_id",
+            [$invoice['id']]
+        );
+
+        foreach ($rows as $row) {
+            $alreadyReturnedByInvoiceItem[(int)$row['invoice_item_id']] = (float)$row['returned_quantity'];
+        }
+    } else {
+        // Fallback: حساب بناءً على product_id فقط
+        $rows = $db->query(
+            "SELECT ri.product_id, COALESCE(SUM(ri.quantity), 0) AS returned_quantity
+             FROM return_items ri
+             INNER JOIN returns r ON r.id = ri.return_id
+             WHERE r.invoice_id = ?
+               AND r.status IN ('pending','approved','processed','completed')
+             GROUP BY ri.product_id",
+            [$invoice['id']]
+        );
+
+        foreach ($rows as $row) {
+            $alreadyReturned[(int)$row['product_id']] = (float)$row['returned_quantity'];
+        }
     }
 
     $selectedItems = [];
@@ -208,7 +274,14 @@ function handleSubmitReturn(): void
         $item = $itemMap[$invoiceItemId];
         $productId = (int)$item['product_id'];
         $soldQuantity = (float)$item['quantity'];
-        $returnedQuantity = $alreadyReturned[$productId] ?? 0.0;
+        
+        // حساب الكمية المرتجعة بناءً على invoice_item_id إن كان متوفراً
+        if ($hasInvoiceItemId) {
+            $returnedQuantity = $alreadyReturnedByInvoiceItem[$invoiceItemId] ?? 0.0;
+        } else {
+            $returnedQuantity = $alreadyReturned[$productId] ?? 0.0;
+        }
+        
         $remaining = max(0, round($soldQuantity - $returnedQuantity, 3));
 
         if ($remaining <= 0) {
@@ -219,7 +292,12 @@ function handleSubmitReturn(): void
             returnJson(['success' => false, 'message' => 'الكمية المطلوبة للمنتج ' . ($item['product_name'] ?? $item['description']) . ' تتجاوز الحد المتاح (' . $remaining . ')'], 422);
         }
 
-        $alreadyReturned[$productId] = $returnedQuantity + $quantity;
+        // تحديث الكمية المرتجعة
+        if ($hasInvoiceItemId) {
+            $alreadyReturnedByInvoiceItem[$invoiceItemId] = $returnedQuantity + $quantity;
+        } else {
+            $alreadyReturned[$productId] = $returnedQuantity + $quantity;
+        }
         $lineTotal = round($quantity * (float)$item['unit_price'], 2);
         $totalRefund += $lineTotal;
 
@@ -298,20 +376,52 @@ function handleSubmitReturn(): void
 
         $returnId = (int)$db->getLastInsertId();
 
+        // التحقق من وجود الأعمدة invoice_item_id و batch_number_id
+        $hasInvoiceItemId = false;
+        $hasBatchNumberId = false;
+        try {
+            $colCheck = $db->queryOne("SHOW COLUMNS FROM return_items LIKE 'invoice_item_id'");
+            $hasInvoiceItemId = !empty($colCheck);
+            
+            $colCheck = $db->queryOne("SHOW COLUMNS FROM return_items LIKE 'batch_number_id'");
+            $hasBatchNumberId = !empty($colCheck);
+        } catch (Throwable $e) {
+            // تجاهل الأخطاء
+        }
+
         foreach ($selectedItems as $item) {
-            $db->execute(
-                "INSERT INTO return_items
-                 (return_id, sale_item_id, product_id, quantity, unit_price, total_price, condition)
-                 VALUES (?, ?, ?, ?, ?, ?, 'new')",
-                [
-                    $returnId,
-                    null,
-                    $item['product_id'],
-                    $item['quantity'],
-                    $item['unit_price'],
-                    $item['total_price'],
-                ]
-            );
+            // الحصول على batch_number_id من invoice_item_id إذا كان متوفراً
+            $batchNumberId = null;
+            if ($hasBatchNumberId && isset($item['invoice_item_id'])) {
+                $batchRow = $db->queryOne(
+                    "SELECT batch_number_id FROM sales_batch_numbers 
+                     WHERE invoice_item_id = ? 
+                     ORDER BY id ASC LIMIT 1",
+                    [$item['invoice_item_id']]
+                );
+                if ($batchRow && !empty($batchRow['batch_number_id'])) {
+                    $batchNumberId = (int)$batchRow['batch_number_id'];
+                }
+            }
+
+            // بناء قائمة الأعمدة والقيم بشكل ديناميكي
+            $columns = ['return_id', 'sale_item_id', 'product_id', 'quantity', 'unit_price', 'total_price', '`condition`'];
+            $values = [$returnId, null, $item['product_id'], $item['quantity'], $item['unit_price'], $item['total_price'], 'new'];
+            
+            if ($hasInvoiceItemId && isset($item['invoice_item_id'])) {
+                $columns[] = 'invoice_item_id';
+                $values[] = $item['invoice_item_id'];
+            }
+            
+            if ($hasBatchNumberId && $batchNumberId) {
+                $columns[] = 'batch_number_id';
+                $values[] = $batchNumberId;
+            }
+
+            $placeholders = str_repeat('?,', count($values) - 1) . '?';
+            $sql = "INSERT INTO return_items (" . implode(', ', $columns) . ") VALUES ($placeholders)";
+            
+            $db->execute($sql, $values);
 
             $inventoryRow = $db->queryOne(
                 "SELECT id, quantity FROM vehicle_inventory WHERE vehicle_id = ? AND product_id = ? FOR UPDATE",
