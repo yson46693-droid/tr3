@@ -1,6 +1,6 @@
 <?php
 /**
- * صفحة خزنة الشركة (المدير)
+ * صفحة خزنة المحاسب
  */
 
 if (!defined('ACCESS_ALLOWED')) {
@@ -13,14 +13,18 @@ require_once __DIR__ . '/../../includes/auth.php';
 require_once __DIR__ . '/../../includes/table_styles.php';
 require_once __DIR__ . '/../../includes/lang/' . getCurrentLanguage() . '.php';
 
-requireRole(['manager', 'accountant']);
+requireRole(['accountant', 'manager']);
 
 $db = db();
+$currentUser = getCurrentUser();
+
 $lang = isset($translations) ? $translations : [];
 
-$month = date('n');
-$year = date('Y');
+$today = date('Y-m-d');
+$currentMonth = date('n');
+$currentYear = date('Y');
 
+// أرصدة موجزة
 $incomeRow = $db->queryOne("
     SELECT COALESCE(SUM(amount), 0) AS total
     FROM financial_transactions
@@ -31,23 +35,36 @@ $expenseRow = $db->queryOne("
     FROM financial_transactions
     WHERE status = 'approved' AND type IN ('expense', 'payment')
 ");
-$companyBalance = floatval($incomeRow['total'] ?? 0) - floatval($expenseRow['total'] ?? 0);
+$cashBalance = floatval($incomeRow['total'] ?? 0) - floatval($expenseRow['total'] ?? 0);
 
-$approvedExpensesMonth = $db->queryOne("
+$todayIncome = $db->queryOne("
     SELECT COALESCE(SUM(amount), 0) AS total
     FROM financial_transactions
-    WHERE status = 'approved' AND type IN ('expense','payment')
-      AND MONTH(created_at) = ? AND YEAR(created_at) = ?
-", [$month, $year]);
-
-$collectionsStatusColumn = $db->queryOne("SHOW COLUMNS FROM collections LIKE 'status'");
-$collectionsStatusCondition = !empty($collectionsStatusColumn) ? "status IN ('approved','pending')" : '1=1';
-$collectionsMonth = $db->queryOne("
+    WHERE status = 'approved' AND type IN ('income', 'transfer')
+      AND DATE(created_at) = CURDATE()
+");
+$todayExpenses = $db->queryOne("
     SELECT COALESCE(SUM(amount), 0) AS total
-    FROM collections
-    WHERE $collectionsStatusCondition
-      AND MONTH(date) = ? AND YEAR(date) = ?
-", [$month, $year]);
+    FROM financial_transactions
+    WHERE status = 'approved' AND type IN ('expense', 'payment')
+      AND DATE(created_at) = CURDATE()
+");
+
+$monthIncome = $db->queryOne("
+    SELECT COALESCE(SUM(amount), 0) AS total
+    FROM financial_transactions
+    WHERE status = 'approved'
+      AND type IN ('income', 'transfer')
+      AND MONTH(created_at) = ? AND YEAR(created_at) = ?
+", [$currentMonth, $currentYear]);
+
+$monthExpenses = $db->queryOne("
+    SELECT COALESCE(SUM(amount), 0) AS total
+    FROM financial_transactions
+    WHERE status = 'approved'
+      AND type IN ('expense', 'payment')
+      AND MONTH(created_at) = ? AND YEAR(created_at) = ?
+", [$currentMonth, $currentYear]);
 
 $pendingTransactions = $db->queryOne("
     SELECT COUNT(*) AS total
@@ -55,553 +72,332 @@ $pendingTransactions = $db->queryOne("
     WHERE status = 'pending'
 ");
 
-$salariesTableExists = $db->queryOne("SHOW TABLES LIKE 'salaries'");
-$pendingSalaries = ['total' => 0];
-if (!empty($salariesTableExists)) {
-    $pendingSalaries = $db->queryOne("
-        SELECT COALESCE(SUM(total_amount), 0) AS total
-        FROM salaries
-        WHERE status IN ('pending', 'approved')
-    ");
-}
-
-// أحدث التحصيلات
-$latestCollections = [];
-if ($collectionsStatusColumn !== false) {
-    $statusFilter = !empty($collectionsStatusColumn) ? "WHERE c.status IN ('approved','pending')" : '';
-    $latestCollections = $db->query("
-        SELECT c.*, cust.name AS customer_name, u.full_name AS collector_name
-        FROM collections c
-        LEFT JOIN customers cust ON c.customer_id = cust.id
-        LEFT JOIN users u ON c.collected_by = u.id
-        $statusFilter
-        ORDER BY c.date DESC, c.created_at DESC
-        LIMIT 10
-    ");
-}
-
-// سجل المعاملات المالية (مختصر)
-$transactions = $db->query("
-    SELECT ft.*, creator.full_name AS creator_name, creator.username AS creator_username
-    FROM financial_transactions ft
-    LEFT JOIN users creator ON ft.created_by = creator.id
-    ORDER BY ft.created_at DESC
-    LIMIT 15
+// تحصيلات اليوم
+$collectionsStatusColumn = $db->queryOne("SHOW COLUMNS FROM collections LIKE 'status'");
+$collectionsStatusFilter = !empty($collectionsStatusColumn) ? "AND status IN ('approved','pending')" : '';
+$collectionsToday = $db->queryOne("
+    SELECT COALESCE(SUM(amount), 0) AS total
+    FROM collections
+    WHERE DATE(date) = CURDATE() $collectionsStatusFilter
 ");
+
+// فلاتر سجل المعاملات
+$validTypes = [
+    '' => 'جميع الأنواع',
+    'income' => 'إيراد',
+    'expense' => 'مصروف',
+    'transfer' => 'تحويل',
+    'payment' => 'دفعة'
+];
+
+$validStatuses = [
+    '' => 'جميع الحالات',
+    'approved' => 'معتمدة',
+    'pending' => 'قيد المراجعة',
+    'rejected' => 'مرفوضة'
+];
+
+$filterType = isset($_GET['type']) && array_key_exists($_GET['type'], $validTypes) ? $_GET['type'] : '';
+$filterStatus = isset($_GET['status']) && array_key_exists($_GET['status'], $validStatuses) ? $_GET['status'] : '';
+$filterFrom = isset($_GET['from']) && preg_match('/^\d{4}-\d{2}-\d{2}$/', $_GET['from']) ? $_GET['from'] : '';
+$filterTo = isset($_GET['to']) && preg_match('/^\d{4}-\d{2}-\d{2}$/', $_GET['to']) ? $_GET['to'] : '';
+$searchTerm = isset($_GET['search']) ? trim($_GET['search']) : '';
+
+$whereParts = [];
+$whereParams = [];
+
+if ($filterType !== '') {
+    $whereParts[] = 'ft.type = ?';
+    $whereParams[] = $filterType;
+}
+
+if ($filterStatus !== '') {
+    $whereParts[] = 'ft.status = ?';
+    $whereParams[] = $filterStatus;
+}
+
+if ($filterFrom !== '') {
+    $whereParts[] = 'DATE(ft.created_at) >= ?';
+    $whereParams[] = $filterFrom;
+}
+
+if ($filterTo !== '') {
+    $whereParts[] = 'DATE(ft.created_at) <= ?';
+    $whereParams[] = $filterTo;
+}
+
+if ($searchTerm !== '') {
+    $whereParts[] = '(ft.description LIKE ? OR ft.reference_number LIKE ?)';
+    $like = '%' . $searchTerm . '%';
+    $whereParams[] = $like;
+    $whereParams[] = $like;
+}
+
+$whereClause = $whereParts ? ('WHERE ' . implode(' AND ', $whereParts)) : '';
+
+$perPage = 15;
+$pageNum = isset($_GET['p']) ? max(1, intval($_GET['p'])) : 1;
+
+$countRow = $db->queryOne("SELECT COUNT(*) AS total FROM financial_transactions ft $whereClause", $whereParams);
+$totalRows = (int) ($countRow['total'] ?? 0);
+$totalPages = max(1, (int) ceil($totalRows / $perPage));
+if ($pageNum > $totalPages) {
+    $pageNum = $totalPages;
+}
+$offset = ($pageNum - 1) * $perPage;
+
+$transactions = $db->query(
+    "SELECT ft.*, u.full_name AS creator_name, u.username AS creator_username,
+            approver.full_name AS approver_name
+     FROM financial_transactions ft
+     LEFT JOIN users u ON ft.created_by = u.id
+     LEFT JOIN users approver ON ft.approved_by = approver.id
+     $whereClause
+     ORDER BY ft.created_at DESC
+     LIMIT ? OFFSET ?",
+    array_merge($whereParams, [$perPage, $offset])
+);
 ?>
 
-<style>
-/* Modern Financial Dashboard Styles */
-.company-cash-dashboard {
-    direction: rtl;
-    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
-}
+<div class="page-header mb-4">
+    <h2><i class="bi bi-safe2 me-2"></i>خزنة المحاسب</h2>
+    <p class="text-muted mb-0">التحكم الكامل في التدفق النقدي والمعاملات المالية المعتمدة.</p>
+</div>
 
-.company-cash-header {
-    margin-bottom: 2.5rem;
-    padding: 1.5rem 0;
-}
-
-.company-cash-header h2 {
-    font-size: 2rem;
-    font-weight: 700;
-    color: #1e3d78;
-    margin-bottom: 0.5rem;
-    display: flex;
-    align-items: center;
-    gap: 0.75rem;
-}
-
-.company-cash-header h2 i {
-    font-size: 2.25rem;
-    color: #2b4c80;
-    opacity: 0.9;
-}
-
-.company-cash-header p {
-    color: #64748b;
-    font-size: 1rem;
-    margin: 0;
-}
-
-/* Metric Cards Grid */
-.metric-cards-grid {
-    display: grid;
-    grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
-    gap: 1.5rem;
-    margin-bottom: 2.5rem;
-}
-
-.metric-card {
-    background: #ffffff;
-    border-radius: 20px;
-    padding: 1.75rem;
-    box-shadow: 0 8px 25px rgba(0, 80, 180, 0.08);
-    border: none;
-    position: relative;
-    transition: transform 0.3s ease, box-shadow 0.3s ease;
-    overflow: hidden;
-}
-
-.metric-card:hover {
-    transform: translateY(-4px);
-    box-shadow: 0 12px 35px rgba(0, 80, 180, 0.12);
-}
-
-.metric-card::before {
-    content: '';
-    position: absolute;
-    right: 0;
-    top: 0;
-    bottom: 0;
-    width: 4px;
-    background: linear-gradient(180deg, #2b4c80 0%, #1e3d78 100%);
-}
-
-.metric-card-icon {
-    width: 56px;
-    height: 56px;
-    border-radius: 12px;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    margin-bottom: 1rem;
-    font-size: 1.5rem;
-}
-
-.metric-card-icon.blue {
-    background: #e9f1ff;
-    color: #2b4c80;
-}
-
-.metric-card-icon.red {
-    background: #fee2e2;
-    color: #dc2626;
-}
-
-.metric-card-icon.purple {
-    background: #f3e8ff;
-    color: #9333ea;
-}
-
-.metric-card-title {
-    font-size: 0.95rem;
-    color: #64748b;
-    margin-bottom: 0.75rem;
-    font-weight: 500;
-}
-
-.metric-card-value {
-    font-size: 1.875rem;
-    font-weight: 700;
-    color: #1e293b;
-    margin-bottom: 0.5rem;
-    line-height: 1.2;
-}
-
-.metric-card-description {
-    font-size: 0.875rem;
-    color: #94a3b8;
-    line-height: 1.5;
-}
-
-/* Tables Section */
-.tables-section {
-    display: grid;
-    grid-template-columns: repeat(auto-fit, minmax(400px, 1fr));
-    gap: 1.5rem;
-    margin-bottom: 2.5rem;
-}
-
-.table-card {
-    background: #ffffff;
-    border-radius: 20px;
-    box-shadow: 0 8px 25px rgba(0, 80, 180, 0.08);
-    overflow: hidden;
-    border: none;
-}
-
-.table-card-header {
-    padding: 1.25rem 1.75rem;
-    background: #ffffff;
-    border-bottom: 1px solid #e2e8f0;
-    display: flex;
-    align-items: center;
-    gap: 0.75rem;
-}
-
-.table-card-header h5 {
-    margin: 0;
-    font-size: 1.1rem;
-    font-weight: 600;
-    color: #1e3d78;
-    display: flex;
-    align-items: center;
-    gap: 0.5rem;
-}
-
-.table-card-header i {
-    font-size: 1.25rem;
-    color: #2b4c80;
-}
-
-.table-card-body {
-    padding: 0;
-}
-
-.modern-table {
-    width: 100%;
-    border-collapse: separate;
-    border-spacing: 0;
-}
-
-.modern-table thead th {
-    background: #334155;
-    color: #ffffff;
-    font-weight: 600;
-    font-size: 0.85rem;
-    padding: 1rem 1.25rem;
-    text-align: right;
-    border: none;
-    border-left: 1px solid rgba(255, 255, 255, 0.1);
-}
-
-.modern-table thead th:first-child {
-    border-left: none;
-}
-
-.modern-table tbody td {
-    padding: 1rem 1.25rem;
-    border-bottom: 1px solid #e2e8f0;
-    color: #475569;
-    font-size: 0.9rem;
-}
-
-.modern-table tbody tr:last-child td {
-    border-bottom: none;
-}
-
-.modern-table tbody tr:hover {
-    background: #f8fafc;
-}
-
-.modern-table tbody tr:nth-child(even) {
-    background: #f8fafc;
-}
-
-.modern-table tbody tr:nth-child(even):hover {
-    background: #f1f5f9;
-}
-
-/* Important Notes Section */
-.important-notes-section {
-    background: linear-gradient(135deg, #dff0ff 0%, #b9d8ff 100%);
-    border-radius: 20px;
-    padding: 2rem;
-    box-shadow: 0 8px 25px rgba(0, 80, 180, 0.08);
-}
-
-.important-notes-header {
-    display: flex;
-    align-items: center;
-    gap: 0.75rem;
-    margin-bottom: 1.5rem;
-}
-
-.important-notes-header h5 {
-    margin: 0;
-    font-size: 1.25rem;
-    font-weight: 600;
-    color: #1e3d78;
-    display: flex;
-    align-items: center;
-    gap: 0.5rem;
-}
-
-.important-notes-header i {
-    width: 40px;
-    height: 40px;
-    background: rgba(30, 61, 120, 0.1);
-    border-radius: 50%;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    color: #1e3d78;
-    font-size: 1.1rem;
-}
-
-.notes-grid {
-    display: grid;
-    grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
-    gap: 1.25rem;
-}
-
-.note-item {
-    background: rgba(255, 255, 255, 0.9);
-    border-radius: 12px;
-    padding: 1.25rem;
-    backdrop-filter: blur(10px);
-    border: 1px solid rgba(255, 255, 255, 0.5);
-}
-
-.note-item strong {
-    display: block;
-    color: #1e3d78;
-    font-size: 0.95rem;
-    margin-bottom: 0.75rem;
-    font-weight: 600;
-}
-
-.note-item .note-value {
-    font-size: 1.5rem;
-    font-weight: 700;
-    color: #1e293b;
-    margin: 0.5rem 0;
-}
-
-.note-item small {
-    display: block;
-    color: #64748b;
-    font-size: 0.85rem;
-    margin-top: 0.5rem;
-    line-height: 1.5;
-}
-
-/* Responsive Design */
-@media (max-width: 768px) {
-    .metric-cards-grid {
-        grid-template-columns: 1fr;
-        gap: 1rem;
-    }
-    
-    .tables-section {
-        grid-template-columns: 1fr;
-        gap: 1rem;
-    }
-    
-    .notes-grid {
-        grid-template-columns: 1fr;
-    }
-    
-    .company-cash-header h2 {
-        font-size: 1.5rem;
-    }
-    
-    .metric-card {
-        padding: 1.5rem;
-    }
-    
-    .table-card-header {
-        padding: 1rem 1.25rem;
-    }
-    
-    .modern-table thead th,
-    .modern-table tbody td {
-        padding: 0.75rem 1rem;
-        font-size: 0.85rem;
-    }
-}
-
-@media (max-width: 480px) {
-    .company-cash-header h2 {
-        font-size: 1.25rem;
-    }
-    
-    .company-cash-header h2 i {
-        font-size: 1.75rem;
-    }
-    
-    .metric-card-value {
-        font-size: 1.5rem;
-    }
-    
-    .important-notes-section {
-        padding: 1.5rem;
-    }
-}
-</style>
-
-<div class="company-cash-dashboard">
-    <!-- Header Section -->
-    <div class="company-cash-header">
-        <h2>
-            <i class="bi bi-building"></i>
-            خزنة الشركة
-        </h2>
-        <p>رؤية شاملة للتدفقات النقدية والالتزامات المالية.</p>
-    </div>
-
-    <!-- Metric Cards Grid -->
-    <div class="metric-cards-grid">
-        <!-- Salaries Pending Disbursement -->
-        <div class="metric-card">
-            <div class="metric-card-icon purple">
-                <i class="bi bi-clipboard-data"></i>
-            </div>
-            <div class="metric-card-title">رواتب بانتظار الصرف</div>
-            <div class="metric-card-value"><?php echo formatCurrency($pendingSalaries['total'] ?? 0); ?></div>
-            <div class="metric-card-description">حالات معتمدة/معلقة</div>
-        </div>
-
-        <!-- Monthly Expenses -->
-        <div class="metric-card">
-            <div class="metric-card-icon red">
-                <i class="bi bi-arrow-down-circle"></i>
-            </div>
-            <div class="metric-card-title">مصروفات الشهر</div>
-            <div class="metric-card-value"><?php echo formatCurrency($approvedExpensesMonth['total'] ?? 0); ?></div>
-            <div class="metric-card-description">معاملات معتمدة فقط</div>
-        </div>
-
-        <!-- Monthly Collections -->
-        <div class="metric-card">
-            <div class="metric-card-icon blue">
-                <i class="bi bi-graph-up"></i>
-            </div>
-            <div class="metric-card-title">تحصيلات الشهر</div>
-            <div class="metric-card-value"><?php echo formatCurrency($collectionsMonth['total'] ?? 0); ?></div>
-            <div class="metric-card-description">يشمل التحصيلات المعتمدة والمعلقة</div>
-        </div>
-
-        <!-- Current Company Balance -->
-        <div class="metric-card">
-            <div class="metric-card-icon blue">
-                <i class="bi bi-wallet2"></i>
-            </div>
-            <div class="metric-card-title">رصيد الشركة الحالي</div>
-            <div class="metric-card-value"><?php echo formatCurrency($companyBalance); ?></div>
-            <div class="metric-card-description">إجمالي الإيرادات - المصروفات</div>
-        </div>
-    </div>
-
-    <!-- Tables Section -->
-    <div class="tables-section">
-        <!-- Latest Collections from Customers -->
-        <div class="table-card">
-            <div class="table-card-header">
-                <h5>
-                    <i class="bi bi-people"></i>
-                    آخر التحصيلات من العملاء
-                </h5>
-            </div>
-            <div class="table-card-body">
-                <div class="table-responsive">
-                    <table class="modern-table">
-                        <thead>
-                            <tr>
-                                <th>المحصل</th>
-                                <th>المبلغ</th>
-                                <th>العميل</th>
-                                <th>التاريخ</th>
-                            </tr>
-                        </thead>
-                        <tbody>
-                            <?php if (empty($latestCollections)): ?>
-                                <tr>
-                                    <td colspan="4" style="text-align: center; color: #94a3b8; padding: 2rem;">لا توجد تحصيلات حديثة.</td>
-                                </tr>
-                            <?php else: ?>
-                                <?php foreach ($latestCollections as $collection): ?>
-                                    <tr>
-                                        <td><?php echo htmlspecialchars($collection['collector_name'] ?? '—'); ?></td>
-                                        <td style="color: #10b981; font-weight: 600;"><?php echo formatCurrency($collection['amount']); ?></td>
-                                        <td><?php echo htmlspecialchars($collection['customer_name'] ?? 'عميل مجهول'); ?></td>
-                                        <td><?php echo htmlspecialchars($collection['date']); ?></td>
-                                    </tr>
-                                <?php endforeach; ?>
-                            <?php endif; ?>
-                        </tbody>
-                    </table>
+<div class="row g-3 mb-4">
+    <div class="col-12 col-lg-3 col-md-6">
+        <div class="card stat-card shadow-sm border-0 h-100">
+            <div class="card-body">
+                <div class="stat-card-icon success">
+                    <i class="bi bi-cash-stack"></i>
                 </div>
+                <div class="stat-card-title">رصيد الخزنة</div>
+                <div class="h4 fw-bold mb-0"><?php echo formatCurrency($cashBalance); ?></div>
+                <div class="stat-card-description text-muted">صافي (إيرادات - مصروفات) معتمدة</div>
             </div>
         </div>
-
-        <!-- Latest Financial Transactions -->
-        <div class="table-card">
-            <div class="table-card-header">
-                <h5>
-                    <i class="bi bi-journal-text"></i>
-                    أحدث المعاملات المالية
-                </h5>
+    </div>
+    <div class="col-12 col-lg-3 col-md-6">
+        <div class="card stat-card shadow-sm border-0 h-100">
+            <div class="card-body">
+                <div class="stat-card-icon primary">
+                    <i class="bi bi-calendar-event"></i>
+                </div>
+                <div class="stat-card-title">إيرادات اليوم</div>
+                <div class="h4 fw-bold mb-0"><?php echo formatCurrency($todayIncome['total'] ?? 0); ?></div>
+                <div class="stat-card-description text-muted">المعاملات المعتمدة فقط</div>
             </div>
-            <div class="table-card-body">
-                <div class="table-responsive">
-                    <table class="modern-table">
-                        <thead>
-                            <tr>
-                                <th>الحالة</th>
-                                <th>المبلغ</th>
-                                <th>النوع</th>
-                                <th>التاريخ</th>
-                            </tr>
-                        </thead>
-                        <tbody>
-                            <?php if (empty($transactions)): ?>
-                                <tr>
-                                    <td colspan="4" style="text-align: center; color: #94a3b8; padding: 2rem;">لا توجد معاملات مسجلة.</td>
-                                </tr>
-                            <?php else: ?>
-                                <?php foreach ($transactions as $transaction): ?>
-                                    <tr>
-                                        <td>
-                                            <span class="badge bg-<?php echo $transaction['status'] === 'approved' ? 'success' : ($transaction['status'] === 'pending' ? 'warning text-dark' : 'danger'); ?>">
-                                                <?php echo $transaction['status']; ?>
-                                            </span>
-                                        </td>
-                                        <td>
-                                            <?php
-                                            $isOut = in_array($transaction['type'], ['expense', 'payment'], true);
-                                            $amount = formatCurrency($transaction['amount']);
-                                            ?>
-                                            <span style="color: <?php echo $isOut ? '#dc2626' : '#10b981'; ?>; font-weight: 600;">
-                                                <?php echo $isOut ? '-' : '+'; ?><?php echo $amount; ?>
-                                            </span>
-                                        </td>
-                                        <td>
-                                            <span class="badge bg-secondary"><?php echo $transaction['type']; ?></span>
-                                            <div style="font-size: 0.8rem; color: #94a3b8; margin-top: 0.25rem;">
-                                                <?php echo htmlspecialchars(mb_strimwidth($transaction['description'], 0, 40, '...')); ?>
-                                            </div>
-                                        </td>
-                                        <td>
-                                            <?php echo date('Y-m-d', strtotime($transaction['created_at'])); ?>
-                                            <div style="font-size: 0.8rem; color: #94a3b8; margin-top: 0.25rem;">
-                                                <?php echo date('H:i', strtotime($transaction['created_at'])); ?>
-                                            </div>
-                                        </td>
-                                    </tr>
-                                <?php endforeach; ?>
-                            <?php endif; ?>
-                        </tbody>
-                    </table>
+        </div>
+    </div>
+    <div class="col-12 col-lg-3 col-md-6">
+        <div class="card stat-card shadow-sm border-0 h-100">
+            <div class="card-body">
+                <div class="stat-card-icon red">
+                    <i class="bi bi-arrow-down-circle"></i>
+                </div>
+                <div class="stat-card-title">مصروفات اليوم</div>
+                <div class="h4 fw-bold mb-0"><?php echo formatCurrency($todayExpenses['total'] ?? 0); ?></div>
+                <div class="stat-card-description text-muted">يشمل الدفعات النقدية</div>
+            </div>
+        </div>
+    </div>
+    <div class="col-12 col-lg-3 col-md-6">
+        <div class="card stat-card shadow-sm border-0 h-100">
+            <div class="card-body">
+                <div class="stat-card-icon purple">
+                    <i class="bi bi-list-check"></i>
+                </div>
+                <div class="stat-card-title">معاملات قيد الاعتماد</div>
+                <div class="h4 fw-bold mb-0"><?php echo (int)($pendingTransactions['total'] ?? 0); ?></div>
+                <div class="stat-card-description text-muted">بانتظار اعتماد المحاسب</div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<div class="row g-3 mb-4">
+    <div class="col-12 col-lg-4">
+        <div class="card shadow-sm border-0 h-100">
+            <div class="card-body">
+                <h5 class="card-title">ملخص شهري</h5>
+                <div class="d-flex justify-content-between mb-2">
+                    <span class="text-muted">إيرادات الشهر</span>
+                    <strong class="text-success"><?php echo formatCurrency($monthIncome['total'] ?? 0); ?></strong>
+                </div>
+                <div class="d-flex justify-content-between mb-2">
+                    <span class="text-muted">مصروفات الشهر</span>
+                    <strong class="text-danger"><?php echo formatCurrency($monthExpenses['total'] ?? 0); ?></strong>
+                </div>
+                <div class="d-flex justify-content-between">
+                    <span class="text-muted">تحصيلات اليوم</span>
+                    <strong><?php echo formatCurrency($collectionsToday['total'] ?? 0); ?></strong>
                 </div>
             </div>
         </div>
     </div>
-
-    <!-- Important Notes Section -->
-    <div class="important-notes-section">
-        <div class="important-notes-header">
-            <i class="bi bi-exclamation-circle"></i>
-            <h5>إشارات هامة</h5>
-        </div>
-        <div class="notes-grid">
-            <div class="note-item">
-                <strong>معاملات قيد الاعتماد:</strong>
-                <div class="note-value"><?php echo (int)($pendingTransactions['total'] ?? 0); ?></div>
-                <small>يرجى مراجعتها لاعتماد الرصيد النهائي.</small>
-            </div>
-            <div class="note-item">
-                <strong>إلتزامات الرواتب:</strong>
-                <div class="note-value"><?php echo formatCurrency($pendingSalaries['total'] ?? 0); ?></div>
-                <small>مبالغ يجب توفيرها قبل موعد الصرف.</small>
-            </div>
-            <div class="note-item">
-                <strong>تحصيلات الشهر الحالي:</strong>
-                <div class="note-value"><?php echo formatCurrency($collectionsMonth['total'] ?? 0); ?></div>
-                <small>تساعد في دعم السيولة.</small>
+    <div class="col-12 col-lg-8">
+        <div class="card shadow-sm border-0 h-100">
+            <div class="card-body">
+                <h5 class="card-title">فلترة السجل المالي</h5>
+                <form class="row g-3" method="GET">
+                    <input type="hidden" name="page" value="accountant_cash">
+                    <div class="col-sm-6 col-lg-3">
+                        <label class="form-label">النوع</label>
+                        <select class="form-select" name="type">
+                            <?php foreach ($validTypes as $value => $label): ?>
+                                <option value="<?php echo $value; ?>" <?php echo $filterType === $value ? 'selected' : ''; ?>>
+                                    <?php echo $label; ?>
+                                </option>
+                            <?php endforeach; ?>
+                        </select>
+                    </div>
+                    <div class="col-sm-6 col-lg-3">
+                        <label class="form-label">الحالة</label>
+                        <select class="form-select" name="status">
+                            <?php foreach ($validStatuses as $value => $label): ?>
+                                <option value="<?php echo $value; ?>" <?php echo $filterStatus === $value ? 'selected' : ''; ?>>
+                                    <?php echo $label; ?>
+                                </option>
+                            <?php endforeach; ?>
+                        </select>
+                    </div>
+                    <div class="col-sm-6 col-lg-3">
+                        <label class="form-label">من تاريخ</label>
+                        <input type="date" class="form-control" name="from" value="<?php echo htmlspecialchars($filterFrom); ?>">
+                    </div>
+                    <div class="col-sm-6 col-lg-3">
+                        <label class="form-label">إلى تاريخ</label>
+                        <input type="date" class="form-control" name="to" value="<?php echo htmlspecialchars($filterTo); ?>">
+                    </div>
+                    <div class="col-12">
+                        <label class="form-label">بحث بالكلمات المفتاحية</label>
+                        <input type="text" class="form-control" name="search" placeholder="وصف، رقم مرجعي..." value="<?php echo htmlspecialchars($searchTerm); ?>">
+                    </div>
+                    <div class="col-12 d-flex justify-content-end gap-2">
+                        <a href="accountant.php?page=accountant_cash" class="btn btn-outline-secondary">
+                            مسح الفلاتر
+                        </a>
+                        <button class="btn btn-primary" type="submit">
+                            <i class="bi bi-funnel me-1"></i>تطبيق
+                        </button>
+                    </div>
+                </form>
             </div>
         </div>
     </div>
+</div>
+
+<div class="card shadow-sm">
+    <div class="card-header d-flex justify-content-between align-items-center">
+        <h5 class="mb-0"><i class="bi bi-journal-text me-2"></i>سجل المعاملات المالية</h5>
+        <span class="text-muted small">إجمالي النتائج: <?php echo $totalRows; ?></span>
+    </div>
+    <div class="card-body p-0">
+        <div class="table-responsive">
+            <table class="table table-hover mb-0">
+                <thead class="table-light">
+                    <tr>
+                        <th>التاريخ</th>
+                        <th>النوع</th>
+                        <th>الوصف</th>
+                        <th>المبلغ</th>
+                        <th>الحالة</th>
+                        <th>المستخدم</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    <?php if (empty($transactions)): ?>
+                        <tr>
+                            <td colspan="6" class="text-center text-muted py-4">
+                                لا توجد معاملات مطابقة للمعايير الحالية.
+                            </td>
+                        </tr>
+                    <?php else: ?>
+                        <?php foreach ($transactions as $transaction): ?>
+                            <tr>
+                                <td>
+                                    <strong><?php echo date('Y-m-d', strtotime($transaction['created_at'])); ?></strong>
+                                    <div class="text-muted small"><?php echo date('H:i', strtotime($transaction['created_at'])); ?></div>
+                                </td>
+                                <td>
+                                    <span class="badge bg-secondary">
+                                        <?php echo $validTypes[$transaction['type']] ?? $transaction['type']; ?>
+                                    </span>
+                                    <?php if (!empty($transaction['reference_number'])): ?>
+                                        <div class="text-muted small">#<?php echo htmlspecialchars($transaction['reference_number']); ?></div>
+                                    <?php endif; ?>
+                                </td>
+                                <td>
+                                    <?php echo nl2br(htmlspecialchars($transaction['description'])); ?>
+                                </td>
+                                <td>
+                                    <?php
+                                    $amount = floatval($transaction['amount']);
+                                    $isExpense = in_array($transaction['type'], ['expense', 'payment'], true);
+                                    $formattedAmount = formatCurrency($amount);
+                                    ?>
+                                    <span class="<?php echo $isExpense ? 'text-danger' : 'text-success'; ?>">
+                                        <?php echo $isExpense ? '-' : '+'; ?><?php echo $formattedAmount; ?>
+                                    </span>
+                                </td>
+                                <td>
+                                    <?php
+                                    $status = $transaction['status'];
+                                    $statusClasses = [
+                                        'approved' => 'badge bg-success',
+                                        'pending' => 'badge bg-warning text-dark',
+                                        'rejected' => 'badge bg-danger'
+                                    ];
+                                    ?>
+                                    <span class="<?php echo $statusClasses[$status] ?? 'badge bg-secondary'; ?>">
+                                        <?php echo $validStatuses[$status] ?? $status; ?>
+                                    </span>
+                                </td>
+                                <td>
+                                    <div><?php echo htmlspecialchars($transaction['creator_name'] ?? $transaction['creator_username'] ?? '—'); ?></div>
+                                    <?php if (!empty($transaction['approver_name'])): ?>
+                                        <div class="text-muted small">
+                                            <i class="bi bi-check2-circle me-1"></i><?php echo htmlspecialchars($transaction['approver_name']); ?>
+                                        </div>
+                                    <?php endif; ?>
+                                </td>
+                            </tr>
+                        <?php endforeach; ?>
+                    <?php endif; ?>
+                </tbody>
+            </table>
+        </div>
+    </div>
+    <?php if ($totalPages > 1): ?>
+    <div class="card-footer d-flex justify-content-between align-items-center">
+        <span class="text-muted small">
+            صفحة <?php echo $pageNum; ?> من <?php echo $totalPages; ?>
+        </span>
+        <nav>
+            <ul class="pagination pagination-sm mb-0">
+                <?php
+                $query = $_GET;
+                $query['page'] = 'accountant_cash';
+                $prevPage = max(1, $pageNum - 1);
+                $nextPage = min($totalPages, $pageNum + 1);
+                $query['p'] = $prevPage;
+                ?>
+                <li class="page-item <?php echo $pageNum <= 1 ? 'disabled' : ''; ?>">
+                    <a class="page-link" href="<?php echo '?' . http_build_query($query); ?>">&laquo;</a>
+                </li>
+                <?php for ($i = 1; $i <= $totalPages; $i++): ?>
+                    <?php $query['p'] = $i; ?>
+                    <li class="page-item <?php echo $i === $pageNum ? 'active' : ''; ?>">
+                        <a class="page-link" href="<?php echo '?' . http_build_query($query); ?>"><?php echo $i; ?></a>
+                    </li>
+                <?php endfor; ?>
+                <?php $query['p'] = $nextPage; ?>
+                <li class="page-item <?php echo $pageNum >= $totalPages ? 'disabled' : ''; ?>">
+                    <a class="page-link" href="<?php echo '?' . http_build_query($query); ?>">&raquo;</a>
+                </li>
+            </ul>
+        </nav>
+    </div>
+    <?php endif; ?>
 </div>
 
