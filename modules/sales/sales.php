@@ -449,7 +449,9 @@ $tableHeaderStyle = $isSalesRecords ? 'background: linear-gradient(135deg, #667e
         <?php endif; ?>
     </div>
 </div>
+<?php endif; ?>
 
+<?php if ($activeTab === 'exchanges'): ?>
 <?php
 // ========== قسم سجلات الاستبدال ==========
 // جلب عمليات الاستبدال للمندوب
@@ -656,4 +658,5 @@ $tableHeaderStyle = $isSalesRecords ? 'background: linear-gradient(135deg, #667e
         <?php endif; ?>
     </div>
 </div>
+<?php endif; ?>
 
