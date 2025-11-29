@@ -610,7 +610,7 @@ function approveReturn(returnId, event) {
         btn.innerHTML = '<span class="spinner-border spinner-border-sm me-2"></span>جاري المعالجة...';
     }
     
-    fetch(basePath + '/api/approve_return.php', {
+    fetch(basePath + '/api/returns.php?action=approve', {
         method: 'POST',
         headers: {
             'Content-Type': 'application/json',
@@ -618,13 +618,41 @@ function approveReturn(returnId, event) {
         credentials: 'same-origin',
         body: JSON.stringify({
             return_id: returnId,
-            action: 'approve'
+            notes: ''
         })
     })
-    .then(response => response.json())
+    .then(response => {
+        console.log('Response Status:', response.status);
+        const contentType = response.headers.get('content-type') || '';
+        if (!contentType.includes('application/json')) {
+            return response.text().then(text => {
+                console.error('Expected JSON but got:', contentType, text.substring(0, 500));
+                throw new Error('استجابة غير صحيحة من الخادم');
+            });
+        }
+        if (!response.ok) {
+            return response.json().then(errorData => {
+                throw new Error(errorData.message || 'خطأ في الطلب: ' + response.status);
+            }).catch(() => {
+                throw new Error('حدث خطأ في الطلب: ' + response.status);
+            });
+        }
+        return response.json();
+    })
     .then(data => {
+        console.log('Response Data:', data);
         if (data.success) {
-            alert('تمت الموافقة بنجاح!\n' + (data.financial_note || ''));
+            let successMsg = '✅ تمت الموافقة على طلب المرتجع بنجاح!\n\n';
+            if (data.financial_note) {
+                successMsg += '📊 التفاصيل المالية:\n' + data.financial_note + '\n\n';
+            }
+            if (data.items_returned && data.items_returned > 0) {
+                successMsg += '📦 تم إرجاع ' + data.items_returned + ' منتج(ات) إلى مخزن السيارة\n\n';
+            }
+            if (data.return_number) {
+                successMsg += '🔢 رقم المرتجع: ' + data.return_number;
+            }
+            alert(successMsg);
             location.reload();
         } else {
             if (btn) {
@@ -640,7 +668,7 @@ function approveReturn(returnId, event) {
             btn.disabled = false;
             btn.innerHTML = originalHTML;
         }
-        alert('حدث خطأ في الاتصال بالخادم. يرجى المحاولة مرة أخرى.');
+        alert('خطأ: ' + (error.message || 'حدث خطأ في الاتصال بالخادم. يرجى المحاولة مرة أخرى.'));
     });
 }
 
@@ -663,7 +691,7 @@ function rejectReturn(returnId, event) {
         btn.innerHTML = '<span class="spinner-border spinner-border-sm me-2"></span>جاري المعالجة...';
     }
     
-    fetch(basePath + '/api/approve_return.php', {
+    fetch(basePath + '/api/returns.php?action=reject', {
         method: 'POST',
         headers: {
             'Content-Type': 'application/json',
@@ -671,7 +699,6 @@ function rejectReturn(returnId, event) {
         credentials: 'same-origin',
         body: JSON.stringify({
             return_id: returnId,
-            action: 'reject',
             notes: notes || ''
         })
     })

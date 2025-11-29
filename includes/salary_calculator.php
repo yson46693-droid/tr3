@@ -727,6 +727,32 @@ function createOrUpdateSalary($userId, $month, $year, $bonus = 0, $deductions = 
         $hasNotesColumn = false;
     }
     
+    // التحقق من وجود عمود updated_at
+    $hasUpdatedAtColumn = false;
+    try {
+        $columnExists = $db->queryOne(
+            "SELECT COUNT(*) as cnt FROM INFORMATION_SCHEMA.COLUMNS 
+             WHERE TABLE_SCHEMA = DATABASE() 
+             AND TABLE_NAME = 'salaries' 
+             AND COLUMN_NAME = 'updated_at'"
+        );
+        if (!empty($columnExists) && isset($columnExists['cnt'])) {
+            $hasUpdatedAtColumn = (int)$columnExists['cnt'] > 0;
+        }
+    } catch (Exception $e) {
+        try {
+            $updatedAtColumnCheck = $db->queryOne("SHOW COLUMNS FROM salaries WHERE Field = 'updated_at'");
+            if (!empty($updatedAtColumnCheck) && isset($updatedAtColumnCheck['Field']) && $updatedAtColumnCheck['Field'] === 'updated_at') {
+                $hasUpdatedAtColumn = true;
+            }
+        } catch (Exception $e2) {
+            $hasUpdatedAtColumn = false;
+        }
+    }
+    if (!$hasUpdatedAtColumn) {
+        $hasUpdatedAtColumn = false;
+    }
+    
     // التحقق من نوع month إذا لم يكن year موجوداً
     $monthType = '';
     if (!$hasYearColumn) {
@@ -855,116 +881,136 @@ function createOrUpdateSalary($userId, $month, $year, $bonus = 0, $deductions = 
         if ($hasBonusColumn) {
             if ($hasNotesColumn) {
                 if ($hasAccumulatedColumn) {
-                    $db->execute(
-                        "UPDATE salaries SET 
-                            hourly_rate = ?, 
-                            total_hours = ?, 
-                            base_amount = ?, 
-                            bonus = ?, 
-                            deductions = ?, 
-                            total_amount = ?,
-                            accumulated_amount = ?,
-                            notes = ?,
-                            updated_at = NOW()
-                         WHERE id = ?",
-                        [
-                            $calculation['hourly_rate'],
-                            $calculation['total_hours'],
-                            $calculation['base_amount'],
-                            $calculation['total_bonus'], // إجمالي المكافأة (بما في ذلك نسبة التحصيلات)
-                            $calculation['deductions'],
-                            $calculation['total_amount'],
-                            $currentAccumulated,
-                            $notes,
-                            $existingSalary['id']
-                        ]
-                    );
-                } else {
-                    $db->execute(
-                        "UPDATE salaries SET 
-                            hourly_rate = ?, 
-                            total_hours = ?, 
-                            base_amount = ?, 
-                            bonus = ?, 
-                            deductions = ?, 
-                            total_amount = ?,
-                            notes = ?,
-                            updated_at = NOW()
-                         WHERE id = ?",
-                        [
-                            $calculation['hourly_rate'],
-                            $calculation['total_hours'],
-                            $calculation['base_amount'],
-                            $calculation['total_bonus'], // إجمالي المكافأة (بما في ذلك نسبة التحصيلات)
-                            $calculation['deductions'],
-                            $calculation['total_amount'],
-                            $notes,
-                            $existingSalary['id']
-                        ]
-                    );
-                }
-            } else {
-                $db->execute(
-                    "UPDATE salaries SET 
-                        hourly_rate = ?, 
-                        total_hours = ?, 
-                        base_amount = ?, 
-                        bonus = ?, 
-                        deductions = ?, 
-                        total_amount = ?,
-                        updated_at = NOW()
-                     WHERE id = ?",
-                    [
+                    $updateFields = [
+                        'hourly_rate = ?',
+                        'total_hours = ?',
+                        'base_amount = ?',
+                        'bonus = ?',
+                        'deductions = ?',
+                        'total_amount = ?',
+                        'accumulated_amount = ?',
+                        'notes = ?'
+                    ];
+                    $updateParams = [
                         $calculation['hourly_rate'],
                         $calculation['total_hours'],
                         $calculation['base_amount'],
                         $calculation['total_bonus'], // إجمالي المكافأة (بما في ذلك نسبة التحصيلات)
                         $calculation['deductions'],
                         $calculation['total_amount'],
-                        $existingSalary['id']
-                    ]
+                        $currentAccumulated,
+                        $notes
+                    ];
+                    if ($hasUpdatedAtColumn) {
+                        $updateFields[] = 'updated_at = NOW()';
+                    }
+                    $updateParams[] = $existingSalary['id'];
+                    $db->execute(
+                        "UPDATE salaries SET " . implode(', ', $updateFields) . " WHERE id = ?",
+                        $updateParams
+                    );
+                } else {
+                    $updateFields = [
+                        'hourly_rate = ?',
+                        'total_hours = ?',
+                        'base_amount = ?',
+                        'bonus = ?',
+                        'deductions = ?',
+                        'total_amount = ?',
+                        'notes = ?'
+                    ];
+                    $updateParams = [
+                        $calculation['hourly_rate'],
+                        $calculation['total_hours'],
+                        $calculation['base_amount'],
+                        $calculation['total_bonus'], // إجمالي المكافأة (بما في ذلك نسبة التحصيلات)
+                        $calculation['deductions'],
+                        $calculation['total_amount'],
+                        $notes
+                    ];
+                    if ($hasUpdatedAtColumn) {
+                        $updateFields[] = 'updated_at = NOW()';
+                    }
+                    $updateParams[] = $existingSalary['id'];
+                    $db->execute(
+                        "UPDATE salaries SET " . implode(', ', $updateFields) . " WHERE id = ?",
+                        $updateParams
+                    );
+                }
+            } else {
+                $updateFields = [
+                    'hourly_rate = ?',
+                    'total_hours = ?',
+                    'base_amount = ?',
+                    'bonus = ?',
+                    'deductions = ?',
+                    'total_amount = ?'
+                ];
+                $updateParams = [
+                    $calculation['hourly_rate'],
+                    $calculation['total_hours'],
+                    $calculation['base_amount'],
+                    $calculation['total_bonus'], // إجمالي المكافأة (بما في ذلك نسبة التحصيلات)
+                    $calculation['deductions'],
+                    $calculation['total_amount']
+                ];
+                if ($hasUpdatedAtColumn) {
+                    $updateFields[] = 'updated_at = NOW()';
+                }
+                $updateParams[] = $existingSalary['id'];
+                $db->execute(
+                    "UPDATE salaries SET " . implode(', ', $updateFields) . " WHERE id = ?",
+                    $updateParams
                 );
             }
         } else {
             if ($hasNotesColumn) {
+                $updateFields = [
+                    'hourly_rate = ?',
+                    'total_hours = ?',
+                    'base_amount = ?',
+                    'deductions = ?',
+                    'total_amount = ?',
+                    'notes = ?'
+                ];
+                $updateParams = [
+                    $calculation['hourly_rate'],
+                    $calculation['total_hours'],
+                    $calculation['base_amount'],
+                    $calculation['deductions'],
+                    $calculation['total_amount'],
+                    $notes
+                ];
+                if ($hasUpdatedAtColumn) {
+                    $updateFields[] = 'updated_at = NOW()';
+                }
+                $updateParams[] = $existingSalary['id'];
                 $db->execute(
-                    "UPDATE salaries SET 
-                        hourly_rate = ?, 
-                        total_hours = ?, 
-                        base_amount = ?, 
-                        deductions = ?, 
-                        total_amount = ?,
-                        notes = ?,
-                        updated_at = NOW()
-                     WHERE id = ?",
-                    [
-                        $calculation['hourly_rate'],
-                        $calculation['total_hours'],
-                        $calculation['base_amount'],
-                        $calculation['deductions'],
-                        $calculation['total_amount'],
-                        $notes,
-                        $existingSalary['id']
-                    ]
+                    "UPDATE salaries SET " . implode(', ', $updateFields) . " WHERE id = ?",
+                    $updateParams
                 );
             } else {
+                $updateFields = [
+                    'hourly_rate = ?',
+                    'total_hours = ?',
+                    'base_amount = ?',
+                    'deductions = ?',
+                    'total_amount = ?'
+                ];
+                $updateParams = [
+                    $calculation['hourly_rate'],
+                    $calculation['total_hours'],
+                    $calculation['base_amount'],
+                    $calculation['deductions'],
+                    $calculation['total_amount']
+                ];
+                if ($hasUpdatedAtColumn) {
+                    $updateFields[] = 'updated_at = NOW()';
+                }
+                $updateParams[] = $existingSalary['id'];
                 $db->execute(
-                    "UPDATE salaries SET 
-                        hourly_rate = ?, 
-                        total_hours = ?, 
-                        base_amount = ?, 
-                        deductions = ?, 
-                        total_amount = ?,
-                        updated_at = NOW()
-                     WHERE id = ?",
-                    [
-                        $calculation['hourly_rate'],
-                        $calculation['total_hours'],
-                        $calculation['base_amount'],
-                        $calculation['deductions'],
-                        $calculation['total_amount'],
-                        $existingSalary['id']
-                    ]
+                    "UPDATE salaries SET " . implode(', ', $updateFields) . " WHERE id = ?",
+                    $updateParams
                 );
             }
         }
@@ -2144,6 +2190,29 @@ function updateTotalHoursFromAttendanceRecords($userId = null, $month = null, $y
             ];
         }
         
+        // التحقق من وجود عمود updated_at
+        $hasUpdatedAtColumn = false;
+        try {
+            $columnExists = $db->queryOne(
+                "SELECT COUNT(*) as cnt FROM INFORMATION_SCHEMA.COLUMNS 
+                 WHERE TABLE_SCHEMA = DATABASE() 
+                 AND TABLE_NAME = 'salaries' 
+                 AND COLUMN_NAME = 'updated_at'"
+            );
+            if (!empty($columnExists) && isset($columnExists['cnt'])) {
+                $hasUpdatedAtColumn = (int)$columnExists['cnt'] > 0;
+            }
+        } catch (Exception $e) {
+            try {
+                $updatedAtColumnCheck = $db->queryOne("SHOW COLUMNS FROM salaries WHERE Field = 'updated_at'");
+                if (!empty($updatedAtColumnCheck) && isset($updatedAtColumnCheck['Field']) && $updatedAtColumnCheck['Field'] === 'updated_at') {
+                    $hasUpdatedAtColumn = true;
+                }
+            } catch (Exception $e2) {
+                $hasUpdatedAtColumn = false;
+            }
+        }
+        
         // استخدام الاستعلام المطلوب: SELECT * FROM attendance_records ORDER BY work_hours ASC
         // ثم تجميع الساعات لكل موظف وشهر
         // بناء شروط WHERE للاستعلام الداخلي
@@ -2214,9 +2283,15 @@ function updateTotalHoursFromAttendanceRecords($userId = null, $month = null, $y
                 
                 if ($salary) {
                     // تحديث total_hours
+                    $updateFields = ['total_hours = ?'];
+                    $updateParams = [$totalHours];
+                    if ($hasUpdatedAtColumn) {
+                        $updateFields[] = 'updated_at = NOW()';
+                    }
+                    $updateParams[] = $salary['id'];
                     $db->execute(
-                        "UPDATE salaries SET total_hours = ?, updated_at = NOW() WHERE id = ?",
-                        [$totalHours, $salary['id']]
+                        "UPDATE salaries SET " . implode(', ', $updateFields) . " WHERE id = ?",
+                        $updateParams
                     );
                     $updatedCount++;
                 } else {

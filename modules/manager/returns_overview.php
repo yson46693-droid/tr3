@@ -554,7 +554,7 @@ function approveReturn(returnId) {
         return;
     }
     
-    fetch(basePath + '/api/approve_return.php', {
+    fetch(basePath + '/api/returns.php?action=approve', {
         method: 'POST',
         headers: {
             'Content-Type': 'application/json',
@@ -562,7 +562,7 @@ function approveReturn(returnId) {
         credentials: 'same-origin',
         body: JSON.stringify({
             return_id: returnId,
-            action: 'approve'
+            notes: ''
         })
     })
     .then(response => response.json())

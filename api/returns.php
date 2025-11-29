@@ -783,8 +783,16 @@ function handleApproveReturn(): void
         returnJson(['success' => false, 'message' => 'معرف المرتجع غير صالح'], 422);
     }
     
+    error_log("=== API: Approving return ID: {$returnId} by user: {$currentUser['id']} ===");
+    
     // استخدام دالة الموافقة الشاملة
     $result = approveReturn($returnId, (int)$currentUser['id'], $notes);
+    
+    error_log("=== API: Approve result: " . json_encode($result, JSON_UNESCAPED_UNICODE) . " ===");
+    
+    if (!$result['success']) {
+        error_log("=== API: Approval failed: " . ($result['message'] ?? 'Unknown error') . " ===");
+    }
     
     returnJson($result, $result['success'] ? 200 : 400);
 }

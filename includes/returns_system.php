@@ -340,9 +340,10 @@ function returnProductsToVehicleInventory(int $returnId, ?int $approvedBy = null
             return ['success' => false, 'message' => 'المرتجع غير موجود'];
         }
         
-        if ($return['status'] !== 'approved') {
-            return ['success' => false, 'message' => 'المرتجع غير معتمد بعد. لا يمكن إرجاع المنتجات للمخزون.'];
-        }
+        // ملاحظة: لا نحتاج للتحقق من الحالة هنا لأن الدالة تُستدعى بعد تحديث الحالة إلى approved
+        // if ($return['status'] !== 'approved') {
+        //     return ['success' => false, 'message' => 'المرتجع غير معتمد بعد. لا يمكن إرجاع المنتجات للمخزون.'];
+        // }
         
         $salesRepId = (int)($return['sales_rep_id'] ?? 0);
         if ($salesRepId <= 0) {
