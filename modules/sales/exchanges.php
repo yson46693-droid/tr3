@@ -732,7 +732,7 @@ function loadRecentRequests() {
     loadingDiv.style.display = 'block';
     tableDiv.innerHTML = '';
     
-    fetch(basePath + '/api/return_requests.php?action=get_recent_requests&limit=20', {
+    fetch(basePath + '/api/returns.php?action=get_recent_requests&limit=20', {
         credentials: 'same-origin',
         headers: {
             'Accept': 'application/json'

@@ -1565,7 +1565,7 @@ function loadPurchaseHistory(customerId) {
     const productFilter = document.getElementById('purchaseHistorySearchProduct').value;
     const batchFilter = document.getElementById('purchaseHistorySearchBatch').value;
     
-    let url = basePath + '/api/customer_purchase_history.php?action=get_history&customer_id=' + customerId;
+    let url = basePath + '/api/returns.php?action=get_purchase_history&customer_id=' + customerId;
     
     if (productFilter) {
         url += '&product_name=' + encodeURIComponent(productFilter);
@@ -1905,7 +1905,7 @@ function submitReturnRequest() {
         notes: formData.get('notes')
     };
     
-    fetch(basePath + '/api/new_returns_api.php?action=create', {
+    fetch(basePath + '/api/returns.php?action=create', {
         method: 'POST',
         headers: {
             'Content-Type': 'application/json'
@@ -1913,7 +1913,27 @@ function submitReturnRequest() {
         credentials: 'same-origin',
         body: JSON.stringify(requestData)
     })
-    .then(response => response.json())
+    .then(response => {
+        // التحقق من نوع المحتوى أولاً
+        const contentType = response.headers.get('content-type') || '';
+        if (!contentType.includes('application/json')) {
+            return response.text().then(text => {
+                console.error('Expected JSON but got:', contentType, text.substring(0, 500));
+                throw new Error('استجابة غير صحيحة من الخادم. يرجى المحاولة مرة أخرى.');
+            });
+        }
+        
+        // التحقق من حالة الاستجابة
+        if (!response.ok) {
+            return response.json().then(errorData => {
+                throw new Error(errorData.message || 'خطأ في الطلب: ' + response.status);
+            }).catch(() => {
+                throw new Error('حدث خطأ في الطلب: ' + response.status);
+            });
+        }
+        
+        return response.json();
+    })
     .then(data => {
         if (data.success) {
             alert('تم إنشاء طلب الإرجاع بنجاح وتم إرساله للمدير للموافقة');
@@ -1927,7 +1947,7 @@ function submitReturnRequest() {
     })
     .catch(error => {
         console.error('Error:', error);
-        alert('حدث خطأ في الاتصال بالخادم');
+        alert('خطأ: ' + (error.message || 'حدث خطأ في الاتصال بالخادم. يرجى المحاولة مرة أخرى.'));
     });
 }
 </script>

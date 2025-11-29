@@ -301,7 +301,7 @@ document.addEventListener('DOMContentLoaded', function() {
 
 
 function loadCustomers() {
-    fetch(basePath + '/api/return_requests.php?action=get_customers', {
+    fetch(basePath + '/api/returns.php?action=get_customers', {
         credentials: 'same-origin',
         headers: {
             'Accept': 'application/json'
@@ -465,7 +465,7 @@ function loadPurchaseHistory(customerId) {
     tableDiv.innerHTML = '';
     sectionDiv.style.display = 'block';
     
-    fetch(basePath + '/api/return_requests.php?action=get_purchase_history&customer_id=' + customerId, {
+    fetch(basePath + '/api/returns.php?action=get_purchase_history&customer_id=' + customerId, {
         credentials: 'same-origin',
         headers: {
             'Accept': 'application/json'
@@ -659,14 +659,13 @@ document.getElementById('submitReturnRequest').addEventListener('click', functio
     
     const notes = document.getElementById('returnNotes').value.trim();
     
-    fetch(basePath + '/api/return_requests.php', {
+    fetch(basePath + '/api/returns.php?action=create', {
         method: 'POST',
         headers: {
             'Content-Type': 'application/json',
         },
         credentials: 'same-origin',
         body: JSON.stringify({
-            action: 'create',
             customer_id: selectedCustomerId,
             items: selectedReturnItems,
             notes: notes
@@ -778,7 +777,7 @@ function loadRecentRequests() {
     loadingDiv.style.display = 'block';
     tableDiv.innerHTML = '';
     
-    fetch(basePath + '/api/return_requests.php?action=get_recent_requests&limit=20', {
+    fetch(basePath + '/api/returns.php?action=get_recent_requests&limit=20', {
         credentials: 'same-origin',
         headers: {
             'Accept': 'application/json'

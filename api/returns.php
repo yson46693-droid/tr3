@@ -657,6 +657,7 @@ function handleCreateReturn(): void
             'return_number' => $returnNumber,
             'refund_amount' => $totalRefund,
             'status' => 'pending',
+            'print_url' => $printUrl,
             'print_url' => $printUrl
         ]);
         

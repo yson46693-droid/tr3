@@ -367,7 +367,7 @@ function viewReturnDetails(returnId) {
     content.innerHTML = '<div class="text-center"><div class="spinner-border" role="status"><span class="visually-hidden">جاري التحميل...</span></div></div>';
     modal.show();
     
-    fetch(basePath + '/api/new_returns_api.php?action=details&id=' + returnId, {
+    fetch(basePath + '/api/returns.php?action=get_return_details&return_id=' + returnId, {
         credentials: 'same-origin',
         headers: {
             'Accept': 'application/json'
