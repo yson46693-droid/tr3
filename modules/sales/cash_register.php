@@ -207,6 +207,27 @@ if (!empty($salesTableExists)) {
 // إجمالي المبيعات (نستخدم الفواتير إذا كانت موجودة، وإلا نستخدم جدول sales)
 $totalSales = $totalSalesFromInvoices > 0 ? $totalSalesFromInvoices : $totalSalesFromSalesTable;
 
+// حساب إجمالي المرتجعات للمندوب
+$totalReturns = 0.0;
+$returnsTableExists = $db->queryOne("SHOW TABLES LIKE 'returns'");
+if (!empty($returnsTableExists)) {
+    try {
+        // حساب المرتجعات المعتمدة والمعالجة فقط
+        $returnsResult = $db->queryOne(
+            "SELECT COALESCE(SUM(refund_amount), 0) as total_returns
+             FROM returns
+             WHERE sales_rep_id = ? 
+               AND status IN ('approved', 'processed')
+               AND refund_amount > 0",
+            [$salesRepId]
+        );
+        $totalReturns = (float)($returnsResult['total_returns'] ?? 0);
+    } catch (Throwable $returnsError) {
+        error_log('Returns calculation error: ' . $returnsError->getMessage());
+        $totalReturns = 0.0;
+    }
+}
+
 // حساب صافي المبيعات (إجمالي المبيعات - المرتجعات)
 $netSales = $totalSales - $totalReturns;
 
@@ -283,27 +304,6 @@ if (!empty($accountantTransactionsExists)) {
         [$salesRepId]
     );
     $collectedFromRep = (float)($collectedResult['total_collected'] ?? 0);
-}
-
-// حساب إجمالي المرتجعات للمندوب
-$totalReturns = 0.0;
-$returnsTableExists = $db->queryOne("SHOW TABLES LIKE 'returns'");
-if (!empty($returnsTableExists)) {
-    try {
-        // حساب المرتجعات المعتمدة والمعالجة فقط
-        $returnsResult = $db->queryOne(
-            "SELECT COALESCE(SUM(refund_amount), 0) as total_returns
-             FROM returns
-             WHERE sales_rep_id = ? 
-               AND status IN ('approved', 'processed')
-               AND refund_amount > 0",
-            [$salesRepId]
-        );
-        $totalReturns = (float)($returnsResult['total_returns'] ?? 0);
-    } catch (Throwable $returnsError) {
-        error_log('Returns calculation error: ' . $returnsError->getMessage());
-        $totalReturns = 0.0;
-    }
 }
 
 // حساب إجمالي المرتجعات التالفة للمندوب
