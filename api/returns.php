@@ -318,7 +318,9 @@ function handleGetPurchaseHistory(): void
         error_log("Returned quantities for customer {$customerId}: " . json_encode($returnedQuantities));
     }
     
-    // ... لاحقاً في الكود ...
+    // إرجاع كل عنصر فاتورة كصف منفصل
+    $result = [];
+
     foreach ($purchaseHistory as $item) {
         $invoiceItemId = (int)$item['invoice_item_id'];
         $productId = (int)$item['product_id'];
