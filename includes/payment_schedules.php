@@ -431,12 +431,15 @@ function notifyTodayPaymentSchedules($salesRepId) {
         }
 
         try {
+            // التحقق من وجود إشعار غير مقروء وغير محذوف من نفس النوع والرابط في نفس اليوم
+            // نتحقق من وجود إشعار غير مقروء فقط (إذا تم حذفه، فلن يوجد في النتائج)
             $existing = $db->queryOne(
                 "SELECT id FROM notifications 
                  WHERE user_id = ? 
                    AND type = ? 
                    AND DATE(created_at) = CURDATE()
                    AND link = ?
+                   AND (`read` = 0 OR `read` IS NULL)
                  LIMIT 1",
                 [$salesRepId, $notificationType, $link]
             );

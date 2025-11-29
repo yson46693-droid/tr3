@@ -3343,6 +3343,15 @@ document.addEventListener('DOMContentLoaded', function () {
                                         >
                                             <i class="bi bi-arrow-return-left me-1"></i>إرجاع
                                         </button>
+                                        <button
+                                            type="button"
+                                            class="btn btn-sm btn-outline-warning js-replacement-btn"
+                                            data-customer-id="<?php echo (int)$customer['id']; ?>"
+                                            data-customer-name="<?php echo htmlspecialchars($customer['name']); ?>"
+                                            title="استبدال منتجات"
+                                        >
+                                            <i class="bi bi-arrow-repeat me-1"></i>استبدال
+                                        </button>
                                         <?php endif; ?>
                                     </div>
                                 </td>
@@ -3520,6 +3529,145 @@ document.addEventListener('DOMContentLoaded', function () {
     </div>
 </div>
 
+<!-- Modal استبدال المنتجات -->
+<div class="modal fade" id="replacementModal" tabindex="-1" aria-hidden="true">
+    <div class="modal-dialog modal-xl modal-dialog-scrollable">
+        <div class="modal-content">
+            <div class="modal-header bg-warning text-dark">
+                <h5 class="modal-title">
+                    <i class="bi bi-arrow-repeat me-2"></i>استبدال منتجات
+                </h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="إغلاق"></button>
+            </div>
+            <div class="modal-body">
+                <div class="mb-3">
+                    <div class="text-muted small fw-semibold">العميل</div>
+                    <div class="fs-4 fw-bold replacement-customer-name">-</div>
+                </div>
+                
+                <div class="replacement-loading text-center py-4">
+                    <div class="spinner-border text-warning" role="status">
+                        <span class="visually-hidden">جاري التحميل...</span>
+                    </div>
+                </div>
+                
+                <div class="alert alert-danger d-none replacement-error"></div>
+                
+                <div class="replacement-content d-none">
+                    <div class="row g-4">
+                        <!-- جدول مشتريات العميل -->
+                        <div class="col-12 col-lg-6">
+                            <div class="card shadow-sm">
+                                <div class="card-header bg-primary text-white">
+                                    <h6 class="mb-0">
+                                        <i class="bi bi-bag-check me-2"></i>منتجات العميل (المطلوب استبدالها)
+                                    </h6>
+                                </div>
+                                <div class="card-body p-0">
+                                    <div class="table-responsive" style="max-height: 400px;">
+                                        <table class="table table-sm table-hover mb-0">
+                                            <thead class="table-light sticky-top">
+                                                <tr>
+                                                    <th style="width: 40px;">
+                                                        <input type="checkbox" class="form-check-input" id="selectAllCustomerItems">
+                                                    </th>
+                                                    <th>المنتج</th>
+                                                    <th>الكمية المتاحة</th>
+                                                    <th>السعر</th>
+                                                    <th>الإجمالي</th>
+                                                </tr>
+                                            </thead>
+                                            <tbody id="customerPurchasesTableBody">
+                                            </tbody>
+                                        </table>
+                                    </div>
+                                </div>
+                                <div class="card-footer">
+                                    <div class="d-flex justify-content-between align-items-center">
+                                        <strong>الإجمالي:</strong>
+                                        <strong class="text-primary" id="customerTotal">0.00 ج.م</strong>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                        
+                        <!-- جدول مخزن السيارة -->
+                        <div class="col-12 col-lg-6">
+                            <div class="card shadow-sm">
+                                <div class="card-header bg-success text-white">
+                                    <h6 class="mb-0">
+                                        <i class="bi bi-box-seam me-2"></i>منتجات مخزن السيارة
+                                    </h6>
+                                </div>
+                                <div class="card-body p-0">
+                                    <div class="table-responsive" style="max-height: 400px;">
+                                        <table class="table table-sm table-hover mb-0">
+                                            <thead class="table-light sticky-top">
+                                                <tr>
+                                                    <th style="width: 40px;">
+                                                        <input type="checkbox" class="form-check-input" id="selectAllCarItems">
+                                                    </th>
+                                                    <th>المنتج</th>
+                                                    <th>الكمية المتاحة</th>
+                                                    <th>السعر</th>
+                                                    <th>الإجمالي</th>
+                                                </tr>
+                                            </thead>
+                                            <tbody id="carInventoryTableBody">
+                                            </tbody>
+                                        </table>
+                                    </div>
+                                </div>
+                                <div class="card-footer">
+                                    <div class="d-flex justify-content-between align-items-center">
+                                        <strong>الإجمالي:</strong>
+                                        <strong class="text-success" id="carTotal">0.00 ج.م</strong>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                    
+                    <!-- ملخص العملية -->
+                    <div class="row mt-4">
+                        <div class="col-12">
+                            <div class="card shadow-sm border-info">
+                                <div class="card-header bg-info text-white">
+                                    <h6 class="mb-0"><i class="bi bi-info-circle me-2"></i>ملخص العملية</h6>
+                                </div>
+                                <div class="card-body">
+                                    <div class="row g-3">
+                                        <div class="col-md-4">
+                                            <div class="text-muted small">إجمالي منتجات العميل</div>
+                                            <div class="fs-5 fw-bold text-primary" id="summaryCustomerTotal">0.00 ج.م</div>
+                                        </div>
+                                        <div class="col-md-4">
+                                            <div class="text-muted small">إجمالي منتجات السيارة</div>
+                                            <div class="fs-5 fw-bold text-success" id="summaryCarTotal">0.00 ج.م</div>
+                                        </div>
+                                        <div class="col-md-4">
+                                            <div class="text-muted small">الفرق</div>
+                                            <div class="fs-5 fw-bold" id="summaryDifference">0.00 ج.م</div>
+                                        </div>
+                                    </div>
+                                    <div class="alert alert-info mt-3 mb-0 d-none" id="replacementInfo">
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">إلغاء</button>
+                <button type="button" class="btn btn-warning" id="executeReplacementBtn" disabled>
+                    <i class="bi bi-check-circle me-2"></i>تنفيذ الاستبدال
+                </button>
+            </div>
+        </div>
+    </div>
+</div>
+
 <?php endif; // end if ($section === 'company') ?>
 
 <!-- إعادة تحميل الصفحة تلقائياً بعد أي رسالة (نجاح أو خطأ) لمنع تكرار الطلبات -->
@@ -3544,5 +3692,329 @@ document.addEventListener('DOMContentLoaded', function () {
             window.location.href = currentUrl.toString();
         }, 3000);
     }
+})();
+
+// ========== JavaScript لإدارة عملية الاستبدال ==========
+(function() {
+    const replacementModal = document.getElementById('replacementModal');
+    if (!replacementModal) {
+        return;
+    }
+    
+    let currentCustomerId = null;
+    let customerPurchases = [];
+    let carInventory = [];
+    let selectedCustomerItems = [];
+    let selectedCarItems = [];
+    
+    // دالة تنسيق العملة
+    function formatCurrency(value) {
+        const number = Number(value || 0);
+        return number.toLocaleString('ar-EG', { 
+            minimumFractionDigits: 2, 
+            maximumFractionDigits: 2 
+        }) + ' ج.م';
+    }
+    
+    // دالة حساب الإجماليات
+    function calculateTotals() {
+        let customerTotal = 0;
+        let carTotal = 0;
+        
+        selectedCustomerItems.forEach(item => {
+            customerTotal += parseFloat(item.total_price || 0);
+        });
+        
+        selectedCarItems.forEach(item => {
+            carTotal += parseFloat(item.total_price || 0);
+        });
+        
+        const difference = customerTotal - carTotal;
+        
+        document.getElementById('customerTotal').textContent = formatCurrency(customerTotal);
+        document.getElementById('carTotal').textContent = formatCurrency(carTotal);
+        document.getElementById('summaryCustomerTotal').textContent = formatCurrency(customerTotal);
+        document.getElementById('summaryCarTotal').textContent = formatCurrency(carTotal);
+        
+        const differenceEl = document.getElementById('summaryDifference');
+        differenceEl.textContent = formatCurrency(Math.abs(difference));
+        
+        if (Math.abs(difference) < 0.01) {
+            differenceEl.className = 'fs-5 fw-bold text-secondary';
+        } else if (difference > 0) {
+            differenceEl.className = 'fs-5 fw-bold text-danger';
+        } else {
+            differenceEl.className = 'fs-5 fw-bold text-success';
+        }
+        
+        // عرض معلومات العملية
+        const infoEl = document.getElementById('replacementInfo');
+        infoEl.classList.remove('d-none');
+        
+        if (Math.abs(difference) < 0.01) {
+            infoEl.className = 'alert alert-info mt-3 mb-0';
+            infoEl.innerHTML = '<i class="bi bi-info-circle me-2"></i>لا يوجد فرق في القيمة. لن يتأثر رصيد العميل أو خزنة المندوب.';
+        } else if (difference < 0) {
+            infoEl.className = 'alert alert-warning mt-3 mb-0';
+            infoEl.innerHTML = '<i class="bi bi-exclamation-triangle me-2"></i>سيتم إضافة ' + formatCurrency(Math.abs(difference)) + ' إلى رصيد العميل المدين وإضافة المبلغ إلى خزنة المندوب.';
+        } else {
+            infoEl.className = 'alert alert-danger mt-3 mb-0';
+            infoEl.innerHTML = '<i class="bi bi-exclamation-circle me-2"></i>سيتم خصم ' + formatCurrency(difference) + ' من رصيد العميل وخصم المبلغ من خزنة المندوب وخصم 2% من راتب المندوب.';
+        }
+        
+        // تفعيل/تعطيل زر التنفيذ
+        const executeBtn = document.getElementById('executeReplacementBtn');
+        executeBtn.disabled = selectedCustomerItems.length === 0 || selectedCarItems.length === 0;
+    }
+    
+    // فتح المودال
+    document.addEventListener('click', function(e) {
+        if (e.target.closest('.js-replacement-btn')) {
+            const btn = e.target.closest('.js-replacement-btn');
+            currentCustomerId = parseInt(btn.getAttribute('data-customer-id'));
+            const customerName = btn.getAttribute('data-customer-name');
+            
+            document.querySelector('.replacement-customer-name').textContent = customerName;
+            
+            // إعادة تعيين
+            selectedCustomerItems = [];
+            selectedCarItems = [];
+            customerPurchases = [];
+            carInventory = [];
+            
+            // إظهار التحميل
+            document.querySelector('.replacement-loading').classList.remove('d-none');
+            document.querySelector('.replacement-content').classList.add('d-none');
+            document.querySelector('.replacement-error').classList.add('d-none');
+            
+            // تحميل البيانات
+            fetch('api/get_replacement_data.php?customer_id=' + currentCustomerId)
+                .then(response => response.json())
+                .then(data => {
+                    if (data.success) {
+                        customerPurchases = data.customer_purchases || [];
+                        carInventory = data.car_inventory || [];
+                        
+                        // عرض البيانات
+                        renderCustomerPurchases();
+                        renderCarInventory();
+                        
+                        document.querySelector('.replacement-loading').classList.add('d-none');
+                        document.querySelector('.replacement-content').classList.remove('d-none');
+                    } else {
+                        throw new Error(data.message || 'فشل تحميل البيانات');
+                    }
+                })
+                .catch(error => {
+                    document.querySelector('.replacement-loading').classList.add('d-none');
+                    const errorEl = document.querySelector('.replacement-error');
+                    errorEl.textContent = error.message || 'حدث خطأ أثناء تحميل البيانات';
+                    errorEl.classList.remove('d-none');
+                });
+        }
+    });
+    
+    // عرض مشتريات العميل
+    function renderCustomerPurchases() {
+        const tbody = document.getElementById('customerPurchasesTableBody');
+        tbody.innerHTML = '';
+        
+        if (customerPurchases.length === 0) {
+            tbody.innerHTML = '<tr><td colspan="5" class="text-center text-muted py-3">لا توجد مشتريات متاحة للاستبدال</td></tr>';
+            return;
+        }
+        
+        customerPurchases.forEach(item => {
+            const tr = document.createElement('tr');
+            const checked = selectedCustomerItems.some(sel => sel.invoice_item_id === item.invoice_item_id);
+            
+            tr.innerHTML = `
+                <td>
+                    <input type="checkbox" class="form-check-input customer-item-checkbox" 
+                           data-invoice-item-id="${item.invoice_item_id}"
+                           data-product-id="${item.product_id}"
+                           data-quantity="${item.available_quantity}"
+                           data-unit-price="${item.unit_price}"
+                           data-total-price="${item.available_quantity * item.unit_price}"
+                           ${checked ? 'checked' : ''}>
+                </td>
+                <td>
+                    <div>${item.product_name || 'غير معروف'}</div>
+                    <small class="text-muted">فاتورة: ${item.invoice_number}</small>
+                </td>
+                <td>${item.available_quantity} ${item.unit || 'قطعة'}</td>
+                <td>${formatCurrency(item.unit_price)}</td>
+                <td>${formatCurrency(item.available_quantity * item.unit_price)}</td>
+            `;
+            
+            tbody.appendChild(tr);
+        });
+        
+        // إضافة مستمعات
+        document.querySelectorAll('.customer-item-checkbox').forEach(checkbox => {
+            checkbox.addEventListener('change', function() {
+                const invoiceItemId = parseInt(this.getAttribute('data-invoice-item-id'));
+                
+                if (this.checked) {
+                    selectedCustomerItems.push({
+                        invoice_item_id: invoiceItemId,
+                        product_id: parseInt(this.getAttribute('data-product-id')),
+                        quantity: parseFloat(this.getAttribute('data-quantity')),
+                        unit_price: parseFloat(this.getAttribute('data-unit-price')),
+                        total_price: parseFloat(this.getAttribute('data-total-price'))
+                    });
+                } else {
+                    selectedCustomerItems = selectedCustomerItems.filter(
+                        item => item.invoice_item_id !== invoiceItemId
+                    );
+                }
+                
+                // تحديث select all
+                const allChecked = document.querySelectorAll('.customer-item-checkbox:checked').length === customerPurchases.length;
+                document.getElementById('selectAllCustomerItems').checked = allChecked;
+                
+                calculateTotals();
+            });
+        });
+        
+        // select all للمشتريات
+        document.getElementById('selectAllCustomerItems').addEventListener('change', function() {
+            const checkboxes = document.querySelectorAll('.customer-item-checkbox');
+            checkboxes.forEach(cb => {
+                cb.checked = this.checked;
+                cb.dispatchEvent(new Event('change'));
+            });
+        });
+    }
+    
+    // عرض مخزن السيارة
+    function renderCarInventory() {
+        const tbody = document.getElementById('carInventoryTableBody');
+        tbody.innerHTML = '';
+        
+        if (carInventory.length === 0) {
+            tbody.innerHTML = '<tr><td colspan="5" class="text-center text-muted py-3">لا توجد منتجات في مخزن السيارة</td></tr>';
+            return;
+        }
+        
+        carInventory.forEach(item => {
+            const tr = document.createElement('tr');
+            const checked = selectedCarItems.some(sel => sel.product_id === item.product_id);
+            
+            tr.innerHTML = `
+                <td>
+                    <input type="checkbox" class="form-check-input car-item-checkbox" 
+                           data-product-id="${item.product_id}"
+                           data-quantity="${item.quantity}"
+                           data-unit-price="${item.unit_price}"
+                           data-total-price="${item.total_value}"
+                           data-finished-batch-id="${item.finished_batch_id || ''}"
+                           data-finished-batch-number="${item.finished_batch_number || ''}"
+                           ${checked ? 'checked' : ''}>
+                </td>
+                <td>${item.product_name || 'غير معروف'}</td>
+                <td>${item.quantity} ${item.unit || 'قطعة'}</td>
+                <td>${formatCurrency(item.unit_price)}</td>
+                <td>${formatCurrency(item.total_value)}</td>
+            `;
+            
+            tbody.appendChild(tr);
+        });
+        
+        // إضافة مستمعات
+        document.querySelectorAll('.car-item-checkbox').forEach(checkbox => {
+            checkbox.addEventListener('change', function() {
+                const productId = parseInt(this.getAttribute('data-product-id'));
+                
+                if (this.checked) {
+                    selectedCarItems.push({
+                        product_id: productId,
+                        quantity: parseFloat(this.getAttribute('data-quantity')),
+                        unit_price: parseFloat(this.getAttribute('data-unit-price')),
+                        total_price: parseFloat(this.getAttribute('data-total-price')),
+                        finished_batch_id: this.getAttribute('data-finished-batch-id') || null,
+                        finished_batch_number: this.getAttribute('data-finished-batch-number') || null
+                    });
+                } else {
+                    selectedCarItems = selectedCarItems.filter(
+                        item => item.product_id !== productId
+                    );
+                }
+                
+                // تحديث select all
+                const allChecked = document.querySelectorAll('.car-item-checkbox:checked').length === carInventory.length;
+                document.getElementById('selectAllCarItems').checked = allChecked;
+                
+                calculateTotals();
+            });
+        });
+        
+        // select all للمخزن
+        document.getElementById('selectAllCarItems').addEventListener('change', function() {
+            const checkboxes = document.querySelectorAll('.car-item-checkbox');
+            checkboxes.forEach(cb => {
+                cb.checked = this.checked;
+                cb.dispatchEvent(new Event('change'));
+            });
+        });
+    }
+    
+    // تنفيذ الاستبدال
+    document.getElementById('executeReplacementBtn').addEventListener('click', function() {
+        if (selectedCustomerItems.length === 0 || selectedCarItems.length === 0) {
+            alert('يرجى اختيار منتجات من العميل ومخزن السيارة');
+            return;
+        }
+        
+        if (!confirm('هل أنت متأكد من تنفيذ عملية الاستبدال؟')) {
+            return;
+        }
+        
+        const btn = this;
+        btn.disabled = true;
+        btn.innerHTML = '<span class="spinner-border spinner-border-sm me-2"></span>جاري التنفيذ...';
+        
+        const formData = new FormData();
+        formData.append('customer_id', currentCustomerId);
+        formData.append('customer_items', JSON.stringify(selectedCustomerItems));
+        formData.append('car_items', JSON.stringify(selectedCarItems));
+        
+        fetch('api/process_replacement.php', {
+            method: 'POST',
+            body: formData
+        })
+            .then(response => response.json())
+            .then(data => {
+                if (data.success) {
+                    alert('تم تنفيذ عملية الاستبدال بنجاح!\nرقم العملية: ' + (data.exchange_number || ''));
+                    
+                    // إغلاق المودال
+                    const modal = bootstrap.Modal.getInstance(replacementModal);
+                    if (modal) {
+                        modal.hide();
+                    }
+                    
+                    // إعادة تحميل الصفحة
+                    window.location.reload();
+                } else {
+                    throw new Error(data.message || 'فشل تنفيذ العملية');
+                }
+            })
+            .catch(error => {
+                alert('حدث خطأ: ' + error.message);
+                btn.disabled = false;
+                btn.innerHTML = '<i class="bi bi-check-circle me-2"></i>تنفيذ الاستبدال';
+            });
+    });
+    
+    // إعادة تعيين عند إغلاق المودال
+    replacementModal.addEventListener('hidden.bs.modal', function() {
+        selectedCustomerItems = [];
+        selectedCarItems = [];
+        customerPurchases = [];
+        carInventory = [];
+        document.getElementById('selectAllCustomerItems').checked = false;
+        document.getElementById('selectAllCarItems').checked = false;
+    });
 })();
 </script>
