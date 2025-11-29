@@ -58,6 +58,88 @@ try {
             echo json_encode(['success' => false, 'error' => 'لا توجد بصمات مسجلة لهذا المستخدم'], JSON_UNESCAPED_UNICODE);
         }
         
+    } elseif ($action === 'get_users_with_credentials') {
+        // الحصول على جميع المستخدمين الذين لديهم بصمات مسجلة
+        $users = WebAuthn::getAllUsersWithCredentials();
+        
+        if (count($users) === 0) {
+            http_response_code(404);
+            echo json_encode(['success' => false, 'error' => 'لا توجد حسابات مسجلة بالبصمة'], JSON_UNESCAPED_UNICODE);
+        } else {
+            echo json_encode([
+                'success' => true,
+                'users' => $users,
+                'count' => count($users)
+            ], JSON_UNESCAPED_UNICODE);
+        }
+        
+    } elseif ($action === 'create_challenge_without_username') {
+        // إنشاء challenge بدون اسم مستخدم - للبحث عن جميع البصمات على الجهاز
+        $challenge = WebAuthn::createLoginChallengeWithoutUsername();
+        
+        if ($challenge) {
+            echo json_encode(['success' => true, 'challenge' => $challenge], JSON_UNESCAPED_UNICODE);
+        } else {
+            http_response_code(500);
+            echo json_encode(['success' => false, 'error' => 'فشل في إنشاء التحدي'], JSON_UNESCAPED_UNICODE);
+        }
+        
+    } elseif ($action === 'verify_without_username') {
+        // التحقق من البصمة بدون معرفة المستخدم مسبقاً
+        $response = $_POST['response'] ?? '';
+        
+        if (empty($response)) {
+            http_response_code(400);
+            echo json_encode(['success' => false, 'error' => 'الاستجابة مطلوبة'], JSON_UNESCAPED_UNICODE);
+            exit;
+        }
+        
+        // تحويل JSON string إلى array
+        if (is_string($response)) {
+            $response = json_decode($response, true);
+            if (json_last_error() !== JSON_ERROR_NONE) {
+                http_response_code(400);
+                echo json_encode(['success' => false, 'error' => 'استجابة غير صحيحة: ' . json_last_error_msg()], JSON_UNESCAPED_UNICODE);
+                exit;
+            }
+        }
+        
+        // التحقق من البصمة والحصول على معلومات المستخدم
+        $user = WebAuthn::verifyLoginWithoutUsername(json_encode($response));
+        
+        if ($user) {
+            // تسجيل الدخول
+            $userData = getUserById($user['user_id']);
+            
+            if ($userData && $userData['status'] === 'active') {
+                $_SESSION['user_id'] = $userData['id'];
+                $_SESSION['username'] = $userData['username'];
+                $_SESSION['role'] = $userData['role'];
+                $_SESSION['logged_in'] = true;
+                
+                // تسجيل سجل التدقيق
+                require_once __DIR__ . '/../includes/audit_log.php';
+                logAudit($userData['id'], 'login', 'user', $userData['id'], null, ['method' => 'webauthn', 'no_username' => true]);
+                
+                echo json_encode([
+                    'success' => true,
+                    'message' => 'تم تسجيل الدخول بنجاح',
+                    'user' => [
+                        'id' => $userData['id'],
+                        'username' => $userData['username'],
+                        'role' => $userData['role'],
+                        'full_name' => $userData['full_name'] ?? null
+                    ]
+                ], JSON_UNESCAPED_UNICODE);
+            } else {
+                http_response_code(403);
+                echo json_encode(['success' => false, 'error' => 'الحساب غير مفعّل'], JSON_UNESCAPED_UNICODE);
+            }
+        } else {
+            http_response_code(401);
+            echo json_encode(['success' => false, 'error' => 'فشل التحقق من البصمة'], JSON_UNESCAPED_UNICODE);
+        }
+        
     } elseif ($action === 'verify') {
         $response = $_POST['response'] ?? '';
         

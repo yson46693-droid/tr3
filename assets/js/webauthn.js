@@ -355,6 +355,318 @@ class SimpleWebAuthn {
     }
 
     /**
+     * الحصول على قائمة المستخدمين الذين لديهم بصمات مسجلة
+     */
+    async getUsersWithCredentials() {
+        try {
+            const currentPath = window.location.pathname;
+            const pathParts = currentPath.split('/').filter(p => p && !p.endsWith('.php'));
+            
+            let loginApiPath;
+            if (pathParts.length === 0) {
+                loginApiPath = 'api/webauthn_login.php';
+            } else {
+                loginApiPath = '/' + pathParts[0] + '/api/webauthn_login.php';
+            }
+
+            const response = await fetch(loginApiPath, {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/x-www-form-urlencoded',
+                },
+                credentials: 'same-origin',
+                body: new URLSearchParams({
+                    action: 'get_users_with_credentials'
+                })
+            });
+
+            if (!response.ok) {
+                return { success: false, users: [] };
+            }
+
+            const data = await response.json();
+            return data;
+        } catch (error) {
+            console.error('Error getting users with credentials:', error);
+            return { success: false, users: [] };
+        }
+    }
+
+    /**
+     * عرض قائمة بالحسابات للاختيار
+     */
+    showAccountSelectionModal(users) {
+        return new Promise((resolve, reject) => {
+            // التحقق من أن Bootstrap متاح
+            if (typeof bootstrap === 'undefined') {
+                // إذا لم يكن Bootstrap متاحاً، نستخدم prompt بسيط
+                const usernames = users.map(u => u.username);
+                const userList = users.map((u, i) => `${i + 1}. ${u.full_name || u.username} (${u.username})`).join('\n');
+                const choice = prompt(`تم العثور على أكثر من حساب مرتبط بالبصمة. يرجى اختيار الحساب:\n\n${userList}\n\nأدخل رقم الحساب (1-${users.length}):`);
+                
+                if (choice === null || choice === '') {
+                    reject(new Error('تم إلغاء العملية'));
+                    return;
+                }
+                
+                const index = parseInt(choice) - 1;
+                if (index >= 0 && index < users.length) {
+                    resolve(users[index].username);
+                } else {
+                    reject(new Error('اختيار غير صحيح'));
+                }
+                return;
+            }
+            
+            // إنشاء modal للاختيار
+            const modal = document.createElement('div');
+            modal.className = 'modal fade';
+            modal.id = 'accountSelectionModal';
+            modal.setAttribute('tabindex', '-1');
+            modal.setAttribute('aria-labelledby', 'accountSelectionModalLabel');
+            modal.setAttribute('aria-hidden', 'true');
+            
+            // ترجمة الأدوار
+            const roleNames = {
+                'accountant': 'محاسب',
+                'sales': 'مبيعات',
+                'production': 'إنتاج',
+                'manager': 'مدير'
+            };
+            
+            modal.innerHTML = `
+                <div class="modal-dialog modal-dialog-centered">
+                    <div class="modal-content">
+                        <div class="modal-header">
+                            <h5 class="modal-title" id="accountSelectionModalLabel">
+                                <i class="bi bi-person-check me-2"></i>اختر الحساب
+                            </h5>
+                            <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+                        </div>
+                        <div class="modal-body">
+                            <p class="text-muted mb-3">تم العثور على أكثر من حساب مرتبط بالبصمة. يرجى اختيار الحساب الذي تريد الدخول إليه:</p>
+                            <div class="list-group" id="accountList">
+                                ${users.map((user, index) => `
+                                    <button type="button" class="list-group-item list-group-item-action account-item" data-username="${user.username}" data-index="${index}">
+                                        <div class="d-flex w-100 justify-content-between align-items-center">
+                                            <div>
+                                                <h6 class="mb-1">${user.full_name || user.username}</h6>
+                                                <small class="text-muted">${user.username}</small>
+                                            </div>
+                                            <span class="badge bg-primary rounded-pill">${roleNames[user.role] || user.role}</span>
+                                        </div>
+                                    </button>
+                                `).join('')}
+                            </div>
+                        </div>
+                        <div class="modal-footer">
+                            <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">إلغاء</button>
+                        </div>
+                    </div>
+                </div>
+            `;
+            
+            document.body.appendChild(modal);
+            
+            const bsModal = new bootstrap.Modal(modal);
+            bsModal.show();
+            
+            // إضافة event listeners
+            modal.querySelectorAll('.account-item').forEach(item => {
+                item.addEventListener('click', () => {
+                    const username = item.getAttribute('data-username');
+                    bsModal.hide();
+                    setTimeout(() => {
+                        modal.remove();
+                        resolve(username);
+                    }, 300);
+                });
+            });
+            
+            modal.addEventListener('hidden.bs.modal', () => {
+                modal.remove();
+                reject(new Error('تم إلغاء العملية'));
+            });
+        });
+    }
+
+    /**
+     * تسجيل الدخول باستخدام WebAuthn بدون اسم مستخدم
+     * يعرض جميع البصمات المسجلة على الجهاز
+     */
+    async loginWithoutUsername() {
+        try {
+            // التحقق من الدعم
+            if (!this.isSupported()) {
+                throw new Error('WebAuthn غير مدعوم في هذا المتصفح. يرجى استخدام متصفح حديث.');
+            }
+
+            // التحقق من HTTPS
+            if (window.location.protocol !== 'https:' && window.location.hostname !== 'localhost') {
+                throw new Error('WebAuthn يتطلب HTTPS. الموقع الحالي: ' + window.location.protocol);
+            }
+
+            // الحصول على مسار API لتسجيل الدخول
+            const currentPath = window.location.pathname;
+            const pathParts = currentPath.split('/').filter(p => p && !p.endsWith('.php'));
+            
+            let loginApiPath;
+            if (pathParts.length === 0) {
+                loginApiPath = 'api/webauthn_login.php';
+            } else {
+                loginApiPath = '/' + pathParts[0] + '/api/webauthn_login.php';
+            }
+            
+            // أولاً: التحقق من عدد المستخدمين الذين لديهم بصمات
+            const usersData = await this.getUsersWithCredentials();
+            
+            if (!usersData.success || usersData.users.length === 0) {
+                throw new Error('لا توجد حسابات مسجلة بالبصمة');
+            }
+            
+            // إذا كان هناك أكثر من مستخدم، نعرض قائمة للاختيار
+            if (usersData.users.length > 1) {
+                try {
+                    const selectedUsername = await this.showAccountSelectionModal(usersData.users);
+                    // استخدام login العادي مع اسم المستخدم المختار
+                    return await this.login(selectedUsername);
+                } catch (error) {
+                    if (error.message === 'تم إلغاء العملية') {
+                        throw error;
+                    }
+                    throw new Error('حدث خطأ أثناء اختيار الحساب');
+                }
+            }
+            
+            // إذا كان هناك مستخدم واحد فقط، نستخدم login العادي مع اسم المستخدم
+            if (usersData.users.length === 1) {
+                return await this.login(usersData.users[0].username);
+            }
+            
+            // إذا لم يكن هناك مستخدمين، نتابع مع loginWithoutUsername (للحالات الخاصة)
+
+            // 1. الحصول على challenge بدون اسم مستخدم
+            const challengeResponse = await fetch(loginApiPath, {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/x-www-form-urlencoded',
+                },
+                credentials: 'same-origin',
+                body: new URLSearchParams({
+                    action: 'create_challenge_without_username'
+                })
+            });
+
+            if (!challengeResponse.ok) {
+                throw new Error(`خطأ في الاتصال بالخادم: ${challengeResponse.status}`);
+            }
+
+            const challengeData = await challengeResponse.json();
+
+            if (!challengeData.success || !challengeData.challenge) {
+                throw new Error(challengeData.error || 'فشل في إنشاء التحدي');
+            }
+
+            const challenge = challengeData.challenge;
+
+            // 2. تحويل البيانات
+            challenge.challenge = this.base64ToArrayBuffer(challenge.challenge);
+
+            // 3. إعداد rpId
+            let rpId = challenge.rpId || window.location.hostname;
+            rpId = rpId.replace(/^www\./, '').split(':')[0];
+            challenge.rpId = rpId;
+
+            // 4. إعدادات للموبايل
+            const isMobile = /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent);
+            if (isMobile) {
+                challenge.timeout = 180000;
+                challenge.userVerification = 'preferred';
+            }
+
+            // 5. الحصول على الاعتماد (بدون allowCredentials - سيظهر جميع البصمات)
+            const credential = await navigator.credentials.get({
+                publicKey: challenge
+            });
+
+            if (!credential) {
+                throw new Error('فشل في الحصول على الاعتماد');
+            }
+
+            // 6. تحويل البيانات
+            const clientDataJSON = this.arrayBufferToBase64(credential.response.clientDataJSON);
+            const authenticatorData = this.arrayBufferToBase64(credential.response.authenticatorData);
+            const signature = this.arrayBufferToBase64(credential.response.signature);
+            const credentialIdBase64 = this.arrayBufferToBase64(credential.rawId);
+
+            // 7. التحقق من البصمة
+            const verifyResponse = await fetch(loginApiPath, {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/x-www-form-urlencoded',
+                },
+                credentials: 'same-origin',
+                body: new URLSearchParams({
+                    action: 'verify_without_username',
+                    response: JSON.stringify({
+                        id: credential.id,
+                        rawId: credentialIdBase64,
+                        type: credential.type,
+                        response: {
+                            clientDataJSON: clientDataJSON,
+                            authenticatorData: authenticatorData,
+                            signature: signature
+                        }
+                    })
+                })
+            });
+
+            if (!verifyResponse.ok) {
+                const errorText = await verifyResponse.text();
+                throw new Error(`خطأ في التحقق: ${verifyResponse.status} - ${errorText}`);
+            }
+
+            const verifyData = await verifyResponse.json();
+
+            if (verifyData.success) {
+                // إعادة توجيه إلى لوحة التحكم
+                const userRole = verifyData.user?.role || 'accountant';
+                
+                let dashboardUrl;
+                if (pathParts.length === 0) {
+                    dashboardUrl = 'dashboard/' + userRole + '.php';
+                } else {
+                    dashboardUrl = '/' + pathParts[0] + '/dashboard/' + userRole + '.php';
+                }
+                
+                window.location.href = dashboardUrl;
+                return {
+                    success: true,
+                    message: 'تم تسجيل الدخول بنجاح',
+                    redirect: dashboardUrl,
+                    user: verifyData.user
+                };
+            } else {
+                throw new Error(verifyData.error || 'فشل التحقق من البصمة');
+            }
+
+        } catch (error) {
+            console.error('WebAuthn Login Without Username Error:', error);
+            
+            let errorMessage = 'خطأ في تسجيل الدخول';
+            if (error.message) {
+                errorMessage = error.message;
+            } else if (error.name === 'NotAllowedError') {
+                errorMessage = 'تم إلغاء العملية. يرجى المحاولة مرة أخرى.';
+            } else if (error.name === 'NotSupportedError') {
+                errorMessage = 'الجهاز أو المتصفح لا يدعم WebAuthn';
+            }
+
+            throw new Error(errorMessage);
+        }
+    }
+
+    /**
      * تسجيل الدخول باستخدام WebAuthn
      */
     async login(username) {
@@ -541,6 +853,7 @@ const simpleWebAuthn = new SimpleWebAuthn();
 // للتوافق مع الكود القديم
 const webauthnManager = {
     login: (username) => simpleWebAuthn.login(username),
+    loginWithoutUsername: () => simpleWebAuthn.loginWithoutUsername(),
     register: () => simpleWebAuthn.register()
 };
 

@@ -379,6 +379,232 @@ class WebAuthn {
     }
     
     /**
+     * البحث عن المستخدم المرتبط بـ credential_id (للتسجيل بدون اسم مستخدم)
+     */
+    public static function findUserByCredentialId($credentialIdRaw) {
+        try {
+            $db = db();
+            
+            // تحويل credential ID إلى base64 إذا لزم الأمر (قد يكون base64url)
+            $credentialIdEncoded = strtr($credentialIdRaw, '-_', '+/');
+            
+            // إذا كان credential ID ليس base64 padded، نضيف padding
+            $mod = strlen($credentialIdEncoded) % 4;
+            if ($mod) {
+                $credentialIdEncoded .= str_repeat('=', 4 - $mod);
+            }
+            
+            // البحث عن credential في قاعدة البيانات
+            $credential = $db->queryOne(
+                "SELECT wc.*, u.id as user_id, u.username, u.role, u.status, u.full_name
+                 FROM webauthn_credentials wc
+                 INNER JOIN users u ON wc.user_id = u.id
+                 WHERE wc.credential_id = ? AND u.status = 'active'",
+                [$credentialIdEncoded]
+            );
+            
+            if (!$credential) {
+                return null;
+            }
+            
+            return [
+                'user_id' => $credential['user_id'],
+                'username' => $credential['username'],
+                'role' => $credential['role'],
+                'full_name' => $credential['full_name'],
+                'credential_id' => $credential['credential_id']
+            ];
+        } catch (Exception $e) {
+            error_log("WebAuthn findUserByCredentialId Error: " . $e->getMessage());
+            return null;
+        }
+    }
+    
+    /**
+     * الحصول على جميع المستخدمين الذين لديهم بصمات مسجلة (للعرض في القائمة)
+     */
+    public static function getAllUsersWithCredentials() {
+        try {
+            $db = db();
+            
+            $users = $db->query(
+                "SELECT DISTINCT u.id, u.username, u.role, u.full_name, u.status,
+                        COUNT(wc.id) as credentials_count
+                 FROM users u
+                 INNER JOIN webauthn_credentials wc ON u.id = wc.user_id
+                 WHERE u.status = 'active'
+                 GROUP BY u.id, u.username, u.role, u.full_name, u.status
+                 ORDER BY u.username"
+            );
+            
+            return $users ?: [];
+        } catch (Exception $e) {
+            error_log("WebAuthn getAllUsersWithCredentials Error: " . $e->getMessage());
+            return [];
+        }
+    }
+    
+    /**
+     * إنشاء تحدي لتسجيل الدخول بدون اسم مستخدم (للبحث عن جميع البصمات)
+     */
+    public static function createLoginChallengeWithoutUsername() {
+        $challengeBytes = random_bytes(32);
+        $challenge = self::base64urlEncode($challengeBytes);
+        $_SESSION['webauthn_login_challenge'] = $challenge;
+        // لا نحفظ user_id هنا لأننا لا نعرف المستخدم بعد
+        
+        // rpId يجب أن يكون hostname فقط (بدون www. وبدون port)
+        $rpId = parse_url(WEBAUTHN_ORIGIN, PHP_URL_HOST);
+        
+        // إزالة www. إذا كان موجوداً
+        if ($rpId && strpos($rpId, 'www.') === 0) {
+            $rpId = substr($rpId, 4);
+        }
+        
+        // إزالة port إذا كان موجوداً
+        if ($rpId && strpos($rpId, ':') !== false) {
+            $rpId = substr($rpId, 0, strpos($rpId, ':'));
+        }
+        
+        // التأكد من أن rpId ليس فارغاً
+        if (empty($rpId)) {
+            $rpId = $_SERVER['HTTP_HOST'] ?? 'localhost';
+            if (strpos($rpId, 'www.') === 0) {
+                $rpId = substr($rpId, 4);
+            }
+        }
+        
+        // إعدادات challenge محسّنة للموبايل
+        // لا نرسل allowCredentials هنا - هذا سيسمح للمتصفح بعرض جميع البصمات
+        $challengeData = [
+            'challenge' => $challenge,
+            'timeout' => 180000, // زيادة timeout للموبايل (180 ثانية = 3 دقائق)
+            'rpId' => $rpId,
+            'userVerification' => 'preferred' // مهم للموبايل - يسمح بـ Face ID/Touch ID
+        ];
+        
+        return $challengeData;
+    }
+    
+    /**
+     * التحقق من تسجيل الدخول بدون معرفة المستخدم مسبقاً
+     */
+    public static function verifyLoginWithoutUsername($response) {
+        try {
+            // إذا كان response هو string، نحوله إلى array
+            if (is_string($response)) {
+                $responseData = json_decode($response, true);
+                if (json_last_error() !== JSON_ERROR_NONE) {
+                    error_log("WebAuthn Login: Invalid JSON response. Error: " . json_last_error_msg());
+                    return false;
+                }
+            } else {
+                $responseData = $response;
+            }
+            
+            if (!isset($_SESSION['webauthn_login_challenge'])) {
+                error_log("WebAuthn Login: Missing session challenge");
+                return false;
+            }
+            
+            $challenge = $_SESSION['webauthn_login_challenge'];
+            
+            // استخراج البيانات من response object
+            $clientDataJSONEncoded = $responseData['response']['clientDataJSON'] ?? $responseData['clientDataJSON'] ?? '';
+            $authenticatorDataEncoded = $responseData['response']['authenticatorData'] ?? $responseData['authenticatorData'] ?? '';
+            $signatureEncoded = $responseData['response']['signature'] ?? $responseData['signature'] ?? '';
+            
+            if (empty($clientDataJSONEncoded) || empty($authenticatorDataEncoded) || empty($signatureEncoded)) {
+                error_log("WebAuthn Login: Missing required response data");
+                return false;
+            }
+            
+            $clientDataJSON = self::base64urlDecode($clientDataJSONEncoded);
+            $authenticatorData = self::base64urlDecode($authenticatorDataEncoded);
+            $signature = self::base64urlDecode($signatureEncoded);
+            
+            if ($clientDataJSON === false || $authenticatorData === false || $signature === false) {
+                error_log("WebAuthn Login: Failed to decode base64 data");
+                return false;
+            }
+            
+            $clientData = json_decode($clientDataJSON, true);
+            
+            if (!$clientData) {
+                error_log("WebAuthn Login: Failed to decode clientDataJSON");
+                return false;
+            }
+            
+            // التحقق من التحدي
+            $expectedChallenge = $challenge;
+            $receivedChallenge = $clientData['challenge'] ?? '';
+            
+            if ($receivedChallenge !== $expectedChallenge) {
+                error_log("WebAuthn Login: Challenge mismatch");
+                return false;
+            }
+            
+            // التحقق من الأصل
+            $expectedOrigin = rtrim(WEBAUTHN_ORIGIN, '/');
+            $receivedOrigin = rtrim($clientData['origin'] ?? '', '/');
+            
+            $expectedHost = parse_url($expectedOrigin, PHP_URL_HOST);
+            $receivedHost = parse_url($receivedOrigin, PHP_URL_HOST);
+            
+            if ($expectedHost && strpos($expectedHost, 'www.') === 0) {
+                $expectedHost = substr($expectedHost, 4);
+            }
+            if ($receivedHost && strpos($receivedHost, 'www.') === 0) {
+                $receivedHost = substr($receivedHost, 4);
+            }
+            
+            if ($expectedHost !== $receivedHost) {
+                error_log("WebAuthn Login: Origin host mismatch");
+                return false;
+            }
+            
+            // التحقق من النوع
+            if ($clientData['type'] !== 'webauthn.get') {
+                error_log("WebAuthn Login: Invalid type");
+                return false;
+            }
+            
+            // استخراج credential ID
+            $credentialIdRaw = $responseData['rawId'] ?? $responseData['id'] ?? '';
+            
+            if (empty($credentialIdRaw)) {
+                error_log("WebAuthn Login: Missing credential ID");
+                return false;
+            }
+            
+            // البحث عن المستخدم المرتبط بهذا credential
+            $user = self::findUserByCredentialId($credentialIdRaw);
+            
+            if (!$user) {
+                error_log("WebAuthn Login: No user found for credential ID");
+                return false;
+            }
+            
+            $db = db();
+            
+            // تحديث آخر استخدام
+            $db->execute(
+                "UPDATE webauthn_credentials SET last_used = NOW(), counter = counter + 1 WHERE credential_id = ?",
+                [$user['credential_id']]
+            );
+            
+            // مسح بيانات الجلسة
+            unset($_SESSION['webauthn_login_challenge']);
+            
+            return $user;
+            
+        } catch (Exception $e) {
+            error_log("WebAuthn Login Without Username Error: " . $e->getMessage());
+            return false;
+        }
+    }
+    
+    /**
      * التحقق من تسجيل الدخول
      */
     public static function verifyLogin($response) {

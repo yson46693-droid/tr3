@@ -690,23 +690,15 @@ $lang = $translations;
             }
         });
         
-        // تسجيل الدخول عبر WebAuthn
+        // تسجيل الدخول عبر WebAuthn بدون اسم مستخدم
         document.getElementById('webauthnLoginBtn')?.addEventListener('click', async function() {
-            const username = document.getElementById('username').value;
-            
-            if (!username) {
-                alert('يرجى إدخال اسم المستخدم أولاً');
-                document.getElementById('username').focus();
-                return;
-            }
-            
             this.disabled = true;
             this.innerHTML = '<span class="spinner-border spinner-border-sm me-2"></span>جاري التحقق...';
             
             try {
-                const result = await webauthnManager.login(username);
+                const result = await webauthnManager.loginWithoutUsername();
                 if (result && result.success) {
-                    // سيتم إعادة التوجيه تلقائياً من داخل login()
+                    // سيتم إعادة التوجيه تلقائياً من داخل loginWithoutUsername()
                     console.log('Login successful, redirecting...');
                 }
             } catch (error) {
