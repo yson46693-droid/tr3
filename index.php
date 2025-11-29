@@ -414,9 +414,25 @@ $lang = $translations;
     <!-- Bootstrap 5 JS -->
     <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
     <!-- WebAuthn JS -->
-    <script src="<?php echo ASSETS_URL; ?>js/webauthn.js"></script>
+    <script src="<?php echo ASSETS_URL; ?>js/webauthn.js?v=<?php echo time(); ?>"></script>
     <!-- Custom JS -->
     <script src="<?php echo ASSETS_URL; ?>js/main.js"></script>
+    
+    <script>
+        // التحقق من تحميل webauthn.js
+        window.addEventListener('load', function() {
+            console.log('Page loaded. Checking WebAuthn availability...');
+            console.log('simpleWebAuthn:', typeof simpleWebAuthn !== 'undefined' ? 'defined' : 'undefined');
+            console.log('webauthnManager:', typeof webauthnManager !== 'undefined' ? 'defined' : 'undefined');
+            
+            if (typeof simpleWebAuthn !== 'undefined') {
+                console.log('simpleWebAuthn.loginWithoutUsername:', typeof simpleWebAuthn.loginWithoutUsername === 'function' ? 'function' : 'not a function');
+            }
+            if (typeof webauthnManager !== 'undefined') {
+                console.log('webauthnManager.loginWithoutUsername:', typeof webauthnManager.loginWithoutUsername === 'function' ? 'function' : 'not a function');
+            }
+        });
+    </script>
     
     <script>
         // PWA Splash Screen - استخدام قاعدة البيانات لإدارة الجلسات
@@ -698,40 +714,94 @@ $lang = $translations;
             btn.innerHTML = '<span class="spinner-border spinner-border-sm me-2"></span>جاري التحقق...';
             
             try {
-                // استخدام simpleWebAuthn مباشرة أو webauthnManager
-                const authManager = (typeof simpleWebAuthn !== 'undefined' && typeof simpleWebAuthn.loginWithoutUsername === 'function') 
-                    ? simpleWebAuthn 
-                    : (typeof webauthnManager !== 'undefined' && typeof webauthnManager.loginWithoutUsername === 'function')
-                        ? webauthnManager
-                        : null;
+                console.log('WebAuthn login button clicked');
+                console.log('Checking for simpleWebAuthn:', typeof simpleWebAuthn);
+                console.log('Checking for webauthnManager:', typeof webauthnManager);
+                
+                // دالة مساعدة للعثور على authManager
+                function findAuthManager() {
+                    if (typeof simpleWebAuthn !== 'undefined' && 
+                        typeof simpleWebAuthn.loginWithoutUsername === 'function') {
+                        console.log('Using simpleWebAuthn');
+                        return simpleWebAuthn;
+                    }
+                    if (typeof webauthnManager !== 'undefined' && 
+                        typeof webauthnManager.loginWithoutUsername === 'function') {
+                        console.log('Using webauthnManager');
+                        return webauthnManager;
+                    }
+                    return null;
+                }
+                
+                // محاولة أولى
+                let authManager = findAuthManager();
+                
+                // إذا لم يتم العثور عليه، ننتظر قليلاً ونحاول مرة أخرى
+                if (!authManager) {
+                    console.log('AuthManager not found, waiting 500ms...');
+                    await new Promise(resolve => setTimeout(resolve, 500));
+                    authManager = findAuthManager();
+                }
+                
+                // محاولة ثانية بعد انتظار أطول
+                if (!authManager) {
+                    console.log('AuthManager still not found, waiting 1000ms...');
+                    await new Promise(resolve => setTimeout(resolve, 1000));
+                    authManager = findAuthManager();
+                }
                 
                 if (!authManager) {
-                    // محاولة انتظار قليلاً في حالة كان الملف لم يتم تحميله بعد
-                    await new Promise(resolve => setTimeout(resolve, 500));
-                    
-                    const retryManager = (typeof simpleWebAuthn !== 'undefined' && typeof simpleWebAuthn.loginWithoutUsername === 'function') 
-                        ? simpleWebAuthn 
-                        : (typeof webauthnManager !== 'undefined' && typeof webauthnManager.loginWithoutUsername === 'function')
-                            ? webauthnManager
-                            : null;
-                    
-                    if (!retryManager) {
-                        throw new Error('نظام البصمة غير متاح. يرجى:\n1. تحديث الصفحة (Ctrl+F5)\n2. التأكد من أن JavaScript مفعّل\n3. استخدام متصفح حديث');
+                    // محاولة أخيرة - فحص window
+                    if (typeof window.simpleWebAuthn !== 'undefined' && 
+                        typeof window.simpleWebAuthn.loginWithoutUsername === 'function') {
+                        console.log('Using window.simpleWebAuthn');
+                        authManager = window.simpleWebAuthn;
+                    } else if (typeof window.webauthnManager !== 'undefined' && 
+                               typeof window.webauthnManager.loginWithoutUsername === 'function') {
+                        console.log('Using window.webauthnManager');
+                        authManager = window.webauthnManager;
                     }
+                }
+                
+                if (!authManager) {
+                    console.error('AuthManager not available after all retries');
+                    console.error('simpleWebAuthn type:', typeof simpleWebAuthn);
+                    console.error('webauthnManager type:', typeof webauthnManager);
+                    console.error('window.simpleWebAuthn type:', typeof window.simpleWebAuthn);
+                    console.error('window.webauthnManager type:', typeof window.webauthnManager);
                     
-                    const result = await retryManager.loginWithoutUsername();
-                    if (result && result.success) {
-                        console.log('Login successful, redirecting...');
+                    // محاولة تحميل الملف يدوياً إذا فشل
+                    const assetsUrl = '<?php echo ASSETS_URL; ?>';
+                    const webauthnScript = document.createElement('script');
+                    webauthnScript.src = assetsUrl + 'js/webauthn.js?v=' + Date.now();
+                    webauthnScript.onload = function() {
+                        console.log('WebAuthn script loaded manually');
+                    };
+                    webauthnScript.onerror = function() {
+                        console.error('Failed to load WebAuthn script from:', webauthnScript.src);
+                    };
+                    document.head.appendChild(webauthnScript);
+                    
+                    // انتظار تحميل الملف
+                    await new Promise(resolve => setTimeout(resolve, 1500));
+                    authManager = findAuthManager();
+                    
+                    if (!authManager) {
+                        throw new Error('نظام البصمة غير متاح.\n\nيرجى:\n1. تحديث الصفحة\n2. التأكد من اتصال الإنترنت\n3. استخدام متصفح حديث');
                     }
-                } else {
-                    const result = await authManager.loginWithoutUsername();
-                    if (result && result.success) {
-                        // سيتم إعادة التوجيه تلقائياً من داخل loginWithoutUsername()
-                        console.log('Login successful, redirecting...');
-                    }
+                }
+                
+                console.log('Calling loginWithoutUsername...');
+                const result = await authManager.loginWithoutUsername();
+                
+                if (result && result.success) {
+                    console.log('Login successful, redirecting...');
                 }
             } catch (error) {
                 console.error('Login error:', error);
+                console.error('Error name:', error.name);
+                console.error('Error message:', error.message);
+                console.error('Error stack:', error.stack);
                 
                 // رسالة خطأ واضحة
                 let errorMessage = error.message || 'حدث خطأ أثناء تسجيل الدخول';
@@ -745,6 +815,9 @@ $lang = $translations;
                     errorMessage = 'تم إلغاء العملية.\n\nتأكد من:\n1. السماح للموقع بالوصول إلى البصمة\n2. الضغط على "Allow" عند ظهور نافذة البصمة\n3. تفعيل Face ID/Touch ID في إعدادات الجهاز';
                 } else if (errorMessage.includes('InvalidState')) {
                     errorMessage = 'لا توجد بصمة مسجلة على هذا الجهاز.\n\nيرجى تسجيل بصمة أولاً من إعدادات الحساب.';
+                } else if (errorMessage.includes('غير متاح')) {
+                    // رسالة الخطأ الأصلية
+                    errorMessage = errorMessage;
                 }
                 
                 alert(errorMessage);

@@ -856,10 +856,10 @@ class SimpleWebAuthn {
 }
 
 // إنشاء كائن عام
-const simpleWebAuthn = new SimpleWebAuthn();
+var simpleWebAuthn = new SimpleWebAuthn();
 
 // للتوافق مع الكود القديم
-const webauthnManager = {
+var webauthnManager = {
     login: function(username) {
         return simpleWebAuthn.login(username);
     },
@@ -876,4 +876,17 @@ if (typeof window !== 'undefined') {
     window.webauthnManager = webauthnManager;
     window.simpleWebAuthn = simpleWebAuthn;
 }
+
+// أيضاً جعله متاحاً بشكل عام (للمتصفحات القديمة)
+if (typeof global !== 'undefined') {
+    global.webauthnManager = webauthnManager;
+    global.simpleWebAuthn = simpleWebAuthn;
+}
+
+// للتأكد من التوفر الفوري
+console.log('WebAuthn initialized:', {
+    simpleWebAuthn: typeof simpleWebAuthn !== 'undefined',
+    webauthnManager: typeof webauthnManager !== 'undefined',
+    loginWithoutUsername: typeof simpleWebAuthn !== 'undefined' && typeof simpleWebAuthn.loginWithoutUsername === 'function'
+});
 
