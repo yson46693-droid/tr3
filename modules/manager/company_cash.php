@@ -323,7 +323,6 @@ require_once __DIR__ . '/../../includes/lang/' . getCurrentLanguage() . '.php';
 $lang = isset($translations) ? $translations : [];
 $pageTitle = isset($lang['menu_financial']) ? $lang['menu_financial'] : 'خزنة الشركة';
 ?>
-<?php include __DIR__ . '/../../templates/header.php'; ?>
 
 <!-- صفحة الخزنة -->
 <div class="page-header mb-4 d-flex justify-content-between align-items-center">
@@ -901,6 +900,3 @@ document.addEventListener('DOMContentLoaded', function() {
     }
 });
 </script>
-
-
-<?php include __DIR__ . '/../../templates/footer.php'; ?>
