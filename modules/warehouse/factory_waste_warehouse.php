@@ -215,9 +215,8 @@ if ($activeTab === 'products') {
     }
     
     if ($search) {
-        $sql .= " AND (p.name LIKE ? OR bn.batch_number LIKE ? OR p.code LIKE ? OR r.return_number LIKE ?)";
+        $sql .= " AND (p.name LIKE ? OR bn.batch_number LIKE ? OR r.return_number LIKE ?)";
         $searchParam = "%{$search}%";
-        $params[] = $searchParam;
         $params[] = $searchParam;
         $params[] = $searchParam;
         $params[] = $searchParam;
@@ -275,9 +274,8 @@ if ($activeTab === 'products') {
     }
     
     if ($search) {
-        $countSql .= " AND (p.name LIKE ? OR bn.batch_number LIKE ? OR p.code LIKE ? OR r.return_number LIKE ?)";
+        $countSql .= " AND (p.name LIKE ? OR bn.batch_number LIKE ? OR r.return_number LIKE ?)";
         $searchParam = "%{$search}%";
-        $countParams[] = $searchParam;
         $countParams[] = $searchParam;
         $countParams[] = $searchParam;
         $countParams[] = $searchParam;
