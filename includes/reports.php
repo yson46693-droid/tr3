@@ -149,16 +149,16 @@ function sendReportAndDelete($report, $reportType, $reportName) {
             
             // ملخصات الفواتير
             if (isset($report['summary']['net_total'])) {
-                $summaryLines[] = 'الإجمالي: ' . number_format((float)$report['summary']['net_total'], 2) . ' ر.س';
+                $summaryLines[] = 'الإجمالي: ' . number_format((float)$report['summary']['net_total'], 2) . ' ج.م';
             }
             if (isset($report['summary']['paid'])) {
-                $summaryLines[] = 'المدفوع: ' . number_format((float)$report['summary']['paid'], 2) . ' ر.س';
+                $summaryLines[] = 'المدفوع: ' . number_format((float)$report['summary']['paid'], 2) . ' ج.م';
             }
             if (isset($report['summary']['due'])) {
-                $summaryLines[] = 'المتبقي: ' . number_format((float)$report['summary']['due'], 2) . ' ر.س';
+                $summaryLines[] = 'المتبقي: ' . number_format((float)$report['summary']['due'], 2) . ' ج.م';
             }
             if (isset($report['summary']['subtotal'])) {
-                $summaryLines[] = 'المجموع الفرعي: ' . number_format((float)$report['summary']['subtotal'], 2) . ' ر.س';
+                $summaryLines[] = 'المجموع الفرعي: ' . number_format((float)$report['summary']['subtotal'], 2) . ' ج.م';
             }
             
             if (!empty($summaryLines)) {
