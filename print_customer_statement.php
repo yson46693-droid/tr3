@@ -246,7 +246,7 @@ function getCustomerStatementData($customerId) {
             width: 80px;
             height: 80px;
             border-radius: 12px;
-            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            background: linear-gradient(135deg,rgb(6, 59, 134) 0%,rgb(3, 71, 155) 100%);
             display: flex;
             align-items: center;
             justify-content: center;
