@@ -213,7 +213,7 @@ function handleGetPurchaseHistory(): void
         }
     }
     
-    // جلب سجل المشتريات
+    // جلب سجل المشتريات - تحسين الاستعلام
     $purchaseHistory = $db->query(
         "SELECT 
             i.id as invoice_id,
@@ -236,24 +236,49 @@ function handleGetPurchaseHistory(): void
                  ORDER BY fp2.id DESC 
                  LIMIT 1),
                 NULLIF(TRIM(p.name), ''),
-                CONCAT('منتج رقم ', p.id)
+                CONCAT('منتج رقم ', ii.product_id)
             ) as product_name,
-            p.unit,
+            COALESCE(p.unit, 'قطعة') as unit,
             ii.quantity,
             ii.unit_price,
             ii.total_price,
             GROUP_CONCAT(DISTINCT bn.batch_number ORDER BY bn.batch_number SEPARATOR ', ') as batch_numbers,
-            GROUP_CONCAT(DISTINCT bn.id ORDER BY bn.id SEPARATOR ',') as batch_number_ids
+            GROUP_CONCAT(DISTINCT CAST(bn.id AS CHAR) ORDER BY bn.id SEPARATOR ',') as batch_number_ids
         FROM invoices i
         INNER JOIN invoice_items ii ON i.id = ii.invoice_id
         LEFT JOIN products p ON ii.product_id = p.id
         LEFT JOIN sales_batch_numbers sbn ON ii.id = sbn.invoice_item_id
         LEFT JOIN batch_numbers bn ON sbn.batch_number_id = bn.id
         WHERE i.customer_id = ?
-        GROUP BY i.id, ii.id
+          AND i.status NOT IN ('cancelled', 'draft')
+        GROUP BY i.id, i.invoice_number, i.date, i.total_amount, i.paid_amount, i.status, 
+                 ii.id, ii.product_id, ii.quantity, ii.unit_price, ii.total_price, p.unit
         ORDER BY i.date DESC, i.id DESC, ii.id ASC",
         [$customerId]
     );
+    
+    error_log("Purchase history query returned " . count($purchaseHistory) . " items for customer ID: {$customerId}");
+    
+    // إرجاع معلومات العميل
+    $customerInfo = $db->queryOne(
+        "SELECT id, name, phone, address FROM customers WHERE id = ?",
+        [$customerId]
+    );
+    
+    if (empty($purchaseHistory)) {
+        error_log("No purchase history found for customer ID: {$customerId}");
+        returnJson([
+            'success' => true,
+            'purchase_history' => [],
+            'customer' => $customerInfo ? [
+                'id' => (int)$customerInfo['id'],
+                'name' => $customerInfo['name'],
+                'phone' => $customerInfo['phone'] ?? '',
+                'address' => $customerInfo['address'] ?? ''
+            ] : null
+        ]);
+        return;
+    }
     
     // حساب الكميات المرتجعة
     $returnedQuantities = [];
@@ -285,13 +310,14 @@ function handleGetPurchaseHistory(): void
         }
     }
     
-    // تجميع المنتجات
-    $productsMap = [];
+    // إرجاع كل عنصر فاتورة كصف منفصل
+    $result = [];
     
     foreach ($purchaseHistory as $item) {
         $invoiceItemId = (int)$item['invoice_item_id'];
         $productId = (int)$item['product_id'];
         
+        // حساب الكمية المرتجعة
         $returnedQty = 0.0;
         if ($hasInvoiceItemId) {
             $key = "{$invoiceItemId}_{$productId}";
@@ -301,76 +327,64 @@ function handleGetPurchaseHistory(): void
         $purchasedQty = (float)$item['quantity'];
         $remainingQty = max(0, round($purchasedQty - $returnedQty, 3));
         
+        // تخطي العناصر التي تم إرجاعها بالكامل
         if ($remainingQty <= 0) {
             continue;
         }
         
-        if (!isset($productsMap[$productId])) {
-            $finalProductName = resolveProductName([$item['product_name'] ?? null], 'اسم المنتج غير متوفر');
-            
-            $productsMap[$productId] = [
-                'product_id' => $productId,
-                'product_name' => $finalProductName,
-                'unit' => $item['unit'] ?? '',
-                'quantity_purchased' => 0.0,
-                'quantity_returned' => 0.0,
-                'quantity_remaining' => 0.0,
-                'unit_price' => (float)$item['unit_price'],
-                'total_price' => 0.0,
-                'batch_numbers' => [],
-                'invoice_item_ids' => [],
-                'invoices' => []
-            ];
+        // جلب اسم المنتج الحقيقي
+        $finalProductName = resolveProductName([$item['product_name'] ?? null], 'اسم المنتج غير متوفر');
+        
+        // تحويل batch_numbers من string إلى array
+        $batchNumbersArray = [];
+        if (!empty($item['batch_numbers'])) {
+            $batchNumbersArray = array_map('trim', explode(', ', $item['batch_numbers']));
+            $batchNumbersArray = array_filter($batchNumbersArray); // إزالة القيم الفارغة
+            $batchNumbersArray = array_values($batchNumbersArray); // إعادة ترقيم المفاتيح
         }
         
-        $productsMap[$productId]['quantity_purchased'] += $purchasedQty;
-        $productsMap[$productId]['quantity_returned'] += $returnedQty;
-        $productsMap[$productId]['quantity_remaining'] += $remainingQty;
-        $productsMap[$productId]['total_price'] += (float)$item['total_price'];
-        $productsMap[$productId]['invoice_item_ids'][] = $invoiceItemId;
-        
-        if ($item['batch_numbers']) {
-            $batches = explode(', ', $item['batch_numbers']);
-            foreach ($batches as $batch) {
-                if ($batch && !in_array($batch, $productsMap[$productId]['batch_numbers'])) {
-                    $productsMap[$productId]['batch_numbers'][] = $batch;
-                }
-            }
+        // تحويل batch_number_ids من string إلى array
+        $batchNumberIdsArray = [];
+        if (!empty($item['batch_number_ids'])) {
+            $batchNumberIdsArray = array_map('intval', explode(',', $item['batch_number_ids']));
+            $batchNumberIdsArray = array_filter($batchNumberIdsArray); // إزالة القيم الصفرية
+            $batchNumberIdsArray = array_values($batchNumberIdsArray); // إعادة ترقيم المفاتيح
         }
         
-        $productsMap[$productId]['invoices'][] = [
+        $result[] = [
             'invoice_id' => (int)$item['invoice_id'],
-            'invoice_number' => $item['invoice_number'],
             'invoice_item_id' => $invoiceItemId,
-            'quantity' => $remainingQty
+            'invoice_number' => $item['invoice_number'] ?? '',
+            'invoice_date' => !empty($item['invoice_date']) ? date('Y-m-d', strtotime($item['invoice_date'])) : '',
+            'product_id' => $productId,
+            'product_name' => $finalProductName,
+            'unit' => $item['unit'] ?? '',
+            'quantity' => $purchasedQty,
+            'quantity_purchased' => $purchasedQty,
+            'returned_quantity' => $returnedQty,
+            'quantity_returned' => $returnedQty,
+            'available_to_return' => $remainingQty,
+            'quantity_remaining' => $remainingQty,
+            'unit_price' => (float)$item['unit_price'],
+            'total_price' => (float)$item['total_price'],
+            'batch_numbers' => $batchNumbersArray, // array
+            'batch_number_ids' => $batchNumberIdsArray, // array
+            'can_return' => true // يمكن الإرجاع إذا كان هناك كمية متاحة
         ];
     }
     
-    // تحويل إلى مصفوفة
-    $result = [];
-    foreach ($productsMap as $productId => $product) {
-        if ($product['quantity_remaining'] > 0) {
-            $firstInvoiceItemId = !empty($product['invoice_item_ids']) ? $product['invoice_item_ids'][0] : 0;
-            $finalProductName = resolveProductName([$product['product_name']], 'اسم المنتج غير متوفر');
-            
-            $result[] = [
-                'invoice_item_id' => $firstInvoiceItemId,
-                'product_id' => $productId,
-                'product_name' => $finalProductName,
-                'unit' => $product['unit'],
-                'quantity_purchased' => round($product['quantity_purchased'], 3),
-                'quantity_returned' => round($product['quantity_returned'], 3),
-                'quantity_remaining' => round($product['quantity_remaining'], 3),
-                'unit_price' => $product['unit_price'],
-                'total_price' => round($product['total_price'], 2),
-                'batch_numbers' => implode(', ', $product['batch_numbers']),
-                'invoices' => $product['invoices'],
-                'invoice_item_ids' => $product['invoice_item_ids']
-            ];
-        }
-    }
+    error_log("Processed " . count($result) . " items after filtering for customer ID: {$customerId}");
     
-    returnJson(['success' => true, 'purchase_history' => $result]);
+    returnJson([
+        'success' => true,
+        'purchase_history' => $result,
+        'customer' => $customerInfo ? [
+            'id' => (int)$customerInfo['id'],
+            'name' => $customerInfo['name'],
+            'phone' => $customerInfo['phone'] ?? '',
+            'address' => $customerInfo['address'] ?? ''
+        ] : null
+    ]);
 }
 
 /**

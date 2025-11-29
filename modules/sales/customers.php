@@ -1581,9 +1581,30 @@ function loadPurchaseHistory(customerId) {
             'Accept': 'application/json'
         }
     })
-    .then(response => response.json())
+    .then(response => {
+        // التحقق من نوع المحتوى
+        const contentType = response.headers.get('content-type') || '';
+        if (!contentType.includes('application/json')) {
+            return response.text().then(text => {
+                console.error('Expected JSON but got:', contentType, text.substring(0, 500));
+                throw new Error('استجابة غير صحيحة من الخادم');
+            });
+        }
+        
+        if (!response.ok) {
+            return response.json().then(errorData => {
+                throw new Error(errorData.message || 'خطأ في الطلب: ' + response.status);
+            }).catch(() => {
+                throw new Error('حدث خطأ في الطلب: ' + response.status);
+            });
+        }
+        
+        return response.json();
+    })
     .then(data => {
         loading.classList.add('d-none');
+        
+        console.log('Purchase history data:', data); // للتشخيص
         
         if (data.success) {
             // Update customer info
@@ -1594,6 +1615,7 @@ function loadPurchaseHistory(customerId) {
             
             // Store purchase history data
             purchaseHistoryData = data.purchase_history || [];
+            console.log('Purchase history items:', purchaseHistoryData.length); // للتشخيص
             displayPurchaseHistory(purchaseHistoryData);
             tableDiv.classList.remove('d-none');
         } else {
@@ -1603,9 +1625,9 @@ function loadPurchaseHistory(customerId) {
     })
     .catch(error => {
         loading.classList.add('d-none');
-        errorDiv.textContent = 'حدث خطأ في الاتصال بالخادم';
+        errorDiv.textContent = 'خطأ: ' + (error.message || 'حدث خطأ في الاتصال بالخادم');
         errorDiv.classList.remove('d-none');
-        console.error('Error:', error);
+        console.error('Error loading purchase history:', error);
     });
 }
 
@@ -1614,7 +1636,7 @@ function displayPurchaseHistory(history) {
     tableBody.innerHTML = '';
     
     if (!history || history.length === 0) {
-        tableBody.innerHTML = '<tr><td colspan="11" class="text-center text-muted">لا توجد مشتريات</td></tr>';
+        tableBody.innerHTML = '<tr><td colspan="11" class="text-center text-muted py-4"><i class="bi bi-info-circle me-2"></i>لا توجد منتجات متاحة للإرجاع من مشتريات هذا العميل</td></tr>';
         return;
     }
     
@@ -1637,7 +1659,7 @@ function displayPurchaseHistory(history) {
                        onchange="updateSelectedItems()">
             </td>
             <td>${item.invoice_number || '-'}</td>
-            <td>${(item.batch_numbers || []).join(', ') || '-'}</td>
+            <td>${Array.isArray(item.batch_numbers) ? item.batch_numbers.join(', ') : (item.batch_numbers || '-')}</td>
             <td>${item.product_name || '-'}</td>
             <td>${parseFloat(item.quantity || 0).toFixed(2)}</td>
             <td>${parseFloat(item.returned_quantity || 0).toFixed(2)}</td>
