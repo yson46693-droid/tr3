@@ -1631,8 +1631,9 @@ function loadPurchaseHistory(customerIdParam, retryCount = 0) {
         return;
     }
     
-    // التحقق من وجود العناصر قبل استخدامها
-    if (!loading || !tableDiv || !errorDiv) {
+    // التحقق من وجود العناصر الأساسية قبل استخدامها
+    // loading و tableDiv ضروريان، errorDiv اختياري
+    if (!loading || !tableDiv) {
         // محاولة مرة أخرى بعد فترة قصيرة إذا كانت العناصر غير موجودة
         if (retryCount < 3) {
             setTimeout(function() {
@@ -1648,9 +1649,27 @@ function loadPurchaseHistory(customerIdParam, retryCount = 0) {
         return;
     }
     
+    // إنشاء errorDiv ديناميكياً إذا لم يكن موجوداً
+    if (!errorDiv) {
+        const modalBody = modalElement.querySelector('.modal-body');
+        if (modalBody) {
+            const errorDivElement = document.createElement('div');
+            errorDivElement.className = 'alert alert-danger d-none';
+            errorDivElement.id = 'purchaseHistoryError';
+            // إدراجه بعد loading div
+            if (loading.nextSibling) {
+                modalBody.insertBefore(errorDivElement, loading.nextSibling);
+            } else {
+                modalBody.appendChild(errorDivElement);
+            }
+        }
+    }
+    
+    const finalErrorDiv = document.getElementById('purchaseHistoryError');
+    
     loading.classList.remove('d-none');
     tableDiv.classList.add('d-none');
-    errorDiv.classList.add('d-none');
+    if (finalErrorDiv) finalErrorDiv.classList.add('d-none');
     
     const productFilter = productSearchInput ? productSearchInput.value : '';
     const batchFilter = batchSearchInput ? batchSearchInput.value : '';
@@ -1711,17 +1730,19 @@ function loadPurchaseHistory(customerIdParam, retryCount = 0) {
             displayPurchaseHistory(purchaseHistoryData);
             if (tableDiv) tableDiv.classList.remove('d-none');
         } else {
-            if (errorDiv) {
-                errorDiv.textContent = data.message || 'حدث خطأ أثناء تحميل سجل المشتريات';
-                errorDiv.classList.remove('d-none');
+            const errorDivEl = document.getElementById('purchaseHistoryError');
+            if (errorDivEl) {
+                errorDivEl.textContent = data.message || 'حدث خطأ أثناء تحميل سجل المشتريات';
+                errorDivEl.classList.remove('d-none');
             }
         }
     })
     .catch(error => {
         if (loading) loading.classList.add('d-none');
-        if (errorDiv) {
-            errorDiv.textContent = 'خطأ: ' + (error.message || 'حدث خطأ في الاتصال بالخادم');
-            errorDiv.classList.remove('d-none');
+        const errorDivEl = document.getElementById('purchaseHistoryError');
+        if (errorDivEl) {
+            errorDivEl.textContent = 'خطأ: ' + (error.message || 'حدث خطأ في الاتصال بالخادم');
+            errorDivEl.classList.remove('d-none');
         }
         console.error('Error loading purchase history:', error);
     });
