@@ -4003,6 +4003,22 @@ document.addEventListener('DOMContentLoaded', function () {
         updateExecuteButtonState();
     }
     
+    // دالة تحديث حالة زر التنفيذ
+    function updateExecuteButtonState() {
+        const executeBtn = document.getElementById('executeReplacementBtn');
+        if (!executeBtn) return;
+        
+        // تفعيل الزر فقط إذا كان هناك منتجات محددة من العميل والسيارة
+        const hasCustomerItems = selectedCustomerItems.length > 0;
+        const hasCarItems = selectedCarItems.length > 0;
+        
+        if (hasCustomerItems && hasCarItems) {
+            executeBtn.disabled = false;
+        } else {
+            executeBtn.disabled = true;
+        }
+    }
+    
     // فتح المودال - استخدام event delegation
     document.addEventListener('click', function(e) {
         const replacementBtn = e.target.closest('.js-replacement-btn');
