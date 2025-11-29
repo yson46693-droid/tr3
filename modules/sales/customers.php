@@ -3756,6 +3756,10 @@ document.addEventListener('DOMContentLoaded', function () {
     let selectedCustomerItems = [];
     let selectedCarItems = [];
     
+    // الحصول على المسار الأساسي
+    const basePath = '<?php echo getBasePath(); ?>';
+    const apiPath = basePath + '/api/get_replacement_data.php';
+    
     // دالة عامة لفتح مودال الاستبدال (يمكن استدعاؤها من onclick)
     window.openReplacementModal = function(btn) {
         if (!btn) {
@@ -3800,7 +3804,7 @@ document.addEventListener('DOMContentLoaded', function () {
         modal.show();
         
         // تحميل البيانات
-        fetch('api/get_replacement_data.php?customer_id=' + currentCustomerId)
+        fetch(apiPath + '?customer_id=' + currentCustomerId)
             .then(response => {
                 if (!response.ok) {
                     throw new Error('فشل تحميل البيانات من الخادم');
@@ -3947,7 +3951,9 @@ document.addEventListener('DOMContentLoaded', function () {
             modal.show();
             
             // تحميل البيانات
-            fetch('api/get_replacement_data.php?customer_id=' + currentCustomerId)
+            const basePath = '<?php echo getBasePath(); ?>';
+            const apiPath = basePath + '/api/get_replacement_data.php';
+            fetch(apiPath + '?customer_id=' + currentCustomerId)
                 .then(response => response.json())
                 .then(response => {
                     if (!response.ok) {
@@ -4258,7 +4264,9 @@ document.addEventListener('DOMContentLoaded', function () {
         formData.append('customer_items', JSON.stringify(selectedCustomerItems));
         formData.append('car_items', JSON.stringify(selectedCarItems));
         
-        fetch('api/process_replacement.php', {
+        const basePath = '<?php echo getBasePath(); ?>';
+        const processApiPath = basePath + '/api/process_replacement.php';
+        fetch(processApiPath, {
             method: 'POST',
             body: formData
         })

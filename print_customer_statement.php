@@ -109,16 +109,38 @@ function getCustomerStatementData($customerId) {
     ) ?: [];
     
     // جلب التحصيلات
-    $collections = $db->query(
-        "SELECT 
-            id, amount, date, payment_method, notes,
-            invoice_id,
-            (SELECT invoice_number FROM invoices WHERE id = collections.invoice_id) as invoice_number
-         FROM collections
-         WHERE customer_id = ?
-         ORDER BY date DESC, id DESC",
-        [$customerId]
-    ) ?: [];
+    // التحقق من وجود عمود invoice_id في جدول collections
+    $hasInvoiceIdColumn = false;
+    try {
+        $invoiceIdColumnCheck = $db->queryOne("SHOW COLUMNS FROM collections LIKE 'invoice_id'");
+        $hasInvoiceIdColumn = !empty($invoiceIdColumnCheck);
+    } catch (Throwable $e) {
+        $hasInvoiceIdColumn = false;
+    }
+    
+    if ($hasInvoiceIdColumn) {
+        $collections = $db->query(
+            "SELECT 
+                id, amount, date, payment_method, notes,
+                invoice_id,
+                (SELECT invoice_number FROM invoices WHERE id = collections.invoice_id) as invoice_number
+             FROM collections
+             WHERE customer_id = ?
+             ORDER BY date DESC, id DESC",
+            [$customerId]
+        ) ?: [];
+    } else {
+        $collections = $db->query(
+            "SELECT 
+                id, amount, date, payment_method, notes,
+                NULL as invoice_id,
+                NULL as invoice_number
+             FROM collections
+             WHERE customer_id = ?
+             ORDER BY date DESC, id DESC",
+            [$customerId]
+        ) ?: [];
+    }
     
     // حساب الإجماليات
     $totalInvoiced = 0;
