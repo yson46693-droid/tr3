@@ -89,26 +89,61 @@ function ensureReturnSchemaCompatibility(): void
                 if ($referencedTable === 'sales_returns') {
                     error_log("Fixing return_items foreign key: removing reference to sales_returns");
                     
+                    // التحقق أولاً من وجود جدول returns
+                    $returnsTableExists = $db->queryOne("SHOW TABLES LIKE 'returns'");
+                    if (empty($returnsTableExists)) {
+                        error_log("Warning: returns table does not exist. Cannot fix foreign key.");
+                        return;
+                    }
+                    
                     // حذف الـ foreign key القديم
                     try {
                         $db->execute("ALTER TABLE return_items DROP FOREIGN KEY `{$constraintName}`");
+                        error_log("Dropped old foreign key: {$constraintName}");
                     } catch (Throwable $e) {
-                        error_log("Could not drop old FK: " . $e->getMessage());
+                        error_log("Could not drop old FK {$constraintName}: " . $e->getMessage());
+                        // محاولة حذف بأسماء مختلفة شائعة
+                        $commonNames = ['return_items_ibfk_1', 'fk_return_items_return_id', 'return_items_return_id_foreign'];
+                        foreach ($commonNames as $name) {
+                            try {
+                                $db->execute("ALTER TABLE return_items DROP FOREIGN KEY `{$name}`");
+                                error_log("Dropped foreign key with alternative name: {$name}");
+                                break;
+                            } catch (Throwable $e2) {
+                                // تجاهل
+                            }
+                        }
                     }
                     
-                    // إنشاء foreign key جديد يشير إلى returns
-                    // التحقق أولاً من وجود جدول returns
-                    $returnsTableExists = $db->queryOne("SHOW TABLES LIKE 'returns'");
-                    if (!empty($returnsTableExists)) {
-                        $db->execute(
-                            "ALTER TABLE return_items 
-                             ADD CONSTRAINT `return_items_ibfk_1` 
-                             FOREIGN KEY (`return_id`) 
-                             REFERENCES `returns` (`id`) 
-                             ON DELETE CASCADE"
-                        );
-                        error_log("Successfully fixed return_items foreign key to point to returns table");
+                    // التحقق من عدم وجود constraint بالفعل يشير إلى returns
+                    $existingFk = $db->queryOne(
+                        "SELECT CONSTRAINT_NAME 
+                         FROM information_schema.KEY_COLUMN_USAGE 
+                         WHERE TABLE_SCHEMA = DATABASE() 
+                         AND TABLE_NAME = 'return_items' 
+                         AND COLUMN_NAME = 'return_id' 
+                         AND REFERENCED_TABLE_NAME = 'returns'"
+                    );
+                    
+                    if (empty($existingFk)) {
+                        // إنشاء foreign key جديد يشير إلى returns
+                        try {
+                            $db->execute(
+                                "ALTER TABLE return_items 
+                                 ADD CONSTRAINT `return_items_ibfk_1` 
+                                 FOREIGN KEY (`return_id`) 
+                                 REFERENCES `returns` (`id`) 
+                                 ON DELETE CASCADE"
+                            );
+                            error_log("Successfully created new foreign key pointing to returns table");
+                        } catch (Throwable $e) {
+                            error_log("Could not create new FK: " . $e->getMessage());
+                        }
+                    } else {
+                        error_log("Foreign key already exists pointing to returns table");
                     }
+                } elseif ($referencedTable !== 'returns') {
+                    error_log("Warning: return_items foreign key points to unexpected table: {$referencedTable}");
                 }
             }
         } catch (Throwable $e) {

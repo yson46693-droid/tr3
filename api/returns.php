@@ -394,6 +394,9 @@ function handleCreateReturn(): void
 {
     global $currentUser;
     
+    // التأكد من توافق قاعدة البيانات قبل البدء
+    ensureReturnSchemaCompatibility();
+    
     $payload = json_decode(file_get_contents('php://input'), true);
     
     if (!is_array($payload)) {
