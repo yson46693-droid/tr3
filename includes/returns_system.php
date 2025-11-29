@@ -846,6 +846,10 @@ function applyReturnSalaryDeduction(int $returnId, ?int $salesRepId = null, ?int
         $customerDebitBeforeReturn = $customerBalanceBeforeReturn > 0 ? $customerBalanceBeforeReturn : 0.0;
         $customerCreditBeforeReturn = $customerBalanceBeforeReturn < 0 ? abs($customerBalanceBeforeReturn) : 0.0;
         
+        // حساب رصيد العميل بعد المرتجع
+        $customerBalanceAfterReturn = $customerBalanceBeforeReturn - $returnAmount;
+        $customerDebitAfterReturn = $customerBalanceAfterReturn > 0 ? $customerBalanceAfterReturn : 0.0;
+        
         // تطبيق القواعد
         $amountToDeduct = 0.0;
         $calculationDetails = [];
@@ -860,7 +864,7 @@ function applyReturnSalaryDeduction(int $returnId, ?int $salesRepId = null, ?int
                 'reason' => 'رصيد العميل الدائن أكبر من مبلغ المرتجع'
             ];
         }
-        // القاعدة 2: رصيد مدين < مبلغ المرتجع
+        // القاعدة 2: رصيد مدين < مبلغ المرتجع (جزء يغطي الدين وجزء يغطي رصيد دائن)
         elseif ($customerDebitBeforeReturn > 0 && $customerDebitBeforeReturn < $returnAmount) {
             $difference = $returnAmount - $customerDebitBeforeReturn;
             $amountToDeduct = round($difference * 0.02, 2);
@@ -870,18 +874,38 @@ function applyReturnSalaryDeduction(int $returnId, ?int $salesRepId = null, ?int
                 'return_amount' => $returnAmount,
                 'difference' => $difference,
                 'deduction_percentage' => 2,
-                'reason' => 'رصيد العميل المدين أقل من مبلغ المرتجع'
+                'reason' => 'رصيد العميل المدين أقل من مبلغ المرتجع - خصم من الجزء الزائد فقط'
             ];
         }
-        // القاعدة 3: رصيد = 0 أو رصيد دائن <= مبلغ المرتجع
-        else {
-            $amountToDeduct = round($returnAmount * 0.02, 2);
+        // القاعدة 3: العميل لا يزال مدين بعد المرتجع - لا يتم خصم أي مبلغ
+        elseif ($customerDebitAfterReturn > 0) {
+            $amountToDeduct = 0.0;
             $calculationDetails = [
                 'rule' => 3,
-                'customer_balance' => $customerBalanceBeforeReturn,
+                'customer_balance_before' => $customerBalanceBeforeReturn,
+                'customer_balance_after' => $customerBalanceAfterReturn,
                 'return_amount' => $returnAmount,
+                'reason' => 'العميل لا يزال مدين بعد المرتجع - لا يتم خصم أي مبلغ لأن المندوب لم يحصل على نسبة تحصيلات من هذا المبلغ بعد'
+            ];
+        }
+        // القاعدة 4: رصيد = 0 أو رصيد دائن <= مبلغ المرتجع (العميل غير مدين بعد المرتجع)
+        else {
+            // حساب الجزء الذي تم إرجاعه من المبلغ المدفوع فعلياً
+            // إذا كان العميل كان مدين قبل المرتجع، فالجزء المدفوع = returnAmount - debtBeforeReturn
+            // إذا لم يكن مدين، فكامل المبلغ المدفوع = returnAmount
+            $paidPortion = $customerDebitBeforeReturn > 0 
+                ? max(0, $returnAmount - $customerDebitBeforeReturn) 
+                : $returnAmount;
+            
+            $amountToDeduct = round($paidPortion * 0.02, 2);
+            $calculationDetails = [
+                'rule' => 4,
+                'customer_balance_before' => $customerBalanceBeforeReturn,
+                'customer_balance_after' => $customerBalanceAfterReturn,
+                'return_amount' => $returnAmount,
+                'paid_portion' => $paidPortion,
                 'deduction_percentage' => 2,
-                'reason' => 'رصيد العميل = 0 أو رصيد دائن (Credit <= returnAmount)'
+                'reason' => 'العميل غير مدين بعد المرتجع - خصم من الجزء المدفوع فعلياً'
             ];
         }
         
