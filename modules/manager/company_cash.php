@@ -326,25 +326,28 @@ $pageTitle = isset($lang['menu_financial']) ? $lang['menu_financial'] : 'خزن�
 <?php include __DIR__ . '/../../templates/header.php'; ?>
 
 <!-- صفحة الخزنة -->
-<div class="page-header mb-4">
-    <h2><i class="bi bi-safe me-2"></i><?php echo isset($lang['menu_financial']) ? $lang['menu_financial'] : 'خزنة الشركة'; ?></h2>
-</div>
-
-<?php if ($financialError): ?>
-    <div class="alert alert-danger alert-dismissible fade show">
-        <i class="bi bi-exclamation-triangle-fill me-2"></i>
-        <?php echo htmlspecialchars($financialError, ENT_QUOTES, 'UTF-8'); ?>
-        <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
+<div class="company-cash-page" dir="rtl">
+    <div class="page-header-wrapper mb-4">
+        <div class="page-header d-flex justify-content-end align-items-center">
+            <h2 class="mb-0"><i class="bi bi-safe me-2"></i><?php echo isset($lang['menu_financial']) ? $lang['menu_financial'] : 'خزنة الشركة'; ?></h2>
+        </div>
     </div>
-<?php endif; ?>
 
-<?php if ($financialSuccess): ?>
-    <div class="alert alert-success alert-dismissible fade show">
-        <i class="bi bi-check-circle-fill me-2"></i>
-        <?php echo htmlspecialchars($financialSuccess, ENT_QUOTES, 'UTF-8'); ?>
-        <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
-    </div>
-<?php endif; ?>
+    <?php if ($financialError): ?>
+        <div class="alert alert-danger alert-dismissible fade show mb-4">
+            <i class="bi bi-exclamation-triangle-fill me-2"></i>
+            <?php echo htmlspecialchars($financialError, ENT_QUOTES, 'UTF-8'); ?>
+            <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
+        </div>
+    <?php endif; ?>
+
+    <?php if ($financialSuccess): ?>
+        <div class="alert alert-success alert-dismissible fade show mb-4">
+            <i class="bi bi-check-circle-fill me-2"></i>
+            <?php echo htmlspecialchars($financialSuccess, ENT_QUOTES, 'UTF-8'); ?>
+            <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
+        </div>
+    <?php endif; ?>
 
 
 <?php
@@ -428,134 +431,135 @@ $typeColorMap = [
 ];
 ?>
 
-<div class="row g-4 mt-4">
-    <div class="col-12 col-xxl-7">
-        <div class="card shadow-sm h-100">
-            <div class="card-header bg-light fw-bold d-flex justify-content-between align-items-center">
-                <span><i class="bi bi-graph-up-arrow me-2 text-primary"></i>ملخص الخزنة</span>
-                <span class="badge bg-primary text-white">محدّث</span>
-            </div>
-            <div class="card-body">
-                <div class="d-flex flex-wrap justify-content-between align-items-start gap-3 mb-4">
-                    <div>
-                        <span class="text-muted text-uppercase small d-block mb-2">صافي الرصيد المعتمد</span>
-                        <div class="display-4 fw-bold"><?php echo formatCurrency($netApprovedBalance); ?></div>
+    <!-- Container رئيسي للصفحة -->
+    <div class="company-cash-container">
+        <!-- Grid Layout للعناصر الرئيسية -->
+        <div class="company-cash-grid">
+            <!-- قسم ملخص الخزنة -->
+            <div class="treasury-summary-section">
+                <div class="card shadow-sm h-100">
+                    <div class="card-header bg-light fw-bold d-flex justify-content-between align-items-center">
+                        <span><i class="bi bi-graph-up-arrow me-2 text-primary"></i>ملخص الخزنة</span>
+                        <span class="badge bg-primary text-white">محدّث</span>
                     </div>
-                    <div class="text-end">
-                        <div class="badge bg-success text-white fw-semibold px-4 py-3 fs-6">
-                            <?php echo formatCurrency($approvedIncome); ?> إيرادات
+                    <div class="card-body">
+                        <div class="balance-header d-flex flex-wrap justify-content-between align-items-start gap-4 mb-4">
+                            <div class="balance-info">
+                                <span class="text-muted text-uppercase small d-block mb-2">صافي الرصيد المعتمد</span>
+                                <div class="display-4 fw-bold"><?php echo formatCurrency($netApprovedBalance); ?></div>
+                            </div>
+                            <div class="income-badge">
+                                <div class="badge bg-success text-white fw-semibold px-4 py-3 fs-6">
+                                    <?php echo formatCurrency($approvedIncome); ?> إيرادات
+                                </div>
+                            </div>
+                        </div>
+                        <div class="stats-grid">
+                            <div class="stat-card">
+                                <div class="stat-header d-flex justify-content-between align-items-center mb-3">
+                                    <span class="text-muted small fw-semibold">إيرادات معتمدة</span>
+                                    <i class="bi bi-arrow-up-right-circle text-success fs-5"></i>
+                                </div>
+                                <div class="stat-value h4 text-success fw-bold mb-3"><?php echo formatCurrency($approvedIncome); ?></div>
+                                <div class="progress mb-2" style="height: 8px;">
+                                    <div class="progress-bar bg-success" role="progressbar" style="width: <?php echo max(0, min(100, $incomeShare)); ?>%;"></div>
+                                </div>
+                                <small class="text-muted d-block"><?php echo max(0, min(100, $incomeShare)); ?>% من إجمالي الحركة</small>
+                            </div>
+                            <div class="stat-card">
+                                <div class="stat-header d-flex justify-content-between align-items-center mb-3">
+                                    <span class="text-muted small fw-semibold">مصروفات معتمدة</span>
+                                    <i class="bi bi-arrow-down-right-circle text-danger fs-5"></i>
+                                </div>
+                                <div class="stat-value h4 text-danger fw-bold mb-3"><?php echo formatCurrency($approvedExpense); ?></div>
+                                <div class="progress mb-2" style="height: 8px;">
+                                    <div class="progress-bar bg-danger" role="progressbar" style="width: <?php echo max(0, min(100, $expenseShare)); ?>%;"></div>
+                                </div>
+                                <small class="text-muted d-block"><?php echo max(0, min(100, $expenseShare)); ?>% من إجمالي الحركة</small>
+                            </div>
+                            <div class="stat-card">
+                                <div class="stat-header d-flex justify-content-between align-items-center mb-3">
+                                    <span class="text-muted small fw-semibold">مدفوعات الموردين</span>
+                                    <i class="bi bi-credit-card-2-back text-warning fs-5"></i>
+                                </div>
+                                <div class="stat-value h4 text-warning fw-bold mb-3"><?php echo formatCurrency($approvedPayment); ?></div>
+                                <div class="progress mb-2" style="height: 8px;">
+                                    <div class="progress-bar bg-warning" role="progressbar" style="width: <?php echo max(0, min(100, $paymentShare)); ?>%;"></div>
+                                </div>
+                                <small class="text-muted d-block"><?php echo max(0, min(100, $paymentShare)); ?>% من إجمالي الحركة</small>
+                            </div>
+                            <div class="stat-card">
+                                <div class="stat-header d-flex justify-content-between align-items-center mb-3">
+                                    <span class="text-muted small fw-semibold">إجمالي المرتبات</span>
+                                    <i class="bi bi-cash-stack text-danger fs-5"></i>
+                                </div>
+                                <div class="stat-value h4 text-danger fw-bold mb-3"><?php echo formatCurrency($totalSalaries); ?></div>
+                                <div class="progress mb-2" style="height: 8px;">
+                                    <div class="progress-bar bg-danger" role="progressbar" style="width: <?php echo max(0, min(100, $salariesShare)); ?>%;"></div>
+                                </div>
+                                <small class="text-muted d-block"><?php echo max(0, min(100, $salariesShare)); ?>% من إجمالي الحركة</small>
+                            </div>
                         </div>
                     </div>
                 </div>
-                <div class="row g-4 mt-2">
-                    <div class="col-12 col-md-6 col-lg-3">
-                        <div class="border rounded-3 p-4 h-100 bg-light">
-                            <div class="d-flex justify-content-between align-items-center mb-3">
-                                <span class="text-muted small fw-semibold">إيرادات معتمدة</span>
-                                <i class="bi bi-arrow-up-right-circle text-success fs-5"></i>
-                            </div>
-                            <div class="h4 text-success fw-bold mb-3"><?php echo formatCurrency($approvedIncome); ?></div>
-                            <div class="progress mb-2" style="height: 8px;">
-                                <div class="progress-bar bg-success" role="progressbar" style="width: <?php echo max(0, min(100, $incomeShare)); ?>%;"></div>
-                            </div>
-                            <small class="text-muted d-block"><?php echo max(0, min(100, $incomeShare)); ?>% من إجمالي الحركة</small>
-                        </div>
+            </div>
+            
+            <!-- قسم تسجيل المصروف -->
+            <div class="expense-form-section">
+                <button type="button" class="btn btn-primary btn-lg mb-3 w-100" data-bs-toggle="modal" data-bs-target="#collectFromRepModal">
+                    <i class="bi bi-cash-coin me-2"></i>تحصيل من مندوب
+                </button>
+                <div class="card shadow-sm h-100">
+                    <div class="card-header bg-light fw-bold">
+                        <i class="bi bi-pencil-square me-2 text-success"></i>تسجيل مصروف سريع
                     </div>
-                    <div class="col-12 col-md-6 col-lg-3">
-                        <div class="border rounded-3 p-4 h-100 bg-light">
-                            <div class="d-flex justify-content-between align-items-center mb-3">
-                                <span class="text-muted small fw-semibold">مصروفات معتمدة</span>
-                                <i class="bi bi-arrow-down-right-circle text-danger fs-5"></i>
+                    <div class="card-body">
+                        <form method="POST" class="expense-form">
+                            <input type="hidden" name="action" value="add_quick_expense">
+                            <div class="form-row">
+                                <div class="form-group">
+                                    <label for="quickExpenseAmount" class="form-label fw-semibold">قيمة المصروف <span class="text-danger">*</span></label>
+                                    <div class="input-group input-group-lg">
+                                        <span class="input-group-text">ج.م</span>
+                                        <input type="number" step="0.01" min="0.01" class="form-control" id="quickExpenseAmount" name="amount" required value="<?php echo htmlspecialchars($financialFormData['amount'] ?? '', ENT_QUOTES, 'UTF-8'); ?>">
+                                    </div>
+                                </div>
+                                <div class="form-group">
+                                    <label for="quickExpenseReference" class="form-label fw-semibold">رقم مرجعي</label>
+                                    <?php
+                                    $generatedRef = 'REF-' . mt_rand(100000, 999999);?>
+                                    <input type="text" class="form-control form-control-lg" id="quickExpenseReference" name="reference_number" value="<?php echo $generatedRef; ?>" readonly style="background:#f5f5f5; cursor:not-allowed;">
+                                </div>
                             </div>
-                            <div class="h4 text-danger fw-bold mb-3"><?php echo formatCurrency($approvedExpense); ?></div>
-                            <div class="progress mb-2" style="height: 8px;">
-                                <div class="progress-bar bg-danger" role="progressbar" style="width: <?php echo max(0, min(100, $expenseShare)); ?>%;"></div>
+                            <div class="form-group">
+                                <label for="quickExpenseDescription" class="form-label fw-semibold">وصف المصروف <span class="text-danger">*</span></label>
+                                <textarea class="form-control" id="quickExpenseDescription" name="description" rows="4" required placeholder="أدخل تفاصيل المصروف..."><?php echo htmlspecialchars($financialFormData['description'] ?? '', ENT_QUOTES, 'UTF-8'); ?></textarea>
                             </div>
-                            <small class="text-muted d-block"><?php echo max(0, min(100, $expenseShare)); ?>% من إجمالي الحركة</small>
-                        </div>
-                    </div>
-                    <div class="col-12 col-md-6 col-lg-3">
-                        <div class="border rounded-3 p-4 h-100 bg-light">
-                            <div class="d-flex justify-content-between align-items-center mb-3">
-                                <span class="text-muted small fw-semibold">مدفوعات الموردين</span>
-                                <i class="bi bi-credit-card-2-back text-warning fs-5"></i>
+                            <div class="form-group">
+                                <div class="form-check">
+                                    <input class="form-check-input" type="checkbox" id="quickExpenseApproved" name="mark_as_approved" value="1" <?php echo isset($financialFormData['mark_as_approved']) && $financialFormData['mark_as_approved'] === '1' ? 'checked' : ''; ?>>
+                                    <label class="form-check-label" for="quickExpenseApproved">
+                                        اعتماد المعاملة فوراً (يُستخدم عند تسجيل مصروف مؤكد)
+                                    </label>
+                                </div>
+                                <small class="text-muted d-block mt-1">إذا تُرك غير محدد فسيتم إرسال المصروف للموافقة لاحقاً.</small>
                             </div>
-                            <div class="h4 text-warning fw-bold mb-3"><?php echo formatCurrency($approvedPayment); ?></div>
-                            <div class="progress mb-2" style="height: 8px;">
-                                <div class="progress-bar bg-warning" role="progressbar" style="width: <?php echo max(0, min(100, $paymentShare)); ?>%;"></div>
+                            <div class="form-actions d-flex justify-content-end gap-2 mt-3">
+                                <button type="reset" class="btn btn-outline-secondary btn-lg">تفريغ الحقول</button>
+                                <button type="submit" class="btn btn-success btn-lg">
+                                    <i class="bi bi-send me-1"></i>حفظ المصروف
+                                </button>
                             </div>
-                            <small class="text-muted d-block"><?php echo max(0, min(100, $paymentShare)); ?>% من إجمالي الحركة</small>
-                        </div>
-                    </div>
-                    <div class="col-12 col-md-6 col-lg-3">
-                        <div class="border rounded-3 p-4 h-100 bg-light">
-                            <div class="d-flex justify-content-between align-items-center mb-3">
-                                <span class="text-muted small fw-semibold">إجمالي المرتبات</span>
-                                <i class="bi bi-cash-stack text-danger fs-5"></i>
-                            </div>
-                            <div class="h4 text-danger fw-bold mb-3"><?php echo formatCurrency($totalSalaries); ?></div>
-                            <div class="progress mb-2" style="height: 8px;">
-                                <div class="progress-bar bg-danger" role="progressbar" style="width: <?php echo max(0, min(100, $salariesShare)); ?>%;"></div>
-                            </div>
-                            <small class="text-muted d-block"><?php echo max(0, min(100, $salariesShare)); ?>% من إجمالي الحركة</small>
-                        </div>
+                        </form>
                     </div>
                 </div>
-               
             </div>
         </div>
     </div>
-    <div class="col-12 col-xxl-5">
-        <button type="button" class="btn btn-primary btn-lg mb-3 w-100" data-bs-toggle="modal" data-bs-target="#collectFromRepModal">
-            <i class="bi bi-cash-coin me-2"></i>تحصيل من مندوب
-        </button>
-        <div class="card shadow-sm h-100">
-            <div class="card-header bg-light fw-bold">
-                <i class="bi bi-pencil-square me-2 text-success"></i>تسجيل مصروف سريع
-            </div>
-            <div class="card-body">
-                <form method="POST" class="row g-3">
-                    <input type="hidden" name="action" value="add_quick_expense">
-                    <div class="col-12 col-sm-6">
-                        <label for="quickExpenseAmount" class="form-label fw-semibold">قيمة المصروف <span class="text-danger">*</span></label>
-                        <div class="input-group input-group-lg">
-                            <span class="input-group-text">ج.م</span>
-                            <input type="number" step="0.01" min="0.01" class="form-control" id="quickExpenseAmount" name="amount" required value="<?php echo htmlspecialchars($financialFormData['amount'] ?? '', ENT_QUOTES, 'UTF-8'); ?>">
-                        </div>
-                    </div>
-                    <div class="col-12 col-sm-6">
-                        <label for="quickExpenseReference" class="form-label fw-semibold">رقم مرجعي</label>
-                        <?php
-                        $generatedRef = 'REF-' . mt_rand(100000, 999999);?>
-                        <input type="text" class="form-control form-control-lg" id="quickExpenseReference" name="reference_number" value="<?php echo $generatedRef; ?>" readonly style="background:#f5f5f5; cursor:not-allowed;">
-                    </div>
-                    <div class="col-12">
-                        <label for="quickExpenseDescription" class="form-label fw-semibold">وصف المصروف <span class="text-danger">*</span></label>
-                        <textarea class="form-control" id="quickExpenseDescription" name="description" rows="4" required placeholder="أدخل تفاصيل المصروف..."><?php echo htmlspecialchars($financialFormData['description'] ?? '', ENT_QUOTES, 'UTF-8'); ?></textarea>
-                    </div>
-                    <div class="col-12">
-                        <div class="form-check">
-                            <input class="form-check-input" type="checkbox" id="quickExpenseApproved" name="mark_as_approved" value="1" <?php echo isset($financialFormData['mark_as_approved']) && $financialFormData['mark_as_approved'] === '1' ? 'checked' : ''; ?>>
-                            <label class="form-check-label" for="quickExpenseApproved">
-                                اعتماد المعاملة فوراً (يُستخدم عند تسجيل مصروف مؤكد)
-                            </label>
-                        </div>
-                        <small class="text-muted d-block mt-1">إذا تُرك غير محدد فسيتم إرسال المصروف للموافقة لاحقاً.</small>
-                    </div>
-                    <div class="col-12 d-flex justify-content-end gap-2 mt-3">
-                        <button type="reset" class="btn btn-outline-secondary btn-lg">تفريغ الحقول</button>
-                        <button type="submit" class="btn btn-success btn-lg">
-                            <i class="bi bi-send me-1"></i>حفظ المصروف
-                        </button>
-                    </div>
-                </form>
-            </div>
-        </div>
-    </div>
-</div>
 
-<!-- جدول الحركات المالية -->
-<div class="card shadow-sm mt-4">
+    <!-- جدول الحركات المالية -->
+    <div class="transactions-table-section mt-5">
+        <div class="card shadow-sm">
     <div class="card-header bg-light fw-bold">
         <i class="bi bi-list-ul me-2 text-primary"></i>الحركات المالية
     </div>
@@ -686,6 +690,7 @@ $typeColorMap = [
                 </tbody>
             </table>
         </div>
+    </div>
     </div>
 </div>
 
@@ -901,5 +906,253 @@ document.addEventListener('DOMContentLoaded', function() {
     }
 });
 </script>
+
+<style>
+/* ===== Company Cash Page Styles ===== */
+.company-cash-page {
+    width: 100%;
+    max-width: 100%;
+    direction: rtl;
+}
+
+.page-header-wrapper {
+    width: 100%;
+    display: flex;
+    justify-content: flex-end;
+    align-items: center;
+}
+
+.page-header {
+    width: 100%;
+    display: flex;
+    justify-content: flex-end;
+    align-items: center;
+    padding: 0;
+}
+
+.page-header h2 {
+    margin: 0;
+    font-size: 2rem;
+    font-weight: 700;
+}
+
+/* Container رئيسي */
+.company-cash-container {
+    width: 100%;
+    max-width: 100%;
+    margin: 0 auto;
+    padding: 0;
+}
+
+/* Grid Layout للعناصر الرئيسية */
+.company-cash-grid {
+    display: grid;
+    grid-template-columns: 1fr;
+    gap: 2rem;
+    width: 100%;
+    margin-top: 2rem;
+}
+
+/* قسم ملخص الخزنة */
+.treasury-summary-section {
+    width: 100%;
+}
+
+/* قسم تسجيل المصروف */
+.expense-form-section {
+    width: 100%;
+}
+
+/* Balance Header */
+.balance-header {
+    width: 100%;
+    padding: 1.5rem 0;
+    border-bottom: 2px solid #e9ecef;
+    margin-bottom: 2rem;
+}
+
+.balance-info {
+    flex: 1;
+    min-width: 200px;
+}
+
+.income-badge {
+    flex-shrink: 0;
+}
+
+/* Stats Grid */
+.stats-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
+    gap: 1.5rem;
+    width: 100%;
+}
+
+.stat-card {
+    border: 1px solid #dee2e6;
+    border-radius: 0.75rem;
+    padding: 1.5rem;
+    background-color: #f8f9fa;
+    transition: all 0.3s ease;
+    height: 100%;
+}
+
+.stat-card:hover {
+    transform: translateY(-2px);
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
+    border-color: #adb5bd;
+}
+
+.stat-header {
+    margin-bottom: 1rem;
+}
+
+.stat-value {
+    margin-bottom: 1rem;
+}
+
+/* Expense Form */
+.expense-form {
+    width: 100%;
+}
+
+.form-row {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
+    gap: 1.5rem;
+    margin-bottom: 1.5rem;
+}
+
+.form-group {
+    width: 100%;
+}
+
+.form-actions {
+    width: 100%;
+    margin-top: 1.5rem;
+}
+
+/* Transactions Table Section */
+.transactions-table-section {
+    width: 100%;
+    margin-top: 2.5rem;
+}
+
+/* Responsive Design */
+@media (min-width: 992px) {
+    .company-cash-grid {
+        grid-template-columns: 1.4fr 1fr;
+        gap: 2.5rem;
+    }
+    
+    .stats-grid {
+        grid-template-columns: repeat(2, 1fr);
+    }
+}
+
+@media (min-width: 1400px) {
+    .company-cash-grid {
+        grid-template-columns: 1.75fr 1fr;
+        gap: 3rem;
+    }
+    
+    .stats-grid {
+        grid-template-columns: repeat(4, 1fr);
+    }
+    
+    .form-row {
+        grid-template-columns: 1fr 1fr;
+    }
+}
+
+@media (max-width: 991px) {
+    .company-cash-grid {
+        grid-template-columns: 1fr;
+        gap: 2rem;
+    }
+    
+    .stats-grid {
+        grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+    }
+    
+    .form-row {
+        grid-template-columns: 1fr;
+    }
+    
+    .balance-header {
+        flex-direction: column;
+        align-items: flex-start !important;
+        gap: 1.5rem;
+    }
+    
+    .income-badge {
+        width: 100%;
+    }
+}
+
+@media (max-width: 768px) {
+    .page-header h2 {
+        font-size: 1.5rem;
+    }
+    
+    .stats-grid {
+        grid-template-columns: 1fr;
+        gap: 1rem;
+    }
+    
+    .stat-card {
+        padding: 1rem;
+    }
+    
+    .balance-header {
+        padding: 1rem 0;
+    }
+    
+    .display-4 {
+        font-size: 2rem;
+    }
+    
+    .form-actions {
+        flex-direction: column;
+    }
+    
+    .form-actions .btn {
+        width: 100%;
+    }
+}
+
+/* RTL Support */
+[dir="rtl"] .company-cash-page {
+    direction: rtl;
+}
+
+[dir="rtl"] .page-header-wrapper {
+    justify-content: flex-end;
+}
+
+[dir="rtl"] .balance-header {
+    flex-direction: row-reverse;
+}
+
+[dir="rtl"] .form-actions {
+    justify-content: flex-end;
+}
+
+/* Dark Mode Support */
+body.dark-mode .stat-card {
+    background-color: #2d3748;
+    border-color: #4a5568;
+    color: #e2e8f0;
+}
+
+body.dark-mode .stat-card:hover {
+    border-color: #718096;
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
+}
+
+body.dark-mode .balance-header {
+    border-bottom-color: #4a5568;
+}
+</style>
 
 <?php include __DIR__ . '/../../templates/footer.php'; ?>
