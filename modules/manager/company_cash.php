@@ -913,6 +913,7 @@ document.addEventListener('DOMContentLoaded', function() {
     width: 100%;
     max-width: 100%;
     direction: rtl;
+    text-align: right;
 }
 
 .page-header-wrapper {
@@ -928,12 +929,14 @@ document.addEventListener('DOMContentLoaded', function() {
     justify-content: flex-end;
     align-items: center;
     padding: 0;
+    text-align: right;
 }
 
 .page-header h2 {
     margin: 0;
     font-size: 2rem;
     font-weight: 700;
+    text-align: right;
 }
 
 /* Container رئيسي */
@@ -942,6 +945,8 @@ document.addEventListener('DOMContentLoaded', function() {
     max-width: 100%;
     margin: 0 auto;
     padding: 0;
+    direction: rtl;
+    text-align: right;
 }
 
 /* Grid Layout للعناصر الرئيسية */
@@ -969,15 +974,18 @@ document.addEventListener('DOMContentLoaded', function() {
     padding: 1.5rem 0;
     border-bottom: 2px solid #e9ecef;
     margin-bottom: 2rem;
+    text-align: right;
 }
 
 .balance-info {
     flex: 1;
     min-width: 200px;
+    text-align: right;
 }
 
 .income-badge {
     flex-shrink: 0;
+    text-align: right;
 }
 
 /* Stats Grid */
@@ -995,6 +1003,7 @@ document.addEventListener('DOMContentLoaded', function() {
     background-color: #f8f9fa;
     transition: all 0.3s ease;
     height: 100%;
+    text-align: right;
 }
 
 .stat-card:hover {
@@ -1005,15 +1014,18 @@ document.addEventListener('DOMContentLoaded', function() {
 
 .stat-header {
     margin-bottom: 1rem;
+    text-align: right;
 }
 
 .stat-value {
     margin-bottom: 1rem;
+    text-align: right;
 }
 
 /* Expense Form */
 .expense-form {
     width: 100%;
+    text-align: right;
 }
 
 .form-row {
@@ -1025,17 +1037,45 @@ document.addEventListener('DOMContentLoaded', function() {
 
 .form-group {
     width: 100%;
+    text-align: right;
+}
+
+.form-group .form-label {
+    text-align: right;
 }
 
 .form-actions {
     width: 100%;
     margin-top: 1.5rem;
+    display: flex;
+    justify-content: flex-end;
+    gap: 0.5rem;
 }
 
 /* Transactions Table Section */
 .transactions-table-section {
     width: 100%;
     margin-top: 2.5rem;
+    text-align: right;
+    direction: rtl;
+}
+
+.transactions-table-section .card {
+    text-align: right;
+}
+
+.transactions-table-section .card-header {
+    text-align: right;
+}
+
+.transactions-table-section table {
+    direction: rtl;
+    text-align: right;
+}
+
+.transactions-table-section table th,
+.transactions-table-section table td {
+    text-align: right;
 }
 
 /* Responsive Design */
@@ -1121,21 +1161,45 @@ document.addEventListener('DOMContentLoaded', function() {
     }
 }
 
-/* RTL Support */
+/* RTL Support - Additional alignment fixes */
 [dir="rtl"] .company-cash-page {
     direction: rtl;
+    text-align: right;
 }
 
 [dir="rtl"] .page-header-wrapper {
     justify-content: flex-end;
+    text-align: right;
+}
+
+[dir="rtl"] .page-header {
+    justify-content: flex-end;
+    text-align: right;
 }
 
 [dir="rtl"] .balance-header {
     flex-direction: row-reverse;
+    text-align: right;
 }
 
 [dir="rtl"] .form-actions {
     justify-content: flex-end;
+}
+
+[dir="rtl"] .card-body {
+    text-align: right;
+}
+
+[dir="rtl"] .card-header {
+    text-align: right;
+}
+
+[dir="rtl"] .stat-card {
+    text-align: right;
+}
+
+[dir="rtl"] .form-group {
+    text-align: right;
 }
 
 /* Dark Mode Support */
