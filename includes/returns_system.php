@@ -69,6 +69,53 @@ function ensureReturnSchemaCompatibility(): void
     try {
         $db = db();
         
+        // إصلاح Foreign Key constraint في return_items
+        // المشكلة: return_items قد يشير إلى sales_returns بدلاً من returns
+        try {
+            $fkCheck = $db->queryOne(
+                "SELECT CONSTRAINT_NAME, REFERENCED_TABLE_NAME 
+                 FROM information_schema.KEY_COLUMN_USAGE 
+                 WHERE TABLE_SCHEMA = DATABASE() 
+                 AND TABLE_NAME = 'return_items' 
+                 AND COLUMN_NAME = 'return_id' 
+                 AND REFERENCED_TABLE_NAME IS NOT NULL"
+            );
+            
+            if (!empty($fkCheck)) {
+                $referencedTable = $fkCheck['REFERENCED_TABLE_NAME'] ?? '';
+                $constraintName = $fkCheck['CONSTRAINT_NAME'] ?? 'return_items_ibfk_1';
+                
+                // إذا كان يشير إلى sales_returns، نحذفه وننشئ واحداً جديداً
+                if ($referencedTable === 'sales_returns') {
+                    error_log("Fixing return_items foreign key: removing reference to sales_returns");
+                    
+                    // حذف الـ foreign key القديم
+                    try {
+                        $db->execute("ALTER TABLE return_items DROP FOREIGN KEY `{$constraintName}`");
+                    } catch (Throwable $e) {
+                        error_log("Could not drop old FK: " . $e->getMessage());
+                    }
+                    
+                    // إنشاء foreign key جديد يشير إلى returns
+                    // التحقق أولاً من وجود جدول returns
+                    $returnsTableExists = $db->queryOne("SHOW TABLES LIKE 'returns'");
+                    if (!empty($returnsTableExists)) {
+                        $db->execute(
+                            "ALTER TABLE return_items 
+                             ADD CONSTRAINT `return_items_ibfk_1` 
+                             FOREIGN KEY (`return_id`) 
+                             REFERENCES `returns` (`id`) 
+                             ON DELETE CASCADE"
+                        );
+                        error_log("Successfully fixed return_items foreign key to point to returns table");
+                    }
+                }
+            }
+        } catch (Throwable $e) {
+            error_log("Error checking/fixing return_items FK: " . $e->getMessage());
+            // لا نوقف العملية، فقط نسجل الخطأ
+        }
+        
         // تحديث sale_id ليكون nullable
         try {
             $saleIdColumn = $db->queryOne("SHOW COLUMNS FROM returns LIKE 'sale_id'");

@@ -1522,6 +1522,36 @@ let purchaseHistoryData = []; // Store original purchase history data
 
 // Open purchase history modal - using event delegation for dynamic content
 document.addEventListener('DOMContentLoaded', function() {
+    const modalElement = document.getElementById('customerPurchaseHistoryModal');
+    
+    // Add event listener to reload data every time modal is shown
+    if (modalElement) {
+        modalElement.addEventListener('shown.bs.modal', function() {
+            // Reset filters and selected items
+            document.getElementById('purchaseHistorySearchProduct').value = '';
+            document.getElementById('purchaseHistorySearchBatch').value = '';
+            selectedItemsForReturn = [];
+            document.getElementById('createReturnBtn').style.display = 'none';
+            document.getElementById('selectAllItems').checked = false;
+            
+            // Reload purchase history if customer ID is set
+            if (currentCustomerId) {
+                loadPurchaseHistory(currentCustomerId);
+            }
+        });
+        
+        // Reset state when modal is hidden
+        modalElement.addEventListener('hidden.bs.modal', function() {
+            // Clear the table and reset states
+            const tableBody = document.getElementById('purchaseHistoryTableBody');
+            if (tableBody) {
+                tableBody.innerHTML = '';
+            }
+            selectedItemsForReturn = [];
+            purchaseHistoryData = [];
+        });
+    }
+    
     // Use event delegation to handle clicks on buttons that may be added dynamically
     document.addEventListener('click', function(e) {
         const button = e.target.closest('.js-customer-purchase-history');
@@ -1541,18 +1571,24 @@ document.addEventListener('DOMContentLoaded', function() {
         }
         
         // Show modal
-        const modalElement = document.getElementById('customerPurchaseHistoryModal');
         if (modalElement) {
             const modal = new bootstrap.Modal(modalElement);
             modal.show();
             
-            // Load purchase history
-            loadPurchaseHistory(customerId);
+            // Data will be loaded automatically via the shown.bs.modal event listener
         }
     });
 });
 
-function loadPurchaseHistory(customerId) {
+// Overload function to support calling without parameters (uses currentCustomerId)
+function loadPurchaseHistory(customerIdParam) {
+    const customerId = customerIdParam || currentCustomerId;
+    
+    if (!customerId) {
+        console.error('No customer ID provided for loadPurchaseHistory');
+        return;
+    }
+    
     const loading = document.getElementById('purchaseHistoryLoading');
     const tableDiv = document.getElementById('purchaseHistoryTable');
     const errorDiv = document.getElementById('purchaseHistoryError');
@@ -1879,9 +1915,18 @@ function goBackToPurchaseHistory() {
         createReturnModal.hide();
     }
     
+    // Clear selected items when going back
+    selectedItemsForReturn = [];
+    document.getElementById('createReturnBtn').style.display = 'none';
+    document.getElementById('selectAllItems').checked = false;
+    
     // Show the purchase history modal
-    const purchaseHistoryModal = new bootstrap.Modal(document.getElementById('customerPurchaseHistoryModal'));
-    purchaseHistoryModal.show();
+    const purchaseHistoryModalElement = document.getElementById('customerPurchaseHistoryModal');
+    if (purchaseHistoryModalElement) {
+        const purchaseHistoryModal = new bootstrap.Modal(purchaseHistoryModalElement);
+        purchaseHistoryModal.show();
+        // Data will be reloaded automatically via the shown.bs.modal event listener
+    }
 }
 
 function submitReturnRequest() {
