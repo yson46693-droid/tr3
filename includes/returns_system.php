@@ -909,18 +909,174 @@ function applyReturnSalaryDeduction(int $returnId, ?int $salesRepId = null, ?int
         // الحصول على أو إنشاء سجل الراتب
         $salaryResult = createOrUpdateSalary($salesRepId, $month, $year);
         
-        if (!($salaryResult['success'] ?? false)) {
-            return [
-                'success' => false,
-                'message' => 'فشل الحصول على سجل الراتب: ' . ($salaryResult['message'] ?? 'خطأ غير معروف')
-            ];
+        $salaryId = null;
+        
+        // إذا نجح createOrUpdateSalary، استخدم salary_id
+        if (($salaryResult['success'] ?? false) && !empty($salaryResult['salary_id'])) {
+            $salaryId = (int)$salaryResult['salary_id'];
         }
         
-        $salaryId = (int)($salaryResult['salary_id'] ?? 0);
+        // إذا لم يتم إنشاء سجل الراتب، أنشئه يدوياً
+        if (!$salaryId) {
+            error_log("Warning: createOrUpdateSalary did not return salary_id. Creating salary record manually for user {$salesRepId}, month {$month}, year {$year}");
+            
+            // التحقق من وجود عمود year
+            $yearColumnCheck = $db->queryOne("SHOW COLUMNS FROM salaries LIKE 'year'");
+            $hasYearColumn = !empty($yearColumnCheck);
+            
+            // التحقق من وجود عمود bonus
+            $hasBonusColumn = false;
+            try {
+                $columnExists = $db->queryOne(
+                    "SELECT COUNT(*) as cnt FROM INFORMATION_SCHEMA.COLUMNS 
+                     WHERE TABLE_SCHEMA = DATABASE() 
+                     AND TABLE_NAME = 'salaries' 
+                     AND COLUMN_NAME = 'bonus'"
+                );
+                if (!empty($columnExists) && isset($columnExists['cnt'])) {
+                    $hasBonusColumn = (int)$columnExists['cnt'] > 0;
+                }
+            } catch (Exception $e) {
+                $hasBonusColumn = false;
+            }
+            
+            // التحقق من وجود عمود created_by
+            $createdByColumnCheck = $db->queryOne("SHOW COLUMNS FROM salaries LIKE 'created_by'");
+            $hasCreatedByColumn = !empty($createdByColumnCheck);
+            $createdBy = $processedBy ?? null;
+            if ($hasCreatedByColumn && $createdBy === null) {
+                $currentUser = getCurrentUser();
+                $createdBy = $currentUser ? (int)$currentUser['id'] : $salesRepId;
+            }
+            
+            // جلب hourly_rate للمندوب
+            $user = $db->queryOne("SELECT hourly_rate FROM users WHERE id = ?", [$salesRepId]);
+            $hourlyRate = 0;
+            if ($user && !empty($user['hourly_rate'])) {
+                $hourlyRateRaw = $user['hourly_rate'];
+                $hourlyRateStr = (string)$hourlyRateRaw;
+                $hourlyRateStr = str_replace('262145', '', $hourlyRateStr);
+                $hourlyRateStr = preg_replace('/262145\s*/', '', $hourlyRateStr);
+                $hourlyRateStr = preg_replace('/\s*262145/', '', $hourlyRateStr);
+                $hourlyRateStr = preg_replace('/\s+/', '', trim($hourlyRateStr));
+                $hourlyRateStr = preg_replace('/[^0-9.]/', '', $hourlyRateStr);
+                $hourlyRate = (float)($hourlyRateStr ?: 0);
+            }
+            
+            // التحقق من وجود سجل راتب موجود
+            if ($hasYearColumn) {
+                $existingSalary = $db->queryOne(
+                    "SELECT id FROM salaries WHERE user_id = ? AND month = ? AND year = ?",
+                    [$salesRepId, $month, $year]
+                );
+            } else {
+                $monthColumnCheck = $db->queryOne("SHOW COLUMNS FROM salaries LIKE 'month'");
+                $monthType = $monthColumnCheck['Type'] ?? '';
+                if (stripos($monthType, 'date') !== false) {
+                    $targetDate = sprintf('%04d-%02d-01', $year, $month);
+                    $existingSalary = $db->queryOne(
+                        "SELECT id FROM salaries WHERE user_id = ? AND DATE_FORMAT(month, '%Y-%m') = ?",
+                        [$salesRepId, sprintf('%04d-%02d', $year, $month)]
+                    );
+                } else {
+                    $existingSalary = $db->queryOne(
+                        "SELECT id FROM salaries WHERE user_id = ? AND month = ?",
+                        [$salesRepId, $month]
+                    );
+                }
+            }
+            
+            if ($existingSalary) {
+                $salaryId = (int)$existingSalary['id'];
+                error_log("Found existing salary record with ID: {$salaryId}");
+            } else {
+                // إنشاء سجل راتب جديد مع قيم افتراضية
+                $totalHours = 0;
+                $baseAmount = 0;
+                $bonus = 0;
+                $deductions = 0;
+                $totalAmount = 0;
+                
+                if ($hasYearColumn) {
+                    if ($hasBonusColumn) {
+                        if ($hasCreatedByColumn) {
+                            $db->execute(
+                                "INSERT INTO salaries (user_id, month, year, hourly_rate, total_hours, base_amount, bonus, deductions, total_amount, created_by, status) 
+                                 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'pending')",
+                                [$salesRepId, $month, $year, $hourlyRate, $totalHours, $baseAmount, $bonus, $deductions, $totalAmount, $createdBy]
+                            );
+                        } else {
+                            $db->execute(
+                                "INSERT INTO salaries (user_id, month, year, hourly_rate, total_hours, base_amount, bonus, deductions, total_amount, status) 
+                                 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'pending')",
+                                [$salesRepId, $month, $year, $hourlyRate, $totalHours, $baseAmount, $bonus, $deductions, $totalAmount]
+                            );
+                        }
+                    } else {
+                        if ($hasCreatedByColumn) {
+                            $db->execute(
+                                "INSERT INTO salaries (user_id, month, year, hourly_rate, total_hours, base_amount, deductions, total_amount, created_by, status) 
+                                 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'pending')",
+                                [$salesRepId, $month, $year, $hourlyRate, $totalHours, $baseAmount, $deductions, $totalAmount, $createdBy]
+                            );
+                        } else {
+                            $db->execute(
+                                "INSERT INTO salaries (user_id, month, year, hourly_rate, total_hours, base_amount, deductions, total_amount, status) 
+                                 VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'pending')",
+                                [$salesRepId, $month, $year, $hourlyRate, $totalHours, $baseAmount, $deductions, $totalAmount]
+                            );
+                        }
+                    }
+                } else {
+                    $monthColumnCheck = $db->queryOne("SHOW COLUMNS FROM salaries LIKE 'month'");
+                    $monthType = $monthColumnCheck['Type'] ?? '';
+                    if (stripos($monthType, 'date') !== false) {
+                        $targetDate = sprintf('%04d-%02d-01', $year, $month);
+                        $monthValue = $targetDate;
+                    } else {
+                        $monthValue = $month;
+                    }
+                    
+                    if ($hasBonusColumn) {
+                        if ($hasCreatedByColumn) {
+                            $db->execute(
+                                "INSERT INTO salaries (user_id, month, hourly_rate, total_hours, base_amount, bonus, deductions, total_amount, created_by, status) 
+                                 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'pending')",
+                                [$salesRepId, $monthValue, $hourlyRate, $totalHours, $baseAmount, $bonus, $deductions, $totalAmount, $createdBy]
+                            );
+                        } else {
+                            $db->execute(
+                                "INSERT INTO salaries (user_id, month, hourly_rate, total_hours, base_amount, bonus, deductions, total_amount, status) 
+                                 VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'pending')",
+                                [$salesRepId, $monthValue, $hourlyRate, $totalHours, $baseAmount, $bonus, $deductions, $totalAmount]
+                            );
+                        }
+                    } else {
+                        if ($hasCreatedByColumn) {
+                            $db->execute(
+                                "INSERT INTO salaries (user_id, month, hourly_rate, total_hours, base_amount, deductions, total_amount, created_by, status) 
+                                 VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'pending')",
+                                [$salesRepId, $monthValue, $hourlyRate, $totalHours, $baseAmount, $deductions, $totalAmount, $createdBy]
+                            );
+                        } else {
+                            $db->execute(
+                                "INSERT INTO salaries (user_id, month, hourly_rate, total_hours, base_amount, deductions, total_amount, status) 
+                                 VALUES (?, ?, ?, ?, ?, ?, ?, 'pending')",
+                                [$salesRepId, $monthValue, $hourlyRate, $totalHours, $baseAmount, $deductions, $totalAmount]
+                            );
+                        }
+                    }
+                }
+                
+                $salaryId = (int)$db->getLastInsertId();
+                error_log("Created new salary record with ID: {$salaryId} for user {$salesRepId}, month {$month}, year {$year}");
+            }
+        }
+        
         if ($salaryId <= 0) {
             return [
                 'success' => false,
-                'message' => 'لم يتم العثور على معرف سجل الراتب'
+                'message' => 'لم يتم العثور على معرف سجل الراتب ولم يتم إنشاؤه'
             ];
         }
         
@@ -967,13 +1123,16 @@ function applyReturnSalaryDeduction(int $returnId, ?int $salesRepId = null, ?int
             
             // حساب الخصم الجديد
             $newDeductions = round($currentDeductions + $amountToDeduct, 2);
+            // تحديث total_amount: خصم من الراتب الإجمالي
             $newTotal = round($currentTotal - $amountToDeduct, 2);
             
-            // تحديث الراتب
+            // تحديث الراتب - تطبيق الخصم في عمود deductions
             $db->execute(
                 "UPDATE salaries SET deductions = ?, total_amount = ? WHERE id = ?",
                 [$newDeductions, $newTotal, $salaryId]
             );
+            
+            error_log("Applied salary deduction: user_id={$salesRepId}, salary_id={$salaryId}, old_deductions={$currentDeductions}, new_deductions={$newDeductions}, deduction_amount={$amountToDeduct}");
             
             // تسجيل في audit_logs
             logAudit($processedBy, 'return_salary_deduction', 'returns', $returnId, [
