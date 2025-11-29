@@ -291,37 +291,33 @@ function handleGetPurchaseHistory(): void
     }
     
     if ($hasInvoiceItemId) {
+        // حساب الكمية المرتجعة لكل invoice_item_id (مجموع الكميات بغض النظر عن batch_number_id)
         $returnedRows = $db->query(
-            "SELECT ri.invoice_item_id, ri.product_id, COALESCE(SUM(ri.quantity), 0) AS returned_quantity
+            "SELECT ri.invoice_item_id, COALESCE(SUM(ri.quantity), 0) AS returned_quantity
              FROM return_items ri
              INNER JOIN returns r ON r.id = ri.return_id
              WHERE r.customer_id = ?
                AND r.status IN ('pending', 'approved', 'processed', 'completed')
                AND ri.invoice_item_id IS NOT NULL
-             GROUP BY ri.invoice_item_id, ri.product_id",
+             GROUP BY ri.invoice_item_id",
             [$customerId]
         );
         
         foreach ($returnedRows as $row) {
             $invoiceItemId = (int)$row['invoice_item_id'];
-            $productId = (int)$row['product_id'];
-            $key = "{$invoiceItemId}_{$productId}";
-            $returnedQuantities[$key] = (float)$row['returned_quantity'];
+            $returnedQuantities[$invoiceItemId] = (float)$row['returned_quantity'];
         }
     }
     
-    // إرجاع كل عنصر فاتورة كصف منفصل
-    $result = [];
-    
+    // ... لاحقاً في الكود ...
     foreach ($purchaseHistory as $item) {
         $invoiceItemId = (int)$item['invoice_item_id'];
         $productId = (int)$item['product_id'];
         
-        // حساب الكمية المرتجعة
+        // حساب الكمية المرتجعة - مجموع الكميات المرتجعة لكل invoice_item_id
         $returnedQty = 0.0;
         if ($hasInvoiceItemId) {
-            $key = "{$invoiceItemId}_{$productId}";
-            $returnedQty = $returnedQuantities[$key] ?? 0.0;
+            $returnedQty = $returnedQuantities[$invoiceItemId] ?? 0.0;
         }
         
         $purchasedQty = (float)$item['quantity'];
