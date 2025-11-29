@@ -1,6 +1,6 @@
 <?php
 /**
- * صفحة خزنة المحاسب
+ * صفحة إدارة التحصيلات للمحاسب
  */
 
 if (!defined('ACCESS_ALLOWED')) {
@@ -10,394 +10,874 @@ if (!defined('ACCESS_ALLOWED')) {
 require_once __DIR__ . '/../../includes/config.php';
 require_once __DIR__ . '/../../includes/db.php';
 require_once __DIR__ . '/../../includes/auth.php';
+require_once __DIR__ . '/../../includes/audit_log.php';
+require_once __DIR__ . '/../../includes/notifications.php';
+require_once __DIR__ . '/../../includes/approval_system.php';
 require_once __DIR__ . '/../../includes/table_styles.php';
-require_once __DIR__ . '/../../includes/lang/' . getCurrentLanguage() . '.php';
+require_once __DIR__ . '/../../includes/salary_calculator.php';
 
 requireRole(['accountant', 'manager']);
 
-$db = db();
 $currentUser = getCurrentUser();
+$db = db();
+$error = '';
+$success = '';
 
-$lang = isset($translations) ? $translations : [];
-
-$today = date('Y-m-d');
-$currentMonth = date('n');
-$currentYear = date('Y');
-
-// أرصدة موجزة
-$incomeRow = $db->queryOne("
-    SELECT COALESCE(SUM(amount), 0) AS total
-    FROM financial_transactions
-    WHERE status = 'approved' AND type IN ('income', 'transfer')
-");
-$expenseRow = $db->queryOne("
-    SELECT COALESCE(SUM(amount), 0) AS total
-    FROM financial_transactions
-    WHERE status = 'approved' AND type IN ('expense', 'payment')
-");
-$cashBalance = floatval($incomeRow['total'] ?? 0) - floatval($expenseRow['total'] ?? 0);
-
-$todayIncome = $db->queryOne("
-    SELECT COALESCE(SUM(amount), 0) AS total
-    FROM financial_transactions
-    WHERE status = 'approved' AND type IN ('income', 'transfer')
-      AND DATE(created_at) = CURDATE()
-");
-$todayExpenses = $db->queryOne("
-    SELECT COALESCE(SUM(amount), 0) AS total
-    FROM financial_transactions
-    WHERE status = 'approved' AND type IN ('expense', 'payment')
-      AND DATE(created_at) = CURDATE()
-");
-
-$monthIncome = $db->queryOne("
-    SELECT COALESCE(SUM(amount), 0) AS total
-    FROM financial_transactions
-    WHERE status = 'approved'
-      AND type IN ('income', 'transfer')
-      AND MONTH(created_at) = ? AND YEAR(created_at) = ?
-", [$currentMonth, $currentYear]);
-
-$monthExpenses = $db->queryOne("
-    SELECT COALESCE(SUM(amount), 0) AS total
-    FROM financial_transactions
-    WHERE status = 'approved'
-      AND type IN ('expense', 'payment')
-      AND MONTH(created_at) = ? AND YEAR(created_at) = ?
-", [$currentMonth, $currentYear]);
-
-$pendingTransactions = $db->queryOne("
-    SELECT COUNT(*) AS total
-    FROM financial_transactions
-    WHERE status = 'pending'
-");
-
-// تحصيلات اليوم
-$collectionsStatusColumn = $db->queryOne("SHOW COLUMNS FROM collections LIKE 'status'");
-$collectionsStatusFilter = !empty($collectionsStatusColumn) ? "AND status IN ('approved','pending')" : '';
-$collectionsToday = $db->queryOne("
-    SELECT COALESCE(SUM(amount), 0) AS total
-    FROM collections
-    WHERE DATE(date) = CURDATE() $collectionsStatusFilter
-");
-
-// فلاتر سجل المعاملات
-$validTypes = [
-    '' => 'جميع الأنواع',
-    'income' => 'إيراد',
-    'expense' => 'مصروف',
-    'transfer' => 'تحويل',
-    'payment' => 'دفعة'
-];
-
-$validStatuses = [
-    '' => 'جميع الحالات',
-    'approved' => 'معتمدة',
-    'pending' => 'قيد المراجعة',
-    'rejected' => 'مرفوضة'
-];
-
-$filterType = isset($_GET['type']) && array_key_exists($_GET['type'], $validTypes) ? $_GET['type'] : '';
-$filterStatus = isset($_GET['status']) && array_key_exists($_GET['status'], $validStatuses) ? $_GET['status'] : '';
-$filterFrom = isset($_GET['from']) && preg_match('/^\d{4}-\d{2}-\d{2}$/', $_GET['from']) ? $_GET['from'] : '';
-$filterTo = isset($_GET['to']) && preg_match('/^\d{4}-\d{2}-\d{2}$/', $_GET['to']) ? $_GET['to'] : '';
-$searchTerm = isset($_GET['search']) ? trim($_GET['search']) : '';
-
-$whereParts = [];
-$whereParams = [];
-
-if ($filterType !== '') {
-    $whereParts[] = 'ft.type = ?';
-    $whereParams[] = $filterType;
-}
-
-if ($filterStatus !== '') {
-    $whereParts[] = 'ft.status = ?';
-    $whereParams[] = $filterStatus;
-}
-
-if ($filterFrom !== '') {
-    $whereParts[] = 'DATE(ft.created_at) >= ?';
-    $whereParams[] = $filterFrom;
-}
-
-if ($filterTo !== '') {
-    $whereParts[] = 'DATE(ft.created_at) <= ?';
-    $whereParams[] = $filterTo;
-}
-
-if ($searchTerm !== '') {
-    $whereParts[] = '(ft.description LIKE ? OR ft.reference_number LIKE ?)';
-    $like = '%' . $searchTerm . '%';
-    $whereParams[] = $like;
-    $whereParams[] = $like;
-}
-
-$whereClause = $whereParts ? ('WHERE ' . implode(' AND ', $whereParts)) : '';
-
-$perPage = 15;
+// Pagination
 $pageNum = isset($_GET['p']) ? max(1, intval($_GET['p'])) : 1;
-
-$countRow = $db->queryOne("SELECT COUNT(*) AS total FROM financial_transactions ft $whereClause", $whereParams);
-$totalRows = (int) ($countRow['total'] ?? 0);
-$totalPages = max(1, (int) ceil($totalRows / $perPage));
-if ($pageNum > $totalPages) {
-    $pageNum = $totalPages;
-}
+$perPage = 20;
 $offset = ($pageNum - 1) * $perPage;
 
-$transactions = $db->query(
-    "SELECT ft.*, u.full_name AS creator_name, u.username AS creator_username,
-            approver.full_name AS approver_name
-     FROM financial_transactions ft
-     LEFT JOIN users u ON ft.created_by = u.id
-     LEFT JOIN users approver ON ft.approved_by = approver.id
-     $whereClause
-     ORDER BY ft.created_at DESC
-     LIMIT ? OFFSET ?",
-    array_merge($whereParams, [$perPage, $offset])
-);
+// البحث والفلترة
+$filters = [
+    'customer_id' => $_GET['customer_id'] ?? '',
+    'status' => $_GET['status'] ?? '',
+    'date_from' => $_GET['date_from'] ?? '',
+    'date_to' => $_GET['date_to'] ?? '',
+    'payment_method' => $_GET['payment_method'] ?? '',
+    'collected_by' => $_GET['collected_by'] ?? ''
+];
+
+$filters = array_filter($filters, function($value) {
+    return $value !== '';
+});
+
+// معالجة العمليات
+if ($_SERVER['REQUEST_METHOD'] === 'POST') {
+    $action = $_POST['action'] ?? '';
+    
+    if ($action === 'add_collection') {
+        $customerId = intval($_POST['customer_id'] ?? 0);
+        $amount = floatval($_POST['amount'] ?? 0);
+        $date = $_POST['date'] ?? date('Y-m-d');
+        $paymentMethod = $_POST['payment_method'] ?? 'cash';
+        $referenceNumber = trim($_POST['reference_number'] ?? '');
+        $notes = trim($_POST['notes'] ?? '');
+        
+        if ($customerId <= 0) {
+            $error = 'يجب اختيار العميل';
+        } elseif ($amount <= 0) {
+            $error = 'يجب إدخال مبلغ صحيح أكبر من الصفر';
+        } else {
+            // التحقق من وجود عمود status
+            $columnCheck = $db->queryOne("SHOW COLUMNS FROM collections LIKE 'status'");
+            $hasStatus = !empty($columnCheck);
+            
+            if ($hasStatus) {
+                $status = 'pending';
+                $result = $db->execute(
+                    "INSERT INTO collections (customer_id, amount, date, payment_method, reference_number, collected_by, status, notes) 
+                     VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+                    [$customerId, $amount, $date, $paymentMethod, $referenceNumber ?: null, $currentUser['id'], $status, $notes ?: null]
+                );
+            } else {
+                // إذا لم يكن status موجوداً
+                $result = $db->execute(
+                    "INSERT INTO collections (customer_id, amount, date, payment_method, reference_number, collected_by, notes) 
+                     VALUES (?, ?, ?, ?, ?, ?, ?)",
+                    [$customerId, $amount, $date, $paymentMethod, $referenceNumber ?: null, $currentUser['id'], $notes ?: null]
+                );
+            }
+            
+            logAudit($currentUser['id'], 'add_collection', 'collection', $result['insert_id'], null, [
+                'customer_id' => $customerId,
+                'amount' => $amount
+            ]);
+            
+            // تحديث راتب المندوب المسؤول عن العميل (المستحق للعمولة)
+            try {
+                $salesRepId = getSalesRepForCustomer($customerId);
+                if ($salesRepId && $salesRepId > 0) {
+                    refreshSalesCommissionForUser(
+                        $salesRepId,
+                        $date,
+                        'تحديث تلقائي بعد تسجيل تحصيل جديد من المحاسب'
+                    );
+                }
+            } catch (Throwable $e) {
+                // لا نوقف العملية إذا فشل تحديث الراتب
+                error_log('Error updating sales commission after collection: ' . $e->getMessage());
+            }
+            
+            // إرسال إشعار للمدير للموافقة
+            if ($hasStatus) {
+                notifyManagers('تحصيل جديد', "تم إضافة تحصيل جديد بقيمة " . formatCurrency($amount), 'info');
+            }
+            
+            $success = 'تم إضافة التحصيل بنجاح';
+            
+            if (($currentUser['role'] ?? '') === 'sales') {
+                try {
+                    applyCollectionInstantReward(
+                        $currentUser['id'],
+                        $amount,
+                        $date,
+                        $result['insert_id'] ?? null,
+                        $currentUser['id']
+                    );
+                } catch (Throwable $instantRewardError) {
+                    error_log('Instant collection reward error (accountant add): ' . $instantRewardError->getMessage());
+                }
+            }
+        }
+    } elseif ($action === 'update_collection') {
+        $collectionId = intval($_POST['collection_id'] ?? 0);
+        $amount = floatval($_POST['amount'] ?? 0);
+        $date = $_POST['date'] ?? date('Y-m-d');
+        $paymentMethod = $_POST['payment_method'] ?? 'cash';
+        $referenceNumber = trim($_POST['reference_number'] ?? '');
+        $notes = trim($_POST['notes'] ?? '');
+        
+        if ($collectionId <= 0) {
+            $error = 'معرّف التحصيل غير صحيح';
+        } elseif ($amount <= 0) {
+            $error = 'يجب إدخال مبلغ صحيح أكبر من الصفر';
+        } else {
+            $oldCollection = $db->queryOne("SELECT * FROM collections WHERE id = ?", [$collectionId]);
+            $oldCollectedBy = is_array($oldCollection) && isset($oldCollection['collected_by']) ? $oldCollection['collected_by'] : null;
+            $oldCollectionDate = is_array($oldCollection) && isset($oldCollection['date']) ? $oldCollection['date'] : null;
+            
+            // التحقق من وجود عمود notes
+            $notesColumnCheck = $db->queryOne("SHOW COLUMNS FROM collections LIKE 'notes'");
+            $hasNotes = !empty($notesColumnCheck);
+            
+            if ($hasNotes) {
+                $db->execute(
+                    "UPDATE collections SET amount = ?, date = ?, payment_method = ?, reference_number = ?, notes = ?, updated_at = NOW() WHERE id = ?",
+                    [$amount, $date, $paymentMethod, $referenceNumber ?: null, $notes ?: null, $collectionId]
+                );
+            } else {
+                $db->execute(
+                    "UPDATE collections SET amount = ?, date = ?, payment_method = ?, reference_number = ?, updated_at = NOW() WHERE id = ?",
+                    [$amount, $date, $paymentMethod, $referenceNumber ?: null, $collectionId]
+                );
+            }
+            
+            logAudit($currentUser['id'], 'update_collection', 'collection', $collectionId, 
+                     json_encode($oldCollection), ['amount' => $amount]);
+            
+            $success = 'تم تحديث التحصيل بنجاح';
+            
+            $collectorId = intval($oldCollection['collected_by'] ?? 0);
+            $shouldAdjustReward = false;
+            if ($collectorId > 0) {
+                if ($collectorId === ($currentUser['id'] ?? 0) && ($currentUser['role'] ?? '') === 'sales') {
+                    $shouldAdjustReward = true;
+                } else {
+                    $collectorInfo = $db->queryOne("SELECT role FROM users WHERE id = ?", [$collectorId]);
+                    $shouldAdjustReward = ($collectorInfo['role'] ?? '') === 'sales';
+                }
+            }
+            
+            if ($shouldAdjustReward) {
+                try {
+                    $oldAmount = floatval($oldCollection['amount'] ?? 0);
+                    if ($oldAmount > 0) {
+                        applyCollectionInstantReward(
+                            $collectorId,
+                            $oldAmount,
+                            $oldCollectionDate,
+                            $collectionId,
+                            $currentUser['id'],
+                            true
+                        );
+                    }
+                    applyCollectionInstantReward(
+                        $collectorId,
+                        $amount,
+                        $date,
+                        $collectionId,
+                        $currentUser['id']
+                    );
+                } catch (Throwable $instantRewardError) {
+                    error_log('Instant collection reward adjustment error: ' . $instantRewardError->getMessage());
+                }
+            }
+            
+            // تحديث راتب المندوب المسؤول عن العميل (المستحق للعمولة)
+            // نحدث للتاريخ القديم والجديد للتأكد من الحساب الصحيح
+            $customerId = $oldCollection['customer_id'] ?? 0;
+            if ($customerId > 0) {
+                try {
+                    $salesRepId = getSalesRepForCustomer($customerId);
+                    if ($salesRepId && $salesRepId > 0) {
+                        // تحديث للتاريخ القديم (لإزالة التأثير السابق)
+                        if ($oldCollectionDate) {
+                            refreshSalesCommissionForUser(
+                                $salesRepId,
+                                $oldCollectionDate,
+                                'تحديث تلقائي بعد تعديل تحصيل'
+                            );
+                        }
+                        // تحديث للتاريخ الجديد
+                        refreshSalesCommissionForUser(
+                            $salesRepId,
+                            $date,
+                            'تحديث تلقائي بعد تعديل تحصيل'
+                        );
+                    }
+                } catch (Throwable $e) {
+                    error_log('Error updating sales commission after collection update: ' . $e->getMessage());
+                }
+            }
+        }
+    } elseif ($action === 'delete_collection') {
+        $collectionId = intval($_POST['collection_id'] ?? 0);
+        
+        if ($collectionId <= 0) {
+            $error = 'معرّف التحصيل غير صحيح';
+        } else {
+            $collection = $db->queryOne("SELECT * FROM collections WHERE id = ?", [$collectionId]);
+            $deletedCustomerId = is_array($collection) && isset($collection['customer_id']) ? $collection['customer_id'] : 0;
+            $deletedCollectionDate = is_array($collection) && isset($collection['date']) ? $collection['date'] : null;
+            
+            if ($collection) {
+                $db->execute("DELETE FROM collections WHERE id = ?", [$collectionId]);
+                
+                logAudit($currentUser['id'], 'delete_collection', 'collection', $collectionId, 
+                         json_encode($collection), null);
+                
+                $success = 'تم حذف التحصيل بنجاح';
+                
+                $collectorId = intval($collection['collected_by'] ?? 0);
+                $shouldReverseReward = false;
+                if ($collectorId > 0) {
+                    if ($collectorId === ($currentUser['id'] ?? 0) && ($currentUser['role'] ?? '') === 'sales') {
+                        $shouldReverseReward = true;
+                    } else {
+                        $collectorInfo = $db->queryOne("SELECT role FROM users WHERE id = ?", [$collectorId]);
+                        $shouldReverseReward = ($collectorInfo['role'] ?? '') === 'sales';
+                    }
+                }
+                
+                if ($shouldReverseReward) {
+                    try {
+                        applyCollectionInstantReward(
+                            $collectorId,
+                            floatval($collection['amount'] ?? 0),
+                            $deletedCollectionDate,
+                            $collectionId,
+                            $currentUser['id'],
+                            true
+                        );
+                    } catch (Throwable $instantRewardError) {
+                        error_log('Instant collection reward reversal error: ' . $instantRewardError->getMessage());
+                    }
+                }
+                
+                // تحديث راتب المندوب المسؤول عن العميل (المستحق للعمولة)
+                if ($deletedCustomerId > 0) {
+                    try {
+                        $salesRepId = getSalesRepForCustomer($deletedCustomerId);
+                        if ($salesRepId && $salesRepId > 0) {
+                            refreshSalesCommissionForUser(
+                                $salesRepId,
+                                $deletedCollectionDate,
+                                'تحديث تلقائي بعد حذف تحصيل'
+                            );
+                        }
+                    } catch (Throwable $e) {
+                        error_log('Error updating sales commission after collection deletion: ' . $e->getMessage());
+                    }
+                }
+            } else {
+                $error = 'التحصيل غير موجود';
+            }
+        }
+    } elseif ($action === 'approve_collection') {
+        $collectionId = intval($_POST['collection_id'] ?? 0);
+        
+        if ($collectionId <= 0) {
+            $error = 'معرّف التحصيل غير صحيح';
+        } else {
+            $collectionData = $db->queryOne("SELECT customer_id, date FROM collections WHERE id = ?", [$collectionId]);
+            $statusColumnCheck = $db->queryOne("SHOW COLUMNS FROM collections LIKE 'status'");
+            $approvedByColumnCheck = $db->queryOne("SHOW COLUMNS FROM collections LIKE 'approved_by'");
+            
+            if (!empty($statusColumnCheck)) {
+                if (!empty($approvedByColumnCheck)) {
+                    $db->execute(
+                        "UPDATE collections SET status = 'approved', approved_by = ?, approved_at = NOW() WHERE id = ?",
+                        [$currentUser['id'], $collectionId]
+                    );
+                } else {
+                    $db->execute(
+                        "UPDATE collections SET status = 'approved', approved_at = NOW() WHERE id = ?",
+                        [$collectionId]
+                    );
+                }
+                
+                logAudit($currentUser['id'], 'approve_collection', 'collection', $collectionId, null, null);
+                
+                $success = 'تم الموافقة على التحصيل بنجاح';
+                
+                // تحديث راتب المندوب المسؤول عن العميل (المستحق للعمولة)
+                if ($collectionData && !empty($collectionData['customer_id'])) {
+                    try {
+                        $salesRepId = getSalesRepForCustomer($collectionData['customer_id']);
+                        if ($salesRepId && $salesRepId > 0) {
+                            refreshSalesCommissionForUser(
+                                $salesRepId,
+                                $collectionData['date'] ?? null,
+                                'تحديث تلقائي بعد موافقة التحصيل'
+                            );
+                        }
+                    } catch (Throwable $e) {
+                        error_log('Error updating sales commission after collection approval: ' . $e->getMessage());
+                    }
+                }
+            } else {
+                $error = 'نظام الموافقات غير متاح';
+            }
+        }
+    } elseif ($action === 'reject_collection') {
+        $collectionId = intval($_POST['collection_id'] ?? 0);
+        
+        if ($collectionId <= 0) {
+            $error = 'معرّف التحصيل غير صحيح';
+        } else {
+            $collectionData = $db->queryOne("SELECT customer_id, date FROM collections WHERE id = ?", [$collectionId]);
+            $statusColumnCheck = $db->queryOne("SHOW COLUMNS FROM collections LIKE 'status'");
+            $approvedByColumnCheck = $db->queryOne("SHOW COLUMNS FROM collections LIKE 'approved_by'");
+            
+            if (!empty($statusColumnCheck)) {
+                if (!empty($approvedByColumnCheck)) {
+                    $db->execute(
+                        "UPDATE collections SET status = 'rejected', approved_by = ?, approved_at = NOW() WHERE id = ?",
+                        [$currentUser['id'], $collectionId]
+                    );
+                } else {
+                    $db->execute(
+                        "UPDATE collections SET status = 'rejected', approved_at = NOW() WHERE id = ?",
+                        [$collectionId]
+                    );
+                }
+                
+                logAudit($currentUser['id'], 'reject_collection', 'collection', $collectionId, null, null);
+                
+                $success = 'تم رفض التحصيل';
+                
+                // تحديث راتب المندوب المسؤول عن العميل (المستحق للعمولة)
+                if ($collectionData && !empty($collectionData['customer_id'])) {
+                    try {
+                        $salesRepId = getSalesRepForCustomer($collectionData['customer_id']);
+                        if ($salesRepId && $salesRepId > 0) {
+                            refreshSalesCommissionForUser(
+                                $salesRepId,
+                                $collectionData['date'] ?? null,
+                                'تحديث تلقائي بعد رفض التحصيل'
+                            );
+                        }
+                    } catch (Throwable $e) {
+                        error_log('Error updating sales commission after collection rejection: ' . $e->getMessage());
+                    }
+                }
+            } else {
+                $error = 'نظام الموافقات غير متاح';
+            }
+        }
+    }
+}
+
+// التحقق من وجود الأعمدة قبل بناء الاستعلام
+$approvedByColumnCheck = $db->queryOne("SHOW COLUMNS FROM collections LIKE 'approved_by'");
+$hasApprovedByColumn = !empty($approvedByColumnCheck);
+
+// بناء استعلام البحث
+$sql = "SELECT c.*, 
+        cust.name as customer_name, 
+        cust.phone as customer_phone,
+        u.full_name as collected_by_name";
+        
+if ($hasApprovedByColumn) {
+    $sql .= ",
+        u2.full_name as approved_by_name";
+}
+
+$sql .= " FROM collections c
+        LEFT JOIN customers cust ON c.customer_id = cust.id
+        LEFT JOIN users u ON c.collected_by = u.id";
+        
+if ($hasApprovedByColumn) {
+    $sql .= "
+        LEFT JOIN users u2 ON c.approved_by = u2.id";
+}
+
+$sql .= " WHERE 1=1";
+
+$countSql = "SELECT COUNT(*) as total FROM collections WHERE 1=1";
+$params = [];
+$countParams = [];
+
+if (!empty($filters['customer_id'])) {
+    $sql .= " AND c.customer_id = ?";
+    $countSql .= " AND customer_id = ?";
+    $params[] = $filters['customer_id'];
+    $countParams[] = $filters['customer_id'];
+}
+
+if (!empty($filters['status'])) {
+    $columnCheck = $db->queryOne("SHOW COLUMNS FROM collections LIKE 'status'");
+    if (!empty($columnCheck)) {
+        $sql .= " AND c.status = ?";
+        $countSql .= " AND status = ?";
+        $params[] = $filters['status'];
+        $countParams[] = $filters['status'];
+    }
+}
+
+if (!empty($filters['date_from'])) {
+    $sql .= " AND DATE(c.date) >= ?";
+    $countSql .= " AND DATE(date) >= ?";
+    $params[] = $filters['date_from'];
+    $countParams[] = $filters['date_from'];
+}
+
+if (!empty($filters['date_to'])) {
+    $sql .= " AND DATE(c.date) <= ?";
+    $countSql .= " AND DATE(date) <= ?";
+    $params[] = $filters['date_to'];
+    $countParams[] = $filters['date_to'];
+}
+
+if (!empty($filters['payment_method'])) {
+    $sql .= " AND c.payment_method = ?";
+    $countSql .= " AND payment_method = ?";
+    $params[] = $filters['payment_method'];
+    $countParams[] = $filters['payment_method'];
+}
+
+if (!empty($filters['collected_by'])) {
+    $sql .= " AND c.collected_by = ?";
+    $countSql .= " AND collected_by = ?";
+    $params[] = $filters['collected_by'];
+    $countParams[] = $filters['collected_by'];
+}
+
+$totalResult = $db->queryOne($countSql, $countParams);
+$totalCollections = $totalResult['total'] ?? 0;
+$totalPages = ceil($totalCollections / $perPage);
+
+$sql .= " ORDER BY c.created_at DESC LIMIT ? OFFSET ?";
+$params[] = $perPage;
+$params[] = $offset;
+
+$collections = $db->query($sql, $params);
+
+// الحصول على البيانات المطلوبة
+$customers = $db->query("SELECT id, name FROM customers WHERE status = 'active' ORDER BY name");
+$users = $db->query("SELECT id, username, full_name FROM users WHERE status = 'active' ORDER BY username");
+
+// التحقق من وجود عمود status
+$statusColumnCheck = $db->queryOne("SHOW COLUMNS FROM collections LIKE 'status'");
+$hasStatusColumn = !empty($statusColumnCheck);
 ?>
-
-<div class="page-header mb-4">
-    <h2><i class="bi bi-safe2 me-2"></i>خزنة المحاسب</h2>
-    <p class="text-muted mb-0">التحكم الكامل في التدفق النقدي والمعاملات المالية المعتمدة.</p>
+<div class="d-flex justify-content-between align-items-center mb-4">
+    <h2><i class="bi bi-cash-coin me-2"></i>إدارة التحصيلات</h2>
+    <button class="btn btn-primary" data-bs-toggle="modal" data-bs-target="#addCollectionModal">
+        <i class="bi bi-plus-circle me-2"></i>إضافة تحصيل جديد
+    </button>
 </div>
 
-<div class="row g-3 mb-4">
-    <div class="col-12 col-lg-3 col-md-6">
-        <div class="card stat-card shadow-sm border-0 h-100">
-            <div class="card-body">
-                <div class="stat-card-icon success">
-                    <i class="bi bi-cash-stack"></i>
-                </div>
-                <div class="stat-card-title">رصيد الخزنة</div>
-                <div class="h4 fw-bold mb-0"><?php echo formatCurrency($cashBalance); ?></div>
-                <div class="stat-card-description text-muted">صافي (إيرادات - مصروفات) معتمدة</div>
-            </div>
-        </div>
+<?php if ($error): ?>
+    <div class="alert alert-danger alert-dismissible fade show" id="errorAlert" data-auto-refresh="true">
+        <i class="bi bi-exclamation-triangle-fill me-2"></i>
+        <?php echo htmlspecialchars($error); ?>
+        <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
     </div>
-    <div class="col-12 col-lg-3 col-md-6">
-        <div class="card stat-card shadow-sm border-0 h-100">
-            <div class="card-body">
-                <div class="stat-card-icon primary">
-                    <i class="bi bi-calendar-event"></i>
-                </div>
-                <div class="stat-card-title">إيرادات اليوم</div>
-                <div class="h4 fw-bold mb-0"><?php echo formatCurrency($todayIncome['total'] ?? 0); ?></div>
-                <div class="stat-card-description text-muted">المعاملات المعتمدة فقط</div>
-            </div>
-        </div>
-    </div>
-    <div class="col-12 col-lg-3 col-md-6">
-        <div class="card stat-card shadow-sm border-0 h-100">
-            <div class="card-body">
-                <div class="stat-card-icon red">
-                    <i class="bi bi-arrow-down-circle"></i>
-                </div>
-                <div class="stat-card-title">مصروفات اليوم</div>
-                <div class="h4 fw-bold mb-0"><?php echo formatCurrency($todayExpenses['total'] ?? 0); ?></div>
-                <div class="stat-card-description text-muted">يشمل الدفعات النقدية</div>
-            </div>
-        </div>
-    </div>
-    <div class="col-12 col-lg-3 col-md-6">
-        <div class="card stat-card shadow-sm border-0 h-100">
-            <div class="card-body">
-                <div class="stat-card-icon purple">
-                    <i class="bi bi-list-check"></i>
-                </div>
-                <div class="stat-card-title">معاملات قيد الاعتماد</div>
-                <div class="h4 fw-bold mb-0"><?php echo (int)($pendingTransactions['total'] ?? 0); ?></div>
-                <div class="stat-card-description text-muted">بانتظار اعتماد المحاسب</div>
-            </div>
-        </div>
-    </div>
-</div>
+<?php endif; ?>
 
-<div class="row g-3 mb-4">
-    <div class="col-12 col-lg-4">
-        <div class="card shadow-sm border-0 h-100">
-            <div class="card-body">
-                <h5 class="card-title">ملخص شهري</h5>
-                <div class="d-flex justify-content-between mb-2">
-                    <span class="text-muted">إيرادات الشهر</span>
-                    <strong class="text-success"><?php echo formatCurrency($monthIncome['total'] ?? 0); ?></strong>
-                </div>
-                <div class="d-flex justify-content-between mb-2">
-                    <span class="text-muted">مصروفات الشهر</span>
-                    <strong class="text-danger"><?php echo formatCurrency($monthExpenses['total'] ?? 0); ?></strong>
-                </div>
-                <div class="d-flex justify-content-between">
-                    <span class="text-muted">تحصيلات اليوم</span>
-                    <strong><?php echo formatCurrency($collectionsToday['total'] ?? 0); ?></strong>
-                </div>
-            </div>
-        </div>
+<?php if ($success): ?>
+    <div class="alert alert-success alert-dismissible fade show" id="successAlert" data-auto-refresh="true">
+        <i class="bi bi-check-circle-fill me-2"></i>
+        <?php echo htmlspecialchars($success); ?>
+        <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
     </div>
-    <div class="col-12 col-lg-8">
-        <div class="card shadow-sm border-0 h-100">
-            <div class="card-body">
-                <h5 class="card-title">فلترة السجل المالي</h5>
-                <form class="row g-3" method="GET">
-                    <input type="hidden" name="page" value="accountant_cash">
-                    <div class="col-sm-6 col-lg-3">
-                        <label class="form-label">النوع</label>
-                        <select class="form-select" name="type">
-                            <?php foreach ($validTypes as $value => $label): ?>
-                                <option value="<?php echo $value; ?>" <?php echo $filterType === $value ? 'selected' : ''; ?>>
-                                    <?php echo $label; ?>
-                                </option>
-                            <?php endforeach; ?>
-                        </select>
-                    </div>
-                    <div class="col-sm-6 col-lg-3">
-                        <label class="form-label">الحالة</label>
-                        <select class="form-select" name="status">
-                            <?php foreach ($validStatuses as $value => $label): ?>
-                                <option value="<?php echo $value; ?>" <?php echo $filterStatus === $value ? 'selected' : ''; ?>>
-                                    <?php echo $label; ?>
-                                </option>
-                            <?php endforeach; ?>
-                        </select>
-                    </div>
-                    <div class="col-sm-6 col-lg-3">
-                        <label class="form-label">من تاريخ</label>
-                        <input type="date" class="form-control" name="from" value="<?php echo htmlspecialchars($filterFrom); ?>">
-                    </div>
-                    <div class="col-sm-6 col-lg-3">
-                        <label class="form-label">إلى تاريخ</label>
-                        <input type="date" class="form-control" name="to" value="<?php echo htmlspecialchars($filterTo); ?>">
-                    </div>
-                    <div class="col-12">
-                        <label class="form-label">بحث بالكلمات المفتاحية</label>
-                        <input type="text" class="form-control" name="search" placeholder="وصف، رقم مرجعي..." value="<?php echo htmlspecialchars($searchTerm); ?>">
-                    </div>
-                    <div class="col-12 d-flex justify-content-end gap-2">
-                        <a href="accountant.php?page=accountant_cash" class="btn btn-outline-secondary">
-                            مسح الفلاتر
-                        </a>
-                        <button class="btn btn-primary" type="submit">
-                            <i class="bi bi-funnel me-1"></i>تطبيق
-                        </button>
-                    </div>
-                </form>
+<?php endif; ?>
+
+<!-- البحث والفلترة -->
+<div class="card shadow-sm mb-4">
+    <div class="card-body">
+        <form method="GET" class="row g-3">
+            <div class="col-md-3">
+                <label class="form-label">العميل</label>
+                <select class="form-select" name="customer_id">
+                    <option value="">جميع العملاء</option>
+                    <?php 
+                    require_once __DIR__ . '/../../includes/path_helper.php';
+                    $selectedCustomerId = isset($filters['customer_id']) ? intval($filters['customer_id']) : 0;
+                    $customerValid = isValidSelectValue($selectedCustomerId, $customers, 'id');
+                    foreach ($customers as $customer): ?>
+                        <option value="<?php echo $customer['id']; ?>" <?php echo $customerValid && $selectedCustomerId == $customer['id'] ? 'selected' : ''; ?>>
+                            <?php echo htmlspecialchars($customer['name']); ?>
+                        </option>
+                    <?php endforeach; ?>
+                </select>
             </div>
-        </div>
+            
+            <?php if ($hasStatusColumn): ?>
+            <div class="col-md-2">
+                <label class="form-label">الحالة</label>
+                <select class="form-select" name="status">
+                    <option value="">جميع الحالات</option>
+                    <option value="pending" <?php echo ($filters['status'] ?? '') == 'pending' ? 'selected' : ''; ?>>معلق</option>
+                    <option value="approved" <?php echo ($filters['status'] ?? '') == 'approved' ? 'selected' : ''; ?>>موافق عليه</option>
+                    <option value="rejected" <?php echo ($filters['status'] ?? '') == 'rejected' ? 'selected' : ''; ?>>مرفوض</option>
+                </select>
+            </div>
+            <?php endif; ?>
+            
+            <div class="col-md-2">
+                <label class="form-label">طريقة الدفع</label>
+                <select class="form-select" name="payment_method">
+                    <option value="">جميع الطرق</option>
+                    <option value="cash" <?php echo ($filters['payment_method'] ?? '') == 'cash' ? 'selected' : ''; ?>>نقدي</option>
+                    <option value="bank" <?php echo ($filters['payment_method'] ?? '') == 'bank' ? 'selected' : ''; ?>>نقدا</option>
+                    <option value="cheque" <?php echo ($filters['payment_method'] ?? '') == 'cheque' ? 'selected' : ''; ?>>محفظه الكترونيه</option>
+                    <option value="other" <?php echo ($filters['payment_method'] ?? '') == 'other' ? 'selected' : ''; ?>>أخرى</option>
+                </select>
+            </div>
+            
+            <div class="col-md-2">
+                <label class="form-label">من تاريخ</label>
+                <input type="date" class="form-control" name="date_from" value="<?php echo htmlspecialchars($filters['date_from'] ?? ''); ?>">
+            </div>
+            
+            <div class="col-md-2">
+                <label class="form-label">إلى تاريخ</label>
+                <input type="date" class="form-control" name="date_to" value="<?php echo htmlspecialchars($filters['date_to'] ?? ''); ?>">
+            </div>
+            
+            <div class="col-md-1">
+                <label class="form-label">&nbsp;</label>
+                <button type="submit" class="btn btn-primary w-100">
+                    <i class="bi bi-search"></i>
+                </button>
+            </div>
+        </form>
     </div>
 </div>
 
+<!-- قائمة التحصيلات -->
 <div class="card shadow-sm">
-    <div class="card-header d-flex justify-content-between align-items-center">
-        <h5 class="mb-0"><i class="bi bi-journal-text me-2"></i>سجل المعاملات المالية</h5>
-        <span class="text-muted small">إجمالي النتائج: <?php echo $totalRows; ?></span>
+    <div class="card-header bg-primary text-white">
+        <h5 class="mb-0">قائمة التحصيلات (<?php echo $totalCollections; ?>)</h5>
     </div>
-    <div class="card-body p-0">
-        <div class="table-responsive">
-            <table class="table table-hover mb-0">
-                <thead class="table-light">
+    <div class="card-body">
+        <div class="table-responsive dashboard-table-wrapper">
+            <table class="table dashboard-table align-middle">
+                <thead>
                     <tr>
+                        <th>#</th>
                         <th>التاريخ</th>
-                        <th>النوع</th>
-                        <th>الوصف</th>
+                        <th>العميل</th>
                         <th>المبلغ</th>
+                        <th>طريقة الدفع</th>
+       
+                        <th>المحصل</th>
+                        <?php if ($hasStatusColumn): ?>
                         <th>الحالة</th>
-                        <th>المستخدم</th>
+                        <?php endif; ?>
+                      
                     </tr>
                 </thead>
                 <tbody>
-                    <?php if (empty($transactions)): ?>
+                    <?php if (empty($collections)): ?>
                         <tr>
-                            <td colspan="6" class="text-center text-muted py-4">
-                                لا توجد معاملات مطابقة للمعايير الحالية.
-                            </td>
+                            <td colspan="<?php echo $hasStatusColumn ? '9' : '8'; ?>" class="text-center text-muted">لا توجد تحصيلات</td>
                         </tr>
                     <?php else: ?>
-                        <?php foreach ($transactions as $transaction): ?>
+                        <?php foreach ($collections as $index => $collection): ?>
                             <tr>
-                                <td>
-                                    <strong><?php echo date('Y-m-d', strtotime($transaction['created_at'])); ?></strong>
-                                    <div class="text-muted small"><?php echo date('H:i', strtotime($transaction['created_at'])); ?></div>
-                                </td>
-                                <td>
-                                    <span class="badge bg-secondary">
-                                        <?php echo $validTypes[$transaction['type']] ?? $transaction['type']; ?>
-                                    </span>
-                                    <?php if (!empty($transaction['reference_number'])): ?>
-                                        <div class="text-muted small">#<?php echo htmlspecialchars($transaction['reference_number']); ?></div>
+                                <td data-label="#"><?php echo ($pageNum - 1) * $perPage + $index + 1; ?></td>
+                                <td data-label="التاريخ"><?php echo formatDate($collection['date']); ?></td>
+                                <td data-label="العميل">
+                                    <strong><?php echo htmlspecialchars($collection['customer_name'] ?? 'غير محدد'); ?></strong>
+                                    <?php if (!empty($collection['customer_phone'])): ?>
+                                        <br><small class="text-muted"><?php echo htmlspecialchars($collection['customer_phone']); ?></small>
                                     <?php endif; ?>
                                 </td>
-                                <td>
-                                    <?php echo nl2br(htmlspecialchars($transaction['description'])); ?>
-                                </td>
-                                <td>
+                                <td data-label="المبلغ"><strong class="text-success"><?php echo formatCurrency($collection['amount']); ?></strong></td>
+                                <td data-label="طريقة الدفع">
                                     <?php
-                                    $amount = floatval($transaction['amount']);
-                                    $isExpense = in_array($transaction['type'], ['expense', 'payment'], true);
-                                    $formattedAmount = formatCurrency($amount);
-                                    ?>
-                                    <span class="<?php echo $isExpense ? 'text-danger' : 'text-success'; ?>">
-                                        <?php echo $isExpense ? '-' : '+'; ?><?php echo $formattedAmount; ?>
-                                    </span>
-                                </td>
-                                <td>
-                                    <?php
-                                    $status = $transaction['status'];
-                                    $statusClasses = [
-                                        'approved' => 'badge bg-success',
-                                        'pending' => 'badge bg-warning text-dark',
-                                        'rejected' => 'badge bg-danger'
+                                    $paymentMethods = [
+                                        'cash' => 'نقدي',
+                                        'bank' => 'نقدا',
+                                        'cheque' => 'شيك',
+                                        'other' => 'أخرى'
                                     ];
+                                    echo $paymentMethods[$collection['payment_method']] ?? $collection['payment_method'];
                                     ?>
-                                    <span class="<?php echo $statusClasses[$status] ?? 'badge bg-secondary'; ?>">
-                                        <?php echo $validStatuses[$status] ?? $status; ?>
-                                    </span>
                                 </td>
-                                <td>
-                                    <div><?php echo htmlspecialchars($transaction['creator_name'] ?? $transaction['creator_username'] ?? '—'); ?></div>
-                                    <?php if (!empty($transaction['approver_name'])): ?>
-                                        <div class="text-muted small">
-                                            <i class="bi bi-check2-circle me-1"></i><?php echo htmlspecialchars($transaction['approver_name']); ?>
-                                        </div>
-                                    <?php endif; ?>
-                                </td>
+                                <td data-label="المحصل"><?php echo htmlspecialchars($collection['collected_by_name'] ?? 'غير محدد'); ?></td>
                             </tr>
                         <?php endforeach; ?>
                     <?php endif; ?>
                 </tbody>
             </table>
         </div>
-    </div>
-    <?php if ($totalPages > 1): ?>
-    <div class="card-footer d-flex justify-content-between align-items-center">
-        <span class="text-muted small">
-            صفحة <?php echo $pageNum; ?> من <?php echo $totalPages; ?>
-        </span>
-        <nav>
-            <ul class="pagination pagination-sm mb-0">
-                <?php
-                $query = $_GET;
-                $query['page'] = 'accountant_cash';
-                $prevPage = max(1, $pageNum - 1);
-                $nextPage = min($totalPages, $pageNum + 1);
-                $query['p'] = $prevPage;
-                ?>
+        
+        <!-- Pagination -->
+        <?php if ($totalPages > 1): ?>
+        <nav aria-label="Page navigation" class="mt-3">
+            <ul class="pagination justify-content-center flex-wrap">
                 <li class="page-item <?php echo $pageNum <= 1 ? 'disabled' : ''; ?>">
-                    <a class="page-link" href="<?php echo '?' . http_build_query($query); ?>">&laquo;</a>
+                    <a class="page-link" href="?page=collections&p=<?php echo $pageNum - 1; ?><?php echo !empty($filters) ? '&' . http_build_query($filters) : ''; ?>">
+                        <i class="bi bi-chevron-right"></i>
+                    </a>
                 </li>
-                <?php for ($i = 1; $i <= $totalPages; $i++): ?>
-                    <?php $query['p'] = $i; ?>
-                    <li class="page-item <?php echo $i === $pageNum ? 'active' : ''; ?>">
-                        <a class="page-link" href="<?php echo '?' . http_build_query($query); ?>"><?php echo $i; ?></a>
+                
+                <?php
+                $startPage = max(1, $pageNum - 2);
+                $endPage = min($totalPages, $pageNum + 2);
+                
+                if ($startPage > 1): ?>
+                    <li class="page-item"><a class="page-link" href="?page=collections&p=1<?php echo !empty($filters) ? '&' . http_build_query($filters) : ''; ?>">1</a></li>
+                    <?php if ($startPage > 2): ?>
+                        <li class="page-item disabled"><span class="page-link">...</span></li>
+                    <?php endif; ?>
+                <?php endif; ?>
+                
+                <?php for ($i = $startPage; $i <= $endPage; $i++): ?>
+                    <li class="page-item <?php echo $i == $pageNum ? 'active' : ''; ?>">
+                        <a class="page-link" href="?page=collections&p=<?php echo $i; ?><?php echo !empty($filters) ? '&' . http_build_query($filters) : ''; ?>"><?php echo $i; ?></a>
                     </li>
                 <?php endfor; ?>
-                <?php $query['p'] = $nextPage; ?>
+                
+                <?php if ($endPage < $totalPages): ?>
+                    <?php if ($endPage < $totalPages - 1): ?>
+                        <li class="page-item disabled"><span class="page-link">...</span></li>
+                    <?php endif; ?>
+                    <li class="page-item"><a class="page-link" href="?page=collections&p=<?php echo $totalPages; ?><?php echo !empty($filters) ? '&' . http_build_query($filters) : ''; ?>"><?php echo $totalPages; ?></a></li>
+                <?php endif; ?>
+                
                 <li class="page-item <?php echo $pageNum >= $totalPages ? 'disabled' : ''; ?>">
-                    <a class="page-link" href="<?php echo '?' . http_build_query($query); ?>">&raquo;</a>
+                    <a class="page-link" href="?page=collections&p=<?php echo $pageNum + 1; ?><?php echo !empty($filters) ? '&' . http_build_query($filters) : ''; ?>">
+                        <i class="bi bi-chevron-left"></i>
+                    </a>
                 </li>
             </ul>
         </nav>
+        <?php endif; ?>
     </div>
-    <?php endif; ?>
 </div>
+
+<!-- Modal إضافة تحصيل -->
+<div class="modal fade" id="addCollectionModal" tabindex="-1">
+    <div class="modal-dialog modal-lg">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title">إضافة تحصيل جديد</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <form method="POST" id="addCollectionForm">
+                <input type="hidden" name="action" value="add_collection">
+                <div class="modal-body">
+                    <div class="row g-3">
+                        <div class="col-md-6">
+                            <label class="form-label">العميل <span class="text-danger">*</span></label>
+                            <select class="form-select" name="customer_id" required>
+                                <option value="">اختر العميل</option>
+                                <?php foreach ($customers as $customer): ?>
+                                    <option value="<?php echo $customer['id']; ?>">
+                                        <?php echo htmlspecialchars($customer['name']); ?>
+                                    </option>
+                                <?php endforeach; ?>
+                            </select>
+                        </div>
+                        
+                        <div class="col-md-6">
+                            <label class="form-label">المبلغ <span class="text-danger">*</span></label>
+                            <input type="number" step="0.01" class="form-control" name="amount" required min="0.01">
+                        </div>
+                        
+                        <div class="col-md-6">
+                            <label class="form-label">التاريخ <span class="text-danger">*</span></label>
+                            <input type="date" class="form-control" name="date" value="<?php echo date('Y-m-d'); ?>" required>
+                        </div>
+                        
+                        <div class="col-md-6">
+                            <label class="form-label">طريقة الدفع</label>
+                            <select class="form-select" name="payment_method">
+                      
+                                <option value="bank">نقدا</option>
+                                <option value="cheque">محفظه الكترونيه</option>
+                                <option value="other">أخرى</option>
+                            </select>
+                        </div>
+                        
+                       
+                        <div class="col-md-12">
+                            <label class="form-label">ملاحظات</label>
+                            <textarea class="form-control" name="notes" rows="3" placeholder="ملاحظات إضافية"></textarea>
+                        </div>
+                    </div>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">إلغاء</button>
+                    <button type="submit" class="btn btn-primary">إضافة</button>
+                </div>
+            </form>
+        </div>
+    </div>
+</div>
+
+<!-- Modal تعديل تحصيل -->
+<div class="modal fade" id="editCollectionModal" tabindex="-1">
+    <div class="modal-dialog modal-lg">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title">تعديل التحصيل</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <form method="POST" id="editCollectionForm">
+                <input type="hidden" name="action" value="update_collection">
+                <input type="hidden" name="collection_id" id="edit_collection_id">
+                <div class="modal-body">
+                    <div class="row g-3">
+                        <div class="col-md-6">
+                            <label class="form-label">المبلغ <span class="text-danger">*</span></label>
+                            <input type="number" step="0.01" class="form-control" name="amount" id="edit_amount" required min="0.01">
+                        </div>
+                        
+                        <div class="col-md-6">
+                            <label class="form-label">التاريخ <span class="text-danger">*</span></label>
+                            <input type="date" class="form-control" name="date" id="edit_date" required>
+                        </div>
+                        
+                        <div class="col-md-6">
+                            <label class="form-label">طريقة الدفع</label>
+                            <select class="form-select" name="payment_method" id="edit_payment_method">
+                                <option value="cash">نقدي</option>
+                                <option value="bank">محفظه الكترونيه</option>
+                                <option value="other">أخرى</option>
+                            </select>
+                        </div>
+                        
+                        <div class="col-md-6">
+                            <label class="form-label">رقم المرجع</label>
+                            <input type="text" class="form-control" name="reference_number" id="edit_reference_number">
+                        </div>
+                        
+                        <div class="col-md-12">
+                            <label class="form-label">ملاحظات</label>
+                            <textarea class="form-control" name="notes" id="edit_notes" rows="3"></textarea>
+                        </div>
+                    </div>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">إلغاء</button>
+                    <button type="submit" class="btn btn-primary">حفظ التغييرات</button>
+                </div>
+            </form>
+        </div>
+    </div>
+</div>
+
+<script>
+// عرض تفاصيل التحصيل
+function viewCollection(id) {
+    // TODO: إضافة modal لعرض التفاصيل
+    alert('عرض تفاصيل التحصيل #' + id);
+}
+
+// تعديل التحصيل
+function editCollection(id) {
+    fetch('api/get_collection.php?id=' + id)
+        .then(response => response.json())
+        .then(data => {
+            if (data.success) {
+                const collection = data.collection;
+                document.getElementById('edit_collection_id').value = collection.id;
+                document.getElementById('edit_amount').value = collection.amount;
+                document.getElementById('edit_date').value = collection.date;
+                document.getElementById('edit_payment_method').value = collection.payment_method;
+                document.getElementById('edit_reference_number').value = collection.reference_number || '';
+                document.getElementById('edit_notes').value = collection.notes || '';
+                
+                const modal = new bootstrap.Modal(document.getElementById('editCollectionModal'));
+                modal.show();
+            } else {
+                alert('خطأ: ' + (data.message || 'فشل تحميل البيانات'));
+            }
+        })
+        .catch(error => {
+            console.error('Error:', error);
+            alert('حدث خطأ أثناء تحميل البيانات');
+        });
+}
+
+// الموافقة على التحصيل
+function approveCollection(id) {
+    if (!confirm('هل أنت متأكد من الموافقة على هذا التحصيل؟')) {
+        return;
+    }
+    
+    const form = document.createElement('form');
+    form.method = 'POST';
+    form.innerHTML = `
+        <input type="hidden" name="action" value="approve_collection">
+        <input type="hidden" name="collection_id" value="${id}">
+    `;
+    document.body.appendChild(form);
+    form.submit();
+}
+
+// رفض التحصيل
+function rejectCollection(id) {
+    if (!confirm('هل أنت متأكد من رفض هذا التحصيل؟')) {
+        return;
+    }
+    
+    const form = document.createElement('form');
+    form.method = 'POST';
+    form.innerHTML = `
+        <input type="hidden" name="action" value="reject_collection">
+        <input type="hidden" name="collection_id" value="${id}">
+    `;
+    document.body.appendChild(form);
+    form.submit();
+}
+
+// حذف التحصيل
+function deleteCollection(id) {
+    if (!confirm('هل أنت متأكد من حذف هذا التحصيل؟ هذا الإجراء لا يمكن التراجع عنه.')) {
+        return;
+    }
+    
+    const form = document.createElement('form');
+    form.method = 'POST';
+    form.innerHTML = `
+        <input type="hidden" name="action" value="delete_collection">
+        <input type="hidden" name="collection_id" value="${id}">
+    `;
+    document.body.appendChild(form);
+    form.submit();
+}
+</script>
+
+<!-- إعادة تحميل الصفحة تلقائياً بعد أي رسالة (نجاح أو خطأ) لمنع تكرار الطلبات -->
+<script>
+// إعادة تحميل الصفحة تلقائياً بعد أي رسالة (نجاح أو خطأ) لمنع تكرار الطلبات
+(function() {
+    const successAlert = document.getElementById('successAlert');
+    const errorAlert = document.getElementById('errorAlert');
+    
+    // التحقق من وجود رسالة نجاح أو خطأ
+    const alertElement = successAlert || errorAlert;
+    
+    if (alertElement && alertElement.dataset.autoRefresh === 'true') {
+        // انتظار 3 ثوانٍ لإعطاء المستخدم وقتاً لرؤية الرسالة
+        setTimeout(function() {
+            // إعادة تحميل الصفحة بدون معاملات GET لمنع تكرار الطلبات
+            const currentUrl = new URL(window.location.href);
+            // إزالة معاملات success و error من URL
+            currentUrl.searchParams.delete('success');
+            currentUrl.searchParams.delete('error');
+            // إعادة تحميل الصفحة
+            window.location.href = currentUrl.toString();
+        }, 3000);
+    }
+})();
+</script>
 
