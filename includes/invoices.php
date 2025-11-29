@@ -32,6 +32,36 @@ function createInvoice($customerId, $salesRepId, $date, $items, $taxRate = 0, $d
         // توليد رقم فاتورة
         $invoiceNumber = generateInvoiceNumber();
         
+        // التحقق النهائي من عدم تكرار رقم الفاتورة قبل الإدراج
+        // هذا يضمن عدم التكرار حتى في حالة الطلبات المتزامنة
+        $existingInvoice = $db->queryOne(
+            "SELECT id FROM invoices WHERE invoice_number = ? LIMIT 1",
+            [$invoiceNumber]
+        );
+        
+        if ($existingInvoice) {
+            // إذا كان الرقم موجوداً، توليد رقم جديد
+            error_log("Warning: Invoice number {$invoiceNumber} already exists, generating new number");
+            $invoiceNumber = generateInvoiceNumber();
+            
+            // التحقق مرة أخرى
+            $existingInvoice = $db->queryOne(
+                "SELECT id FROM invoices WHERE invoice_number = ? LIMIT 1",
+                [$invoiceNumber]
+            );
+            
+            if ($existingInvoice) {
+                // إذا كان موجوداً مرة أخرى، استخدم timestamp
+                $timestamp = substr(time(), -6);
+                $microtime = substr(str_replace('.', '', microtime(true)), -4);
+                $random = bin2hex(random_bytes(3));
+                $year = date('Y');
+                $month = date('m');
+                $invoiceNumber = sprintf("INV-%s%s-%04d-%s%s-%s", $year, $month, rand(1000, 9999), $timestamp, $microtime, $random);
+                error_log("Using fallback invoice number: {$invoiceNumber}");
+            }
+        }
+        
         // حساب المبالغ
         $subtotal = 0;
         foreach ($items as $item) {
@@ -52,20 +82,50 @@ function createInvoice($customerId, $salesRepId, $date, $items, $taxRate = 0, $d
                  discount_amount, total_amount, notes, created_by, status) 
                 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'draft')";
         
-        $result = $db->execute($sql, [
-            $invoiceNumber,
-            $customerId,
-            $salesRepId,
-            $date,
-            $dueDate,
-            $subtotal,
-            $taxRate,
-            $taxAmount,
-            $discountAmount,
-            $totalAmount,
-            $notes,
-            $createdBy
-        ]);
+        try {
+            $result = $db->execute($sql, [
+                $invoiceNumber,
+                $customerId,
+                $salesRepId,
+                $date,
+                $dueDate,
+                $subtotal,
+                $taxRate,
+                $taxAmount,
+                $discountAmount,
+                $totalAmount,
+                $notes,
+                $createdBy
+            ]);
+        } catch (Exception $insertError) {
+            // إذا فشل الإدراج بسبب تكرار رقم الفاتورة (UNIQUE constraint)
+            if (strpos($insertError->getMessage(), 'Duplicate entry') !== false || 
+                strpos($insertError->getMessage(), 'invoice_number') !== false) {
+                error_log("Duplicate invoice number detected: {$invoiceNumber}, generating new number");
+                
+                // توليد رقم جديد
+                $invoiceNumber = generateInvoiceNumber();
+                
+                // محاولة الإدراج مرة أخرى
+                $result = $db->execute($sql, [
+                    $invoiceNumber,
+                    $customerId,
+                    $salesRepId,
+                    $date,
+                    $dueDate,
+                    $subtotal,
+                    $taxRate,
+                    $taxAmount,
+                    $discountAmount,
+                    $totalAmount,
+                    $notes,
+                    $createdBy
+                ]);
+            } else {
+                // إذا كان الخطأ مختلفاً، ارميه مرة أخرى
+                throw $insertError;
+            }
+        }
         
         $invoiceId = $result['insert_id'];
         
@@ -104,89 +164,161 @@ function createInvoice($customerId, $salesRepId, $date, $items, $taxRate = 0, $d
 /**
  * توليد رقم فاتورة فريد (يضمن عدم تكرار الأرقام حتى لو كان البيع لنفس العميل)
  * يتم التحقق من عدم التكرار بغض النظر عن العميل أو المنتجات
+ * يستخدم transaction مع SELECT FOR UPDATE لضمان عدم التكرار في حالة الطلبات المتزامنة
  */
 function generateInvoiceNumber() {
     $db = db();
+    $conn = $db->getConnection();
     
     $year = date('Y');
     $month = date('m');
+    $prefix = "INV-{$year}{$month}";
     
-    // الحصول على آخر رقم فاتورة لهذا الشهر (بغض النظر عن العميل أو المنتجات)
-    // نستخدم ORDER BY id DESC لضمان الحصول على آخر رقم تم إنشاؤه
-    $result = $db->queryOne(
-        "SELECT invoice_number FROM invoices 
-         WHERE invoice_number LIKE ? 
-         ORDER BY id DESC LIMIT 1",
-        ["INV-{$year}{$month}-%"]
-    );
-    
-    if ($result) {
-        // استخراج الرقم التسلسلي
-        $parts = explode('-', $result['invoice_number']);
-        $lastSerial = intval($parts[2] ?? 0);
-        
-        // التأكد من أن الرقم التسلسلي صحيح
-        if ($lastSerial > 0) {
-            $serial = $lastSerial + 1;
-        } else {
-            // إذا فشل استخراج الرقم، ابحث عن آخر رقم صحيح
-            $allInvoices = $db->query(
-                "SELECT invoice_number FROM invoices 
-                 WHERE invoice_number LIKE ? 
-                 ORDER BY id DESC LIMIT 100",
-                ["INV-{$year}{$month}-%"]
-            );
-            
-            $maxSerial = 0;
-            foreach ($allInvoices as $inv) {
-                $invParts = explode('-', $inv['invoice_number']);
-                $invSerial = intval($invParts[2] ?? 0);
-                if ($invSerial > $maxSerial) {
-                    $maxSerial = $invSerial;
-                }
-            }
-            $serial = $maxSerial + 1;
-        }
-    } else {
-        $serial = 1;
+    // استخدام transaction مع SELECT FOR UPDATE لضمان عدم التكرار في حالة الطلبات المتزامنة
+    $transactionStarted = false;
+    if (!$db->inTransaction()) {
+        $db->beginTransaction();
+        $transactionStarted = true;
     }
     
-    // التأكد من عدم وجود فاتورة بنفس الرقم (حماية إضافية)
-    // هذا يضمن عدم التكرار حتى في حالة إعادة بيع منتج مرتجع لنفس العميل
-    $maxAttempts = 200;
-    $attempt = 0;
-    $invoiceNumber = sprintf("INV-%s%s-%04d", $year, $month, $serial);
-    
-    while ($attempt < $maxAttempts) {
+    try {
+        // الحصول على آخر رقم فاتورة لهذا الشهر مع قفل الصف
+        // نستخدم FOR UPDATE لضمان عدم قراءة نفس الرقم من طلبات متزامنة
+        $result = $db->queryOne(
+            "SELECT invoice_number, id FROM invoices 
+             WHERE invoice_number LIKE ? 
+             ORDER BY id DESC LIMIT 1
+             FOR UPDATE",
+            ["{$prefix}-%"]
+        );
+        
+        $serial = 1;
+        
+        if ($result && !empty($result['invoice_number'])) {
+            $invoiceNumber = $result['invoice_number'];
+            
+            // استخراج الرقم التسلسلي من رقم الفاتورة
+            // الصيغة: INV-YYYYMM-NNNN أو INV-YYYYMM-NNNN-TIMESTAMP
+            if (preg_match('/^' . preg_quote($prefix, '/') . '-(\d+)(?:-.*)?$/', $invoiceNumber, $matches)) {
+                $lastSerial = intval($matches[1] ?? 0);
+                if ($lastSerial > 0) {
+                    $serial = $lastSerial + 1;
+                }
+            } else {
+                // إذا فشل استخراج الرقم، ابحث عن أكبر رقم تسلسلي
+                $allInvoices = $db->query(
+                    "SELECT invoice_number FROM invoices 
+                     WHERE invoice_number LIKE ? 
+                     ORDER BY id DESC LIMIT 200
+                     FOR UPDATE",
+                    ["{$prefix}-%"]
+                );
+                
+                $maxSerial = 0;
+                foreach ($allInvoices as $inv) {
+                    $invNumber = $inv['invoice_number'] ?? '';
+                    if (preg_match('/^' . preg_quote($prefix, '/') . '-(\d+)(?:-.*)?$/', $invNumber, $invMatches)) {
+                        $invSerial = intval($invMatches[1] ?? 0);
+                        if ($invSerial > $maxSerial) {
+                            $maxSerial = $invSerial;
+                        }
+                    }
+                }
+                $serial = $maxSerial + 1;
+            }
+        }
+        
+        // التأكد من عدم وجود فاتورة بنفس الرقم (حماية إضافية)
+        // هذا يضمن عدم التكرار حتى في حالة إعادة بيع منتج مرتجع لنفس العميل
+        $maxAttempts = 200;
+        $attempt = 0;
+        $invoiceNumber = sprintf("{$prefix}-%04d", $serial);
+        
+        while ($attempt < $maxAttempts) {
+            $existing = $db->queryOne(
+                "SELECT id FROM invoices WHERE invoice_number = ? LIMIT 1 FOR UPDATE",
+                [$invoiceNumber]
+            );
+            
+            if (!$existing) {
+                // الرقم فريد، يمكن استخدامه
+                if ($transactionStarted) {
+                    $db->commit();
+                }
+                error_log("Generated unique invoice number: {$invoiceNumber}");
+                return $invoiceNumber;
+            }
+            
+            // الرقم موجود، جرب الرقم التالي
+            $serial++;
+            $invoiceNumber = sprintf("{$prefix}-%04d", $serial);
+            $attempt++;
+            
+            // إذا تجاوزنا 100 محاولة، أضف timestamp لضمان التفرد
+            if ($attempt > 100) {
+                $timestamp = substr(time(), -6); // آخر 6 أرقام من timestamp
+                $microtime = substr(str_replace('.', '', microtime(true)), -4); // آخر 4 أرقام من microtime
+                $invoiceNumber = sprintf("{$prefix}-%04d-%s%s", $serial, $timestamp, $microtime);
+            }
+        }
+        
+        // في حالة فشل جميع المحاولات، استخدم timestamp + microtime لضمان التفرد
+        $timestamp = substr(time(), -6);
+        $microtime = substr(str_replace('.', '', microtime(true)), -4);
+        $random = bin2hex(random_bytes(2)); // 4 أحرف عشوائية
+        $finalNumber = sprintf("{$prefix}-%04d-%s%s-%s", $serial, $timestamp, $microtime, $random);
+        
+        // التحقق النهائي من عدم التكرار
         $existing = $db->queryOne(
             "SELECT id FROM invoices WHERE invoice_number = ? LIMIT 1",
-            [$invoiceNumber]
+            [$finalNumber]
+        );
+        
+        if ($transactionStarted) {
+            $db->commit();
+        }
+        
+        if (!$existing) {
+            error_log("Generated invoice number with timestamp fallback: {$finalNumber}");
+            return $finalNumber;
+        }
+        
+        // إذا كان موجوداً (مستحيل تقريباً)، أضف رقم عشوائي إضافي
+        $finalNumber = sprintf("{$prefix}-%04d-%s%s-%s-%s", $serial, $timestamp, $microtime, $random, bin2hex(random_bytes(2)));
+        error_log("Generated invoice number with extended fallback: {$finalNumber}");
+        return $finalNumber;
+        
+    } catch (Throwable $e) {
+        if ($transactionStarted) {
+            try {
+                $db->rollback();
+            } catch (Throwable $rollbackError) {
+                // تجاهل خطأ rollback
+            }
+        }
+        
+        error_log("Error generating invoice number: " . $e->getMessage());
+        
+        // استخدام طريقة احتياطية بدون transaction
+        $timestamp = substr(time(), -6);
+        $microtime = substr(str_replace('.', '', microtime(true)), -4);
+        $random = bin2hex(random_bytes(3));
+        $fallbackNumber = sprintf("{$prefix}-%04d-%s%s-%s", rand(1000, 9999), $timestamp, $microtime, $random);
+        
+        // التحقق من عدم التكرار
+        $existing = $db->queryOne(
+            "SELECT id FROM invoices WHERE invoice_number = ? LIMIT 1",
+            [$fallbackNumber]
         );
         
         if (!$existing) {
-            // الرقم فريد، يمكن استخدامه
-            // تسجيل للتأكد من عدم التكرار
-            error_log("Generated unique invoice number: {$invoiceNumber}");
-            return $invoiceNumber;
+            return $fallbackNumber;
         }
         
-        // الرقم موجود، جرب الرقم التالي
-        $serial++;
-        $invoiceNumber = sprintf("INV-%s%s-%04d", $year, $month, $serial);
-        $attempt++;
-        
-        // إذا تجاوزنا 100 محاولة، أضف timestamp لضمان التفرد
-        if ($attempt > 100) {
-            $timestamp = substr(time(), -6); // آخر 6 أرقام من timestamp
-            $invoiceNumber = sprintf("INV-%s%s-%04d-%s", $year, $month, $serial, $timestamp);
-        }
+        // إذا كان موجوداً، أضف رقم عشوائي إضافي
+        $fallbackNumber = sprintf("{$prefix}-%04d-%s%s-%s-%s", rand(1000, 9999), $timestamp, $microtime, $random, bin2hex(random_bytes(2)));
+        return $fallbackNumber;
     }
-    
-    // في حالة فشل جميع المحاولات، استخدم timestamp كجزء من الرقم
-    $timestamp = substr(time(), -6);
-    $finalNumber = sprintf("INV-%s%s-%04d-%s", $year, $month, $serial, $timestamp);
-    error_log("Generated invoice number with timestamp fallback: {$finalNumber}");
-    return $finalNumber;
 }
 
 /**
