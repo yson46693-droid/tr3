@@ -116,12 +116,28 @@ $dateTo = isset($_GET['date_to']) ? trim($_GET['date_to']) : '';
 $search = isset($_GET['search']) ? trim($_GET['search']) : '';
 
 // حساب إجمالي قيمة المنتجات التالفة (للمدير والمحاسب فقط)
+// يشمل factory_waste_products و damaged_returns
 $totalDamagedProductsValue = 0;
 if ($canViewFinancials) {
     $valueResult = $db->queryOne(
         "SELECT COALESCE(SUM(waste_value), 0) as total FROM factory_waste_products"
     );
     $totalDamagedProductsValue = (float)($valueResult['total'] ?? 0);
+    
+    // إضافة قيمة المرتجعات التالفة
+    $damagedReturnsTableExists = $db->queryOne("SHOW TABLES LIKE 'damaged_returns'");
+    if (!empty($damagedReturnsTableExists)) {
+        try {
+            $damagedReturnsValue = $db->queryOne(
+                "SELECT COALESCE(SUM(ri.total_price), 0) as total
+                 FROM damaged_returns dr
+                 INNER JOIN return_items ri ON dr.return_item_id = ri.id"
+            );
+            $totalDamagedProductsValue += (float)($damagedReturnsValue['total'] ?? 0);
+        } catch (Throwable $e) {
+            error_log("Error calculating damaged returns value: " . $e->getMessage());
+        }
+    }
 }
 
 // جلب البيانات حسب التبويب
@@ -130,7 +146,7 @@ $totalCount = 0;
 $totalPages = 0;
 
 if ($activeTab === 'products') {
-    // جدول المنتجات التالفة
+    // جدول المنتجات التالفة - دمج البيانات من factory_waste_products و damaged_returns
     $sql = "SELECT 
             fwp.id,
             fwp.product_id,
@@ -141,7 +157,8 @@ if ($activeTab === 'products') {
             fwp.waste_value,
             fwp.source,
             fwp.transaction_number,
-            fwp.added_date
+            fwp.added_date,
+            'factory_waste' as data_source
         FROM factory_waste_products fwp
         WHERE 1=1";
     
@@ -166,7 +183,47 @@ if ($activeTab === 'products') {
         $params[] = $searchParam;
     }
     
-    $sql .= " ORDER BY fwp.added_date DESC, fwp.created_at DESC
+    // إضافة UNION مع damaged_returns
+    $sql .= " UNION ALL
+        SELECT 
+            dr.id,
+            dr.product_id,
+            COALESCE(p.name, CONCAT('منتج رقم ', dr.product_id)) as product_name,
+            p.code as product_code,
+            COALESCE(bn.batch_number, '') as batch_number,
+            dr.quantity as damaged_quantity,
+            COALESCE(ri.total_price, 0) as waste_value,
+            'damaged_returns' as source,
+            r.return_number as transaction_number,
+            DATE(r.return_date) as added_date,
+            'damaged_returns' as data_source
+        FROM damaged_returns dr
+        INNER JOIN returns r ON dr.return_id = r.id
+        LEFT JOIN return_items ri ON dr.return_item_id = ri.id
+        LEFT JOIN products p ON dr.product_id = p.id
+        LEFT JOIN batch_numbers bn ON dr.batch_number_id = bn.id
+        WHERE 1=1";
+    
+    if ($dateFrom) {
+        $sql .= " AND DATE(r.return_date) >= ?";
+        $params[] = $dateFrom;
+    }
+    
+    if ($dateTo) {
+        $sql .= " AND DATE(r.return_date) <= ?";
+        $params[] = $dateTo;
+    }
+    
+    if ($search) {
+        $sql .= " AND (p.name LIKE ? OR bn.batch_number LIKE ? OR p.code LIKE ? OR r.return_number LIKE ?)";
+        $searchParam = "%{$search}%";
+        $params[] = $searchParam;
+        $params[] = $searchParam;
+        $params[] = $searchParam;
+        $params[] = $searchParam;
+    }
+    
+    $sql .= " ORDER BY added_date DESC, id DESC
               LIMIT ? OFFSET ?";
     $params[] = $perPage;
     $params[] = $offset;
@@ -174,9 +231,10 @@ if ($activeTab === 'products') {
     $data = $db->query($sql, $params);
     
     // Get total count
-    $countSql = "SELECT COUNT(*) as total
-                 FROM factory_waste_products fwp
-                 WHERE 1=1";
+    $countSql = "SELECT COUNT(*) as total FROM (
+        SELECT fwp.id
+        FROM factory_waste_products fwp
+        WHERE 1=1";
     $countParams = [];
     
     if ($dateFrom) {
@@ -197,6 +255,35 @@ if ($activeTab === 'products') {
         $countParams[] = $searchParam;
         $countParams[] = $searchParam;
     }
+    
+    $countSql .= " UNION ALL
+        SELECT dr.id
+        FROM damaged_returns dr
+        INNER JOIN returns r ON dr.return_id = r.id
+        LEFT JOIN products p ON dr.product_id = p.id
+        LEFT JOIN batch_numbers bn ON dr.batch_number_id = bn.id
+        WHERE 1=1";
+    
+    if ($dateFrom) {
+        $countSql .= " AND DATE(r.return_date) >= ?";
+        $countParams[] = $dateFrom;
+    }
+    
+    if ($dateTo) {
+        $countSql .= " AND DATE(r.return_date) <= ?";
+        $countParams[] = $dateTo;
+    }
+    
+    if ($search) {
+        $countSql .= " AND (p.name LIKE ? OR bn.batch_number LIKE ? OR p.code LIKE ? OR r.return_number LIKE ?)";
+        $searchParam = "%{$search}%";
+        $countParams[] = $searchParam;
+        $countParams[] = $searchParam;
+        $countParams[] = $searchParam;
+        $countParams[] = $searchParam;
+    }
+    
+    $countSql .= ") as combined_data";
     
     $totalResult = $db->queryOne($countSql, $countParams);
     $totalCount = (int)($totalResult['total'] ?? 0);
@@ -459,12 +546,27 @@ $totalPages = ceil($totalCount / $perPage);
                                     <tbody>
                                         <?php foreach ($data as $item): ?>
                                             <tr>
-                                                <td><strong><?php echo htmlspecialchars($item['product_name'] ?? 'منتج رقم ' . $item['product_id']); ?></strong></td>
+                                                <td><strong><?php 
+                                                    $productName = $item['product_name'] ?? '';
+                                                    if (empty($productName) && !empty($item['product_id'])) {
+                                                        $productName = 'منتج رقم ' . $item['product_id'];
+                                                    }
+                                                    echo htmlspecialchars($productName ?: '-');
+                                                ?></strong></td>
                                                 <td><?php echo htmlspecialchars($item['product_code'] ?? '-'); ?></td>
                                                 <td><?php echo htmlspecialchars($item['batch_number'] ?? '-'); ?></td>
                                                 <td><span class="badge bg-danger"><?php echo number_format((float)$item['damaged_quantity'], 2); ?></span></td>
                                                 <td><?php echo htmlspecialchars($item['added_date'] ?? '-'); ?></td>
-                                                <td><?php echo htmlspecialchars($item['source'] === 'damaged_returns' ? 'المرتجعات التالفة' : $item['source']); ?></td>
+                                                <td>
+                                                    <?php 
+                                                    $source = $item['source'] ?? ($item['data_source'] ?? '');
+                                                    if ($source === 'damaged_returns' || $item['data_source'] === 'damaged_returns') {
+                                                        echo '<span class="badge bg-danger">المرتجعات التالفة</span>';
+                                                    } else {
+                                                        echo htmlspecialchars($source ?: '-');
+                                                    }
+                                                    ?>
+                                                </td>
                                                 <td><strong class="text-primary"><?php echo htmlspecialchars($item['transaction_number'] ?? '-'); ?></strong></td>
                                                 <?php if ($canViewFinancials): ?>
                                                     <td><?php echo number_format((float)$item['waste_value'], 2); ?> جنيه</td>

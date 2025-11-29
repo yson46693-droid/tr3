@@ -820,6 +820,60 @@ function applyReturnSalaryDeduction(int $returnId, ?int $salesRepId = null, ?int
             ];
         }
         
+        // التحقق من وجود منتجات تالفة في المرتجع - إذا كان المرتجع تالف، لا يتم خصم أي مبلغ
+        $hasDamagedItems = false;
+        try {
+            // التحقق من وجود جدول damaged_returns
+            $damagedReturnsTableExists = $db->queryOne("SHOW TABLES LIKE 'damaged_returns'");
+            if (!empty($damagedReturnsTableExists)) {
+                $damagedCount = $db->queryOne(
+                    "SELECT COUNT(*) as count FROM damaged_returns WHERE return_id = ?",
+                    [$returnId]
+                );
+                $hasDamagedItems = (int)($damagedCount['count'] ?? 0) > 0;
+            }
+            
+            // إذا لم نجد في damaged_returns، تحقق من return_items
+            if (!$hasDamagedItems) {
+                $hasIsDamagedColumn = false;
+                try {
+                    $columnCheck = $db->queryOne("SHOW COLUMNS FROM return_items LIKE 'is_damaged'");
+                    $hasIsDamagedColumn = !empty($columnCheck);
+                } catch (Throwable $e) {
+                    $hasIsDamagedColumn = false;
+                }
+                
+                if ($hasIsDamagedColumn) {
+                    $damagedItemsCount = $db->queryOne(
+                        "SELECT COUNT(*) as count FROM return_items WHERE return_id = ? AND (is_damaged = 1 OR is_damaged = '1')",
+                        [$returnId]
+                    );
+                    $hasDamagedItems = (int)($damagedItemsCount['count'] ?? 0) > 0;
+                } else {
+                    // التحقق من condition في return_items
+                    $damagedItemsCount = $db->queryOne(
+                        "SELECT COUNT(*) as count FROM return_items WHERE return_id = ? AND (condition = 'damaged' OR condition = 'defective')",
+                        [$returnId]
+                    );
+                    $hasDamagedItems = (int)($damagedItemsCount['count'] ?? 0) > 0;
+                }
+            }
+        } catch (Throwable $e) {
+            error_log("Error checking for damaged items in return: " . $e->getMessage());
+            // في حالة الخطأ، نفترض أنه لا توجد منتجات تالفة لتجنب منع الخصم بالخطأ
+            $hasDamagedItems = false;
+        }
+        
+        // إذا كان المرتجع يحتوي على منتجات تالفة، لا يتم خصم أي مبلغ
+        if ($hasDamagedItems) {
+            return [
+                'success' => true,
+                'message' => 'المرتجع يحتوي على منتجات تالفة - لا يتم خصم أي مبلغ من مرتب المندوب',
+                'deduction_amount' => 0.0,
+                'is_damaged_return' => true
+            ];
+        }
+        
         // الحصول على رصيد العميل قبل المرتجع من audit_log
         $customerBalanceBeforeReturn = 0.0;
         $auditLog = $db->queryOne(
