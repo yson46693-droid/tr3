@@ -852,8 +852,20 @@ const simpleWebAuthn = new SimpleWebAuthn();
 
 // للتوافق مع الكود القديم
 const webauthnManager = {
-    login: (username) => simpleWebAuthn.login(username),
-    loginWithoutUsername: () => simpleWebAuthn.loginWithoutUsername(),
-    register: () => simpleWebAuthn.register()
+    login: function(username) {
+        return simpleWebAuthn.login(username);
+    },
+    loginWithoutUsername: function() {
+        return simpleWebAuthn.loginWithoutUsername();
+    },
+    register: function() {
+        return simpleWebAuthn.register();
+    }
 };
+
+// التأكد من أن webauthnManager متاح بشكل عام
+if (typeof window !== 'undefined') {
+    window.webauthnManager = webauthnManager;
+    window.simpleWebAuthn = simpleWebAuthn;
+}
 

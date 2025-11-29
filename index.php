@@ -696,7 +696,18 @@ $lang = $translations;
             this.innerHTML = '<span class="spinner-border spinner-border-sm me-2"></span>جاري التحقق...';
             
             try {
-                const result = await webauthnManager.loginWithoutUsername();
+                // استخدام simpleWebAuthn مباشرة أو webauthnManager
+                const authManager = (typeof simpleWebAuthn !== 'undefined' && typeof simpleWebAuthn.loginWithoutUsername === 'function') 
+                    ? simpleWebAuthn 
+                    : (typeof webauthnManager !== 'undefined' && typeof webauthnManager.loginWithoutUsername === 'function')
+                        ? webauthnManager
+                        : null;
+                
+                if (!authManager) {
+                    throw new Error('نظام البصمة غير متاح. يرجى تحديث الصفحة (Ctrl+F5).');
+                }
+                
+                const result = await authManager.loginWithoutUsername();
                 if (result && result.success) {
                     // سيتم إعادة التوجيه تلقائياً من داخل loginWithoutUsername()
                     console.log('Login successful, redirecting...');
