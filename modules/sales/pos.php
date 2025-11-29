@@ -2106,7 +2106,7 @@ if (!$error) {
                                 </div>
                                 <div class="mt-3 d-none" id="posPartialWrapper">
                                     <label class="form-label">مبلغ التحصيل الجزئي</label>
-                                    <input type="number" step="0.01" min="0" value="0" class="form-control" id="posPartialAmount" placeholder="0.00">
+                                    <input type="number" min="0" value="0" class="form-control" id="posPartialAmount" placeholder="0.00">
                                 </div>
                                 <div class="mt-3 d-none" id="posDueDateWrapper">
                                     <label class="form-label">تاريخ الاستحقاق <span class="text-muted">(اختياري)</span></label>
