@@ -128,6 +128,7 @@ $paidAmount      = $invoiceData['paid_amount'] ?? 0;
 $dueAmount       = isset($invoiceData['remaining_amount']) && $invoiceData['remaining_amount'] !== null 
     ? (float)$invoiceData['remaining_amount'] 
     : max(0, $total - $paidAmount);
+$creditUsed      = (float)($invoiceData['credit_used'] ?? 0);
 $notes           = trim((string)($invoiceData['notes'] ?? ''));
 
 $currencyLabel   = CURRENCY . ' ' . CURRENCY_SYMBOL;
@@ -392,6 +393,12 @@ $returnTypeLabel = $isReturnDocument ? ($returnTypeLabels[$returnMetadata['retur
                         <span>المدفوع</span>
                         <strong class="text-success"><?php echo formatCurrency($paidAmount); ?></strong>
                     </div>
+                    <?php if ($creditUsed > 0): ?>
+                        <div class="summary-row">
+                            <span>المدفوع من رصيد العميل</span>
+                            <strong class="text-info"><?php echo formatCurrency($creditUsed); ?></strong>
+                        </div>
+                    <?php endif; ?>
                     <div class="summary-row due">
                         <span>المتبقي</span>
                         <strong class="<?php echo $dueAmount > 0 ? 'text-danger' : 'text-success'; ?>">
