@@ -4390,7 +4390,7 @@ document.addEventListener('DOMContentLoaded', function () {
                 }
                 
                 // تحديث الإجماليات الكلية فوراً
-                updateTotalsImmediately();
+                calculateTotals();
             });
             
             // event listener للتغيير (عند فقدان التركيز)
@@ -4422,7 +4422,7 @@ document.addEventListener('DOMContentLoaded', function () {
                 }
                 
                 // تحديث الإجماليات
-                updateTotalsImmediately();
+                calculateTotals();
             });
             
             input.addEventListener('blur', function() {
@@ -4480,7 +4480,10 @@ document.addEventListener('DOMContentLoaded', function () {
                            data-finished-batch-number="${item.finished_batch_number || ''}"
                            ${checked ? 'checked' : ''}>
                 </td>
-                <td>${item.product_name || 'غير معروف'}</td>
+                <td>
+                    <div>${item.product_name || 'غير معروف'}</div>
+                    ${item.finished_batch_number ? `<small class="text-muted d-block mt-1">تشغيلة: ${item.finished_batch_number}</small>` : ''}
+                </td>
                 <td>${item.quantity} ${item.unit || 'قطعة'}</td>
                 <td>
                     <input type="number" 
@@ -4584,7 +4587,7 @@ document.addEventListener('DOMContentLoaded', function () {
                 }
                 
                 // تحديث الإجماليات الكلية فوراً
-                updateTotalsImmediately();
+                calculateTotals();
             });
             
             // event listener للتغيير (عند فقدان التركيز)
@@ -4616,7 +4619,7 @@ document.addEventListener('DOMContentLoaded', function () {
                 }
                 
                 // تحديث الإجماليات
-                updateTotalsImmediately();
+                calculateTotals();
             });
             
         });
