@@ -1149,13 +1149,13 @@ $collectionsLabel = $isSalesUser ? 'تحصيلاتي' : 'إجمالي التحص
                                 <table class="table table-striped table-hover mb-0 customer-history-table">
                                     <thead class="table-light">
                                         <tr>
-                                            <th>رقم الفاتورة</th>
-                                            <th>المنتج ورقم التشغيلة</th>
-                                            <th>التاريخ</th>
-                                            <th>الإجمالي</th>
-                                            <th>المدفوع</th>
-                                            <th>المرتجعات</th>
-                                            <th>الصافي</th>
+                                            <th style="width: 15%;">رقم الفاتورة</th>
+                                            <th style="width: 40%;">المنتجات</th>
+                                            <th style="width: 10%;">التاريخ</th>
+                                            <th style="width: 10%;">الإجمالي</th>
+                                            <th style="width: 10%;">المدفوع</th>
+                                            <th style="width: 10%;">المرتجعات</th>
+                                            <th style="width: 10%;">الصافي</th>
                                         </tr>
                                     </thead>
                                     <tbody></tbody>
@@ -1317,24 +1317,156 @@ document.addEventListener('DOMContentLoaded', function () {
         }
 
         rows.forEach(function (row) {
-            var tr = document.createElement('tr');
-            tr.innerHTML = `
-                <td>${row.invoice_number || '—'}</td>
-                <td>
-                    <div class="text-wrap" style="max-width: 300px;">
-                        ${row.products_info || '—'}
-                    </div>
-                </td>
-                <td>${row.invoice_date || '—'}</td>
-                <td>${formatCurrency(row.invoice_total || 0)}</td>
-                <td>${formatCurrency(row.paid_amount || 0)}</td>
-                <td>
+            // إذا كانت هناك منتجات منفصلة، اعرضها في جدول منفصل
+            if (row.products && Array.isArray(row.products) && row.products.length > 0) {
+                var rowspan = row.products.length;
+                
+                // إنشاء صف رئيسي للفاتورة
+                var tr = document.createElement('tr');
+                tr.className = 'invoice-header-row';
+                tr.style.backgroundColor = '#f8f9fa';
+                
+                // رقم الفاتورة
+                var invoiceNumberCell = document.createElement('td');
+                invoiceNumberCell.setAttribute('rowspan', rowspan);
+                invoiceNumberCell.className = 'align-middle fw-bold text-primary';
+                invoiceNumberCell.textContent = row.invoice_number || '—';
+                tr.appendChild(invoiceNumberCell);
+                
+                // خلية المنتجات الأولى
+                var firstProductCell = document.createElement('td');
+                firstProductCell.className = 'products-cell';
+                
+                var productsTable = document.createElement('table');
+                productsTable.className = 'table table-sm table-bordered mb-0';
+                productsTable.style.marginBottom = '0';
+                productsTable.style.fontSize = '0.875rem';
+                
+                var thead = document.createElement('thead');
+                thead.className = 'table-light';
+                thead.innerHTML = `
+                    <tr>
+                        <th style="width: 50%;">اسم المنتج</th>
+                        <th style="width: 30%;">رقم التشغيلة</th>
+                        <th style="width: 10%;">الكمية</th>
+                        <th style="width: 10%;">السعر</th>
+                    </tr>
+                `;
+                productsTable.appendChild(thead);
+                
+                var tbody = document.createElement('tbody');
+                var firstProductRow = document.createElement('tr');
+                firstProductRow.innerHTML = `
+                    <td class="fw-semibold">${row.products[0].product_name || '—'}</td>
+                    <td>
+                        ${row.products[0].batch_numbers ? 
+                            '<span class="badge bg-info text-dark">' + row.products[0].batch_numbers + '</span>' : 
+                            '<span class="text-muted">—</span>'
+                        }
+                    </td>
+                    <td>${parseFloat(row.products[0].quantity || 0).toFixed(2)}</td>
+                    <td>${formatCurrency(row.products[0].unit_price || 0)}</td>
+                `;
+                tbody.appendChild(firstProductRow);
+                productsTable.appendChild(tbody);
+                firstProductCell.appendChild(productsTable);
+                tr.appendChild(firstProductCell);
+                
+                // التاريخ
+                var dateCell = document.createElement('td');
+                dateCell.setAttribute('rowspan', rowspan);
+                dateCell.className = 'align-middle';
+                dateCell.textContent = row.invoice_date || '—';
+                tr.appendChild(dateCell);
+                
+                // الإجمالي
+                var totalCell = document.createElement('td');
+                totalCell.setAttribute('rowspan', rowspan);
+                totalCell.className = 'align-middle fw-semibold';
+                totalCell.textContent = formatCurrency(row.invoice_total || 0);
+                tr.appendChild(totalCell);
+                
+                // المدفوع
+                var paidCell = document.createElement('td');
+                paidCell.setAttribute('rowspan', rowspan);
+                paidCell.className = 'align-middle';
+                paidCell.textContent = formatCurrency(row.paid_amount || 0);
+                tr.appendChild(paidCell);
+                
+                // المرتجعات
+                var returnsCell = document.createElement('td');
+                returnsCell.setAttribute('rowspan', rowspan);
+                returnsCell.className = 'align-middle';
+                returnsCell.innerHTML = `
                     <span class="text-danger fw-semibold">${formatCurrency(row.return_total || 0)}</span>
                     <div class="text-muted small">${row.return_count || 0} مرتجع</div>
-                </td>
-                <td>${formatCurrency(row.net_total || 0)}</td>
-            `;
-            invoicesTableBody.appendChild(tr);
+                `;
+                tr.appendChild(returnsCell);
+                
+                // الصافي
+                var netCell = document.createElement('td');
+                netCell.setAttribute('rowspan', rowspan);
+                netCell.className = 'align-middle fw-bold';
+                netCell.textContent = formatCurrency(row.net_total || 0);
+                tr.appendChild(netCell);
+                
+                invoicesTableBody.appendChild(tr);
+                
+                // إضافة صفوف إضافية للمنتجات المتبقية
+                for (var i = 1; i < row.products.length; i++) {
+                    var productRow = document.createElement('tr');
+                    productRow.className = 'invoice-product-row';
+                    
+                    var productCell = document.createElement('td');
+                    productCell.className = 'products-cell';
+                    
+                    var productTable = document.createElement('table');
+                    productTable.className = 'table table-sm table-bordered mb-0';
+                    productTable.style.marginBottom = '0';
+                    productTable.style.fontSize = '0.875rem';
+                    
+                    var productTbody = document.createElement('tbody');
+                    var productTr = document.createElement('tr');
+                    productTr.innerHTML = `
+                        <td class="fw-semibold" style="width: 50%;">${row.products[i].product_name || '—'}</td>
+                        <td style="width: 30%;">
+                            ${row.products[i].batch_numbers ? 
+                                '<span class="badge bg-info text-dark">' + row.products[i].batch_numbers + '</span>' : 
+                                '<span class="text-muted">—</span>'
+                            }
+                        </td>
+                        <td style="width: 10%;">${parseFloat(row.products[i].quantity || 0).toFixed(2)}</td>
+                        <td style="width: 10%;">${formatCurrency(row.products[i].unit_price || 0)}</td>
+                    `;
+                    productTbody.appendChild(productTr);
+                    productTable.appendChild(productTbody);
+                    productCell.appendChild(productTable);
+                    productRow.appendChild(productCell);
+                    
+                    invoicesTableBody.appendChild(productRow);
+                }
+                
+            } else {
+                // إذا لم تكن هناك منتجات منفصلة، استخدم products_info القديم
+                var tr = document.createElement('tr');
+                tr.innerHTML = `
+                    <td>${row.invoice_number || '—'}</td>
+                    <td>
+                        <div class="text-wrap" style="max-width: 300px;">
+                            ${row.products_info || '—'}
+                        </div>
+                    </td>
+                    <td>${row.invoice_date || '—'}</td>
+                    <td>${formatCurrency(row.invoice_total || 0)}</td>
+                    <td>${formatCurrency(row.paid_amount || 0)}</td>
+                    <td>
+                        <span class="text-danger fw-semibold">${formatCurrency(row.return_total || 0)}</span>
+                        <div class="text-muted small">${row.return_count || 0} مرتجع</div>
+                    </td>
+                    <td>${formatCurrency(row.net_total || 0)}</td>
+                `;
+                invoicesTableBody.appendChild(tr);
+            }
         });
     }
 
@@ -1492,6 +1624,75 @@ document.addEventListener('DOMContentLoaded', function () {
     historyModal.addEventListener('hidden.bs.modal', resetModalState);
 });
 </script>
+<style>
+/* تحسينات على جدول سجل مشتريات العميل */
+.customer-history-table {
+    font-size: 0.9rem;
+}
+
+.customer-history-table .invoice-header-row {
+    background-color: #f8f9fa !important;
+    border-top: 2px solid #dee2e6;
+}
+
+.customer-history-table .invoice-product-row {
+    background-color: #ffffff;
+}
+
+.customer-history-table .invoice-product-row:hover {
+    background-color: #f8f9fa;
+}
+
+.customer-history-table .products-cell {
+    padding: 0.5rem !important;
+    vertical-align: middle;
+}
+
+.customer-history-table .products-cell table {
+    margin-bottom: 0;
+    background-color: transparent;
+}
+
+.customer-history-table .products-cell table thead th {
+    font-size: 0.8rem;
+    padding: 0.4rem;
+    font-weight: 600;
+    background-color: #e9ecef;
+    border: 1px solid #dee2e6;
+}
+
+.customer-history-table .products-cell table tbody td {
+    padding: 0.5rem;
+    border: 1px solid #dee2e6;
+    vertical-align: middle;
+}
+
+.customer-history-table .products-cell table tbody tr:hover {
+    background-color: #f8f9fa;
+}
+
+.customer-history-table .badge {
+    font-size: 0.75rem;
+    padding: 0.25rem 0.5rem;
+    font-weight: 500;
+}
+
+.customer-history-table td.align-middle {
+    vertical-align: middle !important;
+}
+
+/* تحسين مظهر الجدول على الشاشات الصغيرة */
+@media (max-width: 768px) {
+    .customer-history-table .products-cell table {
+        font-size: 0.75rem;
+    }
+    
+    .customer-history-table .products-cell table thead th,
+    .customer-history-table .products-cell table tbody td {
+        padding: 0.3rem;
+    }
+}
+</style>
 <?php endif; ?>
 
 <!-- Modal سجل مشتريات العميل - إنشاء مرتجع -->

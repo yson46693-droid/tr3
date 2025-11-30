@@ -262,12 +262,14 @@ function customerHistorySyncForCustomer(int $customerId): array
         $summaryTotals['net_total'] += $net;
 
         // جلب معلومات المنتجات وأرقام التشغيلات للفاتورة
-        $productsInfo = [];
+        $productsList = [];
         try {
             $invoiceItems = $db->query(
                 "SELECT 
                     ii.id as invoice_item_id,
                     ii.product_id,
+                    ii.quantity,
+                    ii.unit_price,
                     COALESCE(
                         (SELECT fp2.product_name 
                          FROM finished_products fp2 
@@ -298,16 +300,26 @@ function customerHistorySyncForCustomer(int $customerId): array
                 $productName = $item['product_name'] ?? 'غير معروف';
                 $batchNumbers = !empty($item['batch_numbers']) ? $item['batch_numbers'] : '';
                 
-                if ($batchNumbers) {
-                    $productsInfo[] = $productName . ' (تشغيلة: ' . $batchNumbers . ')';
-                } else {
-                    $productsInfo[] = $productName;
-                }
+                $productsList[] = [
+                    'product_name' => $productName,
+                    'batch_numbers' => $batchNumbers,
+                    'quantity' => (float)($item['quantity'] ?? 0),
+                    'unit_price' => (float)($item['unit_price'] ?? 0),
+                ];
             }
         } catch (Throwable $e) {
             error_log('Error fetching products for invoice ' . $invoiceId . ': ' . $e->getMessage());
         }
         
+        // الاحتفاظ بـ products_info للنماذج القديمة (للتوافق مع الكود القديم)
+        $productsInfo = [];
+        foreach ($productsList as $product) {
+            if ($product['batch_numbers']) {
+                $productsInfo[] = $product['product_name'] . ' (تشغيلة: ' . $product['batch_numbers'] . ')';
+            } else {
+                $productsInfo[] = $product['product_name'];
+            }
+        }
         $productsDisplay = !empty($productsInfo) ? implode(' | ', $productsInfo) : '—';
 
         $invoicesPayload[] = [
@@ -320,7 +332,8 @@ function customerHistorySyncForCustomer(int $customerId): array
             'return_total'    => $returnTotal,
             'return_count'    => (int)($row['return_count'] ?? 0),
             'net_total'       => $net,
-            'products_info'   => $productsDisplay, // اسم المنتج ورقم التشغيلة
+            'products_info'   => $productsDisplay, // اسم المنتج ورقم التشغيلة (للتوافق مع الكود القديم)
+            'products'        => $productsList, // قائمة منفصلة من المنتجات مع بياناتها
         ];
     }
 
