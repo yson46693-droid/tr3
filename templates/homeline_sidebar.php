@@ -402,6 +402,13 @@ switch ($role) {
                 'active' => ($currentPage === 'sales.php' && $currentPageParam === 'my_salary'),
                 'badge' => null
             ],
+            [
+                'title' => isset($lang['menu_attendance']) ? $lang['menu_attendance'] : 'الحضور',
+                'icon' => 'bi-calendar-check',
+                'url' => getRelativeUrl('attendance.php'),
+                'active' => ($currentPage === 'attendance.php'),
+                'badge' => null
+            ],
             ['divider' => true, 'title' => 'أدوات'],
             [
                 'title' => 'قارئ أرقام التشغيلات',
