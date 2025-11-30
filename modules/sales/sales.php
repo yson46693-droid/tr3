@@ -374,7 +374,7 @@ $tableHeaderStyle = $isSalesRecords ? 'background: linear-gradient(135deg,rgb(37
         <div class="table-responsive dashboard-table-wrapper">
             <table class="table dashboard-table align-middle <?php echo $isSalesRecords ? 'table-hover' : ''; ?>" style="<?php echo $isSalesRecords ? 'margin-bottom: 0;' : ''; ?>">
                 <thead>
-                    <tr style="<?php echo $isSalesRecords ? 'background: linear-gradient(135deg,rgb(40, 74, 225) 0%, #764ba2 100%);' : ''; ?>">
+                    <tr style="<?php echo $isSalesRecords ? 'background: linear-gradient(135deg,rgb(40, 74, 225) 0%,rgb(28, 49, 186) 100%);' : ''; ?>">
                         <th class="<?php echo $isSalesRecords ? 'text-white fw-bold' : ''; ?>" style="<?php echo $isSalesRecords ? 'border: none; padding: 1rem;' : ''; ?>">التاريخ</th>
                         <th class="<?php echo $isSalesRecords ? 'text-white fw-bold' : ''; ?>" style="<?php echo $isSalesRecords ? 'border: none; padding: 1rem;' : ''; ?>">رقم الاستبدال</th>
                         <th class="<?php echo $isSalesRecords ? 'text-white fw-bold' : ''; ?>" style="<?php echo $isSalesRecords ? 'border: none; padding: 1rem;' : ''; ?>">العميل</th>
@@ -533,8 +533,8 @@ $tableHeaderStyle = $isSalesRecords ? 'background: linear-gradient(135deg,rgb(37
                 <thead>
                     <tr style="<?php echo $isSalesRecords ? 'background: linear-gradient(135deg,rgb(40, 74, 225) 0%,rgb(2, 71, 220) 100%);' : ''; ?>">
                         <th class="<?php echo $isSalesRecords ? 'text-white fw-bold' : ''; ?>" style="<?php echo $isSalesRecords ? 'border: none; padding: 1rem;' : ''; ?>">التاريخ</th>
-                        <th class="<?php echo $isSalesRecords ? 'text-white fw-bold' : ''; ?>" style="<?php echo $isSalesRecords ? 'border: none; padding: 1rem;' : ''; ?>">رقم الفاتورة</th>
-                        <th class="<?php echo $isSalesRecords ? 'text-white fw-bold' : ''; ?>" style="<?php echo $isSalesRecords ? 'border: none; padding: 1rem;' : ''; ?>">العميل</th>
+                        <th class="<?php echo $isSalesRecords ? 'fw-bold' : ''; ?>" style="<?php echo $isSalesRecords ? 'border: none; padding: 1rem; color: #000;' : ''; ?>">رقم الفاتورة</th>
+                        <th class="<?php echo $isSalesRecords ? 'fw-bold' : ''; ?>" style="<?php echo $isSalesRecords ? 'border: none; padding: 1rem; color: #000;' : ''; ?>">العميل</th>
                         <th class="<?php echo $isSalesRecords ? 'text-white fw-bold' : ''; ?>" style="<?php echo $isSalesRecords ? 'border: none; padding: 1rem;' : ''; ?>">المنتج</th>
                         <th class="<?php echo $isSalesRecords ? 'text-white fw-bold' : ''; ?>" style="<?php echo $isSalesRecords ? 'border: none; padding: 1rem;' : ''; ?>">الكمية</th>
                         <th class="<?php echo $isSalesRecords ? 'text-white fw-bold' : ''; ?>" style="<?php echo $isSalesRecords ? 'border: none; padding: 1rem;' : ''; ?>">السعر</th>
