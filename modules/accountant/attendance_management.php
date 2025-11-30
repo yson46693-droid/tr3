@@ -19,6 +19,106 @@ requireRole(['accountant', 'manager']);
 $currentUser = getCurrentUser();
 $db = db();
 
+$error = '';
+$success = '';
+
+// معالجة POST لتحديث العدادات والصلاحيات
+if ($_SERVER['REQUEST_METHOD'] === 'POST') {
+    requireRole(['accountant', 'manager']);
+    
+    $action = $_POST['action'] ?? '';
+    $targetUserId = intval($_POST['user_id'] ?? 0);
+    
+    if ($targetUserId <= 0) {
+        $error = 'معرف مستخدم غير صحيح';
+    } else {
+        // التحقق من أن المستخدم المستهدف ليس مديراً
+        $targetUser = $db->queryOne("SELECT id, role FROM users WHERE id = ? AND role != 'manager'", [$targetUserId]);
+        if (!$targetUser) {
+            $error = 'المستخدم غير موجود أو لا يمكن تعديل بياناته';
+        } else {
+            if ($action === 'update_counts') {
+                // تحديث عداد التأخيرات وعداد الإنذارات
+                $delayCount = max(0, intval($_POST['delay_count'] ?? 0));
+                $warningCount = max(0, intval($_POST['warning_count'] ?? 0));
+                
+                try {
+                    $db->execute(
+                        "UPDATE users SET delay_count = ?, warning_count = ? WHERE id = ?",
+                        [$delayCount, $warningCount, $targetUserId]
+                    );
+                    $success = 'تم تحديث العدادات بنجاح';
+                } catch (Exception $e) {
+                    $error = 'حدث خطأ أثناء تحديث العدادات: ' . $e->getMessage();
+                }
+            } elseif ($action === 'update_permissions') {
+                // تحديث صلاحيات الحضور والانصراف
+                require_once __DIR__ . '/../../includes/audit_log.php';
+                
+                // التأكد من وجود الحقول
+                $canCheckInColumn = $db->queryOne("SHOW COLUMNS FROM users LIKE 'can_check_in'");
+                if (empty($canCheckInColumn)) {
+                    try {
+                        $db->execute("ALTER TABLE users ADD COLUMN `can_check_in` tinyint(1) DEFAULT 1 AFTER `warning_count`");
+                    } catch (Exception $e) {
+                        error_log("Error adding can_check_in column: " . $e->getMessage());
+                    }
+                }
+                
+                $canCheckOutColumn = $db->queryOne("SHOW COLUMNS FROM users LIKE 'can_check_out'");
+                if (empty($canCheckOutColumn)) {
+                    try {
+                        $db->execute("ALTER TABLE users ADD COLUMN `can_check_out` tinyint(1) DEFAULT 1 AFTER `can_check_in`");
+                    } catch (Exception $e) {
+                        error_log("Error adding can_check_out column: " . $e->getMessage());
+                    }
+                }
+                
+                $canCheckIn = isset($_POST['can_check_in']) ? 1 : 0;
+                $canCheckOut = isset($_POST['can_check_out']) ? 1 : 0;
+                
+                try {
+                    $db->execute(
+                        "UPDATE users SET can_check_in = ?, can_check_out = ? WHERE id = ?",
+                        [$canCheckIn, $canCheckOut, $targetUserId]
+                    );
+                    
+                    logAudit($currentUser['id'], 'update_user_attendance_permissions', 'users', $targetUserId, null, [
+                        'can_check_in' => $canCheckIn,
+                        'can_check_out' => $canCheckOut
+                    ]);
+                    
+                    $success = 'تم تحديث الصلاحيات بنجاح';
+                } catch (Exception $e) {
+                    $error = 'حدث خطأ أثناء تحديث الصلاحيات: ' . $e->getMessage();
+                }
+            }
+        }
+    }
+    
+    // إعادة توجيه مع الرسائل
+    $redirectUrl = '?page=attendance_management&month=' . urlencode($_GET['month'] ?? date('Y-m'));
+    if ($targetUserId > 0) {
+        $redirectUrl .= '&user_id=' . $targetUserId;
+    }
+    if ($success) {
+        $redirectUrl .= '&success=' . urlencode($success);
+    }
+    if ($error) {
+        $redirectUrl .= '&error=' . urlencode($error);
+    }
+    header('Location: ' . $redirectUrl);
+    exit;
+}
+
+// عرض رسائل النجاح والخطأ من GET
+if (isset($_GET['success'])) {
+    $success = urldecode($_GET['success']);
+}
+if (isset($_GET['error'])) {
+    $error = urldecode($_GET['error']);
+}
+
 // الفلترة
 $selectedMonth = $_GET['month'] ?? date('Y-m');
 $selectedUserId = $_GET['user_id'] ?? 0;
@@ -93,6 +193,18 @@ if ($selectedUserId > 0) {
 // الحصول على رابط الصفحة الحالية للرجوع (بدون user_id للعودة للقائمة العامة)
 $backUrl = '?page=attendance_management&month=' . urlencode($selectedMonth);
 ?>
+<?php if ($success): ?>
+    <div class="alert alert-success alert-dismissible fade show" role="alert">
+        <i class="bi bi-check-circle-fill me-2"></i><?php echo htmlspecialchars($success); ?>
+        <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
+    </div>
+<?php endif; ?>
+<?php if ($error): ?>
+    <div class="alert alert-danger alert-dismissible fade show" role="alert">
+        <i class="bi bi-exclamation-triangle-fill me-2"></i><?php echo htmlspecialchars($error); ?>
+        <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
+    </div>
+<?php endif; ?>
 <div class="d-flex justify-content-between align-items-center mb-4">
     <h2><i class="bi bi-calendar-check me-2"></i>متابعة الحضور والانصراف</h2>
     <?php if ($selectedUserId > 0 && $selectedUserStats): ?>
@@ -222,23 +334,30 @@ $backUrl = '?page=attendance_management&month=' . urlencode($selectedMonth);
         <div class="col-md-6 col-sm-6 mb-3">
             <div class="card shadow-sm border-warning">
                 <div class="card-body">
-                    <div class="d-flex align-items-center">
-                        <div class="flex-shrink-0">
-                            <div class="stat-card-icon orange">
-                                <i class="bi bi-exclamation-triangle-fill"></i>
-                            </div>
-                        </div>
-                        <div class="flex-grow-1 ms-3">
-                            <div class="text-muted small">عداد تأخيرات الحضور الشهري</div>
-                            <div class="h4 mb-0 <?php echo $selectedDelayCount >= 3 ? 'text-danger' : ''; ?>">
-                                <?php echo $selectedDelayCount; ?>
-                            </div>
-                            <?php if ($selectedDelayCount >= 3): ?>
-                                <div class="text-danger small mt-1">
-                                    <i class="bi bi-exclamation-circle"></i> تم إبلاغ المدير
+                    <div class="d-flex align-items-center justify-content-between">
+                        <div class="d-flex align-items-center flex-grow-1">
+                            <div class="flex-shrink-0">
+                                <div class="stat-card-icon orange">
+                                    <i class="bi bi-exclamation-triangle-fill"></i>
                                 </div>
-                            <?php endif; ?>
+                            </div>
+                            <div class="flex-grow-1 ms-3">
+                                <div class="text-muted small">عداد تأخيرات الحضور الشهري</div>
+                                <div class="h4 mb-0 <?php echo $selectedDelayCount >= 3 ? 'text-danger' : ''; ?>">
+                                    <?php echo $selectedDelayCount; ?>
+                                </div>
+                                <?php if ($selectedDelayCount >= 3): ?>
+                                    <div class="text-danger small mt-1">
+                                        <i class="bi bi-exclamation-circle"></i> تم إبلاغ المدير
+                                    </div>
+                                <?php endif; ?>
+                            </div>
                         </div>
+                        <?php if (in_array($currentUser['role'], ['manager', 'accountant'])): ?>
+                            <button class="btn btn-sm btn-outline-warning" onclick="editCounts(<?php echo $selectedUserId; ?>, <?php echo $selectedDelayCount; ?>, <?php echo $selectedWarningCount; ?>)" title="تعديل العدادات">
+                                <i class="bi bi-pencil"></i>
+                            </button>
+                        <?php endif; ?>
                     </div>
                 </div>
             </div>
@@ -263,6 +382,80 @@ $backUrl = '?page=attendance_management&month=' . urlencode($selectedMonth);
                                     <i class="bi bi-exclamation-circle"></i> تم خصم ساعتين إضافيتين
                                 </div>
                             <?php endif; ?>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+    
+    <!-- قسم الصلاحيات -->
+    <?php
+    // الحصول على صلاحيات المستخدم
+    $userPermissions = $db->queryOne(
+        "SELECT can_check_in, can_check_out FROM users WHERE id = ?",
+        [$selectedUserId]
+    );
+    
+    // التأكد من وجود الحقول
+    $canCheckInColumn = $db->queryOne("SHOW COLUMNS FROM users LIKE 'can_check_in'");
+    $canCheckOutColumn = $db->queryOne("SHOW COLUMNS FROM users LIKE 'can_check_out'");
+    
+    if (empty($canCheckInColumn) || empty($canCheckOutColumn)) {
+        // الحقول غير موجودة، القيم الافتراضية
+        $canCheckIn = 1;
+        $canCheckOut = 1;
+    } else {
+        $canCheckIn = (int)($userPermissions['can_check_in'] ?? 1);
+        $canCheckOut = (int)($userPermissions['can_check_out'] ?? 1);
+    }
+    ?>
+    <div class="row mb-4">
+        <div class="col-12">
+            <div class="card shadow-sm border-info">
+                <div class="card-header bg-info text-white d-flex justify-content-between align-items-center">
+                    <h6 class="mb-0"><i class="bi bi-shield-check me-2"></i>صلاحيات الحضور والانصراف</h6>
+                    <?php if (in_array($currentUser['role'], ['manager', 'accountant'])): ?>
+                        <button class="btn btn-sm btn-light" onclick="editPermissions(<?php echo $selectedUserId; ?>, <?php echo $canCheckIn; ?>, <?php echo $canCheckOut; ?>)" title="تعديل الصلاحيات">
+                            <i class="bi bi-pencil"></i> تعديل
+                        </button>
+                    <?php endif; ?>
+                </div>
+                <div class="card-body">
+                    <div class="row">
+                        <div class="col-md-6">
+                            <div class="d-flex align-items-center">
+                                <div class="flex-shrink-0">
+                                    <?php if ($canCheckIn): ?>
+                                        <i class="bi bi-check-circle-fill text-success" style="font-size: 1.5rem;"></i>
+                                    <?php else: ?>
+                                        <i class="bi bi-x-circle-fill text-danger" style="font-size: 1.5rem;"></i>
+                                    <?php endif; ?>
+                                </div>
+                                <div class="flex-grow-1 ms-3">
+                                    <strong>تسجيل الحضور:</strong>
+                                    <span class="badge <?php echo $canCheckIn ? 'bg-success' : 'bg-danger'; ?>">
+                                        <?php echo $canCheckIn ? 'مسموح' : 'محظور'; ?>
+                                    </span>
+                                </div>
+                            </div>
+                        </div>
+                        <div class="col-md-6">
+                            <div class="d-flex align-items-center">
+                                <div class="flex-shrink-0">
+                                    <?php if ($canCheckOut): ?>
+                                        <i class="bi bi-check-circle-fill text-success" style="font-size: 1.5rem;"></i>
+                                    <?php else: ?>
+                                        <i class="bi bi-x-circle-fill text-danger" style="font-size: 1.5rem;"></i>
+                                    <?php endif; ?>
+                                </div>
+                                <div class="flex-grow-1 ms-3">
+                                    <strong>تسجيل الانصراف:</strong>
+                                    <span class="badge <?php echo $canCheckOut ? 'bg-success' : 'bg-danger'; ?>">
+                                        <?php echo $canCheckOut ? 'مسموح' : 'محظور'; ?>
+                                    </span>
+                                </div>
+                            </div>
                         </div>
                     </div>
                 </div>
@@ -418,5 +611,152 @@ $backUrl = '?page=attendance_management&month=' . urlencode($selectedMonth);
             </div>
         </div>
     </div>
+<?php endif; ?>
+
+<?php if ($selectedUserId > 0 && in_array($currentUser['role'], ['manager', 'accountant'])): ?>
+<!-- Modal تعديل العدادات -->
+<div class="modal fade" id="editCountsModal" tabindex="-1" aria-labelledby="editCountsModalLabel" aria-hidden="true">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title" id="editCountsModalLabel">
+                    <i class="bi bi-pencil me-2"></i>تعديل العدادات
+                </h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+            </div>
+            <form method="POST" id="editCountsForm">
+                <div class="modal-body">
+                    <input type="hidden" name="action" value="update_counts">
+                    <input type="hidden" name="user_id" id="countsUserId">
+                    
+                    <div class="mb-3">
+                        <label for="delay_count" class="form-label">عداد تأخيرات الحضور الشهري</label>
+                        <input type="number" class="form-control" id="delay_count" name="delay_count" min="0" required>
+                        <small class="text-muted">عدد حالات التأخير في الحضور لهذا الشهر</small>
+                    </div>
+                    
+                    <div class="mb-3">
+                        <label for="warning_count" class="form-label">عداد إنذارات نسيان الانصراف</label>
+                        <input type="number" class="form-control" id="warning_count" name="warning_count" min="0" required>
+                        <small class="text-muted">عدد إنذارات نسيان تسجيل الانصراف لهذا الشهر</small>
+                    </div>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">إلغاء</button>
+                    <button type="submit" class="btn btn-primary">
+                        <i class="bi bi-check-lg me-2"></i>حفظ التغييرات
+                    </button>
+                </div>
+            </form>
+        </div>
+    </div>
+</div>
+
+<!-- Modal تعديل الصلاحيات -->
+<div class="modal fade" id="editPermissionsModal" tabindex="-1" aria-labelledby="editPermissionsModalLabel" aria-hidden="true">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title" id="editPermissionsModalLabel">
+                    <i class="bi bi-shield-check me-2"></i>تعديل الصلاحيات
+                </h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+            </div>
+            <form method="POST" id="editPermissionsForm">
+                <div class="modal-body">
+                    <input type="hidden" name="action" value="update_permissions">
+                    <input type="hidden" name="user_id" id="permissionsUserId">
+                    
+                    <div class="mb-3">
+                        <div class="form-check form-switch">
+                            <input class="form-check-input" type="checkbox" id="can_check_in" name="can_check_in" value="1" checked>
+                            <label class="form-check-label" for="can_check_in">
+                                <strong>تسجيل الحضور</strong>
+                            </label>
+                        </div>
+                        <small class="text-muted d-block ms-4">السماح للمستخدم بتسجيل الحضور</small>
+                    </div>
+                    
+                    <div class="mb-3">
+                        <div class="form-check form-switch">
+                            <input class="form-check-input" type="checkbox" id="can_check_out" name="can_check_out" value="1" checked>
+                            <label class="form-check-label" for="can_check_out">
+                                <strong>تسجيل الانصراف</strong>
+                            </label>
+                        </div>
+                        <small class="text-muted d-block ms-4">السماح للمستخدم بتسجيل الانصراف</small>
+                    </div>
+                    
+                    <div class="alert alert-info">
+                        <i class="bi bi-info-circle me-2"></i>
+                        عند إلغاء تفعيل أي صلاحية، لن يتمكن المستخدم من استخدامها حتى يتم إعادة تفعيلها.
+                    </div>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">إلغاء</button>
+                    <button type="submit" class="btn btn-primary">
+                        <i class="bi bi-check-lg me-2"></i>حفظ التغييرات
+                    </button>
+                </div>
+            </form>
+        </div>
+    </div>
+</div>
+
+<script>
+function editCounts(userId, delayCount, warningCount) {
+    document.getElementById('countsUserId').value = userId;
+    document.getElementById('delay_count').value = delayCount;
+    document.getElementById('warning_count').value = warningCount;
+    
+    // إضافة معاملات GET للنموذج
+    const form = document.getElementById('editCountsForm');
+    const month = new URLSearchParams(window.location.search).get('month') || '<?php echo date('Y-m'); ?>';
+    const actionInput = form.querySelector('input[name="action"]');
+    const userIdInput = form.querySelector('input[name="user_id"]');
+    
+    // إضافة hidden inputs للاحتفاظ بالمعاملات عند الإرسال
+    let monthInput = form.querySelector('input[name="month"]');
+    if (!monthInput) {
+        monthInput = document.createElement('input');
+        monthInput.type = 'hidden';
+        monthInput.name = 'month';
+        form.appendChild(monthInput);
+    }
+    monthInput.value = month;
+    
+    // إضافة user_id للـ GET parameters عند الإعادة التوجيه
+    form.action = window.location.pathname + '?page=attendance_management&month=' + encodeURIComponent(month) + '&user_id=' + userId;
+    
+    const modal = new bootstrap.Modal(document.getElementById('editCountsModal'));
+    modal.show();
+}
+
+function editPermissions(userId, canCheckIn, canCheckOut) {
+    document.getElementById('permissionsUserId').value = userId;
+    document.getElementById('can_check_in').checked = canCheckIn == 1;
+    document.getElementById('can_check_out').checked = canCheckOut == 1;
+    
+    // إضافة معاملات GET للنموذج
+    const form = document.getElementById('editPermissionsForm');
+    const month = new URLSearchParams(window.location.search).get('month') || '<?php echo date('Y-m'); ?>';
+    
+    // إضافة hidden inputs للاحتفاظ بالمعاملات عند الإرسال
+    let monthInput = form.querySelector('input[name="month"]');
+    if (!monthInput) {
+        monthInput = document.createElement('input');
+        monthInput.type = 'hidden';
+        monthInput.name = 'month';
+        form.appendChild(monthInput);
+    }
+    monthInput.value = month;
+    
+    // إضافة user_id للـ GET parameters عند الإعادة التوجيه
+    form.action = window.location.pathname + '?page=attendance_management&month=' + encodeURIComponent(month) + '&user_id=' + userId;
+    
+    const modal = new bootstrap.Modal(document.getElementById('editPermissionsModal'));
+    modal.show();
+}
+</script>
 <?php endif; ?>
 

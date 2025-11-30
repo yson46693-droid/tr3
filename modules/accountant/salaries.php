@@ -1322,6 +1322,118 @@ if ($view === 'advances' || $currentUser['role'] === 'accountant' || $currentUse
     $advanceStats['pending_amount'] = $db->queryOne("SELECT COALESCE(SUM(amount), 0) as total FROM salary_advances WHERE status IN ('pending','accountant_approved')")['total'] ?? 0;
 }
 
+// معالجة طباعة كشف حساب المرتب
+if (isset($_GET['action']) && $_GET['action'] === 'print_statement') {
+    $statementSalaryId = intval($_GET['salary_id'] ?? 0);
+    $statementUserId = intval($_GET['user_id'] ?? 0);
+    $periodType = $_GET['period_type'] ?? 'current_month';
+    
+    if ($statementUserId <= 0) {
+        die('معرف الموظف غير صحيح');
+    }
+    
+    // الحصول على بيانات الموظف
+    $employee = $db->queryOne(
+        "SELECT id, full_name, username, role, hourly_rate FROM users WHERE id = ?",
+        [$statementUserId]
+    );
+    
+    if (!$employee) {
+        die('الموظف غير موجود');
+    }
+    
+    // تحديد الفترة الزمنية
+    $fromDate = null;
+    $toDate = null;
+    $periodLabel = '';
+    
+    if ($periodType === 'current_month') {
+        $month = intval($_GET['month'] ?? date('n'));
+        $year = intval($_GET['year'] ?? date('Y'));
+        $fromDate = date('Y-m-01', mktime(0, 0, 0, $month, 1, $year));
+        $toDate = date('Y-m-d');
+        $periodLabel = 'الشهر الحالي حتى اليوم (' . date('F', mktime(0, 0, 0, $month, 1)) . ' ' . $year . ')';
+    } elseif ($periodType === 'specific_month') {
+        $month = intval($_GET['month'] ?? date('n'));
+        $year = intval($_GET['year'] ?? date('Y'));
+        $fromDate = date('Y-m-01', mktime(0, 0, 0, $month, 1, $year));
+        $daysInMonth = date('t', mktime(0, 0, 0, $month, 1, $year));
+        $toDate = date('Y-m-' . $daysInMonth, mktime(0, 0, 0, $month, 1, $year));
+        $periodLabel = date('F', mktime(0, 0, 0, $month, 1)) . ' ' . $year;
+    } elseif ($periodType === 'date_range') {
+        $fromDate = $_GET['from_date'] ?? date('Y-m-01');
+        $toDate = $_GET['to_date'] ?? date('Y-m-d');
+        $periodLabel = 'من ' . date('d/m/Y', strtotime($fromDate)) . ' إلى ' . date('d/m/Y', strtotime($toDate));
+    }
+    
+    // جلب الرواتب خلال الفترة
+    $yearColumnCheck = $db->queryOne("SHOW COLUMNS FROM salaries LIKE 'year'");
+    $hasYearColumn = !empty($yearColumnCheck);
+    
+    $fromYear = intval(date('Y', strtotime($fromDate)));
+    $fromMonth = intval(date('n', strtotime($fromDate)));
+    $toYear = intval(date('Y', strtotime($toDate)));
+    $toMonth = intval(date('n', strtotime($toDate)));
+    
+    if ($hasYearColumn) {
+        // استخدام year و month للفلترة
+        $statementSalaries = $db->query(
+            "SELECT s.* FROM salaries s 
+             WHERE s.user_id = ? 
+             AND ((s.year > ? OR (s.year = ? AND s.month >= ?)) AND (s.year < ? OR (s.year = ? AND s.month <= ?)))
+             ORDER BY s.year ASC, s.month ASC",
+            [$statementUserId, $fromYear, $fromYear, $fromMonth, $toYear, $toYear, $toMonth]
+        );
+    } else {
+        // استخدام month فقط (افتراض أنه تاريخ)
+        $statementSalaries = $db->query(
+            "SELECT s.* FROM salaries s 
+             WHERE s.user_id = ? 
+             AND DATE(s.month) BETWEEN ? AND ?
+             ORDER BY s.month ASC",
+            [$statementUserId, $fromDate, $toDate]
+        );
+    }
+    
+    // جلب السلف خلال الفترة
+    $advancesQuery = "SELECT sa.* FROM salary_advances sa 
+                      WHERE sa.user_id = ? 
+                      AND DATE(sa.request_date) BETWEEN ? AND ?
+                      AND sa.status = 'manager_approved'
+                      ORDER BY sa.request_date ASC";
+    $statementAdvances = $db->query($advancesQuery, [$statementUserId, $fromDate, $toDate]);
+    
+    // جلب التسويات خلال الفترة
+    $settlementsQuery = "SELECT ss.* FROM salary_settlements ss 
+                        WHERE ss.user_id = ? 
+                        AND DATE(ss.settlement_date) BETWEEN ? AND ?
+                        ORDER BY ss.settlement_date ASC";
+    $statementSettlements = $db->query($settlementsQuery, [$statementUserId, $fromDate, $toDate]);
+    
+    // حساب الإجماليات
+    $totalSalaries = 0;
+    $totalAdvances = 0;
+    $totalSettlements = 0;
+    
+    foreach ($statementSalaries as $sal) {
+        $totalSalaries += cleanFinancialValue($sal['total_amount'] ?? 0);
+    }
+    
+    foreach ($statementAdvances as $adv) {
+        $totalAdvances += cleanFinancialValue($adv['amount'] ?? 0);
+    }
+    
+    foreach ($statementSettlements as $set) {
+        $totalSettlements += cleanFinancialValue($set['settlement_amount'] ?? 0);
+    }
+    
+    $netAmount = $totalSalaries - $totalAdvances - $totalSettlements;
+    
+    // عرض صفحة الطباعة
+    include __DIR__ . '/salary_statement_print.php';
+    exit;
+}
+
 // معالجة AJAX لتفاصيل الراتب
 if (isset($_GET['ajax']) && $_GET['ajax'] == '1' && $salaryId > 0) {
     $salary = $db->queryOne(
@@ -2841,6 +2953,16 @@ $pageTitle = ($view === 'advances') ? 'السلف' : (($view === 'pending') ? '�
                                 <i class="bi bi-cash-coin me-1"></i>تسوية
                             </button>
                             <?php endif; ?>
+                            
+                            <?php if ($hasSalaryId): ?>
+                            <button class="btn btn-primary btn-sm" 
+                                    onclick="openStatementModal(<?php echo $salary['id']; ?>, <?php echo $userId; ?>, '<?php echo htmlspecialchars($employeeName); ?>')" 
+                                    data-bs-toggle="modal" 
+                                    data-bs-target="#salaryStatementModal"
+                                    title="كشف حساب">
+                                <i class="bi bi-file-earmark-text me-1"></i>كشف حساب
+                            </button>
+                            <?php endif; ?>
                         </div>
                     </div>
                 </div>
@@ -3541,6 +3663,63 @@ function updateSettleRemaining() {
         submitBtn.disabled = settleAmount <= 0 || settleAmount > remaining;
     }
 }
+
+function openStatementModal(salaryId, userId, employeeName) {
+    document.getElementById('statementSalaryId').value = salaryId;
+    document.getElementById('statementUserId').value = userId;
+    document.getElementById('statementEmployeeName').textContent = employeeName;
+    
+    // تعيين القيم الافتراضية
+    const today = new Date();
+    const currentMonth = today.getMonth() + 1;
+    const currentYear = today.getFullYear();
+    const currentDay = today.getDate();
+    
+    // الشهر الحالي حتى اليوم
+    document.getElementById('statementPeriodType').value = 'current_month';
+    document.getElementById('statementMonth').value = currentMonth;
+    document.getElementById('statementYear').value = currentYear;
+    
+    // تحديث عرض الحقول حسب نوع الفترة
+    updateStatementPeriodFields();
+}
+
+function updateStatementPeriodFields() {
+    const periodType = document.getElementById('statementPeriodType').value;
+    const monthFields = document.getElementById('statementMonthFields');
+    const dateRangeFields = document.getElementById('statementDateRangeFields');
+    
+    if (periodType === 'current_month') {
+        monthFields.style.display = 'block';
+        dateRangeFields.style.display = 'none';
+    } else if (periodType === 'specific_month') {
+        monthFields.style.display = 'block';
+        dateRangeFields.style.display = 'none';
+    } else if (periodType === 'date_range') {
+        monthFields.style.display = 'none';
+        dateRangeFields.style.display = 'block';
+    }
+}
+
+function printSalaryStatement() {
+    const salaryId = document.getElementById('statementSalaryId').value;
+    const userId = document.getElementById('statementUserId').value;
+    const periodType = document.getElementById('statementPeriodType').value;
+    
+    let url = '<?php echo $currentUrl; ?>?page=salaries&action=print_statement&salary_id=' + salaryId + '&user_id=' + userId + '&period_type=' + periodType;
+    
+    if (periodType === 'current_month' || periodType === 'specific_month') {
+        const month = document.getElementById('statementMonth').value;
+        const year = document.getElementById('statementYear').value;
+        url += '&month=' + month + '&year=' + year;
+    } else if (periodType === 'date_range') {
+        const fromDate = document.getElementById('statementFromDate').value;
+        const toDate = document.getElementById('statementToDate').value;
+        url += '&from_date=' + fromDate + '&to_date=' + toDate;
+    }
+    
+    window.open(url, '_blank');
+}
 </script>
 
 <!-- Modal تسوية مستحقات الموظف -->
@@ -3623,6 +3802,79 @@ document.getElementById('settleSalaryModal')?.addEventListener('shown.bs.modal',
     document.getElementById('settleRemainingAmount2').textContent = formatCurrency(remaining);
 });
 </script>
+
+<!-- Modal كشف حساب المرتب -->
+<div class="modal fade" id="salaryStatementModal" tabindex="-1">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <div class="modal-header bg-primary text-white">
+                <h5 class="modal-title"><i class="bi bi-file-earmark-text me-2"></i>كشف حساب المرتب</h5>
+                <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body">
+                <div class="mb-3">
+                    <label class="form-label">الموظف</label>
+                    <input type="text" class="form-control" id="statementEmployeeName" readonly>
+                    <input type="hidden" id="statementSalaryId">
+                    <input type="hidden" id="statementUserId">
+                </div>
+                
+                <div class="mb-3">
+                    <label class="form-label">نوع الفترة <span class="text-danger">*</span></label>
+                    <select class="form-select" id="statementPeriodType" onchange="updateStatementPeriodFields()">
+                        <option value="current_month">الشهر الحالي حتى اليوم</option>
+                        <option value="specific_month">شهر محدد</option>
+                        <option value="date_range">فترة محددة</option>
+                    </select>
+                </div>
+                
+                <div id="statementMonthFields">
+                    <div class="row">
+                        <div class="col-md-6 mb-3">
+                            <label class="form-label">الشهر</label>
+                            <select class="form-select" id="statementMonth">
+                                <?php for ($m = 1; $m <= 12; $m++): ?>
+                                    <option value="<?php echo $m; ?>" <?php echo $m == date('n') ? 'selected' : ''; ?>>
+                                        <?php echo date('F', mktime(0, 0, 0, $m, 1)); ?>
+                                    </option>
+                                <?php endfor; ?>
+                            </select>
+                        </div>
+                        <div class="col-md-6 mb-3">
+                            <label class="form-label">السنة</label>
+                            <select class="form-select" id="statementYear">
+                                <?php for ($y = date('Y'); $y >= date('Y') - 10; $y--): ?>
+                                    <option value="<?php echo $y; ?>" <?php echo $y == date('Y') ? 'selected' : ''; ?>>
+                                        <?php echo $y; ?>
+                                    </option>
+                                <?php endfor; ?>
+                            </select>
+                        </div>
+                    </div>
+                </div>
+                
+                <div id="statementDateRangeFields" style="display: none;">
+                    <div class="row">
+                        <div class="col-md-6 mb-3">
+                            <label class="form-label">من تاريخ</label>
+                            <input type="date" class="form-control" id="statementFromDate" value="<?php echo date('Y-m-01'); ?>">
+                        </div>
+                        <div class="col-md-6 mb-3">
+                            <label class="form-label">إلى تاريخ</label>
+                            <input type="date" class="form-control" id="statementToDate" value="<?php echo date('Y-m-d'); ?>">
+                        </div>
+                    </div>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">إلغاء</button>
+                <button type="button" class="btn btn-primary" onclick="printSalaryStatement()">
+                    <i class="bi bi-printer me-2"></i>طباعة كشف الحساب
+                </button>
+            </div>
+        </div>
+    </div>
+</div>
 
 <!-- إعادة تحميل الصفحة تلقائياً بعد أي رسالة (نجاح أو خطأ) لمنع تكرار الطلبات -->
 <script>
