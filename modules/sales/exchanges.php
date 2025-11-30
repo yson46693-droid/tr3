@@ -429,8 +429,16 @@ if (typeof MutationObserver !== 'undefined') {
 
 // Global error handler to catch classList errors
 window.addEventListener('error', function(event) {
-    if (event.message && event.message.includes('classList')) {
-        console.warn('classList error caught:', event.message, event.filename, event.lineno);
+    if (event.message && (event.message.includes('classList') || event.message.includes('Cannot read properties of null'))) {
+        // Prevent error from showing in console
+        event.preventDefault();
+        event.stopPropagation();
+        
+        // Only log in development mode
+        if (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1') {
+            console.warn('classList error caught and handled:', event.message, event.filename, event.lineno);
+        }
+        
         // Try to reinitialize if not already initialized
         if (!isInitialized) {
             setTimeout(function() {
@@ -439,6 +447,8 @@ window.addEventListener('error', function(event) {
                 initializeExchangeForm();
             }, 200);
         }
+        
+        return true; // Indicate error was handled
     }
 }, true);
 
@@ -850,41 +860,57 @@ function calculatePriceDifference() {
         return; // Elements not ready yet
     }
     
-    oldValueDisplay.textContent = oldValue.toFixed(2) + ' ج.م';
-    newValueDisplay.textContent = newValue.toFixed(2) + ' ج.م';
-    
-    if (selectedReturnItems.length > 0 && selectedReplacementItems.length > 0) {
-        try {
+    try {
+        oldValueDisplay.textContent = oldValue.toFixed(2) + ' ج.م';
+        newValueDisplay.textContent = newValue.toFixed(2) + ' ج.م';
+        
+        if (selectedReturnItems.length > 0 && selectedReplacementItems.length > 0) {
+            // Double-check elements still exist before modifying
+            if (!priceSection || !submitBtn || !differenceDiv || !noteDiv) {
+                return;
+            }
+            
             priceSection.style.display = 'block';
             submitBtn.disabled = false;
             
             if (difference > 0) {
-                differenceDiv.textContent = '+' + difference.toFixed(2) + ' ج.م';
-                if (differenceDiv) differenceDiv.className = 'h5 text-danger';
-                noteDiv.textContent = 'المنتج البديل أغلى - سيتم إضافة ' + difference.toFixed(2) + ' ج.م لدين العميل';
-                if (noteDiv) noteDiv.className = 'alert alert-warning mt-3';
+                if (differenceDiv) {
+                    differenceDiv.textContent = '+' + difference.toFixed(2) + ' ج.م';
+                    differenceDiv.className = 'h5 text-danger';
+                }
+                if (noteDiv) {
+                    noteDiv.textContent = 'المنتج البديل أغلى - سيتم إضافة ' + difference.toFixed(2) + ' ج.م لدين العميل';
+                    noteDiv.className = 'alert alert-warning mt-3';
+                    noteDiv.style.display = 'block';
+                }
             } else if (difference < 0) {
-                differenceDiv.textContent = difference.toFixed(2) + ' ج.م';
-                if (differenceDiv) differenceDiv.className = 'h5 text-success';
-                noteDiv.textContent = 'المنتج البديل أرخص - سيتم إضافة ' + Math.abs(difference).toFixed(2) + ' ج.م لرصيد العميل الدائن';
-                if (noteDiv) noteDiv.className = 'alert alert-success mt-3';
+                if (differenceDiv) {
+                    differenceDiv.textContent = difference.toFixed(2) + ' ج.م';
+                    differenceDiv.className = 'h5 text-success';
+                }
+                if (noteDiv) {
+                    noteDiv.textContent = 'المنتج البديل أرخص - سيتم إضافة ' + Math.abs(difference).toFixed(2) + ' ج.م لرصيد العميل الدائن';
+                    noteDiv.className = 'alert alert-success mt-3';
+                    noteDiv.style.display = 'block';
+                }
             } else {
-                differenceDiv.textContent = '0.00 ج.م';
-                if (differenceDiv) differenceDiv.className = 'h5 text-secondary';
-                noteDiv.textContent = 'لا يوجد فرق مالي';
-                if (noteDiv) noteDiv.className = 'alert alert-info mt-3';
+                if (differenceDiv) {
+                    differenceDiv.textContent = '0.00 ج.م';
+                    differenceDiv.className = 'h5 text-secondary';
+                }
+                if (noteDiv) {
+                    noteDiv.textContent = 'لا يوجد فرق مالي';
+                    noteDiv.className = 'alert alert-info mt-3';
+                    noteDiv.style.display = 'block';
+                }
             }
-            if (noteDiv) noteDiv.style.display = 'block';
-        } catch (error) {
-            console.error('Error updating price difference display:', error);
-        }
-    } else {
-        try {
+        } else {
             if (priceSection) priceSection.style.display = 'none';
             if (submitBtn) submitBtn.disabled = true;
-        } catch (error) {
-            console.error('Error hiding price section:', error);
         }
+    } catch (error) {
+        console.error('Error updating price difference display:', error);
+        // Silently fail - elements may not be ready yet
     }
 }
 
