@@ -1406,6 +1406,15 @@ function updateEntityStatus($type, $entityId, $status, $approvedBy) {
                     
                     $db->execute("UPDATE customers SET balance = ? WHERE id = ?", [$newBalance, $customerId]);
                 }
+                
+                // تحديث سجل مشتريات العميل بعد الموافقة على الاستبدال
+                try {
+                    require_once __DIR__ . '/customer_history.php';
+                    customerHistorySyncForCustomer($customerId);
+                } catch (Exception $historyException) {
+                    // لا نسمح لفشل تحديث السجل بإلغاء نجاح الموافقة
+                    error_log('Failed to sync customer history after exchange approval: ' . $historyException->getMessage());
+                }
             }
             break;
     }

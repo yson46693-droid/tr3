@@ -1310,7 +1310,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && trim($_P
                     if (!targetId) return;
                     
                     document.querySelectorAll('.tab-pane').forEach(function(pane) {
-                        pane.classList.remove('show', 'active');
+                        if (pane) {
+                            pane.classList.remove('show', 'active');
+                        }
                     });
                     
                     const targetPane = document.querySelector(targetId);
@@ -1319,8 +1321,10 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && trim($_P
                     }
                     
                     const currentTabButtons = document.querySelectorAll('#myRecordsTabs button[data-bs-toggle="tab"]');
-                    updateTabState(this, currentTabButtons);
-                    updateURL(this);
+                    if (this && currentTabButtons && currentTabButtons.length > 0) {
+                        updateTabState(this, currentTabButtons);
+                        updateURL(this);
+                    }
                 });
             }
             
@@ -1331,15 +1335,24 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && trim($_P
     }
     
     function updateTabState(activeButton, allButtons) {
+        if (!activeButton) return;
+        
         allButtons.forEach(function(btn) {
-            btn.classList.remove('active');
-            btn.setAttribute('aria-selected', 'false');
+            if (btn) {
+                btn.classList.remove('active');
+                btn.setAttribute('aria-selected', 'false');
+            }
         });
-        activeButton.classList.add('active');
-        activeButton.setAttribute('aria-selected', 'true');
+        
+        if (activeButton) {
+            activeButton.classList.add('active');
+            activeButton.setAttribute('aria-selected', 'true');
+        }
     }
     
     function updateURL(button) {
+        if (!button) return;
+        
         const targetId = button.getAttribute('data-bs-target');
         let section = 'sales';
         if (targetId === '#my-collections-section') {
@@ -1941,8 +1954,10 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && trim($_P
                 // استخدام Bootstrap Tabs - معالج shown.bs.tab فقط
                 button.addEventListener('shown.bs.tab', function(event) {
                     const currentTabButtons = document.querySelectorAll('#salesRecordsTabs button[data-bs-toggle="tab"]');
-                    updateTabState(event.target, currentTabButtons);
-                    updateURL(event.target);
+                    if (event.target && currentTabButtons && currentTabButtons.length > 0) {
+                        updateTabState(event.target, currentTabButtons);
+                        updateURL(event.target);
+                    }
                 });
             } else {
                 // Fallback يدوي - معالج click فقط
@@ -1958,7 +1973,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && trim($_P
                     
                     // إخفاء جميع المحتويات
                     document.querySelectorAll('.tab-pane').forEach(function(pane) {
-                        pane.classList.remove('show', 'active');
+                        if (pane) {
+                            pane.classList.remove('show', 'active');
+                        }
                     });
                     
                     // إظهار المحتوى المطلوب
@@ -1971,8 +1988,10 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && trim($_P
                     
                     // تحديث حالة التبويبات
                     const currentTabButtons = document.querySelectorAll('#salesRecordsTabs button[data-bs-toggle="tab"]');
-                    updateTabState(this, currentTabButtons);
-                    updateURL(this);
+                    if (this && currentTabButtons && currentTabButtons.length > 0) {
+                        updateTabState(this, currentTabButtons);
+                        updateURL(this);
+                    }
                 });
             }
             
@@ -1985,19 +2004,25 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && trim($_P
         const section = urlParams.get('section');
         let activeTabId = 'sales-tab';
         
-        if (section === 'collections') {
+        // التحقق من وجود التبويبات المتاحة في الصفحة الحالية
+        const availableTabs = document.querySelectorAll('#salesRecordsTabs button[data-bs-toggle="tab"]');
+        const availableTabIds = Array.from(availableTabs).map(btn => btn.id);
+        
+        if (section === 'collections' && availableTabIds.includes('collections-tab')) {
             activeTabId = 'collections-tab';
-        } else if (section === 'returns') {
+        } else if (section === 'returns' && availableTabIds.includes('returns-tab')) {
             activeTabId = 'returns-tab';
-        } else if (section === 'exchanges') {
+        } else if (section === 'exchanges' && availableTabIds.includes('my-exchanges-tab')) {
             activeTabId = 'my-exchanges-tab';
-        } else if (section === 'damaged_returns') {
+        } else if (section === 'damaged_returns' && availableTabIds.includes('my-damaged-returns-tab')) {
             activeTabId = 'my-damaged-returns-tab';
+        } else if (section === 'sales' && availableTabIds.includes('sales-tab')) {
+            activeTabId = 'sales-tab';
         }
         
         // تفعيل التبويب النشط
         const activeTabButton = document.getElementById(activeTabId);
-        if (activeTabButton) {
+        if (activeTabButton && availableTabIds.includes(activeTabId)) {
             const currentActiveTab = document.querySelector('#salesRecordsTabs .nav-link.active');
             if (!currentActiveTab || currentActiveTab.id !== activeTabId) {
                 if (useBootstrap) {
@@ -2018,15 +2043,24 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && trim($_P
     }
     
     function updateTabState(activeButton, allButtons) {
+        if (!activeButton) return;
+        
         allButtons.forEach(function(btn) {
-            btn.classList.remove('active');
-            btn.setAttribute('aria-selected', 'false');
+            if (btn) {
+                btn.classList.remove('active');
+                btn.setAttribute('aria-selected', 'false');
+            }
         });
-        activeButton.classList.add('active');
-        activeButton.setAttribute('aria-selected', 'true');
+        
+        if (activeButton) {
+            activeButton.classList.add('active');
+            activeButton.setAttribute('aria-selected', 'true');
+        }
     }
     
     function updateURL(button) {
+        if (!button) return;
+        
         const targetId = button.getAttribute('data-bs-target');
         let section = 'sales';
         if (targetId === '#collections-section') {
@@ -2040,12 +2074,16 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && trim($_P
     }
     
     function activateTabManually(button) {
+        if (!button) return;
+        
         const targetId = button.getAttribute('data-bs-target');
         if (!targetId) return;
         
         // إخفاء جميع المحتويات
         document.querySelectorAll('.tab-pane').forEach(function(pane) {
-            pane.classList.remove('show', 'active');
+            if (pane) {
+                pane.classList.remove('show', 'active');
+            }
         });
         
         // إظهار المحتوى المطلوب
@@ -2056,7 +2094,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && trim($_P
         
         // تحديث التبويبات
         const tabButtons = document.querySelectorAll('#salesRecordsTabs button[data-bs-toggle="tab"]');
-        updateTabState(button, tabButtons);
+        if (tabButtons && tabButtons.length > 0 && button) {
+            updateTabState(button, tabButtons);
+        }
     }
     
     function initReportButtons() {

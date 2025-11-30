@@ -159,11 +159,12 @@ function customerHistorySyncForCustomer(int $customerId): array
         }
     }
 
-    // تجميع بيانات الاستبدالات عبر المرتجعات المرتبطة بالفواتير (فقط للفواتير الحقيقية)
+    // تجميع بيانات الاستبدالات (من خلال returns المرتبطة بالفواتير أو مباشرة من invoice_id)
     $exchangesByInvoice = [];
     if (!empty($realInvoiceIds)) {
         $placeholders = implode(',', array_fill(0, count($realInvoiceIds), '?'));
-        $exchangeRows = $db->query(
+        // البحث عن الاستبدالات من خلال returns المرتبطة بالفواتير
+        $exchangeRowsFromReturns = $db->query(
             "SELECT
                 e.id,
                 e.exchange_date,
@@ -181,7 +182,28 @@ function customerHistorySyncForCustomer(int $customerId): array
             array_merge([$customerId, $cutoffDate], $realInvoiceIds)
         );
 
-        foreach ($exchangeRows as $exchangeRow) {
+        // البحث عن الاستبدالات التي لها invoice_id مباشرة
+        $exchangeRowsDirect = $db->query(
+            "SELECT
+                e.id,
+                e.exchange_date,
+                e.exchange_type,
+                e.difference_amount,
+                e.new_total,
+                e.original_total,
+                e.invoice_id
+             FROM exchanges e
+             WHERE e.customer_id = ?
+               AND e.exchange_date >= ?
+               AND e.invoice_id IS NOT NULL
+               AND e.invoice_id IN ($placeholders)",
+            array_merge([$customerId, $cutoffDate], $realInvoiceIds)
+        );
+
+        // دمج النتائج
+        $allExchangeRows = array_merge($exchangeRowsFromReturns, $exchangeRowsDirect);
+
+        foreach ($allExchangeRows as $exchangeRow) {
             $invoiceId = (int)($exchangeRow['invoice_id'] ?? 0);
             if ($invoiceId <= 0) {
                 continue;

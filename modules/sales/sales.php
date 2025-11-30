@@ -576,7 +576,7 @@ $tableHeaderStyle = $isSalesRecords ? 'background: linear-gradient(135deg,rgb(37
                                 <?php endif; ?>>
                                 <td style="<?php echo $isSalesRecords ? 'padding: 1rem; font-weight: 500;' : ''; ?>"><?php echo formatDate($sale['date']); ?></td>
                                 <td style="<?php echo $isSalesRecords ? 'padding: 1rem;' : ''; ?>">
-                                    <span class="badge <?php echo $isSalesRecords ? 'bg-gradient shadow-sm' : 'bg-info'; ?>" style="<?php echo $isSalesRecords ? 'background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); padding: 0.5rem 0.75rem; font-weight: 600; color: #000;' : ''; ?>">
+                                    <span class="badge <?php echo $isSalesRecords ? 'bg-gradient shadow-sm' : 'bg-info'; ?>" style="<?php echo $isSalesRecords ? 'background: linear-gradient(135deg,rgb(13, 56, 250) 0%,rgb(40, 15, 139) 100%); padding: 0.5rem 0.75rem; font-weight: 600; color: #000;' : ''; ?>">
                                         <?php echo htmlspecialchars($sale['invoice_number'] ?? 'INV-' . $sale['invoice_id']); ?>
                                     </span>
                                 </td>
