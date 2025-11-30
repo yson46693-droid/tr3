@@ -812,12 +812,6 @@ function displayRecentRequests(data) {
         });
     }
     
-    // Add exchange requests
-    if (data.exchanges && data.exchanges.length > 0) {
-        data.exchanges.forEach(req => {
-            allRequests.push(req);
-        });
-    }
     
     // Sort by created_at descending
     allRequests.sort((a, b) => {
@@ -846,22 +840,16 @@ function displayRecentRequests(data) {
     `;
     
     allRequests.forEach(req => {
-        const isReturn = req.type === 'return';
-        const requestNumber = isReturn ? req.return_number : req.exchange_number;
-        const requestDate = isReturn ? req.return_date : req.exchange_date;
-        const amount = isReturn ? req.refund_amount : req.difference_amount;
-        const amountLabel = isReturn ? 'مبلغ المرتجع' : 'الفرق';
-        
         const statusBadge = getStatusBadge(req.status, req.status_label);
-        const typeLabel = isReturn ? '<span class="badge bg-warning text-dark"><i class="bi bi-arrow-counterclockwise"></i> مرتجع</span>' : '<span class="badge bg-info"><i class="bi bi-arrow-left-right"></i> استبدال</span>';
+        const typeLabel = '<span class="badge bg-warning text-dark"><i class="bi bi-arrow-counterclockwise"></i> مرتجع</span>';
         
         html += `
             <tr>
                 <td>${typeLabel}</td>
-                <td><strong>${requestNumber}</strong></td>
-                <td>${requestDate}</td>
+                <td><strong>${req.return_number}</strong></td>
+                <td>${req.return_date}</td>
                 <td>${req.customer_name || 'غير معروف'}</td>
-                <td>${parseFloat(amount).toFixed(2)} ج.م</td>
+                <td>${parseFloat(req.refund_amount).toFixed(2)} ج.م</td>
                 <td>${statusBadge}</td>
                 <td><small class="text-muted">${req.notes || '-'}</small></td>
             </tr>
