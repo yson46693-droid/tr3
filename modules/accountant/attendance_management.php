@@ -56,23 +56,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 require_once __DIR__ . '/../../includes/audit_log.php';
                 
                 // التأكد من وجود الحقول
-                $canCheckInColumn = $db->queryOne("SHOW COLUMNS FROM users LIKE 'can_check_in'");
-                if (empty($canCheckInColumn)) {
-                    try {
-                        $db->execute("ALTER TABLE users ADD COLUMN `can_check_in` tinyint(1) DEFAULT 1 AFTER `warning_count`");
-                    } catch (Exception $e) {
-                        error_log("Error adding can_check_in column: " . $e->getMessage());
-                    }
-                }
-                
-                $canCheckOutColumn = $db->queryOne("SHOW COLUMNS FROM users LIKE 'can_check_out'");
-                if (empty($canCheckOutColumn)) {
-                    try {
-                        $db->execute("ALTER TABLE users ADD COLUMN `can_check_out` tinyint(1) DEFAULT 1 AFTER `can_check_in`");
-                    } catch (Exception $e) {
-                        error_log("Error adding can_check_out column: " . $e->getMessage());
-                    }
-                }
+                ensureAttendancePermissionsColumns();
                 
                 $canCheckIn = isset($_POST['can_check_in']) ? 1 : 0;
                 $canCheckOut = isset($_POST['can_check_out']) ? 1 : 0;
@@ -132,6 +116,7 @@ $users = $db->query(
 // التأكد من وجود الأعمدة الجديدة
 ensureDelayCountColumn();
 ensureWarningCountColumn();
+ensureAttendancePermissionsColumns();
 
 // الحصول على إحصائيات المستخدمين
 $userStats = [];
@@ -391,24 +376,16 @@ $backUrl = '?page=attendance_management&month=' . urlencode($selectedMonth);
     
     <!-- قسم الصلاحيات -->
     <?php
+    // التأكد من وجود الحقول أولاً
+    ensureAttendancePermissionsColumns();
+    
     // الحصول على صلاحيات المستخدم
     $userPermissions = $db->queryOne(
         "SELECT can_check_in, can_check_out FROM users WHERE id = ?",
         [$selectedUserId]
     );
-    
-    // التأكد من وجود الحقول
-    $canCheckInColumn = $db->queryOne("SHOW COLUMNS FROM users LIKE 'can_check_in'");
-    $canCheckOutColumn = $db->queryOne("SHOW COLUMNS FROM users LIKE 'can_check_out'");
-    
-    if (empty($canCheckInColumn) || empty($canCheckOutColumn)) {
-        // الحقول غير موجودة، القيم الافتراضية
-        $canCheckIn = 1;
-        $canCheckOut = 1;
-    } else {
-        $canCheckIn = (int)($userPermissions['can_check_in'] ?? 1);
-        $canCheckOut = (int)($userPermissions['can_check_out'] ?? 1);
-    }
+    $canCheckIn = (int)($userPermissions['can_check_in'] ?? 1);
+    $canCheckOut = (int)($userPermissions['can_check_out'] ?? 1);
     ?>
     <div class="row mb-4">
         <div class="col-12">

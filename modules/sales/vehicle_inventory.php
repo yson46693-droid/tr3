@@ -291,7 +291,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             }
         }
     }
-}
 
 // الحصول على السيارات
 $vehicles = getVehicles(['status' => 'active']);

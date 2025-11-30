@@ -1958,6 +1958,40 @@ function ensureDelayCountColumn(): void
 }
 
 /**
+ * التأكد من وجود حقول صلاحيات الحضور والانصراف في جدول users
+ */
+function ensureAttendancePermissionsColumns(): void
+{
+    static $ensured = false;
+    
+    if ($ensured) {
+        return;
+    }
+    
+    try {
+        $db = db();
+        
+        // التحقق من وجود عمود can_check_in
+        $canCheckInColumn = $db->queryOne("SHOW COLUMNS FROM users LIKE 'can_check_in'");
+        if (empty($canCheckInColumn)) {
+            $db->execute("ALTER TABLE users ADD COLUMN `can_check_in` tinyint(1) DEFAULT 1 AFTER `delay_count`");
+            error_log('Added can_check_in column to users table');
+        }
+        
+        // التحقق من وجود عمود can_check_out
+        $canCheckOutColumn = $db->queryOne("SHOW COLUMNS FROM users LIKE 'can_check_out'");
+        if (empty($canCheckOutColumn)) {
+            $db->execute("ALTER TABLE users ADD COLUMN `can_check_out` tinyint(1) DEFAULT 1 AFTER `can_check_in`");
+            error_log('Added can_check_out column to users table');
+        }
+        
+        $ensured = true;
+    } catch (Exception $e) {
+        error_log('Failed to ensure attendance permissions columns: ' . $e->getMessage());
+    }
+}
+
+/**
  * تصفير عداد الإنذارات لجميع الموظفين مع بداية كل شهر جديد
  */
 function resetWarningCountsForNewMonth(): void

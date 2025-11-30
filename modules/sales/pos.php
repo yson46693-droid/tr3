@@ -190,6 +190,7 @@ if (!$error) {
 }
 
 // تحميل قائمة العملاء المتاحين للمندوب
+// فحص أمني: المندوب يرى فقط عملائه (created_by = user_id) وليس جميع العملاء
 $customers = [];
 if (!$error && !empty($customersTableExists)) {
     $statusColumnExists = $db->queryOne("SHOW COLUMNS FROM customers LIKE 'status'");
@@ -202,9 +203,14 @@ if (!$error && !empty($customersTableExists)) {
         $customerSql .= " AND status = 'active'";
     }
 
+    // فحص أمني: للمندوبين، عرض فقط العملاء الذين أنشأهم هذا المندوب
+    // إزالة الشرط "OR created_by IS NULL" لمنع ظهور عملاء المندوبين الآخرين
     if (!empty($createdByColumnExists) && ($currentUser['role'] ?? '') === 'sales') {
-        $customerSql .= " AND (created_by = ? OR created_by IS NULL)";
-        $customerParams[] = $currentUser['id'];
+        $currentUserId = isset($currentUser['id']) ? (int)$currentUser['id'] : 0;
+        if ($currentUserId > 0) {
+            $customerSql .= " AND created_by = ?";
+            $customerParams[] = $currentUserId;
+        }
     }
 
     $customerSql .= " ORDER BY name ASC";
