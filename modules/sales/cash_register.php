@@ -395,6 +395,7 @@ if (!empty($damagedReturnsTableExists)) {
 // حساب الإضافات المباشرة للرصيد
 $totalCashAdditions = 0.0;
 $cashAdditionsTableExists = $db->queryOne("SHOW TABLES LIKE 'cash_register_additions'");
+$cashAdditions = [];
 if (!empty($cashAdditionsTableExists)) {
     try {
         $additionsResult = $db->queryOne(
@@ -404,9 +405,27 @@ if (!empty($cashAdditionsTableExists)) {
             [$salesRepId]
         );
         $totalCashAdditions = (float)($additionsResult['total_additions'] ?? 0);
+        
+        // جلب قائمة الإضافات المباشرة مع التفاصيل
+        $cashAdditions = $db->query(
+            "SELECT 
+                cra.id,
+                cra.amount,
+                cra.description,
+                cra.created_at,
+                cra.created_by,
+                u.username as created_by_username,
+                u.full_name as created_by_name
+             FROM cash_register_additions cra
+             LEFT JOIN users u ON cra.created_by = u.id
+             WHERE cra.sales_rep_id = ?
+             ORDER BY cra.created_at DESC",
+            [$salesRepId]
+        );
     } catch (Throwable $additionsError) {
         error_log('Cash additions calculation error: ' . $additionsError->getMessage());
         $totalCashAdditions = 0.0;
+        $cashAdditions = [];
     }
 }
 
@@ -1087,6 +1106,104 @@ $salesRepInfo = $db->queryOne(
             <div class="alert alert-info mb-0" style="border-radius: 12px;">
                 <i class="bi bi-check-circle me-2"></i>
                 لا توجد ديون قديمة للعملاء المدينين بدون سجل مشتريات.
+            </div>
+        <?php endif; ?>
+    </div>
+</div>
+
+<!-- جدول الإضافات المباشرة للخزنة -->
+<div class="glass-card mb-4">
+    <div class="glass-card-header">
+        <i class="bi bi-plus-circle-fill glass-card-green"></i>
+        <h5 class="mb-0 fw-bold">سجل الإضافات المباشرة للخزنة</h5>
+    </div>
+    <div class="glass-card-body">
+        <?php if (!empty($cashAdditions)): ?>
+            <div class="glass-debts-table">
+                <div class="table-responsive">
+                    <table class="table align-middle mb-0">
+                        <thead>
+                            <tr>
+                                <th>
+                                    <i class="bi bi-hash me-2"></i>#
+                                </th>
+                                <th>
+                                    <i class="bi bi-calendar-event me-2"></i>التاريخ والوقت
+                                </th>
+                                <th class="text-end">
+                                    <i class="bi bi-cash-coin me-2"></i>المبلغ
+                                </th>
+                                <th>
+                                    <i class="bi bi-card-text me-2"></i>الوصف
+                                </th>
+                                <th>
+                                    <i class="bi bi-person me-2"></i>تمت الإضافة بواسطة
+                                </th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            <?php 
+                            $counter = 1;
+                            foreach ($cashAdditions as $addition): 
+                            ?>
+                                <tr>
+                                    <td>
+                                        <strong><?php echo $counter++; ?></strong>
+                                    </td>
+                                    <td>
+                                        <small>
+                                            <?php echo formatDateTime($addition['created_at']); ?>
+                                        </small>
+                                    </td>
+                                    <td class="text-end">
+                                        <strong class="text-success">
+                                            + <?php echo formatCurrency((float)($addition['amount'] ?? 0)); ?>
+                                        </strong>
+                                    </td>
+                                    <td>
+                                        <?php if (!empty($addition['description'])): ?>
+                                            <span class="text-muted">
+                                                <?php echo htmlspecialchars($addition['description']); ?>
+                                            </span>
+                                        <?php else: ?>
+                                            <span class="text-muted fst-italic">-</span>
+                                        <?php endif; ?>
+                                    </td>
+                                    <td>
+                                        <div class="d-flex align-items-center">
+                                            <i class="bi bi-person-circle me-2 text-muted"></i>
+                                            <span>
+                                                <?php 
+                                                echo htmlspecialchars(
+                                                    $addition['created_by_name'] ?? 
+                                                    $addition['created_by_username'] ?? 
+                                                    'غير معروف'
+                                                ); 
+                                                ?>
+                                            </span>
+                                        </div>
+                                    </td>
+                                </tr>
+                            <?php endforeach; ?>
+                        </tbody>
+                        <tfoot>
+                            <tr style="background: rgba(15, 165, 90, 0.1);">
+                                <th colspan="2" class="text-end">
+                                    <strong>إجمالي الإضافات:</strong>
+                                </th>
+                                <th class="text-end text-success">
+                                    <strong>+ <?php echo formatCurrency($totalCashAdditions); ?></strong>
+                                </th>
+                                <th colspan="2"></th>
+                            </tr>
+                        </tfoot>
+                    </table>
+                </div>
+            </div>
+        <?php else: ?>
+            <div class="alert alert-info mb-0" style="border-radius: 12px;">
+                <i class="bi bi-info-circle me-2"></i>
+                لا توجد إضافات مباشرة مسجلة للخزنة حتى الآن.
             </div>
         <?php endif; ?>
     </div>
