@@ -150,6 +150,51 @@ if (isset($_GET['ajax']) && $_GET['ajax'] === 'load_products') {
         }
         
         $products = getFinishedProductBatchOptions(true, $warehouseId);
+        
+        // إضافة المنتجات الخارجية إلى القائمة
+        try {
+            $externalProducts = $db->query(
+                "SELECT id, name, quantity, unit, unit_price, status
+                 FROM products
+                 WHERE product_type = 'external' AND status = 'active' AND quantity > 0
+                 ORDER BY name ASC"
+            );
+            
+            foreach ($externalProducts as $extProduct) {
+                $productId = (int)($extProduct['id'] ?? 0);
+                $availableQuantity = (float)($extProduct['quantity'] ?? 0);
+                
+                // خصم الكمية المحجوزة في طلبات النقل المعلقة
+                if ($productId > 0 && $warehouseId && $availableQuantity > 0) {
+                    $pendingTransfers = $db->queryOne(
+                        "SELECT COALESCE(SUM(wti.quantity), 0) AS pending_quantity
+                         FROM warehouse_transfer_items wti
+                         INNER JOIN warehouse_transfers wt ON wt.id = wti.transfer_id
+                         WHERE wti.product_id = ? AND wti.batch_id IS NULL AND wt.from_warehouse_id = ? AND wt.status = 'pending'",
+                        [$productId, $warehouseId]
+                    );
+                    $availableQuantity -= (float)($pendingTransfers['pending_quantity'] ?? 0);
+                }
+                
+                if ($availableQuantity > 0) {
+                    $products[] = [
+                        'batch_id' => null,
+                        'product_id' => $productId,
+                        'product_name' => ($extProduct['name'] ?? '') . ' (منتج خارجي)',
+                        'batch_number' => '',
+                        'production_date' => null,
+                        'quantity_produced' => (float)($extProduct['quantity'] ?? 0),
+                        'quantity_available' => max(0, $availableQuantity),
+                        'warehouse_id' => $warehouseId,
+                        'is_external' => true,
+                        'unit' => $extProduct['unit'] ?? 'قطعة',
+                    ];
+                }
+            }
+        } catch (Exception $e) {
+            error_log('Error adding external products to AJAX response: ' . $e->getMessage());
+        }
+        
         echo json_encode([
             'success' => true,
             'products' => $products
@@ -524,6 +569,52 @@ if (!empty($warehousesTableExists)) {
                     }
                 }
             }
+            
+            // إضافة المنتجات الخارجية إلى قائمة المنتجات المتاحة للنقل
+            if ($primaryWarehouse && !empty($primaryWarehouse['id'])) {
+                try {
+                    $externalProductsForTransfer = $db->query(
+                        "SELECT id, name, quantity, unit, unit_price, status
+                         FROM products
+                         WHERE product_type = 'external' AND status = 'active' AND quantity > 0
+                         ORDER BY name ASC"
+                    );
+                    
+                    foreach ($externalProductsForTransfer as $extProduct) {
+                        $productId = (int)($extProduct['id'] ?? 0);
+                        $availableQuantity = (float)($extProduct['quantity'] ?? 0);
+                        
+                        // خصم الكمية المحجوزة في طلبات النقل المعلقة
+                        if ($productId > 0 && $availableQuantity > 0) {
+                            $pendingTransfers = $db->queryOne(
+                                "SELECT COALESCE(SUM(wti.quantity), 0) AS pending_quantity
+                                 FROM warehouse_transfer_items wti
+                                 INNER JOIN warehouse_transfers wt ON wt.id = wti.transfer_id
+                                 WHERE wti.product_id = ? AND wti.batch_id IS NULL AND wt.from_warehouse_id = ? AND wt.status = 'pending'",
+                                [$productId, $primaryWarehouse['id']]
+                            );
+                            $availableQuantity -= (float)($pendingTransfers['pending_quantity'] ?? 0);
+                        }
+                        
+                        if ($availableQuantity > 0) {
+                            $finishedProductOptions[] = [
+                                'batch_id' => null, // المنتجات الخارجية لا تحتوي على batch_id
+                                'product_id' => $productId,
+                                'product_name' => ($extProduct['name'] ?? '') . ' (منتج خارجي)',
+                                'batch_number' => '', // لا يوجد رقم تشغيلة
+                                'production_date' => null,
+                                'quantity_produced' => (float)($extProduct['quantity'] ?? 0),
+                                'quantity_available' => max(0, $availableQuantity),
+                                'warehouse_id' => $primaryWarehouse['id'],
+                                'is_external' => true, // علامة للمنتجات الخارجية
+                                'unit' => $extProduct['unit'] ?? 'قطعة',
+                            ];
+                        }
+                    }
+                } catch (Exception $e) {
+                    error_log('Error adding external products to transfer options: ' . $e->getMessage());
+                }
+            }
         }
         $hasDestinationWarehouses = !empty($destinationWarehouses);
         $hasFinishedBatches = !empty($finishedProductOptions);
@@ -723,25 +814,37 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                                     'name' => $productName
                                 ];
                             } else {
-                                // إذا لم يكن هناك batch، نستخدم products.quantity كبديل
+                                // إذا لم يكن هناك batch، نستخدم products.quantity كبديل (يشمل المنتجات الداخلية والخارجية)
                                 if ($productId > 0) {
                                     $productRow = $db->queryOne(
-                                        "SELECT id, name, quantity FROM products WHERE id = ? AND (product_type IS NULL OR product_type = 'internal')",
+                                        "SELECT id, name, quantity, product_type FROM products WHERE id = ? AND status = 'active'",
                                         [$productId]
                                     );
                                     
                                     if ($productRow) {
                                         $availableQuantity = (float)($productRow['quantity'] ?? 0);
                                         $productName = $productRow['name'] ?? '';
+                                        $isExternal = ($productRow['product_type'] ?? '') === 'external';
                                         
                                         // خصم الكمية المحجوزة في طلبات النقل المعلقة (pending) من نفس المخزن
-                                        $pendingTransfers = $db->queryOne(
-                                            "SELECT COALESCE(SUM(wti.quantity), 0) AS pending_quantity
-                                             FROM warehouse_transfer_items wti
-                                             INNER JOIN warehouse_transfers wt ON wt.id = wti.transfer_id
-                                             WHERE wti.product_id = ? AND wt.from_warehouse_id = ? AND wt.status = 'pending'",
-                                            [$productId, $fromWarehouseId]
-                                        );
+                                        // للمنتجات الخارجية، نتحقق من batch_id IS NULL
+                                        if ($isExternal) {
+                                            $pendingTransfers = $db->queryOne(
+                                                "SELECT COALESCE(SUM(wti.quantity), 0) AS pending_quantity
+                                                 FROM warehouse_transfer_items wti
+                                                 INNER JOIN warehouse_transfers wt ON wt.id = wti.transfer_id
+                                                 WHERE wti.product_id = ? AND wti.batch_id IS NULL AND wt.from_warehouse_id = ? AND wt.status = 'pending'",
+                                                [$productId, $fromWarehouseId]
+                                            );
+                                        } else {
+                                            $pendingTransfers = $db->queryOne(
+                                                "SELECT COALESCE(SUM(wti.quantity), 0) AS pending_quantity
+                                                 FROM warehouse_transfer_items wti
+                                                 INNER JOIN warehouse_transfers wt ON wt.id = wti.transfer_id
+                                                 WHERE wti.product_id = ? AND wt.from_warehouse_id = ? AND wt.status = 'pending'",
+                                                [$productId, $fromWarehouseId]
+                                            );
+                                        }
                                         $availableQuantity -= (float)($pendingTransfers['pending_quantity'] ?? 0);
                                         
                                         $availabilityMap[$productId . '_' . $batchId] = [
@@ -754,24 +857,36 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                                 }
                             }
                         } elseif ($productId > 0) {
-                            // إذا لم يكن هناك batch_id، نستخدم products.quantity
+                            // إذا لم يكن هناك batch_id، نستخدم products.quantity (يشمل المنتجات الداخلية والخارجية)
                             $productRow = $db->queryOne(
-                                "SELECT id, name, quantity FROM products WHERE id = ? AND (product_type IS NULL OR product_type = 'internal')",
+                                "SELECT id, name, quantity, product_type FROM products WHERE id = ? AND status = 'active'",
                                 [$productId]
                             );
                             
                             if ($productRow) {
                                 $availableQuantity = (float)($productRow['quantity'] ?? 0);
                                 $productName = $productRow['name'] ?? '';
+                                $isExternal = ($productRow['product_type'] ?? '') === 'external';
                                 
                                 // خصم الكمية المحجوزة في طلبات النقل المعلقة (pending) من نفس المخزن
-                                $pendingTransfers = $db->queryOne(
-                                    "SELECT COALESCE(SUM(wti.quantity), 0) AS pending_quantity
-                                     FROM warehouse_transfer_items wti
-                                     INNER JOIN warehouse_transfers wt ON wt.id = wti.transfer_id
-                                     WHERE wti.product_id = ? AND wt.from_warehouse_id = ? AND wt.status = 'pending'",
-                                    [$productId, $fromWarehouseId]
-                                );
+                                // للمنتجات الخارجية، نتحقق من batch_id IS NULL
+                                if ($isExternal) {
+                                    $pendingTransfers = $db->queryOne(
+                                        "SELECT COALESCE(SUM(wti.quantity), 0) AS pending_quantity
+                                         FROM warehouse_transfer_items wti
+                                         INNER JOIN warehouse_transfers wt ON wt.id = wti.transfer_id
+                                         WHERE wti.product_id = ? AND wti.batch_id IS NULL AND wt.from_warehouse_id = ? AND wt.status = 'pending'",
+                                        [$productId, $fromWarehouseId]
+                                    );
+                                } else {
+                                    $pendingTransfers = $db->queryOne(
+                                        "SELECT COALESCE(SUM(wti.quantity), 0) AS pending_quantity
+                                         FROM warehouse_transfer_items wti
+                                         INNER JOIN warehouse_transfers wt ON wt.id = wti.transfer_id
+                                         WHERE wti.product_id = ? AND wt.from_warehouse_id = ? AND wt.status = 'pending'",
+                                        [$productId, $fromWarehouseId]
+                                    );
+                                }
                                 $availableQuantity -= (float)($pendingTransfers['pending_quantity'] ?? 0);
                                 
                                 $availabilityMap[$productId . '_' . $batchId] = [
@@ -2721,20 +2836,12 @@ $filterProduct = isset($_GET['filter_product']) ? trim($_GET['filter_product']) 
         <span class="badge bg-light text-dark"><?php echo number_format(count($externalProductsForProduction)); ?> منتج</span>
     </div>
     <div class="card-body">
-        <div class="alert alert-info mb-3">
-            <i class="bi bi-info-circle me-2"></i>
-            يمكنك عرض المنتجات الخارجية وطلب نقلها إلى مخازن أخرى. سيتم إرسال طلب النقل إلى المدير للموافقة عليه.
-        </div>
         <div class="table-responsive dashboard-table-wrapper">
             <table class="table dashboard-table align-middle mb-0">
                 <thead class="table-light">
                     <tr>
                         <th>اسم المنتج</th>
-                        <th>نوع البيع</th>
-                        <th>الكمية المتاحة</th>
-                        <th>سعر البيع</th>
-                        <th>الوحدة</th>
-                        <th>إجراءات</th>
+                        <th>كمية المنتج</th>
                     </tr>
                 </thead>
                 <tbody>
@@ -2742,14 +2849,7 @@ $filterProduct = isset($_GET['filter_product']) ? trim($_GET['filter_product']) 
                     <tr>
                         <td>
                             <strong><?php echo htmlspecialchars($externalProduct['name'] ?? ''); ?></strong>
-                            <?php if (!empty($externalProduct['description'])): ?>
-                                <br><small class="text-muted"><?php echo htmlspecialchars($externalProduct['description']); ?></small>
-                            <?php endif; ?>
                         </td>
-                        <td><?php
-                            $channelKey = $externalProduct['external_channel'] ?? null;
-                            echo htmlspecialchars($externalChannelLabels[$channelKey] ?? $externalChannelLabels[null]);
-                        ?></td>
                         <td>
                             <?php 
                             $productId = (int)($externalProduct['id'] ?? 0);
@@ -2769,26 +2869,7 @@ $filterProduct = isset($_GET['filter_product']) ? trim($_GET['filter_product']) 
                             }
                             
                             echo number_format($availableQty, 2); 
-                            ?> <?php echo htmlspecialchars($externalProduct['unit'] ?? 'قطعة'); ?>
-                        </td>
-                        <td><?php echo formatCurrency($externalProduct['unit_price'] ?? 0); ?></td>
-                        <td><?php echo htmlspecialchars($externalProduct['unit'] ?? 'قطعة'); ?></td>
-                        <td>
-                            <?php if ($canCreateTransfers && $primaryWarehouse): ?>
-                            <button
-                                type="button"
-                                class="btn btn-outline-primary btn-sm js-transfer-external-product"
-                                data-product-id="<?php echo $productId; ?>"
-                                data-product-name="<?php echo htmlspecialchars($externalProduct['name'] ?? '', ENT_QUOTES); ?>"
-                                data-available-qty="<?php echo number_format($availableQty, 2); ?>"
-                                data-unit="<?php echo htmlspecialchars($externalProduct['unit'] ?? 'قطعة', ENT_QUOTES); ?>"
-                            >
-                                <i class="bi bi-arrow-left-right me-1"></i>
-                                نقل منتج
-                            </button>
-                            <?php else: ?>
-                            <span class="text-muted small">غير متاح</span>
-                            <?php endif; ?>
+                            ?>
                         </td>
                     </tr>
                     <?php endforeach; ?>
@@ -3172,14 +3253,21 @@ $filterProduct = isset($_GET['filter_product']) ? trim($_GET['filter_product']) 
                                         <select id="transferProduct0" class="form-select product-select" name="items[0][product_select]" required>
                                             <option value="">اختر المنتج</option>
                                             <?php foreach ($finishedProductOptions as $option): ?>
+                                                <?php
+                                                $isExternal = isset($option['is_external']) && $option['is_external'] === true;
+                                                $displayText = htmlspecialchars($option['product_name'] ?? '');
+                                                if (!$isExternal && !empty($option['batch_number'])) {
+                                                    $displayText .= ' - تشغيلة ' . htmlspecialchars($option['batch_number']);
+                                                }
+                                                $displayText .= ' (متاح: ' . number_format((float)$option['quantity_available'], 2) . ')';
+                                                ?>
                                                 <option value="<?php echo intval($option['product_id'] ?? 0); ?>"
                                                         data-product-id="<?php echo intval($option['product_id'] ?? 0); ?>"
-                                                        data-batch-id="<?php echo intval($option['batch_id']); ?>"
-                                                        data-batch-number="<?php echo htmlspecialchars($option['batch_number']); ?>"
-                                                        data-available="<?php echo number_format((float)$option['quantity_available'], 2, '.', ''); ?>">
-                                                    <?php echo htmlspecialchars($option['product_name']); ?>
-                                                    - تشغيلة <?php echo htmlspecialchars($option['batch_number'] ?: 'بدون'); ?>
-                                                    (متاح: <?php echo number_format((float)$option['quantity_available'], 2); ?>)
+                                                        data-batch-id="<?php echo $isExternal ? '' : intval($option['batch_id'] ?? 0); ?>"
+                                                        data-batch-number="<?php echo htmlspecialchars($option['batch_number'] ?? ''); ?>"
+                                                        data-available="<?php echo number_format((float)$option['quantity_available'], 2, '.', ''); ?>"
+                                                        data-is-external="<?php echo $isExternal ? '1' : '0'; ?>">
+                                                    <?php echo $displayText; ?>
                                                 </option>
                                             <?php endforeach; ?>
                                         </select>
@@ -3264,10 +3352,20 @@ if (!window.transferFormInitialized) {
                     productIdInput.value = selectedOption ? parseInt(selectedOption.dataset.productId || '0', 10) : '';
                 }
                 if (batchIdInput) {
-                    batchIdInput.value = selectedOption ? parseInt(selectedOption.dataset.batchId || '0', 10) : '';
+                    const isExternal = selectedOption ? (selectedOption.dataset.isExternal === '1') : false;
+                    if (isExternal) {
+                        batchIdInput.value = ''; // المنتجات الخارجية لا تحتوي على batch_id
+                    } else {
+                        batchIdInput.value = selectedOption ? parseInt(selectedOption.dataset.batchId || '0', 10) : '';
+                    }
                 }
                 if (batchNumberInput) {
-                    batchNumberInput.value = selectedOption ? selectedOption.dataset.batchNumber || '' : '';
+                    const isExternal = selectedOption ? (selectedOption.dataset.isExternal === '1') : false;
+                    if (isExternal) {
+                        batchNumberInput.value = ''; // المنتجات الخارجية لا تحتوي على batch_number
+                    } else {
+                        batchNumberInput.value = selectedOption ? selectedOption.dataset.batchNumber || '' : '';
+                    }
                 }
                 
                 if (availableHint) {
@@ -3298,18 +3396,26 @@ if (!window.transferFormInitialized) {
             let optionsHtml = '<option value="">اختر المنتج</option>';
             allFinishedProductOptions.forEach(function(option) {
                 const productId = parseInt(option.product_id || 0, 10);
-                const batchId = parseInt(option.batch_id || 0, 10);
+                const batchId = option.batch_id ? parseInt(option.batch_id, 10) : 0;
                 const batchNumber = (option.batch_number || '').replace(/"/g, '&quot;');
                 const productName = (option.product_name || 'غير محدد').replace(/"/g, '&quot;');
                 const available = parseFloat(option.quantity_available || 0);
                 const availableFormatted = available.toLocaleString('ar-EG', {minimumFractionDigits: 2, maximumFractionDigits: 2});
+                const isExternal = option.is_external === true || option.is_external === '1' || option.is_external === 1;
+                
+                let displayText = productName;
+                if (!isExternal && batchNumber) {
+                    displayText += ' - تشغيلة ' + batchNumber;
+                }
+                displayText += ' (متاح: ' + availableFormatted + ')';
                 
                 optionsHtml += `<option value="${productId}"
                         data-product-id="${productId}"
-                        data-batch-id="${batchId}"
+                        data-batch-id="${isExternal ? '' : batchId}"
                         data-batch-number="${batchNumber}"
-                        data-available="${available.toFixed(2)}">
-                    ${productName} - تشغيلة ${batchNumber || 'بدون'} (متاح: ${availableFormatted})
+                        data-available="${available.toFixed(2)}"
+                        data-is-external="${isExternal ? '1' : '0'}">
+                    ${displayText}
                 </option>`;
             });
             
@@ -3412,12 +3518,21 @@ if (!window.transferFormInitialized) {
                                         select.innerHTML = '<option value="">اختر المنتج</option>';
                                         allFinishedProductOptions.forEach(option => {
                                             const optionElement = document.createElement('option');
+                                            const isExternal = option.is_external === true || option.is_external === '1' || option.is_external === 1;
                                             optionElement.value = option.product_id || 0;
                                             optionElement.dataset.productId = option.product_id || 0;
-                                            optionElement.dataset.batchId = option.batch_id;
-                                            optionElement.dataset.batchNumber = option.batch_number || '';
-                                            optionElement.dataset.available = option.quantity_available || 0;
-                                            optionElement.textContent = `${option.product_name} - تشغيلة ${option.batch_number || 'بدون'} (متاح: ${parseFloat(option.quantity_available || 0).toFixed(2)})`;
+                                            optionElement.dataset.batchId = isExternal ? '' : (option.batch_id || 0);
+                                            optionElement.dataset.batchNumber = isExternal ? '' : (option.batch_number || '');
+                                            optionElement.dataset.available = parseFloat(option.quantity_available || 0).toFixed(2);
+                                            optionElement.dataset.isExternal = isExternal ? '1' : '0';
+                                            
+                                            let displayText = option.product_name || 'غير محدد';
+                                            if (!isExternal && option.batch_number) {
+                                                displayText += ' - تشغيلة ' + (option.batch_number || 'بدون');
+                                            }
+                                            displayText += ' (متاح: ' + parseFloat(option.quantity_available || 0).toFixed(2) + ')';
+                                            optionElement.textContent = displayText;
+                                            
                                             if (currentValue && option.product_id == currentValue) {
                                                 optionElement.selected = true;
                                             }

@@ -1298,7 +1298,6 @@ if (isset($_GET['id'])) {
     </div>
 </div>
 
-<?php if ($isManagerOrAccountant): ?>
 <!-- Modal إنشاء طلب -->
 <div class="modal fade" id="addOrderModal" tabindex="-1">
     <div class="modal-dialog modal-xl">
@@ -1547,6 +1546,27 @@ if (isset($_GET['id'])) {
 <script>
 let itemIndex = 1;
 
+// إنشاء options المنتجات من PHP
+const productOptions = <?php 
+    $optionsArray = [];
+    foreach ($products as $product) {
+        $optionsArray[] = [
+            'id' => $product['id'],
+            'name' => htmlspecialchars($product['name'] ?? '')
+        ];
+    }
+    echo json_encode($optionsArray, JSON_UNESCAPED_UNICODE);
+?>;
+
+// دالة لإنشاء HTML options
+function getProductOptionsHTML() {
+    let html = '<option value="">اختر القالب</option>';
+    productOptions.forEach(function(product) {
+        html += '<option value="' + product.id + '">' + product.name + '</option>';
+    });
+    return html;
+}
+
 // إضافة عنصر جديد
 document.getElementById('addItemBtn')?.addEventListener('click', function() {
     const itemsDiv = document.getElementById('orderItems');
@@ -1555,12 +1575,7 @@ document.getElementById('addItemBtn')?.addEventListener('click', function() {
     newItem.innerHTML = `
         <div class="col-md-9">
             <select class="form-select product-select" name="items[${itemIndex}][product_id]" required>
-                <option value="">اختر القالب</option>
-                <?php foreach ($products as $product): ?>
-                    <option value="<?php echo $product['id']; ?>">
-                        <?php echo htmlspecialchars($product['name']); ?>
-                    </option>
-                <?php endforeach; ?>
+                ${getProductOptionsHTML()}
             </select>
         </div>
         <div class="col-md-2">
@@ -1742,12 +1757,7 @@ document.getElementById('addCompanyItemBtn')?.addEventListener('click', function
     newItem.innerHTML = `
         <div class="col-md-9">
             <select class="form-select product-select" name="items[${companyItemIndex}][product_id]" required>
-                <option value="">اختر القالب</option>
-                <?php foreach ($products as $product): ?>
-                    <option value="<?php echo $product['id']; ?>">
-                        <?php echo htmlspecialchars($product['name']); ?>
-                    </option>
-                <?php endforeach; ?>
+                ${getProductOptionsHTML()}
             </select>
         </div>
         <div class="col-md-2">
@@ -1824,12 +1834,7 @@ if (addCompanyOrderModalElement && typeof bootstrap !== 'undefined') {
                 <div class="order-item row mb-2">
                     <div class="col-md-9">
                         <select class="form-select product-select" name="items[0][product_id]" required>
-                            <option value="">اختر القالب</option>
-                            <?php foreach ($products as $product): ?>
-                                <option value="<?php echo $product['id']; ?>">
-                                    <?php echo htmlspecialchars($product['name']); ?>
-                                </option>
-                            <?php endforeach; ?>
+                            ${getProductOptionsHTML()}
                         </select>
                     </div>
                     <div class="col-md-2">
