@@ -1659,12 +1659,12 @@ document.addEventListener('click', function(e) {
     }
 });
 
-const newCustomerToggle = document.getElementById('toggleNewCustomer');
-const existingCustomerSelect = document.getElementById('existingCustomerSelect');
-const newCustomerFields = document.getElementById('newCustomerFields');
-const newCustomerRequiredInputs = Array.from(document.querySelectorAll('.new-customer-required'));
-
 function updateNewCustomerState() {
+    const newCustomerToggle = document.getElementById('toggleNewCustomer');
+    const existingCustomerSelect = document.getElementById('existingCustomerSelect');
+    const newCustomerFields = document.getElementById('newCustomerFields');
+    const newCustomerRequiredInputs = Array.from(document.querySelectorAll('#addOrderModal .new-customer-required'));
+    
     if (!newCustomerToggle || !existingCustomerSelect || !newCustomerFields) {
         return;
     }
@@ -1687,24 +1687,36 @@ function updateNewCustomerState() {
     }
 }
 
-if (newCustomerToggle) {
-    newCustomerToggle.addEventListener('change', updateNewCustomerState);
-    updateNewCustomerState();
-}
-
+// ربط الأحداث عند فتح Modal
 const addOrderModalElement = document.getElementById('addOrderModal');
 if (addOrderModalElement && typeof bootstrap !== 'undefined') {
-    addOrderModalElement.addEventListener('hidden.bs.modal', function() {
-        if (!newCustomerToggle) {
-            return;
+    // ربط event listener مباشرة على toggle (event delegation)
+    addOrderModalElement.addEventListener('change', function(e) {
+        if (e.target && e.target.id === 'toggleNewCustomer') {
+            updateNewCustomerState();
         }
-        newCustomerToggle.checked = false;
+    });
+    
+    // تحديث الحالة عند فتح Modal
+    addOrderModalElement.addEventListener('shown.bs.modal', function() {
         updateNewCustomerState();
+    });
+}
+
+// إعادة تعيين النموذج عند إغلاق Modal
+if (addOrderModalElement && typeof bootstrap !== 'undefined') {
+    addOrderModalElement.addEventListener('hidden.bs.modal', function() {
+        const newCustomerToggle = document.getElementById('toggleNewCustomer');
+        if (newCustomerToggle) {
+            newCustomerToggle.checked = false;
+            updateNewCustomerState();
+        }
+        const newCustomerRequiredInputs = Array.from(document.querySelectorAll('#addOrderModal .new-customer-required'));
         newCustomerRequiredInputs.forEach(function(input) {
             input.value = '';
         });
-        const newCustomerPhoneInput = document.querySelector('input[name="new_customer_phone"]');
-        const newCustomerAddressInput = document.querySelector('textarea[name="new_customer_address"]');
+        const newCustomerPhoneInput = document.querySelector('#addOrderModal input[name="new_customer_phone"]');
+        const newCustomerAddressInput = document.querySelector('#addOrderModal textarea[name="new_customer_address"]');
         if (newCustomerPhoneInput) {
             newCustomerPhoneInput.value = '';
         }
@@ -1790,17 +1802,25 @@ if (salesRepSelect && existingCustomerSelect) {
 }
 
 // تحديث حالة تعطيل العميل عند تغيير toggleNewCustomer (فقط إذا لم يكن المستخدم مندوب مبيعات)
-if (newCustomerToggle && salesRepSelect) {
-    const originalUpdateNewCustomerState = updateNewCustomerState;
-    updateNewCustomerState = function() {
-        originalUpdateNewCustomerState();
+if (addOrderModalElement && typeof bootstrap !== 'undefined') {
+    addOrderModalElement.addEventListener('shown.bs.modal', function() {
+        const newCustomerToggle = document.getElementById('toggleNewCustomer');
+        const salesRepSelect = document.getElementById('salesRepSelect');
+        const existingCustomerSelect = document.getElementById('existingCustomerSelect');
         
-        // التأكد من أن حقل العميل معطل إذا لم يتم اختيار مندوب
-        if (salesRepSelect && !salesRepSelect.value && !newCustomerToggle.checked) {
-            existingCustomerSelect.disabled = true;
-            existingCustomerSelect.innerHTML = '<option value="">اختر المندوب أولاً</option>';
+        // إذا كان هناك مندوب محدد، تحميل عملاءه
+        if (salesRepSelect && salesRepSelect.value) {
+            salesRepSelect.dispatchEvent(new Event('change'));
         }
-    };
+        
+        // التأكد من أن حقل العميل معطل إذا لم يتم اختيار مندوب (فقط للمدير)
+        if (newCustomerToggle && salesRepSelect && existingCustomerSelect) {
+            if (!salesRepSelect.value && !newCustomerToggle.checked) {
+                existingCustomerSelect.disabled = true;
+                existingCustomerSelect.innerHTML = '<option value="">اختر المندوب أولاً</option>';
+            }
+        }
+    });
 }
 
 // JavaScript لمعالجة Modal طلب الشركة
