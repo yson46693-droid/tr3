@@ -42,12 +42,10 @@ if (!isset($currentUser) || $currentUser === null) {
     $currentUser = getCurrentUser();
 }
 
-// فحص أمني: إذا كان المستخدم محذوفاً أو غير موجود، إعادة التوجيه لتسجيل الدخول
-if (isLoggedIn() && (!$currentUser || !is_array($currentUser))) {
-    // المستخدم مسجل دخول لكن غير موجود في قاعدة البيانات - خطأ أمني
-    require_once __DIR__ . '/../includes/auth.php';
-    logout();
-    
+// فحص أمني: إذا كان المستخدم مسجل دخول لكن غير موجود في قاعدة البيانات
+// (getCurrentUser() يقوم بإلغاء تسجيل الدخول تلقائياً، لكن نتأكد من عدم وجود جلسة نشطة)
+if (isLoggedIn() && (!$currentUser || !is_array($currentUser) || empty($currentUser))) {
+    // المستخدم مسجل دخول لكن غير موجود أو محذوف - تم إلغاء تسجيل الدخول تلقائياً
     // إعادة التوجيه لتسجيل الدخول
     $loginUrl = function_exists('getRelativeUrl') ? getRelativeUrl('index.php') : '/index.php';
     if (!headers_sent()) {

@@ -51,6 +51,20 @@ requireRole('sales');
 if (!isset($currentUser) || $currentUser === null) {
     $currentUser = getCurrentUser();
 }
+
+// فحص أمني: إذا كان المستخدم محذوفاً أو غير موجود، إعادة التوجيه
+if (isLoggedIn() && (!$currentUser || !is_array($currentUser) || empty($currentUser))) {
+    // المستخدم محذوف أو غير موجود - تم إلغاء تسجيل الدخول تلقائياً من getCurrentUser()
+    $loginUrl = function_exists('getRelativeUrl') ? getRelativeUrl('index.php') : '/index.php';
+    if (!headers_sent()) {
+        header('Location: ' . $loginUrl);
+        exit;
+    } else {
+        echo '<script>window.location.href = "' . htmlspecialchars($loginUrl) . '";</script>';
+        exit;
+    }
+}
+
 $db = db();
 $pageParam = $_GET['page'] ?? 'dashboard';
 $page = $pageParam;

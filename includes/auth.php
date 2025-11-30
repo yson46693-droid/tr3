@@ -619,6 +619,20 @@ function requireLogin() {
 function requireRole($role) {
     requireLogin();
     
+    // فحص أمني: التأكد من أن المستخدم موجود في قاعدة البيانات
+    $currentUser = getCurrentUser();
+    if (!$currentUser || !is_array($currentUser) || empty($currentUser)) {
+        // المستخدم محذوف أو غير موجود - تم إلغاء تسجيل الدخول تلقائياً من getCurrentUser()
+        $loginUrl = function_exists('getRelativeUrl') ? getRelativeUrl('index.php') : '/index.php';
+        if (!headers_sent()) {
+            header('Location: ' . $loginUrl);
+            exit;
+        } else {
+            echo '<script>window.location.href = "' . htmlspecialchars($loginUrl) . '";</script>';
+            exit;
+        }
+    }
+    
     // إذا كان array، استخدم requireAnyRole
     if (is_array($role)) {
         return requireAnyRole($role);
