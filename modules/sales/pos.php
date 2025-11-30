@@ -2146,7 +2146,7 @@ if (!$error) {
                                 </div>
                                 <div class="mt-3 d-none" id="posPartialWrapper">
                                     <label class="form-label">مبلغ التحصيل الجزئي</label>
-                                    <input type="number" class="form-control text-muted" id="posPartialAmount" placeholder="0" step="1" required>
+                                    <input type="number" class="form-control text-muted" id="posPartialAmount" placeholder="0" step="1">
                                 </div>
                                 <div class="mt-3 d-none" id="posDueDateWrapper">
                                     <label class="form-label">تاريخ الاستحقاق <span class="text-muted">(اختياري)</span></label>
@@ -2403,11 +2403,19 @@ if (!$error) {
             paidAmount = netTotal;
             elements.partialWrapper.classList.add('d-none');
             elements.partialInput.value = '';
+            // إزالة required من حقل الدفع الجزئي عند اختيار الدفع الكامل
+            if (elements.partialInput) {
+                elements.partialInput.removeAttribute('required');
+            }
             if (elements.dueDateWrapper) {
                 elements.dueDateWrapper.classList.add('d-none');
             }
         } else if (paymentType === 'partial') {
             elements.partialWrapper.classList.remove('d-none');
+            // إضافة required لحقل الدفع الجزئي عند اختيار الدفع الجزئي
+            if (elements.partialInput) {
+                elements.partialInput.setAttribute('required', 'required');
+            }
             if (elements.dueDateWrapper) {
                 elements.dueDateWrapper.classList.remove('d-none');
             }
@@ -2434,6 +2442,10 @@ if (!$error) {
         } else {
             elements.partialWrapper.classList.add('d-none');
             elements.partialInput.value = '';
+            // إزالة required من حقل الدفع الجزئي عند اختيار البيع بالآجل
+            if (elements.partialInput) {
+                elements.partialInput.removeAttribute('required');
+            }
             if (elements.dueDateWrapper) {
                 elements.dueDateWrapper.classList.remove('d-none');
             }
