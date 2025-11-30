@@ -437,13 +437,15 @@ function displayCarInventory(inventory) {
     `;
     
     inventory.forEach(item => {
+        const batchNumberId = item.batch_number_id || 'null';
+        const batchNumber = (item.batch_number || '').replace(/'/g, "\\'");
         html += `
             <tr>
                 <td>${item.product_name}</td>
                 <td>${parseFloat(item.quantity).toFixed(2)}</td>
                 <td>${parseFloat(item.unit_price).toFixed(2)} ج.م</td>
                 <td>
-                    <button class="btn btn-sm btn-success" onclick="addToReplacementItems(${item.product_id}, '${item.product_name.replace(/'/g, "\\'")}', ${item.quantity}, ${item.unit_price}, '${(item.batch_number || '').replace(/'/g, "\\'")}')">
+                    <button class="btn btn-sm btn-success" onclick="addToReplacementItems(${item.product_id}, '${item.product_name.replace(/'/g, "\\'")}', ${item.quantity}, ${item.unit_price}, '${batchNumber}', ${batchNumberId})">
                         <i class="bi bi-plus"></i>
                     </button>
                 </td>
@@ -494,10 +496,14 @@ function addToReturnItems(invoiceItemId, productId, productName, maxQuantity, un
     calculatePriceDifference();
 }
 
-function addToReplacementItems(productId, productName, maxQuantity, unitPrice, batchNumber) {
-    const existing = selectedReplacementItems.find(item => item.product_id === productId);
+function addToReplacementItems(productId, productName, maxQuantity, unitPrice, batchNumber, batchNumberId) {
+    // Check if same product with same batch_number_id already exists
+    const existing = selectedReplacementItems.find(item => 
+        item.product_id === productId && 
+        (item.batch_number_id === batchNumberId || (item.batch_number_id === null && batchNumberId === null))
+    );
     if (existing) {
-        alert('هذا المنتج مضاف بالفعل');
+        alert('هذا المنتج مع نفس رقم التشغيلة مضاف بالفعل');
         return;
     }
     
@@ -520,7 +526,8 @@ function addToReplacementItems(productId, productName, maxQuantity, unitPrice, b
         quantity: qty,
         unit_price: unitPrice,
         total_price: total,
-        batch_number: batchNumber
+        batch_number: batchNumber || null,
+        batch_number_id: batchNumberId && batchNumberId !== 'null' ? batchNumberId : null
     };
     
     selectedReplacementItems.push(item);

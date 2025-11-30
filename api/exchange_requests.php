@@ -377,6 +377,21 @@ function handleCreateExchange(): void
         
         // Process replacement items
         $processedReplacementItems = [];
+        
+        // Get vehicle ID once
+        $vehicle = $db->queryOne(
+            "SELECT id FROM vehicles WHERE driver_id = ? AND status = 'active' ORDER BY id DESC LIMIT 1",
+            [$salesRepId]
+        );
+        
+        if (!$vehicle) {
+            throw new RuntimeException('لا توجد سيارة مرتبطة بهذا المندوب');
+        }
+        
+        $vehicleId = (int)$vehicle['id'];
+        
+        // Group replacement items by product_id and batch_number_id to accumulate quantities
+        $replacementItemsByKey = [];
         foreach ($replacementItems as $item) {
             if (!is_array($item)) {
                 continue;
@@ -385,49 +400,84 @@ function handleCreateExchange(): void
             $productId = (int)($item['product_id'] ?? 0);
             $quantity = isset($item['quantity']) ? (float)$item['quantity'] : 0.0;
             $unitPrice = isset($item['unit_price']) ? (float)$item['unit_price'] : 0.0;
+            $batchNumberId = isset($item['batch_number_id']) && $item['batch_number_id'] !== null ? (int)$item['batch_number_id'] : null;
             
             if ($productId <= 0 || $quantity <= 0 || $unitPrice <= 0) {
                 continue;
             }
             
-            // Verify inventory availability
-            $vehicle = $db->queryOne(
-                "SELECT id FROM vehicles WHERE driver_id = ? AND status = 'active' ORDER BY id DESC LIMIT 1",
-                [$salesRepId]
-            );
+            // Create a unique key for product + batch combination
+            $key = $productId . '_' . ($batchNumberId ?? 'null');
             
-            if (!$vehicle) {
-                throw new RuntimeException('لا توجد سيارة مرتبطة بهذا المندوب');
+            if (!isset($replacementItemsByKey[$key])) {
+                $replacementItemsByKey[$key] = [
+                    'product_id' => $productId,
+                    'batch_number_id' => $batchNumberId,
+                    'quantity' => 0,
+                    'unit_price' => $unitPrice,
+                    'items' => []
+                ];
             }
             
-            $vehicleId = (int)$vehicle['id'];
+            $replacementItemsByKey[$key]['quantity'] += $quantity;
+            $replacementItemsByKey[$key]['items'][] = $item;
+        }
+        
+        // Verify inventory availability for each unique product+batch combination
+        foreach ($replacementItemsByKey as $key => $groupedItem) {
+            $productId = $groupedItem['product_id'];
+            $batchNumberId = $groupedItem['batch_number_id'];
+            $totalQuantity = $groupedItem['quantity'];
+            $unitPrice = $groupedItem['unit_price'];
             
-            $inventory = $db->queryOne(
-                "SELECT quantity, finished_batch_number, finished_batch_id FROM vehicle_inventory 
-                 WHERE vehicle_id = ? AND product_id = ? FOR UPDATE",
-                [$vehicleId, $productId]
-            );
+            // Build query to check inventory by product_id and optionally batch_number_id
+            $inventoryQuery = "SELECT quantity, finished_batch_number, finished_batch_id FROM vehicle_inventory 
+                              WHERE vehicle_id = ? AND product_id = ?";
+            $inventoryParams = [$vehicleId, $productId];
+            
+            if ($batchNumberId !== null) {
+                $inventoryQuery .= " AND finished_batch_id = ?";
+                $inventoryParams[] = $batchNumberId;
+            } else {
+                // If no batch_number_id specified, check for entries without batch or with null batch
+                $inventoryQuery .= " AND (finished_batch_id IS NULL OR finished_batch_id = 0)";
+            }
+            
+            $inventoryQuery .= " FOR UPDATE";
+            
+            $inventory = $db->queryOne($inventoryQuery, $inventoryParams);
             
             if (!$inventory) {
-                throw new RuntimeException("المنتج غير موجود في مخزن السيارة");
+                $errorMsg = $batchNumberId !== null 
+                    ? "المنتج مع رقم التشغيلة المحدد غير موجود في مخزن السيارة"
+                    : "المنتج غير موجود في مخزن السيارة";
+                throw new RuntimeException($errorMsg);
             }
             
             $availableQty = (float)$inventory['quantity'];
-            if ($availableQty < $quantity) {
-                throw new RuntimeException("الكمية المتاحة ({$availableQty}) أقل من المطلوب ({$quantity})");
+            if ($availableQty < $totalQuantity) {
+                throw new RuntimeException("الكمية المطلوبة ({$totalQuantity}) أكبر من الكمية المتاحة في مخزن السيارة ({$availableQty})");
             }
             
-            $lineTotal = round($quantity * $unitPrice, 2);
-            $newValue += $lineTotal;
-            
-            $processedReplacementItems[] = [
-                'product_id' => $productId,
-                'quantity' => $quantity,
-                'unit_price' => $unitPrice,
-                'total_price' => $lineTotal,
-                'batch_number' => $inventory['finished_batch_number'] ?? null,
-                'batch_number_id' => isset($inventory['finished_batch_id']) ? (int)$inventory['finished_batch_id'] : null,
-            ];
+            // Process each item in this group
+            foreach ($groupedItem['items'] as $item) {
+                $qty = isset($item['quantity']) ? (float)$item['quantity'] : 0.0;
+                $lineTotal = round($qty * $unitPrice, 2);
+                $newValue += $lineTotal;
+                
+                // Use batch_number from original item if available, otherwise from inventory
+                $itemBatchNumber = $item['batch_number'] ?? $inventory['finished_batch_number'] ?? null;
+                $itemBatchNumberId = $batchNumberId ?? (isset($inventory['finished_batch_id']) ? (int)$inventory['finished_batch_id'] : null);
+                
+                $processedReplacementItems[] = [
+                    'product_id' => $productId,
+                    'quantity' => $qty,
+                    'unit_price' => $unitPrice,
+                    'total_price' => $lineTotal,
+                    'batch_number' => $itemBatchNumber,
+                    'batch_number_id' => $itemBatchNumberId,
+                ];
+            }
         }
         
         if (empty($processedReturnItems) || empty($processedReplacementItems)) {
@@ -608,20 +658,34 @@ function handleCreateExchange(): void
                     foreach ($replacementItems as $item) {
                         $productId = (int)$item['product_id'];
                         $quantity = (float)$item['quantity'];
+                        $batchNumberId = isset($item['batch_number_id']) && $item['batch_number_id'] !== null ? (int)$item['batch_number_id'] : null;
                         
-                        // Check availability in vehicle inventory
-                        $inventoryRow = $db->queryOne(
-                            "SELECT id, quantity FROM vehicle_inventory WHERE vehicle_id = ? AND product_id = ? FOR UPDATE",
-                            [$vehicleId, $productId]
-                        );
+                        // Check availability in vehicle inventory by product_id and batch_number_id
+                        $inventoryQuery = "SELECT id, quantity FROM vehicle_inventory WHERE vehicle_id = ? AND product_id = ?";
+                        $inventoryParams = [$vehicleId, $productId];
+                        
+                        if ($batchNumberId !== null) {
+                            $inventoryQuery .= " AND finished_batch_id = ?";
+                            $inventoryParams[] = $batchNumberId;
+                        } else {
+                            // If no batch_number_id specified, check for entries without batch or with null batch
+                            $inventoryQuery .= " AND (finished_batch_id IS NULL OR finished_batch_id = 0)";
+                        }
+                        
+                        $inventoryQuery .= " FOR UPDATE";
+                        
+                        $inventoryRow = $db->queryOne($inventoryQuery, $inventoryParams);
                         
                         if (!$inventoryRow) {
-                            throw new Exception("المنتج غير موجود في مخزن السيارة");
+                            $errorMsg = $batchNumberId !== null 
+                                ? "المنتج مع رقم التشغيلة المحدد غير موجود في مخزن السيارة"
+                                : "المنتج غير موجود في مخزن السيارة";
+                            throw new Exception($errorMsg);
                         }
                         
                         $currentQuantity = (float)$inventoryRow['quantity'];
                         if ($currentQuantity < $quantity) {
-                            throw new Exception("الكمية المتاحة ({$currentQuantity}) أقل من المطلوب ({$quantity})");
+                            throw new Exception("الكمية المطلوبة ({$quantity}) أكبر من الكمية المتاحة في مخزن السيارة ({$currentQuantity})");
                         }
                         
                         $newQuantity = round($currentQuantity - $quantity, 3);
