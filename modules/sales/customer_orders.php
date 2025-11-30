@@ -180,11 +180,50 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 $transactionStarted = true;
 
                 if ($createNewCustomer) {
-                    // إنشاء عميل جديد دائماً، حتى لو كان هناك عميل بنفس الاسم أو رقم الهاتف
-                    // هذا يضمن أن كل مندوب له عملاؤه الخاصون به
+                    // التحقق من عدم تكرار بيانات العميل الجديد مع عملاء المندوب الحاليين
                     $newCustomerCreator = $customerCreatorId ?? $currentUser['id'];
                     $newCustomerRepId = $salesRepId ?? ($isSalesUser ? $currentUser['id'] : null);
                     $createdByAdminFlag = ($isSalesUser && $newCustomerRepId) ? 0 : 1;
+
+                    // التحقق من وجود عميل مطابق في عملاء المندوب
+                    if ($newCustomerRepId) {
+                        $duplicateCheckConditions = [
+                            "(rep_id = ? OR created_by = ?)",
+                            "name = ?"
+                        ];
+                        $duplicateCheckParams = [$newCustomerRepId, $newCustomerRepId, $newCustomerName];
+                        
+                        // إضافة فحص رقم الهاتف إذا كان موجوداً
+                        if (!empty($newCustomerPhone)) {
+                            $duplicateCheckConditions[] = "phone = ?";
+                            $duplicateCheckParams[] = $newCustomerPhone;
+                        }
+                        
+                        // إضافة فحص العنوان إذا كان موجوداً
+                        if (!empty($newCustomerAddress)) {
+                            $duplicateCheckConditions[] = "address = ?";
+                            $duplicateCheckParams[] = $newCustomerAddress;
+                        }
+                        
+                        $duplicateQuery = "SELECT id, name, phone, address FROM customers WHERE " . implode(" AND ", $duplicateCheckConditions) . " LIMIT 1";
+                        $duplicateCustomer = $db->queryOne($duplicateQuery, $duplicateCheckParams);
+                        
+                        if ($duplicateCustomer) {
+                            $duplicateInfo = [];
+                            if (!empty($duplicateCustomer['phone'])) {
+                                $duplicateInfo[] = "رقم الهاتف: " . $duplicateCustomer['phone'];
+                            }
+                            if (!empty($duplicateCustomer['address'])) {
+                                $duplicateInfo[] = "العنوان: " . $duplicateCustomer['address'];
+                            }
+                            $duplicateMessage = "يوجد عميل مسجل مسبقاً بنفس البيانات في قائمة عملائك";
+                            if (!empty($duplicateInfo)) {
+                                $duplicateMessage .= " (" . implode(", ", $duplicateInfo) . ")";
+                            }
+                            $duplicateMessage .= ". يرجى اختيار العميل الموجود من القائمة أو تعديل البيانات.";
+                            throw new InvalidArgumentException($duplicateMessage);
+                        }
+                    }
 
                     // التحقق من وجود أعمدة اللوكيشن
                     $hasLatitudeColumn = !empty($db->queryOne("SHOW COLUMNS FROM customers LIKE 'latitude'"));

@@ -681,15 +681,48 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action'])) {
             $error = 'يجب إدخال اسم العميل';
         } else {
             try {
-                if (!empty($phone)) {
-                    $existing = $db->queryOne("SELECT id FROM customers WHERE phone = ?", [$phone]);
-                    if ($existing) {
-                        throw new InvalidArgumentException('رقم الهاتف موجود بالفعل');
-                    }
-                }
-
                 $repIdForCustomer = $isSalesUser ? (int)$currentUser['id'] : null;
                 $createdByAdminFlag = $isSalesUser ? 0 : 1;
+
+                // التحقق من عدم تكرار بيانات العميل الجديد مع عملاء المندوب الحاليين
+                if ($repIdForCustomer) {
+                    $duplicateCheckConditions = [
+                        "(rep_id = ? OR created_by = ?)",
+                        "name = ?"
+                    ];
+                    $duplicateCheckParams = [$repIdForCustomer, $repIdForCustomer, $name];
+                    
+                    // إضافة فحص رقم الهاتف إذا كان موجوداً
+                    if (!empty($phone)) {
+                        $duplicateCheckConditions[] = "phone = ?";
+                        $duplicateCheckParams[] = $phone;
+                    }
+                    
+                    // إضافة فحص العنوان إذا كان موجوداً
+                    if (!empty($address)) {
+                        $duplicateCheckConditions[] = "address = ?";
+                        $duplicateCheckParams[] = $address;
+                    }
+                    
+                    $duplicateQuery = "SELECT id, name, phone, address FROM customers WHERE " . implode(" AND ", $duplicateCheckConditions) . " LIMIT 1";
+                    $duplicateCustomer = $db->queryOne($duplicateQuery, $duplicateCheckParams);
+                    
+                    if ($duplicateCustomer) {
+                        $duplicateInfo = [];
+                        if (!empty($duplicateCustomer['phone'])) {
+                            $duplicateInfo[] = "رقم الهاتف: " . $duplicateCustomer['phone'];
+                        }
+                        if (!empty($duplicateCustomer['address'])) {
+                            $duplicateInfo[] = "العنوان: " . $duplicateCustomer['address'];
+                        }
+                        $duplicateMessage = "يوجد عميل مسجل مسبقاً بنفس البيانات في قائمة عملائك";
+                        if (!empty($duplicateInfo)) {
+                            $duplicateMessage .= " (" . implode(", ", $duplicateInfo) . ")";
+                        }
+                        $duplicateMessage .= ". يرجى اختيار العميل الموجود من القائمة أو تعديل البيانات.";
+                        throw new InvalidArgumentException($duplicateMessage);
+                    }
+                }
 
                 $result = $db->execute(
                     "INSERT INTO customers (name, phone, balance, address, status, created_by, rep_id, created_from_pos, created_by_admin) 
