@@ -187,6 +187,29 @@ if (!empty($salesTableExists)) {
 // إجمالي المبيعات (نستخدم الفواتير إذا كانت موجودة، وإلا نستخدم جدول sales)
 $totalSales = $totalSalesFromInvoices > 0 ? $totalSalesFromInvoices : $totalSalesFromSalesTable;
 
+// حساب تأثير الاستبدالات على إجمالي المبيعات
+$exchangesTableExists = $db->queryOne("SHOW TABLES LIKE 'exchanges'");
+$totalExchanges = 0.0;
+if (!empty($exchangesTableExists)) {
+    try {
+        // حساب إجمالي الفرق من الاستبدالات المعتمدة
+        $exchangesResult = $db->queryOne(
+            "SELECT COALESCE(SUM(difference_amount), 0) as total_exchanges
+             FROM exchanges
+             WHERE sales_rep_id = ? 
+               AND status IN ('approved', 'completed')",
+            [$salesRepId]
+        );
+        $totalExchanges = (float)($exchangesResult['total_exchanges'] ?? 0);
+        
+        // إضافة/خصم الاستبدالات من إجمالي المبيعات
+        // الفرق موجب = خصم، الفرق سالب = إضافة
+        $totalSales = $totalSales - $totalExchanges; // سالب الفرق = إضافة إذا كان الفرق سالب
+    } catch (Throwable $exchangesError) {
+        error_log('Exchanges calculation error for total sales: ' . $exchangesError->getMessage());
+    }
+}
+
 // حساب إجمالي المرتجعات للمندوب
 $totalReturns = 0.0;
 $returnsTableExists = $db->queryOne("SHOW TABLES LIKE 'returns'");
@@ -380,6 +403,44 @@ if (!empty($returnsTableExists)) {
         $monthSales = max(0, $monthSales - $monthReturns);
     } catch (Throwable $returnsError) {
         error_log('Returns calculation error for daily/monthly sales: ' . $returnsError->getMessage());
+    }
+}
+
+// حساب تأثير الاستبدالات على مبيعات اليوم والشهر
+$exchangesTableExists = $db->queryOne("SHOW TABLES LIKE 'exchanges'");
+if (!empty($exchangesTableExists)) {
+    try {
+        // حساب الاستبدالات اليومية (الفرق الإجمالي)
+        $todayExchangesResult = $db->queryOne(
+            "SELECT COALESCE(SUM(difference_amount), 0) as total_exchanges
+             FROM exchanges
+             WHERE sales_rep_id = ? 
+               AND DATE(exchange_date) = CURDATE()
+               AND status IN ('approved', 'completed')",
+            [$salesRepId]
+        );
+        $todayExchanges = (float)($todayExchangesResult['total_exchanges'] ?? 0);
+        
+        // إضافة/خصم الاستبدالات اليومية من مبيعات اليوم
+        // الفرق موجب = خصم، الفرق سالب = إضافة
+        $todaySales = $todaySales - $todayExchanges; // سالب الفرق = إضافة إذا كان الفرق سالب
+        
+        // حساب الاستبدالات الشهرية
+        $monthExchangesResult = $db->queryOne(
+            "SELECT COALESCE(SUM(difference_amount), 0) as total_exchanges
+             FROM exchanges
+             WHERE sales_rep_id = ? 
+               AND MONTH(exchange_date) = MONTH(NOW()) 
+               AND YEAR(exchange_date) = YEAR(NOW())
+               AND status IN ('approved', 'completed')",
+            [$salesRepId]
+        );
+        $monthExchanges = (float)($monthExchangesResult['total_exchanges'] ?? 0);
+        
+        // إضافة/خصم الاستبدالات الشهرية من مبيعات الشهر
+        $monthSales = $monthSales - $monthExchanges; // سالب الفرق = إضافة إذا كان الفرق سالب
+    } catch (Throwable $exchangesError) {
+        error_log('Exchanges calculation error for daily/monthly sales: ' . $exchangesError->getMessage());
     }
 }
 

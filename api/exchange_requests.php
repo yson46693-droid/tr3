@@ -620,6 +620,7 @@ function handleCreateExchange(): void
         if (abs($difference) >= 0.01) {
             $customer = $db->queryOne("SELECT balance FROM customers WHERE id = ? FOR UPDATE", [$customerId]);
             $customerBalance = (float)($customer['balance'] ?? 0);
+            $oldBalance = $customerBalance; // حفظ الرصيد القديم
             
             if ($difference < 0) {
                 // المنتج البديل أرخص - إضافة للرصيد الدائن
@@ -630,6 +631,219 @@ function handleCreateExchange(): void
             }
             
             $db->execute("UPDATE customers SET balance = ? WHERE id = ?", [$newBalance, $customerId]);
+            
+            // خصم المندوب فقط في حالة معينة:
+            // 1. إذا كان إجمالي منتجات العميل أكبر من إجمالي منتجات السيارة (difference < 0)
+            // 2. إذا كان العميل مدين قبل العملية (oldBalance > 0)
+            // 3. إذا أصبح رصيد العميل دائن بعد العملية (newBalance < 0)
+            if ($difference < 0 && $oldBalance > 0 && $newBalance < 0 && $salesRepId > 0) {
+                // حساب قيمة الرصيد الدائن المضاف للعميل
+                // الرصيد الدائن المضاف = الفرق بين الرصيد القديم والجديد (الجزء الذي تحول من مدين إلى دائن)
+                $creditAdded = abs($newBalance); // القيمة المطلقة للرصيد الدائن الجديد
+                
+                // خصم 2% من المندوب من قيمة الرصيد الدائن المضاف
+                $deductionAmount = round($creditAdded * 0.02, 2);
+                
+                if ($deductionAmount > 0) {
+                    require_once __DIR__ . '/../includes/salary_calculator.php';
+                    require_once __DIR__ . '/../includes/audit_log.php';
+                    
+                    // التحقق من عدم تطبيق الخصم مسبقاً (منع الخصم المكرر)
+                    $existingDeduction = $db->queryOne(
+                        "SELECT id FROM audit_logs 
+                         WHERE action = 'exchange_deduction' 
+                         AND entity_type = 'salary' 
+                         AND new_value LIKE ?",
+                        ['%"exchange_id":' . $exchangeId . '%']
+                    );
+                    
+                    if (empty($existingDeduction)) {
+                        // تحديد الشهر والسنة من تاريخ الاستبدال
+                        $exchangeDate = date('Y-m-d');
+                        $timestamp = strtotime($exchangeDate) ?: time();
+                        $month = (int)date('n', $timestamp);
+                        $year = (int)date('Y', $timestamp);
+                        
+                        // الحصول على أو إنشاء سجل الراتب
+                        $summary = getSalarySummary($salesRepId, $month, $year);
+                        
+                        if (!$summary['exists']) {
+                            $creation = createOrUpdateSalary($salesRepId, $month, $year);
+                            if (!($creation['success'] ?? false)) {
+                                error_log('Failed to create salary for exchange deduction: ' . ($creation['message'] ?? 'unknown error'));
+                                // لا نرمي استثناء، فقط نسجل الخطأ
+                            } else {
+                                $summary = getSalarySummary($salesRepId, $month, $year);
+                            }
+                        }
+                        
+                        if ($summary['exists'] ?? false) {
+                            $salary = $summary['salary'];
+                            $salaryId = (int)($salary['id'] ?? 0);
+                            
+                            if ($salaryId > 0) {
+                                // الحصول على أسماء الأعمدة في جدول الرواتب
+                                $columns = $db->query("SHOW COLUMNS FROM salaries");
+                                $columnMap = [
+                                    'deductions' => null,
+                                    'total_amount' => null,
+                                    'updated_at' => null
+                                ];
+                                
+                                foreach ($columns as $column) {
+                                    $field = $column['Field'] ?? '';
+                                    if ($field === 'deductions' || $field === 'total_deductions') {
+                                        $columnMap['deductions'] = $field;
+                                    } elseif ($field === 'total_amount' || $field === 'amount' || $field === 'net_total') {
+                                        $columnMap['total_amount'] = $field;
+                                    } elseif ($field === 'updated_at' || $field === 'modified_at' || $field === 'last_updated') {
+                                        $columnMap['updated_at'] = $field;
+                                    }
+                                }
+                                
+                                // بناء استعلام التحديث
+                                $updates = [];
+                                $params = [];
+                                
+                                if ($columnMap['deductions'] !== null) {
+                                    $updates[] = "{$columnMap['deductions']} = COALESCE({$columnMap['deductions']}, 0) + ?";
+                                    $params[] = $deductionAmount;
+                                }
+                                
+                                if ($columnMap['total_amount'] !== null) {
+                                    $updates[] = "{$columnMap['total_amount']} = GREATEST(COALESCE({$columnMap['total_amount']}, 0) - ?, 0)";
+                                    $params[] = $deductionAmount;
+                                }
+                                
+                                if ($columnMap['updated_at'] !== null) {
+                                    $updates[] = "{$columnMap['updated_at']} = NOW()";
+                                }
+                                
+                                if (!empty($updates)) {
+                                    $params[] = $salaryId;
+                                    $db->execute(
+                                        "UPDATE salaries SET " . implode(', ', $updates) . " WHERE id = ?",
+                                        $params
+                                    );
+                                    
+                                    // تحديث ملاحظات الراتب لتوثيق الخصم
+                                    $currentNotes = $salary['notes'] ?? '';
+                                    $deductionNote = "\n[خصم استبدال]: تم خصم " . number_format($deductionAmount, 2) . " ج.م (2% من رصيد دائن مضاف للعميل بقيمة " . number_format($creditAdded, 2) . " ج.م من استبدال {$exchangeNumber})";
+                                    $newNotes = $currentNotes . $deductionNote;
+                                    
+                                    $db->execute(
+                                        "UPDATE salaries SET notes = ? WHERE id = ?",
+                                        [$newNotes, $salaryId]
+                                    );
+                                    
+                                    // تسجيل سجل التدقيق
+                                    logAudit($currentUser['id'], 'exchange_deduction', 'salary', $salaryId, null, [
+                                        'exchange_id' => $exchangeId,
+                                        'exchange_number' => $exchangeNumber,
+                                        'credit_added' => $creditAdded,
+                                        'deduction_amount' => $deductionAmount,
+                                        'sales_rep_id' => $salesRepId,
+                                        'old_balance' => $oldBalance,
+                                        'new_balance' => $newBalance
+                                    ]);
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        
+        // تحديث إجمالي المبيعات ومبيعات الشهر بناءً على الفرق
+        // إذا كان الفرق موجب (أحمر): خصم من المبيعات
+        // إذا كان الفرق سالب (أخضر): إضافة إلى المبيعات
+        if (abs($difference) >= 0.01 && $salesRepId > 0) {
+            require_once __DIR__ . '/../includes/approval_system.php';
+            
+            // التحقق من عدم إنشاء سجل تحصيل مسبقاً (منع التكرار)
+            $existingCollection = $db->queryOne(
+                "SELECT id FROM collections 
+                 WHERE reference_number = ? 
+                 AND collected_by = ?",
+                ['EXCHANGE-' . $exchangeNumber, $salesRepId]
+            );
+            
+            if (empty($existingCollection)) {
+                // إنشاء سجل تحصيل (سالب أو موجب) حسب الفرق
+                // الفرق موجب (أحمر) = المنتج البديل أغلى = خصم من المبيعات (سالب)
+                // الفرق سالب (أخضر) = المنتج البديل أرخص = إضافة إلى المبيعات (موجب)
+                $collectionAmount = -$difference; // سالب الفرق = موجب إذا كان الفرق سالب
+                
+                // الحصول على أعمدة جدول collections
+                $columns = $db->query("SHOW COLUMNS FROM collections") ?? [];
+                $columnNames = [];
+                foreach ($columns as $column) {
+                    if (!empty($column['Field'])) {
+                        $columnNames[] = $column['Field'];
+                    }
+                }
+                
+                $hasStatus = in_array('status', $columnNames, true);
+                $hasApprovedBy = in_array('approved_by', $columnNames, true);
+                $hasApprovedAt = in_array('approved_at', $columnNames, true);
+                
+                $fields = [];
+                $placeholders = [];
+                $values = [];
+                
+                $baseData = [
+                    'customer_id' => $customerId,
+                    'amount' => $collectionAmount,
+                    'date' => date('Y-m-d'),
+                    'payment_method' => 'cash',
+                    'reference_number' => 'EXCHANGE-' . $exchangeNumber,
+                    'notes' => 'استبدال رقم ' . $exchangeNumber . ' - ' . ($difference > 0 ? 'خصم' : 'إضافة') . ' ' . number_format(abs($difference), 2) . ' ج.م',
+                    'collected_by' => $salesRepId,
+                ];
+                
+                foreach ($baseData as $column => $value) {
+                    if (in_array($column, $columnNames, true)) {
+                        $fields[] = $column;
+                        $placeholders[] = '?';
+                        $values[] = $value;
+                    }
+                }
+                
+                if ($hasStatus) {
+                    $fields[] = 'status';
+                    $placeholders[] = '?';
+                    $values[] = 'approved';
+                }
+                
+                if ($hasApprovedBy) {
+                    $fields[] = 'approved_by';
+                    $placeholders[] = '?';
+                    $values[] = $currentUser['id'];
+                }
+                
+                if ($hasApprovedAt) {
+                    $fields[] = 'approved_at';
+                    $placeholders[] = '?';
+                    $values[] = date('Y-m-d H:i:s');
+                }
+                
+                if (!empty($fields)) {
+                    $db->execute(
+                        "INSERT INTO collections (" . implode(', ', $fields) . ") 
+                         VALUES (" . implode(', ', $placeholders) . ")",
+                        $values
+                    );
+                    
+                    // تسجيل في سجل التدقيق
+                    logAudit($currentUser['id'], 'exchange_collection', 'collections', $db->getLastInsertId(), null, [
+                        'exchange_id' => $exchangeId,
+                        'exchange_number' => $exchangeNumber,
+                        'difference_amount' => $difference,
+                        'collection_amount' => $collectionAmount,
+                        'sales_rep_id' => $salesRepId
+                    ]);
+                }
+            }
         }
         
         // Update customer purchase history immediately
