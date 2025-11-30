@@ -389,9 +389,12 @@ function getExchanges($filters = [], $limit = 100, $offset = 0) {
         $params[] = $filters['customer_id'];
     }
     
-    if (!empty($filters['sales_rep_id'])) {
-        $sql .= " AND e.sales_rep_id = ?";
-        $params[] = $filters['sales_rep_id'];
+    if (isset($filters['sales_rep_id']) && $filters['sales_rep_id'] !== '') {
+        $salesRepId = (int)$filters['sales_rep_id'];
+        if ($salesRepId > 0) {
+            $sql .= " AND e.sales_rep_id = ?";
+            $params[] = $salesRepId;
+        }
     }
     
     if (!empty($filters['status'])) {

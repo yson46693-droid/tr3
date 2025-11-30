@@ -170,9 +170,13 @@ if ($currentUser['role'] === 'sales') {
     $exchangeFilters['sales_rep_id'] = $currentUser['id'];
 }
 
-$exchangeFilters = array_filter($exchangeFilters, function($value) {
+$exchangeFilters = array_filter($exchangeFilters, function($value, $key) {
+    // عدم حذف sales_rep_id حتى لو كان 0 (لأنه قد يكون null في قاعدة البيانات)
+    if ($key === 'sales_rep_id') {
+        return true; // احتفظ بـ sales_rep_id دائماً
+    }
     return $value !== '';
-});
+}, ARRAY_FILTER_USE_BOTH);
 ?>
 
 <div class="d-flex justify-content-between align-items-center mb-4">

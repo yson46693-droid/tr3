@@ -277,6 +277,30 @@ function handleCreateExchange(): void
         $salesRepId = (int)($firstInvoice['sales_rep_id'] ?? 0);
     }
     
+    // في دالة handleCreateExchange، بعد تحديد $salesRepId (حوالي السطر 278)
+    // التأكد من أن sales_rep_id محدد بشكل صحيح
+    if ($salesRepId <= 0 && $currentUser['role'] === 'sales') {
+        // إذا كان المستخدم مندوب مبيعات، استخدم معرفه
+        $salesRepId = (int)$currentUser['id'];
+    }
+
+    // التأكد من أن sales_rep_id محدد قبل حفظ الاستبدال
+    if ($salesRepId <= 0) {
+        // محاولة الحصول على sales_rep_id من الفاتورة المرتبطة
+        if ($invoiceId) {
+            $invoice = $db->queryOne(
+                "SELECT sales_rep_id FROM invoices WHERE id = ?",
+                [$invoiceId]
+            );
+            $salesRepId = (int)($invoice['sales_rep_id'] ?? 0);
+        }
+        
+        // إذا لم يتم العثور على sales_rep_id، استخدم معرف المستخدم الحالي إذا كان مندوب
+        if ($salesRepId <= 0 && $currentUser['role'] === 'sales') {
+            $salesRepId = (int)$currentUser['id'];
+        }
+    }
+    
     $conn->begin_transaction();
     
     try {
@@ -441,7 +465,7 @@ function handleCreateExchange(): void
                 $exchangeNumber,
                 $invoiceId,
                 $customerId,
-                $salesRepId ?: null,
+                $salesRepId > 0 ? $salesRepId : null,
                 $oldValue,
                 $newValue,
                 $difference,
