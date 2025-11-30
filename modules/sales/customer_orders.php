@@ -251,7 +251,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                             $newCustomerName,
                             $newCustomerPhone !== '' ? $newCustomerPhone : null,
                             $newCustomerAddress !== '' ? $newCustomerAddress : null,
-                            0,
+                            0.0, // رصيد العميل الجديد يجب أن يكون 0
                             'active',
                             $newCustomerCreator,
                             $newCustomerRepId,
