@@ -230,6 +230,81 @@ function customerHistorySyncForCustomer(int $customerId): array
             $exchangesByInvoice[$invoiceId]['total'] += (float)($exchangeRow['difference_amount'] ?? 0.0);
         }
     }
+    
+    // أيضاً حساب الاستبدالات من جدول product_exchanges (للتوافق مع النظام القديم)
+    $hasProductExchangesTable = !empty($db->queryOne("SHOW TABLES LIKE 'product_exchanges'"));
+    if ($hasProductExchangesTable) {
+        try {
+            // التحقق من وجود عمود invoice_id في product_exchanges
+            $hasInvoiceIdColumn = false;
+            try {
+                $columnCheck = $db->queryOne("SHOW COLUMNS FROM product_exchanges LIKE 'invoice_id'");
+                $hasInvoiceIdColumn = !empty($columnCheck);
+            } catch (Throwable $e) {
+                $hasInvoiceIdColumn = false;
+            }
+            
+            if ($hasInvoiceIdColumn) {
+                $productExchangeRows = $db->query(
+                    "SELECT pe.invoice_id, pe.difference_amount
+                     FROM product_exchanges pe
+                     INNER JOIN invoices i ON i.id = pe.invoice_id
+                     WHERE pe.customer_id = ?
+                       AND pe.exchange_date >= ?
+                       AND pe.status = 'completed'
+                       AND pe.invoice_id IS NOT NULL
+                       AND pe.invoice_id IN ($placeholders)",
+                    array_merge([$customerId, $cutoffDate], $realInvoiceIds)
+                );
+            } else {
+                // إذا لم يكن هناك invoice_id، نحاول ربطه من exchange_return_items
+                try {
+                    $hasExchangeReturnItems = !empty($db->queryOne("SHOW TABLES LIKE 'exchange_return_items'"));
+                    if ($hasExchangeReturnItems) {
+                        $hasInvoiceItemIdColumn = !empty($db->queryOne("SHOW COLUMNS FROM exchange_return_items LIKE 'invoice_item_id'"));
+                        if ($hasInvoiceItemIdColumn) {
+                            $productExchangeRows = $db->query(
+                                "SELECT DISTINCT i.id as invoice_id, pe.difference_amount
+                                 FROM product_exchanges pe
+                                 INNER JOIN exchange_return_items eri ON eri.exchange_id = pe.id
+                                 INNER JOIN invoice_items ii ON ii.id = eri.invoice_item_id
+                                 INNER JOIN invoices i ON i.id = ii.invoice_id
+                                 WHERE pe.customer_id = ?
+                                   AND pe.exchange_date >= ?
+                                   AND pe.status = 'completed'
+                                   AND i.id IN ($placeholders)",
+                                array_merge([$customerId, $cutoffDate], $realInvoiceIds)
+                            );
+                        } else {
+                            $productExchangeRows = [];
+                        }
+                    } else {
+                        $productExchangeRows = [];
+                    }
+                } catch (Throwable $e) {
+                    error_log('customerHistorySyncForCustomer: failed linking product_exchanges with invoices -> ' . $e->getMessage());
+                    $productExchangeRows = [];
+                }
+            }
+            
+            foreach ($productExchangeRows as $peRow) {
+                $invoiceId = (int)($peRow['invoice_id'] ?? 0);
+                if ($invoiceId <= 0) {
+                    continue;
+                }
+                if (!isset($exchangesByInvoice[$invoiceId])) {
+                    $exchangesByInvoice[$invoiceId] = [
+                        'count' => 0,
+                        'total' => 0.0,
+                    ];
+                }
+                $exchangesByInvoice[$invoiceId]['count']++;
+                $exchangesByInvoice[$invoiceId]['total'] += (float)($peRow['difference_amount'] ?? 0.0);
+            }
+        } catch (Throwable $e) {
+            error_log('customerHistorySyncForCustomer: failed getting product_exchanges -> ' . $e->getMessage());
+        }
+    }
 
     // تحديث أو إنشاء السجلات في جدول التاريخ (فقط للفواتير الرسمية)
     foreach ($allInvoiceRows as $invoiceRow) {

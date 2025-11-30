@@ -506,12 +506,23 @@ function handleCreateExchange(): void
             $attempts++;
         }
         
-        // Get first invoice ID for linking
-        $firstInvoice = $db->queryOne(
-            "SELECT id FROM invoices WHERE customer_id = ? ORDER BY id ASC LIMIT 1",
-            [$customerId]
-        );
-        $invoiceId = $firstInvoice ? (int)$firstInvoice['id'] : null;
+        // استخدام invoice_id من أول منتج مرجع
+        $invoiceId = null;
+        if (!empty($processedReturnItems)) {
+            $firstReturnItem = $processedReturnItems[0];
+            // الحصول على invoice_id من invoice_item_id
+            if (isset($firstReturnItem['invoice_id'])) {
+                $invoiceId = (int)$firstReturnItem['invoice_id'];
+            } else if (isset($firstReturnItem['invoice_item_id'])) {
+                $invoiceItem = $db->queryOne(
+                    "SELECT invoice_id FROM invoice_items WHERE id = ?",
+                    [(int)$firstReturnItem['invoice_item_id']]
+                );
+                if ($invoiceItem) {
+                    $invoiceId = (int)$invoiceItem['invoice_id'];
+                }
+            }
+        }
         
         // Create exchange record with approved status (no approval needed)
         $db->execute(

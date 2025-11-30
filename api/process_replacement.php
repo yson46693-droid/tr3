@@ -688,6 +688,189 @@ try {
             }
         }
         
+        // ========== تسجيل في جدول exchanges الجديد ==========
+        $hasExchangesTable = !empty($db->queryOne("SHOW TABLES LIKE 'exchanges'"));
+        if ($hasExchangesTable) {
+            try {
+                // الحصول على invoice_id من أول منتج مرجع
+                $invoiceId = null;
+                if (!empty($customerItemsProcessed)) {
+                    $firstItem = $customerItemsProcessed[0];
+                    if (isset($firstItem['invoice_id'])) {
+                        $invoiceId = (int)$firstItem['invoice_id'];
+                    } else if (isset($firstItem['invoice_item_id'])) {
+                        $invoiceItem = $db->queryOne(
+                            "SELECT invoice_id FROM invoice_items WHERE id = ?",
+                            [(int)$firstItem['invoice_item_id']]
+                        );
+                        if ($invoiceItem) {
+                            $invoiceId = (int)$invoiceItem['invoice_id'];
+                        }
+                    }
+                }
+                
+                // إنشاء سجل في جدول exchanges
+                $db->execute(
+                    "INSERT INTO exchanges
+                     (exchange_number, invoice_id, customer_id, sales_rep_id, exchange_date, exchange_type,
+                      original_total, new_total, difference_amount, status, notes, created_by, approved_by, approved_at)
+                     VALUES (?, ?, ?, ?, CURDATE(), 'different_product', ?, ?, ?, 'completed', ?, ?, ?, NOW())",
+                    [
+                        $exchangeNumber,
+                        $invoiceId,
+                        $customerId,
+                        $salesRepId,
+                        $customerTotal,
+                        $carTotal,
+                        $difference,
+                        null, // notes
+                        $currentUser['id'],
+                        $currentUser['id'], // approved_by = created_by
+                    ]
+                );
+                
+                $newExchangeId = (int)$db->getLastInsertId();
+                
+                // نسخ عناصر الاستبدال من product_exchanges إلى exchanges
+                // نسخ exchange_return_items
+                if ($hasExchangeReturnItems && isset($exchangeId) && $exchangeId && $newExchangeId) {
+                    try {
+                        $returnItems = $db->query(
+                            "SELECT * FROM exchange_return_items WHERE exchange_id = ?",
+                            [$exchangeId]
+                        );
+                        
+                        foreach ($returnItems as $returnItem) {
+                            $fields = [];
+                            $placeholders = [];
+                            $values = [];
+                            
+                            $fields[] = 'exchange_id';
+                            $placeholders[] = '?';
+                            $values[] = $newExchangeId;
+                            
+                            if (isset($returnItem['invoice_item_id'])) {
+                                $fields[] = 'invoice_item_id';
+                                $placeholders[] = '?';
+                                $values[] = $returnItem['invoice_item_id'];
+                            }
+                            
+                            $fields[] = 'product_id';
+                            $placeholders[] = '?';
+                            $values[] = $returnItem['product_id'];
+                            
+                            if (isset($returnItem['batch_number_id']) && $returnItem['batch_number_id'] > 0) {
+                                $fields[] = 'batch_number_id';
+                                $placeholders[] = '?';
+                                $values[] = $returnItem['batch_number_id'];
+                            }
+                            
+                            if (isset($returnItem['batch_number'])) {
+                                $fields[] = 'batch_number';
+                                $placeholders[] = '?';
+                                $values[] = $returnItem['batch_number'];
+                            }
+                            
+                            $fields[] = 'quantity';
+                            $placeholders[] = '?';
+                            $values[] = $returnItem['quantity'];
+                            
+                            $fields[] = 'unit_price';
+                            $placeholders[] = '?';
+                            $values[] = $returnItem['unit_price'];
+                            
+                            $fields[] = 'total_price';
+                            $placeholders[] = '?';
+                            $values[] = $returnItem['total_price'];
+                            
+                            // التحقق من وجود جدول exchange_return_items المرتبط بـ exchanges
+                            $hasExchangesReturnItems = !empty($db->queryOne("SHOW TABLES LIKE 'exchange_return_items'"));
+                            if ($hasExchangesReturnItems) {
+                                // التحقق من وجود exchange_id في exchange_return_items
+                                $hasExchangeIdColumn = !empty($db->queryOne("SHOW COLUMNS FROM exchange_return_items LIKE 'exchange_id'"));
+                                if ($hasExchangeIdColumn) {
+                                    // التحقق من أن exchange_id يشير إلى جدول exchanges
+                                    // نستخدم exchange_id الجديد مباشرة
+                                    $db->execute(
+                                        "INSERT INTO exchange_return_items (" . implode(', ', $fields) . ") VALUES (" . implode(', ', $placeholders) . ")",
+                                        $values
+                                    );
+                                }
+                            }
+                        }
+                    } catch (Throwable $e) {
+                        error_log('Error copying exchange_return_items to exchanges table: ' . $e->getMessage());
+                    }
+                }
+                
+                // نسخ exchange_new_items
+                if ($hasExchangeNewItems && isset($exchangeId) && $exchangeId && $newExchangeId) {
+                    try {
+                        $newItems = $db->query(
+                            "SELECT * FROM exchange_new_items WHERE exchange_id = ?",
+                            [$exchangeId]
+                        );
+                        
+                        foreach ($newItems as $newItem) {
+                            $fields = [];
+                            $placeholders = [];
+                            $values = [];
+                            
+                            $fields[] = 'exchange_id';
+                            $placeholders[] = '?';
+                            $values[] = $newExchangeId;
+                            
+                            $fields[] = 'product_id';
+                            $placeholders[] = '?';
+                            $values[] = $newItem['product_id'];
+                            
+                            if (isset($newItem['batch_number_id']) && $newItem['batch_number_id'] > 0) {
+                                $fields[] = 'batch_number_id';
+                                $placeholders[] = '?';
+                                $values[] = $newItem['batch_number_id'];
+                            }
+                            
+                            if (isset($newItem['batch_number'])) {
+                                $fields[] = 'batch_number';
+                                $placeholders[] = '?';
+                                $values[] = $newItem['batch_number'];
+                            }
+                            
+                            $fields[] = 'quantity';
+                            $placeholders[] = '?';
+                            $values[] = $newItem['quantity'];
+                            
+                            $fields[] = 'unit_price';
+                            $placeholders[] = '?';
+                            $values[] = $newItem['unit_price'];
+                            
+                            $fields[] = 'total_price';
+                            $placeholders[] = '?';
+                            $values[] = $newItem['total_price'];
+                            
+                            // التحقق من وجود جدول exchange_new_items المرتبط بـ exchanges
+                            $hasExchangesNewItems = !empty($db->queryOne("SHOW TABLES LIKE 'exchange_new_items'"));
+                            if ($hasExchangesNewItems) {
+                                // التحقق من وجود exchange_id في exchange_new_items
+                                $hasExchangeIdColumn = !empty($db->queryOne("SHOW COLUMNS FROM exchange_new_items LIKE 'exchange_id'"));
+                                if ($hasExchangeIdColumn) {
+                                    $db->execute(
+                                        "INSERT INTO exchange_new_items (" . implode(', ', $fields) . ") VALUES (" . implode(', ', $placeholders) . ")",
+                                        $values
+                                    );
+                                }
+                            }
+                        }
+                    } catch (Throwable $e) {
+                        error_log('Error copying exchange_new_items to exchanges table: ' . $e->getMessage());
+                    }
+                }
+            } catch (Throwable $e) {
+                error_log('Error creating exchange record in exchanges table: ' . $e->getMessage());
+                // لا نوقف العملية إذا فشل تسجيل الاستبدال
+            }
+        }
+        
         // ========== تحديث خزنة المندوب ==========
         if ($collectionAmount > 0.01) {
             $hasCollectionsTable = !empty($db->queryOne("SHOW TABLES LIKE 'collections'"));
