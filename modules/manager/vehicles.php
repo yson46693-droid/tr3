@@ -161,10 +161,32 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 $hasOrders = ['count' => 0];
             }
             
-            $hasTransfers = $db->queryOne(
-                "SELECT COUNT(*) as count FROM warehouse_transfers WHERE vehicle_id = ? OR to_vehicle_id = ?",
-                [$vehicleId, $vehicleId]
-            );
+            // التحقق من وجود نقلات مرتبطة بالسيارة عبر المخازن
+            $hasTransfers = ['count' => 0];
+            try {
+                // التحقق من وجود جدول warehouse_transfers أولاً
+                $transfersTableExists = $db->queryOne("SHOW TABLES LIKE 'warehouse_transfers'");
+                if (!empty($transfersTableExists)) {
+                    // التحقق من وجود مخزن مرتبط بالسيارة
+                    $vehicleWarehouse = $db->queryOne(
+                        "SELECT id FROM warehouses WHERE vehicle_id = ? AND warehouse_type = 'vehicle'",
+                        [$vehicleId]
+                    );
+                    if ($vehicleWarehouse) {
+                        $warehouseId = $vehicleWarehouse['id'];
+                        // البحث عن نقلات تستخدم هذا المخزن
+                        $hasTransfers = $db->queryOne(
+                            "SELECT COUNT(*) as count FROM warehouse_transfers 
+                             WHERE from_warehouse_id = ? OR to_warehouse_id = ?",
+                            [$warehouseId, $warehouseId]
+                        );
+                    }
+                }
+            } catch (Throwable $e) {
+                // تجاهل الخطأ إذا كان الجدول غير موجود
+                error_log("Vehicles: Error checking warehouse_transfers: " . $e->getMessage());
+                $hasTransfers = ['count' => 0];
+            }
             
             if (($hasInventory && $hasInventory['count'] > 0) || 
                 ($hasOrders && $hasOrders['count'] > 0) || 
