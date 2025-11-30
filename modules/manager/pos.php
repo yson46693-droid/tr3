@@ -208,6 +208,7 @@ function ensureShippingTables(Database $db): void
                 `id` int(11) NOT NULL AUTO_INCREMENT,
                 `order_id` int(11) NOT NULL,
                 `product_id` int(11) NOT NULL,
+                `batch_id` int(11) DEFAULT NULL,
                 `quantity` decimal(10,2) NOT NULL,
                 `unit_price` decimal(15,2) NOT NULL,
                 `total_price` decimal(15,2) NOT NULL,
@@ -215,10 +216,22 @@ function ensureShippingTables(Database $db): void
                 PRIMARY KEY (`id`),
                 KEY `order_id` (`order_id`),
                 KEY `product_id` (`product_id`),
+                KEY `batch_id` (`batch_id`),
                 CONSTRAINT `shipping_company_order_items_order_fk` FOREIGN KEY (`order_id`) REFERENCES `shipping_company_orders` (`id`) ON DELETE CASCADE,
                 CONSTRAINT `shipping_company_order_items_product_fk` FOREIGN KEY (`product_id`) REFERENCES `products` (`id`) ON DELETE CASCADE
             ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci"
         );
+        
+        // إضافة عمود batch_id إذا لم يكن موجوداً
+        try {
+            $batchIdColumn = $db->queryOne("SHOW COLUMNS FROM shipping_company_order_items LIKE 'batch_id'");
+            if (empty($batchIdColumn)) {
+                $db->execute("ALTER TABLE shipping_company_order_items ADD COLUMN batch_id int(11) DEFAULT NULL AFTER product_id");
+                $db->execute("ALTER TABLE shipping_company_order_items ADD KEY batch_id (batch_id)");
+            }
+        } catch (Throwable $e) {
+            error_log('Error adding batch_id column: ' . $e->getMessage());
+        }
     } catch (Throwable $e) {
         error_log('shipping_company_order_items table creation error: ' . $e->getMessage());
     }
@@ -925,6 +938,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             $normalizedItems = [];
             $totalAmount = 0.0;
             $productIds = [];
+            $batchIds = [];
 
             foreach ($itemsInput as $itemRow) {
                 if (!is_array($itemRow)) {
@@ -939,15 +953,27 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     continue;
                 }
 
-                $productIds[] = $productId;
+                // تحديد إذا كان منتج مصنع (id > 1000000)
+                $batchId = null;
+                $isFactoryProduct = false;
+                if ($productId > 1000000) {
+                    $batchId = $productId - 1000000;
+                    $isFactoryProduct = true;
+                    $batchIds[] = $batchId;
+                } else {
+                    $productIds[] = $productId;
+                }
+
                 $lineTotal = round($quantity * $unitPrice, 2);
                 $totalAmount += $lineTotal;
 
                 $normalizedItems[] = [
-                    'product_id' => $productId,
+                    'product_id' => $isFactoryProduct ? 0 : $productId, // للمنتجات المصنع نستخدم 0 أو product_id من finished_products
+                    'batch_id' => $batchId,
                     'quantity' => $quantity,
                     'unit_price' => $unitPrice,
                     'total_price' => $lineTotal,
+                    'is_factory_product' => $isFactoryProduct,
                 ];
             }
 
@@ -980,6 +1006,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     }
 
                     $productsMap = [];
+                    $factoryProductsMap = [];
+                    
+                    // جلب المنتجات الخارجية
                     if (!empty($productIds)) {
                         $placeholders = implode(',', array_fill(0, count($productIds), '?'));
                         $productsRows = $db->query(
@@ -991,28 +1020,113 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                             $productsMap[(int)$row['id']] = $row;
                         }
                     }
-
-                    foreach ($normalizedItems as $normalizedItem) {
-                        $productId = $normalizedItem['product_id'];
-                        $requestedQuantity = $normalizedItem['quantity'];
-
-                        $productRow = $productsMap[$productId] ?? null;
-                        if (!$productRow) {
-                            throw new InvalidArgumentException('تعذر العثور على منتج من عناصر الطلب.');
+                    
+                    // جلب منتجات المصنع
+                    if (!empty($batchIds)) {
+                        $placeholders = implode(',', array_fill(0, count($batchIds), '?'));
+                        $factoryProductsRows = $db->query(
+                            "SELECT 
+                                fp.id as batch_id,
+                                COALESCE(NULLIF(TRIM(fp.product_name), ''), pr.name, 'غير محدد') AS name,
+                                fp.quantity_produced,
+                                COALESCE(fp.product_id, bn.product_id, 0) as product_id
+                             FROM finished_products fp
+                             LEFT JOIN batch_numbers bn ON fp.batch_number = bn.batch_number
+                             LEFT JOIN products pr ON COALESCE(fp.product_id, bn.product_id) = pr.id
+                             WHERE fp.id IN ($placeholders) FOR UPDATE",
+                            $batchIds
+                        );
+                        
+                        foreach ($factoryProductsRows as $row) {
+                            $batchId = (int)($row['batch_id'] ?? 0);
+                            $factoryProductsMap[$batchId] = $row;
                         }
+                    }
 
-                        $availableQuantity = (float)($productRow['quantity'] ?? 0);
-                        if ($availableQuantity < $requestedQuantity) {
-                            throw new InvalidArgumentException('الكمية المتاحة للمنتج ' . ($productRow['name'] ?? '') . ' غير كافية.');
+                    // التحقق من توفر الكميات
+                    foreach ($normalizedItems as $normalizedItem) {
+                        $requestedQuantity = $normalizedItem['quantity'];
+                        $isFactoryProduct = $normalizedItem['is_factory_product'] ?? false;
+                        
+                        if ($isFactoryProduct) {
+                            $batchId = $normalizedItem['batch_id'];
+                            $factoryProduct = $factoryProductsMap[$batchId] ?? null;
+                            
+                            if (!$factoryProduct) {
+                                throw new InvalidArgumentException('تعذر العثور على منتج مصنع من عناصر الطلب.');
+                            }
+                            
+                            $quantityProduced = (float)($factoryProduct['quantity_produced'] ?? 0);
+                            
+                            // حساب الكمية المباعة
+                            $soldQuantity = $db->queryOne(
+                                "SELECT COALESCE(SUM(si.quantity), 0) AS sold_qty
+                                 FROM sale_items si
+                                 INNER JOIN sales s ON si.sale_id = s.id
+                                 WHERE si.batch_id = ? AND s.status IN ('approved', 'completed')",
+                                [$batchId]
+                            );
+                            $soldQty = (float)($soldQuantity['sold_qty'] ?? 0);
+                            
+                            // حساب الكمية المحجوزة في طلبات النقل
+                            $pendingTransfers = $db->queryOne(
+                                "SELECT COALESCE(SUM(wti.quantity), 0) AS pending_quantity
+                                 FROM warehouse_transfer_items wti
+                                 INNER JOIN warehouse_transfers wt ON wt.id = wti.transfer_id
+                                 WHERE wti.batch_id = ? AND wt.status = 'pending'",
+                                [$batchId]
+                            );
+                            $pendingQty = (float)($pendingTransfers['pending_quantity'] ?? 0);
+                            
+                            // حساب الكمية المحجوزة في طلبات الشحن المعلقة
+                            $pendingShipping = $db->queryOne(
+                                "SELECT COALESCE(SUM(soi.quantity), 0) AS pending_quantity
+                                 FROM shipping_company_order_items soi
+                                 INNER JOIN shipping_company_orders sco ON soi.order_id = sco.id
+                                 WHERE soi.batch_id = ? AND sco.status IN ('assigned', 'in_transit')",
+                                [$batchId]
+                            );
+                            $pendingShippingQty = (float)($pendingShipping['pending_quantity'] ?? 0);
+                            
+                            $availableQuantity = max(0, $quantityProduced - $soldQty - $pendingQty - $pendingShippingQty);
+                            
+                            if ($availableQuantity < $requestedQuantity) {
+                                $productName = $factoryProduct['name'] ?? 'غير محدد';
+                                throw new InvalidArgumentException('الكمية المتاحة للمنتج ' . $productName . ' غير كافية. المتاح: ' . number_format($availableQuantity, 2));
+                            }
+                        } else {
+                            $productId = $normalizedItem['product_id'];
+                            $productRow = $productsMap[$productId] ?? null;
+                            
+                            if (!$productRow) {
+                                throw new InvalidArgumentException('تعذر العثور على منتج من عناصر الطلب.');
+                            }
+
+                            $availableQuantity = (float)($productRow['quantity'] ?? 0);
+                            if ($availableQuantity < $requestedQuantity) {
+                                throw new InvalidArgumentException('الكمية المتاحة للمنتج ' . ($productRow['name'] ?? '') . ' غير كافية.');
+                            }
                         }
                     }
 
                     $invoiceItems = [];
                     foreach ($normalizedItems as $normalizedItem) {
-                        $productRow = $productsMap[$normalizedItem['product_id']];
+                        $isFactoryProduct = $normalizedItem['is_factory_product'] ?? false;
+                        $productName = '';
+                        
+                        if ($isFactoryProduct) {
+                            $batchId = $normalizedItem['batch_id'];
+                            $factoryProduct = $factoryProductsMap[$batchId] ?? null;
+                            $productName = $factoryProduct['name'] ?? 'غير محدد';
+                        } else {
+                            $productId = $normalizedItem['product_id'];
+                            $productRow = $productsMap[$productId] ?? null;
+                            $productName = $productRow['name'] ?? 'غير محدد';
+                        }
+                        
                         $invoiceItems[] = [
-                            'product_id' => $normalizedItem['product_id'],
-                            'description' => $productRow['name'] ?? null,
+                            'product_id' => $isFactoryProduct ? ($factoryProductsMap[$normalizedItem['batch_id']]['product_id'] ?? 0) : $normalizedItem['product_id'],
+                            'description' => $productName,
                             'quantity' => $normalizedItem['quantity'],
                             'unit_price' => $normalizedItem['unit_price'],
                         ];
@@ -1059,30 +1173,58 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     $orderId = (int)$db->getLastInsertId();
 
                     foreach ($normalizedItems as $normalizedItem) {
-                        $productRow = $productsMap[$normalizedItem['product_id']];
-
+                        $isFactoryProduct = $normalizedItem['is_factory_product'] ?? false;
+                        $batchId = $normalizedItem['batch_id'] ?? null;
+                        $productId = $normalizedItem['product_id'];
+                        
+                        // تحديد product_id الصحيح
+                        if ($isFactoryProduct && $batchId) {
+                            $factoryProduct = $factoryProductsMap[$batchId] ?? null;
+                            $productId = (int)($factoryProduct['product_id'] ?? 0);
+                        }
+                        
+                        // حفظ عنصر الطلب مع batch_id
                         $db->execute(
-                            "INSERT INTO shipping_company_order_items (order_id, product_id, quantity, unit_price, total_price) VALUES (?, ?, ?, ?, ?)",
+                            "INSERT INTO shipping_company_order_items (order_id, product_id, batch_id, quantity, unit_price, total_price) VALUES (?, ?, ?, ?, ?, ?)",
                             [
                                 $orderId,
-                                $normalizedItem['product_id'],
+                                $productId > 0 ? $productId : 0,
+                                $batchId,
                                 $normalizedItem['quantity'],
                                 $normalizedItem['unit_price'],
                                 $normalizedItem['total_price'],
                             ]
                         );
 
+                        // تسجيل حركة المخزون
                         $movementNote = 'تسليم طلب شحن #' . $orderNumber . ' لشركة الشحن';
-                        $movementResult = recordInventoryMovement(
-                            $normalizedItem['product_id'],
-                            $mainWarehouseId,
-                            'out',
-                            $normalizedItem['quantity'],
-                            'shipping_order',
-                            $orderId,
-                            $movementNote,
-                            $currentUser['id'] ?? null
-                        );
+                        
+                        if ($isFactoryProduct && $batchId) {
+                            // لمنتجات المصنع، نستخدم batch_id
+                            $movementResult = recordInventoryMovement(
+                                $productId > 0 ? $productId : 0,
+                                $mainWarehouseId,
+                                'out',
+                                $normalizedItem['quantity'],
+                                'shipping_order',
+                                $orderId,
+                                $movementNote,
+                                $currentUser['id'] ?? null,
+                                $batchId
+                            );
+                        } else {
+                            // للمنتجات الخارجية
+                            $movementResult = recordInventoryMovement(
+                                $productId,
+                                $mainWarehouseId,
+                                'out',
+                                $normalizedItem['quantity'],
+                                'shipping_order',
+                                $orderId,
+                                $movementNote,
+                                $currentUser['id'] ?? null
+                            );
+                        }
 
                         if (empty($movementResult['success'])) {
                             throw new RuntimeException($movementResult['message'] ?? 'تعذر تسجيل حركة المخزون.');
@@ -1406,12 +1548,142 @@ try {
     error_log('Error fetching recent sales: ' . $e->getMessage());
 }
 
-// جلب المنتجات المتاحة لطلبات الشحن (من products فقط)
+// جلب المنتجات المتاحة لطلبات الشحن (من finished_products و products)
 $availableProductsForShipping = [];
 try {
-    $availableProductsForShipping = $db->query(
-        "SELECT id, name, quantity, unit, unit_price FROM products WHERE status = 'active' AND quantity > 0 ORDER BY name ASC"
+    // جلب منتجات المصنع من finished_products
+    $factoryProductsForShipping = [];
+    $finishedProductsTableExists = $db->queryOne("SHOW TABLES LIKE 'finished_products'");
+    
+    if (!empty($finishedProductsTableExists)) {
+        $factoryProductsRaw = $db->query("
+            SELECT 
+                fp.id as batch_id,
+                fp.batch_number,
+                COALESCE(NULLIF(TRIM(fp.product_name), ''), pr.name, 'غير محدد') AS name,
+                fp.quantity_produced as quantity,
+                COALESCE(
+                    NULLIF(fp.unit_price, 0),
+                    (SELECT pt.unit_price 
+                     FROM product_templates pt 
+                     WHERE pt.status = 'active' 
+                       AND pt.unit_price IS NOT NULL 
+                       AND pt.unit_price > 0
+                       AND pt.unit_price <= 10000
+                       AND (
+                           (COALESCE(fp.product_id, bn.product_id) IS NOT NULL 
+                            AND COALESCE(fp.product_id, bn.product_id) > 0
+                            AND pt.product_id IS NOT NULL 
+                            AND pt.product_id > 0 
+                            AND pt.product_id = COALESCE(fp.product_id, bn.product_id))
+                           OR (pt.product_name IS NOT NULL 
+                               AND pt.product_name != ''
+                               AND COALESCE(NULLIF(TRIM(fp.product_name), ''), pr.name) IS NOT NULL
+                               AND COALESCE(NULLIF(TRIM(fp.product_name), ''), pr.name) != ''
+                               AND (LOWER(TRIM(pt.product_name)) = LOWER(TRIM(COALESCE(NULLIF(TRIM(fp.product_name), ''), pr.name)))
+                                    OR LOWER(TRIM(pt.product_name)) LIKE CONCAT('%', LOWER(TRIM(COALESCE(NULLIF(TRIM(fp.product_name), ''), pr.name))), '%')
+                                    OR LOWER(TRIM(COALESCE(NULLIF(TRIM(fp.product_name), ''), pr.name))) LIKE CONCAT('%', LOWER(TRIM(pt.product_name)), '%')))
+                           )
+                     ORDER BY pt.unit_price DESC
+                     LIMIT 1),
+                    0
+                ) AS unit_price,
+                COALESCE(pr.unit, 'قطعة') as unit,
+                fp.production_date
+            FROM finished_products fp
+            LEFT JOIN batch_numbers bn ON fp.batch_number = bn.batch_number
+            LEFT JOIN products pr ON COALESCE(fp.product_id, bn.product_id) = pr.id
+            WHERE (fp.quantity_produced IS NULL OR fp.quantity_produced > 0)
+            ORDER BY fp.production_date DESC, fp.id DESC
+        ");
+        
+        // حساب الكمية المتاحة بعد خصم المبيعات والتحويلات
+        foreach ($factoryProductsRaw as $fp) {
+            $batchId = (int)($fp['batch_id'] ?? 0);
+            $quantityProduced = (float)($fp['quantity'] ?? 0);
+            
+            // حساب الكمية المباعة من هذا التشغيلة
+            $soldQuantity = $db->queryOne(
+                "SELECT COALESCE(SUM(si.quantity), 0) AS sold_qty
+                 FROM sale_items si
+                 INNER JOIN sales s ON si.sale_id = s.id
+                 WHERE si.batch_id = ? AND s.status IN ('approved', 'completed')",
+                [$batchId]
+            );
+            $soldQty = (float)($soldQuantity['sold_qty'] ?? 0);
+            
+            // حساب الكمية المحجوزة في طلبات النقل المعلقة
+            $pendingTransfers = $db->queryOne(
+                "SELECT COALESCE(SUM(wti.quantity), 0) AS pending_quantity
+                 FROM warehouse_transfer_items wti
+                 INNER JOIN warehouse_transfers wt ON wt.id = wti.transfer_id
+                 WHERE wti.batch_id = ? AND wt.status = 'pending'",
+                [$batchId]
+            );
+            $pendingQty = (float)($pendingTransfers['pending_quantity'] ?? 0);
+            
+            // حساب الكمية المحجوزة في طلبات الشحن المعلقة
+            $pendingShipping = $db->queryOne(
+                "SELECT COALESCE(SUM(soi.quantity), 0) AS pending_quantity
+                 FROM shipping_company_order_items soi
+                 INNER JOIN shipping_company_orders sco ON soi.order_id = sco.id
+                 WHERE soi.batch_id = ? AND sco.status IN ('assigned', 'in_transit')",
+                [$batchId]
+            );
+            $pendingShippingQty = (float)($pendingShipping['pending_quantity'] ?? 0);
+            
+            // الكمية المتاحة = الكمية المنتجة - المباعة - المحجوزة في النقل - المحجوزة في الشحن
+            $availableQty = max(0, $quantityProduced - $soldQty - $pendingQty - $pendingShippingQty);
+            
+            if ($availableQty > 0) {
+                $batchNumber = $fp['batch_number'] ?? '';
+                $productName = $fp['name'] ?? 'غير محدد';
+                $displayName = $batchNumber ? $productName . ' - تشغيلة ' . $batchNumber : $productName;
+                
+                $factoryProductsForShipping[] = [
+                    'id' => $batchId + 1000000, // استخدام رقم فريد لمنتجات المصنع
+                    'batch_id' => $batchId,
+                    'name' => $displayName,
+                    'quantity' => $availableQty,
+                    'unit' => $fp['unit'] ?? 'قطعة',
+                    'unit_price' => (float)($fp['unit_price'] ?? 0),
+                    'is_factory_product' => true
+                ];
+            }
+        }
+    }
+    
+    // جلب المنتجات الخارجية من products
+    $externalProductsForShipping = $db->query(
+        "SELECT id, name, quantity, COALESCE(unit, 'قطعة') as unit, unit_price 
+         FROM products 
+         WHERE status = 'active' 
+           AND quantity > 0 
+           AND (product_type = 'external' OR product_type IS NULL)
+         ORDER BY name ASC"
     );
+    
+    // دمج المنتجات مع إضافة batch_id = null للمنتجات الخارجية
+    foreach ($externalProductsForShipping as $ep) {
+        $availableProductsForShipping[] = [
+            'id' => (int)($ep['id'] ?? 0),
+            'batch_id' => null,
+            'name' => $ep['name'] ?? '',
+            'quantity' => (float)($ep['quantity'] ?? 0),
+            'unit' => $ep['unit'] ?? 'قطعة',
+            'unit_price' => (float)($ep['unit_price'] ?? 0),
+            'is_factory_product' => false
+        ];
+    }
+    
+    // إضافة منتجات المصنع
+    $availableProductsForShipping = array_merge($availableProductsForShipping, $factoryProductsForShipping);
+    
+    // ترتيب حسب الاسم
+    usort($availableProductsForShipping, function($a, $b) {
+        return strcmp($a['name'], $b['name']);
+    });
+    
 } catch (Throwable $e) {
     error_log('Error fetching products for shipping: ' . $e->getMessage());
 }
