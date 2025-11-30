@@ -163,6 +163,61 @@ function calculateMonthlyHours($userId, $month, $year) {
 }
 
 /**
+ * حساب الساعات المكتملة فقط (التي تم تسجيل الانصراف لها)
+ * هذه الدالة تحسب فقط الساعات من السجلات التي لديها check_out_time
+ * ولا تشمل الساعات من السجلات غير المكتملة (حضور بدون انصراف)
+ */
+function calculateCompletedMonthlyHours($userId, $month, $year) {
+    $db = db();
+    
+    // التحقق من وجود جدول attendance_records
+    $tableCheck = $db->queryOne("SHOW TABLES LIKE 'attendance_records'");
+    
+    if (!empty($tableCheck)) {
+        // استخدام الجدول الجديد
+        $monthKey = sprintf('%04d-%02d', $year, $month);
+        
+        // حساب الساعات من السجلات المكتملة فقط (التي لديها check_out_time)
+        $completedResult = $db->queryOne(
+            "SELECT COALESCE(SUM(work_hours), 0) as total_hours 
+             FROM attendance_records 
+             WHERE user_id = ? AND DATE_FORMAT(date, '%Y-%m') = ?
+             AND check_out_time IS NOT NULL
+             AND work_hours IS NOT NULL
+             AND work_hours > 0",
+            [$userId, $monthKey]
+        );
+        
+        $completedHours = round($completedResult['total_hours'] ?? 0, 2);
+        
+        return $completedHours;
+    } else {
+        // Fallback للجدول القديم - يعيد نفس النتيجة لأن الجدول القديم يحتوي فقط على السجلات المكتملة
+        $totalHours = 0;
+        
+        $attendanceRecords = $db->query(
+            "SELECT * FROM attendance 
+             WHERE user_id = ? AND MONTH(date) = ? AND YEAR(date) = ?
+             AND check_in IS NOT NULL AND check_out IS NOT NULL
+             ORDER BY date ASC",
+            [$userId, $month, $year]
+        );
+        
+        foreach ($attendanceRecords as $record) {
+            $checkIn = strtotime($record['date'] . ' ' . $record['check_in']);
+            $checkOut = strtotime($record['date'] . ' ' . $record['check_out']);
+            
+            if ($checkOut > $checkIn) {
+                $hours = ($checkOut - $checkIn) / 3600;
+                $totalHours += $hours;
+            }
+        }
+        
+        return round($totalHours, 2);
+    }
+}
+
+/**
  * حساب مجموع المبالغ المستحقة للمكافأة 2% للمندوب خلال الشهر
  * الحالات:
  * 1. المبيعات بكامل: 2% على إجمالي الفاتورة
@@ -580,14 +635,18 @@ function calculateSalary($userId, $month, $year, $bonus = 0, $deductions = 0) {
     
     // حساب الراتب الأساسي
     // للمندوبين: hourly_rate هو راتب شهري ثابت وليس سعر ساعة
-    // للآخرين: الراتب = الساعات × سعر الساعة
+    // للآخرين: الراتب = الساعات المكتملة فقط × سعر الساعة
+    // لا نحسب الراتب من الساعات غير المكتملة (حضور بدون انصراف)
+    $completedHours = calculateCompletedMonthlyHours($userId, $month, $year);
+    
     if ($role === 'sales') {
         // للمندوبين: الراتب الأساسي هو hourly_rate مباشرة (راتب شهري ثابت)
-        // لكن فقط إذا كان لديهم ساعات عمل (إذا لم يعملوا، الراتب = 0)
-        $baseAmount = ($totalHours > 0) ? $hourlyRate : 0;
+        // لكن فقط إذا كان لديهم ساعات عمل مكتملة (إذا لم يعملوا، الراتب = 0)
+        $baseAmount = ($completedHours > 0) ? $hourlyRate : 0;
     } else {
-        // للآخرين: الراتب = الساعات × سعر الساعة
-        $baseAmount = $totalHours * $hourlyRate;
+        // للآخرين: الراتب = الساعات المكتملة فقط × سعر الساعة
+        // لا يوجد راتب أساسي حتى يتم تسجيل الانصراف
+        $baseAmount = $completedHours * $hourlyRate;
     }
     
     // حساب نسبة التحصيلات للمندوبين (2%)

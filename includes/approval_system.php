@@ -190,9 +190,10 @@ function requestApproval($type, $entityId, $requestedBy, $notes = null) {
                                 // للمندوبين: الراتب الأساسي هو hourly_rate مباشرة (راتب شهري ثابت)
                                 $baseAmount = cleanFinancialValue($salary['base_amount'] ?? $hourlyRate);
                             } else {
-                                // لعمال الإنتاج والمحاسبين: دائماً إعادة الحساب من الساعات (مطابق لبطاقة الموظف)
-                                $actualHours = calculateMonthlyHours($userId, $month, $year);
-                                $baseAmount = round($actualHours * $hourlyRate, 2);
+                                // لعمال الإنتاج والمحاسبين: دائماً إعادة الحساب من الساعات المكتملة فقط (مطابق لبطاقة الموظف)
+                                require_once __DIR__ . '/salary_calculator.php';
+                                $completedHours = calculateCompletedMonthlyHours($userId, $month, $year);
+                                $baseAmount = round($completedHours * $hourlyRate, 2);
                             }
                             
                             // إذا كان مندوب مبيعات، أعد حساب نسبة التحصيلات (نفس كود بطاقة الموظف)
@@ -690,9 +691,10 @@ function updateEntityStatus($type, $entityId, $status, $approvedBy) {
                     $baseAmount = cleanFinancialValue($salary['base_amount'] ?? $hourlyRate);
                     $actualHours = 0; // المندوبين ليس لديهم ساعات
                 } else {
-                    // لعمال الإنتاج والمحاسبين: دائماً إعادة الحساب من الساعات (مطابق لبطاقة الموظف)
-                    $actualHours = calculateMonthlyHours($userId, $month, $year);
-                    $baseAmount = round($actualHours * $hourlyRate, 2);
+                    // لعمال الإنتاج والمحاسبين: دائماً إعادة الحساب من الساعات المكتملة فقط (مطابق لبطاقة الموظف)
+                    require_once __DIR__ . '/salary_calculator.php';
+                    $completedHours = calculateCompletedMonthlyHours($userId, $month, $year);
+                    $baseAmount = round($completedHours * $hourlyRate, 2);
                 }
                 
                 // حساب الراتب الجديد بنفس طريقة الحساب في بطاقة الموظف

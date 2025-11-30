@@ -1080,8 +1080,10 @@ foreach ($users as $user) {
     } else {
         // المستخدم ليس لديه راتب مسجل - إنشاء سجل فارغ
         $hourlyRate = cleanFinancialValue($user['hourly_rate'] ?? 0);
-        $monthHours = calculateMonthlyHours($userId, $selectedMonth, $selectedYear);
-        $baseAmount = round($monthHours * $hourlyRate, 2);
+        // حساب الساعات المكتملة فقط (التي تم تسجيل الانصراف لها)
+        require_once __DIR__ . '/../../includes/salary_calculator.php';
+        $completedHours = calculateCompletedMonthlyHours($userId, $selectedMonth, $selectedYear);
+        $baseAmount = round($completedHours * $hourlyRate, 2);
         
         // حساب نسبة التحصيلات إذا كان مندوب
         $collectionsAmount = 0;
@@ -2371,7 +2373,10 @@ $pageTitle = ($view === 'advances') ? 'السلف' : (($view === 'pending') ? '�
                         }
                     }
                     
-                    $baseAmount = round($actualHours * $hourlyRate, 2);
+                    // حساب الراتب الأساسي من الساعات المكتملة فقط (التي تم تسجيل الانصراف لها)
+                    require_once __DIR__ . '/../../includes/salary_calculator.php';
+                    $completedHours = calculateCompletedMonthlyHours($userId, $selectedMonth, $selectedYear);
+                    $baseAmount = round($completedHours * $hourlyRate, 2);
                 }
                 
                 // إذا كان مندوب مبيعات، أعد حساب نسبة التحصيلات
@@ -2522,10 +2527,12 @@ $pageTitle = ($view === 'advances') ? 'السلف' : (($view === 'pending') ? '�
                         if ($userRole === 'sales') {
                             $baseAmount = cleanFinancialValue($salary['base_amount'] ?? $hourlyRate);
                         } else {
-                            // حساب الساعات أولاً
-                            $actualHoursForBase = calculateMonthlyHours($userId, $selectedMonth, $selectedYear);
-                            // إعادة حساب الراتب الأساسي بناءً على عدد الساعات الحالي
-                            $baseAmount = round($actualHoursForBase * $hourlyRate, 2);
+                            // حساب الساعات المكتملة فقط (التي تم تسجيل الانصراف لها)
+                            require_once __DIR__ . '/../../includes/salary_calculator.php';
+                            $completedHoursForBase = calculateCompletedMonthlyHours($userId, $selectedMonth, $selectedYear);
+                            // إعادة حساب الراتب الأساسي بناءً على الساعات المكتملة فقط
+                            // لا يوجد راتب أساسي حتى يتم تسجيل الانصراف
+                            $baseAmount = round($completedHoursForBase * $hourlyRate, 2);
                         }
                         
                         // حساب الراتب الإجمالي دائماً من المكونات لضمان الدقة
