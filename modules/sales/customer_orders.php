@@ -180,112 +180,56 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 $transactionStarted = true;
 
                 if ($createNewCustomer) {
-                    $existingCustomer = null;
-                    if ($newCustomerPhone !== '') {
-                        $existingCustomer = $db->queryOne(
-                            "SELECT id, phone, address, created_by FROM customers WHERE phone = ? LIMIT 1",
-                            [$newCustomerPhone]
-                        );
+                    // إنشاء عميل جديد دائماً، حتى لو كان هناك عميل بنفس الاسم أو رقم الهاتف
+                    // هذا يضمن أن كل مندوب له عملاؤه الخاصون به
+                    $newCustomerCreator = $customerCreatorId ?? $currentUser['id'];
+                    $newCustomerRepId = $salesRepId ?? ($isSalesUser ? $currentUser['id'] : null);
+                    $createdByAdminFlag = ($isSalesUser && $newCustomerRepId) ? 0 : 1;
+
+                    // التحقق من وجود أعمدة اللوكيشن
+                    $hasLatitudeColumn = !empty($db->queryOne("SHOW COLUMNS FROM customers LIKE 'latitude'"));
+                    $hasLongitudeColumn = !empty($db->queryOne("SHOW COLUMNS FROM customers LIKE 'longitude'"));
+                    $hasLocationCapturedAtColumn = !empty($db->queryOne("SHOW COLUMNS FROM customers LIKE 'location_captured_at'"));
+                    
+                    $customerColumns = ['name', 'phone', 'address', 'balance', 'status', 'created_by', 'rep_id', 'created_from_pos', 'created_by_admin'];
+                    $customerValues = [
+                        $newCustomerName,
+                        $newCustomerPhone !== '' ? $newCustomerPhone : null,
+                        $newCustomerAddress !== '' ? $newCustomerAddress : null,
+                        0.0, // رصيد العميل الجديد يجب أن يكون 0
+                        'active',
+                        $newCustomerCreator,
+                        $newCustomerRepId,
+                        0,
+                        $createdByAdminFlag,
+                    ];
+                    $customerPlaceholders = ['?', '?', '?', '?', '?', '?', '?', '?', '?'];
+                    
+                    if ($hasLatitudeColumn && $newCustomerLatitude !== null) {
+                        $customerColumns[] = 'latitude';
+                        $customerValues[] = (float)$newCustomerLatitude;
+                        $customerPlaceholders[] = '?';
                     }
-                    if (!$existingCustomer) {
-                        $existingCustomer = $db->queryOne(
-                            "SELECT id, phone, address, created_by FROM customers WHERE name = ? LIMIT 1",
-                            [$newCustomerName]
-                        );
+                    
+                    if ($hasLongitudeColumn && $newCustomerLongitude !== null) {
+                        $customerColumns[] = 'longitude';
+                        $customerValues[] = (float)$newCustomerLongitude;
+                        $customerPlaceholders[] = '?';
+                    }
+                    
+                    if ($hasLocationCapturedAtColumn && $newCustomerLatitude !== null && $newCustomerLongitude !== null) {
+                        $customerColumns[] = 'location_captured_at';
+                        $customerValues[] = date('Y-m-d H:i:s');
+                        $customerPlaceholders[] = '?';
                     }
 
-                    if ($existingCustomer) {
-                        $customerId = (int)$existingCustomer['id'];
-                        $updateFields = [];
-                        $updateParams = [];
-
-                        if ($newCustomerPhone !== '' && $newCustomerPhone !== ($existingCustomer['phone'] ?? '')) {
-                            $updateFields[] = "phone = ?";
-                            $updateParams[] = $newCustomerPhone;
-                        }
-                        if ($newCustomerAddress !== '' && $newCustomerAddress !== ($existingCustomer['address'] ?? '')) {
-                            $updateFields[] = "address = ?";
-                            $updateParams[] = $newCustomerAddress;
-                        }
-                        if ($customerCreatorId && (int)($existingCustomer['created_by'] ?? 0) !== $customerCreatorId) {
-                            $updateFields[] = "created_by = ?";
-                            $updateParams[] = $customerCreatorId;
-                        }
-                        
-                        // تحديث الموقع إذا كان موجوداً
-                        $hasLatitudeColumn = !empty($db->queryOne("SHOW COLUMNS FROM customers LIKE 'latitude'"));
-                        $hasLongitudeColumn = !empty($db->queryOne("SHOW COLUMNS FROM customers LIKE 'longitude'"));
-                        $hasLocationCapturedAtColumn = !empty($db->queryOne("SHOW COLUMNS FROM customers LIKE 'location_captured_at'"));
-                        
-                        if ($hasLatitudeColumn && $newCustomerLatitude !== null) {
-                            $updateFields[] = "latitude = ?";
-                            $updateParams[] = (float)$newCustomerLatitude;
-                        }
-                        if ($hasLongitudeColumn && $newCustomerLongitude !== null) {
-                            $updateFields[] = "longitude = ?";
-                            $updateParams[] = (float)$newCustomerLongitude;
-                        }
-                        if ($hasLocationCapturedAtColumn && $newCustomerLatitude !== null && $newCustomerLongitude !== null) {
-                            $updateFields[] = "location_captured_at = NOW()";
-                        }
-
-                        if (!empty($updateFields)) {
-                            $updateParams[] = $customerId;
-                            $db->execute(
-                                "UPDATE customers SET " . implode(', ', $updateFields) . " WHERE id = ?",
-                                $updateParams
-                            );
-                        }
-                    } else {
-                        $newCustomerCreator = $customerCreatorId ?? $currentUser['id'];
-                        $newCustomerRepId = $salesRepId ?? ($isSalesUser ? $currentUser['id'] : null);
-                        $createdByAdminFlag = ($isSalesUser && $newCustomerRepId) ? 0 : 1;
-
-                        // التحقق من وجود أعمدة اللوكيشن
-                        $hasLatitudeColumn = !empty($db->queryOne("SHOW COLUMNS FROM customers LIKE 'latitude'"));
-                        $hasLongitudeColumn = !empty($db->queryOne("SHOW COLUMNS FROM customers LIKE 'longitude'"));
-                        $hasLocationCapturedAtColumn = !empty($db->queryOne("SHOW COLUMNS FROM customers LIKE 'location_captured_at'"));
-                        
-                        $customerColumns = ['name', 'phone', 'address', 'balance', 'status', 'created_by', 'rep_id', 'created_from_pos', 'created_by_admin'];
-                        $customerValues = [
-                            $newCustomerName,
-                            $newCustomerPhone !== '' ? $newCustomerPhone : null,
-                            $newCustomerAddress !== '' ? $newCustomerAddress : null,
-                            0.0, // رصيد العميل الجديد يجب أن يكون 0
-                            'active',
-                            $newCustomerCreator,
-                            $newCustomerRepId,
-                            0,
-                            $createdByAdminFlag,
-                        ];
-                        $customerPlaceholders = ['?', '?', '?', '?', '?', '?', '?', '?', '?'];
-                        
-                        if ($hasLatitudeColumn && $newCustomerLatitude !== null) {
-                            $customerColumns[] = 'latitude';
-                            $customerValues[] = (float)$newCustomerLatitude;
-                            $customerPlaceholders[] = '?';
-                        }
-                        
-                        if ($hasLongitudeColumn && $newCustomerLongitude !== null) {
-                            $customerColumns[] = 'longitude';
-                            $customerValues[] = (float)$newCustomerLongitude;
-                            $customerPlaceholders[] = '?';
-                        }
-                        
-                        if ($hasLocationCapturedAtColumn && $newCustomerLatitude !== null && $newCustomerLongitude !== null) {
-                            $customerColumns[] = 'location_captured_at';
-                            $customerValues[] = date('Y-m-d H:i:s');
-                            $customerPlaceholders[] = '?';
-                        }
-
-                        $db->execute(
-                            "INSERT INTO customers (" . implode(', ', $customerColumns) . ") 
-                             VALUES (" . implode(', ', $customerPlaceholders) . ")",
-                            $customerValues
-                        );
-                        $customerId = (int)$db->getLastInsertId();
-                        $newCustomerCreated = true;
-                    }
+                    $db->execute(
+                        "INSERT INTO customers (" . implode(', ', $customerColumns) . ") 
+                         VALUES (" . implode(', ', $customerPlaceholders) . ")",
+                        $customerValues
+                    );
+                    $customerId = (int)$db->getLastInsertId();
+                    $newCustomerCreated = true;
                 }
 
                 if ($customerId <= 0) {
@@ -580,60 +524,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 $transactionStarted = true;
 
                 if ($createNewCustomer) {
-                    $existingCustomer = null;
-                    if ($newCustomerPhone !== '') {
-                        $existingCustomer = $db->queryOne(
-                            "SELECT id, phone, address, created_by FROM customers WHERE phone = ? LIMIT 1",
-                            [$newCustomerPhone]
-                        );
-                    }
-                    if (!$existingCustomer) {
-                        $existingCustomer = $db->queryOne(
-                            "SELECT id, phone, address, created_by FROM customers WHERE name = ? LIMIT 1",
-                            [$newCustomerName]
-                        );
-                    }
-
-                    if ($existingCustomer) {
-                        $customerId = (int)$existingCustomer['id'];
-                        $updateFields = [];
-                        $updateParams = [];
-
-                        if ($newCustomerPhone !== '' && $newCustomerPhone !== ($existingCustomer['phone'] ?? '')) {
-                            $updateFields[] = "phone = ?";
-                            $updateParams[] = $newCustomerPhone;
-                        }
-                        if ($newCustomerAddress !== '' && $newCustomerAddress !== ($existingCustomer['address'] ?? '')) {
-                            $updateFields[] = "address = ?";
-                            $updateParams[] = $newCustomerAddress;
-                        }
-                        
-                        // تحديث الموقع إذا كان موجوداً
-                        $hasLatitudeColumn = !empty($db->queryOne("SHOW COLUMNS FROM customers LIKE 'latitude'"));
-                        $hasLongitudeColumn = !empty($db->queryOne("SHOW COLUMNS FROM customers LIKE 'longitude'"));
-                        $hasLocationCapturedAtColumn = !empty($db->queryOne("SHOW COLUMNS FROM customers LIKE 'location_captured_at'"));
-                        
-                        if ($hasLatitudeColumn && $newCustomerLatitude !== null) {
-                            $updateFields[] = "latitude = ?";
-                            $updateParams[] = (float)$newCustomerLatitude;
-                        }
-                        if ($hasLongitudeColumn && $newCustomerLongitude !== null) {
-                            $updateFields[] = "longitude = ?";
-                            $updateParams[] = (float)$newCustomerLongitude;
-                        }
-                        if ($hasLocationCapturedAtColumn && $newCustomerLatitude !== null && $newCustomerLongitude !== null) {
-                            $updateFields[] = "location_captured_at = NOW()";
-                        }
-
-                        if (!empty($updateFields)) {
-                            $updateParams[] = $customerId;
-                            $db->execute(
-                                "UPDATE customers SET " . implode(', ', $updateFields) . " WHERE id = ?",
-                                $updateParams
-                            );
-                        }
-                    } else {
-                        // إنشاء عميل جديد للشركة (بدون مندوب)
+                    // إنشاء عميل جديد دائماً، حتى لو كان هناك عميل بنفس الاسم أو رقم الهاتف
+                    // هذا يضمن أن كل عميل شركة يتم إنشاؤه بشكل منفصل
+                    // إنشاء عميل جديد للشركة (بدون مندوب)
                         // التحقق من وجود أعمدة اللوكيشن
                         $hasLatitudeColumn = !empty($db->queryOne("SHOW COLUMNS FROM customers LIKE 'latitude'"));
                         $hasLongitudeColumn = !empty($db->queryOne("SHOW COLUMNS FROM customers LIKE 'longitude'"));
@@ -676,7 +569,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                         );
                         $customerId = (int)$db->getLastInsertId();
                         $newCustomerCreated = true;
-                    }
                 }
 
                 if ($customerId <= 0) {
