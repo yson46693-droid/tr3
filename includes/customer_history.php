@@ -378,7 +378,131 @@ function customerHistorySyncForCustomer(int $customerId): array
                 [$invoiceId]
             );
             
-            foreach ($invoiceItems as $item) {
+            // جلب المنتجات البديلة من الاستبدالات المرتبطة بهذه الفاتورة
+            $exchangeNewItems = [];
+            if ($invoiceId > 0) {
+                try {
+                    $hasInvoiceItemIdColumn = !empty($db->queryOne("SHOW COLUMNS FROM exchange_new_items LIKE 'invoice_item_id'"));
+                    if ($hasInvoiceItemIdColumn) {
+                        $exchangeNewItems = $db->query(
+                            "SELECT 
+                                eni.invoice_item_id,
+                                eni.product_id,
+                                eni.quantity,
+                                eni.unit_price,
+                                eni.total_price,
+                                eni.batch_number,
+                                eni.batch_number_id,
+                                COALESCE(
+                                    (SELECT fp2.product_name 
+                                     FROM finished_products fp2 
+                                     INNER JOIN batch_numbers bn2 ON fp2.batch_id = bn2.id
+                                     WHERE bn2.id = eni.batch_number_id
+                                       AND fp2.product_name IS NOT NULL 
+                                       AND TRIM(fp2.product_name) != ''
+                                       AND fp2.product_name NOT LIKE 'منتج رقم%'
+                                     ORDER BY fp2.id DESC 
+                                     LIMIT 1),
+                                    NULLIF(TRIM(p.name), ''),
+                                    CONCAT('منتج رقم ', eni.product_id)
+                                ) as product_name,
+                                p.unit
+                            FROM exchange_new_items eni
+                            INNER JOIN exchanges e ON eni.exchange_id = e.id
+                            LEFT JOIN products p ON eni.product_id = p.id
+                            WHERE e.invoice_id = ?
+                              AND e.status IN ('approved', 'completed')
+                              AND eni.invoice_item_id IS NOT NULL",
+                            [$invoiceId]
+                        );
+                    } else {
+                        // إذا لم يكن هناك عمود invoice_item_id، جلب المنتجات البديلة مباشرة من الاستبدالات
+                        $exchangeNewItems = $db->query(
+                            "SELECT 
+                                eni.product_id,
+                                eni.quantity,
+                                eni.unit_price,
+                                eni.total_price,
+                                eni.batch_number,
+                                eni.batch_number_id,
+                                COALESCE(
+                                    (SELECT fp2.product_name 
+                                     FROM finished_products fp2 
+                                     INNER JOIN batch_numbers bn2 ON fp2.batch_id = bn2.id
+                                     WHERE bn2.id = eni.batch_number_id
+                                       AND fp2.product_name IS NOT NULL 
+                                       AND TRIM(fp2.product_name) != ''
+                                       AND fp2.product_name NOT LIKE 'منتج رقم%'
+                                     ORDER BY fp2.id DESC 
+                                     LIMIT 1),
+                                    NULLIF(TRIM(p.name), ''),
+                                    CONCAT('منتج رقم ', eni.product_id)
+                                ) as product_name,
+                                p.unit
+                            FROM exchange_new_items eni
+                            INNER JOIN exchanges e ON eni.exchange_id = e.id
+                            LEFT JOIN products p ON eni.product_id = p.id
+                            WHERE e.invoice_id = ?
+                              AND e.status IN ('approved', 'completed')",
+                            [$invoiceId]
+                        );
+                    }
+                } catch (Throwable $e) {
+                    error_log('Error fetching exchange new items: ' . $e->getMessage());
+                }
+            }
+
+            // دمج invoiceItems مع exchangeNewItems
+            $allItems = $invoiceItems;
+            foreach ($exchangeNewItems as $exchangeItem) {
+                $productName = $exchangeItem['product_name'] ?? 'غير معروف';
+                $batchNumber = $exchangeItem['batch_number'] ?? '';
+                
+                // إذا كان هناك invoice_item_id، استخدمه، وإلا أضف كعنصر جديد
+                if (!empty($exchangeItem['invoice_item_id'])) {
+                    // البحث عن invoice_item الموجود وتحديثه
+                    $found = false;
+                    foreach ($allItems as &$item) {
+                        if ($item['invoice_item_id'] == $exchangeItem['invoice_item_id']) {
+                            // تحديث batch_numbers
+                            $existingBatches = !empty($item['batch_numbers']) ? explode(', ', $item['batch_numbers']) : [];
+                            if ($batchNumber && !in_array($batchNumber, $existingBatches)) {
+                                $existingBatches[] = $batchNumber;
+                                $item['batch_numbers'] = implode(', ', $existingBatches);
+                            }
+                            $found = true;
+                            break;
+                        }
+                    }
+                    
+                    if (!$found) {
+                        // إضافة كعنصر جديد
+                        $allItems[] = [
+                            'invoice_item_id' => $exchangeItem['invoice_item_id'],
+                            'product_id' => $exchangeItem['product_id'],
+                            'product_name' => $productName,
+                            'quantity' => $exchangeItem['quantity'],
+                            'unit_price' => $exchangeItem['unit_price'],
+                            'total_price' => $exchangeItem['total_price'],
+                            'batch_numbers' => $batchNumber
+                        ];
+                    }
+                } else {
+                    // إضافة كعنصر جديد بدون invoice_item_id
+                    $allItems[] = [
+                        'invoice_item_id' => null,
+                        'product_id' => $exchangeItem['product_id'],
+                        'product_name' => $productName . ($batchNumber ? ' (تشغيلة: ' . $batchNumber . ')' : ''),
+                        'quantity' => $exchangeItem['quantity'],
+                        'unit_price' => $exchangeItem['unit_price'],
+                        'total_price' => $exchangeItem['total_price'],
+                        'batch_numbers' => $batchNumber
+                    ];
+                }
+            }
+
+            // استخدام $allItems بدلاً من $invoiceItems في باقي الكود
+            foreach ($allItems as $item) {
                 $productName = $item['product_name'] ?? 'غير معروف';
                 $batchNumbers = !empty($item['batch_numbers']) ? $item['batch_numbers'] : '';
                 

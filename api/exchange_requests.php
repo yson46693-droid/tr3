@@ -279,14 +279,14 @@ function handleCreateExchange(): void
     
     // في دالة handleCreateExchange، بعد تحديد $salesRepId (حوالي السطر 278)
     // التأكد من أن sales_rep_id محدد بشكل صحيح
-    if ($salesRepId <= 0 && $currentUser['role'] === 'sales') {
-        // إذا كان المستخدم مندوب مبيعات، استخدم معرفه
-        $salesRepId = (int)$currentUser['id'];
-    }
-
-    // التأكد من أن sales_rep_id محدد قبل حفظ الاستبدال
     if ($salesRepId <= 0) {
         // محاولة الحصول على sales_rep_id من الفاتورة المرتبطة
+        $firstInvoice = $db->queryOne(
+            "SELECT id FROM invoices WHERE customer_id = ? ORDER BY id ASC LIMIT 1",
+            [$customerId]
+        );
+        $invoiceId = $firstInvoice ? (int)$firstInvoice['id'] : null;
+        
         if ($invoiceId) {
             $invoice = $db->queryOne(
                 "SELECT sales_rep_id FROM invoices WHERE id = ?",
@@ -298,6 +298,11 @@ function handleCreateExchange(): void
         // إذا لم يتم العثور على sales_rep_id، استخدم معرف المستخدم الحالي إذا كان مندوب
         if ($salesRepId <= 0 && $currentUser['role'] === 'sales') {
             $salesRepId = (int)$currentUser['id'];
+        }
+        
+        // إذا لم يتم العثور على sales_rep_id بعد كل المحاولات، استخدم created_by من العميل
+        if ($salesRepId <= 0) {
+            $salesRepId = (int)($customer['created_by'] ?? 0);
         }
     }
     

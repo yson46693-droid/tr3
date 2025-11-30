@@ -29,6 +29,78 @@ applyPRGPattern($error, $success);
 // إذا كان المستخدم مندوب، عرض فقط بياناته
 $salesRepId = $isSalesUser ? $currentUser['id'] : (isset($_GET['sales_rep_id']) ? intval($_GET['sales_rep_id']) : null);
 
+// معالجة إضافة رصيد مباشر للخزنة
+if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['action'] === 'add_cash_balance') {
+    // التأكد من أن المستخدم مندوب مبيعات فقط
+    if (!$isSalesUser) {
+        $error = 'غير مصرح لك بإضافة رصيد للخزنة';
+    } else {
+        $amount = floatval($_POST['amount'] ?? 0);
+        $description = trim($_POST['description'] ?? '');
+        
+        if ($amount <= 0) {
+            $error = 'يجب إدخال مبلغ صحيح أكبر من الصفر';
+        } else {
+            try {
+                // التأكد من وجود جدول cash_register_additions
+                $tableExists = $db->queryOne("SHOW TABLES LIKE 'cash_register_additions'");
+                if (empty($tableExists)) {
+                    $db->execute("
+                        CREATE TABLE IF NOT EXISTS `cash_register_additions` (
+                          `id` int(11) NOT NULL AUTO_INCREMENT,
+                          `sales_rep_id` int(11) NOT NULL,
+                          `amount` decimal(15,2) NOT NULL,
+                          `description` text DEFAULT NULL,
+                          `created_by` int(11) NOT NULL,
+                          `created_at` timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                          PRIMARY KEY (`id`),
+                          KEY `sales_rep_id` (`sales_rep_id`),
+                          KEY `created_at` (`created_at`),
+                          CONSTRAINT `cash_register_additions_ibfk_1` FOREIGN KEY (`sales_rep_id`) REFERENCES `users` (`id`) ON DELETE CASCADE,
+                          CONSTRAINT `cash_register_additions_ibfk_2` FOREIGN KEY (`created_by`) REFERENCES `users` (`id`) ON DELETE CASCADE
+                        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
+                    ");
+                }
+                
+                // إضافة الرصيد
+                $db->execute(
+                    "INSERT INTO cash_register_additions (sales_rep_id, amount, description, created_by) VALUES (?, ?, ?, ?)",
+                    [$currentUser['id'], $amount, $description ?: null, $currentUser['id']]
+                );
+                
+                // تسجيل في سجل التدقيق
+                try {
+                    logAudit($currentUser['id'], 'add_cash_balance', 'cash_register_addition', $db->getLastInsertId(), null, [
+                        'amount' => $amount,
+                        'description' => $description
+                    ]);
+                } catch (Throwable $auditError) {
+                    error_log('Error logging audit for cash addition: ' . $auditError->getMessage());
+                }
+                
+                $success = 'تم إضافة الرصيد إلى الخزنة بنجاح';
+            } catch (Throwable $e) {
+                error_log('Error adding cash balance: ' . $e->getMessage());
+                $error = 'حدث خطأ في إضافة الرصيد. يرجى المحاولة لاحقاً.';
+            }
+        }
+    }
+    
+    // إعادة التوجيه لتجنب إعادة إرسال النموذج
+    if (!empty($success)) {
+        $_SESSION['success'] = $success;
+    }
+    if (!empty($error)) {
+        $_SESSION['error'] = $error;
+    }
+    $redirectUrl = $_SERVER['PHP_SELF'] . '?page=cash_register';
+    if ($salesRepId && !$isSalesUser) {
+        $redirectUrl .= '&sales_rep_id=' . $salesRepId;
+    }
+    header('Location: ' . $redirectUrl);
+    exit;
+}
+
 if (!$salesRepId) {
     $error = 'يجب تحديد مندوب المبيعات';
     $salesRepId = $currentUser['id'];
@@ -313,9 +385,27 @@ if (!empty($damagedReturnsTableExists)) {
     }
 }
 
-// رصيد الخزنة = التحصيلات + المبيعات المدفوعة بالكامل - المبالغ المحصلة من المندوب
+// حساب الإضافات المباشرة للرصيد
+$totalCashAdditions = 0.0;
+$cashAdditionsTableExists = $db->queryOne("SHOW TABLES LIKE 'cash_register_additions'");
+if (!empty($cashAdditionsTableExists)) {
+    try {
+        $additionsResult = $db->queryOne(
+            "SELECT COALESCE(SUM(amount), 0) as total_additions
+             FROM cash_register_additions
+             WHERE sales_rep_id = ?",
+            [$salesRepId]
+        );
+        $totalCashAdditions = (float)($additionsResult['total_additions'] ?? 0);
+    } catch (Throwable $additionsError) {
+        error_log('Cash additions calculation error: ' . $additionsError->getMessage());
+        $totalCashAdditions = 0.0;
+    }
+}
+
+// رصيد الخزنة = التحصيلات + المبيعات المدفوعة بالكامل + الإضافات المباشرة - المبالغ المحصلة من المندوب
 // لا يتم خصم المرتجعات من رصيد الخزنة الإجمالي
-$cashRegisterBalance = $totalCollections + $fullyPaidSales - $collectedFromRep;
+$cashRegisterBalance = $totalCollections + $fullyPaidSales + $totalCashAdditions - $collectedFromRep;
 
 // حساب المبيعات المعلقة (الديون) بالاعتماد على أرصدة العملاء لضمان التطابق مع صفحة العملاء
 $pendingSales = 0.0;
@@ -873,9 +963,19 @@ $salesRepInfo = $db->queryOne(
                 <div class="glass-card-header">
                     <i class="bi bi-bank glass-card-blue"></i>
                     <h6 class="mb-0 fw-semibold">رصيد الخزنة الإجمالي</h6>
+                    <?php if ($isSalesUser): ?>
+                    <button type="button" class="btn btn-sm btn-light ms-auto" data-bs-toggle="modal" data-bs-target="#addCashBalanceModal" title="إضافة رصيد">
+                        <i class="bi bi-plus-circle"></i>
+                    </button>
+                    <?php endif; ?>
                 </div>
                 <div class="glass-card-body">
                     <p class="glass-card-value glass-card-blue mb-0"><?php echo formatCurrency($cashRegisterBalance); ?></p>
+                    <?php if ($totalCashAdditions > 0): ?>
+                    <p class="glass-card-title mt-2 mb-0" style="font-size: 12px;">
+                        إضافات مباشرة: <?php echo formatCurrency($totalCashAdditions); ?>
+                    </p>
+                    <?php endif; ?>
                 </div>
             </div>
         </div>
@@ -985,6 +1085,54 @@ $salesRepInfo = $db->queryOne(
     </div>
 </div>
 
+<!-- Modal إضافة رصيد للخزنة -->
+<?php if ($isSalesUser): ?>
+<div class="modal fade" id="addCashBalanceModal" tabindex="-1" aria-labelledby="addCashBalanceModalLabel" aria-hidden="true">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title" id="addCashBalanceModalLabel">
+                    <i class="bi bi-plus-circle me-2"></i>إضافة رصيد للخزنة
+                </h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+            </div>
+            <form method="POST" action="" id="addCashBalanceForm">
+                <input type="hidden" name="action" value="add_cash_balance">
+                <div class="modal-body">
+                    <div class="mb-3">
+                        <label for="cashBalanceAmount" class="form-label">المبلغ <span class="text-danger">*</span></label>
+                        <input type="number" 
+                               class="form-control" 
+                               id="cashBalanceAmount" 
+                               name="amount" 
+                               step="0.01" 
+                               min="0.01" 
+                               required 
+                               placeholder="أدخل المبلغ">
+                        <div class="form-text">يجب أن يكون المبلغ أكبر من الصفر</div>
+                    </div>
+                    <div class="mb-3">
+                        <label for="cashBalanceDescription" class="form-label">الوصف</label>
+                        <textarea class="form-control" 
+                                  id="cashBalanceDescription" 
+                                  name="description" 
+                                  rows="3" 
+                                  placeholder="اكتب وصفاً للمبلغ (اختياري)"></textarea>
+                        <div class="form-text">مثال: إضافة رصيد نقدي، إيداع من حساب شخصي، إلخ</div>
+                    </div>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">إلغاء</button>
+                    <button type="submit" class="btn btn-primary">
+                        <i class="bi bi-check-circle me-2"></i>إضافة الرصيد
+                    </button>
+                </div>
+            </form>
+        </div>
+    </div>
+</div>
+<?php endif; ?>
+
 <!-- إعادة تحميل الصفحة تلقائياً بعد أي رسالة (نجاح أو خطأ) لمنع تكرار الطلبات -->
 <script>
 // إعادة تحميل الصفحة تلقائياً بعد أي رسالة (نجاح أو خطأ) لمنع تكرار الطلبات
@@ -1006,6 +1154,18 @@ $salesRepInfo = $db->queryOne(
             // إعادة تحميل الصفحة
             window.location.href = currentUrl.toString();
         }, 3000);
+    }
+})();
+
+// إعادة تعيين نموذج إضافة الرصيد عند إغلاق الـ modal
+(function() {
+    const addCashBalanceModal = document.getElementById('addCashBalanceModal');
+    const addCashBalanceForm = document.getElementById('addCashBalanceForm');
+    
+    if (addCashBalanceModal && addCashBalanceForm) {
+        addCashBalanceModal.addEventListener('hidden.bs.modal', function() {
+            addCashBalanceForm.reset();
+        });
     }
 })();
 </script>

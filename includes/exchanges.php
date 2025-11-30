@@ -392,8 +392,12 @@ function getExchanges($filters = [], $limit = 100, $offset = 0) {
     if (isset($filters['sales_rep_id']) && $filters['sales_rep_id'] !== '') {
         $salesRepId = (int)$filters['sales_rep_id'];
         if ($salesRepId > 0) {
+            // إذا كان sales_rep_id محدد وموجب، فلتر حسبه
             $sql .= " AND e.sales_rep_id = ?";
             $params[] = $salesRepId;
+        } else {
+            // إذا كان sales_rep_id = 0 أو null في الفلاتر، فلتر للاستبدالات التي ليس لها sales_rep_id
+            $sql .= " AND (e.sales_rep_id IS NULL OR e.sales_rep_id = 0)";
         }
     }
     
