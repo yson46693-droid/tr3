@@ -226,14 +226,15 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['
                     }
                     
                     // إضافة الرصيد
+                    $userId = isset($currentUser['id']) ? (int)$currentUser['id'] : 0;
                     $db->execute(
                         "INSERT INTO cash_register_additions (sales_rep_id, amount, description, created_by) VALUES (?, ?, ?, ?)",
-                        [$currentUser['id'], $amount, $description ?: null, $currentUser['id']]
+                        [$userId, $amount, $description ?: null, $userId]
                     );
                     
                     // تسجيل في سجل التدقيق
                     try {
-                        logAudit($currentUser['id'], 'add_cash_balance', 'cash_register_addition', $db->getLastInsertId(), null, [
+                        logAudit($userId, 'add_cash_balance', 'cash_register_addition', $db->getLastInsertId(), null, [
                             'amount' => $amount,
                             'description' => $description
                         ]);
@@ -280,7 +281,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['
                     // إحصائيات المبيعات - التحقق من وجود جدول sales أولاً
                     $salesTableCheck = $db->queryOne("SHOW TABLES LIKE 'sales'");
                     if (!empty($salesTableCheck)) {
-                        $currentUserId = (int)($currentUser['id'] ?? 0);
+                        $currentUserId = isset($currentUser['id']) ? (int)$currentUser['id'] : 0;
                         $todaySales = $db->queryOne(
                             "SELECT COALESCE(SUM(total), 0) as total 
                              FROM sales 
@@ -303,7 +304,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['
                     }
                     
                     $customersCount = ['count' => 0];
-                    $salesUserId = (int) ($currentUser['id'] ?? 0);
+                    $salesUserId = isset($currentUser['id']) ? (int)$currentUser['id'] : 0;
                     $customersTableExists = $db->queryOne("SHOW TABLES LIKE 'customers'");
                     if (!empty($customersTableExists) && $salesUserId > 0) {
                         try {
@@ -401,7 +402,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['
                                      WHERE s.salesperson_id = ? 
                                      ORDER BY s.created_at DESC 
                                      LIMIT 10",
-                                    [$currentUser['id']]
+                                    [isset($currentUser['id']) ? (int)$currentUser['id'] : 0]
                                 );
                             } catch (Exception $e) {
                                 error_log("Sales query error: " . $e->getMessage());
@@ -496,7 +497,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['
                 <!-- صفحة المبيعات -->
                 <?php
                 // الحصول على قائمة العملاء للنماذج - فقط عملاء المندوب الحالي
-                $currentUserId = (int)($currentUser['id'] ?? 0);
+                $currentUserId = isset($currentUser['id']) ? (int)$currentUser['id'] : 0;
                 $reportCustomers = $db->query(
                     "SELECT id, name, phone 
                      FROM customers 
@@ -618,7 +619,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['
                 <!-- صفحة التحصيلات -->
                 <?php
                 // الحصول على قائمة العملاء للنماذج - فقط عملاء المندوب الحالي
-                $currentUserId = (int)($currentUser['id'] ?? 0);
+                $currentUserId = isset($currentUser['id']) ? (int)$currentUser['id'] : 0;
                 $reportCustomers = $db->query(
                     "SELECT id, name, phone 
                      FROM customers 
@@ -916,7 +917,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['
                 <!-- صفحة سجلات المندوب -->
                 <?php
                 // الحصول على قائمة العملاء للنماذج - فقط عملاء المندوب الحالي
-                $currentUserId = (int)($currentUser['id'] ?? 0);
+                $currentUserId = isset($currentUser['id']) ? (int)$currentUser['id'] : 0;
                 $reportCustomers = $db->query(
                     "SELECT id, name, phone 
                      FROM customers 
@@ -1590,7 +1591,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['
             <?php elseif ($page === 'sales_records'): ?>
                 <?php
                 // الحصول على قائمة العملاء للنماذج - فقط عملاء المندوب الحالي
-                $currentUserId = (int)($currentUser['id'] ?? 0);
+                $currentUserId = isset($currentUser['id']) ? (int)$currentUser['id'] : 0;
                 $reportCustomers = $db->query(
                     "SELECT id, name, phone 
                      FROM customers 
