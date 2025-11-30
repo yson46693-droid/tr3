@@ -1355,12 +1355,10 @@ if ($showSuccessFromSession): ?>
                 <td><?php echo ($currentUser['role'] === 'sales') ? 'سعر الساعه' : 'سعر الساعة'; ?></td>
                 <td><?php echo formatCurrency($hourlyRate); ?></td>
             </tr>
-            <?php if ($currentUser['role'] !== 'sales'): ?>
             <tr>
                 <td>عدد الساعات</td>
                 <td><?php echo formatHours($monthStats['total_hours']); ?></td>
             </tr>
-            <?php endif; ?>
             <tr>
                 <td>إجمالي التأخير</td>
                 <td><?php echo number_format($delaySummary['total_minutes'] ?? 0, 2); ?> دقيقة</td>
