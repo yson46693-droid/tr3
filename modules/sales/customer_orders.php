@@ -607,6 +607,23 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                             $updateFields[] = "address = ?";
                             $updateParams[] = $newCustomerAddress;
                         }
+                        
+                        // تحديث الموقع إذا كان موجوداً
+                        $hasLatitudeColumn = !empty($db->queryOne("SHOW COLUMNS FROM customers LIKE 'latitude'"));
+                        $hasLongitudeColumn = !empty($db->queryOne("SHOW COLUMNS FROM customers LIKE 'longitude'"));
+                        $hasLocationCapturedAtColumn = !empty($db->queryOne("SHOW COLUMNS FROM customers LIKE 'location_captured_at'"));
+                        
+                        if ($hasLatitudeColumn && $newCustomerLatitude !== null) {
+                            $updateFields[] = "latitude = ?";
+                            $updateParams[] = (float)$newCustomerLatitude;
+                        }
+                        if ($hasLongitudeColumn && $newCustomerLongitude !== null) {
+                            $updateFields[] = "longitude = ?";
+                            $updateParams[] = (float)$newCustomerLongitude;
+                        }
+                        if ($hasLocationCapturedAtColumn && $newCustomerLatitude !== null && $newCustomerLongitude !== null) {
+                            $updateFields[] = "location_captured_at = NOW()";
+                        }
 
                         if (!empty($updateFields)) {
                             $updateParams[] = $customerId;
@@ -617,15 +634,45 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                         }
                     } else {
                         // إنشاء عميل جديد للشركة (بدون مندوب)
+                        // التحقق من وجود أعمدة اللوكيشن
+                        $hasLatitudeColumn = !empty($db->queryOne("SHOW COLUMNS FROM customers LIKE 'latitude'"));
+                        $hasLongitudeColumn = !empty($db->queryOne("SHOW COLUMNS FROM customers LIKE 'longitude'"));
+                        $hasLocationCapturedAtColumn = !empty($db->queryOne("SHOW COLUMNS FROM customers LIKE 'location_captured_at'"));
+                        
+                        $customerColumns = ['name', 'phone', 'address', 'balance', 'status', 'created_by', 'created_by_admin'];
+                        $customerValues = [
+                            $newCustomerName,
+                            $newCustomerPhone !== '' ? $newCustomerPhone : null,
+                            $newCustomerAddress !== '' ? $newCustomerAddress : null,
+                            0,
+                            'active',
+                            $currentUser['id'],
+                            1
+                        ];
+                        $customerPlaceholders = ['?', '?', '?', '?', '?', '?', '?'];
+                        
+                        if ($hasLatitudeColumn && $newCustomerLatitude !== null) {
+                            $customerColumns[] = 'latitude';
+                            $customerValues[] = (float)$newCustomerLatitude;
+                            $customerPlaceholders[] = '?';
+                        }
+                        
+                        if ($hasLongitudeColumn && $newCustomerLongitude !== null) {
+                            $customerColumns[] = 'longitude';
+                            $customerValues[] = (float)$newCustomerLongitude;
+                            $customerPlaceholders[] = '?';
+                        }
+                        
+                        if ($hasLocationCapturedAtColumn && $newCustomerLatitude !== null && $newCustomerLongitude !== null) {
+                            $customerColumns[] = 'location_captured_at';
+                            $customerValues[] = date('Y-m-d H:i:s');
+                            $customerPlaceholders[] = '?';
+                        }
+                        
                         $db->execute(
-                            "INSERT INTO customers (name, phone, address, balance, status, created_by, created_by_admin) 
-                             VALUES (?, ?, ?, 0, 'active', ?, 1)",
-                            [
-                                $newCustomerName,
-                                $newCustomerPhone !== '' ? $newCustomerPhone : null,
-                                $newCustomerAddress !== '' ? $newCustomerAddress : null,
-                                $currentUser['id']
-                            ]
+                            "INSERT INTO customers (" . implode(', ', $customerColumns) . ") 
+                             VALUES (" . implode(', ', $customerPlaceholders) . ")",
+                            $customerValues
                         );
                         $customerId = (int)$db->getLastInsertId();
                         $newCustomerCreated = true;
@@ -1054,7 +1101,7 @@ if (isset($_GET['id'])) {
     <h2 class="mb-0"><i class="bi bi-cart-check me-2"></i>إدارة طلبات العملاء</h2>
     <div class="d-flex flex-wrap gap-2">
         <button class="btn btn-primary" data-bs-toggle="modal" data-bs-target="#addOrderModal">
-            <i class="bi bi-plus-circle me-2"></i>إنشاء طلب جديد
+            <i class="bi bi-plus-circle me-2"></i>طلب عميل مندوب
         </button>
         <?php if ($isManagerOrAccountant): ?>
             <button class="btn btn-success" data-bs-toggle="modal" data-bs-target="#addCompanyOrderModal">
@@ -1645,6 +1692,17 @@ if (isset($_GET['id'])) {
                             <label class="form-label">عنوان العميل</label>
                             <textarea class="form-control" name="new_customer_address" rows="2" autocomplete="off" placeholder="اكتب العنوان بالتفصيل"></textarea>
                         </div>
+                        <div class="col-12">
+                            <label class="form-label">موقع العميل <span class="text-muted">(اختياري)</span></label>
+                            <div class="d-flex gap-2">
+                                <input type="text" class="form-control" name="new_customer_latitude" id="companyNewCustomerLatitude" placeholder="خط العرض" readonly>
+                                <input type="text" class="form-control" name="new_customer_longitude" id="companyNewCustomerLongitude" placeholder="خط الطول" readonly>
+                                <button type="button" class="btn btn-outline-primary" id="companyGetLocationBtn" title="الحصول على الموقع الحالي">
+                                    <i class="bi bi-geo-alt"></i>
+                                </button>
+                            </div>
+                            <small class="text-muted">اضغط على زر الموقع للحصول على موقعك الحالي</small>
+                        </div>
                     </div>
                     
                     <div class="mb-3">
@@ -1963,6 +2021,21 @@ if (document.readyState === 'loading') {
     setupLocationButton();
 }
 
+// ربط الأحداث عند فتح Modal طلب الشركة
+const addCompanyOrderModalElement = document.getElementById('addCompanyOrderModal');
+if (addCompanyOrderModalElement && typeof bootstrap !== 'undefined') {
+    addCompanyOrderModalElement.addEventListener('shown.bs.modal', function() {
+        setupCompanyLocationButton();
+    });
+}
+
+// أيضاً محاولة الربط مباشرة عند تحميل الصفحة
+if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', setupCompanyLocationButton);
+} else {
+    setupCompanyLocationButton();
+}
+
 // ربط أحداث العناصر
 function attachItemEvents(item) {
     // لا حاجة لحسابات السعر والإجمالي
@@ -2135,11 +2208,19 @@ if (addCompanyOrderModalElement && typeof bootstrap !== 'undefined') {
         });
         const newCustomerPhoneInput = document.querySelector('#addCompanyOrderModal input[name="new_customer_phone"]');
         const newCustomerAddressInput = document.querySelector('#addCompanyOrderModal textarea[name="new_customer_address"]');
+        const newCustomerLatitudeInput = document.querySelector('#addCompanyOrderModal input[name="new_customer_latitude"]');
+        const newCustomerLongitudeInput = document.querySelector('#addCompanyOrderModal input[name="new_customer_longitude"]');
         if (newCustomerPhoneInput) {
             newCustomerPhoneInput.value = '';
         }
         if (newCustomerAddressInput) {
             newCustomerAddressInput.value = '';
+        }
+        if (newCustomerLatitudeInput) {
+            newCustomerLatitudeInput.value = '';
+        }
+        if (newCustomerLongitudeInput) {
+            newCustomerLongitudeInput.value = '';
         }
         // إعادة تعيين العناصر
         const companyOrderItems = document.getElementById('companyOrderItems');
