@@ -1630,11 +1630,13 @@ function approveReturn(int $returnId, ?int $approvedBy = null, ?string $notes = 
             // 7. الموافقة على طلب الموافقة
             $entityColumn = getApprovalsEntityColumn();
             $approval = $db->queryOne(
-                "SELECT id FROM approvals WHERE type = 'return_request' AND {$entityColumn} = ? AND status = 'pending'",
+                "SELECT id, requested_by FROM approvals WHERE type = 'return_request' AND {$entityColumn} = ? AND status = 'pending'",
                 [$returnId]
             );
             
+            $requestedBy = null;
             if ($approval) {
+                $requestedBy = (int)($approval['requested_by'] ?? 0);
                 approveRequest((int)$approval['id'], $approvedBy, $notes ?: 'تمت الموافقة على طلب المرتجع');
             }
             
@@ -1650,6 +1652,55 @@ function approveReturn(int $returnId, ?int $approvedBy = null, ?string $notes = 
             
             // Commit المعاملة
             $db->commit();
+            
+            // 8. إرسال إشعار للمندوب بعد commit (لضمان عدم فشل العملية)
+            try {
+                if ($salesRepId > 0) {
+                    require_once __DIR__ . '/notifications.php';
+                    require_once __DIR__ . '/approval_system.php';
+                    
+                    $notificationMessage = "✅ تمت الموافقة على طلب المرتجع رقم: {$return['return_number']}\n\n";
+                    $notificationMessage .= "العميل: {$return['customer_name']}\n";
+                    $notificationMessage .= "المبلغ: " . number_format($returnAmount, 2) . " ج.م";
+                    
+                    if (($inventoryResult['items_count'] ?? 0) > 0) {
+                        $notificationMessage .= "\n\n📦 تم إرجاع " . ($inventoryResult['items_count'] ?? 0) . " منتج(ات) إلى مخزن السيارة";
+                    }
+                    
+                    $notificationLink = getEntityLink('return_request', $returnId);
+                    
+                    createNotification(
+                        $salesRepId,
+                        'تمت الموافقة على طلب المرتجع',
+                        $notificationMessage,
+                        'success',
+                        $notificationLink
+                    );
+                }
+                
+                // إرسال إشعار للمستخدم الذي طلب الموافقة (إذا كان مختلفاً عن المندوب)
+                if ($requestedBy > 0 && $requestedBy !== $salesRepId) {
+                    require_once __DIR__ . '/notifications.php';
+                    require_once __DIR__ . '/approval_system.php';
+                    
+                    $notificationMessage = "✅ تمت الموافقة على طلب المرتجع رقم: {$return['return_number']}\n\n";
+                    $notificationMessage .= "العميل: {$return['customer_name']}\n";
+                    $notificationMessage .= "المبلغ: " . number_format($returnAmount, 2) . " ج.م";
+                    
+                    $notificationLink = getEntityLink('return_request', $returnId);
+                    
+                    createNotification(
+                        $requestedBy,
+                        'تمت الموافقة على طلب المرتجع',
+                        $notificationMessage,
+                        'success',
+                        $notificationLink
+                    );
+                }
+            } catch (Throwable $e) {
+                // لا نفشل العملية إذا فشل إرسال الإشعار
+                error_log("Warning: Failed to send notification: " . $e->getMessage());
+            }
             
             // التحقق من أن الحالة تم تحديثها بشكل صحيح بعد commit
             $verifyReturn = $db->queryOne(

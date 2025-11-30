@@ -18,15 +18,41 @@ error_reporting(E_ALL);
 define('ACCESS_ALLOWED', true);
 define('IS_API_REQUEST', true);
 
+// تعيين معالج الأخطاء المخصص لمنع عرض HTML
+set_error_handler(function($errno, $errstr, $errfile, $errline) {
+    // تسجيل الخطأ فقط، لا نطبع أي شيء
+    error_log("PHP Error [{$errno}]: {$errstr} in {$errfile} on line {$errline}");
+    return true; // منع معالج الخطأ الافتراضي
+}, E_ALL);
+
+// تعيين معالج الاستثناءات
+set_exception_handler(function($exception) {
+    // تنظيف أي output buffers
+    while (ob_get_level() > 0) {
+        @ob_end_clean();
+    }
+    
+    error_log("Uncaught Exception: " . $exception->getMessage());
+    error_log("Stack trace: " . $exception->getTraceAsString());
+    
+    @header('Content-Type: application/json; charset=utf-8', true);
+    http_response_code(500);
+    echo json_encode([
+        'success' => false,
+        'message' => 'حدث خطأ غير متوقع في الخادم'
+    ], JSON_UNESCAPED_UNICODE);
+    exit;
+});
+
 // تنظيف أي output buffer موجود
 while (ob_get_level() > 0) {
-    ob_end_clean();
+    @ob_end_clean();
 }
 
 // بدء output buffer جديد
-ob_start();
+@ob_start();
 
-header('Content-Type: application/json; charset=utf-8');
+@header('Content-Type: application/json; charset=utf-8');
 
 require_once __DIR__ . '/../includes/config.php';
 require_once __DIR__ . '/../includes/db.php';
@@ -136,15 +162,26 @@ function returnJson(array $data, int $status = 200): void
 {
     // تنظيف جميع output buffers
     while (ob_get_level() > 0) {
-        ob_end_clean();
+        @ob_end_clean();
+    }
+    
+    // إزالة أي output غير مرغوب فيه
+    if (ob_get_level() > 0) {
+        @ob_clean();
     }
     
     // إرسال headers
-    header('Content-Type: application/json; charset=utf-8', true);
+    @header('Content-Type: application/json; charset=utf-8', true);
+    @header('X-Content-Type-Options: nosniff', true);
     http_response_code($status);
     
     // إرسال JSON
     echo json_encode($data, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
+    
+    // إنهاء التنفيذ
+    if (function_exists('fastcgi_finish_request')) {
+        fastcgi_finish_request();
+    }
     
     exit;
 }
@@ -830,35 +867,62 @@ function handleApproveReturn(): void
 {
     global $currentUser;
     
-    if ($currentUser['role'] !== 'manager') {
-        returnJson(['success' => false, 'message' => 'فقط المدير يمكنه الموافقة على المرتجعات'], 403);
+    // تنظيف أي output buffers قبل البدء
+    while (ob_get_level() > 0) {
+        ob_end_clean();
     }
     
-    $payload = json_decode(file_get_contents('php://input'), true);
-    
-    if (!is_array($payload)) {
-        returnJson(['success' => false, 'message' => 'صيغة البيانات غير صحيحة'], 400);
+    try {
+        if ($currentUser['role'] !== 'manager') {
+            returnJson(['success' => false, 'message' => 'فقط المدير يمكنه الموافقة على المرتجعات'], 403);
+        }
+        
+        $payload = json_decode(file_get_contents('php://input'), true);
+        
+        if (!is_array($payload)) {
+            returnJson(['success' => false, 'message' => 'صيغة البيانات غير صحيحة'], 400);
+        }
+        
+        $returnId = isset($payload['return_id']) ? (int)$payload['return_id'] : 0;
+        $notes = trim($payload['notes'] ?? '');
+        
+        if ($returnId <= 0) {
+            returnJson(['success' => false, 'message' => 'معرف المرتجع غير صالح'], 422);
+        }
+        
+        error_log("=== API: Approving return ID: {$returnId} by user: {$currentUser['id']} ===");
+        
+        // استخدام دالة الموافقة الشاملة
+        $result = approveReturn($returnId, (int)$currentUser['id'], $notes);
+        
+        error_log("=== API: Approve result: " . json_encode($result, JSON_UNESCAPED_UNICODE) . " ===");
+        
+        if (!$result['success']) {
+            error_log("=== API: Approval failed: " . ($result['message'] ?? 'Unknown error') . " ===");
+        }
+        
+        // تنظيف أي output buffers قبل إرجاع JSON
+        while (ob_get_level() > 0) {
+            ob_end_clean();
+        }
+        
+        returnJson($result, $result['success'] ? 200 : 400);
+        
+    } catch (Throwable $e) {
+        // تنظيف أي output buffers قبل إرجاع الخطأ
+        while (ob_get_level() > 0) {
+            ob_end_clean();
+        }
+        
+        error_log("=== API: Approve Return Exception ===");
+        error_log("Error: " . $e->getMessage());
+        error_log("Stack trace: " . $e->getTraceAsString());
+        
+        returnJson([
+            'success' => false,
+            'message' => 'حدث خطأ أثناء معالجة الموافقة: ' . $e->getMessage()
+        ], 500);
     }
-    
-    $returnId = isset($payload['return_id']) ? (int)$payload['return_id'] : 0;
-    $notes = trim($payload['notes'] ?? '');
-    
-    if ($returnId <= 0) {
-        returnJson(['success' => false, 'message' => 'معرف المرتجع غير صالح'], 422);
-    }
-    
-    error_log("=== API: Approving return ID: {$returnId} by user: {$currentUser['id']} ===");
-    
-    // استخدام دالة الموافقة الشاملة
-    $result = approveReturn($returnId, (int)$currentUser['id'], $notes);
-    
-    error_log("=== API: Approve result: " . json_encode($result, JSON_UNESCAPED_UNICODE) . " ===");
-    
-    if (!$result['success']) {
-        error_log("=== API: Approval failed: " . ($result['message'] ?? 'Unknown error') . " ===");
-    }
-    
-    returnJson($result, $result['success'] ? 200 : 400);
 }
 
 /**
