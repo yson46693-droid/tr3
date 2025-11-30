@@ -17,7 +17,6 @@ if ($_SERVER['HTTP_HOST'] == 'localhost' || $_SERVER['SERVER_NAME'] == 'localhos
     define('DB_PASS', '');
     define('DB_NAME', 'tr'); // يمكن تغيير اسم قاعدة البيانات هنا
 } else {
-    // 🌍 إعدادات قاعدة البيانات على الاستضافة (InfinityFree)
     define('DB_HOST', 'sql110.infinityfree.com');
     define('DB_PORT', '3306');
     define('DB_USER', 'if0_40278066');

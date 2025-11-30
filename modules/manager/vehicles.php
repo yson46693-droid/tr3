@@ -131,10 +131,35 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 [$vehicleId]
             );
             
-            $hasOrders = $db->queryOne(
-                "SELECT COUNT(*) as count FROM orders WHERE vehicle_id = ?",
-                [$vehicleId]
-            );
+            // التحقق من وجود طلبات مرتبطة بالسيارة (إذا كان الجدول موجوداً)
+            $hasOrders = ['count' => 0];
+            try {
+                // التحقق من وجود جدول orders أولاً
+                $ordersTableExists = $db->queryOne("SHOW TABLES LIKE 'orders'");
+                if (!empty($ordersTableExists)) {
+                    // التحقق من وجود عمود vehicle_id في جدول orders
+                    $vehicleIdColumnExists = $db->queryOne("
+                        SELECT COLUMN_NAME 
+                        FROM information_schema.COLUMNS 
+                        WHERE TABLE_SCHEMA = DATABASE()
+                          AND TABLE_NAME = 'orders'
+                          AND COLUMN_NAME = 'vehicle_id'
+                    ");
+                    if (!empty($vehicleIdColumnExists)) {
+                        $hasOrders = $db->queryOne(
+                            "SELECT COUNT(*) as count FROM orders WHERE vehicle_id = ?",
+                            [$vehicleId]
+                        );
+                    }
+                } else {
+                    // إذا لم يكن جدول orders موجوداً، لا يوجد طلبات مرتبطة
+                    $hasOrders = ['count' => 0];
+                }
+            } catch (Throwable $e) {
+                // تجاهل الخطأ إذا كان الجدول غير موجود
+                error_log("Vehicles: Error checking orders table: " . $e->getMessage());
+                $hasOrders = ['count' => 0];
+            }
             
             $hasTransfers = $db->queryOne(
                 "SELECT COUNT(*) as count FROM warehouse_transfers WHERE vehicle_id = ? OR to_vehicle_id = ?",
