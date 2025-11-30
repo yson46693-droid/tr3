@@ -262,48 +262,40 @@ function handleCreateExchange(): void
         returnJson(['success' => false, 'message' => 'العميل غير موجود'], 404);
     }
     
-    // Verify sales rep ownership
-    $salesRepId = (int)($customer['created_by'] ?? 0);
-    if ($currentUser['role'] === 'sales' && $salesRepId !== (int)$currentUser['id']) {
-        returnJson(['success' => false, 'message' => 'هذا العميل غير مرتبط بك'], 403);
-    }
+    // تحديد sales_rep_id - إذا كان المستخدم مندوب مبيعات، استخدم معرفه دائماً
+    $salesRepId = 0;
     
-    // Get sales rep ID
-    if ($salesRepId <= 0 && in_array($currentUser['role'], ['manager', 'accountant'], true)) {
-        $firstInvoice = $db->queryOne(
-            "SELECT sales_rep_id FROM invoices WHERE customer_id = ? ORDER BY id ASC LIMIT 1",
-            [$customerId]
-        );
-        $salesRepId = (int)($firstInvoice['sales_rep_id'] ?? 0);
-    }
-    
-    // في دالة handleCreateExchange، بعد تحديد $salesRepId (حوالي السطر 278)
-    // التأكد من أن sales_rep_id محدد بشكل صحيح
-    if ($salesRepId <= 0) {
-        // محاولة الحصول على sales_rep_id من الفاتورة المرتبطة
-        $firstInvoice = $db->queryOne(
-            "SELECT id FROM invoices WHERE customer_id = ? ORDER BY id ASC LIMIT 1",
-            [$customerId]
-        );
-        $invoiceId = $firstInvoice ? (int)$firstInvoice['id'] : null;
+    if ($currentUser['role'] === 'sales') {
+        // إذا كان المستخدم مندوب مبيعات، استخدم معرفه دائماً
+        $salesRepId = (int)$currentUser['id'];
         
-        if ($invoiceId) {
-            $invoice = $db->queryOne(
-                "SELECT sales_rep_id FROM invoices WHERE id = ?",
-                [$invoiceId]
-            );
-            $salesRepId = (int)($invoice['sales_rep_id'] ?? 0);
+        // التحقق من أن العميل مرتبط بهذا المندوب
+        $customerCreatedBy = (int)($customer['created_by'] ?? 0);
+        if ($customerCreatedBy !== $salesRepId) {
+            returnJson(['success' => false, 'message' => 'هذا العميل غير مرتبط بك'], 403);
         }
+    } else {
+        // للمديرين والمحاسبين: محاولة الحصول على sales_rep_id من العميل أو الفاتورة
+        $salesRepId = (int)($customer['created_by'] ?? 0);
         
-        // إذا لم يتم العثور على sales_rep_id، استخدم معرف المستخدم الحالي إذا كان مندوب
-        if ($salesRepId <= 0 && $currentUser['role'] === 'sales') {
-            $salesRepId = (int)$currentUser['id'];
+        if ($salesRepId <= 0) {
+            // محاولة الحصول على sales_rep_id من أول فاتورة للعميل
+            $firstInvoice = $db->queryOne(
+                "SELECT sales_rep_id FROM invoices WHERE customer_id = ? ORDER BY id ASC LIMIT 1",
+                [$customerId]
+            );
+            $salesRepId = (int)($firstInvoice['sales_rep_id'] ?? 0);
         }
         
         // إذا لم يتم العثور على sales_rep_id بعد كل المحاولات، استخدم created_by من العميل
         if ($salesRepId <= 0) {
             $salesRepId = (int)($customer['created_by'] ?? 0);
         }
+    }
+    
+    // التأكد من أن sales_rep_id محدد بشكل صحيح (يجب أن يكون أكبر من 0)
+    if ($salesRepId <= 0) {
+        error_log("Warning: sales_rep_id is 0 or less for exchange creation. Customer ID: {$customerId}, User ID: {$currentUser['id']}, User Role: {$currentUser['role']}");
     }
     
     $conn->begin_transaction();
@@ -525,6 +517,15 @@ function handleCreateExchange(): void
         }
         
         // Create exchange record with approved status (no approval needed)
+        // التأكد من تسجيل sales_rep_id بشكل صحيح - إذا كان المستخدم مندوب، يجب أن يكون sales_rep_id = معرفه
+        $finalSalesRepId = null;
+        if ($salesRepId > 0) {
+            $finalSalesRepId = $salesRepId;
+        } elseif ($currentUser['role'] === 'sales') {
+            // إذا كان المستخدم مندوب ولم يتم تحديد sales_rep_id، استخدم معرفه
+            $finalSalesRepId = (int)$currentUser['id'];
+        }
+        
         $db->execute(
             "INSERT INTO exchanges
              (exchange_number, invoice_id, customer_id, sales_rep_id, exchange_date, exchange_type,
@@ -534,7 +535,7 @@ function handleCreateExchange(): void
                 $exchangeNumber,
                 $invoiceId,
                 $customerId,
-                $salesRepId > 0 ? $salesRepId : null,
+                $finalSalesRepId,
                 $oldValue,
                 $newValue,
                 $difference,

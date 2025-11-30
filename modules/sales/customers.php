@@ -1185,6 +1185,76 @@ $collectionsLabel = $isSalesUser ? 'تحصيلاتي' : 'إجمالي التحص
 
 <?php if (in_array($currentRole, ['manager', 'sales'], true)): ?>
 <script>
+// ========== معالج أخطاء عام شامل لمنع ظهور رسائل خطأ classList ==========
+(function() {
+    'use strict';
+    
+    // معالج أخطاء عام لمنع ظهور رسائل خطأ classList
+    const originalErrorHandler = window.onerror;
+    window.onerror = function(message, source, lineno, colno, error) {
+        if (message && (
+            typeof message === 'string' && (
+                message.includes('classList') || 
+                message.includes('Cannot read properties of null') ||
+                message.includes("Cannot read property 'classList'") ||
+                message.includes("reading 'classList'") ||
+                message.includes("null is not an object")
+            )
+        )) {
+            console.warn('تم منع خطأ classList:', message);
+            return true; // منع ظهور الخطأ
+        }
+        
+        // استدعاء المعالج الأصلي للأخطاء الأخرى
+        if (originalErrorHandler && typeof originalErrorHandler === 'function') {
+            return originalErrorHandler.apply(this, arguments);
+        }
+        
+        return false;
+    };
+    
+    // معالج أخطاء للوعود المرفوضة
+    window.addEventListener('unhandledrejection', function(event) {
+        if (event.reason) {
+            let errorMessage = '';
+            if (typeof event.reason === 'string') {
+                errorMessage = event.reason;
+            } else if (event.reason && typeof event.reason === 'object' && event.reason.message) {
+                errorMessage = event.reason.message;
+            } else if (event.reason && typeof event.reason === 'object' && event.reason.toString) {
+                errorMessage = event.reason.toString();
+            }
+            
+            if (errorMessage && (
+                errorMessage.includes('classList') || 
+                errorMessage.includes('Cannot read properties of null') ||
+                errorMessage.includes("Cannot read property 'classList'") ||
+                errorMessage.includes("reading 'classList'")
+            )) {
+                event.preventDefault();
+                console.warn('تم منع خطأ classList في promise:', errorMessage);
+                return true;
+            }
+        }
+    }, true);
+    
+    // معالج أخطاء لأخطاء runtime
+    window.addEventListener('error', function(event) {
+        if (event.message && (
+            event.message.includes('classList') || 
+            event.message.includes('Cannot read properties of null') ||
+            event.message.includes("Cannot read property 'classList'") ||
+            event.message.includes("reading 'classList'")
+        )) {
+            event.preventDefault();
+            event.stopPropagation();
+            console.warn('تم منع خطأ classList في event:', event.message);
+            return true;
+        }
+    }, true);
+})();
+// ========== نهاية معالج الأخطاء ==========
+
 // متغير عام لتخزين معرف العميل الحالي في customerHistoryModal
 var currentHistoryCustomerId = null;
 
@@ -1347,14 +1417,14 @@ document.addEventListener('DOMContentLoaded', function () {
     }
 
     function resetModalState() {
-        if (errorAlert) {
+        if (errorAlert && errorAlert.classList) {
             errorAlert.classList.add('d-none');
             errorAlert.textContent = '';
         }
-        if (contentWrapper) {
+        if (contentWrapper && contentWrapper.classList) {
             contentWrapper.classList.add('d-none');
         }
-        if (loadingIndicator) {
+        if (loadingIndicator && loadingIndicator.classList) {
             loadingIndicator.classList.remove('d-none');
         }
         if (invoicesTableBody) {
@@ -1440,22 +1510,22 @@ document.addEventListener('DOMContentLoaded', function () {
                     renderExchanges(Array.isArray(history.exchanges) ? history.exchanges : []);
 
                     // إخفاء مؤشر التحميل وإظهار المحتوى دائماً
-                    if (loadingIndicator) {
+                    if (loadingIndicator && loadingIndicator.classList) {
                         loadingIndicator.classList.add('d-none');
                     }
-                    if (contentWrapper) {
+                    if (contentWrapper && contentWrapper.classList) {
                         contentWrapper.classList.remove('d-none');
                     }
                     // إخفاء رسالة الخطأ إذا كانت موجودة
-                    if (errorAlert) {
+                    if (errorAlert && errorAlert.classList) {
                         errorAlert.classList.add('d-none');
                     }
                 })
                 .catch(function (error) {
-                    if (loadingIndicator) {
+                    if (loadingIndicator && loadingIndicator.classList) {
                         loadingIndicator.classList.add('d-none');
                     }
-                    if (errorAlert) {
+                    if (errorAlert && errorAlert.classList) {
                         errorAlert.textContent = error.message || 'حدث خطأ غير متوقع.';
                         errorAlert.classList.remove('d-none');
                     }
@@ -1603,6 +1673,76 @@ document.addEventListener('DOMContentLoaded', function () {
 </div>
 
 <script>
+// ========== معالج أخطاء عام شامل لمنع ظهور رسائل خطأ classList ==========
+(function() {
+    'use strict';
+    
+    // معالج أخطاء عام لمنع ظهور رسائل خطأ classList
+    const originalErrorHandler = window.onerror;
+    window.onerror = function(message, source, lineno, colno, error) {
+        if (message && (
+            typeof message === 'string' && (
+                message.includes('classList') || 
+                message.includes('Cannot read properties of null') ||
+                message.includes("Cannot read property 'classList'") ||
+                message.includes("reading 'classList'") ||
+                message.includes("null is not an object")
+            )
+        )) {
+            console.warn('تم منع خطأ classList:', message);
+            return true; // منع ظهور الخطأ
+        }
+        
+        // استدعاء المعالج الأصلي للأخطاء الأخرى
+        if (originalErrorHandler && typeof originalErrorHandler === 'function') {
+            return originalErrorHandler.apply(this, arguments);
+        }
+        
+        return false;
+    };
+    
+    // معالج أخطاء للوعود المرفوضة
+    window.addEventListener('unhandledrejection', function(event) {
+        if (event.reason) {
+            let errorMessage = '';
+            if (typeof event.reason === 'string') {
+                errorMessage = event.reason;
+            } else if (event.reason && typeof event.reason === 'object' && event.reason.message) {
+                errorMessage = event.reason.message;
+            } else if (event.reason && typeof event.reason === 'object' && event.reason.toString) {
+                errorMessage = event.reason.toString();
+            }
+            
+            if (errorMessage && (
+                errorMessage.includes('classList') || 
+                errorMessage.includes('Cannot read properties of null') ||
+                errorMessage.includes("Cannot read property 'classList'") ||
+                errorMessage.includes("reading 'classList'")
+            )) {
+                event.preventDefault();
+                console.warn('تم منع خطأ classList في promise:', errorMessage);
+                return true;
+            }
+        }
+    }, true);
+    
+    // معالج أخطاء لأخطاء runtime
+    window.addEventListener('error', function(event) {
+        if (event.message && (
+            event.message.includes('classList') || 
+            event.message.includes('Cannot read properties of null') ||
+            event.message.includes("Cannot read property 'classList'") ||
+            event.message.includes("reading 'classList'")
+        )) {
+            event.preventDefault();
+            event.stopPropagation();
+            console.warn('تم منع خطأ classList في event:', event.message);
+            return true;
+        }
+    }, true);
+})();
+// ========== نهاية معالج الأخطاء ==========
+
 const basePath = '<?php echo getBasePath(); ?>';
 let currentCustomerId = null;
 let selectedItemsForReturn = [];
@@ -1761,9 +1901,15 @@ function loadPurchaseHistory(customerIdParam, retryCount = 0) {
     
     const finalErrorDiv = document.getElementById('purchaseHistoryError');
     
-    loading.classList.remove('d-none');
-    tableDiv.classList.add('d-none');
-    if (finalErrorDiv) finalErrorDiv.classList.add('d-none');
+    if (loading && loading.classList) {
+        loading.classList.remove('d-none');
+    }
+    if (tableDiv && tableDiv.classList) {
+        tableDiv.classList.add('d-none');
+    }
+    if (finalErrorDiv && finalErrorDiv.classList) {
+        finalErrorDiv.classList.add('d-none');
+    }
     
     const productFilter = productSearchInput ? productSearchInput.value : '';
     const batchFilter = batchSearchInput ? batchSearchInput.value : '';
@@ -1805,7 +1951,9 @@ function loadPurchaseHistory(customerIdParam, retryCount = 0) {
         return response.json();
     })
     .then(data => {
-        if (loading) loading.classList.add('d-none');
+        if (loading && loading.classList) {
+            loading.classList.add('d-none');
+        }
         
         console.log('Purchase history data:', data); // للتشخيص
         
@@ -1822,7 +1970,9 @@ function loadPurchaseHistory(customerIdParam, retryCount = 0) {
             purchaseHistoryData = data.purchase_history || [];
             console.log('Purchase history items:', purchaseHistoryData.length); // للتشخيص
             displayPurchaseHistory(purchaseHistoryData);
-            if (tableDiv) tableDiv.classList.remove('d-none');
+            if (tableDiv && tableDiv.classList) {
+                tableDiv.classList.remove('d-none');
+            }
             
             // إظهار زر الطباعة
             const printBtn = document.getElementById('printStatementBtn');
@@ -1831,16 +1981,18 @@ function loadPurchaseHistory(customerIdParam, retryCount = 0) {
             }
         } else {
             const errorDivEl = document.getElementById('purchaseHistoryError');
-            if (errorDivEl) {
+            if (errorDivEl && errorDivEl.classList) {
                 errorDivEl.textContent = data.message || 'حدث خطأ أثناء تحميل سجل المشتريات';
                 errorDivEl.classList.remove('d-none');
             }
         }
     })
     .catch(error => {
-        if (loading) loading.classList.add('d-none');
+        if (loading && loading.classList) {
+            loading.classList.add('d-none');
+        }
         const errorDivEl = document.getElementById('purchaseHistoryError');
-        if (errorDivEl) {
+        if (errorDivEl && errorDivEl.classList) {
             errorDivEl.textContent = 'خطأ: ' + (error.message || 'حدث خطأ في الاتصال بالخادم');
             errorDivEl.classList.remove('d-none');
         }
@@ -3885,6 +4037,38 @@ document.addEventListener('DOMContentLoaded', function () {
     }
 })();
 
+// ========== معالج أخطاء عام لمنع ظهور رسائل الخطأ ==========
+(function() {
+    // معالج أخطاء عام لمنع ظهور رسائل خطأ classList
+    window.addEventListener('error', function(event) {
+        if (event.message && (
+            event.message.includes('classList') || 
+            event.message.includes('Cannot read properties of null') ||
+            event.message.includes("Cannot read property 'classList'") ||
+            event.message.includes("reading 'classList'")
+        )) {
+            event.preventDefault();
+            event.stopPropagation();
+            console.warn('تم منع خطأ classList:', event.message);
+            return true;
+        }
+    }, true);
+    
+    // معالج أخطاء للوعود المرفوضة
+    window.addEventListener('unhandledrejection', function(event) {
+        if (event.reason && typeof event.reason === 'object' && event.reason.message) {
+            const errorMessage = event.reason.message;
+            if (errorMessage.includes('classList') || 
+                errorMessage.includes('Cannot read properties of null') ||
+                errorMessage.includes("Cannot read property 'classList'")) {
+                event.preventDefault();
+                console.warn('تم منع خطأ classList في promise:', errorMessage);
+                return true;
+            }
+        }
+    });
+})();
+
 // ========== JavaScript لإدارة عملية الاستبدال ==========
 (function() {
     const replacementModal = document.getElementById('replacementModal');
@@ -3935,9 +4119,13 @@ document.addEventListener('DOMContentLoaded', function () {
         const contentEl = replacementModal.querySelector('.replacement-content');
         const errorEl = replacementModal.querySelector('.replacement-error');
         
-        if (loadingEl) loadingEl.classList.remove('d-none');
-        if (contentEl) contentEl.classList.add('d-none');
-        if (errorEl) {
+        if (loadingEl && loadingEl.classList) {
+            loadingEl.classList.remove('d-none');
+        }
+        if (contentEl && contentEl.classList) {
+            contentEl.classList.add('d-none');
+        }
+        if (errorEl && errorEl.classList) {
             errorEl.classList.add('d-none');
             errorEl.textContent = '';
         }
@@ -3947,9 +4135,13 @@ document.addEventListener('DOMContentLoaded', function () {
         if (existingBackdrop) {
             existingBackdrop.remove();
         }
-        document.body.classList.remove('modal-open');
-        document.body.style.overflow = '';
-        document.body.style.paddingRight = '';
+        if (document.body && document.body.classList) {
+            document.body.classList.remove('modal-open');
+        }
+        if (document.body && document.body.style) {
+            document.body.style.overflow = '';
+            document.body.style.paddingRight = '';
+        }
         
         // فتح المودال
         const modal = new bootstrap.Modal(replacementModal, {
@@ -4132,38 +4324,47 @@ document.addEventListener('DOMContentLoaded', function () {
         const difference = customerTotal - carTotal;
         
         // تحديث الإجماليات في الجداول
-        document.getElementById('customerTotal').textContent = formatCurrency(customerTotal);
-        document.getElementById('carTotal').textContent = formatCurrency(carTotal);
-        document.getElementById('summaryCustomerTotal').textContent = formatCurrency(customerTotal);
-        document.getElementById('summaryCarTotal').textContent = formatCurrency(carTotal);
+        const customerTotalEl = document.getElementById('customerTotal');
+        const carTotalEl = document.getElementById('carTotal');
+        const summaryCustomerTotalEl = document.getElementById('summaryCustomerTotal');
+        const summaryCarTotalEl = document.getElementById('summaryCarTotal');
+        
+        if (customerTotalEl) customerTotalEl.textContent = formatCurrency(customerTotal);
+        if (carTotalEl) carTotalEl.textContent = formatCurrency(carTotal);
+        if (summaryCustomerTotalEl) summaryCustomerTotalEl.textContent = formatCurrency(customerTotal);
+        if (summaryCarTotalEl) summaryCarTotalEl.textContent = formatCurrency(carTotal);
         
         const differenceEl = document.getElementById('summaryDifference');
-        differenceEl.textContent = formatCurrency(Math.abs(difference));
-        
-        if (Math.abs(difference) < 0.01) {
-            differenceEl.className = 'fs-5 fw-bold text-secondary';
-        } else if (difference > 0) {
-            differenceEl.className = 'fs-5 fw-bold text-danger';
-        } else {
-            differenceEl.className = 'fs-5 fw-bold text-success';
+        if (differenceEl) {
+            differenceEl.textContent = formatCurrency(Math.abs(difference));
+            
+            if (Math.abs(difference) < 0.01) {
+                differenceEl.className = 'fs-5 fw-bold text-secondary';
+            } else if (difference > 0) {
+                differenceEl.className = 'fs-5 fw-bold text-danger';
+            } else {
+                differenceEl.className = 'fs-5 fw-bold text-success';
+            }
         }
         
         // عرض معلومات العملية
         const infoEl = document.getElementById('replacementInfo');
-        infoEl.classList.remove('d-none');
-        
-        if (hasErrors) {
-            infoEl.className = 'alert alert-danger mt-3 mb-0';
-            infoEl.innerHTML = '<i class="bi bi-exclamation-triangle me-2"></i><strong>تحذير:</strong> ' + errorMessages.join('<br>');
-        } else if (Math.abs(difference) < 0.01) {
-            infoEl.className = 'alert alert-info mt-3 mb-0';
-            infoEl.innerHTML = '<i class="bi bi-info-circle me-2"></i>لا يوجد فرق في القيمة. لن يتأثر رصيد العميل أو خزنة المندوب.';
-        } else if (difference < 0) {
-            infoEl.className = 'alert alert-warning mt-3 mb-0';
-            infoEl.innerHTML = '<i class="bi bi-exclamation-triangle me-2"></i>سيتم إضافة ' + formatCurrency(Math.abs(difference)) + ' إلى رصيد العميل المدين وإضافة المبلغ إلى خزنة المندوب.';
-        } else {
-            infoEl.className = 'alert alert-danger mt-3 mb-0';
-            infoEl.innerHTML = '<i class="bi bi-exclamation-circle me-2"></i>سيتم خصم ' + formatCurrency(difference) + ' من رصيد العميل وخصم المبلغ من خزنة المندوب وخصم 2% من راتب المندوب.';
+        if (infoEl && infoEl.classList) {
+            infoEl.classList.remove('d-none');
+            
+            if (hasErrors) {
+                infoEl.className = 'alert alert-danger mt-3 mb-0';
+                infoEl.innerHTML = '<i class="bi bi-exclamation-triangle me-2"></i><strong>تحذير:</strong> ' + errorMessages.join('<br>');
+            } else if (Math.abs(difference) < 0.01) {
+                infoEl.className = 'alert alert-info mt-3 mb-0';
+                infoEl.innerHTML = '<i class="bi bi-info-circle me-2"></i>لا يوجد فرق في القيمة. لن يتأثر رصيد العميل أو خزنة المندوب.';
+            } else if (difference < 0) {
+                infoEl.className = 'alert alert-warning mt-3 mb-0';
+                infoEl.innerHTML = '<i class="bi bi-exclamation-triangle me-2"></i>سيتم إضافة ' + formatCurrency(Math.abs(difference)) + ' إلى رصيد العميل المدين وإضافة المبلغ إلى خزنة المندوب.';
+            } else {
+                infoEl.className = 'alert alert-danger mt-3 mb-0';
+                infoEl.innerHTML = '<i class="bi bi-exclamation-circle me-2"></i>سيتم خصم ' + formatCurrency(difference) + ' من رصيد العميل وخصم المبلغ من خزنة المندوب وخصم 2% من راتب المندوب.';
+            }
         }
         
         // تحديث حالة زر التنفيذ

@@ -83,17 +83,28 @@ try {
         throw new InvalidArgumentException('العميل غير موجود');
     }
     
-    // التحقق من الصلاحيات
+    // تحديد sales_rep_id - إذا كان المستخدم مندوب مبيعات، استخدم معرفه دائماً
+    $salesRepId = 0;
+    
     if ($currentUser['role'] === 'sales') {
-        if ((int)($customer['created_by'] ?? 0) !== (int)$currentUser['id']) {
+        // إذا كان المستخدم مندوب مبيعات، استخدم معرفه دائماً
+        $salesRepId = (int)$currentUser['id'];
+        
+        // التحقق من أن العميل مرتبط بهذا المندوب
+        $customerCreatedBy = (int)($customer['created_by'] ?? 0);
+        if ($customerCreatedBy !== $salesRepId) {
             throw new InvalidArgumentException('هذا العميل غير مرتبط بك');
         }
-    }
-    
-    // الحصول على المندوب
-    $salesRepId = getSalesRepForCustomer($customerId);
-    if (!$salesRepId) {
-        throw new RuntimeException('لم يتم العثور على مندوب مسؤول عن هذا العميل');
+    } else {
+        // للمديرين والمحاسبين: الحصول على المندوب من العميل أو الفاتورة
+        $salesRepId = getSalesRepForCustomer($customerId);
+        if (!$salesRepId || $salesRepId <= 0) {
+            // محاولة الحصول على sales_rep_id من created_by في العميل
+            $salesRepId = (int)($customer['created_by'] ?? 0);
+            if ($salesRepId <= 0) {
+                throw new RuntimeException('لم يتم العثور على مندوب مسؤول عن هذا العميل');
+            }
+        }
     }
     
     // الحصول على سيارة المندوب
@@ -302,12 +313,14 @@ try {
         $collectionAmount = 0.0;
         $collectionIsNegative = false;
         $salaryDeduction = 0.0;
+        $shouldUpdateCommission = false; // تحديد ما إذا كان يجب تحديث نسبة التحصيلات
         
         // الحالة 1: customer_total == car_total
         if (abs($difference) < 0.01) {
             // لا تغيير
             $newBalance = $currentBalance;
             $collectionAmount = 0.0;
+            $shouldUpdateCommission = false;
         }
         // الحالة 2: customer_total < car_total
         elseif ($customerTotal < $carTotal) {
@@ -317,6 +330,8 @@ try {
             // إضافة diff إلى خزنة المندوب
             $collectionAmount = $diff;
             $collectionIsNegative = false;
+            // لا يجب تحديث نسبة التحصيلات لأن العميل مدين وليس هناك تحصيل فعلي
+            $shouldUpdateCommission = false;
         }
         // الحالة 3: customer_total > car_total
         else {
@@ -339,6 +354,8 @@ try {
             $collectionIsNegative = true;
             // خصم 2% من diff من راتب المندوب
             $salaryDeduction = round($diff * 0.02, 2);
+            // لا يجب تحديث نسبة التحصيلات في هذه الحالة لأننا نخصم من خزنة المندوب
+            $shouldUpdateCommission = false;
         }
         
         // ========== تحديث مخزون السيارة ==========
@@ -710,6 +727,15 @@ try {
                 }
                 
                 // إنشاء سجل في جدول exchanges
+                // التأكد من تسجيل sales_rep_id بشكل صحيح - إذا كان المستخدم مندوب، يجب أن يكون sales_rep_id = معرفه
+                $finalSalesRepId = null;
+                if ($salesRepId > 0) {
+                    $finalSalesRepId = $salesRepId;
+                } elseif ($currentUser['role'] === 'sales') {
+                    // إذا كان المستخدم مندوب ولم يتم تحديد sales_rep_id، استخدم معرفه
+                    $finalSalesRepId = (int)$currentUser['id'];
+                }
+                
                 $db->execute(
                     "INSERT INTO exchanges
                      (exchange_number, invoice_id, customer_id, sales_rep_id, exchange_date, exchange_type,
@@ -719,7 +745,7 @@ try {
                         $exchangeNumber,
                         $invoiceId,
                         $customerId,
-                        $salesRepId,
+                        $finalSalesRepId,
                         $customerTotal,
                         $carTotal,
                         $difference,
@@ -919,15 +945,20 @@ try {
                     $values
                 );
                 
-                // تحديث المبيعات للمندوب
-                try {
-                    refreshSalesCommissionForUser(
-                        $salesRepId,
-                        date('Y-m-d'),
-                        'تحديث تلقائي بعد عملية استبدال'
-                    );
-                } catch (Throwable $e) {
-                    error_log('Error updating sales commission: ' . $e->getMessage());
+                // تحديث المبيعات للمندوب فقط إذا كان هناك تحصيل فعلي (وليس دين)
+                // في حالة الاستبدال، لا يجب تحديث نسبة التحصيلات لأن:
+                // - الحالة 2: العميل مدين (لا تحصيل فعلي)
+                // - الحالة 3: نخصم من خزنة المندوب (لا تحصيل فعلي)
+                if ($shouldUpdateCommission) {
+                    try {
+                        refreshSalesCommissionForUser(
+                            $salesRepId,
+                            date('Y-m-d'),
+                            'تحديث تلقائي بعد عملية استبدال'
+                        );
+                    } catch (Throwable $e) {
+                        error_log('Error updating sales commission: ' . $e->getMessage());
+                    }
                 }
             }
         }

@@ -1517,6 +1517,253 @@ if ($showSuccessFromSession): ?>
     <?php endif; ?>
 </div>
 
+<?php if ($currentUser['role'] === 'sales'): ?>
+<!-- جدول سجلات نسبة التحصيلات والخصومات -->
+<?php
+// جلب سجلات العمليات التي تؤثر على نسبة التحصيلات والخصومات
+$commissionAndDeductionLogs = [];
+
+try {
+    // جلب التحصيلات من عملاء المندوب (للشهر الحالي)
+    $collectionsQuery = "
+        SELECT c.*, cust.name as customer_name, cust.id as customer_id
+        FROM collections c
+        INNER JOIN customers cust ON c.customer_id = cust.id
+        WHERE cust.created_by = ?
+        AND MONTH(c.date) = ?
+        AND YEAR(c.date) = ?
+        ORDER BY c.created_at DESC
+    ";
+    
+    $collections = $db->query($collectionsQuery, [$currentUser['id'], $selectedMonth, $selectedYear]);
+    
+    foreach ($collections as $collection) {
+        $collectionAmount = abs(floatval($collection['amount'] ?? 0));
+        if ($collectionAmount > 0) {
+            // حساب نسبة التحصيلات (2%)
+            $commissionAmount = round($collectionAmount * 0.02, 2);
+            if ($commissionAmount > 0) {
+                $commissionAndDeductionLogs[] = [
+                    'id' => 'collection_' . $collection['id'],
+                    'action' => 'add_collection',
+                    'operation_type' => 'إضافة',
+                    'amount' => $commissionAmount,
+                    'description' => 'نسبة تحصيلات من عميل (' . htmlspecialchars($collection['customer_name'] ?? '') . ') - مبلغ التحصيل: ' . formatCurrency($collectionAmount) . ' (نسبة 2%)',
+                    'created_at' => $collection['created_at'] ?? $collection['date'],
+                    'username' => 'نظام'
+                ];
+            }
+        }
+    }
+    
+    // جلب سجلات audit_logs المتعلقة بنسبة التحصيلات
+    $rewardActions = ['collection_reward_add', 'collection_reward_remove'];
+    $placeholders = implode(',', array_fill(0, count($rewardActions), '?'));
+    
+    $rewardLogsQuery = "
+        SELECT al.*, u.username, u.full_name
+        FROM audit_logs al
+        LEFT JOIN users u ON al.user_id = u.id
+        WHERE al.action IN ($placeholders)
+        ORDER BY al.created_at DESC
+        LIMIT 100
+    ";
+    
+    $rewardLogs = $db->query($rewardLogsQuery, $rewardActions);
+    
+    foreach ($rewardLogs as $log) {
+        $newValue = $log['new_value'] ?? '';
+        if (empty($newValue)) continue;
+        
+        $newValueData = json_decode($newValue, true);
+        if (json_last_error() !== JSON_ERROR_NONE) continue;
+        
+        // التحقق من أن السجل متعلق بالمندوب الحالي
+        $userId = isset($newValueData['user_id']) ? (int)$newValueData['user_id'] : 0;
+        if ($userId !== (int)$currentUser['id']) continue;
+        
+        $rewardAmount = abs(floatval($newValueData['reward_amount'] ?? 0));
+        if ($rewardAmount > 0) {
+            $operationType = $log['action'] === 'collection_reward_add' ? 'إضافة' : 'خصم';
+            $collectionId = $newValueData['collection_id'] ?? null;
+            
+            $description = 'نسبة التحصيلات: ' . ($operationType === 'إضافة' ? 'إضافة' : 'خصم');
+            if ($collectionId) {
+                $description .= ' - رقم التحصيل: #' . $collectionId;
+            }
+            
+            $commissionAndDeductionLogs[] = [
+                'id' => 'reward_' . $log['id'],
+                'action' => $log['action'],
+                'operation_type' => $operationType,
+                'amount' => $rewardAmount,
+                'description' => $description,
+                'created_at' => $log['created_at'],
+                'username' => $log['username'] ?? $log['full_name'] ?? 'نظام'
+            ];
+        }
+    }
+    
+    // جلب سجلات الخصومات من المرتجعات
+    $returnDeductionQuery = "
+        SELECT al.*, u.username, u.full_name
+        FROM audit_logs al
+        LEFT JOIN users u ON al.user_id = u.id
+        WHERE al.action = 'return_salary_deduction'
+        ORDER BY al.created_at DESC
+        LIMIT 100
+    ";
+    
+    $returnLogs = $db->query($returnDeductionQuery);
+    
+    foreach ($returnLogs as $log) {
+        $newValue = $log['new_value'] ?? '';
+        if (empty($newValue)) continue;
+        
+        $newValueData = json_decode($newValue, true);
+        if (json_last_error() !== JSON_ERROR_NONE) continue;
+        
+        $salesRepId = isset($newValueData['sales_rep_id']) ? (int)$newValueData['sales_rep_id'] : 0;
+        if ($salesRepId !== (int)$currentUser['id']) continue;
+        
+        $deductionAmount = abs(floatval($newValueData['deduction_amount'] ?? 0));
+        if ($deductionAmount > 0) {
+            $returnId = $newValueData['return_id'] ?? $log['entity_id'] ?? null;
+            $description = 'خصم بسبب مرتجع';
+            if ($returnId) {
+                $description .= ' - رقم المرتجع: #' . $returnId;
+            }
+            
+            $commissionAndDeductionLogs[] = [
+                'id' => 'return_' . $log['id'],
+                'action' => 'return_salary_deduction',
+                'operation_type' => 'خصم',
+                'amount' => $deductionAmount,
+                'description' => $description,
+                'created_at' => $log['created_at'],
+                'username' => $log['username'] ?? $log['full_name'] ?? 'نظام'
+            ];
+        }
+    }
+    
+    // جلب سجلات الخصومات من الاستبدال
+    $replacementQuery = "
+        SELECT al.*, u.username, u.full_name
+        FROM audit_logs al
+        LEFT JOIN users u ON al.user_id = u.id
+        WHERE al.action = 'process_replacement'
+        ORDER BY al.created_at DESC
+        LIMIT 100
+    ";
+    
+    $replacementLogs = $db->query($replacementQuery);
+    
+    foreach ($replacementLogs as $log) {
+        $newValue = $log['new_value'] ?? '';
+        if (empty($newValue)) continue;
+        
+        $newValueData = json_decode($newValue, true);
+        if (json_last_error() !== JSON_ERROR_NONE) continue;
+        
+        $customerId = $newValueData['customer_id'] ?? null;
+        if (!$customerId) continue;
+        
+        $customer = $db->queryOne("SELECT created_by FROM customers WHERE id = ?", [$customerId]);
+        if (!$customer || (int)($customer['created_by'] ?? 0) !== (int)$currentUser['id']) continue;
+        
+        $salaryDeduction = floatval($newValueData['salary_deduction'] ?? 0);
+        if ($salaryDeduction > 0) {
+            $exchangeNumber = $newValueData['exchange_number'] ?? '';
+            $description = 'خصم بسبب استبدال';
+            if ($exchangeNumber) {
+                $description .= ' - رقم الاستبدال: ' . htmlspecialchars($exchangeNumber);
+            }
+            
+            $commissionAndDeductionLogs[] = [
+                'id' => 'replacement_' . $log['id'],
+                'action' => 'process_replacement',
+                'operation_type' => 'خصم',
+                'amount' => $salaryDeduction,
+                'description' => $description,
+                'created_at' => $log['created_at'],
+                'username' => $log['username'] ?? $log['full_name'] ?? 'نظام'
+            ];
+        }
+    }
+    
+    // ترتيب حسب التاريخ
+    usort($commissionAndDeductionLogs, function($a, $b) {
+        $timeA = strtotime($a['created_at'] ?? '1970-01-01');
+        $timeB = strtotime($b['created_at'] ?? '1970-01-01');
+        return $timeB - $timeA;
+    });
+    
+    // أخذ آخر 50 سجل فقط
+    $commissionAndDeductionLogs = array_slice($commissionAndDeductionLogs, 0, 50);
+    
+} catch (Throwable $e) {
+    error_log('Error fetching commission and deduction logs: ' . $e->getMessage());
+    $commissionAndDeductionLogs = [];
+}
+?>
+
+<div class="advance-history-table" style="margin-top: 30px;">
+    <h3 class="mb-4">سجلات نسبة التحصيلات والخصومات</h3>
+    <?php if (!empty($commissionAndDeductionLogs)): ?>
+    <table>
+        <thead>
+            <tr>
+                <th>التاريخ</th>
+                <th>نوع العملية</th>
+                <th>المبلغ</th>
+                <th>الوصف</th>
+                <th>المستخدم</th>
+            </tr>
+        </thead>
+        <tbody>
+            <?php foreach ($commissionAndDeductionLogs as $log): 
+                $date = !empty($log['created_at']) ? date('Y-m-d H:i', strtotime($log['created_at'])) : '—';
+                $operationType = $log['operation_type'] ?? '—';
+                $amount = $log['amount'] ?? 0;
+                $description = $log['description'] ?? '—';
+                $username = $log['username'] ?? 'نظام';
+                
+                // تحديد لون العملية
+                $typeClass = '';
+                if ($operationType === 'إضافة') {
+                    $typeClass = 'text-success';
+                } elseif ($operationType === 'خصم') {
+                    $typeClass = 'text-danger';
+                }
+            ?>
+            <tr>
+                <td><?php echo htmlspecialchars($date); ?></td>
+                <td><span class="<?php echo $typeClass; ?> font-weight-bold"><?php echo htmlspecialchars($operationType); ?></span></td>
+                <td class="<?php echo $typeClass; ?>">
+                    <?php 
+                    if ($operationType === 'إضافة') {
+                        echo '+';
+                    } elseif ($operationType === 'خصم') {
+                        echo '-';
+                    }
+                    echo formatCurrency($amount); 
+                    ?>
+                </td>
+                <td><?php echo htmlspecialchars($description); ?></td>
+                <td><?php echo htmlspecialchars($username); ?></td>
+            </tr>
+            <?php endforeach; ?>
+        </tbody>
+    </table>
+    <?php else: ?>
+    <div class="text-center py-4 text-muted">
+        <i class="bi bi-inbox" style="font-size: 48px; display: block; margin-bottom: 15px; opacity: 0.5;"></i>
+        لا توجد سجلات لنسبة التحصيلات والخصومات
+    </div>
+    <?php endif; ?>
+</div>
+<?php endif; ?>
+
 <script>
 document.addEventListener('DOMContentLoaded', function() {
     // التحقق من وجود طلب السلفة في الجدول بعد إعادة تحميل الصفحة
