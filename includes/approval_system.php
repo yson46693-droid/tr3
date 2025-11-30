@@ -286,6 +286,11 @@ function requestApproval($type, $entityId, $requestedBy, $notes = null) {
             require_once __DIR__ . '/path_helper.php';
             $basePath = getBasePath();
             $notificationLink = $basePath . '/dashboard/manager.php?page=returns&id=' . $entityId;
+        } elseif ($type === 'warehouse_transfer') {
+            // لطلبات نقل المخازن، استخدم رابط صفحة الموافقات مع قسم warehouse_transfers
+            require_once __DIR__ . '/path_helper.php';
+            $basePath = getBasePath();
+            $notificationLink = $basePath . '/dashboard/manager.php?page=approvals&section=warehouse_transfers&id=' . $result['insert_id'];
         } else {
             // للموافقات الأخرى، استخدم رابط صفحة الموافقات مع معرف الموافقة
             require_once __DIR__ . '/path_helper.php';

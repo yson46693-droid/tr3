@@ -1730,6 +1730,28 @@ function createWarehouseTransfer($fromWarehouseId, $toWarehouseId, $transferDate
                 // لا نسمح لفشل التنفيذ بإلغاء نجاح إنشاء النقل
                 error_log('Manager warehouse transfer direct execution exception: ' . $executionException->getMessage());
             }
+        } else {
+            // إذا لم يكن المدير، إنشاء طلب موافقة
+            if ($initialStatus === 'pending') {
+                try {
+                    require_once __DIR__ . '/approval_system.php';
+                    $approvalNotes = "طلب نقل رقم: {$transferNumber}\n";
+                    if ($reason) {
+                        $approvalNotes .= "السبب: {$reason}\n";
+                    }
+                    if ($notes) {
+                        $approvalNotes .= "ملاحظات: {$notes}";
+                    }
+                    
+                    $approvalResult = requestApproval('warehouse_transfer', $transferId, $requestedBy, $approvalNotes);
+                    if (!($approvalResult['success'] ?? false)) {
+                        error_log('Failed to create approval request for warehouse transfer: ' . ($approvalResult['message'] ?? 'Unknown error'));
+                    }
+                } catch (Exception $approvalException) {
+                    // لا نسمح لفشل إنشاء طلب الموافقة بإلغاء نجاح إنشاء النقل
+                    error_log('Warehouse transfer approval request exception: ' . $approvalException->getMessage());
+                }
+            }
         }
         
         // تسجيل عملية التدقيق
