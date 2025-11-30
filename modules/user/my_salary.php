@@ -357,18 +357,19 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['
     $deductions = cleanFinancialValue($salaryRecord['deductions'] ?? 0);
     
     // حساب الراتب الإجمالي بناءً على عدد الساعات الفعلية
+    // حساب الراتب الأساسي من الساعات المكتملة فقط (لجميع الأدوار)
+    require_once __DIR__ . '/../../includes/salary_calculator.php';
+    $completedHours = calculateCompletedMonthlyHours($currentUser['id'], $month, $year);
+    $baseAmount = round($completedHours * $hourlyRate, 2);
+    
     if ($currentUser['role'] === 'sales') {
-        // للمندوبين: استخدم الحساب مع نسبة التحصيلات
-        $salaryCalculation = calculateTotalSalaryWithCollections($salaryRecord, $currentUser['id'], $month, $year, $currentUser['role']);
-        $currentSalary = $salaryCalculation['total_salary'];
+        // للمندوبين: احسب نسبة التحصيلات وأضفها
+        $collectionsAmount = calculateSalesCollections($currentUser['id'], $month, $year);
+        $collectionsBonus = round($collectionsAmount * 0.02, 2);
+        // الراتب الإجمالي = الراتب الأساسي + المكافآت + نسبة التحصيلات - الخصومات
+        $currentSalary = round($baseAmount + $bonus + $collectionsBonus - $deductions, 2);
     } else {
-        // لعمال الإنتاج والمحاسبين: احسب الراتب من الساعات المكتملة فقط (التي تم تسجيل الانصراف لها)
-        // الراتب الأساسي = الساعات المكتملة فقط × سعر الساعة
-        // لا يوجد راتب أساسي حتى يتم تسجيل الانصراف
-        require_once __DIR__ . '/../../includes/salary_calculator.php';
-        $completedHours = calculateCompletedMonthlyHours($currentUser['id'], $month, $year);
-        $baseAmount = round($completedHours * $hourlyRate, 2);
-        // الراتب الإجمالي = الراتب الأساسي + المكافآت - الخصومات
+        // لعمال الإنتاج والمحاسبين: الراتب الإجمالي = الراتب الأساسي + المكافآت - الخصومات
         $currentSalary = round($baseAmount + $bonus - $deductions, 2);
     }
     
@@ -990,32 +991,26 @@ $bonus = cleanFinancialValue($currentSalary['bonus'] ?? 0);
 $deductions = cleanFinancialValue($currentSalary['deductions'] ?? 0);
 
 // حساب الراتب الأساسي بناءً على الساعات المكتملة فقط (التي تم تسجيل الانصراف لها)
-// لعمال الإنتاج والمحاسبين: الراتب = الساعات المكتملة فقط × سعر الساعة
-// للمندوبين: الراتب الأساسي هو hourly_rate مباشرة (راتب شهري ثابت)
+// لجميع الأدوار: الراتب الأساسي = الساعات المكتملة فقط × سعر الساعة
 // لا نحسب الراتب من الساعات غير المكتملة (حضور بدون انصراف)
-if ($currentUser['role'] === 'sales') {
-    $baseAmount = cleanFinancialValue($currentSalary['base_amount'] ?? $hourlyRate);
-} else {
-    // لعمال الإنتاج والمحاسبين: احسب الراتب الأساسي فقط من الساعات المكتملة (التي تم تسجيل الانصراف لها)
-    // لا يوجد راتب أساسي حتى يتم تسجيل الانصراف
-    $monthKey = sprintf('%04d-%02d', $selectedYear, $selectedMonth);
-    
-    // حساب الساعات المكتملة فقط (التي لديها check_out_time)
-    $completedHoursResult = $db->queryOne(
-        "SELECT COALESCE(SUM(work_hours), 0) as total_hours 
-         FROM attendance_records 
-         WHERE user_id = ? AND DATE_FORMAT(date, '%Y-%m') = ?
-         AND check_out_time IS NOT NULL
-         AND work_hours IS NOT NULL
-         AND work_hours > 0",
-        [$currentUser['id'], $monthKey]
-    );
-    
-    $completedHours = round($completedHoursResult['total_hours'] ?? 0, 2);
-    
-    // الراتب الأساسي = الساعات المكتملة فقط × سعر الساعة
-    $baseAmount = round($completedHours * $hourlyRate, 2);
-}
+// لا يوجد راتب أساسي حتى يتم تسجيل الانصراف
+$monthKey = sprintf('%04d-%02d', $selectedYear, $selectedMonth);
+
+// حساب الساعات المكتملة فقط (التي لديها check_out_time)
+$completedHoursResult = $db->queryOne(
+    "SELECT COALESCE(SUM(work_hours), 0) as total_hours 
+     FROM attendance_records 
+     WHERE user_id = ? AND DATE_FORMAT(date, '%Y-%m') = ?
+     AND check_out_time IS NOT NULL
+     AND work_hours IS NOT NULL
+     AND work_hours > 0",
+    [$currentUser['id'], $monthKey]
+);
+
+$completedHours = round($completedHoursResult['total_hours'] ?? 0, 2);
+
+// الراتب الأساسي = الساعات المكتملة فقط × سعر الساعة (لجميع الأدوار)
+$baseAmount = round($completedHours * $hourlyRate, 2);
 
 // حساب الراتب الإجمالي بناءً على عدد الساعات المعروض في الصفحة
 if ($currentSalary) {

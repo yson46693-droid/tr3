@@ -1137,16 +1137,11 @@ function recordAttendanceCheckOut($userId, $photoBase64 = null) {
                     }
                     
                     // إعادة حساب الراتب الأساسي بناءً على الساعات المكتملة فقط (التي تم تسجيل الانصراف لها)
-                    if ($userRole === 'sales') {
-                        // للمندوبين: الراتب الأساسي هو hourly_rate مباشرة (راتب شهري ثابت)
-                        $newBaseAmount = $hourlyRate;
-                    } else {
-                        // لعمال الإنتاج والمحاسبين: الراتب = الساعات المكتملة فقط × سعر الساعة
-                        // لا يوجد راتب أساسي حتى يتم تسجيل الانصراف
-                        require_once __DIR__ . '/salary_calculator.php';
-                        $completedHours = calculateCompletedMonthlyHours($userId, $attendanceMonthNumber, $attendanceYearNumber);
-                        $newBaseAmount = round($completedHours * $hourlyRate, 2);
-                    }
+                    // لجميع الأدوار: الراتب الأساسي = الساعات المكتملة فقط × سعر الساعة
+                    // لا يوجد راتب أساسي حتى يتم تسجيل الانصراف
+                    require_once __DIR__ . '/salary_calculator.php';
+                    $completedHours = calculateCompletedMonthlyHours($userId, $attendanceMonthNumber, $attendanceYearNumber);
+                    $newBaseAmount = round($completedHours * $hourlyRate, 2);
                     
                     // حساب نسبة التحصيلات للمندوبين
                     $collectionsBonus = 0;
@@ -2259,15 +2254,11 @@ function processAutoCheckoutForMissingEmployees(): void
                             );
                             
                             // إعادة حساب الراتب الأساسي بناءً على الساعات المكتملة فقط (التي تم تسجيل الانصراف لها)
-                            if ($userRole === 'sales') {
-                                $newBaseAmount = $hourlyRate;
-                            } else {
-                                // لعمال الإنتاج والمحاسبين: الراتب = الساعات المكتملة فقط × سعر الساعة
-                                // لا يوجد راتب أساسي حتى يتم تسجيل الانصراف
-                                require_once __DIR__ . '/salary_calculator.php';
-                                $completedHours = calculateCompletedMonthlyHours($userId, $attendanceMonthNumber, $attendanceYearNumber);
-                                $newBaseAmount = round($completedHours * $hourlyRate, 2);
-                            }
+                            // لجميع الأدوار: الراتب الأساسي = الساعات المكتملة فقط × سعر الساعة
+                            // لا يوجد راتب أساسي حتى يتم تسجيل الانصراف
+                            require_once __DIR__ . '/salary_calculator.php';
+                            $completedHours = calculateCompletedMonthlyHours($userId, $attendanceMonthNumber, $attendanceYearNumber);
+                            $newBaseAmount = round($completedHours * $hourlyRate, 2);
                             
                             // حساب نسبة التحصيلات للمندوبين
                             $collectionsBonus = 0;

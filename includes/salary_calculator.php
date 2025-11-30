@@ -634,20 +634,13 @@ function calculateSalary($userId, $month, $year, $bonus = 0, $deductions = 0) {
     $totalHours = calculateMonthlyHours($userId, $month, $year);
     
     // حساب الراتب الأساسي
-    // للمندوبين: hourly_rate هو راتب شهري ثابت وليس سعر ساعة
-    // للآخرين: الراتب = الساعات المكتملة فقط × سعر الساعة
+    // لجميع الأدوار: الراتب الأساسي = الساعات المكتملة فقط × سعر الساعة
     // لا نحسب الراتب من الساعات غير المكتملة (حضور بدون انصراف)
+    // لا يوجد راتب أساسي حتى يتم تسجيل الانصراف
     $completedHours = calculateCompletedMonthlyHours($userId, $month, $year);
     
-    if ($role === 'sales') {
-        // للمندوبين: الراتب الأساسي هو hourly_rate مباشرة (راتب شهري ثابت)
-        // لكن فقط إذا كان لديهم ساعات عمل مكتملة (إذا لم يعملوا، الراتب = 0)
-        $baseAmount = ($completedHours > 0) ? $hourlyRate : 0;
-    } else {
-        // للآخرين: الراتب = الساعات المكتملة فقط × سعر الساعة
-        // لا يوجد راتب أساسي حتى يتم تسجيل الانصراف
-        $baseAmount = $completedHours * $hourlyRate;
-    }
+    // الراتب الأساسي = الساعات المكتملة فقط × سعر الساعة (لجميع الأدوار)
+    $baseAmount = $completedHours * $hourlyRate;
     
     // حساب نسبة التحصيلات للمندوبين (2%)
     $collectionsBonus = 0;

@@ -185,16 +185,11 @@ function requestApproval($type, $entityId, $requestedBy, $notes = null) {
                             $currentDeductions = cleanFinancialValue($salary['deductions'] ?? 0);
                             $collectionsBonus = cleanFinancialValue($salary['collections_bonus'] ?? 0);
                             
-                            // حساب الراتب الأساسي بناءً على نوع المستخدم (نفس كود بطاقة الموظف بالضبط)
-                            if ($userRole === 'sales') {
-                                // للمندوبين: الراتب الأساسي هو hourly_rate مباشرة (راتب شهري ثابت)
-                                $baseAmount = cleanFinancialValue($salary['base_amount'] ?? $hourlyRate);
-                            } else {
-                                // لعمال الإنتاج والمحاسبين: دائماً إعادة الحساب من الساعات المكتملة فقط (مطابق لبطاقة الموظف)
-                                require_once __DIR__ . '/salary_calculator.php';
-                                $completedHours = calculateCompletedMonthlyHours($userId, $month, $year);
-                                $baseAmount = round($completedHours * $hourlyRate, 2);
-                            }
+                            // حساب الراتب الأساسي بناءً على الساعات المكتملة فقط (لجميع الأدوار)
+                            // لا يوجد راتب أساسي حتى يتم تسجيل الانصراف
+                            require_once __DIR__ . '/salary_calculator.php';
+                            $completedHours = calculateCompletedMonthlyHours($userId, $month, $year);
+                            $baseAmount = round($completedHours * $hourlyRate, 2);
                             
                             // إذا كان مندوب مبيعات، أعد حساب نسبة التحصيلات (نفس كود بطاقة الموظف)
                             if ($userRole === 'sales') {
@@ -687,15 +682,12 @@ function updateEntityStatus($type, $entityId, $status, $approvedBy) {
                 
                 // حساب الراتب الأساسي بنفس طريقة الحساب في بطاقة الموظف (إعادة الحساب من الساعات)
                 if ($userRole === 'sales') {
-                    // للمندوبين: الراتب الأساسي هو hourly_rate مباشرة (راتب شهري ثابت)
-                    $baseAmount = cleanFinancialValue($salary['base_amount'] ?? $hourlyRate);
-                    $actualHours = 0; // المندوبين ليس لديهم ساعات
-                } else {
-                    // لعمال الإنتاج والمحاسبين: دائماً إعادة الحساب من الساعات المكتملة فقط (مطابق لبطاقة الموظف)
+                    // لجميع الأدوار: الراتب الأساسي = الساعات المكتملة فقط × سعر الساعة
+                    // لا يوجد راتب أساسي حتى يتم تسجيل الانصراف
                     require_once __DIR__ . '/salary_calculator.php';
                     $completedHours = calculateCompletedMonthlyHours($userId, $month, $year);
                     $baseAmount = round($completedHours * $hourlyRate, 2);
-                }
+                    $actualHours = $completedHours;
                 
                 // حساب الراتب الجديد بنفس طريقة الحساب في بطاقة الموظف
                 $newTotal = round($baseAmount + $bonus + $collectionsBonus - $deductions, 2);

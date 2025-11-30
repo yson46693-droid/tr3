@@ -2339,45 +2339,40 @@ $pageTitle = ($view === 'advances') ? 'السلف' : (($view === 'pending') ? '�
                 $deductions = cleanFinancialValue($salary['deductions'] ?? 0);
                 $collectionsBonus = cleanFinancialValue($salary['collections_bonus'] ?? 0);
                 
-                // حساب الراتب الأساسي بناءً على نوع المستخدم
-                if ($roleClass === 'sales') {
-                    // للمندوبين: الراتب الأساسي هو hourly_rate مباشرة (راتب شهري ثابت)
-                    $baseAmount = cleanFinancialValue($salary['base_amount'] ?? $hourlyRate);
-                } else {
-                    // لعمال الإنتاج والمحاسبين: الراتب = عدد الساعات × سعر الساعة
-                    $actualHours = calculateMonthlyHours($userId, $selectedMonth, $selectedYear);
-                    
-                    // تحديث total_hours تلقائياً إذا كان مختلفاً عن القيمة الفعلية
-                    if ($hasSalaryId) {
-                        $savedTotalHours = floatval($salary['total_hours'] ?? 0);
-                        if (abs($actualHours - $savedTotalHours) > 0.01) {
-                            // تحديث total_hours في قاعدة البيانات
-                            try {
-                                $db->execute(
-                                    "UPDATE salaries SET total_hours = ?, updated_at = NOW() WHERE id = ?",
-                                    [$actualHours, $salary['id']]
-                                );
-                                // إعادة جلب البيانات من قاعدة البيانات للتأكد من الحصول على القيمة المحدثة
-                                $updatedSalary = $db->queryOne(
-                                    "SELECT total_hours FROM salaries WHERE id = ?",
-                                    [$salary['id']]
-                                );
-                                if ($updatedSalary) {
-                                    $salary['total_hours'] = floatval($updatedSalary['total_hours'] ?? $actualHours);
-                                } else {
-                                    $salary['total_hours'] = $actualHours;
-                                }
-                            } catch (Exception $e) {
-                                error_log("Error updating total_hours for salary ID {$salary['id']}: " . $e->getMessage());
+                // حساب الراتب الأساسي بناءً على الساعات المكتملة فقط (لجميع الأدوار)
+                // لا يوجد راتب أساسي حتى يتم تسجيل الانصراف
+                $actualHours = calculateMonthlyHours($userId, $selectedMonth, $selectedYear);
+                
+                // تحديث total_hours تلقائياً إذا كان مختلفاً عن القيمة الفعلية
+                if ($hasSalaryId) {
+                    $savedTotalHours = floatval($salary['total_hours'] ?? 0);
+                    if (abs($actualHours - $savedTotalHours) > 0.01) {
+                        // تحديث total_hours في قاعدة البيانات
+                        try {
+                            $db->execute(
+                                "UPDATE salaries SET total_hours = ?, updated_at = NOW() WHERE id = ?",
+                                [$actualHours, $salary['id']]
+                            );
+                            // إعادة جلب البيانات من قاعدة البيانات للتأكد من الحصول على القيمة المحدثة
+                            $updatedSalary = $db->queryOne(
+                                "SELECT total_hours FROM salaries WHERE id = ?",
+                                [$salary['id']]
+                            );
+                            if ($updatedSalary) {
+                                $salary['total_hours'] = floatval($updatedSalary['total_hours'] ?? $actualHours);
+                            } else {
+                                $salary['total_hours'] = $actualHours;
                             }
+                        } catch (Exception $e) {
+                            error_log("Error updating total_hours for salary ID {$salary['id']}: " . $e->getMessage());
                         }
                     }
-                    
-                    // حساب الراتب الأساسي من الساعات المكتملة فقط (التي تم تسجيل الانصراف لها)
-                    require_once __DIR__ . '/../../includes/salary_calculator.php';
-                    $completedHours = calculateCompletedMonthlyHours($userId, $selectedMonth, $selectedYear);
-                    $baseAmount = round($completedHours * $hourlyRate, 2);
                 }
+                
+                // حساب الراتب الأساسي من الساعات المكتملة فقط (التي تم تسجيل الانصراف لها)
+                require_once __DIR__ . '/../../includes/salary_calculator.php';
+                $completedHours = calculateCompletedMonthlyHours($userId, $selectedMonth, $selectedYear);
+                $baseAmount = round($completedHours * $hourlyRate, 2);
                 
                 // إذا كان مندوب مبيعات، أعد حساب نسبة التحصيلات
                 if ($roleClass === 'sales') {
@@ -2522,18 +2517,12 @@ $pageTitle = ($view === 'advances') ? 'السلف' : (($view === 'pending') ? '�
                         $deductions = cleanFinancialValue($salary['deductions'] ?? 0);
                         
                         // حساب الراتب الأساسي بناءً على عدد الساعات المعروض
-                        // لعمال الإنتاج والمحاسبين: الراتب = عدد الساعات × سعر الساعة
-                        // للمندوبين: الراتب الأساسي هو hourly_rate مباشرة (راتب شهري ثابت)
-                        if ($userRole === 'sales') {
-                            $baseAmount = cleanFinancialValue($salary['base_amount'] ?? $hourlyRate);
-                        } else {
-                            // حساب الساعات المكتملة فقط (التي تم تسجيل الانصراف لها)
-                            require_once __DIR__ . '/../../includes/salary_calculator.php';
-                            $completedHoursForBase = calculateCompletedMonthlyHours($userId, $selectedMonth, $selectedYear);
-                            // إعادة حساب الراتب الأساسي بناءً على الساعات المكتملة فقط
-                            // لا يوجد راتب أساسي حتى يتم تسجيل الانصراف
-                            $baseAmount = round($completedHoursForBase * $hourlyRate, 2);
-                        }
+                        // لجميع الأدوار: الراتب الأساسي = الساعات المكتملة فقط × سعر الساعة
+                        // لا يوجد راتب أساسي حتى يتم تسجيل الانصراف
+                        require_once __DIR__ . '/../../includes/salary_calculator.php';
+                        $completedHoursForBase = calculateCompletedMonthlyHours($userId, $selectedMonth, $selectedYear);
+                        // إعادة حساب الراتب الأساسي بناءً على الساعات المكتملة فقط
+                        $baseAmount = round($completedHoursForBase * $hourlyRate, 2);
                         
                         // حساب الراتب الإجمالي دائماً من المكونات لضمان الدقة
                         // الراتب الإجمالي = الراتب الأساسي + المكافآت + نسبة التحصيلات - الخصومات
