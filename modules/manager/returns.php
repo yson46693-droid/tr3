@@ -604,25 +604,6 @@ $stats = [
             </div>
         </div>
     </div>
-</div>
-
-<!-- Return Details Modal -->
-<div class="modal fade" id="returnDetailsModal" tabindex="-1" aria-hidden="true">
-    <div class="modal-dialog modal-lg">
-        <div class="modal-content">
-            <div class="modal-header">
-                <h5 class="modal-title">تفاصيل طلب المرتجع</h5>
-                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
-            </div>
-            <div class="modal-body" id="returnDetailsContent">
-                <div class="text-center">
-                    <div class="spinner-border" role="status">
-                        <span class="visually-hidden">جاري التحميل...</span>
-                    </div>
-                </div>
-            </div>
-        </div>
-    </div>
 
     <!-- Exchanges Section -->
     <div class="row mt-4" id="exchanges">
@@ -858,6 +839,24 @@ $stats = [
                         <?php endif; ?>
                     <?php endif; ?>
                 </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Return Details Modal -->
+<div class="modal fade" id="returnDetailsModal" tabindex="-1" aria-hidden="true">
+    <div class="modal-dialog modal-lg">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title">تفاصيل طلب المرتجع</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+            </div>
+            <div class="modal-body" id="returnDetailsContent">
+                <div class="text-center">
+                    <div class="spinner-border" role="status">
+                        <span class="visually-hidden">جاري التحميل...</span>
+                    </div>
             </div>
         </div>
     </div>
