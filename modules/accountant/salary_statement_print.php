@@ -19,13 +19,8 @@ if (!isset($employee) || !isset($periodLabel) || !isset($statementSalaries) || !
     die('بيانات غير كاملة');
 }
 
-function formatCurrency($amount) {
-    return number_format($amount, 2) . ' ج.م';
-}
-
-function formatDate($date) {
-    return date('d/m/Y', strtotime($date));
-}
+// الدوال formatCurrency() و formatDate() معرفة بالفعل في includes/config.php
+// لا حاجة لإعادة تعريفها هنا
 
 $companyName = COMPANY_NAME;
 ?>
