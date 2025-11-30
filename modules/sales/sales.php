@@ -237,7 +237,8 @@ $exchangeFilters = array_filter($exchangeFilters, function($value) {
 
 <?php 
 $isSalesRecords = isset($_GET['page']) && $_GET['page'] === 'sales_records';
-$activeTab = isset($_GET['tab']) ? $_GET['tab'] : 'exchanges';
+// التحقق من section أولاً (من dashboard/sales.php) ثم tab
+$activeTab = isset($_GET['section']) ? $_GET['section'] : (isset($_GET['tab']) ? $_GET['tab'] : 'exchanges');
 if ($activeTab !== 'exchanges' && $activeTab !== 'sales') {
     $activeTab = 'exchanges';
 }
@@ -356,210 +357,7 @@ if (!empty($exchangesTableCheck)) {
 <?php 
 $tableCardClass = $isSalesRecords ? 'border-0 shadow-lg' : 'shadow-sm';
 $tableHeaderClass = $isSalesRecords ? 'bg-gradient' : 'bg-primary';
-$tableHeaderStyle = $isSalesRecords ? 'background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); border-radius: 12px 12px 0 0;' : '';
-?>
-<div class="card <?php echo $tableCardClass; ?>" style="<?php echo $isSalesRecords ? 'border-radius: 12px; overflow: hidden;' : ''; ?>">
-<?php 
-$tableCardClass = $isSalesRecords ? 'border-0 shadow-lg' : 'shadow-sm';
-$tableHeaderClass = $isSalesRecords ? 'bg-gradient' : 'bg-primary';
-$tableHeaderStyle = $isSalesRecords ? 'background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); border-radius: 12px 12px 0 0;' : '';
-?>
-<div class="card <?php echo $tableCardClass; ?>" style="<?php echo $isSalesRecords ? 'border-radius: 12px; overflow: hidden;' : ''; ?>">
-    <div class="card-header <?php echo $tableHeaderClass; ?> text-white" style="<?php echo $tableHeaderStyle; ?>">
-        <h5 class="mb-0 fw-bold"><i class="bi bi-<?php echo $isSalesRecords ? 'journal-text' : 'cart-check'; ?> me-2"></i><?php echo $isSalesRecords ? 'قائمة السجلات' : 'قائمة المبيعات'; ?> (<?php echo $totalSales ?? 0; ?>)</h5>
-    </div>
-    <div class="card-body" style="<?php echo $isSalesRecords ? 'padding: 1.5rem;' : ''; ?>">
-        <div class="table-responsive dashboard-table-wrapper">
-            <table class="table dashboard-table align-middle <?php echo $isSalesRecords ? 'table-hover' : ''; ?>" style="<?php echo $isSalesRecords ? 'margin-bottom: 0;' : ''; ?>">
-                <thead>
-                    <tr style="<?php echo $isSalesRecords ? 'background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);' : ''; ?>">
-                        <th class="<?php echo $isSalesRecords ? 'text-white fw-bold' : ''; ?>" style="<?php echo $isSalesRecords ? 'border: none; padding: 1rem;' : ''; ?>">التاريخ</th>
-                        <th class="<?php echo $isSalesRecords ? 'text-white fw-bold' : ''; ?>" style="<?php echo $isSalesRecords ? 'border: none; padding: 1rem;' : ''; ?>">رقم الفاتورة</th>
-                        <th class="<?php echo $isSalesRecords ? 'text-white fw-bold' : ''; ?>" style="<?php echo $isSalesRecords ? 'border: none; padding: 1rem;' : ''; ?>">العميل</th>
-                        <th class="<?php echo $isSalesRecords ? 'text-white fw-bold' : ''; ?>" style="<?php echo $isSalesRecords ? 'border: none; padding: 1rem;' : ''; ?>">المنتج</th>
-                        <th class="<?php echo $isSalesRecords ? 'text-white fw-bold' : ''; ?>" style="<?php echo $isSalesRecords ? 'border: none; padding: 1rem;' : ''; ?>">الكمية</th>
-                        <th class="<?php echo $isSalesRecords ? 'text-white fw-bold' : ''; ?>" style="<?php echo $isSalesRecords ? 'border: none; padding: 1rem;' : ''; ?>">السعر</th>
-                        <th class="<?php echo $isSalesRecords ? 'text-white fw-bold' : ''; ?>" style="<?php echo $isSalesRecords ? 'border: none; padding: 1rem;' : ''; ?>">الإجمالي</th>
-                        <?php if ($currentUser['role'] !== 'sales'): ?>
-                        <th class="<?php echo $isSalesRecords ? 'text-white fw-bold' : ''; ?>" style="<?php echo $isSalesRecords ? 'border: none; padding: 1rem;' : ''; ?>">مندوب المبيعات</th>
-                        <?php endif; ?>
-                        <th class="<?php echo $isSalesRecords ? 'text-white fw-bold' : ''; ?>" style="<?php echo $isSalesRecords ? 'border: none; padding: 1rem;' : ''; ?>" width="100">إجراء</th>
-                    </tr>
-                </thead>
-                <tbody>
-                    <?php if (empty($sales)): ?>
-                        <tr>
-                            <td colspan="<?php echo $currentUser['role'] !== 'sales' ? '10' : '9'; ?>" class="text-center text-muted">لا توجد مبيعات</td>
-                        </tr>
-                    <?php else: ?>
-                        <?php foreach ($sales as $sale): ?>
-                            <?php
-                            // حل اسم المنتج باستخدام الدالة المساعدة
-                            $productName = resolveProductName([
-                                $sale['product_name'] ?? null
-                            ]);
-                            ?>
-                            <tr style="<?php echo $isSalesRecords ? 'transition: all 0.3s ease; border-bottom: 1px solid #e9ecef;' : ''; ?>" 
-                                <?php if ($isSalesRecords): ?>
-                                onmouseover="this.style.background='#f8f9fa'; this.style.transform='translateX(-2px)';" 
-                                onmouseout="this.style.background=''; this.style.transform='';"
-                                <?php endif; ?>>
-                                <td style="<?php echo $isSalesRecords ? 'padding: 1rem; font-weight: 500;' : ''; ?>"><?php echo formatDate($sale['date']); ?></td>
-                                <td style="<?php echo $isSalesRecords ? 'padding: 1rem;' : ''; ?>">
-                                    <?php if (!empty($sale['invoice_number'])): ?>
-                                        <div class="d-flex align-items-center gap-2 flex-wrap">
-                                            <span class="badge <?php echo $isSalesRecords ? 'bg-gradient shadow-sm' : 'bg-info'; ?>" style="<?php echo $isSalesRecords ? 'background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); padding: 0.5rem 0.75rem; font-weight: 600; color: #000;' : ''; ?>"><?php echo htmlspecialchars($sale['invoice_number']); ?></span>
-                                            <?php 
-                                            $creditUsed = (float)($sale['credit_used'] ?? 0);
-                                            if ($creditUsed > 0.01): 
-                                            ?>
-                                                <span class="badge bg-warning text-dark shadow-sm" 
-                                                      style="padding: 0.4rem 0.6rem; font-weight: 600; font-size: 0.75rem;"
-                                                      title="تم خصم <?php echo formatCurrency($creditUsed); ?> من رصيد العميل الدائن">
-                                                    <i class="bi bi-credit-card-2-front me-1"></i>
-                                                    خصم: <?php echo formatCurrency($creditUsed); ?>
-                                                </span>
-                                            <?php endif; ?>
-                                        </div>
-                                    <?php else: ?>
-                                        <span class="text-muted">-</span>
-                                    <?php endif; ?>
-                                </td>
-                                <td style="<?php echo $isSalesRecords ? 'padding: 1rem; font-weight: 500;' : ''; ?>"><?php echo htmlspecialchars($sale['customer_name'] ?? '-'); ?></td>
-                                <td style="<?php echo $isSalesRecords ? 'padding: 1rem;' : ''; ?>"><?php echo htmlspecialchars($productName); ?></td>
-                                <td style="<?php echo $isSalesRecords ? 'padding: 1rem;' : ''; ?>"><?php echo number_format($sale['quantity'], 2); ?></td>
-                                <td style="<?php echo $isSalesRecords ? 'padding: 1rem; font-weight: 500;' : ''; ?>"><?php echo formatCurrency($sale['price']); ?></td>
-                                <td style="<?php echo $isSalesRecords ? 'padding: 1rem;' : ''; ?>"><strong class="<?php echo $isSalesRecords ? 'text-primary' : ''; ?>" style="<?php echo $isSalesRecords ? 'font-size: 1.1rem;' : ''; ?>"><?php echo formatCurrency($sale['total']); ?></strong></td>
-                                <?php if ($currentUser['role'] !== 'sales'): ?>
-                                <td style="<?php echo $isSalesRecords ? 'padding: 1rem;' : ''; ?>"><?php echo htmlspecialchars($sale['salesperson_name'] ?? '-'); ?></td>
-                                <?php endif; ?>
-                                <td style="<?php echo $isSalesRecords ? 'padding: 1rem;' : ''; ?>">
-                                    <?php if (!empty($sale['invoice_id']) && !empty($sale['invoice_number'])): ?>
-                                        <a href="<?php echo getRelativeUrl('print_invoice.php?id=' . (int)$sale['invoice_id']); ?>" 
-                                           target="_blank" 
-                                           class="btn btn-sm <?php echo $isSalesRecords ? 'btn-light shadow-sm' : 'btn-primary'; ?>" 
-                                           title="طباعة الفاتورة"
-                                           style="<?php echo $isSalesRecords ? 'font-weight: 600;' : ''; ?>">
-                                            <i class="bi bi-printer me-1"></i>طباعة
-                                        </a>
-                                    <?php else: ?>
-                                        <span class="text-muted small">-</span>
-                                    <?php endif; ?>
-                                </td>
-                            </tr>
-                        <?php endforeach; ?>
-                    <?php endif; ?>
-                </tbody>
-            </table>
-        </div>
-        
-        <!-- Pagination -->
-        <?php if (isset($totalPages) && $totalPages > 1): ?>
-        <nav aria-label="Page navigation" class="mt-3">
-            <ul class="pagination justify-content-center">
-                <li class="page-item <?php echo $pageNum <= 1 ? 'disabled' : ''; ?>">
-                    <a class="page-link <?php echo $isSalesRecords ? 'shadow-sm' : ''; ?>" href="?page=<?php echo $isSalesRecords ? 'sales_records' : 'sales_collections'; ?>&tab=sales&p=<?php echo $pageNum - 1; ?><?php echo !empty($filters['customer_id']) ? '&customer_id=' . urlencode($filters['customer_id']) : ''; ?><?php echo !empty($filters['status']) ? '&status=' . urlencode($filters['status']) : ''; ?><?php echo !empty($filters['date_from']) ? '&date_from=' . urlencode($filters['date_from']) : ''; ?><?php echo !empty($filters['date_to']) ? '&date_to=' . urlencode($filters['date_to']) : ''; ?>">
-                        <i class="bi bi-chevron-right"></i>
-                    </a>
-                </li>
-                
-                <?php
-                $startPage = max(1, $pageNum - 2);
-                $endPage = min($totalPages, $pageNum + 2);
-                
-                if ($startPage > 1): ?>
-                    <li class="page-item"><a class="page-link <?php echo $isSalesRecords ? 'shadow-sm' : ''; ?>" href="?page=<?php echo $isSalesRecords ? 'sales_records' : 'sales_collections'; ?>&tab=sales&p=1<?php echo !empty($filters['customer_id']) ? '&customer_id=' . urlencode($filters['customer_id']) : ''; ?><?php echo !empty($filters['status']) ? '&status=' . urlencode($filters['status']) : ''; ?><?php echo !empty($filters['date_from']) ? '&date_from=' . urlencode($filters['date_from']) : ''; ?><?php echo !empty($filters['date_to']) ? '&date_to=' . urlencode($filters['date_to']) : ''; ?>">1</a></li>
-                    <?php if ($startPage > 2): ?>
-                        <li class="page-item disabled"><span class="page-link">...</span></li>
-                    <?php endif; ?>
-                <?php endif; ?>
-                
-                <?php for ($i = $startPage; $i <= $endPage; $i++): ?>
-                    <li class="page-item <?php echo $i == $pageNum ? 'active' : ''; ?>">
-                        <a class="page-link <?php echo $isSalesRecords ? 'shadow-sm' : ''; ?>" href="?page=<?php echo $isSalesRecords ? 'sales_records' : 'sales_collections'; ?>&tab=sales&p=<?php echo $i; ?><?php echo !empty($filters['customer_id']) ? '&customer_id=' . urlencode($filters['customer_id']) : ''; ?><?php echo !empty($filters['status']) ? '&status=' . urlencode($filters['status']) : ''; ?><?php echo !empty($filters['date_from']) ? '&date_from=' . urlencode($filters['date_from']) : ''; ?><?php echo !empty($filters['date_to']) ? '&date_to=' . urlencode($filters['date_to']) : ''; ?>"><?php echo $i; ?></a>
-                    </li>
-                <?php endfor; ?>
-                
-                <?php if ($endPage < $totalPages): ?>
-                    <?php if ($endPage < $totalPages - 1): ?>
-                        <li class="page-item disabled"><span class="page-link">...</span></li>
-                    <?php endif; ?>
-                    <li class="page-item"><a class="page-link <?php echo $isSalesRecords ? 'shadow-sm' : ''; ?>" href="?page=<?php echo $isSalesRecords ? 'sales_records' : 'sales_collections'; ?>&tab=sales&p=<?php echo $totalPages; ?><?php echo !empty($filters['customer_id']) ? '&customer_id=' . urlencode($filters['customer_id']) : ''; ?><?php echo !empty($filters['status']) ? '&status=' . urlencode($filters['status']) : ''; ?><?php echo !empty($filters['date_from']) ? '&date_from=' . urlencode($filters['date_from']) : ''; ?><?php echo !empty($filters['date_to']) ? '&date_to=' . urlencode($filters['date_to']) : ''; ?>"><?php echo $totalPages; ?></a></li>
-                <?php endif; ?>
-                
-                <li class="page-item <?php echo $pageNum >= $totalPages ? 'disabled' : ''; ?>">
-                    <a class="page-link <?php echo $isSalesRecords ? 'shadow-sm' : ''; ?>" href="?page=<?php echo $isSalesRecords ? 'sales_records' : 'sales_collections'; ?>&tab=sales&p=<?php echo $pageNum + 1; ?><?php echo !empty($filters['customer_id']) ? '&customer_id=' . urlencode($filters['customer_id']) : ''; ?><?php echo !empty($filters['status']) ? '&status=' . urlencode($filters['status']) : ''; ?><?php echo !empty($filters['date_from']) ? '&date_from=' . urlencode($filters['date_from']) : ''; ?><?php echo !empty($filters['date_to']) ? '&date_to=' . urlencode($filters['date_to']) : ''; ?>">
-                        <i class="bi bi-chevron-left"></i>
-                    </a>
-                </li>
-            </ul>
-        </nav>
-        <?php endif; ?>
-    </div>
-</div>
-<?php endif; ?>
-
-<?php if ($activeTab === 'exchanges'): ?>
-<?php
-// ========== قسم سجلات الاستبدال ==========
-// جلب عمليات الاستبدال للمندوب
-$exchangesPageNum = isset($_GET['p']) ? max(1, intval($_GET['p'])) : 1;
-$exchangesPerPage = 20;
-$exchangesOffset = ($exchangesPageNum - 1) * $exchangesPerPage;
-
-// التأكد من وجود جدول exchanges
-$exchangesTableCheck = $db->queryOne("SHOW TABLES LIKE 'exchanges'");
-$exchanges = [];
-$totalExchanges = 0;
-$totalExchangePages = 0;
-
-if (!empty($exchangesTableCheck)) {
-    // استخدام دالة getExchanges من includes/exchanges.php
-    ensureExchangeSchema();
-    
-    // حساب العدد الإجمالي
-    $exchangeCountSql = "SELECT COUNT(*) as total FROM exchanges e WHERE 1=1";
-    $exchangeCountParams = [];
-    
-    if ($currentUser['role'] === 'sales') {
-        $exchangeCountSql .= " AND e.sales_rep_id = ?";
-        $exchangeCountParams[] = $currentUser['id'];
-    }
-    
-    if (!empty($exchangeFilters['customer_id'])) {
-        $exchangeCountSql .= " AND e.customer_id = ?";
-        $exchangeCountParams[] = $exchangeFilters['customer_id'];
-    }
-    
-    if (!empty($exchangeFilters['status'])) {
-        $exchangeCountSql .= " AND e.status = ?";
-        $exchangeCountParams[] = $exchangeFilters['status'];
-    }
-    
-    if (!empty($exchangeFilters['date_from'])) {
-        $exchangeCountSql .= " AND DATE(e.exchange_date) >= ?";
-        $exchangeCountParams[] = $exchangeFilters['date_from'];
-    }
-    
-    if (!empty($exchangeFilters['date_to'])) {
-        $exchangeCountSql .= " AND DATE(e.exchange_date) <= ?";
-        $exchangeCountParams[] = $exchangeFilters['date_to'];
-    }
-    
-    $totalExchangeResult = $db->queryOne($exchangeCountSql, $exchangeCountParams);
-    $totalExchanges = $totalExchangeResult['total'] ?? 0;
-    $totalExchangePages = ceil($totalExchanges / $exchangesPerPage);
-    
-    // جلب الاستبدالات
-    $exchanges = getExchanges($exchangeFilters, $exchangesPerPage, $exchangesOffset);
-}
-?>
-
-<!-- قسم سجلات الاستبدال -->
-<?php 
-$tableCardClass = $isSalesRecords ? 'border-0 shadow-lg' : 'shadow-sm';
-$tableHeaderClass = $isSalesRecords ? 'bg-gradient' : 'bg-primary';
-$tableHeaderStyle = $isSalesRecords ? 'background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); border-radius: 12px 12px 0 0;' : '';
+$tableHeaderStyle = $isSalesRecords ? 'background: linear-gradient(135deg,rgb(37, 70, 213) 0%,rgb(5, 46, 134) 100%); border-radius: 12px 12px 0 0;' : '';
 ?>
 <div class="card <?php echo $tableCardClass; ?>" style="<?php echo $isSalesRecords ? 'border-radius: 12px; overflow: hidden;' : ''; ?>">
     <div class="card-header <?php echo $tableHeaderClass; ?> text-white" style="<?php echo $tableHeaderStyle; ?>">
@@ -569,7 +367,7 @@ $tableHeaderStyle = $isSalesRecords ? 'background: linear-gradient(135deg, #667e
         <div class="table-responsive dashboard-table-wrapper">
             <table class="table dashboard-table align-middle <?php echo $isSalesRecords ? 'table-hover' : ''; ?>" style="<?php echo $isSalesRecords ? 'margin-bottom: 0;' : ''; ?>">
                 <thead>
-                    <tr style="<?php echo $isSalesRecords ? 'background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);' : ''; ?>">
+                    <tr style="<?php echo $isSalesRecords ? 'background: linear-gradient(135deg,rgb(40, 74, 225) 0%, #764ba2 100%);' : ''; ?>">
                         <th class="<?php echo $isSalesRecords ? 'text-white fw-bold' : ''; ?>" style="<?php echo $isSalesRecords ? 'border: none; padding: 1rem;' : ''; ?>">التاريخ</th>
                         <th class="<?php echo $isSalesRecords ? 'text-white fw-bold' : ''; ?>" style="<?php echo $isSalesRecords ? 'border: none; padding: 1rem;' : ''; ?>">رقم الاستبدال</th>
                         <th class="<?php echo $isSalesRecords ? 'text-white fw-bold' : ''; ?>" style="<?php echo $isSalesRecords ? 'border: none; padding: 1rem;' : ''; ?>">العميل</th>
@@ -707,4 +505,3 @@ $tableHeaderStyle = $isSalesRecords ? 'background: linear-gradient(135deg, #667e
     </div>
 </div>
 <?php endif; ?>
-
