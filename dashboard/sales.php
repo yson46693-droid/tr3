@@ -169,6 +169,102 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && trim($_P
         exit;
     }
 }
+
+// معالجة طلبات cash_register قبل إرسال أي HTML
+if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['action'] === 'add_cash_balance') {
+    $pageParam = $_GET['page'] ?? 'dashboard';
+    if ($pageParam === 'cash_register') {
+        // تنظيف أي output buffer
+        while (ob_get_level() > 0) {
+            ob_end_clean();
+        }
+        
+        // تحميل الملفات الأساسية
+        require_once __DIR__ . '/../includes/config.php';
+        require_once __DIR__ . '/../includes/db.php';
+        require_once __DIR__ . '/../includes/auth.php';
+        require_once __DIR__ . '/../includes/audit_log.php';
+        require_once __DIR__ . '/../includes/path_helper.php';
+        
+        requireRole(['sales', 'accountant', 'manager']);
+        
+        $currentUser = getCurrentUser();
+        $isSalesUser = isset($currentUser['role']) && $currentUser['role'] === 'sales';
+        $db = db();
+        $error = '';
+        $success = '';
+        
+        // التأكد من أن المستخدم مندوب مبيعات فقط
+        if (!$isSalesUser) {
+            $error = 'غير مصرح لك بإضافة رصيد للخزنة';
+        } else {
+            $amount = floatval($_POST['amount'] ?? 0);
+            $description = trim($_POST['description'] ?? '');
+            
+            if ($amount <= 0) {
+                $error = 'يجب إدخال مبلغ صحيح أكبر من الصفر';
+            } else {
+                try {
+                    // التأكد من وجود جدول cash_register_additions
+                    $tableExists = $db->queryOne("SHOW TABLES LIKE 'cash_register_additions'");
+                    if (empty($tableExists)) {
+                        $db->execute("
+                            CREATE TABLE IF NOT EXISTS `cash_register_additions` (
+                              `id` int(11) NOT NULL AUTO_INCREMENT,
+                              `sales_rep_id` int(11) NOT NULL,
+                              `amount` decimal(15,2) NOT NULL,
+                              `description` text DEFAULT NULL,
+                              `created_by` int(11) NOT NULL,
+                              `created_at` timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                              PRIMARY KEY (`id`),
+                              KEY `sales_rep_id` (`sales_rep_id`),
+                              KEY `created_at` (`created_at`),
+                              CONSTRAINT `cash_register_additions_ibfk_1` FOREIGN KEY (`sales_rep_id`) REFERENCES `users` (`id`) ON DELETE CASCADE,
+                              CONSTRAINT `cash_register_additions_ibfk_2` FOREIGN KEY (`created_by`) REFERENCES `users` (`id`) ON DELETE CASCADE
+                            ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
+                        ");
+                    }
+                    
+                    // إضافة الرصيد
+                    $db->execute(
+                        "INSERT INTO cash_register_additions (sales_rep_id, amount, description, created_by) VALUES (?, ?, ?, ?)",
+                        [$currentUser['id'], $amount, $description ?: null, $currentUser['id']]
+                    );
+                    
+                    // تسجيل في سجل التدقيق
+                    try {
+                        logAudit($currentUser['id'], 'add_cash_balance', 'cash_register_addition', $db->getLastInsertId(), null, [
+                            'amount' => $amount,
+                            'description' => $description
+                        ]);
+                    } catch (Throwable $auditError) {
+                        error_log('Error logging audit for cash addition: ' . $auditError->getMessage());
+                    }
+                    
+                    $success = 'تم إضافة الرصيد إلى الخزنة بنجاح';
+                } catch (Throwable $e) {
+                    error_log('Error adding cash balance: ' . $e->getMessage());
+                    $error = 'حدث خطأ في إضافة الرصيد. يرجى المحاولة لاحقاً.';
+                }
+            }
+        }
+        
+        // إعادة التوجيه لتجنب إعادة إرسال النموذج
+        if (!empty($success)) {
+            $_SESSION['success'] = $success;
+        }
+        if (!empty($error)) {
+            $_SESSION['error'] = $error;
+        }
+        $redirectUrl = $_SERVER['PHP_SELF'] . '?page=cash_register';
+        $salesRepId = isset($_GET['sales_rep_id']) ? intval($_GET['sales_rep_id']) : null;
+        if ($salesRepId && !$isSalesUser) {
+            $redirectUrl .= '&sales_rep_id=' . $salesRepId;
+        }
+        header('Location: ' . $redirectUrl);
+        exit;
+    }
+}
 ?>
 <?php include __DIR__ . '/../templates/header.php'; ?>
 

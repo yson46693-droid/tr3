@@ -93,12 +93,19 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['
     if (!empty($error)) {
         $_SESSION['error'] = $error;
     }
-    $redirectUrl = $_SERVER['PHP_SELF'] . '?page=cash_register';
-    if ($salesRepId && !$isSalesUser) {
-        $redirectUrl .= '&sales_rep_id=' . $salesRepId;
+    
+    // التحقق من أن headers لم يتم إرسالها بعد
+    if (!headers_sent()) {
+        $redirectUrl = $_SERVER['PHP_SELF'] . '?page=cash_register';
+        if ($salesRepId && !$isSalesUser) {
+            $redirectUrl .= '&sales_rep_id=' . $salesRepId;
+        }
+        header('Location: ' . $redirectUrl);
+        exit;
+    } else {
+        // إذا تم إرسال headers بالفعل، فقط نترك الصفحة تكمل (سيتم عرض الرسائل عبر applyPRGPattern)
+        // لا نحتاج لإعادة توجيه لأن POST قد تم معالجته مسبقاً في dashboard/sales.php
     }
-    header('Location: ' . $redirectUrl);
-    exit;
 }
 
 if (!$salesRepId) {
