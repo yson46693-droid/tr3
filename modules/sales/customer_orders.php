@@ -797,18 +797,53 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         $status = $_POST['status'] ?? '';
         
         if ($orderId > 0 && !empty($status)) {
-            $oldOrder = $db->queryOne("SELECT status FROM customer_orders WHERE id = ?", [$orderId]);
-            
-            $db->execute(
-                "UPDATE customer_orders SET status = ?, updated_at = NOW() WHERE id = ?",
-                [$status, $orderId]
-            );
-            
-            logAudit($currentUser['id'], 'update_order_status', 'customer_order', $orderId, 
-                     ['old_status' => $oldOrder['status']], 
-                     ['new_status' => $status]);
-            
-            $success = 'تم تحديث حالة الطلب بنجاح';
+            // التحقق من صلاحيات المندوب
+            if ($isSalesUser) {
+                // المندوب يمكنه فقط تغيير الحالة إلى "تم التسليم" أو "ملغى"
+                $allowedStatuses = ['delivered', 'cancelled'];
+                if (!in_array($status, $allowedStatuses, true)) {
+                    $error = 'غير مصرح لك بتغيير الحالة إلى: ' . $status;
+                } else {
+                    // التحقق من أن الطلب يخص هذا المندوب
+                    $order = $db->queryOne(
+                        "SELECT id, sales_rep_id FROM customer_orders WHERE id = ?",
+                        [$orderId]
+                    );
+                    
+                    if (!$order) {
+                        $error = 'الطلب غير موجود.';
+                    } elseif ((int)($order['sales_rep_id'] ?? 0) !== (int)$currentUser['id']) {
+                        $error = 'غير مصرح لك بتعديل هذا الطلب.';
+                    } else {
+                        $oldOrder = $db->queryOne("SELECT status FROM customer_orders WHERE id = ?", [$orderId]);
+                        
+                        $db->execute(
+                            "UPDATE customer_orders SET status = ?, updated_at = NOW() WHERE id = ?",
+                            [$status, $orderId]
+                        );
+                        
+                        logAudit($currentUser['id'], 'update_order_status', 'customer_order', $orderId, 
+                                 ['old_status' => $oldOrder['status']], 
+                                 ['new_status' => $status]);
+                        
+                        $success = 'تم تحديث حالة الطلب بنجاح';
+                    }
+                }
+            } else {
+                // المدير والمحاسب يمكنهم تغيير الحالة إلى أي حالة
+                $oldOrder = $db->queryOne("SELECT status FROM customer_orders WHERE id = ?", [$orderId]);
+                
+                $db->execute(
+                    "UPDATE customer_orders SET status = ?, updated_at = NOW() WHERE id = ?",
+                    [$status, $orderId]
+                );
+                
+                logAudit($currentUser['id'], 'update_order_status', 'customer_order', $orderId, 
+                         ['old_status' => $oldOrder['status']], 
+                         ['new_status' => $status]);
+                
+                $success = 'تم تحديث حالة الطلب بنجاح';
+            }
         }
     }
 }
@@ -1661,12 +1696,19 @@ if (isset($_GET['id'])) {
                     <div class="mb-3">
                         <label class="form-label">الحالة</label>
                         <select class="form-select" name="status" id="statusSelect" required>
-                            <option value="pending">معلق</option>
-                            <option value="confirmed">مؤكد</option>
-                            <option value="in_production">قيد الإنتاج</option>
-                            <option value="ready">جاهز</option>
-                            <option value="delivered">تم التسليم</option>
-                            <option value="cancelled">ملغى</option>
+                            <?php if ($isSalesUser): ?>
+                                <!-- للمندوب: فقط حالتين -->
+                                <option value="delivered">تم التسليم</option>
+                                <option value="cancelled">ملغى</option>
+                            <?php else: ?>
+                                <!-- للمدير والمحاسب: جميع الحالات -->
+                                <option value="pending">معلق</option>
+                                <option value="confirmed">مؤكد</option>
+                                <option value="in_production">قيد الإنتاج</option>
+                                <option value="ready">جاهز</option>
+                                <option value="delivered">تم التسليم</option>
+                                <option value="cancelled">ملغى</option>
+                            <?php endif; ?>
                         </select>
                     </div>
                 </div>
