@@ -1091,7 +1091,7 @@ if (isset($_GET['id'])) {
                     <table class="table dashboard-table dashboard-table--compact align-middle">
                         <thead>
                             <tr>
-                                <th>القالب</th>
+                                <th>المنتج</th>
                                 <th>الكمية</th>
                                 <th>حالة الإنتاج</th>
                             </tr>
@@ -1099,7 +1099,7 @@ if (isset($_GET['id'])) {
                         <tbody>
                             <?php foreach ($selectedOrder['items'] as $item): ?>
                                 <tr>
-                                    <td data-label="القالب"><?php echo htmlspecialchars($item['product_name'] ?? '-'); ?></td>
+                                    <td data-label="المنتج"><?php echo htmlspecialchars($item['product_name'] ?? '-'); ?></td>
                                     <td data-label="الكمية"><?php echo number_format($item['quantity'], 2); ?></td>
                                     <td data-label="حالة الإنتاج">
                                         <span class="badge bg-<?php 
@@ -1463,7 +1463,7 @@ if (isset($_GET['id'])) {
                             <div class="order-item row mb-2">
                                 <div class="col-md-9">
                                     <input type="text" class="form-control template-input" 
-                                           name="items[0][template_name]" placeholder="اسم القالب" required>
+                                           name="items[0][template_name]" placeholder="اسم المنتج" required>
                                 </div>
                                 <div class="col-md-2">
                                     <input type="text" class="form-control quantity" 
@@ -1560,7 +1560,7 @@ if (isset($_GET['id'])) {
                             <div class="order-item row mb-2">
                                 <div class="col-md-9">
                                     <input type="text" class="form-control template-input" 
-                                           name="items[0][template_name]" placeholder="اسم القالب" required>
+                                           name="items[0][template_name]" placeholder="اسم المنتج" required>
                                 </div>
                                 <div class="col-md-2">
                                     <input type="text" class="form-control quantity" 
