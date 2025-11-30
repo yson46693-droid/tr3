@@ -15,9 +15,7 @@ if (!ob_get_level()) {
     ob_start();
 }
 
-$pageParam = $_GET['page'] ?? 'overview';
-// دعم اسم الصفحة بالعربية
-$page = ($pageParam === 'المرتجعات') ? 'returns' : $pageParam;
+$page = $_GET['page'] ?? 'overview';
 
 // معالجة AJAX قبل أي require أو include قد يخرج محتوى HTML
 // خاصة لصفحة قوالب المنتجات
@@ -919,7 +917,7 @@ $pageTitle = isset($lang['manager_dashboard']) ? $lang['manager_dashboard'] : '�
                 }
                 ?>
                 
-            <?php elseif ($page === 'returns' || $page === 'المرتجعات'): ?>
+            <?php elseif ($page === 'returns'): ?>
                 <!-- صفحة المرتجعات - حساب المدير -->
                 <?php 
                 $modulePath = __DIR__ . '/../modules/manager/returns_overview.php';

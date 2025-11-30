@@ -143,9 +143,9 @@ $baseUrl = getDashboardUrl();
                 </li>
                 
                 <li class="nav-item">
-                    <a class="nav-link <?php echo (isset($_GET['page']) && ($_GET['page'] === 'returns' || $_GET['page'] === 'المرتجعات')) ? 'active' : ''; ?>" href="<?php echo $baseUrl; ?>manager.php?page=المرتجعات">
+                    <a class="nav-link <?php echo (isset($_GET['page']) && $_GET['page'] === 'returns') ? 'active' : ''; ?>" href="<?php echo $baseUrl; ?>manager.php?page=returns">
                         <i class="bi bi-arrow-left-right"></i>
-                        <span>المرتجعات</span>
+                        <span><?php echo isset($lang['menu_returns_exchanges']) ? $lang['menu_returns_exchanges'] : 'المرتجعات'; ?></span>
                     </a>
                 </li>
             </div>

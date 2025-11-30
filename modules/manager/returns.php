@@ -326,7 +326,7 @@ $stats = [
                             <nav aria-label="Page navigation" class="mt-3">
                                 <ul class="pagination justify-content-center">
                                     <li class="page-item <?php echo $pendingPageNum <= 1 ? 'disabled' : ''; ?>">
-                                        <a class="page-link" href="?page=المرتجعات&pending_p=<?php echo $pendingPageNum - 1; ?>#pending-returns">
+                                        <a class="page-link" href="?page=returns&pending_p=<?php echo $pendingPageNum - 1; ?>#pending-returns">
                                             <i class="bi bi-chevron-right"></i>
                                         </a>
                                     </li>
@@ -336,7 +336,7 @@ $stats = [
                                     $endPage = min($totalPendingPages, $pendingPageNum + 2);
                                     
                                     if ($startPage > 1): ?>
-                                        <li class="page-item"><a class="page-link" href="?page=المرتجعات&pending_p=1#pending-returns">1</a></li>
+                                        <li class="page-item"><a class="page-link" href="?page=returns&pending_p=1#pending-returns">1</a></li>
                                         <?php if ($startPage > 2): ?>
                                             <li class="page-item disabled"><span class="page-link">...</span></li>
                                         <?php endif; ?>
@@ -344,7 +344,7 @@ $stats = [
                                     
                                     <?php for ($i = $startPage; $i <= $endPage; $i++): ?>
                                         <li class="page-item <?php echo $i == $pendingPageNum ? 'active' : ''; ?>">
-                                            <a class="page-link" href="?page=المرتجعات&pending_p=<?php echo $i; ?>#pending-returns"><?php echo $i; ?></a>
+                                            <a class="page-link" href="?page=returns&pending_p=<?php echo $i; ?>#pending-returns"><?php echo $i; ?></a>
                                         </li>
                                     <?php endfor; ?>
                                     
@@ -352,11 +352,11 @@ $stats = [
                                         <?php if ($endPage < $totalPendingPages - 1): ?>
                                             <li class="page-item disabled"><span class="page-link">...</span></li>
                                         <?php endif; ?>
-                                        <li class="page-item"><a class="page-link" href="?page=المرتجعات&pending_p=<?php echo $totalPendingPages; ?>#pending-returns"><?php echo $totalPendingPages; ?></a></li>
+                                        <li class="page-item"><a class="page-link" href="?page=returns&pending_p=<?php echo $totalPendingPages; ?>#pending-returns"><?php echo $totalPendingPages; ?></a></li>
                                     <?php endif; ?>
                                     
                                     <li class="page-item <?php echo $pendingPageNum >= $totalPendingPages ? 'disabled' : ''; ?>">
-                                        <a class="page-link" href="?page=المرتجعات&pending_p=<?php echo $pendingPageNum + 1; ?>#pending-returns">
+                                        <a class="page-link" href="?page=returns&pending_p=<?php echo $pendingPageNum + 1; ?>#pending-returns">
                                             <i class="bi bi-chevron-left"></i>
                                         </a>
                                     </li>
@@ -498,7 +498,7 @@ $stats = [
                             <nav aria-label="Page navigation" class="mt-3">
                                 <ul class="pagination justify-content-center">
                                     <li class="page-item <?php echo $latestPageNum <= 1 ? 'disabled' : ''; ?>">
-                                        <a class="page-link" href="?page=المرتجعات&latest_p=<?php echo $latestPageNum - 1; ?>#latest-returns">
+                                        <a class="page-link" href="?page=returns&latest_p=<?php echo $latestPageNum - 1; ?>#latest-returns">
                                             <i class="bi bi-chevron-right"></i>
                                         </a>
                                     </li>
@@ -508,7 +508,7 @@ $stats = [
                                     $endPage = min($totalLatestPages, $latestPageNum + 2);
                                     
                                     if ($startPage > 1): ?>
-                                        <li class="page-item"><a class="page-link" href="?page=المرتجعات&latest_p=1#latest-returns">1</a></li>
+                                        <li class="page-item"><a class="page-link" href="?page=returns&latest_p=1#latest-returns">1</a></li>
                                         <?php if ($startPage > 2): ?>
                                             <li class="page-item disabled"><span class="page-link">...</span></li>
                                         <?php endif; ?>
@@ -516,7 +516,7 @@ $stats = [
                                     
                                     <?php for ($i = $startPage; $i <= $endPage; $i++): ?>
                                         <li class="page-item <?php echo $i == $latestPageNum ? 'active' : ''; ?>">
-                                            <a class="page-link" href="?page=المرتجعات&latest_p=<?php echo $i; ?>#latest-returns"><?php echo $i; ?></a>
+                                            <a class="page-link" href="?page=returns&latest_p=<?php echo $i; ?>#latest-returns"><?php echo $i; ?></a>
                                         </li>
                                     <?php endfor; ?>
                                     
@@ -524,11 +524,11 @@ $stats = [
                                         <?php if ($endPage < $totalLatestPages - 1): ?>
                                             <li class="page-item disabled"><span class="page-link">...</span></li>
                                         <?php endif; ?>
-                                        <li class="page-item"><a class="page-link" href="?page=المرتجعات&latest_p=<?php echo $totalLatestPages; ?>#latest-returns"><?php echo $totalLatestPages; ?></a></li>
+                                        <li class="page-item"><a class="page-link" href="?page=returns&latest_p=<?php echo $totalLatestPages; ?>#latest-returns"><?php echo $totalLatestPages; ?></a></li>
                                     <?php endif; ?>
                                     
                                     <li class="page-item <?php echo $latestPageNum >= $totalLatestPages ? 'disabled' : ''; ?>">
-                                        <a class="page-link" href="?page=المرتجعات&latest_p=<?php echo $latestPageNum + 1; ?>#latest-returns">
+                                        <a class="page-link" href="?page=returns&latest_p=<?php echo $latestPageNum + 1; ?>#latest-returns">
                                             <i class="bi bi-chevron-left"></i>
                                         </a>
                                     </li>
