@@ -431,12 +431,12 @@ function handleCreateExchange(): void
         );
         $invoiceId = $firstInvoice ? (int)$firstInvoice['id'] : null;
         
-        // Create exchange record with pending status
+        // Create exchange record with approved status (no approval needed)
         $db->execute(
             "INSERT INTO exchanges
              (exchange_number, invoice_id, customer_id, sales_rep_id, exchange_date, exchange_type,
-              original_total, new_total, difference_amount, status, notes, created_by)
-             VALUES (?, ?, ?, ?, CURDATE(), 'different_product', ?, ?, ?, 'pending', ?, ?)",
+              original_total, new_total, difference_amount, status, notes, created_by, approved_by, approved_at)
+             VALUES (?, ?, ?, ?, CURDATE(), 'different_product', ?, ?, ?, 'approved', ?, ?, ?, NOW())",
             [
                 $exchangeNumber,
                 $invoiceId,
@@ -447,6 +447,7 @@ function handleCreateExchange(): void
                 $difference,
                 $notes ?: null,
                 $currentUser['id'],
+                $currentUser['id'], // approved_by = created_by
             ]
         );
         
@@ -494,24 +495,165 @@ function handleCreateExchange(): void
             );
         }
         
-        // Create approval request
-        require_once __DIR__ . '/../includes/approval_system.php';
+        // Process inventory and balance immediately (no approval needed)
+        require_once __DIR__ . '/../includes/inventory_movements.php';
+        require_once __DIR__ . '/../includes/vehicle_inventory.php';
         
-        $approvalNotes = "استبدال رقم: {$exchangeNumber}\n";
-        $approvalNotes .= "العميل: {$customer['name']}\n";
-        $approvalNotes .= "قيمة المنتجات المرجعة: " . number_format($oldValue, 2) . " ج.م\n";
-        $approvalNotes .= "قيمة المنتجات البديلة: " . number_format($newValue, 2) . " ج.م\n";
-        $approvalNotes .= "الفرق: " . number_format($difference, 2) . " ج.م\n";
-        $approvalNotes .= "عدد المنتجات المرجعة: " . count($processedReturnItems) . "\n";
-        $approvalNotes .= "عدد المنتجات البديلة: " . count($processedReplacementItems);
+        // Get return items and replacement items
+        $returnItems = $db->query(
+            "SELECT * FROM exchange_return_items WHERE exchange_id = ?",
+            [$exchangeId]
+        );
         
-        requestApproval('exchange_request', $exchangeId, $currentUser['id'], $approvalNotes);
+        $replacementItems = $db->query(
+            "SELECT * FROM exchange_new_items WHERE exchange_id = ?",
+            [$exchangeId]
+        );
+        
+        // Return old products to vehicle inventory
+        if ($salesRepId > 0 && !empty($returnItems)) {
+            $vehicle = $db->queryOne(
+                "SELECT id FROM vehicles WHERE driver_id = ? AND status = 'active' ORDER BY id DESC LIMIT 1",
+                [$salesRepId]
+            );
+            
+            if ($vehicle) {
+                $vehicleId = (int)$vehicle['id'];
+                $vehicleWarehouse = getVehicleWarehouse($vehicleId);
+                
+                if ($vehicleWarehouse) {
+                    $warehouseId = $vehicleWarehouse['id'];
+                    
+                    foreach ($returnItems as $item) {
+                        $productId = (int)$item['product_id'];
+                        $quantity = (float)$item['quantity'];
+                        
+                        // Get current quantity in vehicle inventory
+                        $inventoryRow = $db->queryOne(
+                            "SELECT id, quantity FROM vehicle_inventory WHERE vehicle_id = ? AND product_id = ? FOR UPDATE",
+                            [$vehicleId, $productId]
+                        );
+                        
+                        $currentQuantity = (float)($inventoryRow['quantity'] ?? 0);
+                        $newQuantity = round($currentQuantity + $quantity, 3);
+                        
+                        // Update vehicle inventory
+                        $updateResult = updateVehicleInventory($vehicleId, $productId, $newQuantity, $currentUser['id']);
+                        if (empty($updateResult['success'])) {
+                            throw new Exception($updateResult['message'] ?? 'تعذر تحديث مخزون السيارة');
+                        }
+                        
+                        // Record inventory movement
+                        recordInventoryMovement(
+                            $productId,
+                            $warehouseId,
+                            'in',
+                            $quantity,
+                            'exchange',
+                            $exchangeId,
+                            'إرجاع من استبدال ' . $exchangeNumber,
+                            $currentUser['id']
+                        );
+                    }
+                }
+            }
+        }
+        
+        // Remove new products from vehicle inventory
+        if ($salesRepId > 0 && !empty($replacementItems)) {
+            $vehicle = $db->queryOne(
+                "SELECT id FROM vehicles WHERE driver_id = ? AND status = 'active' ORDER BY id DESC LIMIT 1",
+                [$salesRepId]
+            );
+            
+            if ($vehicle) {
+                $vehicleId = (int)$vehicle['id'];
+                $vehicleWarehouse = getVehicleWarehouse($vehicleId);
+                
+                if ($vehicleWarehouse) {
+                    $warehouseId = $vehicleWarehouse['id'];
+                    
+                    foreach ($replacementItems as $item) {
+                        $productId = (int)$item['product_id'];
+                        $quantity = (float)$item['quantity'];
+                        
+                        // Check availability in vehicle inventory
+                        $inventoryRow = $db->queryOne(
+                            "SELECT id, quantity FROM vehicle_inventory WHERE vehicle_id = ? AND product_id = ? FOR UPDATE",
+                            [$vehicleId, $productId]
+                        );
+                        
+                        if (!$inventoryRow) {
+                            throw new Exception("المنتج غير موجود في مخزن السيارة");
+                        }
+                        
+                        $currentQuantity = (float)$inventoryRow['quantity'];
+                        if ($currentQuantity < $quantity) {
+                            throw new Exception("الكمية المتاحة ({$currentQuantity}) أقل من المطلوب ({$quantity})");
+                        }
+                        
+                        $newQuantity = round($currentQuantity - $quantity, 3);
+                        
+                        // Update vehicle inventory
+                        $updateResult = updateVehicleInventory($vehicleId, $productId, $newQuantity, $currentUser['id']);
+                        if (empty($updateResult['success'])) {
+                            throw new Exception($updateResult['message'] ?? 'تعذر تحديث مخزون السيارة');
+                        }
+                        
+                        // Record inventory movement
+                        recordInventoryMovement(
+                            $productId,
+                            $warehouseId,
+                            'out',
+                            $quantity,
+                            'exchange',
+                            $exchangeId,
+                            'استبدال رقم ' . $exchangeNumber,
+                            $currentUser['id']
+                        );
+                    }
+                }
+            }
+        }
+        
+        // Update customer balance
+        if (abs($difference) >= 0.01) {
+            $customer = $db->queryOne("SELECT balance FROM customers WHERE id = ? FOR UPDATE", [$customerId]);
+            $customerBalance = (float)($customer['balance'] ?? 0);
+            
+            if ($difference < 0) {
+                // المنتج البديل أرخص - إضافة للرصيد الدائن
+                $newBalance = round($customerBalance - abs($difference), 2);
+            } else {
+                // المنتج البديل أغلى - إضافة للدين
+                $newBalance = round($customerBalance + $difference, 2);
+            }
+            
+            $db->execute("UPDATE customers SET balance = ? WHERE id = ?", [$newBalance, $customerId]);
+        }
+        
+        // Update customer purchase history immediately
+        try {
+            require_once __DIR__ . '/../includes/customer_history.php';
+            customerHistorySyncForCustomer($customerId);
+        } catch (Exception $historyException) {
+            // لا نسمح لفشل تحديث السجل بإلغاء نجاح العملية
+            error_log('Failed to sync customer history after exchange creation: ' . $historyException->getMessage());
+        }
+        
+        // Log audit
+        require_once __DIR__ . '/../includes/audit_log.php';
+        logAudit($currentUser['id'], 'create_exchange', 'exchange', $exchangeId, null, [
+            'exchange_number' => $exchangeNumber,
+            'difference_amount' => $difference,
+            'status' => 'approved'
+        ]);
         
         $conn->commit();
         
         returnJson([
             'success' => true,
-            'message' => 'تم إنشاء طلب الاستبدال بنجاح وتم إرساله للموافقة',
+            'message' => 'تم إنشاء الاستبدال وتسجيله كمعتمد بنجاح',
             'exchange_id' => $exchangeId,
             'exchange_number' => $exchangeNumber,
             'old_value' => $oldValue,
