@@ -1083,6 +1083,8 @@ foreach ($users as $user) {
         // حساب الساعات المكتملة فقط (التي تم تسجيل الانصراف لها)
         require_once __DIR__ . '/../../includes/salary_calculator.php';
         $completedHours = calculateCompletedMonthlyHours($userId, $selectedMonth, $selectedYear);
+        // حساب إجمالي الساعات (المكتملة وغير المكتملة)
+        $monthHours = calculateMonthlyHours($userId, $selectedMonth, $selectedYear);
         $baseAmount = round($completedHours * $hourlyRate, 2);
         
         // حساب نسبة التحصيلات إذا كان مندوب
