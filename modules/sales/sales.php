@@ -63,46 +63,96 @@ if (empty($salesTableCheck)) {
         error_log('Error checking/adding credit_used column: ' . $e->getMessage());
     }
 
-    // بناء استعلام SQL - استخدام invoice_items بدلاً من sales لضمان ربط كل عنصر بفاتورته الصحيحة
-    // هذا يمنع تكرار أرقام الفواتير عند إعادة بيع منتج مرتجع
-    $sql = "SELECT 
-                   ii.id as sale_id,
-                   ii.invoice_id,
-                   i.invoice_number,
-                   i.date,
-                   i.customer_id,
-                   i.sales_rep_id as salesperson_id,
-                   ii.product_id,
-                   ii.quantity,
-                   ii.unit_price as price,
-                   ii.total_price as total,
-                   i.status,
-                   c.name as customer_name,
-                   COALESCE(
-                       (SELECT fp2.product_name 
-                        FROM finished_products fp2 
-                        WHERE fp2.product_id = ii.product_id 
-                          AND fp2.product_name IS NOT NULL 
-                          AND TRIM(fp2.product_name) != ''
-                          AND fp2.product_name NOT LIKE 'منتج رقم%'
-                        ORDER BY fp2.id DESC 
-                        LIMIT 1),
-                       NULLIF(TRIM(p.name), ''),
-                       CONCAT('منتج رقم ', ii.product_id)
-                   ) as product_name,
-                   u.full_name as salesperson_name,
-                   COALESCE(i.credit_used, 0) as credit_used
-            FROM invoice_items ii
-            INNER JOIN invoices i ON ii.invoice_id = i.id
-            LEFT JOIN customers c ON i.customer_id = c.id
-            LEFT JOIN products p ON ii.product_id = p.id
-            LEFT JOIN users u ON i.sales_rep_id = u.id
-            WHERE i.status != 'cancelled'";
+    // التحقق من كون هذه صفحة my_records (sales_records)
+    $isSalesRecords = isset($_GET['page']) && $_GET['page'] === 'sales_records';
+    
+    // بناء استعلام SQL - إذا كانت صفحة my_records، تجميع الفواتير، وإلا عرض كل عنصر منفصل
+    if ($isSalesRecords) {
+        // تجميع الفواتير - عرض فاتورة واحدة لكل invoice_id
+        $sql = "SELECT 
+                       i.id as invoice_id,
+                       i.invoice_number,
+                       i.date,
+                       i.customer_id,
+                       i.sales_rep_id as salesperson_id,
+                       i.status,
+                       c.name as customer_name,
+                       u.full_name as salesperson_name,
+                       COALESCE(i.credit_used, 0) as credit_used,
+                       COUNT(ii.id) as items_count,
+                       GROUP_CONCAT(
+                           CONCAT(
+                               COALESCE(
+                                   (SELECT fp2.product_name 
+                                    FROM finished_products fp2 
+                                    WHERE fp2.product_id = ii.product_id 
+                                      AND fp2.product_name IS NOT NULL 
+                                      AND TRIM(fp2.product_name) != ''
+                                      AND fp2.product_name NOT LIKE 'منتج رقم%'
+                                    ORDER BY fp2.id DESC 
+                                    LIMIT 1),
+                                   NULLIF(TRIM(p.name), ''),
+                                   CONCAT('منتج رقم ', ii.product_id)
+                               ),
+                               ' (', FORMAT(ii.quantity, 2), ')'
+                           ) SEPARATOR '، '
+                       ) as products_list,
+                       SUM(ii.total_price) as total
+                FROM invoices i
+                INNER JOIN invoice_items ii ON i.id = ii.invoice_id
+                LEFT JOIN customers c ON i.customer_id = c.id
+                LEFT JOIN products p ON ii.product_id = p.id
+                LEFT JOIN users u ON i.sales_rep_id = u.id
+                WHERE i.status != 'cancelled'";
+    } else {
+        // عرض كل عنصر منفصل (السلوك الأصلي)
+        $sql = "SELECT 
+                       ii.id as sale_id,
+                       ii.invoice_id,
+                       i.invoice_number,
+                       i.date,
+                       i.customer_id,
+                       i.sales_rep_id as salesperson_id,
+                       ii.product_id,
+                       ii.quantity,
+                       ii.unit_price as price,
+                       ii.total_price as total,
+                       i.status,
+                       c.name as customer_name,
+                       COALESCE(
+                           (SELECT fp2.product_name 
+                            FROM finished_products fp2 
+                            WHERE fp2.product_id = ii.product_id 
+                              AND fp2.product_name IS NOT NULL 
+                              AND TRIM(fp2.product_name) != ''
+                              AND fp2.product_name NOT LIKE 'منتج رقم%'
+                            ORDER BY fp2.id DESC 
+                            LIMIT 1),
+                           NULLIF(TRIM(p.name), ''),
+                           CONCAT('منتج رقم ', ii.product_id)
+                       ) as product_name,
+                       u.full_name as salesperson_name,
+                       COALESCE(i.credit_used, 0) as credit_used
+                FROM invoice_items ii
+                INNER JOIN invoices i ON ii.invoice_id = i.id
+                LEFT JOIN customers c ON i.customer_id = c.id
+                LEFT JOIN products p ON ii.product_id = p.id
+                LEFT JOIN users u ON i.sales_rep_id = u.id
+                WHERE i.status != 'cancelled'";
+    }
 
-    $countSql = "SELECT COUNT(*) as total 
-                 FROM invoice_items ii
-                 INNER JOIN invoices i ON ii.invoice_id = i.id
-                 WHERE i.status != 'cancelled'";
+    // بناء countSql حسب نوع الاستعلام
+    if ($isSalesRecords) {
+        $countSql = "SELECT COUNT(DISTINCT i.id) as total 
+                     FROM invoices i
+                     INNER JOIN invoice_items ii ON i.id = ii.invoice_id
+                     WHERE i.status != 'cancelled'";
+    } else {
+        $countSql = "SELECT COUNT(*) as total 
+                     FROM invoice_items ii
+                     INNER JOIN invoices i ON ii.invoice_id = i.id
+                     WHERE i.status != 'cancelled'";
+    }
     $params = [];
     $countParams = [];
 
@@ -143,11 +193,21 @@ if (empty($salesTableCheck)) {
         $countParams[] = $filters['date_to'];
     }
 
+    // إضافة GROUP BY للاستعلام المجمع
+    if ($isSalesRecords) {
+        $sql .= " GROUP BY i.id, i.invoice_number, i.date, i.customer_id, i.sales_rep_id, i.status, c.name, u.full_name, i.credit_used";
+    }
+
     $totalResult = $db->queryOne($countSql, $countParams);
     $totalSales = $totalResult['total'] ?? 0;
     $totalPages = ceil($totalSales / $perPage);
 
-    $sql .= " ORDER BY i.date DESC, i.id DESC, ii.id DESC LIMIT ? OFFSET ?";
+    // ORDER BY و LIMIT
+    if ($isSalesRecords) {
+        $sql .= " ORDER BY i.date DESC, i.id DESC LIMIT ? OFFSET ?";
+    } else {
+        $sql .= " ORDER BY i.date DESC, i.id DESC, ii.id DESC LIMIT ? OFFSET ?";
+    }
     $params[] = $perPage;
     $params[] = $offset;
 
@@ -220,13 +280,13 @@ $customers = $db->query("SELECT id, name FROM customers WHERE status = 'active' 
 <?php endif; ?>
 
 <?php 
-$isSalesRecords = isset($_GET['page']) && $_GET['page'] === 'sales_records';
 // التحقق من section أولاً (من dashboard/sales.php) ثم tab
 $activeTab = isset($_GET['section']) ? $_GET['section'] : (isset($_GET['tab']) ? $_GET['tab'] : 'sales');
 // التأكد من أن activeTab هو 'sales'
 if ($activeTab !== 'sales') {
     $activeTab = 'sales';
 }
+// $isSalesRecords تم تعريفه بالفعل في قسم الاستعلام
 ?>
 
 <!-- الفلاتر -->
@@ -310,9 +370,11 @@ $tableHeaderStyle = $isSalesRecords ? 'background: linear-gradient(135deg,rgb(37
                         <th class="<?php echo $isSalesRecords ? 'text-white fw-bold' : ''; ?>" style="<?php echo $isSalesRecords ? 'border: none; padding: 1rem;' : ''; ?>">التاريخ</th>
                         <th class="<?php echo $isSalesRecords ? 'fw-bold' : ''; ?>" style="<?php echo $isSalesRecords ? 'border: none; padding: 1rem; color: #000;' : ''; ?>">رقم الفاتورة</th>
                         <th class="<?php echo $isSalesRecords ? 'fw-bold' : ''; ?>" style="<?php echo $isSalesRecords ? 'border: none; padding: 1rem; color: #000;' : ''; ?>">العميل</th>
-                        <th class="<?php echo $isSalesRecords ? 'text-white fw-bold' : ''; ?>" style="<?php echo $isSalesRecords ? 'border: none; padding: 1rem;' : ''; ?>">المنتج</th>
+                        <th class="<?php echo $isSalesRecords ? 'text-white fw-bold' : ''; ?>" style="<?php echo $isSalesRecords ? 'border: none; padding: 1rem;' : ''; ?>"><?php echo $isSalesRecords ? 'المنتجات' : 'المنتج'; ?></th>
+                        <?php if (!$isSalesRecords): ?>
                         <th class="<?php echo $isSalesRecords ? 'text-white fw-bold' : ''; ?>" style="<?php echo $isSalesRecords ? 'border: none; padding: 1rem;' : ''; ?>">الكمية</th>
                         <th class="<?php echo $isSalesRecords ? 'text-white fw-bold' : ''; ?>" style="<?php echo $isSalesRecords ? 'border: none; padding: 1rem;' : ''; ?>">السعر</th>
+                        <?php endif; ?>
                         <th class="<?php echo $isSalesRecords ? 'text-white fw-bold' : ''; ?>" style="<?php echo $isSalesRecords ? 'border: none; padding: 1rem;' : ''; ?>">الإجمالي</th>
                         <th class="<?php echo $isSalesRecords ? 'text-white fw-bold' : ''; ?>" style="<?php echo $isSalesRecords ? 'border: none; padding: 1rem;' : ''; ?>">الحالة</th>
                         <?php if (isset($currentUser['role']) && $currentUser['role'] !== 'sales'): ?>
@@ -352,13 +414,26 @@ $tableHeaderStyle = $isSalesRecords ? 'background: linear-gradient(135deg,rgb(37
                                 <td style="<?php echo $isSalesRecords ? 'padding: 1rem; font-weight: 500;' : ''; ?>"><?php echo formatDate($sale['date']); ?></td>
                                 <td style="<?php echo $isSalesRecords ? 'padding: 1rem;' : ''; ?>">
                                     <span class="badge <?php echo $isSalesRecords ? 'bg-gradient shadow-sm' : 'bg-info'; ?>" style="<?php echo $isSalesRecords ? 'background: linear-gradient(135deg,rgb(13, 56, 250) 0%,rgb(40, 15, 139) 100%); padding: 0.5rem 0.75rem; font-weight: 600; color: #000;' : ''; ?>">
-                                        <?php echo htmlspecialchars($sale['invoice_number'] ?? 'INV-' . $sale['invoice_id']); ?>
+                                        <?php echo htmlspecialchars($sale['invoice_number'] ?? 'INV-' . ($sale['invoice_id'] ?? $sale['sale_id'] ?? '')); ?>
                                     </span>
                                 </td>
                                 <td style="<?php echo $isSalesRecords ? 'padding: 1rem; font-weight: 500;' : ''; ?>"><?php echo htmlspecialchars($sale['customer_name'] ?? '-'); ?></td>
-                                <td style="<?php echo $isSalesRecords ? 'padding: 1rem;' : ''; ?>"><?php echo htmlspecialchars($sale['product_name'] ?? '-'); ?></td>
+                                <td style="<?php echo $isSalesRecords ? 'padding: 1rem;' : ''; ?>">
+                                    <?php if ($isSalesRecords && isset($sale['products_list'])): ?>
+                                        <div style="max-width: 400px;">
+                                            <div style="font-weight: 600; margin-bottom: 0.25rem;"><?php echo (int)($sale['items_count'] ?? 0); ?> منتج</div>
+                                            <div style="font-size: 0.9rem; color: #666; line-height: 1.5;">
+                                                <?php echo htmlspecialchars($sale['products_list']); ?>
+                                            </div>
+                                        </div>
+                                    <?php else: ?>
+                                        <?php echo htmlspecialchars($sale['product_name'] ?? '-'); ?>
+                                    <?php endif; ?>
+                                </td>
+                                <?php if (!$isSalesRecords): ?>
                                 <td style="<?php echo $isSalesRecords ? 'padding: 1rem;' : ''; ?>"><?php echo number_format($sale['quantity'], 2); ?></td>
                                 <td style="<?php echo $isSalesRecords ? 'padding: 1rem;' : ''; ?>"><?php echo formatCurrency($sale['price'] ?? 0); ?></td>
+                                <?php endif; ?>
                                 <td style="<?php echo $isSalesRecords ? 'padding: 1rem;' : ''; ?>">
                                     <strong style="<?php echo $isSalesRecords ? 'font-size: 1.1rem;' : ''; ?>">
                                         <?php echo formatCurrency($sale['total'] ?? 0); ?>
@@ -371,7 +446,7 @@ $tableHeaderStyle = $isSalesRecords ? 'background: linear-gradient(135deg,rgb(37
                                 <td style="<?php echo $isSalesRecords ? 'padding: 1rem;' : ''; ?>"><?php echo htmlspecialchars($sale['salesperson_name'] ?? '-'); ?></td>
                                 <?php endif; ?>
                                 <td style="<?php echo $isSalesRecords ? 'padding: 1rem;' : ''; ?>">
-                                    <a href="<?php echo getRelativeUrl('print_invoice.php?id=' . (int)$sale['invoice_id']); ?>" 
+                                    <a href="<?php echo getRelativeUrl('print_invoice.php?id=' . (int)($sale['invoice_id'] ?? 0)); ?>" 
                                        target="_blank" 
                                        class="btn btn-sm <?php echo $isSalesRecords ? 'btn-light shadow-sm' : 'btn-primary'; ?>" 
                                        title="طباعة الفاتورة"
