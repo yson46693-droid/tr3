@@ -169,103 +169,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && trim($_P
         exit;
     }
 }
-
-// معالجة طلبات cash_register قبل إرسال أي HTML
-if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['action'] === 'add_cash_balance') {
-    $pageParam = $_GET['page'] ?? 'dashboard';
-    if ($pageParam === 'cash_register') {
-        // تنظيف أي output buffer
-        while (ob_get_level() > 0) {
-            ob_end_clean();
-        }
-        
-        // تحميل الملفات الأساسية
-        require_once __DIR__ . '/../includes/config.php';
-        require_once __DIR__ . '/../includes/db.php';
-        require_once __DIR__ . '/../includes/auth.php';
-        require_once __DIR__ . '/../includes/audit_log.php';
-        require_once __DIR__ . '/../includes/path_helper.php';
-        
-        requireRole(['sales', 'accountant', 'manager']);
-        
-        $currentUser = getCurrentUser();
-        $isSalesUser = isset($currentUser['role']) && $currentUser['role'] === 'sales';
-        $db = db();
-        $error = '';
-        $success = '';
-        
-        // التأكد من أن المستخدم مندوب مبيعات فقط
-        if (!$isSalesUser) {
-            $error = 'غير مصرح لك بإضافة رصيد للخزنة';
-        } else {
-            $amount = floatval($_POST['amount'] ?? 0);
-            $description = trim($_POST['description'] ?? '');
-            
-            if ($amount <= 0) {
-                $error = 'يجب إدخال مبلغ صحيح أكبر من الصفر';
-            } else {
-                try {
-                    // التأكد من وجود جدول cash_register_additions
-                    $tableExists = $db->queryOne("SHOW TABLES LIKE 'cash_register_additions'");
-                    if (empty($tableExists)) {
-                        $db->execute("
-                            CREATE TABLE IF NOT EXISTS `cash_register_additions` (
-                              `id` int(11) NOT NULL AUTO_INCREMENT,
-                              `sales_rep_id` int(11) NOT NULL,
-                              `amount` decimal(15,2) NOT NULL,
-                              `description` text DEFAULT NULL,
-                              `created_by` int(11) NOT NULL,
-                              `created_at` timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP,
-                              PRIMARY KEY (`id`),
-                              KEY `sales_rep_id` (`sales_rep_id`),
-                              KEY `created_at` (`created_at`),
-                              CONSTRAINT `cash_register_additions_ibfk_1` FOREIGN KEY (`sales_rep_id`) REFERENCES `users` (`id`) ON DELETE CASCADE,
-                              CONSTRAINT `cash_register_additions_ibfk_2` FOREIGN KEY (`created_by`) REFERENCES `users` (`id`) ON DELETE CASCADE
-                            ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
-                        ");
-                    }
-                    
-                    // إضافة الرصيد
-                    $userId = isset($currentUser['id']) ? (int)$currentUser['id'] : 0;
-                    $db->execute(
-                        "INSERT INTO cash_register_additions (sales_rep_id, amount, description, created_by) VALUES (?, ?, ?, ?)",
-                        [$userId, $amount, $description ?: null, $userId]
-                    );
-                    
-                    // تسجيل في سجل التدقيق
-                    try {
-                        logAudit($userId, 'add_cash_balance', 'cash_register_addition', $db->getLastInsertId(), null, [
-                            'amount' => $amount,
-                            'description' => $description
-                        ]);
-                    } catch (Throwable $auditError) {
-                        error_log('Error logging audit for cash addition: ' . $auditError->getMessage());
-                    }
-                    
-                    $success = 'تم إضافة الرصيد إلى الخزنة بنجاح';
-                } catch (Throwable $e) {
-                    error_log('Error adding cash balance: ' . $e->getMessage());
-                    $error = 'حدث خطأ في إضافة الرصيد. يرجى المحاولة لاحقاً.';
-                }
-            }
-        }
-        
-        // إعادة التوجيه لتجنب إعادة إرسال النموذج
-        if (!empty($success)) {
-            $_SESSION['success'] = $success;
-        }
-        if (!empty($error)) {
-            $_SESSION['error'] = $error;
-        }
-        $redirectUrl = $_SERVER['PHP_SELF'] . '?page=cash_register';
-        $salesRepId = isset($_GET['sales_rep_id']) ? intval($_GET['sales_rep_id']) : null;
-        if ($salesRepId && !$isSalesUser) {
-            $redirectUrl .= '&sales_rep_id=' . $salesRepId;
-        }
-        header('Location: ' . $redirectUrl);
-        exit;
-    }
-}
 ?>
 <?php include __DIR__ . '/../templates/header.php'; ?>
 
@@ -281,22 +184,16 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['
                     // إحصائيات المبيعات - التحقق من وجود جدول sales أولاً
                     $salesTableCheck = $db->queryOne("SHOW TABLES LIKE 'sales'");
                     if (!empty($salesTableCheck)) {
-                        $currentUserId = isset($currentUser['id']) ? (int)$currentUser['id'] : 0;
                         $todaySales = $db->queryOne(
                             "SELECT COALESCE(SUM(total), 0) as total 
                              FROM sales 
-                             WHERE DATE(date) = CURDATE() 
-                               AND salesperson_id = ?",
-                            [$currentUserId]
+                             WHERE DATE(date) = CURDATE()"
                         );
                         
                         $monthSales = $db->queryOne(
                             "SELECT COALESCE(SUM(total), 0) as total 
                              FROM sales 
-                             WHERE MONTH(date) = MONTH(NOW()) 
-                               AND YEAR(date) = YEAR(NOW())
-                               AND salesperson_id = ?",
-                            [$currentUserId]
+                             WHERE MONTH(date) = MONTH(NOW()) AND YEAR(date) = YEAR(NOW())"
                         );
                     } else {
                         $todaySales = ['total' => 0];
@@ -304,7 +201,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['
                     }
                     
                     $customersCount = ['count' => 0];
-                    $salesUserId = isset($currentUser['id']) ? (int)$currentUser['id'] : 0;
+                    $salesUserId = (int) ($currentUser['id'] ?? 0);
                     $customersTableExists = $db->queryOne("SHOW TABLES LIKE 'customers'");
                     if (!empty($customersTableExists) && $salesUserId > 0) {
                         try {
@@ -402,7 +299,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['
                                      WHERE s.salesperson_id = ? 
                                      ORDER BY s.created_at DESC 
                                      LIMIT 10",
-                                    [isset($currentUser['id']) ? (int)$currentUser['id'] : 0]
+                                    [$currentUser['id']]
                                 );
                             } catch (Exception $e) {
                                 error_log("Sales query error: " . $e->getMessage());
@@ -496,16 +393,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['
             <?php elseif ($page === 'sales'): ?>
                 <!-- صفحة المبيعات -->
                 <?php
-                // الحصول على قائمة العملاء للنماذج - فقط عملاء المندوب الحالي
-                $currentUserId = isset($currentUser['id']) ? (int)$currentUser['id'] : 0;
-                $reportCustomers = $db->query(
-                    "SELECT id, name, phone 
-                     FROM customers 
-                     WHERE status = 'active' 
-                       AND created_by = ?
-                     ORDER BY name",
-                    [$currentUserId]
-                );
+                // الحصول على قائمة العملاء للنماذج
+                $reportCustomers = $db->query("SELECT id, name, phone FROM customers WHERE status = 'active' ORDER BY name");
                 ?>
                 <!-- Page Header -->
                 <div class="page-header">
@@ -618,16 +507,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['
             <?php elseif ($page === 'collections'): ?>
                 <!-- صفحة التحصيلات -->
                 <?php
-                // الحصول على قائمة العملاء للنماذج - فقط عملاء المندوب الحالي
-                $currentUserId = isset($currentUser['id']) ? (int)$currentUser['id'] : 0;
-                $reportCustomers = $db->query(
-                    "SELECT id, name, phone 
-                     FROM customers 
-                     WHERE status = 'active' 
-                       AND created_by = ?
-                     ORDER BY name",
-                    [$currentUserId]
-                );
+                // الحصول على قائمة العملاء للنماذج
+                $reportCustomers = $db->query("SELECT id, name, phone FROM customers WHERE status = 'active' ORDER BY name");
                 ?>
                 <!-- Page Header -->
                 <div class="page-header">
@@ -916,16 +797,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['
             <?php elseif ($page === 'my_records'): ?>
                 <!-- صفحة سجلات المندوب -->
                 <?php
-                // الحصول على قائمة العملاء للنماذج - فقط عملاء المندوب الحالي
-                $currentUserId = isset($currentUser['id']) ? (int)$currentUser['id'] : 0;
-                $reportCustomers = $db->query(
-                    "SELECT id, name, phone 
-                     FROM customers 
-                     WHERE status = 'active' 
-                       AND created_by = ?
-                     ORDER BY name",
-                    [$currentUserId]
-                );
+                // الحصول على قائمة العملاء للنماذج
+                $reportCustomers = $db->query("SELECT id, name, phone FROM customers WHERE status = 'active' ORDER BY name");
                 
                 // تحديد التبويب النشط
                 $activeTab = $_GET['section'] ?? 'sales';
@@ -933,10 +806,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['
                     $activeTab = 'collections';
                 } elseif ($activeTab === 'returns') {
                     $activeTab = 'returns';
-                } elseif ($activeTab === 'exchanges') {
-                    $activeTab = 'exchanges';
-                } elseif ($activeTab === 'damaged_returns') {
-                    $activeTab = 'damaged_returns';
                 } else {
                     $activeTab = 'sales';
                 }
@@ -1049,32 +918,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['
                                 <span>المرتجعات</span>
                             </button>
                         </li>
-                        <li class="nav-item" role="presentation">
-                            <button class="nav-link <?php echo $activeTab === 'exchanges' ? 'active' : ''; ?>" 
-                                    id="my-exchanges-tab" 
-                                    data-bs-toggle="tab" 
-                                    data-bs-target="#my-exchanges-section" 
-                                    type="button" 
-                                    role="tab" 
-                                    aria-controls="my-exchanges-section" 
-                                    aria-selected="<?php echo $activeTab === 'exchanges' ? 'true' : 'false'; ?>">
-                                <i class="bi bi-arrow-left-right"></i>
-                                <span>الاستبدالات</span>
-                            </button>
-                        </li>
-                        <li class="nav-item" role="presentation">
-                            <button class="nav-link <?php echo $activeTab === 'damaged_returns' ? 'active' : ''; ?>" 
-                                    id="my-damaged-returns-tab" 
-                                    data-bs-toggle="tab" 
-                                    data-bs-target="#my-damaged-returns-section" 
-                                    type="button" 
-                                    role="tab" 
-                                    aria-controls="my-damaged-returns-section" 
-                                    aria-selected="<?php echo $activeTab === 'damaged_returns' ? 'true' : 'false'; ?>">
-                                <i class="bi bi-exclamation-triangle"></i>
-                                <span>المرتجعات التالفة</span>
-                            </button>
-                        </li>
                     </ul>
 
                     <div class="tab-content combined-tab-content" id="myRecordsTabContent">
@@ -1103,7 +946,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['
                                 $salesModulePath = __DIR__ . '/../modules/sales/sales.php';
                                 if (file_exists($salesModulePath)) {
                                     $_GET['page'] = 'sales_records';
-                                    $_GET['section'] = 'sales';  // تحديث دائماً إلى 'sales'
                                     include $salesModulePath;
                                 } else {
                                 ?>
@@ -1167,48 +1009,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['
                                     <div class="empty-state-icon"><i class="bi bi-arrow-return-left"></i></div>
                                     <div class="empty-state-title">المرتجعات</div>
                                     <div class="empty-state-description">صفحة المرتجعات - سيتم إضافتها قريباً</div>
-                                </div>
-                                <?php } ?>
-                            </div>
-                        </div>
-
-                        <div class="tab-pane fade <?php echo $activeTab === 'exchanges' ? 'show active' : ''; ?> combined-tab-pane" 
-                             id="my-exchanges-section" 
-                             role="tabpanel" 
-                             aria-labelledby="my-exchanges-tab">
-                            <div id="my-exchanges-section-content" class="printable-section">
-                                <?php 
-                                $salesModulePath = __DIR__ . '/../modules/sales/sales.php';
-                                if (file_exists($salesModulePath)) {
-                                    $_GET['page'] = 'sales_records';
-                                    $_GET['section'] = 'exchanges';  // تحديث دائماً إلى 'exchanges'
-                                    include $salesModulePath;
-                                } else {
-                                ?>
-                                <div class="empty-state-card">
-                                    <div class="empty-state-icon"><i class="bi bi-arrow-left-right"></i></div>
-                                    <div class="empty-state-title">الاستبدالات</div>
-                                    <div class="empty-state-description">صفحة الاستبدالات - سيتم إضافتها</div>
-                                </div>
-                                <?php } ?>
-                            </div>
-                        </div>
-
-                        <div class="tab-pane fade <?php echo $activeTab === 'damaged_returns' ? 'show active' : ''; ?> combined-tab-pane" 
-                             id="my-damaged-returns-section" 
-                             role="tabpanel" 
-                             aria-labelledby="my-damaged-returns-tab">
-                            <div id="my-damaged-returns-section-content" class="printable-section">
-                                <?php 
-                                $damagedReturnsModulePath = __DIR__ . '/../modules/sales/damaged_returns.php';
-                                if (file_exists($damagedReturnsModulePath)) {
-                                    include $damagedReturnsModulePath;
-                                } else {
-                                ?>
-                                <div class="empty-state-card">
-                                    <div class="empty-state-icon"><i class="bi bi-exclamation-triangle"></i></div>
-                                    <div class="empty-state-title">المرتجعات التالفة</div>
-                                    <div class="empty-state-description">صفحة المرتجعات التالفة - سيتم إضافتها قريباً</div>
                                 </div>
                                 <?php } ?>
                             </div>
@@ -1407,9 +1207,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['
                     if (!targetId) return;
                     
                     document.querySelectorAll('.tab-pane').forEach(function(pane) {
-                        if (pane) {
-                            pane.classList.remove('show', 'active');
-                        }
+                        pane.classList.remove('show', 'active');
                     });
                     
                     const targetPane = document.querySelector(targetId);
@@ -1418,10 +1216,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['
                     }
                     
                     const currentTabButtons = document.querySelectorAll('#myRecordsTabs button[data-bs-toggle="tab"]');
-                    if (this && currentTabButtons && currentTabButtons.length > 0) {
-                        updateTabState(this, currentTabButtons);
-                        updateURL(this);
-                    }
+                    updateTabState(this, currentTabButtons);
+                    updateURL(this);
                 });
             }
             
@@ -1432,34 +1228,21 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['
     }
     
     function updateTabState(activeButton, allButtons) {
-        if (!activeButton) return;
-        
         allButtons.forEach(function(btn) {
-            if (btn) {
-                btn.classList.remove('active');
-                btn.setAttribute('aria-selected', 'false');
-            }
+            btn.classList.remove('active');
+            btn.setAttribute('aria-selected', 'false');
         });
-        
-        if (activeButton) {
-            activeButton.classList.add('active');
-            activeButton.setAttribute('aria-selected', 'true');
-        }
+        activeButton.classList.add('active');
+        activeButton.setAttribute('aria-selected', 'true');
     }
     
     function updateURL(button) {
-        if (!button) return;
-        
         const targetId = button.getAttribute('data-bs-target');
         let section = 'sales';
         if (targetId === '#my-collections-section') {
             section = 'collections';
         } else if (targetId === '#my-returns-section') {
             section = 'returns';
-        } else if (targetId === '#my-exchanges-section') {
-            section = 'exchanges';
-        } else if (targetId === '#my-damaged-returns-section') {
-            section = 'damaged_returns';
         }
         const url = new URL(window.location);
         url.searchParams.set('section', section);
@@ -1629,16 +1412,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['
 
             <?php elseif ($page === 'sales_records'): ?>
                 <?php
-                // الحصول على قائمة العملاء للنماذج - فقط عملاء المندوب الحالي
-                $currentUserId = isset($currentUser['id']) ? (int)$currentUser['id'] : 0;
-                $reportCustomers = $db->query(
-                    "SELECT id, name, phone 
-                     FROM customers 
-                     WHERE status = 'active' 
-                       AND created_by = ?
-                     ORDER BY name",
-                    [$currentUserId]
-                );
+                // الحصول على قائمة العملاء للنماذج
+                $reportCustomers = $db->query("SELECT id, name, phone FROM customers WHERE status = 'active' ORDER BY name");
                 
                 // تحديد التبويب النشط
                 $activeTab = $_GET['section'] ?? 'sales';
@@ -1646,10 +1421,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['
                     $activeTab = 'collections';
                 } elseif ($activeTab === 'returns') {
                     $activeTab = 'returns';
-                } elseif ($activeTab === 'exchanges') {
-                    $activeTab = 'exchanges';
-                } elseif ($activeTab === 'damaged_returns') {
-                    $activeTab = 'damaged_returns';
                 } else {
                     $activeTab = 'sales';
                 }
@@ -1791,9 +1562,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['
                                 if (file_exists($salesModulePath)) {
                                     // تعديل قيمة page في GET قبل تضمين الملف
                                     $_GET['page'] = 'sales_records';
-                                    if (!isset($_GET['section'])) {
-                                        $_GET['section'] = $activeTab;
-                                    }
                                     include $salesModulePath;
                                 } else {
                                 ?>
@@ -2051,10 +1819,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['
                 // استخدام Bootstrap Tabs - معالج shown.bs.tab فقط
                 button.addEventListener('shown.bs.tab', function(event) {
                     const currentTabButtons = document.querySelectorAll('#salesRecordsTabs button[data-bs-toggle="tab"]');
-                    if (event.target && currentTabButtons && currentTabButtons.length > 0) {
-                        updateTabState(event.target, currentTabButtons);
-                        updateURL(event.target);
-                    }
+                    updateTabState(event.target, currentTabButtons);
+                    updateURL(event.target);
                 });
             } else {
                 // Fallback يدوي - معالج click فقط
@@ -2070,9 +1836,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['
                     
                     // إخفاء جميع المحتويات
                     document.querySelectorAll('.tab-pane').forEach(function(pane) {
-                        if (pane) {
-                            pane.classList.remove('show', 'active');
-                        }
+                        pane.classList.remove('show', 'active');
                     });
                     
                     // إظهار المحتوى المطلوب
@@ -2085,10 +1849,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['
                     
                     // تحديث حالة التبويبات
                     const currentTabButtons = document.querySelectorAll('#salesRecordsTabs button[data-bs-toggle="tab"]');
-                    if (this && currentTabButtons && currentTabButtons.length > 0) {
-                        updateTabState(this, currentTabButtons);
-                        updateURL(this);
-                    }
+                    updateTabState(this, currentTabButtons);
+                    updateURL(this);
                 });
             }
             
@@ -2101,25 +1863,15 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['
         const section = urlParams.get('section');
         let activeTabId = 'sales-tab';
         
-        // التحقق من وجود التبويبات المتاحة في الصفحة الحالية
-        const availableTabs = document.querySelectorAll('#salesRecordsTabs button[data-bs-toggle="tab"]');
-        const availableTabIds = Array.from(availableTabs).map(btn => btn.id);
-        
-        if (section === 'collections' && availableTabIds.includes('collections-tab')) {
+        if (section === 'collections') {
             activeTabId = 'collections-tab';
-        } else if (section === 'returns' && availableTabIds.includes('returns-tab')) {
+        } else if (section === 'returns') {
             activeTabId = 'returns-tab';
-        } else if (section === 'exchanges' && availableTabIds.includes('my-exchanges-tab')) {
-            activeTabId = 'my-exchanges-tab';
-        } else if (section === 'damaged_returns' && availableTabIds.includes('my-damaged-returns-tab')) {
-            activeTabId = 'my-damaged-returns-tab';
-        } else if (section === 'sales' && availableTabIds.includes('sales-tab')) {
-            activeTabId = 'sales-tab';
         }
         
         // تفعيل التبويب النشط
         const activeTabButton = document.getElementById(activeTabId);
-        if (activeTabButton && availableTabIds.includes(activeTabId)) {
+        if (activeTabButton) {
             const currentActiveTab = document.querySelector('#salesRecordsTabs .nav-link.active');
             if (!currentActiveTab || currentActiveTab.id !== activeTabId) {
                 if (useBootstrap) {
@@ -2140,24 +1892,15 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['
     }
     
     function updateTabState(activeButton, allButtons) {
-        if (!activeButton) return;
-        
         allButtons.forEach(function(btn) {
-            if (btn) {
-                btn.classList.remove('active');
-                btn.setAttribute('aria-selected', 'false');
-            }
+            btn.classList.remove('active');
+            btn.setAttribute('aria-selected', 'false');
         });
-        
-        if (activeButton) {
-            activeButton.classList.add('active');
-            activeButton.setAttribute('aria-selected', 'true');
-        }
+        activeButton.classList.add('active');
+        activeButton.setAttribute('aria-selected', 'true');
     }
     
     function updateURL(button) {
-        if (!button) return;
-        
         const targetId = button.getAttribute('data-bs-target');
         let section = 'sales';
         if (targetId === '#collections-section') {
@@ -2171,16 +1914,12 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['
     }
     
     function activateTabManually(button) {
-        if (!button) return;
-        
         const targetId = button.getAttribute('data-bs-target');
         if (!targetId) return;
         
         // إخفاء جميع المحتويات
         document.querySelectorAll('.tab-pane').forEach(function(pane) {
-            if (pane) {
-                pane.classList.remove('show', 'active');
-            }
+            pane.classList.remove('show', 'active');
         });
         
         // إظهار المحتوى المطلوب
@@ -2191,9 +1930,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['
         
         // تحديث التبويبات
         const tabButtons = document.querySelectorAll('#salesRecordsTabs button[data-bs-toggle="tab"]');
-        if (tabButtons && tabButtons.length > 0 && button) {
-            updateTabState(button, tabButtons);
-        }
+        updateTabState(button, tabButtons);
     }
     
     function initReportButtons() {
