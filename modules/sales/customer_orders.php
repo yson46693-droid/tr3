@@ -394,6 +394,16 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 } catch (Throwable $modifyError) {
                     error_log('Error modifying product_id column: ' . $modifyError->getMessage());
                 }
+                
+                // التحقق من وجود عمود product_name وإضافته إذا لم يكن موجوداً
+                try {
+                    $productNameColumn = $db->queryOne("SHOW COLUMNS FROM {$orderItemsTable} LIKE 'product_name'");
+                    if (empty($productNameColumn)) {
+                        $db->execute("ALTER TABLE {$orderItemsTable} ADD COLUMN product_name VARCHAR(255) NULL AFTER template_id");
+                    }
+                } catch (Throwable $alterError) {
+                    error_log('Error checking/adding product_name column: ' . $alterError->getMessage());
+                }
 
                 foreach ($items as $item) {
                     $templateName = $item['template_name'];
@@ -425,49 +435,88 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                         }
                     }
                     
-                    // إدراج العنصر - إذا لم يُعثر على القالب، نستخدم NULL للـ template_id ونحفظ الاسم في notes أو نستخدم product_id = NULL
+                    // إدراج العنصر - حفظ الاسم في product_name إذا لم يُعثر على template_id
                     try {
                         // محاولة إدراج مع template_id إذا وُجد
                         if ($templateId) {
-                            $db->execute(
-                                "INSERT INTO {$orderItemsTable} (order_id, product_id, template_id, quantity, unit_price, total_price) 
-                                 VALUES (?, NULL, ?, ?, ?, ?)",
-                                [
-                                    $orderId,
-                                    $templateId,
-                                    $item['quantity'],
-                                    $item['unit_price'],
-                                    $item['total_price']
-                                ]
-                            );
-                        } else {
-                            // إذا لم يُعثر على القالب، إدراج بدون template_id (سيتم حفظ الاسم في template_name لاحقاً إذا كان هناك عمود لذلك)
-                            // أو يمكننا إضافة عمود template_name للجدول
                             try {
                                 $db->execute(
-                                    "INSERT INTO {$orderItemsTable} (order_id, product_id, template_id, quantity, unit_price, total_price) 
-                                     VALUES (?, NULL, NULL, ?, ?, ?)",
+                                    "INSERT INTO {$orderItemsTable} (order_id, product_id, template_id, product_name, quantity, unit_price, total_price) 
+                                     VALUES (?, NULL, ?, NULL, ?, ?, ?)",
                                     [
                                         $orderId,
+                                        $templateId,
                                         $item['quantity'],
                                         $item['unit_price'],
                                         $item['total_price']
                                     ]
                                 );
                             } catch (Throwable $insertError) {
-                                // إذا فشل لأن template_id غير موجود، نجرب بدون template_id
-                                if (stripos($insertError->getMessage(), 'template_id') !== false || 
+                                // إذا فشل لأن product_name غير موجود، نجرب بدون product_name
+                                if (stripos($insertError->getMessage(), 'product_name') !== false || 
                                     stripos($insertError->getMessage(), 'Unknown column') !== false) {
                                     $db->execute(
-                                        "INSERT INTO {$orderItemsTable} (order_id, product_id, quantity, unit_price, total_price) 
-                                         VALUES (?, NULL, ?, ?, ?)",
+                                        "INSERT INTO {$orderItemsTable} (order_id, product_id, template_id, quantity, unit_price, total_price) 
+                                         VALUES (?, NULL, ?, ?, ?, ?)",
                                         [
                                             $orderId,
+                                            $templateId,
                                             $item['quantity'],
                                             $item['unit_price'],
                                             $item['total_price']
                                         ]
                                     );
+                                } else {
+                                    throw $insertError;
+                                }
+                            }
+                        } else {
+                            // إذا لم يُعثر على القالب، حفظ الاسم في product_name
+                            try {
+                                $db->execute(
+                                    "INSERT INTO {$orderItemsTable} (order_id, product_id, template_id, product_name, quantity, unit_price, total_price) 
+                                     VALUES (?, NULL, NULL, ?, ?, ?, ?)",
+                                    [
+                                        $orderId,
+                                        $templateName,
+                                        $item['quantity'],
+                                        $item['unit_price'],
+                                        $item['total_price']
+                                    ]
+                                );
+                            } catch (Throwable $insertError) {
+                                // إذا فشل لأن product_name غير موجود، نجرب بدون product_name
+                                if (stripos($insertError->getMessage(), 'product_name') !== false || 
+                                    stripos($insertError->getMessage(), 'Unknown column') !== false) {
+                                    try {
+                                        $db->execute(
+                                            "INSERT INTO {$orderItemsTable} (order_id, product_id, template_id, quantity, unit_price, total_price) 
+                                             VALUES (?, NULL, NULL, ?, ?, ?)",
+                                            [
+                                                $orderId,
+                                                $item['quantity'],
+                                                $item['unit_price'],
+                                                $item['total_price']
+                                            ]
+                                        );
+                                    } catch (Throwable $insertError2) {
+                                        // إذا فشل لأن template_id غير موجود، نجرب بدون template_id
+                                        if (stripos($insertError2->getMessage(), 'template_id') !== false || 
+                                            stripos($insertError2->getMessage(), 'Unknown column') !== false) {
+                                            $db->execute(
+                                                "INSERT INTO {$orderItemsTable} (order_id, product_id, quantity, unit_price, total_price) 
+                                                 VALUES (?, NULL, ?, ?, ?)",
+                                                [
+                                                    $orderId,
+                                                    $item['quantity'],
+                                                    $item['unit_price'],
+                                                    $item['total_price']
+                                                ]
+                                            );
+                                        } else {
+                                            throw $insertError2;
+                                        }
+                                    }
                                 } else {
                                     throw $insertError;
                                 }
@@ -664,6 +713,17 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
                 // إضافة العناصر
                 $orderItemsTable = getOrderItemsTableName($db);
+                
+                // التحقق من وجود عمود product_name وإضافته إذا لم يكن موجوداً
+                try {
+                    $productNameColumn = $db->queryOne("SHOW COLUMNS FROM {$orderItemsTable} LIKE 'product_name'");
+                    if (empty($productNameColumn)) {
+                        $db->execute("ALTER TABLE {$orderItemsTable} ADD COLUMN product_name VARCHAR(255) NULL AFTER template_id");
+                    }
+                } catch (Throwable $alterError) {
+                    error_log('Error checking/adding product_name column: ' . $alterError->getMessage());
+                }
+                
                 foreach ($items as $item) {
                     $templateName = $item['template_name'];
                     
@@ -694,45 +754,87 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                         }
                     }
                     
-                    // إدراج العنصر
+                    // إدراج العنصر - حفظ الاسم في product_name إذا لم يُعثر على template_id
                     try {
                         if ($templateId) {
-                            $db->execute(
-                                "INSERT INTO {$orderItemsTable} (order_id, product_id, template_id, quantity, unit_price, total_price) 
-                                 VALUES (?, NULL, ?, ?, ?, ?)",
-                                [
-                                    $orderId,
-                                    $templateId,
-                                    $item['quantity'],
-                                    $item['unit_price'],
-                                    $item['total_price']
-                                ]
-                            );
-                        } else {
                             try {
                                 $db->execute(
-                                    "INSERT INTO {$orderItemsTable} (order_id, product_id, template_id, quantity, unit_price, total_price) 
-                                     VALUES (?, NULL, NULL, ?, ?, ?)",
+                                    "INSERT INTO {$orderItemsTable} (order_id, product_id, template_id, product_name, quantity, unit_price, total_price) 
+                                     VALUES (?, NULL, ?, NULL, ?, ?, ?)",
                                     [
                                         $orderId,
+                                        $templateId,
                                         $item['quantity'],
                                         $item['unit_price'],
                                         $item['total_price']
                                     ]
                                 );
                             } catch (Throwable $insertError) {
-                                if (stripos($insertError->getMessage(), 'template_id') !== false || 
+                                // إذا فشل لأن product_name غير موجود، نجرب بدون product_name
+                                if (stripos($insertError->getMessage(), 'product_name') !== false || 
                                     stripos($insertError->getMessage(), 'Unknown column') !== false) {
                                     $db->execute(
-                                        "INSERT INTO {$orderItemsTable} (order_id, product_id, quantity, unit_price, total_price) 
-                                         VALUES (?, NULL, ?, ?, ?)",
+                                        "INSERT INTO {$orderItemsTable} (order_id, product_id, template_id, quantity, unit_price, total_price) 
+                                         VALUES (?, NULL, ?, ?, ?, ?)",
                                         [
                                             $orderId,
+                                            $templateId,
                                             $item['quantity'],
                                             $item['unit_price'],
                                             $item['total_price']
                                         ]
                                     );
+                                } else {
+                                    throw $insertError;
+                                }
+                            }
+                        } else {
+                            // إذا لم يُعثر على القالب، حفظ الاسم في product_name
+                            try {
+                                $db->execute(
+                                    "INSERT INTO {$orderItemsTable} (order_id, product_id, template_id, product_name, quantity, unit_price, total_price) 
+                                     VALUES (?, NULL, NULL, ?, ?, ?, ?)",
+                                    [
+                                        $orderId,
+                                        $templateName,
+                                        $item['quantity'],
+                                        $item['unit_price'],
+                                        $item['total_price']
+                                    ]
+                                );
+                            } catch (Throwable $insertError) {
+                                // إذا فشل لأن product_name غير موجود، نجرب بدون product_name
+                                if (stripos($insertError->getMessage(), 'product_name') !== false || 
+                                    stripos($insertError->getMessage(), 'Unknown column') !== false) {
+                                    try {
+                                        $db->execute(
+                                            "INSERT INTO {$orderItemsTable} (order_id, product_id, template_id, quantity, unit_price, total_price) 
+                                             VALUES (?, NULL, NULL, ?, ?, ?)",
+                                            [
+                                                $orderId,
+                                                $item['quantity'],
+                                                $item['unit_price'],
+                                                $item['total_price']
+                                            ]
+                                        );
+                                    } catch (Throwable $insertError2) {
+                                        // إذا فشل لأن template_id غير موجود، نجرب بدون template_id
+                                        if (stripos($insertError2->getMessage(), 'template_id') !== false || 
+                                            stripos($insertError2->getMessage(), 'Unknown column') !== false) {
+                                            $db->execute(
+                                                "INSERT INTO {$orderItemsTable} (order_id, product_id, quantity, unit_price, total_price) 
+                                                 VALUES (?, NULL, ?, ?, ?)",
+                                                [
+                                                    $orderId,
+                                                    $item['quantity'],
+                                                    $item['unit_price'],
+                                                    $item['total_price']
+                                                ]
+                                            );
+                                        } else {
+                                            throw $insertError2;
+                                        }
+                                    }
                                 } else {
                                     throw $insertError;
                                 }
@@ -990,8 +1092,12 @@ if (isset($_GET['id'])) {
         foreach ($items as &$item) {
             $productName = '-';
             
-            // أولاً: البحث عن اسم القالب إذا كان template_id موجوداً
-            if (!empty($item['template_id'])) {
+            // أولاً: إذا كان product_name محفوظاً مباشرة في الجدول، استخدمه
+            if (!empty($item['product_name'])) {
+                $productName = $item['product_name'];
+            }
+            // ثانياً: البحث عن اسم القالب إذا كان template_id موجوداً
+            elseif (!empty($item['template_id'])) {
                 // البحث في unified_product_templates
                 $unifiedCheck = $db->queryOne("SHOW TABLES LIKE 'unified_product_templates'");
                 if (!empty($unifiedCheck)) {
@@ -1022,9 +1128,8 @@ if (isset($_GET['id'])) {
                     }
                 }
             }
-            
-            // ثانياً: إذا لم يُعثر على اسم من القالب، البحث عن المنتج إذا كان product_id موجوداً
-            if ($productName === '-' && !empty($item['product_id'])) {
+            // ثالثاً: إذا لم يُعثر على اسم من القالب، البحث عن المنتج إذا كان product_id موجوداً
+            elseif (!empty($item['product_id'])) {
                 $product = $db->queryOne(
                     "SELECT name FROM products WHERE id = ?",
                     [$item['product_id']]
