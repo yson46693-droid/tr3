@@ -45,8 +45,8 @@ if (empty($salesTableCheck)) {
     ];
 
     // إذا كان المستخدم مندوب مبيعات، عرض فقط مبيعاته
-    if ($currentUser['role'] === 'sales') {
-        $filters['salesperson_id'] = $currentUser['id'];
+    if (isset($currentUser['role']) && $currentUser['role'] === 'sales') {
+        $filters['salesperson_id'] = isset($currentUser['id']) ? $currentUser['id'] : 0;
     }
 
     $filters = array_filter($filters, function($value) {
@@ -107,11 +107,12 @@ if (empty($salesTableCheck)) {
     $countParams = [];
 
     // إذا كان المستخدم مندوب مبيعات، فلتر حسب sales_rep_id
-    if ($currentUser['role'] === 'sales') {
+    if (isset($currentUser['role']) && $currentUser['role'] === 'sales') {
         $sql .= " AND i.sales_rep_id = ?";
         $countSql .= " AND i.sales_rep_id = ?";
-        $params[] = $currentUser['id'];
-        $countParams[] = $currentUser['id'];
+        $userId = isset($currentUser['id']) ? $currentUser['id'] : 0;
+        $params[] = $userId;
+        $countParams[] = $userId;
     }
 
     if (!empty($filters['customer_id'])) {
@@ -314,7 +315,7 @@ $tableHeaderStyle = $isSalesRecords ? 'background: linear-gradient(135deg,rgb(37
                         <th class="<?php echo $isSalesRecords ? 'text-white fw-bold' : ''; ?>" style="<?php echo $isSalesRecords ? 'border: none; padding: 1rem;' : ''; ?>">السعر</th>
                         <th class="<?php echo $isSalesRecords ? 'text-white fw-bold' : ''; ?>" style="<?php echo $isSalesRecords ? 'border: none; padding: 1rem;' : ''; ?>">الإجمالي</th>
                         <th class="<?php echo $isSalesRecords ? 'text-white fw-bold' : ''; ?>" style="<?php echo $isSalesRecords ? 'border: none; padding: 1rem;' : ''; ?>">الحالة</th>
-                        <?php if ($currentUser['role'] !== 'sales'): ?>
+                        <?php if (isset($currentUser['role']) && $currentUser['role'] !== 'sales'): ?>
                         <th class="<?php echo $isSalesRecords ? 'text-white fw-bold' : ''; ?>" style="<?php echo $isSalesRecords ? 'border: none; padding: 1rem;' : ''; ?>">مندوب المبيعات</th>
                         <?php endif; ?>
                         <th class="<?php echo $isSalesRecords ? 'text-white fw-bold' : ''; ?>" style="<?php echo $isSalesRecords ? 'border: none; padding: 1rem;' : ''; ?>" width="100">إجراء</th>
@@ -323,7 +324,7 @@ $tableHeaderStyle = $isSalesRecords ? 'background: linear-gradient(135deg,rgb(37
                 <tbody>
                     <?php if (empty($sales)): ?>
                         <tr>
-                            <td colspan="<?php echo $currentUser['role'] !== 'sales' ? '9' : '8'; ?>" class="text-center text-muted">لا توجد مبيعات</td>
+                            <td colspan="<?php echo (isset($currentUser['role']) && $currentUser['role'] !== 'sales') ? '9' : '8'; ?>" class="text-center text-muted">لا توجد مبيعات</td>
                         </tr>
                     <?php else: ?>
                         <?php foreach ($sales as $sale): ?>
@@ -366,7 +367,7 @@ $tableHeaderStyle = $isSalesRecords ? 'background: linear-gradient(135deg,rgb(37
                                 <td style="<?php echo $isSalesRecords ? 'padding: 1rem;' : ''; ?>">
                                     <span class="badge bg-<?php echo $statusColor; ?>"><?php echo htmlspecialchars($statusLabel); ?></span>
                                 </td>
-                                <?php if ($currentUser['role'] !== 'sales'): ?>
+                                <?php if (isset($currentUser['role']) && $currentUser['role'] !== 'sales'): ?>
                                 <td style="<?php echo $isSalesRecords ? 'padding: 1rem;' : ''; ?>"><?php echo htmlspecialchars($sale['salesperson_name'] ?? '-'); ?></td>
                                 <?php endif; ?>
                                 <td style="<?php echo $isSalesRecords ? 'padding: 1rem;' : ''; ?>">
