@@ -535,7 +535,8 @@ if (empty($menuItems)) {
             foreach ($menuItems as $item): if (!isset($item['divider'])): ?>
                 <li class="nav-item">
                     <a class="nav-link <?php echo $item['active'] ? 'active' : ''; ?>" 
-                       href="<?php echo htmlspecialchars($item['url']); ?>">
+                       href="<?php echo htmlspecialchars($item['url']); ?>"
+                       data-no-splash="true">
                         <i class="bi <?php echo htmlspecialchars($item['icon']); ?>"></i>
                         <span><?php echo htmlspecialchars($item['title']); ?></span>
                         <?php if ($item['badge']): ?>

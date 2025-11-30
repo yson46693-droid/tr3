@@ -438,7 +438,7 @@ if (!defined('ACCESS_ALLOWED')) {
                             pageLoader.style.display = 'none';
                         }
                     }, 500);
-                }, 800); // تأخير 800ms لإظهار الشاشة
+                }, 100); // تقليل التأخير إلى 100ms للاستجابة السريعة
             }
             
             // حذف الجلسة من قاعدة البيانات
@@ -514,7 +514,25 @@ if (!defined('ACCESS_ALLOWED')) {
             }
             
             // مراقبة النشاط
-            ['mousedown', 'mousemove', 'keypress', 'scroll', 'touchstart'].forEach(function(event) {
+            // إضافة دالة throttled للأحداث الثقيلة
+            let inactivityTimerThrottle = null;
+            function throttledResetInactivityTimer() {
+                if (inactivityTimerThrottle) {
+                    return; // تخطي إذا كان هناك استدعاء قريب
+                }
+                inactivityTimerThrottle = setTimeout(function() {
+                    resetInactivityTimer();
+                    inactivityTimerThrottle = null;
+                }, 100); // throttle إلى 100ms
+            }
+            
+            // الأحداث الثقيلة مع throttling و passive
+            ['mousemove', 'scroll'].forEach(function(event) {
+                document.addEventListener(event, throttledResetInactivityTimer, { passive: true });
+            });
+            
+            // الأحداث الأخرى بدون throttling
+            ['mousedown', 'keypress', 'touchstart'].forEach(function(event) {
                 document.addEventListener(event, resetInactivityTimer, true);
             });
             
@@ -530,6 +548,24 @@ if (!defined('ACCESS_ALLOWED')) {
                         dashboardMain.classList.add('content-fade-in');
                     }
                     return;
+                }
+                
+                // التحقق من أن الصفحة قادمة من رابط داخلي
+                const isInternalNavigation = sessionStorage.getItem('internalNavigation') === 'true';
+                sessionStorage.removeItem('internalNavigation'); // تنظيف بعد الاستخدام
+                
+                // إذا كان التنقل داخلي، تخطي منطق الجلسات بالكامل
+                if (isInternalNavigation) {
+                    if (pageLoader) {
+                        pageLoader.classList.add('hidden');
+                        if (pageLoader.style) {
+                            pageLoader.style.display = 'none';
+                        }
+                    }
+                    if (dashboardMain) {
+                        dashboardMain.classList.add('content-fade-in');
+                    }
+                    return; // تخطي كل منطق الجلسات والـ API calls
                 }
                 
                 // إذا كانت الصفحة جديدة (ليست من cache)، امسح الجلسة وأظهر splash screen
@@ -686,6 +722,13 @@ if (!defined('ACCESS_ALLOWED')) {
             let isNavigating = false;
             document.addEventListener('click', function(e) {
                 const link = e.target.closest('a');
+                
+                // تخطي الروابط التي لديها data-no-splash (روابط الشريط الجانبي)
+                if (link && link.hasAttribute('data-no-splash')) {
+                    // تسجيل أن هذا تنقل داخلي لتخطي منطق الجلسات في pageshow
+                    sessionStorage.setItem('internalNavigation', 'true');
+                    return; // لا تعرض شاشة التحميل للروابط الداخلية
+                }
                 
                 // تحقق من أن الرابط يؤدي لتغيير الصفحة الكامل (ليس tabs أو sections)
                 if (link && 
