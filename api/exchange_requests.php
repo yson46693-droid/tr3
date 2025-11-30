@@ -634,12 +634,24 @@ function handleCreateExchange(): void
             
             // خصم المندوب فقط في حالة معينة:
             // 1. إذا كان إجمالي منتجات العميل أكبر من إجمالي منتجات السيارة (difference < 0)
-            // 2. إذا كان العميل مدين قبل العملية (oldBalance > 0)
-            // 3. إذا أصبح رصيد العميل دائن بعد العملية (newBalance < 0)
-            if ($difference < 0 && $oldBalance > 0 && $newBalance < 0 && $salesRepId > 0) {
+            // 2. إذا كان العميل مدين قبل العملية (oldBalance > 0.01)
+            // 3. إذا أصبح رصيد العميل دائن بعد العملية (newBalance < -0.01)
+            // 4. التأكد من أن الرصيد تحول فعلاً من مدين إلى دائن
+            $shouldDeduct = ($difference < 0) && 
+                           ($oldBalance > 0.01) && 
+                           ($newBalance < -0.01) && 
+                           ($salesRepId > 0);
+            
+            // تسجيل للتدقيق - فقط للتشخيص
+            if ($difference < 0 && $oldBalance > 0 && $salesRepId > 0) {
+                error_log("Exchange deduction check - difference: {$difference}, oldBalance: {$oldBalance}, newBalance: {$newBalance}, shouldDeduct: " . ($shouldDeduct ? 'YES' : 'NO'));
+            }
+            
+            if ($shouldDeduct) {
                 // حساب قيمة الرصيد الدائن المضاف للعميل
-                // الرصيد الدائن المضاف = الفرق بين الرصيد القديم والجديد (الجزء الذي تحول من مدين إلى دائن)
-                $creditAdded = abs($newBalance); // القيمة المطلقة للرصيد الدائن الجديد
+                // الرصيد الدائن المضاف = الجزء الذي تحول من مدين إلى دائن
+                // = الرصيد المدين القديم + الرصيد الدائن الجديد
+                $creditAdded = $oldBalance + abs($newBalance);
                 
                 // خصم 2% من المندوب من قيمة الرصيد الدائن المضاف
                 $deductionAmount = round($creditAdded * 0.02, 2);
@@ -758,7 +770,7 @@ function handleCreateExchange(): void
         // إذا كان الفرق موجب (أحمر): خصم من المبيعات
         // إذا كان الفرق سالب (أخضر): إضافة إلى المبيعات
         if (abs($difference) >= 0.01 && $salesRepId > 0) {
-            require_once __DIR__ . '/../includes/approval_system.php';
+        require_once __DIR__ . '/../includes/approval_system.php';
             
             // التحقق من عدم إنشاء سجل تحصيل مسبقاً (منع التكرار)
             $existingCollection = $db->queryOne(
