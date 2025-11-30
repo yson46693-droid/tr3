@@ -79,23 +79,97 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         if ($vehicleId > 0) {
             $oldVehicle = $db->queryOne("SELECT * FROM vehicles WHERE id = ?", [$vehicleId]);
             
-            $db->execute(
-                "UPDATE vehicles 
-                 SET vehicle_number = ?, vehicle_type = ?, model = ?, year = ?, 
-                     driver_id = ?, status = ?, notes = ?, updated_at = NOW() 
-                 WHERE id = ?",
-                [$vehicleNumber, $vehicleType, $model, $year, $driverId, $status, $notes, $vehicleId]
+            // التحقق من عدم تكرار رقم السيارة إذا تغير
+            if ($oldVehicle && $oldVehicle['vehicle_number'] !== $vehicleNumber) {
+                $existing = $db->queryOne("SELECT id FROM vehicles WHERE vehicle_number = ? AND id != ?", [$vehicleNumber, $vehicleId]);
+                if ($existing) {
+                    $error = 'رقم السيارة موجود بالفعل';
+                } else {
+                    $db->execute(
+                        "UPDATE vehicles 
+                         SET vehicle_number = ?, vehicle_type = ?, model = ?, year = ?, 
+                             driver_id = ?, status = ?, notes = ?, updated_at = NOW() 
+                         WHERE id = ?",
+                        [$vehicleNumber, $vehicleType, $model, $year, $driverId, $status, $notes, $vehicleId]
+                    );
+                    
+                    logAudit($currentUser['id'], 'update_vehicle', 'vehicle', $vehicleId, 
+                             ['old' => $oldVehicle], 
+                             ['new' => ['vehicle_number' => $vehicleNumber, 'status' => $status]]);
+                    
+                    $success = 'تم تحديث السيارة بنجاح';
+                }
+            } else {
+                $db->execute(
+                    "UPDATE vehicles 
+                     SET vehicle_number = ?, vehicle_type = ?, model = ?, year = ?, 
+                         driver_id = ?, status = ?, notes = ?, updated_at = NOW() 
+                     WHERE id = ?",
+                    [$vehicleNumber, $vehicleType, $model, $year, $driverId, $status, $notes, $vehicleId]
+                );
+                
+                logAudit($currentUser['id'], 'update_vehicle', 'vehicle', $vehicleId, 
+                         ['old' => $oldVehicle], 
+                         ['new' => ['vehicle_number' => $vehicleNumber, 'status' => $status]]);
+                
+                $success = 'تم تحديث السيارة بنجاح';
+            }
+            
+            if ($success) {
+                // Redirect بعد النجاح
+                header('Location: ' . getDashboardUrl('manager') . '?page=vehicles&success=' . urlencode($success));
+                exit;
+            }
+        }
+    } elseif ($action === 'delete_vehicle') {
+        $vehicleId = intval($_POST['vehicle_id'] ?? 0);
+        
+        if ($vehicleId > 0) {
+            // التحقق من وجود معاملات مرتبطة بالسيارة
+            $hasInventory = $db->queryOne(
+                "SELECT COUNT(*) as count FROM vehicle_inventory WHERE vehicle_id = ? AND quantity > 0",
+                [$vehicleId]
             );
             
-            logAudit($currentUser['id'], 'update_vehicle', 'vehicle', $vehicleId, 
-                     ['old' => $oldVehicle], 
-                     ['new' => ['vehicle_number' => $vehicleNumber, 'status' => $status]]);
+            $hasOrders = $db->queryOne(
+                "SELECT COUNT(*) as count FROM orders WHERE vehicle_id = ?",
+                [$vehicleId]
+            );
             
-            $success = 'تم تحديث السيارة بنجاح';
+            $hasTransfers = $db->queryOne(
+                "SELECT COUNT(*) as count FROM warehouse_transfers WHERE vehicle_id = ? OR to_vehicle_id = ?",
+                [$vehicleId, $vehicleId]
+            );
             
-            // Redirect بعد النجاح
-            header('Location: ' . getDashboardUrl('manager') . '?page=vehicles&id=' . $vehicleId . '&success=' . urlencode($success));
-            exit;
+            if (($hasInventory && $hasInventory['count'] > 0) || 
+                ($hasOrders && $hasOrders['count'] > 0) || 
+                ($hasTransfers && $hasTransfers['count'] > 0)) {
+                $error = 'لا يمكن حذف السيارة لأنها مرتبطة بمخزون أو طلبات أو نقلات. يمكنك تغيير حالة السيارة إلى "غير نشطة" بدلاً من ذلك.';
+            } else {
+                $vehicle = $db->queryOne("SELECT vehicle_number FROM vehicles WHERE id = ?", [$vehicleId]);
+                
+                if ($vehicle) {
+                    // حذف مخزن السيارة إذا كان موجوداً
+                    $warehouse = $db->queryOne("SELECT id FROM warehouses WHERE vehicle_id = ? AND warehouse_type = 'vehicle'", [$vehicleId]);
+                    if ($warehouse) {
+                        $db->execute("DELETE FROM warehouses WHERE id = ?", [$warehouse['id']]);
+                    }
+                    
+                    // حذف السيارة
+                    $db->execute("DELETE FROM vehicles WHERE id = ?", [$vehicleId]);
+                    
+                    logAudit($currentUser['id'], 'delete_vehicle', 'vehicle', $vehicleId, null, [
+                        'vehicle_number' => $vehicle['vehicle_number']
+                    ]);
+                    
+                    $success = 'تم حذف السيارة بنجاح';
+                    
+                    header('Location: ' . getDashboardUrl('manager') . '?page=vehicles&success=' . urlencode($success));
+                    exit;
+                } else {
+                    $error = 'السيارة غير موجودة';
+                }
+            }
         }
     }
 }
@@ -283,10 +357,20 @@ if (isset($_GET['id'])) {
                                            class="btn btn-info" title="عرض/تعديل">
                                             <i class="bi bi-eye"></i>
                                         </a>
+                                        <button type="button" class="btn btn-warning" 
+                                                onclick="openEditModal(<?php echo htmlspecialchars(json_encode($vehicle), ENT_QUOTES); ?>)"
+                                                title="تعديل سريع">
+                                            <i class="bi bi-pencil"></i>
+                                        </button>
                                         <a href="<?php echo getDashboardUrl('manager'); ?>?page=vehicle_inventory&vehicle_id=<?php echo $vehicle['id']; ?>" 
                                            class="btn btn-primary" title="المخزون">
                                             <i class="bi bi-box-seam"></i>
                                         </a>
+                                        <button type="button" class="btn btn-danger" 
+                                                onclick="confirmDelete(<?php echo $vehicle['id']; ?>, '<?php echo htmlspecialchars($vehicle['vehicle_number'], ENT_QUOTES); ?>')"
+                                                title="حذف">
+                                            <i class="bi bi-trash"></i>
+                                        </button>
                                     </div>
                                 </td>
                             </tr>

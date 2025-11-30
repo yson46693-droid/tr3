@@ -847,23 +847,26 @@ if (ob_get_level() > 0) {
                 </div>
                 
                 <!-- User Avatar -->
-                <?php if (isLoggedIn()): ?>
+                <?php if (isLoggedIn() && $currentUser): ?>
                 <div class="topbar-dropdown">
                     <div class="topbar-user dropdown-toggle" id="userDropdown" data-bs-toggle="dropdown" role="button">
                         <?php if (isset($currentUser['profile_photo']) && !empty($currentUser['profile_photo'])): ?>
                             <img src="<?php echo htmlspecialchars($currentUser['profile_photo']); ?>" alt="Profile">
                         <?php else: ?>
-                            <?php echo htmlspecialchars(mb_substr($currentUser['username'], 0, 1)); ?>
+                            <?php echo htmlspecialchars(mb_substr($currentUser['username'] ?? '', 0, 1)); ?>
                         <?php endif; ?>
                     </div>
                     <ul class="dropdown-menu dropdown-menu-end" aria-labelledby="userDropdown">
                         <li class="px-3 py-2">
-                            <div class="fw-bold"><?php echo htmlspecialchars($currentUser['username']); ?></div>
-                            <small class="text-muted"><?php echo isset($lang['role_' . $currentUser['role']]) ? $lang['role_' . $currentUser['role']] : ucfirst($currentUser['role']); ?></small>
+                            <div class="fw-bold"><?php echo htmlspecialchars($currentUser['username'] ?? ''); ?></div>
+                            <small class="text-muted"><?php 
+                                $userRole = $currentUser['role'] ?? '';
+                                echo isset($lang['role_' . $userRole]) ? $lang['role_' . $userRole] : ($userRole ? ucfirst($userRole) : ''); 
+                            ?></small>
                         </li>
                         <li><hr class="dropdown-divider"></li>
                         <li><a class="dropdown-item" href="<?php echo getRelativeUrl('profile.php'); ?>"><i class="bi bi-person me-2"></i><?php echo isset($lang['profile']) ? $lang['profile'] : 'الملف الشخصي'; ?></a></li>
-                        <?php if ($currentUser['role'] !== 'manager'): ?>
+                        <?php if (($currentUser['role'] ?? '') !== 'manager'): ?>
                         <li><a class="dropdown-item" href="<?php echo getRelativeUrl('attendance.php'); ?>"><i class="bi bi-calendar-check me-2"></i><?php echo isset($lang['attendance']) ? $lang['attendance'] : 'الحضور والانصراف'; ?></a></li>
                         <?php endif; ?>
                         <li><hr class="dropdown-divider"></li>
