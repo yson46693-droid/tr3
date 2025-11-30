@@ -78,6 +78,11 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         
         if ($vehicleId > 0) {
             $oldVehicle = $db->queryOne("SELECT * FROM vehicles WHERE id = ?", [$vehicleId]);
+            $oldDriverId = isset($oldVehicle['driver_id']) ? (int)$oldVehicle['driver_id'] : null;
+            
+            // تحذير أمني: عند تغيير السائق، التأكد من أن عملاء المندوب القديم لن تظهر للمندوب الجديد
+            // العملاء مرتبطين بـ created_by و rep_id في جدول customers وليس بـ driver_id
+            // لذلك تغيير السائق لا يؤثر على عملاء المندوب القديم
             
             // التحقق من عدم تكرار رقم السيارة إذا تغير
             if ($oldVehicle && $oldVehicle['vehicle_number'] !== $vehicleNumber) {
@@ -100,6 +105,11 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     $success = 'تم تحديث السيارة بنجاح';
                 }
             } else {
+                // فحص أمني: التأكد من عدم تغيير عملاء المندوب القديم
+                // العملاء مرتبطين بـ created_by و rep_id في جدول customers وليس بـ driver_id
+                // لذلك تغيير السائق لا يؤثر على عملاء المندوب القديم
+                // لا يتم تحديث rep_id أو created_by للعملاء عند تغيير السائق
+                
                 $db->execute(
                     "UPDATE vehicles 
                      SET vehicle_number = ?, vehicle_type = ?, model = ?, year = ?, 
@@ -108,9 +118,24 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     [$vehicleNumber, $vehicleType, $model, $year, $driverId, $status, $notes, $vehicleId]
                 );
                 
+                // تسجيل في سجل التدقيق مع معلومات السائق القديم والجديد
+                $auditData = [
+                    'old' => [
+                        'driver_id' => $oldDriverId,
+                        'vehicle_number' => $oldVehicle['vehicle_number'] ?? null,
+                        'status' => $oldVehicle['status'] ?? null
+                    ],
+                    'new' => [
+                        'driver_id' => $driverId,
+                        'vehicle_number' => $vehicleNumber,
+                        'status' => $status
+                    ],
+                    'note' => 'تغيير السائق لا يؤثر على عملاء المندوب القديم - العملاء مرتبطين بـ created_by و rep_id وليس بـ driver_id'
+                ];
+                
                 logAudit($currentUser['id'], 'update_vehicle', 'vehicle', $vehicleId, 
-                         ['old' => $oldVehicle], 
-                         ['new' => ['vehicle_number' => $vehicleNumber, 'status' => $status]]);
+                         $auditData['old'], 
+                         $auditData['new']);
                 
                 $success = 'تم تحديث السيارة بنجاح';
             }

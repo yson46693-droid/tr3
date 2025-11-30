@@ -885,12 +885,15 @@ $countParams = [];
 $statsParams = [];
 
 if ($isSalesUser) {
+    // فحص أمني: العملاء يظهرون فقط للمندوب الذي أنشأهم (created_by)
+    // وليس بناءً على السائق أو السيارة - هذا يضمن عدم ظهور عملاء المندوب القديم للمندوب الجديد
     $sql .= " AND c.created_by = ?";
     $countSql .= " AND created_by = ?";
     $statsSql .= " AND created_by = ?";
-    $params[] = $currentUser['id'];
-    $countParams[] = $currentUser['id'];
-    $statsParams[] = $currentUser['id'];
+    $currentUserId = isset($currentUser['id']) ? (int)$currentUser['id'] : 0;
+    $params[] = $currentUserId;
+    $countParams[] = $currentUserId;
+    $statsParams[] = $currentUserId;
 }
 
 if ($debtStatus === 'debtor') {

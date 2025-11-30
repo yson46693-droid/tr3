@@ -138,15 +138,19 @@ $filters = array_filter($filters, function($value) {
 // إذا كان المستخدم مندوب مبيعات، عرض فقط سيارته
 $defaultFromWarehouseId = null; // مخزن افتراضي للمخزن المصدر في نموذج النقل
 if ($currentUser['role'] === 'sales') {
-    $userVehicle = $db->queryOne("SELECT id FROM vehicles WHERE driver_id = ?", [$currentUser['id']]);
+    $userVehicle = $db->queryOne("SELECT id FROM vehicles WHERE driver_id = ? AND status = 'active'", [$currentUser['id']]);
     if ($userVehicle) {
         $filters['vehicle_id'] = $userVehicle['id'];
         
-        // الحصول على مخزن سيارة المندوب لاستخدامه كقيمة افتراضية في نموذج النقل
+        // الحصول على مخزن سيارة المندوب لاستخدامه كقيمة افتراضية في نموذج النقل (النشط فقط)
         $userVehicleWarehouse = $db->queryOne(
             "SELECT w.id, w.name 
              FROM warehouses w 
-             WHERE w.vehicle_id = ? AND w.warehouse_type = 'vehicle' AND w.status = 'active' 
+             INNER JOIN vehicles v ON w.vehicle_id = v.id
+             WHERE w.vehicle_id = ? 
+             AND w.warehouse_type = 'vehicle' 
+             AND w.status = 'active'
+             AND v.status = 'active'
              LIMIT 1",
             [$userVehicle['id']]
         );
@@ -204,13 +208,41 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             } elseif ($fromWarehouseId <= 0 || $toWarehouseId <= 0) {
                 $error = 'يجب تحديد المخزن المصدر والمخزن الهدف';
             } else {
-                // تسجيل العناصر قبل الإرسال للمساعدة في التصحيح
-                error_log('Transfer items from sales: ' . json_encode($items));
-            $result = createWarehouseTransfer($fromWarehouseId, $toWarehouseId, $transferDate, $items, $reason, $notes);
-            if ($result['success']) {
-                $success = 'تم إنشاء طلب النقل بنجاح: ' . $result['transfer_number'];
-            } else {
-                $error = $result['message'];
+                // التحقق من أن المخازن نشطة وأن السيارات المرتبطة نشطة أيضاً
+                $fromWarehouse = $db->queryOne(
+                    "SELECT w.id, w.name, w.warehouse_type, v.status as vehicle_status
+                     FROM warehouses w
+                     LEFT JOIN vehicles v ON w.vehicle_id = v.id AND w.warehouse_type = 'vehicle'
+                     WHERE w.id = ? 
+                     AND w.status = 'active'
+                     AND (w.warehouse_type != 'vehicle' OR (w.warehouse_type = 'vehicle' AND v.status = 'active' AND v.id IS NOT NULL))",
+                    [$fromWarehouseId]
+                );
+                
+                $toWarehouse = $db->queryOne(
+                    "SELECT w.id, w.name, w.warehouse_type, v.status as vehicle_status
+                     FROM warehouses w
+                     LEFT JOIN vehicles v ON w.vehicle_id = v.id AND w.warehouse_type = 'vehicle'
+                     WHERE w.id = ? 
+                     AND w.status = 'active'
+                     AND (w.warehouse_type != 'vehicle' OR (w.warehouse_type = 'vehicle' AND v.status = 'active' AND v.id IS NOT NULL))",
+                    [$toWarehouseId]
+                );
+                
+                if (!$fromWarehouse) {
+                    $error = 'المخزن المصدر غير موجود أو غير نشط أو السيارة المرتبطة غير نشطة.';
+                } elseif (!$toWarehouse) {
+                    $error = 'المخزن الهدف غير موجود أو غير نشط أو السيارة المرتبطة غير نشطة.';
+                } else {
+                    // تسجيل العناصر قبل الإرسال للمساعدة في التصحيح
+                    error_log('Transfer items from sales: ' . json_encode($items));
+                    $result = createWarehouseTransfer($fromWarehouseId, $toWarehouseId, $transferDate, $items, $reason, $notes);
+                    if ($result['success']) {
+                        $success = 'تم إنشاء طلب النقل بنجاح: ' . $result['transfer_number'];
+                    } else {
+                        $error = $result['message'];
+                    }
+                }
             }
         }
     } elseif ($action === 'create_vehicle') {
@@ -269,9 +301,26 @@ if ($canManageVehicles) {
 }
 
 // الحصول على المخازن
-$warehouses = $db->query("SELECT id, name, warehouse_type FROM warehouses WHERE status = 'active' ORDER BY name");
+// الحصول على جميع المخازن النشطة مع التأكد من أن السيارات المرتبطة نشطة أيضاً
+$warehouses = $db->query(
+    "SELECT w.id, w.name, w.warehouse_type 
+     FROM warehouses w
+     LEFT JOIN vehicles v ON w.vehicle_id = v.id AND w.warehouse_type = 'vehicle'
+     WHERE w.status = 'active' 
+     AND (w.warehouse_type != 'vehicle' OR (w.warehouse_type = 'vehicle' AND v.status = 'active' AND v.id IS NOT NULL))
+     ORDER BY w.name"
+);
 $mainWarehouses = $db->query("SELECT id, name FROM warehouses WHERE warehouse_type = 'main' AND status = 'active' ORDER BY name");
-$vehicleWarehouses = $db->query("SELECT id, name, vehicle_id FROM warehouses WHERE warehouse_type = 'vehicle' AND status = 'active' ORDER BY name");
+// الحصول على مخازن السيارات النشطة فقط
+$vehicleWarehouses = $db->query(
+    "SELECT w.id, w.name, w.vehicle_id 
+     FROM warehouses w
+     INNER JOIN vehicles v ON w.vehicle_id = v.id
+     WHERE w.warehouse_type = 'vehicle' 
+     AND w.status = 'active'
+     AND v.status = 'active'
+     ORDER BY w.name"
+);
 
 // الحصول على المنتجات
 $products = $db->query("SELECT id, name, quantity, unit_price FROM products WHERE status = 'active' ORDER BY name");

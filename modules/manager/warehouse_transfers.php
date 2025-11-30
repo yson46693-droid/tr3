@@ -95,12 +95,17 @@ if (isset($_GET['ajax']) && $_GET['ajax'] === 'get_warehouse_products' && isset(
     
     try {
         $warehouse = $db->queryOne(
-            "SELECT id, warehouse_type, vehicle_id FROM warehouses WHERE id = ? AND status = 'active'",
+            "SELECT w.id, w.warehouse_type, w.vehicle_id, v.status as vehicle_status
+             FROM warehouses w
+             LEFT JOIN vehicles v ON w.vehicle_id = v.id AND w.warehouse_type = 'vehicle'
+             WHERE w.id = ? 
+             AND w.status = 'active'
+             AND (w.warehouse_type != 'vehicle' OR (w.warehouse_type = 'vehicle' AND v.status = 'active' AND v.id IS NOT NULL))",
             [$warehouseId]
         );
         
         if (!$warehouse) {
-            echo json_encode(['success' => false, 'message' => 'المخزن غير موجود'], JSON_UNESCAPED_UNICODE);
+            echo json_encode(['success' => false, 'message' => 'المخزن غير موجود أو السيارة غير نشطة'], JSON_UNESCAPED_UNICODE);
             exit;
         }
         
@@ -324,14 +329,19 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         if ($toWarehouseId <= 0 || empty($items)) {
             $_SESSION['warehouse_transfer_error'] = 'يجب تحديد المخزن الهدف وإضافة منتج واحد على الأقل.';
         } else {
-            // التحقق من أن المخزن الهدف هو مخزن سيارة
+            // التحقق من أن المخزن الهدف هو مخزن سيارة نشط
             $toWarehouse = $db->queryOne(
-                "SELECT id, name, warehouse_type FROM warehouses WHERE id = ? AND status = 'active'",
+                "SELECT w.id, w.name, w.warehouse_type, v.status as vehicle_status
+                 FROM warehouses w
+                 LEFT JOIN vehicles v ON w.vehicle_id = v.id AND w.warehouse_type = 'vehicle'
+                 WHERE w.id = ? 
+                 AND w.status = 'active'
+                 AND (w.warehouse_type != 'vehicle' OR (w.warehouse_type = 'vehicle' AND v.status = 'active' AND v.id IS NOT NULL))",
                 [$toWarehouseId]
             );
             
             if (!$toWarehouse || $toWarehouse['warehouse_type'] !== 'vehicle') {
-                $_SESSION['warehouse_transfer_error'] = 'يجب تحديد مخزن سيارة كهدف للنقل.';
+                $_SESSION['warehouse_transfer_error'] = 'يجب تحديد مخزن سيارة نشط كهدف للنقل.';
             } else {
                 try {
                     $result = createWarehouseTransfer(
@@ -412,9 +422,35 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             if (empty($items)) {
                 $_SESSION['warehouse_transfer_error'] = 'يجب إضافة منتج واحد على الأقل.';
             } else {
-                try {
-                    $fromWarehouseName = $db->queryOne("SELECT name FROM warehouses WHERE id = ?", [$fromWarehouseId])['name'] ?? 'مخزن';
-                    $toWarehouseName = $db->queryOne("SELECT name FROM warehouses WHERE id = ?", [$toWarehouseId])['name'] ?? 'مخزن';
+                // التحقق من أن المخازن نشطة وأن السيارات المرتبطة نشطة أيضاً
+                $fromWarehouse = $db->queryOne(
+                    "SELECT w.id, w.name, w.warehouse_type, v.status as vehicle_status
+                     FROM warehouses w
+                     LEFT JOIN vehicles v ON w.vehicle_id = v.id AND w.warehouse_type = 'vehicle'
+                     WHERE w.id = ? 
+                     AND w.status = 'active'
+                     AND (w.warehouse_type != 'vehicle' OR (w.warehouse_type = 'vehicle' AND v.status = 'active' AND v.id IS NOT NULL))",
+                    [$fromWarehouseId]
+                );
+                
+                $toWarehouse = $db->queryOne(
+                    "SELECT w.id, w.name, w.warehouse_type, v.status as vehicle_status
+                     FROM warehouses w
+                     LEFT JOIN vehicles v ON w.vehicle_id = v.id AND w.warehouse_type = 'vehicle'
+                     WHERE w.id = ? 
+                     AND w.status = 'active'
+                     AND (w.warehouse_type != 'vehicle' OR (w.warehouse_type = 'vehicle' AND v.status = 'active' AND v.id IS NOT NULL))",
+                    [$toWarehouseId]
+                );
+                
+                if (!$fromWarehouse) {
+                    $_SESSION['warehouse_transfer_error'] = 'المخزن المصدر غير موجود أو غير نشط أو السيارة المرتبطة غير نشطة.';
+                } elseif (!$toWarehouse) {
+                    $_SESSION['warehouse_transfer_error'] = 'المخزن الهدف غير موجود أو غير نشط أو السيارة المرتبطة غير نشطة.';
+                } else {
+                    try {
+                        $fromWarehouseName = $fromWarehouse['name'] ?? 'مخزن';
+                        $toWarehouseName = $toWarehouse['name'] ?? 'مخزن';
                     
                     $result = createWarehouseTransfer(
                         $fromWarehouseId,
@@ -443,6 +479,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 } catch (Exception $e) {
                     error_log('Error creating general transfer: ' . $e->getMessage());
                     $_SESSION['warehouse_transfer_error'] = 'حدث خطأ أثناء إنشاء طلب النقل: ' . $e->getMessage();
+                }
                 }
             }
         }
@@ -478,18 +515,20 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         $reason = trim($_POST['reason'] ?? '');
         $notes = trim($_POST['notes'] ?? '');
         
-        // الحصول على سيارة المندوب ومخزنها
+        // الحصول على سيارة المندوب ومخزنها (النشطة فقط)
         $vehicle = $db->queryOne(
             "SELECT v.id as vehicle_id, w.id as warehouse_id, u.full_name as sales_rep_name
              FROM vehicles v
-             LEFT JOIN warehouses w ON w.vehicle_id = v.id AND w.warehouse_type = 'vehicle'
+             LEFT JOIN warehouses w ON w.vehicle_id = v.id AND w.warehouse_type = 'vehicle' AND w.status = 'active'
              LEFT JOIN users u ON v.driver_id = u.id
-             WHERE v.driver_id = ? AND v.status = 'active'",
+             WHERE v.driver_id = ? 
+             AND v.status = 'active'
+             AND w.id IS NOT NULL",
             [$salesRepId]
         );
         
         if (!$vehicle || empty($vehicle['warehouse_id'])) {
-            $_SESSION['warehouse_transfer_error'] = 'لم يتم العثور على مخزن سيارة للمندوب المحدد.';
+            $_SESSION['warehouse_transfer_error'] = 'لم يتم العثور على مخزن سيارة نشط للمندوب المحدد.';
         } else {
             $fromWarehouseId = $vehicle['warehouse_id'];
             $salesRepName = $vehicle['sales_rep_name'] ?? 'مندوب';
@@ -721,15 +760,25 @@ $totalTransfers = $totalResult['total'] ?? 0;
 $totalPages = ceil($totalTransfers / $perPage);
 $transfers = getWarehouseTransfers($filters, $perPage, $offset);
 
-$warehouses = $db->query("SELECT id, name, warehouse_type FROM warehouses WHERE status = 'active' ORDER BY name");
+// الحصول على جميع المخازن النشطة مع التأكد من أن السيارات المرتبطة نشطة أيضاً
+$warehouses = $db->query(
+    "SELECT w.id, w.name, w.warehouse_type 
+     FROM warehouses w
+     LEFT JOIN vehicles v ON w.vehicle_id = v.id AND w.warehouse_type = 'vehicle'
+     WHERE w.status = 'active' 
+     AND (w.warehouse_type != 'vehicle' OR (w.warehouse_type = 'vehicle' AND v.status = 'active' AND v.id IS NOT NULL))
+     ORDER BY w.name"
+);
 
-// الحصول على مخازن السيارات فقط
+// الحصول على مخازن السيارات فقط (النشطة فقط)
 $vehicleWarehouses = $db->query(
     "SELECT w.id, w.name, v.vehicle_number, u.full_name as driver_name
      FROM warehouses w
-     LEFT JOIN vehicles v ON w.vehicle_id = v.id
+     INNER JOIN vehicles v ON w.vehicle_id = v.id
      LEFT JOIN users u ON v.driver_id = u.id
-     WHERE w.warehouse_type = 'vehicle' AND w.status = 'active'
+     WHERE w.warehouse_type = 'vehicle' 
+     AND w.status = 'active' 
+     AND v.status = 'active'
      ORDER BY w.name"
 );
 
