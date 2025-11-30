@@ -362,6 +362,7 @@ function fetchCustomers(search = '') {
 
 function displayCustomerDropdown(customers) {
     const dropdown = document.getElementById('customerDropdown');
+    if (!dropdown) return;
     
     if (customers.length === 0) {
         dropdown.innerHTML = '<div class="list-group-item">لا توجد نتائج</div>';
@@ -394,13 +395,20 @@ function displayCustomerDropdown(customers) {
 
 function selectCustomer(customerId, customerName, debt, credit) {
     selectedCustomerId = customerId;
-    document.getElementById('customerId').value = customerId;
-    document.getElementById('customerSearch').value = customerName;
-    document.getElementById('customerDropdown').style.display = 'none';
+    
+    const customerIdInput = document.getElementById('customerId');
+    const customerSearchInput = document.getElementById('customerSearch');
+    const customerDropdown = document.getElementById('customerDropdown');
+    
+    if (customerIdInput) customerIdInput.value = customerId;
+    if (customerSearchInput) customerSearchInput.value = customerName;
+    if (customerDropdown) customerDropdown.style.display = 'none';
     
     const selectedDiv = document.getElementById('selectedCustomer');
     const nameDiv = document.getElementById('selectedCustomerName');
     const infoDiv = document.getElementById('selectedCustomerInfo');
+    
+    if (!selectedDiv || !nameDiv || !infoDiv) return;
     
     nameDiv.textContent = customerName;
     const balanceText = debt > 0 
@@ -422,6 +430,8 @@ function loadPurchaseHistory(customerId) {
     const tableDiv = document.getElementById('purchaseHistoryTable');
     const sectionDiv = document.getElementById('exchangeSections');
     
+    if (!loadingDiv || !tableDiv || !sectionDiv) return;
+    
     loadingDiv.style.display = 'block';
     tableDiv.innerHTML = '';
     sectionDiv.style.display = 'block';
@@ -434,24 +444,25 @@ function loadPurchaseHistory(customerId) {
     })
     .then(response => response.json())
     .then(data => {
-        loadingDiv.style.display = 'none';
+        if (loadingDiv) loadingDiv.style.display = 'none';
         
         if (data.success) {
             purchaseHistory = data.purchase_history;
             displayPurchaseHistory(purchaseHistory);
         } else {
-            tableDiv.innerHTML = '<div class="alert alert-warning">' + (data.message || 'لا توجد مشتريات') + '</div>';
+            if (tableDiv) tableDiv.innerHTML = '<div class="alert alert-warning">' + (data.message || 'لا توجد مشتريات') + '</div>';
         }
     })
     .catch(error => {
-        loadingDiv.style.display = 'none';
-        tableDiv.innerHTML = '<div class="alert alert-danger">حدث خطأ أثناء تحميل سجل المشتريات</div>';
+        if (loadingDiv) loadingDiv.style.display = 'none';
+        if (tableDiv) tableDiv.innerHTML = '<div class="alert alert-danger">حدث خطأ أثناء تحميل سجل المشتريات</div>';
         console.error('Error:', error);
     });
 }
 
 function displayPurchaseHistory(history) {
     const tableDiv = document.getElementById('purchaseHistoryTable');
+    if (!tableDiv) return;
     
     if (history.length === 0) {
         tableDiv.innerHTML = '<div class="alert alert-info">لا توجد مشتريات متاحة</div>';
@@ -498,6 +509,8 @@ function loadCarInventory() {
     const loadingDiv = document.getElementById('carInventoryLoading');
     const tableDiv = document.getElementById('carInventoryTable');
     
+    if (!loadingDiv || !tableDiv) return;
+    
     loadingDiv.style.display = 'block';
     tableDiv.innerHTML = '';
     
@@ -509,24 +522,25 @@ function loadCarInventory() {
     })
     .then(response => response.json())
     .then(data => {
-        loadingDiv.style.display = 'none';
+        if (loadingDiv) loadingDiv.style.display = 'none';
         
         if (data.success) {
             carInventory = data.inventory;
             displayCarInventory(carInventory);
-            } else {
-            tableDiv.innerHTML = '<div class="alert alert-warning">' + (data.message || 'لا يوجد مخزون') + '</div>';
+        } else {
+            if (tableDiv) tableDiv.innerHTML = '<div class="alert alert-warning">' + (data.message || 'لا يوجد مخزون') + '</div>';
         }
     })
     .catch(error => {
-        loadingDiv.style.display = 'none';
-        tableDiv.innerHTML = '<div class="alert alert-danger">حدث خطأ أثناء تحميل مخزون السيارة</div>';
+        if (loadingDiv) loadingDiv.style.display = 'none';
+        if (tableDiv) tableDiv.innerHTML = '<div class="alert alert-danger">حدث خطأ أثناء تحميل مخزون السيارة</div>';
         console.error('Error:', error);
     });
 }
 
 function displayCarInventory(inventory) {
     const tableDiv = document.getElementById('carInventoryTable');
+    if (!tableDiv) return;
     
     if (inventory.length === 0) {
         tableDiv.innerHTML = '<div class="alert alert-info">لا يوجد مخزون متاح</div>';
@@ -650,52 +664,56 @@ function updateSelectedItems() {
     const returnListDiv = document.getElementById('selectedReturnItemsList');
     const returnSection = document.getElementById('selectedReturnItemsSection');
     
-    if (selectedReturnItems.length === 0) {
-        returnSection.style.display = 'none';
-        returnListDiv.innerHTML = '';
-    } else {
-        returnSection.style.display = 'block';
-        let html = '';
-        selectedReturnItems.forEach((item, index) => {
-            html += `
-                <div class="list-group-item d-flex justify-content-between align-items-center">
-                    <div>
-                        <strong>${item.product_name}</strong><br>
-                        <small>الكمية: ${item.quantity.toFixed(2)} | السعر: ${item.unit_price.toFixed(2)} ج.م | الإجمالي: ${item.total_price.toFixed(2)} ج.م</small>
+    if (returnListDiv && returnSection) {
+        if (selectedReturnItems.length === 0) {
+            returnSection.style.display = 'none';
+            returnListDiv.innerHTML = '';
+        } else {
+            returnSection.style.display = 'block';
+            let html = '';
+            selectedReturnItems.forEach((item, index) => {
+                html += `
+                    <div class="list-group-item d-flex justify-content-between align-items-center">
+                        <div>
+                            <strong>${item.product_name}</strong><br>
+                            <small>الكمية: ${item.quantity.toFixed(2)} | السعر: ${item.unit_price.toFixed(2)} ج.م | الإجمالي: ${item.total_price.toFixed(2)} ج.م</small>
+                        </div>
+                        <button class="btn btn-sm btn-danger" onclick="removeReturnItem(${index})">
+                            <i class="bi bi-trash"></i>
+                        </button>
                     </div>
-                    <button class="btn btn-sm btn-danger" onclick="removeReturnItem(${index})">
-                        <i class="bi bi-trash"></i>
-                    </button>
-                </div>
-            `;
-        });
-        returnListDiv.innerHTML = html;
+                `;
+            });
+            returnListDiv.innerHTML = html;
+        }
     }
     
     // Update replacement items list
     const replacementListDiv = document.getElementById('selectedReplacementItemsList');
     const replacementSection = document.getElementById('selectedReplacementItemsSection');
     
-    if (selectedReplacementItems.length === 0) {
-        replacementSection.style.display = 'none';
-        replacementListDiv.innerHTML = '';
-    } else {
-        replacementSection.style.display = 'block';
-        let html = '';
-        selectedReplacementItems.forEach((item, index) => {
-            html += `
-                <div class="list-group-item d-flex justify-content-between align-items-center">
-                    <div>
-                        <strong>${item.product_name}</strong><br>
-                        <small>الكمية: ${item.quantity.toFixed(2)} | السعر: ${item.unit_price.toFixed(2)} ج.م | الإجمالي: ${item.total_price.toFixed(2)} ج.م</small>
+    if (replacementListDiv && replacementSection) {
+        if (selectedReplacementItems.length === 0) {
+            replacementSection.style.display = 'none';
+            replacementListDiv.innerHTML = '';
+        } else {
+            replacementSection.style.display = 'block';
+            let html = '';
+            selectedReplacementItems.forEach((item, index) => {
+                html += `
+                    <div class="list-group-item d-flex justify-content-between align-items-center">
+                        <div>
+                            <strong>${item.product_name}</strong><br>
+                            <small>الكمية: ${item.quantity.toFixed(2)} | السعر: ${item.unit_price.toFixed(2)} ج.م | الإجمالي: ${item.total_price.toFixed(2)} ج.م</small>
+                        </div>
+                        <button class="btn btn-sm btn-danger" onclick="removeReplacementItem(${index})">
+                            <i class="bi bi-trash"></i>
+                        </button>
                     </div>
-                    <button class="btn btn-sm btn-danger" onclick="removeReplacementItem(${index})">
-                        <i class="bi bi-trash"></i>
-                    </button>
-                </div>
-            `;
-        });
-        replacementListDiv.innerHTML = html;
+                `;
+            });
+            replacementListDiv.innerHTML = html;
+        }
     }
 }
 
@@ -716,13 +734,20 @@ function calculatePriceDifference() {
     const newValue = selectedReplacementItems.reduce((sum, item) => sum + item.total_price, 0);
     const difference = newValue - oldValue;
     
-    document.getElementById('oldValueDisplay').textContent = oldValue.toFixed(2) + ' ج.م';
-    document.getElementById('newValueDisplay').textContent = newValue.toFixed(2) + ' ج.م';
-    
+    const oldValueDisplay = document.getElementById('oldValueDisplay');
+    const newValueDisplay = document.getElementById('newValueDisplay');
     const differenceDiv = document.getElementById('differenceDisplay');
     const noteDiv = document.getElementById('differenceNote');
     const priceSection = document.getElementById('priceDifferenceSection');
     const submitBtn = document.getElementById('submitExchangeRequest');
+    
+    // Check if all required elements exist
+    if (!oldValueDisplay || !newValueDisplay || !differenceDiv || !noteDiv || !priceSection || !submitBtn) {
+        return; // Elements not ready yet
+    }
+    
+    oldValueDisplay.textContent = oldValue.toFixed(2) + ' ج.م';
+    newValueDisplay.textContent = newValue.toFixed(2) + ' ج.م';
     
     if (selectedReturnItems.length > 0 && selectedReplacementItems.length > 0) {
         priceSection.style.display = 'block';
@@ -759,11 +784,6 @@ document.addEventListener('click', function(event) {
     if (dropdown && searchInput && !dropdown.contains(event.target) && event.target !== searchInput) {
         dropdown.style.display = 'none';
     }
-});
-
-// Load recent requests on page load
-document.addEventListener('DOMContentLoaded', function() {
-    loadRecentRequests();
 });
 
 function loadRecentRequests() {
