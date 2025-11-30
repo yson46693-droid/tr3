@@ -1880,3 +1880,6 @@ if (addCompanyOrderModalElement && typeof bootstrap !== 'undefined') {
 })();
 </script>
 
+<?php
+// نهاية الملف
+?>
