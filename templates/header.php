@@ -38,7 +38,7 @@ if (!isset($lang) || empty($lang)) {
     $lang = isset($translations) ? $translations : [];
 }
 $currentUser = getCurrentUser();
-$currentUserRole = strtolower((string) ($currentUser['role'] ?? ''));
+$currentUserRole = strtolower((string) (isset($currentUser['role']) ? $currentUser['role'] : ''));
 if ($currentUser && function_exists('handleAttendanceRemindersForUser')) {
     handleAttendanceRemindersForUser($currentUser);
 }
@@ -67,7 +67,7 @@ if (function_exists('resetWarningCountsForNewMonth')) {
 
 if ($currentUser && $currentUserRole === 'sales') {
     try {
-        notifyTodayPaymentSchedules((int) $currentUser['id']);
+        notifyTodayPaymentSchedules((int) (isset($currentUser['id']) ? $currentUser['id'] : 0));
     } catch (Throwable $paymentNotificationError) {
         error_log('Sales payment notification error: ' . $paymentNotificationError->getMessage());
     }
@@ -740,7 +740,7 @@ if (ob_get_level() > 0) {
     </script>
 </head>
 <body class="dashboard-body"
-      data-user-role="<?php echo htmlspecialchars($currentUser['role'] ?? ''); ?>"
+      data-user-role="<?php echo htmlspecialchars(isset($currentUser['role']) ? $currentUser['role'] : ''); ?>"
       data-user-id="<?php echo isset($currentUser['id']) ? (int) $currentUser['id'] : 0; ?>">
     <!-- 🎬 PWA Splash Screen -->
     <?php if (!defined('ENABLE_PAGE_LOADER') || ENABLE_PAGE_LOADER): ?>
@@ -792,7 +792,7 @@ if (ob_get_level() > 0) {
                     <?php 
                     $pageTitleText = isset($pageTitle) ? $pageTitle : (isset($lang['dashboard']) ? $lang['dashboard'] : 'لوحة التحكم');
                     ?>
-                    <a href="<?php echo getDashboardUrl($currentUser['role'] ?? 'accountant'); ?>"><?php echo APP_NAME; ?></a>
+                    <a href="<?php echo getDashboardUrl(isset($currentUser['role']) ? $currentUser['role'] : 'accountant'); ?>"><?php echo APP_NAME; ?></a>
                     <span class="mx-2">/</span>
                     <span><?php echo $pageTitleText; ?></span>
                 </div>
@@ -853,20 +853,20 @@ if (ob_get_level() > 0) {
                         <?php if (isset($currentUser['profile_photo']) && !empty($currentUser['profile_photo'])): ?>
                             <img src="<?php echo htmlspecialchars($currentUser['profile_photo']); ?>" alt="Profile">
                         <?php else: ?>
-                            <?php echo htmlspecialchars(mb_substr($currentUser['username'] ?? '', 0, 1)); ?>
+                            <?php echo htmlspecialchars(mb_substr(isset($currentUser['username']) ? $currentUser['username'] : '', 0, 1)); ?>
                         <?php endif; ?>
                     </div>
                     <ul class="dropdown-menu dropdown-menu-end" aria-labelledby="userDropdown">
                         <li class="px-3 py-2">
-                            <div class="fw-bold"><?php echo htmlspecialchars($currentUser['username'] ?? ''); ?></div>
+                            <div class="fw-bold"><?php echo htmlspecialchars(isset($currentUser['username']) ? $currentUser['username'] : ''); ?></div>
                             <small class="text-muted"><?php 
-                                $userRole = $currentUser['role'] ?? '';
+                                $userRole = isset($currentUser['role']) ? $currentUser['role'] : '';
                                 echo isset($lang['role_' . $userRole]) ? $lang['role_' . $userRole] : ($userRole ? ucfirst($userRole) : ''); 
                             ?></small>
                         </li>
                         <li><hr class="dropdown-divider"></li>
                         <li><a class="dropdown-item" href="<?php echo getRelativeUrl('profile.php'); ?>"><i class="bi bi-person me-2"></i><?php echo isset($lang['profile']) ? $lang['profile'] : 'الملف الشخصي'; ?></a></li>
-                        <?php if (($currentUser['role'] ?? '') !== 'manager'): ?>
+                        <?php if ((isset($currentUser['role']) ? $currentUser['role'] : '') !== 'manager'): ?>
                         <li><a class="dropdown-item" href="<?php echo getRelativeUrl('attendance.php'); ?>"><i class="bi bi-calendar-check me-2"></i><?php echo isset($lang['attendance']) ? $lang['attendance'] : 'الحضور والانصراف'; ?></a></li>
                         <?php endif; ?>
                         <li><hr class="dropdown-divider"></li>
