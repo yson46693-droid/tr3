@@ -123,6 +123,11 @@ document.addEventListener('DOMContentLoaded', function () {
     var editModal = document.getElementById('editCustomerModal');
     var deleteModal = document.getElementById('deleteCustomerModal');
 
+    if (!editModal || !deleteModal) {
+        console.warn('Company customers modals not found in DOM');
+        return;
+    }
+
     editModal.addEventListener('show.bs.modal', function (event) {
         var button = event.relatedTarget;
         if (!button) {

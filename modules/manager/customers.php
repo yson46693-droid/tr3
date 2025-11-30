@@ -736,5 +736,10 @@ document.addEventListener('DOMContentLoaded', function () {
     });
 });
 </script>
+
+    <?php
+    // Include modals for company customers (add/edit/delete)
+    require_once __DIR__ . '/partials/company_customers_modals.php';
+    ?>
 <?php endif; ?>
 <!-- End of page scripts -->
