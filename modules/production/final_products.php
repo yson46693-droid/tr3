@@ -1154,6 +1154,144 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             // إعادة إنشاء token للسماح بإعادة المحاولة في حالة وجود أخطاء
             $_SESSION[$sessionTokenKey] = bin2hex(random_bytes(32));
         }
+    } elseif ($isProductionRole && $postAction === 'transfer_external_product') {
+        // معالج نقل المنتجات الخارجية لعمال الإنتاج فقط
+        $submissionToken = $_POST['transfer_token'] ?? '';
+        $sessionTokenKey = 'transfer_submission_token';
+        $storedToken = $_SESSION[$sessionTokenKey] ?? null;
+        
+        if ($submissionToken === '' || $submissionToken !== $storedToken) {
+            $_SESSION[$sessionErrorKey] = 'تم إرسال هذا الطلب مسبقاً. يرجى عدم إعادة تحميل الصفحة.';
+            productionSafeRedirect($productionInventoryUrl, $productionRedirectParams, $productionRedirectRole);
+            exit;
+        }
+        
+        unset($_SESSION[$sessionTokenKey]);
+        
+        $transferErrors = [];
+        
+        if (!$canCreateTransfers || !$primaryWarehouse) {
+            $transferErrors[] = 'لا يمكن إنشاء طلب النقل حالياً بسبب عدم توفر مخزن رئيسي أو مخازن وجهة نشطة.';
+        } else {
+            $fromWarehouseId = intval($primaryWarehouse['id']);
+            $toWarehouseId = intval($_POST['to_warehouse_id'] ?? 0);
+            $productId = intval($_POST['product_id'] ?? 0);
+            $quantity = floatval($_POST['quantity'] ?? 0);
+            $transferDate = $_POST['transfer_date'] ?? date('Y-m-d');
+            $notes = trim((string)($_POST['notes'] ?? ''));
+            
+            if ($productId <= 0) {
+                $transferErrors[] = 'يرجى اختيار منتج صالح.';
+            }
+            
+            if ($quantity <= 0) {
+                $transferErrors[] = 'يرجى إدخال كمية صالحة أكبر من الصفر.';
+            }
+            
+            if ($toWarehouseId <= 0) {
+                $transferErrors[] = 'يرجى اختيار المخزن الوجهة.';
+            }
+            
+            if ($toWarehouseId === $fromWarehouseId) {
+                $transferErrors[] = 'لا يمكن النقل من وإلى نفس المخزن.';
+            }
+            
+            if (!preg_match('/^\d{4}-\d{2}-\d{2}$/', $transferDate)) {
+                $transferDate = date('Y-m-d');
+            }
+            
+            // التحقق من المنتج الخارجي والكمية المتاحة
+            if ($productId > 0 && $quantity > 0) {
+                $externalProduct = $db->queryOne(
+                    "SELECT id, name, quantity, status FROM products WHERE id = ? AND product_type = 'external' AND status = 'active'",
+                    [$productId]
+                );
+                
+                if (!$externalProduct) {
+                    $transferErrors[] = 'المنتج المحدد غير موجود أو غير نشط.';
+                } else {
+                    $availableQuantity = (float)($externalProduct['quantity'] ?? 0);
+                    
+                    // خصم الكمية المحجوزة في طلبات النقل المعلقة
+                    $pendingTransfers = $db->queryOne(
+                        "SELECT COALESCE(SUM(wti.quantity), 0) AS pending_quantity
+                         FROM warehouse_transfer_items wti
+                         INNER JOIN warehouse_transfers wt ON wt.id = wti.transfer_id
+                         WHERE wti.product_id = ? AND wt.from_warehouse_id = ? AND wt.status = 'pending'",
+                        [$productId, $fromWarehouseId]
+                    );
+                    $availableQuantity -= (float)($pendingTransfers['pending_quantity'] ?? 0);
+                    
+                    if ($quantity > $availableQuantity) {
+                        $transferErrors[] = 'الكمية المطلوبة (' . number_format($quantity, 2) . ') أكبر من الكمية المتاحة (' . number_format($availableQuantity, 2) . ') للمنتج ' . htmlspecialchars($externalProduct['name'] ?? '');
+                    }
+                }
+            }
+            
+            if (empty($transferErrors)) {
+                try {
+                    // استخدام vehicle_inventory.php الذي يحتوي على createWarehouseTransfer
+                    if (!function_exists('createWarehouseTransfer')) {
+                        require_once __DIR__ . '/../../includes/vehicle_inventory.php';
+                    }
+                    
+                    $transferItems = [[
+                        'product_id' => $productId,
+                        'batch_id' => null,
+                        'batch_number' => null,
+                        'quantity' => round($quantity, 4),
+                        'notes' => $notes !== '' ? $notes : null,
+                    ]];
+                    
+                    $result = createWarehouseTransfer(
+                        $fromWarehouseId,
+                        $toWarehouseId,
+                        $transferDate,
+                        'نقل منتج خارجي',
+                        $transferItems,
+                        $currentUser['id'] ?? null,
+                        $notes !== '' ? $notes : null
+                    );
+                    
+                    if (!empty($result['success']) && !empty($result['transfer_id'])) {
+                        $transferId = (int)$result['transfer_id'];
+                        $transferNumber = $result['transfer_number'] ?? '';
+                        
+                        logAudit(
+                            $currentUser['id'] ?? null,
+                            'transfer_external_product',
+                            'warehouse_transfer',
+                            $transferId,
+                            null,
+                            [
+                                'product_id' => $productId,
+                                'quantity' => $quantity,
+                                'from_warehouse_id' => $fromWarehouseId,
+                                'to_warehouse_id' => $toWarehouseId,
+                                'transfer_number' => $transferNumber
+                            ]
+                        );
+                        
+                        $_SESSION[$sessionSuccessKey] = sprintf(
+                            'تم إرسال طلب نقل المنتج الخارجي رقم %s إلى المدير للموافقة عليه.',
+                            $transferNumber
+                        );
+                    } else {
+                        $errorMessage = $result['message'] ?? 'تعذر إنشاء طلب النقل.';
+                        $_SESSION[$sessionErrorKey] = $errorMessage;
+                    }
+                } catch (Exception $e) {
+                    error_log('transfer_external_product error: ' . $e->getMessage());
+                    $_SESSION[$sessionErrorKey] = 'حدث خطأ أثناء إنشاء طلب النقل. يرجى المحاولة لاحقاً.';
+                }
+            } else {
+                $_SESSION[$sessionErrorKey] = implode('<br>', $transferErrors);
+            }
+        }
+        
+        productionSafeRedirect($productionInventoryUrl, $productionRedirectParams, $productionRedirectRole);
+        exit;
+        
     } elseif ($postAction === 'create_transfer_from_sales_rep') {
         // التحقق من duplicate submission
         $submissionToken = $_POST['transfer_token'] ?? '';
@@ -1937,6 +2075,7 @@ require_once __DIR__ . '/../../includes/lang/' . getCurrentLanguage() . '.php';
 $lang = isset($translations) ? $translations : [];
 
 $externalProducts = [];
+$externalProductsForProduction = []; // للمنتجات الخارجية لعمال الإنتاج
 $externalChannelLabels = [
     'company' => 'بيع داخل الشركة',
     'delegate' => 'مندوب مبيعات',
@@ -1956,6 +2095,22 @@ if ($isManager) {
     } catch (Exception $e) {
         error_log('final_products: failed loading external products -> ' . $e->getMessage());
         $externalProducts = [];
+    }
+}
+
+// جلب المنتجات الخارجية لعمال الإنتاج (الرؤية والنقل فقط)
+$isProductionRole = isset($currentUser['role']) && $currentUser['role'] === 'production';
+if ($isProductionRole) {
+    try {
+        $externalProductsForProduction = $db->query(
+            "SELECT id, name, external_channel, quantity, unit_price, unit, updated_at, created_at, description, status
+             FROM products
+             WHERE product_type = 'external' AND status = 'active' AND quantity > 0
+             ORDER BY name ASC"
+        );
+    } catch (Exception $e) {
+        error_log('final_products: failed loading external products for production -> ' . $e->getMessage());
+        $externalProductsForProduction = [];
     }
 }
 ?>
@@ -2557,6 +2712,205 @@ $filterProduct = isset($_GET['filter_product']) ? trim($_GET['filter_product']) 
         <?php endif; ?>
     </div>
 <?php endif; ?>
+
+<?php if ($isProductionRole && !empty($externalProductsForProduction)): ?>
+<!-- قسم المنتجات الخارجية لعمال الإنتاج -->
+<div class="card shadow-sm mt-4">
+    <div class="card-header bg-info text-white d-flex justify-content-between align-items-center">
+        <h5 class="mb-0"><i class="bi bi-box-seam me-2"></i>المنتجات الخارجية</h5>
+        <span class="badge bg-light text-dark"><?php echo number_format(count($externalProductsForProduction)); ?> منتج</span>
+    </div>
+    <div class="card-body">
+        <div class="alert alert-info mb-3">
+            <i class="bi bi-info-circle me-2"></i>
+            يمكنك عرض المنتجات الخارجية وطلب نقلها إلى مخازن أخرى. سيتم إرسال طلب النقل إلى المدير للموافقة عليه.
+        </div>
+        <div class="table-responsive dashboard-table-wrapper">
+            <table class="table dashboard-table align-middle mb-0">
+                <thead class="table-light">
+                    <tr>
+                        <th>اسم المنتج</th>
+                        <th>نوع البيع</th>
+                        <th>الكمية المتاحة</th>
+                        <th>سعر البيع</th>
+                        <th>الوحدة</th>
+                        <th>إجراءات</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    <?php foreach ($externalProductsForProduction as $externalProduct): ?>
+                    <tr>
+                        <td>
+                            <strong><?php echo htmlspecialchars($externalProduct['name'] ?? ''); ?></strong>
+                            <?php if (!empty($externalProduct['description'])): ?>
+                                <br><small class="text-muted"><?php echo htmlspecialchars($externalProduct['description']); ?></small>
+                            <?php endif; ?>
+                        </td>
+                        <td><?php
+                            $channelKey = $externalProduct['external_channel'] ?? null;
+                            echo htmlspecialchars($externalChannelLabels[$channelKey] ?? $externalChannelLabels[null]);
+                        ?></td>
+                        <td>
+                            <?php 
+                            $productId = (int)($externalProduct['id'] ?? 0);
+                            $availableQty = (float)($externalProduct['quantity'] ?? 0);
+                            
+                            // حساب الكمية المحجوزة في طلبات النقل المعلقة
+                            if ($primaryWarehouse && $productId > 0) {
+                                $pendingTransfers = $db->queryOne(
+                                    "SELECT COALESCE(SUM(wti.quantity), 0) AS pending_quantity
+                                     FROM warehouse_transfer_items wti
+                                     INNER JOIN warehouse_transfers wt ON wt.id = wti.transfer_id
+                                     WHERE wti.product_id = ? AND wt.from_warehouse_id = ? AND wt.status = 'pending'",
+                                    [$productId, $primaryWarehouse['id']]
+                                );
+                                $availableQty -= (float)($pendingTransfers['pending_quantity'] ?? 0);
+                                $availableQty = max(0, $availableQty);
+                            }
+                            
+                            echo number_format($availableQty, 2); 
+                            ?> <?php echo htmlspecialchars($externalProduct['unit'] ?? 'قطعة'); ?>
+                        </td>
+                        <td><?php echo formatCurrency($externalProduct['unit_price'] ?? 0); ?></td>
+                        <td><?php echo htmlspecialchars($externalProduct['unit'] ?? 'قطعة'); ?></td>
+                        <td>
+                            <?php if ($canCreateTransfers && $primaryWarehouse): ?>
+                            <button
+                                type="button"
+                                class="btn btn-outline-primary btn-sm js-transfer-external-product"
+                                data-product-id="<?php echo $productId; ?>"
+                                data-product-name="<?php echo htmlspecialchars($externalProduct['name'] ?? '', ENT_QUOTES); ?>"
+                                data-available-qty="<?php echo number_format($availableQty, 2); ?>"
+                                data-unit="<?php echo htmlspecialchars($externalProduct['unit'] ?? 'قطعة', ENT_QUOTES); ?>"
+                            >
+                                <i class="bi bi-arrow-left-right me-1"></i>
+                                نقل منتج
+                            </button>
+                            <?php else: ?>
+                            <span class="text-muted small">غير متاح</span>
+                            <?php endif; ?>
+                        </td>
+                    </tr>
+                    <?php endforeach; ?>
+                </tbody>
+            </table>
+        </div>
+    </div>
+</div>
+
+<!-- Modal نقل منتج خارجي -->
+<div class="modal fade" id="transferExternalProductModal" tabindex="-1" aria-hidden="true" data-bs-backdrop="static" data-bs-keyboard="false">
+    <div class="modal-dialog">
+        <form class="modal-content" method="POST" id="transferExternalProductForm">
+            <input type="hidden" name="action" value="transfer_external_product">
+            <input type="hidden" name="transfer_token" value="<?php echo htmlspecialchars($_SESSION['transfer_submission_token'] ?? ''); ?>">
+            <input type="hidden" name="product_id" id="transferExternalProductId" value="">
+            <div class="modal-header bg-info text-white">
+                <h5 class="modal-title"><i class="bi bi-arrow-left-right me-2"></i>نقل منتج خارجي</h5>
+                <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal" aria-label="إغلاق"></button>
+            </div>
+            <div class="modal-body">
+                <div class="mb-3">
+                    <label class="form-label">اسم المنتج</label>
+                    <input type="text" class="form-control" id="transferExternalProductName" readonly>
+                </div>
+                <div class="mb-3">
+                    <label class="form-label">الكمية المتاحة</label>
+                    <input type="text" class="form-control" id="transferExternalAvailableQty" readonly>
+                </div>
+                <div class="mb-3">
+                    <label class="form-label">المخزن المصدر</label>
+                    <input type="text" class="form-control" value="<?php echo htmlspecialchars($primaryWarehouse['name'] ?? 'المخزن الرئيسي'); ?>" readonly>
+                </div>
+                <div class="mb-3">
+                    <label class="form-label">المخزن الوجهة <span class="text-danger">*</span></label>
+                    <select class="form-select" name="to_warehouse_id" required>
+                        <option value="">اختر المخزن الوجهة</option>
+                        <?php if (!empty($destinationWarehouses)): ?>
+                            <?php foreach ($destinationWarehouses as $warehouse): ?>
+                                <option value="<?php echo (int)$warehouse['id']; ?>">
+                                    <?php echo htmlspecialchars($warehouse['name']); ?>
+                                    <?php if (!empty($warehouse['warehouse_type'])): ?>
+                                        (<?php echo htmlspecialchars($warehouse['warehouse_type']); ?>)
+                                    <?php endif; ?>
+                                </option>
+                            <?php endforeach; ?>
+                        <?php endif; ?>
+                    </select>
+                </div>
+                <div class="mb-3">
+                    <label class="form-label">الكمية المراد نقلها <span class="text-danger">*</span></label>
+                    <input type="number" class="form-control" name="quantity" id="transferExternalQuantity" step="0.01" min="0.01" required>
+                    <small class="text-muted">الحد الأقصى: <span id="transferExternalMaxQty">0</span></small>
+                </div>
+                <div class="mb-3">
+                    <label class="form-label">تاريخ النقل</label>
+                    <input type="date" class="form-control" name="transfer_date" value="<?php echo date('Y-m-d'); ?>">
+                </div>
+                <div class="mb-3">
+                    <label class="form-label">ملاحظات</label>
+                    <textarea class="form-control" name="notes" rows="2" placeholder="ملاحظات إضافية (اختياري)"></textarea>
+                </div>
+                <div class="alert alert-warning mb-0">
+                    <i class="bi bi-exclamation-triangle me-2"></i>
+                    سيتم إرسال طلب النقل إلى المدير للموافقة عليه.
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">إلغاء</button>
+                <button type="submit" class="btn btn-primary">إرسال طلب النقل</button>
+            </div>
+        </form>
+    </div>
+</div>
+
+<script>
+(function() {
+    const transferButtons = document.querySelectorAll('.js-transfer-external-product');
+    const transferModal = document.getElementById('transferExternalProductModal');
+    const transferForm = document.getElementById('transferExternalProductForm');
+    const productIdInput = document.getElementById('transferExternalProductId');
+    const productNameInput = document.getElementById('transferExternalProductName');
+    const availableQtyInput = document.getElementById('transferExternalAvailableQty');
+    const quantityInput = document.getElementById('transferExternalQuantity');
+    const maxQtySpan = document.getElementById('transferExternalMaxQty');
+    
+    if (!transferModal || !transferForm) return;
+    
+    transferButtons.forEach(function(button) {
+        button.addEventListener('click', function() {
+            const productId = this.getAttribute('data-product-id');
+            const productName = this.getAttribute('data-product-name');
+            const availableQty = parseFloat(this.getAttribute('data-available-qty') || '0');
+            const unit = this.getAttribute('data-unit') || 'قطعة';
+            
+            if (productIdInput) productIdInput.value = productId;
+            if (productNameInput) productNameInput.value = productName;
+            if (availableQtyInput) availableQtyInput.value = availableQty.toFixed(2) + ' ' + unit;
+            if (maxQtySpan) maxQtySpan.textContent = availableQty.toFixed(2) + ' ' + unit;
+            if (quantityInput) {
+                quantityInput.value = '';
+                quantityInput.max = availableQty.toFixed(2);
+            }
+            
+            const bsModal = new bootstrap.Modal(transferModal);
+            bsModal.show();
+        });
+    });
+    
+    if (quantityInput) {
+        quantityInput.addEventListener('input', function() {
+            const maxQty = parseFloat(this.max || '0');
+            const currentQty = parseFloat(this.value || '0');
+            if (currentQty > maxQty) {
+                this.value = maxQty.toFixed(2);
+            }
+        });
+    }
+})();
+</script>
+<?php endif; ?>
+
 <?php if ($isManager): ?>
 <div class="modal fade" id="addExternalProductModal" tabindex="-1" aria-hidden="true" data-bs-backdrop="static" data-bs-keyboard="false">
     <div class="modal-dialog">

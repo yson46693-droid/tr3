@@ -696,7 +696,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     }
 }
 
-// إذا كان المستخدم مندوب مبيعات، عرض فقط طلباته
+// إذا كان المستخدم مندوب مبيعات، عرض فقط طلباته (ولا تظهر طلبات الشركة)
 if ($isSalesUser) {
     $filters['sales_rep_id'] = $currentUser['id'];
 }
@@ -710,6 +710,12 @@ $sql = "SELECT o.*, c.name as customer_name, u.full_name as sales_rep_name
 
 $countSql = "SELECT COUNT(*) as total FROM customer_orders WHERE 1=1";
 $params = [];
+
+// إخفاء طلبات الشركة عن المناديب (فقط المدير والمحاسب يرونها)
+if ($isSalesUser) {
+    $sql .= " AND (o.order_type IS NULL OR o.order_type = 'sales_rep')";
+    $countSql .= " AND (order_type IS NULL OR order_type = 'sales_rep')";
+}
 
 if (!empty($filters['customer_id'])) {
     $sql .= " AND o.customer_id = ?";
@@ -761,6 +767,29 @@ $sql .= " ORDER BY o.created_at DESC LIMIT ? OFFSET ?";
 $params[] = $perPage;
 $params[] = $offset;
 $orders = $db->query($sql, $params);
+
+// جلب عملاء الشركة (الذين ليس لديهم مندوب أو تم إنشاؤهم بواسطة المدير)
+$companyCustomers = [];
+try {
+    // التحقق من وجود عمود created_by_admin
+    $hasCreatedByAdmin = !empty($db->queryOne("SHOW COLUMNS FROM customers LIKE 'created_by_admin'"));
+    $hasRepId = !empty($db->queryOne("SHOW COLUMNS FROM customers LIKE 'rep_id'"));
+    
+    if ($hasCreatedByAdmin && $hasRepId) {
+        $companyCustomers = $db->query(
+            "SELECT id, name FROM customers 
+             WHERE status = 'active' 
+             AND (created_by_admin = 1 OR rep_id IS NULL OR created_by IN (SELECT id FROM users WHERE role IN ('manager', 'accountant')))
+             ORDER BY name"
+        );
+    } else {
+        // إذا لم تكن الأعمدة موجودة، جلب جميع العملاء النشطين
+        $companyCustomers = $db->query("SELECT id, name FROM customers WHERE status = 'active' ORDER BY name");
+    }
+} catch (Throwable $e) {
+    error_log('Error fetching company customers: ' . $e->getMessage());
+    $companyCustomers = $db->query("SELECT id, name FROM customers WHERE status = 'active' ORDER BY name");
+}
 
 $customers = $db->query("SELECT id, name FROM customers WHERE status = 'active' ORDER BY name");
 
@@ -1131,6 +1160,7 @@ if (isset($_GET['id'])) {
                         <th>تاريخ التسليم</th>
                         <?php if (!$isSalesUser): ?>
                             <th>المندوب</th>
+                            <th>النوع</th>
                         <?php endif; ?>
                         <th>الأولوية</th>
                         <th>الحالة</th>
@@ -1140,7 +1170,7 @@ if (isset($_GET['id'])) {
                 <tbody>
                     <?php if (empty($orders)): ?>
                         <tr>
-                            <td colspan="<?php echo $isSalesUser ? 7 : 8; ?>" class="text-center text-muted">لا توجد طلبات</td>
+                            <td colspan="<?php echo $isSalesUser ? 7 : 9; ?>" class="text-center text-muted">لا توجد طلبات</td>
                         </tr>
                     <?php else: ?>
                         <?php foreach ($orders as $order): ?>
@@ -1155,6 +1185,13 @@ if (isset($_GET['id'])) {
                                 <td><?php echo $order['delivery_date'] ? formatDate($order['delivery_date']) : '-'; ?></td>
                                 <?php if (!$isSalesUser): ?>
                                 <td><?php echo htmlspecialchars($order['sales_rep_name'] ?? '-'); ?></td>
+                                <td>
+                                    <?php if (isset($order['order_type']) && $order['order_type'] === 'company'): ?>
+                                        <span class="badge bg-success">شركة</span>
+                                    <?php else: ?>
+                                        <span class="badge bg-info">مندوب</span>
+                                    <?php endif; ?>
+                                </td>
                                 <?php endif; ?>
                                 <td>
                                     <span class="badge bg-<?php 
@@ -1369,6 +1406,110 @@ if (isset($_GET['id'])) {
         </div>
     </div>
 </div>
+
+<!-- Modal إنشاء طلب شركة -->
+<?php if ($isManagerOrAccountant): ?>
+<div class="modal fade" id="addCompanyOrderModal" tabindex="-1">
+    <div class="modal-dialog modal-xl">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title"><i class="bi bi-building me-2"></i>إنشاء طلب عميل شركة</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <form method="POST" id="companyOrderForm">
+                <input type="hidden" name="action" value="create_company_order">
+                <div class="modal-body">
+                    <div class="row mb-3">
+                        <div class="col-md-6">
+                            <div class="d-flex justify-content-between align-items-center mb-1">
+                                <label class="form-label mb-0">العميل <span class="text-danger">*</span></label>
+                                <div class="form-check form-switch">
+                                    <input class="form-check-input" type="checkbox" id="toggleNewCompanyCustomer" name="create_new_customer" value="1">
+                                    <label class="form-check-label small" for="toggleNewCompanyCustomer">عميل جديد</label>
+                                </div>
+                            </div>
+                            <select class="form-select" name="customer_id" id="companyCustomerSelect" required>
+                                <option value="">اختر العميل</option>
+                                <?php foreach ($companyCustomers as $customer): ?>
+                                    <option value="<?php echo $customer['id']; ?>">
+                                        <?php echo htmlspecialchars($customer['name']); ?>
+                                    </option>
+                                <?php endforeach; ?>
+                            </select>
+                        </div>
+                        <div class="col-md-2">
+                            <label class="form-label">تاريخ الطلب <span class="text-danger">*</span></label>
+                            <input type="date" class="form-control" name="order_date" value="<?php echo date('Y-m-d'); ?>" required>
+                        </div>
+                        <div class="col-md-2">
+                            <label class="form-label">تاريخ التسليم</label>
+                            <input type="date" class="form-control" name="delivery_date">
+                        </div>
+                        <div class="col-md-2">
+                            <label class="form-label">الأولوية</label>
+                            <select class="form-select" name="priority">
+                                <option value="normal">عادية</option>
+                                <option value="low">منخفضة</option>
+                                <option value="high">عالية</option>
+                                <option value="urgent">عاجلة</option>
+                            </select>
+                        </div>
+                    </div>
+                    
+                    <div id="newCompanyCustomerFields" class="row g-3 mb-3 d-none">
+                        <div class="col-md-4">
+                            <label class="form-label">اسم العميل الجديد <span class="text-danger">*</span></label>
+                            <input type="text" class="form-control new-company-customer-required" name="new_customer_name" autocomplete="off">
+                        </div>
+                        <div class="col-md-4">
+                            <label class="form-label">رقم الهاتف</label>
+                            <input type="text" class="form-control" name="new_customer_phone" autocomplete="off" placeholder="مثال: 01234567890">
+                        </div>
+                        <div class="col-md-4">
+                            <label class="form-label">عنوان العميل</label>
+                            <textarea class="form-control" name="new_customer_address" rows="2" autocomplete="off" placeholder="اكتب العنوان بالتفصيل"></textarea>
+                        </div>
+                    </div>
+                    
+                    <div class="mb-3">
+                        <label class="form-label">عناصر الطلب</label>
+                        <div id="companyOrderItems">
+                            <div class="order-item row mb-2">
+                                <div class="col-md-9">
+                                    <select class="form-select product-select" name="items[0][product_id]" required>
+                                        <option value="">اختر القالب</option>
+                                        <?php foreach ($products as $product): ?>
+                                            <option value="<?php echo $product['id']; ?>">
+                                                <?php echo htmlspecialchars($product['name']); ?>
+                                            </option>
+                                        <?php endforeach; ?>
+                                    </select>
+                                </div>
+                                <div class="col-md-2">
+                                    <input type="text" class="form-control quantity" 
+                                           name="items[0][quantity]" placeholder="الكمية" required>
+                                </div>
+                                <div class="col-md-1">
+                                    <button type="button" class="btn btn-danger w-100 remove-item">
+                                        <i class="bi bi-trash"></i>
+                                    </button>
+                                </div>
+                            </div>
+                        </div>
+                        <button type="button" class="btn btn-sm btn-outline-primary" id="addCompanyItemBtn">
+                            <i class="bi bi-plus-circle me-2"></i>إضافة عنصر
+                        </button>
+                    </div>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">إلغاء</button>
+                    <button type="submit" class="btn btn-success">إنشاء طلب شركة</button>
+                </div>
+            </form>
+        </div>
+    </div>
+</div>
+<?php endif; ?>
 
 <!-- Modal تغيير الحالة -->
 <div class="modal fade" id="statusModal" tabindex="-1">
@@ -1588,6 +1729,125 @@ if (newCustomerToggle) {
         }
     };
 }
+
+// JavaScript لمعالجة Modal طلب الشركة
+<?php if ($isManagerOrAccountant): ?>
+let companyItemIndex = 1;
+
+// إضافة عنصر جديد لطلب الشركة
+document.getElementById('addCompanyItemBtn')?.addEventListener('click', function() {
+    const itemsDiv = document.getElementById('companyOrderItems');
+    const newItem = document.createElement('div');
+    newItem.className = 'order-item row mb-2';
+    newItem.innerHTML = `
+        <div class="col-md-9">
+            <select class="form-select product-select" name="items[${companyItemIndex}][product_id]" required>
+                <option value="">اختر القالب</option>
+                <?php foreach ($products as $product): ?>
+                    <option value="<?php echo $product['id']; ?>">
+                        <?php echo htmlspecialchars($product['name']); ?>
+                    </option>
+                <?php endforeach; ?>
+            </select>
+        </div>
+        <div class="col-md-2">
+            <input type="text" class="form-control quantity" 
+                   name="items[${companyItemIndex}][quantity]" placeholder="الكمية" required>
+        </div>
+        <div class="col-md-1">
+            <button type="button" class="btn btn-danger w-100 remove-item">
+                <i class="bi bi-trash"></i>
+            </button>
+        </div>
+    `;
+    itemsDiv.appendChild(newItem);
+    companyItemIndex++;
+});
+
+// معالجة toggle عميل جديد للشركة
+const toggleNewCompanyCustomer = document.getElementById('toggleNewCompanyCustomer');
+const companyCustomerSelect = document.getElementById('companyCustomerSelect');
+const newCompanyCustomerFields = document.getElementById('newCompanyCustomerFields');
+const newCompanyCustomerRequiredInputs = Array.from(document.querySelectorAll('.new-company-customer-required'));
+
+function updateNewCompanyCustomerState() {
+    if (!toggleNewCompanyCustomer || !companyCustomerSelect || !newCompanyCustomerFields) {
+        return;
+    }
+
+    if (toggleNewCompanyCustomer.checked) {
+        newCompanyCustomerFields.classList.remove('d-none');
+        companyCustomerSelect.value = '';
+        companyCustomerSelect.setAttribute('disabled', 'disabled');
+        companyCustomerSelect.removeAttribute('required');
+        newCompanyCustomerRequiredInputs.forEach(function(input) {
+            input.setAttribute('required', 'required');
+        });
+    } else {
+        newCompanyCustomerFields.classList.add('d-none');
+        companyCustomerSelect.removeAttribute('disabled');
+        companyCustomerSelect.setAttribute('required', 'required');
+        newCompanyCustomerRequiredInputs.forEach(function(input) {
+            input.removeAttribute('required');
+        });
+    }
+}
+
+if (toggleNewCompanyCustomer) {
+    toggleNewCompanyCustomer.addEventListener('change', updateNewCompanyCustomerState);
+    updateNewCompanyCustomerState();
+}
+
+// إعادة تعيين نموذج طلب الشركة عند إغلاق الـ modal
+const addCompanyOrderModalElement = document.getElementById('addCompanyOrderModal');
+if (addCompanyOrderModalElement && typeof bootstrap !== 'undefined') {
+    addCompanyOrderModalElement.addEventListener('hidden.bs.modal', function() {
+        if (toggleNewCompanyCustomer) {
+            toggleNewCompanyCustomer.checked = false;
+            updateNewCompanyCustomerState();
+        }
+        newCompanyCustomerRequiredInputs.forEach(function(input) {
+            input.value = '';
+        });
+        const newCustomerPhoneInput = document.querySelector('#addCompanyOrderModal input[name="new_customer_phone"]');
+        const newCustomerAddressInput = document.querySelector('#addCompanyOrderModal textarea[name="new_customer_address"]');
+        if (newCustomerPhoneInput) {
+            newCustomerPhoneInput.value = '';
+        }
+        if (newCustomerAddressInput) {
+            newCustomerAddressInput.value = '';
+        }
+        // إعادة تعيين العناصر
+        const companyOrderItems = document.getElementById('companyOrderItems');
+        if (companyOrderItems) {
+            companyOrderItems.innerHTML = `
+                <div class="order-item row mb-2">
+                    <div class="col-md-9">
+                        <select class="form-select product-select" name="items[0][product_id]" required>
+                            <option value="">اختر القالب</option>
+                            <?php foreach ($products as $product): ?>
+                                <option value="<?php echo $product['id']; ?>">
+                                    <?php echo htmlspecialchars($product['name']); ?>
+                                </option>
+                            <?php endforeach; ?>
+                        </select>
+                    </div>
+                    <div class="col-md-2">
+                        <input type="text" class="form-control quantity" 
+                               name="items[0][quantity]" placeholder="الكمية" required>
+                    </div>
+                    <div class="col-md-1">
+                        <button type="button" class="btn btn-danger w-100 remove-item">
+                            <i class="bi bi-trash"></i>
+                        </button>
+                    </div>
+                </div>
+            `;
+            companyItemIndex = 1;
+        }
+    });
+}
+<?php endif; ?>
 </script>
 
 <!-- إعادة تحميل الصفحة تلقائياً بعد أي رسالة (نجاح أو خطأ) لمنع تكرار الطلبات -->
