@@ -211,6 +211,23 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                             $updateFields[] = "created_by = ?";
                             $updateParams[] = $customerCreatorId;
                         }
+                        
+                        // تحديث الموقع إذا كان موجوداً
+                        $hasLatitudeColumn = !empty($db->queryOne("SHOW COLUMNS FROM customers LIKE 'latitude'"));
+                        $hasLongitudeColumn = !empty($db->queryOne("SHOW COLUMNS FROM customers LIKE 'longitude'"));
+                        $hasLocationCapturedAtColumn = !empty($db->queryOne("SHOW COLUMNS FROM customers LIKE 'location_captured_at'"));
+                        
+                        if ($hasLatitudeColumn && $newCustomerLatitude !== null) {
+                            $updateFields[] = "latitude = ?";
+                            $updateParams[] = (float)$newCustomerLatitude;
+                        }
+                        if ($hasLongitudeColumn && $newCustomerLongitude !== null) {
+                            $updateFields[] = "longitude = ?";
+                            $updateParams[] = (float)$newCustomerLongitude;
+                        }
+                        if ($hasLocationCapturedAtColumn && $newCustomerLatitude !== null && $newCustomerLongitude !== null) {
+                            $updateFields[] = "location_captured_at = NOW()";
+                        }
 
                         if (!empty($updateFields)) {
                             $updateParams[] = $customerId;
@@ -224,17 +241,47 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                         $newCustomerRepId = $salesRepId ?? ($isSalesUser ? $currentUser['id'] : null);
                         $createdByAdminFlag = ($isSalesUser && $newCustomerRepId) ? 0 : 1;
 
+                        // التحقق من وجود أعمدة اللوكيشن
+                        $hasLatitudeColumn = !empty($db->queryOne("SHOW COLUMNS FROM customers LIKE 'latitude'"));
+                        $hasLongitudeColumn = !empty($db->queryOne("SHOW COLUMNS FROM customers LIKE 'longitude'"));
+                        $hasLocationCapturedAtColumn = !empty($db->queryOne("SHOW COLUMNS FROM customers LIKE 'location_captured_at'"));
+                        
+                        $customerColumns = ['name', 'phone', 'address', 'balance', 'status', 'created_by', 'rep_id', 'created_from_pos', 'created_by_admin'];
+                        $customerValues = [
+                            $newCustomerName,
+                            $newCustomerPhone !== '' ? $newCustomerPhone : null,
+                            $newCustomerAddress !== '' ? $newCustomerAddress : null,
+                            0,
+                            'active',
+                            $newCustomerCreator,
+                            $newCustomerRepId,
+                            0,
+                            $createdByAdminFlag,
+                        ];
+                        $customerPlaceholders = ['?', '?', '?', '?', '?', '?', '?', '?', '?'];
+                        
+                        if ($hasLatitudeColumn && $newCustomerLatitude !== null) {
+                            $customerColumns[] = 'latitude';
+                            $customerValues[] = (float)$newCustomerLatitude;
+                            $customerPlaceholders[] = '?';
+                        }
+                        
+                        if ($hasLongitudeColumn && $newCustomerLongitude !== null) {
+                            $customerColumns[] = 'longitude';
+                            $customerValues[] = (float)$newCustomerLongitude;
+                            $customerPlaceholders[] = '?';
+                        }
+                        
+                        if ($hasLocationCapturedAtColumn && $newCustomerLatitude !== null && $newCustomerLongitude !== null) {
+                            $customerColumns[] = 'location_captured_at';
+                            $customerValues[] = date('Y-m-d H:i:s');
+                            $customerPlaceholders[] = '?';
+                        }
+
                         $db->execute(
-                            "INSERT INTO customers (name, phone, address, balance, status, created_by, rep_id, created_from_pos, created_by_admin) 
-                             VALUES (?, ?, ?, 0, 'active', ?, ?, 0, ?)",
-                            [
-                                $newCustomerName,
-                                $newCustomerPhone !== '' ? $newCustomerPhone : null,
-                                $newCustomerAddress !== '' ? $newCustomerAddress : null,
-                                $newCustomerCreator,
-                                $newCustomerRepId,
-                                $createdByAdminFlag,
-                            ]
+                            "INSERT INTO customers (" . implode(', ', $customerColumns) . ") 
+                             VALUES (" . implode(', ', $customerPlaceholders) . ")",
+                            $customerValues
                         );
                         $customerId = (int)$db->getLastInsertId();
                         $newCustomerCreated = true;
@@ -1455,6 +1502,17 @@ if (isset($_GET['id'])) {
                             <label class="form-label">عنوان العميل</label>
                             <textarea class="form-control" name="new_customer_address" rows="2" autocomplete="off" placeholder="اكتب العنوان بالتفصيل"></textarea>
                         </div>
+                        <div class="col-12">
+                            <label class="form-label">موقع العميل <span class="text-muted">(اختياري)</span></label>
+                            <div class="d-flex gap-2">
+                                <input type="text" class="form-control" name="new_customer_latitude" id="newCustomerLatitude" placeholder="خط العرض" readonly>
+                                <input type="text" class="form-control" name="new_customer_longitude" id="newCustomerLongitude" placeholder="خط الطول" readonly>
+                                <button type="button" class="btn btn-outline-primary" id="getLocationBtn" title="الحصول على الموقع الحالي">
+                                    <i class="bi bi-geo-alt"></i>
+                                </button>
+                            </div>
+                            <small class="text-muted">اضغط على زر الموقع للحصول على موقعك الحالي</small>
+                        </div>
                     </div>
                     
                     <div class="mb-3">
@@ -1784,12 +1842,51 @@ if (addOrderModalElement && typeof bootstrap !== 'undefined') {
         });
         const newCustomerPhoneInput = document.querySelector('#addOrderModal input[name="new_customer_phone"]');
         const newCustomerAddressInput = document.querySelector('#addOrderModal textarea[name="new_customer_address"]');
+        const newCustomerLatitudeInput = document.querySelector('#addOrderModal input[name="new_customer_latitude"]');
+        const newCustomerLongitudeInput = document.querySelector('#addOrderModal input[name="new_customer_longitude"]');
         if (newCustomerPhoneInput) {
             newCustomerPhoneInput.value = '';
         }
         if (newCustomerAddressInput) {
             newCustomerAddressInput.value = '';
         }
+        if (newCustomerLatitudeInput) {
+            newCustomerLatitudeInput.value = '';
+        }
+        if (newCustomerLongitudeInput) {
+            newCustomerLongitudeInput.value = '';
+        }
+    });
+}
+
+// دالة الحصول على موقع المستخدم للعميل الجديد
+const getLocationBtn = document.getElementById('getLocationBtn');
+const latitudeInput = document.getElementById('newCustomerLatitude');
+const longitudeInput = document.getElementById('newCustomerLongitude');
+
+if (getLocationBtn && latitudeInput && longitudeInput) {
+    getLocationBtn.addEventListener('click', function() {
+        if (!navigator.geolocation) {
+            alert('المتصفح لا يدعم الحصول على الموقع');
+            return;
+        }
+        
+        getLocationBtn.disabled = true;
+        getLocationBtn.innerHTML = '<i class="bi bi-hourglass-split"></i>';
+        
+        navigator.geolocation.getCurrentPosition(
+            function(position) {
+                latitudeInput.value = position.coords.latitude.toFixed(8);
+                longitudeInput.value = position.coords.longitude.toFixed(8);
+                getLocationBtn.disabled = false;
+                getLocationBtn.innerHTML = '<i class="bi bi-geo-alt"></i>';
+            },
+            function(error) {
+                alert('فشل الحصول على الموقع: ' + error.message);
+                getLocationBtn.disabled = false;
+                getLocationBtn.innerHTML = '<i class="bi bi-geo-alt"></i>';
+            }
+        );
     });
 }
 
