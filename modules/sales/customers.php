@@ -604,6 +604,26 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action'])) {
                         // لا نوقف العملية إذا فشل تحديث الراتب
                         error_log('Error updating sales commission after collection from customers page: ' . $e->getMessage());
                     }
+                    
+                    // القاعدة 3: أي مبلغ يقوم المندوب بتحصيله من العملاء من خلال صفحة العملاء
+                    // يتم احتساب نسبة 2% للمندوب الذي قام بالتحصيل
+                    // إضافة المكافأة الفورية بنسبة 2% للمندوب الذي قام بالتحصيل مباشرة
+                    if (($currentUser['role'] ?? '') === 'sales' && $collectionId) {
+                        try {
+                            require_once __DIR__ . '/../../includes/salary_calculator.php';
+                            if (function_exists('applyCollectionInstantReward')) {
+                                applyCollectionInstantReward(
+                                    $currentUser['id'],
+                                    $amount,
+                                    $collectionDate,
+                                    $collectionId,
+                                    $currentUser['id']
+                                );
+                            }
+                        } catch (Throwable $instantRewardError) {
+                            error_log('Instant collection reward error (customers page): ' . $instantRewardError->getMessage());
+                        }
+                    }
                 } else {
                     error_log('collect_debt: collections table not found, skipping collection record.');
                 }

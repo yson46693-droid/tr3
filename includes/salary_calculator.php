@@ -229,9 +229,21 @@ function calculateSalesCollections($userId, $month, $year) {
     
     $totalCommissionBase = 0;
     
-    // الحالة 1: المبيعات بكامل - حساب 2% على إجمالي الفاتورة
+    // القواعد الجديدة لنسبة التحصيل:
+    // نسبة التحصيل 2% تُحسب للمندوب فقط في 3 حالات:
+    //   1. البيع الكاش (full payment) - تُحتسب على كامل المبلغ
+    //   2. البيع بالتحصيل الجزئي - تُحتسب فقط على المبلغ المحصل (وليس على المبلغ المخصوم من الرصيد الدائن)
+    //   3. التحصيل من صفحة العملاء - تُحتسب على المبلغ المحصل
+    // 
+    // ملاحظات مهمة:
+    // - عند خصم من الرصيد الدائن لعميل لديه سجل مشتريات: يتم حساب نسبة 2% مباشرة كـ bonus
+    //   (بدون إضافة للإجمالي أو السجل) في pos.php، لذا لا تُحسب هنا
+    // - عند خصم من الرصيد الدائن لعميل ليس لديه سجل مشتريات: لا تُحسب نسبة
+    // - المبالغ المخصومة من الرصيد الدائن لا تُحسب في التحصيلات (يتم استبعادها)
+    
+    // الحالة 1: المبيعات بكامل (البيع الكاش) - حساب 2% على إجمالي الفاتورة
     // الفواتير المدفوعة بالكامل (status='paid' و paid_amount = total_amount)
-    // استبعاد الفواتير المدفوعة من رصيد دائن
+    // استبعاد الفواتير المدفوعة من رصيد دائن (لأنها تُحسب مباشرة في pos.php كـ bonus)
     $invoicesTableCheck = $db->queryOne("SHOW TABLES LIKE 'invoices'");
     if (!empty($invoicesTableCheck)) {
         // التحقق من وجود عمود paid_from_credit
@@ -246,6 +258,8 @@ function calculateSalesCollections($userId, $month, $year) {
              AND ABS(paid_amount - total_amount) < 0.01";
         
         // استبعاد الفواتير المدفوعة من رصيد دائن
+        // هذه الفواتير لها معاملة خاصة: تُحسب النسبة مباشرة كـ bonus في pos.php
+        // (لعميل لديه سجل مشتريات) أو لا تُحسب (لعميل ليس لديه سجل مشتريات)
         if ($hasPaidFromCreditColumn) {
             $fullPaymentSalesSql .= " AND (paid_from_credit IS NULL OR paid_from_credit = 0)";
         }
@@ -255,7 +269,7 @@ function calculateSalesCollections($userId, $month, $year) {
     }
     
     // الحالة 2 و 3: التحصيلات الجزئية والتحصيلات من عملاء المندوب
-    // حساب 2% على المبلغ المحصل
+    // حساب 2% على المبلغ المحصل فقط (وليس على المبلغ المخصوم من الرصيد الدائن)
     $collectionsTableCheck = $db->queryOne("SHOW TABLES LIKE 'collections'");
     if (!empty($collectionsTableCheck)) {
         // التحقق من وجود عمود status في collections
@@ -267,10 +281,11 @@ function calculateSalesCollections($userId, $month, $year) {
         $hasCustomers = !empty($customersTableCheck);
         
         if ($hasCustomers && !empty($invoicesTableCheck)) {
-            // الحالة 2: التحصيلات من الفواتير الجزئية
+            // الحالة 2: التحصيلات من الفواتير الجزئية (البيع بالتحصيل الجزئي)
             // التحصيلات التي تمت على فواتير بحالة partial للمندوب
             // نستخدم subquery لتجنب العد المزدوج إذا كان هناك أكثر من فاتورة جزئية للعميل نفسه
             // استبعاد التحصيلات من الفواتير المدفوعة من رصيد دائن
+            // ملاحظة: التحصيلات الجزئية تُحتسب فقط على المبلغ المحصل (وليس على الرصيد الدائن)
             $hasPaidFromCreditColumn = !empty($db->queryOne("SHOW COLUMNS FROM invoices LIKE 'paid_from_credit'"));
             
             $partialCollectionsSql = "SELECT COALESCE(SUM(c.amount), 0) as total 
@@ -295,11 +310,13 @@ function calculateSalesCollections($userId, $month, $year) {
             $partialCollections = $db->queryOne($partialCollectionsSql, [$userId, $month, $year]);
             $partialAmount = floatval($partialCollections['total'] ?? 0);
             
-            // الحالة 3: التحصيلات من عملاء المندوب (الذين أنشأهم المندوب)
+            // الحالة 3: التحصيلات من عملاء المندوب (من صفحة العملاء)
+            // أي مبلغ يقوم المندوب بتحصيله من العملاء من خلال صفحة العملاء
             // نحسب جميع التحصيلات من عملاء المندوب
             // إذا كان التحصيل مؤهلاً للحالتين 2 و 3، سيتم احتسابه مرة واحدة فقط (في الحالة 2)
             // لذلك نستثني التحصيلات التي تم احتسابها في الحالة 2 (من عملاء لديهم فواتير جزئية)
             // استبعاد التحصيلات من العملاء الذين لديهم رصيد دائن وقت التحصيل
+            // (لأن خصم الرصيد الدائن له معاملة خاصة: تُحسب النسبة مباشرة كـ bonus في pos.php)
             $customerCollectionsSql = "SELECT COALESCE(SUM(c.amount), 0) as total 
                  FROM collections c
                  INNER JOIN customers cust ON c.customer_id = cust.id
@@ -328,6 +345,7 @@ function calculateSalesCollections($userId, $month, $year) {
             // الحالة 4: التحصيلات التي قام بها المندوب مباشرة (collected_by)
             // نستثني التحصيلات التي تم احتسابها في الحالتين 2 و 3 لتجنب العد المزدوج
             // استبعاد التحصيلات من العملاء الذين لديهم رصيد دائن
+            // (لأن خصم الرصيد الدائن له معاملة خاصة)
             $collectedByQuery = "
                 SELECT COALESCE(SUM(c.amount), 0) as total 
                 FROM collections c
