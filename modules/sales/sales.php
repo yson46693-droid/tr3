@@ -238,9 +238,10 @@ $exchangeFilters = array_filter($exchangeFilters, function($value) {
 <?php 
 $isSalesRecords = isset($_GET['page']) && $_GET['page'] === 'sales_records';
 // التحقق من section أولاً (من dashboard/sales.php) ثم tab
-$activeTab = isset($_GET['section']) ? $_GET['section'] : (isset($_GET['tab']) ? $_GET['tab'] : 'exchanges');
+$activeTab = isset($_GET['section']) ? $_GET['section'] : (isset($_GET['tab']) ? $_GET['tab'] : 'sales');
+// التأكد من أن activeTab إما 'sales' أو 'exchanges'
 if ($activeTab !== 'exchanges' && $activeTab !== 'sales') {
-    $activeTab = 'exchanges';
+    $activeTab = 'sales';
 }
 ?>
 
@@ -253,7 +254,11 @@ $filterCardStyle = $isSalesRecords ? 'background: linear-gradient(135deg,rgb(12,
     <div class="card-body" style="<?php echo $isSalesRecords ? 'padding: 1.5rem;' : ''; ?>">
         <form method="GET" action="" class="row g-3">
             <input type="hidden" name="page" value="<?php echo $isSalesRecords ? 'sales_records' : 'sales_collections'; ?>">
-            <input type="hidden" name="tab" value="<?php echo $activeTab; ?>">
+            <?php if (isset($_GET['section'])): ?>
+                <input type="hidden" name="section" value="<?php echo htmlspecialchars($activeTab); ?>">
+            <?php else: ?>
+                <input type="hidden" name="tab" value="<?php echo htmlspecialchars($activeTab); ?>">
+            <?php endif; ?>
             <div class="col-md-3">
                 <label class="form-label <?php echo $isSalesRecords ? 'text-white fw-semibold' : ''; ?>">العميل</label>
                 <select class="form-select <?php echo $isSalesRecords ? 'border-0 shadow-sm' : ''; ?>" name="customer_id">
@@ -465,7 +470,7 @@ $tableHeaderStyle = $isSalesRecords ? 'background: linear-gradient(135deg,rgb(37
         <nav aria-label="Page navigation" class="mt-3">
             <ul class="pagination justify-content-center">
                 <li class="page-item <?php echo $exchangesPageNum <= 1 ? 'disabled' : ''; ?>">
-                    <a class="page-link <?php echo $isSalesRecords ? 'shadow-sm' : ''; ?>" href="?page=<?php echo $isSalesRecords ? 'sales_records' : 'sales_collections'; ?>&tab=exchanges&p=<?php echo $exchangesPageNum - 1; ?><?php echo !empty($exchangeFilters['customer_id']) ? '&customer_id=' . urlencode($exchangeFilters['customer_id']) : ''; ?><?php echo !empty($exchangeFilters['status']) ? '&status=' . urlencode($exchangeFilters['status']) : ''; ?><?php echo !empty($exchangeFilters['date_from']) ? '&date_from=' . urlencode($exchangeFilters['date_from']) : ''; ?><?php echo !empty($exchangeFilters['date_to']) ? '&date_to=' . urlencode($exchangeFilters['date_to']) : ''; ?>">
+                    <a class="page-link <?php echo $isSalesRecords ? 'shadow-sm' : ''; ?>" href="?<?php echo isset($_GET['section']) ? 'page=' . ($isSalesRecords ? 'sales_records' : 'sales_collections') . '&section=' . urlencode($activeTab) : 'page=' . ($isSalesRecords ? 'sales_records' : 'sales_collections') . '&tab=' . urlencode($activeTab); ?>&p=<?php echo $exchangesPageNum - 1; ?><?php echo !empty($exchangeFilters['customer_id']) ? '&customer_id=' . urlencode($exchangeFilters['customer_id']) : ''; ?><?php echo !empty($exchangeFilters['status']) ? '&status=' . urlencode($exchangeFilters['status']) : ''; ?><?php echo !empty($exchangeFilters['date_from']) ? '&date_from=' . urlencode($exchangeFilters['date_from']) : ''; ?><?php echo !empty($exchangeFilters['date_to']) ? '&date_to=' . urlencode($exchangeFilters['date_to']) : ''; ?>">
                         <i class="bi bi-chevron-right"></i>
                     </a>
                 </li>
@@ -475,7 +480,7 @@ $tableHeaderStyle = $isSalesRecords ? 'background: linear-gradient(135deg,rgb(37
                 $endPage = min($totalExchangePages, $exchangesPageNum + 2);
                 
                 if ($startPage > 1): ?>
-                    <li class="page-item"><a class="page-link <?php echo $isSalesRecords ? 'shadow-sm' : ''; ?>" href="?page=<?php echo $isSalesRecords ? 'sales_records' : 'sales_collections'; ?>&tab=exchanges&p=1<?php echo !empty($exchangeFilters['customer_id']) ? '&customer_id=' . urlencode($exchangeFilters['customer_id']) : ''; ?><?php echo !empty($exchangeFilters['status']) ? '&status=' . urlencode($exchangeFilters['status']) : ''; ?><?php echo !empty($exchangeFilters['date_from']) ? '&date_from=' . urlencode($exchangeFilters['date_from']) : ''; ?><?php echo !empty($exchangeFilters['date_to']) ? '&date_to=' . urlencode($exchangeFilters['date_to']) : ''; ?>">1</a></li>
+                    <li class="page-item"><a class="page-link <?php echo $isSalesRecords ? 'shadow-sm' : ''; ?>" href="?<?php echo isset($_GET['section']) ? 'page=' . ($isSalesRecords ? 'sales_records' : 'sales_collections') . '&section=' . urlencode($activeTab) : 'page=' . ($isSalesRecords ? 'sales_records' : 'sales_collections') . '&tab=' . urlencode($activeTab); ?>&p=1<?php echo !empty($exchangeFilters['customer_id']) ? '&customer_id=' . urlencode($exchangeFilters['customer_id']) : ''; ?><?php echo !empty($exchangeFilters['status']) ? '&status=' . urlencode($exchangeFilters['status']) : ''; ?><?php echo !empty($exchangeFilters['date_from']) ? '&date_from=' . urlencode($exchangeFilters['date_from']) : ''; ?><?php echo !empty($exchangeFilters['date_to']) ? '&date_to=' . urlencode($exchangeFilters['date_to']) : ''; ?>">1</a></li>
                     <?php if ($startPage > 2): ?>
                         <li class="page-item disabled"><span class="page-link">...</span></li>
                     <?php endif; ?>
@@ -483,7 +488,7 @@ $tableHeaderStyle = $isSalesRecords ? 'background: linear-gradient(135deg,rgb(37
                 
                 <?php for ($i = $startPage; $i <= $endPage; $i++): ?>
                     <li class="page-item <?php echo $i == $exchangesPageNum ? 'active' : ''; ?>">
-                        <a class="page-link <?php echo $isSalesRecords ? 'shadow-sm' : ''; ?>" href="?page=<?php echo $isSalesRecords ? 'sales_records' : 'sales_collections'; ?>&tab=exchanges&p=<?php echo $i; ?><?php echo !empty($exchangeFilters['customer_id']) ? '&customer_id=' . urlencode($exchangeFilters['customer_id']) : ''; ?><?php echo !empty($exchangeFilters['status']) ? '&status=' . urlencode($exchangeFilters['status']) : ''; ?><?php echo !empty($exchangeFilters['date_from']) ? '&date_from=' . urlencode($exchangeFilters['date_from']) : ''; ?><?php echo !empty($exchangeFilters['date_to']) ? '&date_to=' . urlencode($exchangeFilters['date_to']) : ''; ?>"><?php echo $i; ?></a>
+                        <a class="page-link <?php echo $isSalesRecords ? 'shadow-sm' : ''; ?>" href="?<?php echo isset($_GET['section']) ? 'page=' . ($isSalesRecords ? 'sales_records' : 'sales_collections') . '&section=' . urlencode($activeTab) : 'page=' . ($isSalesRecords ? 'sales_records' : 'sales_collections') . '&tab=' . urlencode($activeTab); ?>&p=<?php echo $i; ?><?php echo !empty($exchangeFilters['customer_id']) ? '&customer_id=' . urlencode($exchangeFilters['customer_id']) : ''; ?><?php echo !empty($exchangeFilters['status']) ? '&status=' . urlencode($exchangeFilters['status']) : ''; ?><?php echo !empty($exchangeFilters['date_from']) ? '&date_from=' . urlencode($exchangeFilters['date_from']) : ''; ?><?php echo !empty($exchangeFilters['date_to']) ? '&date_to=' . urlencode($exchangeFilters['date_to']) : ''; ?>"><?php echo $i; ?></a>
                     </li>
                 <?php endfor; ?>
                 
@@ -491,11 +496,155 @@ $tableHeaderStyle = $isSalesRecords ? 'background: linear-gradient(135deg,rgb(37
                     <?php if ($endPage < $totalExchangePages - 1): ?>
                         <li class="page-item disabled"><span class="page-link">...</span></li>
                     <?php endif; ?>
-                    <li class="page-item"><a class="page-link <?php echo $isSalesRecords ? 'shadow-sm' : ''; ?>" href="?page=<?php echo $isSalesRecords ? 'sales_records' : 'sales_collections'; ?>&tab=exchanges&p=<?php echo $totalExchangePages; ?><?php echo !empty($exchangeFilters['customer_id']) ? '&customer_id=' . urlencode($exchangeFilters['customer_id']) : ''; ?><?php echo !empty($exchangeFilters['status']) ? '&status=' . urlencode($exchangeFilters['status']) : ''; ?><?php echo !empty($exchangeFilters['date_from']) ? '&date_from=' . urlencode($exchangeFilters['date_from']) : ''; ?><?php echo !empty($exchangeFilters['date_to']) ? '&date_to=' . urlencode($exchangeFilters['date_to']) : ''; ?>"><?php echo $totalExchangePages; ?></a></li>
+                    <li class="page-item"><a class="page-link <?php echo $isSalesRecords ? 'shadow-sm' : ''; ?>" href="?<?php echo isset($_GET['section']) ? 'page=' . ($isSalesRecords ? 'sales_records' : 'sales_collections') . '&section=' . urlencode($activeTab) : 'page=' . ($isSalesRecords ? 'sales_records' : 'sales_collections') . '&tab=' . urlencode($activeTab); ?>&p=<?php echo $totalExchangePages; ?><?php echo !empty($exchangeFilters['customer_id']) ? '&customer_id=' . urlencode($exchangeFilters['customer_id']) : ''; ?><?php echo !empty($exchangeFilters['status']) ? '&status=' . urlencode($exchangeFilters['status']) : ''; ?><?php echo !empty($exchangeFilters['date_from']) ? '&date_from=' . urlencode($exchangeFilters['date_from']) : ''; ?><?php echo !empty($exchangeFilters['date_to']) ? '&date_to=' . urlencode($exchangeFilters['date_to']) : ''; ?>"><?php echo $totalExchangePages; ?></a></li>
                 <?php endif; ?>
                 
                 <li class="page-item <?php echo $exchangesPageNum >= $totalExchangePages ? 'disabled' : ''; ?>">
-                    <a class="page-link <?php echo $isSalesRecords ? 'shadow-sm' : ''; ?>" href="?page=<?php echo $isSalesRecords ? 'sales_records' : 'sales_collections'; ?>&tab=exchanges&p=<?php echo $exchangesPageNum + 1; ?><?php echo !empty($exchangeFilters['customer_id']) ? '&customer_id=' . urlencode($exchangeFilters['customer_id']) : ''; ?><?php echo !empty($exchangeFilters['status']) ? '&status=' . urlencode($exchangeFilters['status']) : ''; ?><?php echo !empty($exchangeFilters['date_from']) ? '&date_from=' . urlencode($exchangeFilters['date_from']) : ''; ?><?php echo !empty($exchangeFilters['date_to']) ? '&date_to=' . urlencode($exchangeFilters['date_to']) : ''; ?>">
+                    <a class="page-link <?php echo $isSalesRecords ? 'shadow-sm' : ''; ?>" href="?<?php echo isset($_GET['section']) ? 'page=' . ($isSalesRecords ? 'sales_records' : 'sales_collections') . '&section=' . urlencode($activeTab) : 'page=' . ($isSalesRecords ? 'sales_records' : 'sales_collections') . '&tab=' . urlencode($activeTab); ?>&p=<?php echo $exchangesPageNum + 1; ?><?php echo !empty($exchangeFilters['customer_id']) ? '&customer_id=' . urlencode($exchangeFilters['customer_id']) : ''; ?><?php echo !empty($exchangeFilters['status']) ? '&status=' . urlencode($exchangeFilters['status']) : ''; ?><?php echo !empty($exchangeFilters['date_from']) ? '&date_from=' . urlencode($exchangeFilters['date_from']) : ''; ?><?php echo !empty($exchangeFilters['date_to']) ? '&date_to=' . urlencode($exchangeFilters['date_to']) : ''; ?>">
+                        <i class="bi bi-chevron-left"></i>
+                    </a>
+                </li>
+            </ul>
+        </nav>
+        <?php endif; ?>
+    </div>
+</div>
+<?php endif; ?>
+
+<?php if ($activeTab === 'sales'): ?>
+<?php
+// ========== قسم جدول المبيعات ==========
+?>
+<!-- قسم جدول المبيعات -->
+<?php 
+$tableCardClass = $isSalesRecords ? 'border-0 shadow-lg' : 'shadow-sm';
+$tableHeaderClass = $isSalesRecords ? 'bg-gradient' : 'bg-primary';
+$tableHeaderStyle = $isSalesRecords ? 'background: linear-gradient(135deg,rgb(37, 70, 213) 0%,rgb(5, 46, 134) 100%); border-radius: 12px 12px 0 0;' : '';
+?>
+<div class="card <?php echo $tableCardClass; ?>" style="<?php echo $isSalesRecords ? 'border-radius: 12px; overflow: hidden;' : ''; ?>">
+    <div class="card-header <?php echo $tableHeaderClass; ?> text-white" style="<?php echo $tableHeaderStyle; ?>">
+        <h5 class="mb-0 fw-bold"><i class="bi bi-cart-check me-2"></i>سجلات المبيعات (<?php echo $totalSales; ?>)</h5>
+    </div>
+    <div class="card-body" style="<?php echo $isSalesRecords ? 'padding: 1.5rem;' : ''; ?>">
+        <div class="table-responsive dashboard-table-wrapper">
+            <table class="table dashboard-table align-middle <?php echo $isSalesRecords ? 'table-hover' : ''; ?>" style="<?php echo $isSalesRecords ? 'margin-bottom: 0;' : ''; ?>">
+                <thead>
+                    <tr style="<?php echo $isSalesRecords ? 'background: linear-gradient(135deg,rgb(40, 74, 225) 0%, #764ba2 100%);' : ''; ?>">
+                        <th class="<?php echo $isSalesRecords ? 'text-white fw-bold' : ''; ?>" style="<?php echo $isSalesRecords ? 'border: none; padding: 1rem;' : ''; ?>">التاريخ</th>
+                        <th class="<?php echo $isSalesRecords ? 'text-white fw-bold' : ''; ?>" style="<?php echo $isSalesRecords ? 'border: none; padding: 1rem;' : ''; ?>">رقم الفاتورة</th>
+                        <th class="<?php echo $isSalesRecords ? 'text-white fw-bold' : ''; ?>" style="<?php echo $isSalesRecords ? 'border: none; padding: 1rem;' : ''; ?>">العميل</th>
+                        <th class="<?php echo $isSalesRecords ? 'text-white fw-bold' : ''; ?>" style="<?php echo $isSalesRecords ? 'border: none; padding: 1rem;' : ''; ?>">المنتج</th>
+                        <th class="<?php echo $isSalesRecords ? 'text-white fw-bold' : ''; ?>" style="<?php echo $isSalesRecords ? 'border: none; padding: 1rem;' : ''; ?>">الكمية</th>
+                        <th class="<?php echo $isSalesRecords ? 'text-white fw-bold' : ''; ?>" style="<?php echo $isSalesRecords ? 'border: none; padding: 1rem;' : ''; ?>">السعر</th>
+                        <th class="<?php echo $isSalesRecords ? 'text-white fw-bold' : ''; ?>" style="<?php echo $isSalesRecords ? 'border: none; padding: 1rem;' : ''; ?>">الإجمالي</th>
+                        <th class="<?php echo $isSalesRecords ? 'text-white fw-bold' : ''; ?>" style="<?php echo $isSalesRecords ? 'border: none; padding: 1rem;' : ''; ?>">الحالة</th>
+                        <?php if ($currentUser['role'] !== 'sales'): ?>
+                        <th class="<?php echo $isSalesRecords ? 'text-white fw-bold' : ''; ?>" style="<?php echo $isSalesRecords ? 'border: none; padding: 1rem;' : ''; ?>">مندوب المبيعات</th>
+                        <?php endif; ?>
+                        <th class="<?php echo $isSalesRecords ? 'text-white fw-bold' : ''; ?>" style="<?php echo $isSalesRecords ? 'border: none; padding: 1rem;' : ''; ?>" width="100">إجراء</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    <?php if (empty($sales)): ?>
+                        <tr>
+                            <td colspan="<?php echo $currentUser['role'] !== 'sales' ? '9' : '8'; ?>" class="text-center text-muted">لا توجد مبيعات</td>
+                        </tr>
+                    <?php else: ?>
+                        <?php foreach ($sales as $sale): ?>
+                            <?php
+                            $statusLabels = [
+                                'pending' => 'معلق',
+                                'approved' => 'موافق عليه',
+                                'rejected' => 'مرفوض',
+                                'completed' => 'مكتمل'
+                            ];
+                            $statusColors = [
+                                'pending' => 'warning',
+                                'approved' => 'success',
+                                'rejected' => 'danger',
+                                'completed' => 'info'
+                            ];
+                            $statusLabel = $statusLabels[$sale['status']] ?? $sale['status'];
+                            $statusColor = $statusColors[$sale['status']] ?? 'secondary';
+                            ?>
+                            <tr style="<?php echo $isSalesRecords ? 'transition: all 0.3s ease; border-bottom: 1px solid #e9ecef;' : ''; ?>" 
+                                <?php if ($isSalesRecords): ?>
+                                onmouseover="this.style.background='#f8f9fa'; this.style.transform='translateX(-2px)';" 
+                                onmouseout="this.style.background=''; this.style.transform='';"
+                                <?php endif; ?>>
+                                <td style="<?php echo $isSalesRecords ? 'padding: 1rem; font-weight: 500;' : ''; ?>"><?php echo formatDate($sale['date']); ?></td>
+                                <td style="<?php echo $isSalesRecords ? 'padding: 1rem;' : ''; ?>">
+                                    <span class="badge <?php echo $isSalesRecords ? 'bg-gradient shadow-sm' : 'bg-info'; ?>" style="<?php echo $isSalesRecords ? 'background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); padding: 0.5rem 0.75rem; font-weight: 600; color: #fff;' : ''; ?>">
+                                        <?php echo htmlspecialchars($sale['invoice_number'] ?? 'INV-' . $sale['invoice_id']); ?>
+                                    </span>
+                                </td>
+                                <td style="<?php echo $isSalesRecords ? 'padding: 1rem; font-weight: 500;' : ''; ?>"><?php echo htmlspecialchars($sale['customer_name'] ?? '-'); ?></td>
+                                <td style="<?php echo $isSalesRecords ? 'padding: 1rem;' : ''; ?>"><?php echo htmlspecialchars($sale['product_name'] ?? '-'); ?></td>
+                                <td style="<?php echo $isSalesRecords ? 'padding: 1rem;' : ''; ?>"><?php echo number_format($sale['quantity'], 2); ?></td>
+                                <td style="<?php echo $isSalesRecords ? 'padding: 1rem;' : ''; ?>"><?php echo formatCurrency($sale['price'] ?? 0); ?></td>
+                                <td style="<?php echo $isSalesRecords ? 'padding: 1rem;' : ''; ?>">
+                                    <strong style="<?php echo $isSalesRecords ? 'font-size: 1.1rem;' : ''; ?>">
+                                        <?php echo formatCurrency($sale['total'] ?? 0); ?>
+                                    </strong>
+                                </td>
+                                <td style="<?php echo $isSalesRecords ? 'padding: 1rem;' : ''; ?>">
+                                    <span class="badge bg-<?php echo $statusColor; ?>"><?php echo htmlspecialchars($statusLabel); ?></span>
+                                </td>
+                                <?php if ($currentUser['role'] !== 'sales'): ?>
+                                <td style="<?php echo $isSalesRecords ? 'padding: 1rem;' : ''; ?>"><?php echo htmlspecialchars($sale['salesperson_name'] ?? '-'); ?></td>
+                                <?php endif; ?>
+                                <td style="<?php echo $isSalesRecords ? 'padding: 1rem;' : ''; ?>">
+                                    <a href="<?php echo getRelativeUrl('print_invoice.php?id=' . (int)$sale['invoice_id']); ?>" 
+                                       target="_blank" 
+                                       class="btn btn-sm <?php echo $isSalesRecords ? 'btn-light shadow-sm' : 'btn-primary'; ?>" 
+                                       title="طباعة الفاتورة"
+                                       style="<?php echo $isSalesRecords ? 'font-weight: 600;' : ''; ?>">
+                                        <i class="bi bi-printer me-1"></i>طباعة
+                                    </a>
+                                </td>
+                            </tr>
+                        <?php endforeach; ?>
+                    <?php endif; ?>
+                </tbody>
+            </table>
+        </div>
+        
+        <!-- Pagination للمبيعات -->
+        <?php if (isset($totalPages) && $totalPages > 1): ?>
+        <nav aria-label="Page navigation" class="mt-3">
+            <ul class="pagination justify-content-center">
+                <li class="page-item <?php echo $pageNum <= 1 ? 'disabled' : ''; ?>">
+                    <a class="page-link <?php echo $isSalesRecords ? 'shadow-sm' : ''; ?>" href="?<?php echo isset($_GET['section']) ? 'page=' . ($isSalesRecords ? 'sales_records' : 'sales_collections') . '&section=' . urlencode($activeTab) : 'page=' . ($isSalesRecords ? 'sales_records' : 'sales_collections') . '&tab=' . urlencode($activeTab); ?>&p=<?php echo $pageNum - 1; ?><?php echo !empty($filters['customer_id']) ? '&customer_id=' . urlencode($filters['customer_id']) : ''; ?><?php echo !empty($filters['status']) ? '&status=' . urlencode($filters['status']) : ''; ?><?php echo !empty($filters['date_from']) ? '&date_from=' . urlencode($filters['date_from']) : ''; ?><?php echo !empty($filters['date_to']) ? '&date_to=' . urlencode($filters['date_to']) : ''; ?>">
+                        <i class="bi bi-chevron-right"></i>
+                    </a>
+                </li>
+                
+                <?php
+                $startPage = max(1, $pageNum - 2);
+                $endPage = min($totalPages, $pageNum + 2);
+                
+                if ($startPage > 1): ?>
+                    <li class="page-item"><a class="page-link <?php echo $isSalesRecords ? 'shadow-sm' : ''; ?>" href="?<?php echo isset($_GET['section']) ? 'page=' . ($isSalesRecords ? 'sales_records' : 'sales_collections') . '&section=' . urlencode($activeTab) : 'page=' . ($isSalesRecords ? 'sales_records' : 'sales_collections') . '&tab=' . urlencode($activeTab); ?>&p=1<?php echo !empty($filters['customer_id']) ? '&customer_id=' . urlencode($filters['customer_id']) : ''; ?><?php echo !empty($filters['status']) ? '&status=' . urlencode($filters['status']) : ''; ?><?php echo !empty($filters['date_from']) ? '&date_from=' . urlencode($filters['date_from']) : ''; ?><?php echo !empty($filters['date_to']) ? '&date_to=' . urlencode($filters['date_to']) : ''; ?>">1</a></li>
+                    <?php if ($startPage > 2): ?>
+                        <li class="page-item disabled"><span class="page-link">...</span></li>
+                    <?php endif; ?>
+                <?php endif; ?>
+                
+                <?php for ($i = $startPage; $i <= $endPage; $i++): ?>
+                    <li class="page-item <?php echo $i == $pageNum ? 'active' : ''; ?>">
+                        <a class="page-link <?php echo $isSalesRecords ? 'shadow-sm' : ''; ?>" href="?<?php echo isset($_GET['section']) ? 'page=' . ($isSalesRecords ? 'sales_records' : 'sales_collections') . '&section=' . urlencode($activeTab) : 'page=' . ($isSalesRecords ? 'sales_records' : 'sales_collections') . '&tab=' . urlencode($activeTab); ?>&p=<?php echo $i; ?><?php echo !empty($filters['customer_id']) ? '&customer_id=' . urlencode($filters['customer_id']) : ''; ?><?php echo !empty($filters['status']) ? '&status=' . urlencode($filters['status']) : ''; ?><?php echo !empty($filters['date_from']) ? '&date_from=' . urlencode($filters['date_from']) : ''; ?><?php echo !empty($filters['date_to']) ? '&date_to=' . urlencode($filters['date_to']) : ''; ?>"><?php echo $i; ?></a>
+                    </li>
+                <?php endfor; ?>
+                
+                <?php if ($endPage < $totalPages): ?>
+                    <?php if ($endPage < $totalPages - 1): ?>
+                        <li class="page-item disabled"><span class="page-link">...</span></li>
+                    <?php endif; ?>
+                    <li class="page-item"><a class="page-link <?php echo $isSalesRecords ? 'shadow-sm' : ''; ?>" href="?<?php echo isset($_GET['section']) ? 'page=' . ($isSalesRecords ? 'sales_records' : 'sales_collections') . '&section=' . urlencode($activeTab) : 'page=' . ($isSalesRecords ? 'sales_records' : 'sales_collections') . '&tab=' . urlencode($activeTab); ?>&p=<?php echo $totalPages; ?><?php echo !empty($filters['customer_id']) ? '&customer_id=' . urlencode($filters['customer_id']) : ''; ?><?php echo !empty($filters['status']) ? '&status=' . urlencode($filters['status']) : ''; ?><?php echo !empty($filters['date_from']) ? '&date_from=' . urlencode($filters['date_from']) : ''; ?><?php echo !empty($filters['date_to']) ? '&date_to=' . urlencode($filters['date_to']) : ''; ?>"><?php echo $totalPages; ?></a></li>
+                <?php endif; ?>
+                
+                <li class="page-item <?php echo $pageNum >= $totalPages ? 'disabled' : ''; ?>">
+                    <a class="page-link <?php echo $isSalesRecords ? 'shadow-sm' : ''; ?>" href="?<?php echo isset($_GET['section']) ? 'page=' . ($isSalesRecords ? 'sales_records' : 'sales_collections') . '&section=' . urlencode($activeTab) : 'page=' . ($isSalesRecords ? 'sales_records' : 'sales_collections') . '&tab=' . urlencode($activeTab); ?>&p=<?php echo $pageNum + 1; ?><?php echo !empty($filters['customer_id']) ? '&customer_id=' . urlencode($filters['customer_id']) : ''; ?><?php echo !empty($filters['status']) ? '&status=' . urlencode($filters['status']) : ''; ?><?php echo !empty($filters['date_from']) ? '&date_from=' . urlencode($filters['date_from']) : ''; ?><?php echo !empty($filters['date_to']) ? '&date_to=' . urlencode($filters['date_to']) : ''; ?>">
                         <i class="bi bi-chevron-left"></i>
                     </a>
                 </li>

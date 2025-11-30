@@ -1002,6 +1002,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && trim($_P
                                 $salesModulePath = __DIR__ . '/../modules/sales/sales.php';
                                 if (file_exists($salesModulePath)) {
                                     $_GET['page'] = 'sales_records';
+                                    if (!isset($_GET['section'])) {
+                                        $_GET['section'] = $activeTab;
+                                    }
                                     include $salesModulePath;
                                 } else {
                                 ?>
@@ -1079,7 +1082,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && trim($_P
                                 $salesModulePath = __DIR__ . '/../modules/sales/sales.php';
                                 if (file_exists($salesModulePath)) {
                                     $_GET['page'] = 'sales_records';
-                                    $_GET['tab'] = 'exchanges';
+                                    if (!isset($_GET['section'])) {
+                                        $_GET['section'] = 'exchanges';
+                                    }
                                     include $salesModulePath;
                                 } else {
                                 ?>
@@ -1672,6 +1677,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && trim($_P
                                 if (file_exists($salesModulePath)) {
                                     // تعديل قيمة page في GET قبل تضمين الملف
                                     $_GET['page'] = 'sales_records';
+                                    if (!isset($_GET['section'])) {
+                                        $_GET['section'] = $activeTab;
+                                    }
                                     include $salesModulePath;
                                 } else {
                                 ?>
