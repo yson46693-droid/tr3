@@ -163,7 +163,7 @@ function customerHistorySyncForCustomer(int $customerId): array
     $exchangesByInvoice = [];
     if (!empty($realInvoiceIds)) {
         $placeholders = implode(',', array_fill(0, count($realInvoiceIds), '?'));
-        // البحث عن الاستبدالات من خلال returns المرتبطة بالفواتير
+        // البحث عن الاستبدالات من خلال returns المرتبطة بالفواتير (المعتمدة والمكتملة فقط)
         $exchangeRowsFromReturns = $db->query(
             "SELECT
                 e.id,
@@ -177,12 +177,13 @@ function customerHistorySyncForCustomer(int $customerId): array
              LEFT JOIN returns r ON e.return_id = r.id
              WHERE e.customer_id = ?
                AND e.exchange_date >= ?
+               AND e.status IN ('approved', 'completed')
                AND r.invoice_id IS NOT NULL
                AND r.invoice_id IN ($placeholders)",
             array_merge([$customerId, $cutoffDate], $realInvoiceIds)
         );
 
-        // البحث عن الاستبدالات التي لها invoice_id مباشرة
+        // البحث عن الاستبدالات التي لها invoice_id مباشرة (المعتمدة والمكتملة فقط)
         $exchangeRowsDirect = $db->query(
             "SELECT
                 e.id,
@@ -195,6 +196,7 @@ function customerHistorySyncForCustomer(int $customerId): array
              FROM exchanges e
              WHERE e.customer_id = ?
                AND e.exchange_date >= ?
+               AND e.status IN ('approved', 'completed')
                AND e.invoice_id IS NOT NULL
                AND e.invoice_id IN ($placeholders)",
             array_merge([$customerId, $cutoffDate], $realInvoiceIds)
