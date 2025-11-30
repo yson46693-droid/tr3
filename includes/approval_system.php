@@ -281,7 +281,7 @@ function requestApproval($type, $entityId, $requestedBy, $notes = null) {
         if ($type === 'return_request' || $type === 'invoice_return_company') {
             require_once __DIR__ . '/path_helper.php';
             $basePath = getBasePath();
-            $notificationLink = $basePath . '/dashboard/manager.php?page=returns&id=' . $entityId;
+            $notificationLink = $basePath . '/dashboard/manager.php?page=المرتجعات&id=' . $entityId;
         } elseif ($type === 'warehouse_transfer') {
             // لطلبات نقل المخازن، استخدم رابط صفحة الموافقات مع قسم warehouse_transfers
             require_once __DIR__ . '/path_helper.php';
@@ -1379,7 +1379,7 @@ function getEntityLink($type, $entityId) {
 
         case 'invoice_return_company':
         case 'return_request':
-            return $baseUrl . 'manager.php?page=returns&id=' . $entityId;
+            return $baseUrl . 'manager.php?page=المرتجعات&id=' . $entityId;
             
         default:
             return $baseUrl . 'manager.php?page=approvals&id=' . $entityId;

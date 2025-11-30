@@ -117,7 +117,7 @@ $returnNumber = $returnSummary['return_number'] ?? ('RET-' . $returnId);
                     <button class="btn btn-primary" onclick="window.print()">
                         <i class="bi bi-printer me-2"></i>طباعة
                     </button>
-                    <a href="<?php echo getRelativeUrl('dashboard/manager.php?page=returns'); ?>" class="btn btn-secondary">
+                    <a href="<?php echo getRelativeUrl('dashboard/manager.php?page=المرتجعات'); ?>" class="btn btn-secondary">
                         <i class="bi bi-arrow-left me-2"></i>رجوع
                     </a>
                 </div>
