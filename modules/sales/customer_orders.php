@@ -129,7 +129,12 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     
     if ($action === 'create_order') {
         $customerId = intval($_POST['customer_id'] ?? 0);
-        $salesRepId = !empty($_POST['sales_rep_id']) ? intval($_POST['sales_rep_id']) : null;
+        // إذا كان المستخدم مندوب مبيعات، استخدم معرفه مباشرة
+        if ($isSalesUser) {
+            $salesRepId = $currentUser['id'];
+        } else {
+            $salesRepId = !empty($_POST['sales_rep_id']) ? intval($_POST['sales_rep_id']) : null;
+        }
         $orderDate = $_POST['order_date'] ?? date('Y-m-d');
         $deliveryDate = !empty($_POST['delivery_date']) ? $_POST['delivery_date'] : null;
         $priority = $_POST['priority'] ?? 'normal';
@@ -139,14 +144,16 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         $newCustomerPhone = trim($_POST['new_customer_phone'] ?? '');
         $newCustomerAddress = trim($_POST['new_customer_address'] ?? '');
         
-        // معالجة العناصر
+        // معالجة العناصر - الآن template_name بدلاً من product_id
         $items = [];
         if (isset($_POST['items']) && is_array($_POST['items'])) {
             foreach ($_POST['items'] as $item) {
-                if (!empty($item['product_id']) && $item['quantity'] > 0) {
+                $templateName = trim($item['template_name'] ?? '');
+                $quantity = floatval($item['quantity'] ?? 0);
+                if (!empty($templateName) && $quantity > 0) {
                     $items[] = [
-                        'product_id' => intval($item['product_id']),
-                        'quantity' => floatval($item['quantity']),
+                        'template_name' => $templateName,
+                        'quantity' => $quantity,
                         'unit_price' => 0.0,
                         'total_price' => 0.0
                     ];
@@ -357,73 +364,86 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 }
 
                 foreach ($items as $item) {
-                    // التحقق من وجود القالب في أحد الجداول
-                    $templateExists = false;
-                    $templateType = null;
+                    $templateName = $item['template_name'];
                     
-                    // التحقق من unified_product_templates
+                    // البحث عن القالب بالاسم في unified_product_templates أولاً
+                    $templateId = null;
                     $unifiedCheck = $db->queryOne("SHOW TABLES LIKE 'unified_product_templates'");
                     if (!empty($unifiedCheck)) {
                         $template = $db->queryOne(
-                            "SELECT id FROM unified_product_templates WHERE id = ? AND status = 'active'",
-                            [$item['product_id']]
+                            "SELECT id FROM unified_product_templates WHERE (product_name = ? OR CONCAT('قالب #', id) = ?) AND status = 'active' LIMIT 1",
+                            [$templateName, $templateName]
                         );
                         if ($template) {
-                            $templateExists = true;
-                            $templateType = 'unified';
+                            $templateId = (int)$template['id'];
                         }
                     }
                     
-                    // التحقق من product_templates
-                    if (!$templateExists) {
+                    // إذا لم يُعثر عليه، البحث في product_templates
+                    if (!$templateId) {
                         $productTemplatesCheck = $db->queryOne("SHOW TABLES LIKE 'product_templates'");
                         if (!empty($productTemplatesCheck)) {
                             $template = $db->queryOne(
-                                "SELECT id FROM product_templates WHERE id = ? AND status = 'active'",
-                                [$item['product_id']]
+                                "SELECT id FROM product_templates WHERE (product_name = ? OR CONCAT('قالب #', id) = ?) AND status = 'active' LIMIT 1",
+                                [$templateName, $templateName]
                             );
                             if ($template) {
-                                $templateExists = true;
-                                $templateType = 'product';
+                                $templateId = (int)$template['id'];
                             }
                         }
                     }
                     
-                    if (!$templateExists) {
-                        throw new InvalidArgumentException('القالب المحدد غير موجود أو غير نشط: ' . $item['product_id']);
-                    }
-                    
-                    // إدراج العنصر مع template_id و product_id = NULL
+                    // إدراج العنصر - إذا لم يُعثر على القالب، نستخدم NULL للـ template_id ونحفظ الاسم في notes أو نستخدم product_id = NULL
                     try {
-                        $db->execute(
-                            "INSERT INTO {$orderItemsTable} (order_id, product_id, template_id, quantity, unit_price, total_price) 
-                             VALUES (?, NULL, ?, ?, ?, ?)",
-                            [
-                                $orderId,
-                                $item['product_id'],
-                                $item['quantity'],
-                                $item['unit_price'],
-                                $item['total_price']
-                            ]
-                        );
-                    } catch (Throwable $insertError) {
-                        // إذا فشل لأن template_id غير موجود، نجرب بدون template_id
-                        if (stripos($insertError->getMessage(), 'template_id') !== false || 
-                            stripos($insertError->getMessage(), 'Unknown column') !== false) {
-                            // محاولة إدراج بدون template_id (product_id = NULL)
+                        // محاولة إدراج مع template_id إذا وُجد
+                        if ($templateId) {
                             $db->execute(
-                                "INSERT INTO {$orderItemsTable} (order_id, product_id, quantity, unit_price, total_price) 
-                                 VALUES (?, NULL, ?, ?, ?)",
+                                "INSERT INTO {$orderItemsTable} (order_id, product_id, template_id, quantity, unit_price, total_price) 
+                                 VALUES (?, NULL, ?, ?, ?, ?)",
                                 [
                                     $orderId,
+                                    $templateId,
                                     $item['quantity'],
                                     $item['unit_price'],
                                     $item['total_price']
                                 ]
                             );
                         } else {
-                            throw $insertError;
+                            // إذا لم يُعثر على القالب، إدراج بدون template_id (سيتم حفظ الاسم في template_name لاحقاً إذا كان هناك عمود لذلك)
+                            // أو يمكننا إضافة عمود template_name للجدول
+                            try {
+                                $db->execute(
+                                    "INSERT INTO {$orderItemsTable} (order_id, product_id, template_id, quantity, unit_price, total_price) 
+                                     VALUES (?, NULL, NULL, ?, ?, ?)",
+                                    [
+                                        $orderId,
+                                        $item['quantity'],
+                                        $item['unit_price'],
+                                        $item['total_price']
+                                    ]
+                                );
+                            } catch (Throwable $insertError) {
+                                // إذا فشل لأن template_id غير موجود، نجرب بدون template_id
+                                if (stripos($insertError->getMessage(), 'template_id') !== false || 
+                                    stripos($insertError->getMessage(), 'Unknown column') !== false) {
+                                    $db->execute(
+                                        "INSERT INTO {$orderItemsTable} (order_id, product_id, quantity, unit_price, total_price) 
+                                         VALUES (?, NULL, ?, ?, ?)",
+                                        [
+                                            $orderId,
+                                            $item['quantity'],
+                                            $item['unit_price'],
+                                            $item['total_price']
+                                        ]
+                                    );
+                                } else {
+                                    throw $insertError;
+                                }
+                            }
                         }
+                    } catch (Throwable $insertError) {
+                        error_log('Error inserting order item: ' . $insertError->getMessage());
+                        throw $insertError;
                     }
                 }
 
@@ -478,14 +498,16 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         $newCustomerPhone = trim($_POST['new_customer_phone'] ?? '');
         $newCustomerAddress = trim($_POST['new_customer_address'] ?? '');
         
-        // معالجة العناصر
+        // معالجة العناصر - الآن template_name بدلاً من product_id
         $items = [];
         if (isset($_POST['items']) && is_array($_POST['items'])) {
             foreach ($_POST['items'] as $item) {
-                if (!empty($item['product_id']) && !empty(trim($item['quantity'] ?? ''))) {
+                $templateName = trim($item['template_name'] ?? '');
+                $quantity = floatval($item['quantity'] ?? 0);
+                if (!empty($templateName) && $quantity > 0) {
                     $items[] = [
-                        'product_id' => intval($item['product_id']),
-                        'quantity' => trim($item['quantity']),
+                        'template_name' => $templateName,
+                        'quantity' => $quantity,
                         'unit_price' => 0.0,
                         'total_price' => 0.0
                     ];
@@ -614,34 +636,82 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 // إضافة العناصر
                 $orderItemsTable = getOrderItemsTableName($db);
                 foreach ($items as $item) {
-                    try {
-                        $db->execute(
-                            "INSERT INTO {$orderItemsTable} (order_id, product_id, template_id, quantity, unit_price, total_price) 
-                             VALUES (?, NULL, ?, ?, ?, ?)",
-                            [
-                                $orderId,
-                                $item['product_id'],
-                                $item['quantity'],
-                                $item['unit_price'],
-                                $item['total_price']
-                            ]
+                    $templateName = $item['template_name'];
+                    
+                    // البحث عن القالب بالاسم في unified_product_templates أولاً
+                    $templateId = null;
+                    $unifiedCheck = $db->queryOne("SHOW TABLES LIKE 'unified_product_templates'");
+                    if (!empty($unifiedCheck)) {
+                        $template = $db->queryOne(
+                            "SELECT id FROM unified_product_templates WHERE (product_name = ? OR CONCAT('قالب #', id) = ?) AND status = 'active' LIMIT 1",
+                            [$templateName, $templateName]
                         );
-                    } catch (Throwable $insertError) {
-                        if (stripos($insertError->getMessage(), 'template_id') !== false || 
-                            stripos($insertError->getMessage(), 'Unknown column') !== false) {
+                        if ($template) {
+                            $templateId = (int)$template['id'];
+                        }
+                    }
+                    
+                    // إذا لم يُعثر عليه، البحث في product_templates
+                    if (!$templateId) {
+                        $productTemplatesCheck = $db->queryOne("SHOW TABLES LIKE 'product_templates'");
+                        if (!empty($productTemplatesCheck)) {
+                            $template = $db->queryOne(
+                                "SELECT id FROM product_templates WHERE (product_name = ? OR CONCAT('قالب #', id) = ?) AND status = 'active' LIMIT 1",
+                                [$templateName, $templateName]
+                            );
+                            if ($template) {
+                                $templateId = (int)$template['id'];
+                            }
+                        }
+                    }
+                    
+                    // إدراج العنصر
+                    try {
+                        if ($templateId) {
                             $db->execute(
-                                "INSERT INTO {$orderItemsTable} (order_id, product_id, quantity, unit_price, total_price) 
-                                 VALUES (?, NULL, ?, ?, ?)",
+                                "INSERT INTO {$orderItemsTable} (order_id, product_id, template_id, quantity, unit_price, total_price) 
+                                 VALUES (?, NULL, ?, ?, ?, ?)",
                                 [
                                     $orderId,
+                                    $templateId,
                                     $item['quantity'],
                                     $item['unit_price'],
                                     $item['total_price']
                                 ]
                             );
                         } else {
-                            throw $insertError;
+                            try {
+                                $db->execute(
+                                    "INSERT INTO {$orderItemsTable} (order_id, product_id, template_id, quantity, unit_price, total_price) 
+                                     VALUES (?, NULL, NULL, ?, ?, ?)",
+                                    [
+                                        $orderId,
+                                        $item['quantity'],
+                                        $item['unit_price'],
+                                        $item['total_price']
+                                    ]
+                                );
+                            } catch (Throwable $insertError) {
+                                if (stripos($insertError->getMessage(), 'template_id') !== false || 
+                                    stripos($insertError->getMessage(), 'Unknown column') !== false) {
+                                    $db->execute(
+                                        "INSERT INTO {$orderItemsTable} (order_id, product_id, quantity, unit_price, total_price) 
+                                         VALUES (?, NULL, ?, ?, ?)",
+                                        [
+                                            $orderId,
+                                            $item['quantity'],
+                                            $item['unit_price'],
+                                            $item['total_price']
+                                        ]
+                                    );
+                                } else {
+                                    throw $insertError;
+                                }
+                            }
                         }
+                    } catch (Throwable $insertError) {
+                        error_log('Error inserting company order item: ' . $insertError->getMessage());
+                        throw $insertError;
                     }
                 }
 
@@ -1308,8 +1378,12 @@ if (isset($_GET['id'])) {
             </div>
             <form method="POST" id="orderForm">
                 <input type="hidden" name="action" value="create_order">
+                <?php if ($isSalesUser): ?>
+                    <input type="hidden" name="sales_rep_id" value="<?php echo $currentUser['id']; ?>">
+                <?php endif; ?>
                 <div class="modal-body">
                     <div class="row mb-3">
+                        <?php if (!$isSalesUser): ?>
                         <div class="col-md-3">
                             <label class="form-label">مندوب المبيعات <span class="text-danger">*</span></label>
                             <select class="form-select" name="sales_rep_id" id="salesRepSelect" required>
@@ -1321,7 +1395,8 @@ if (isset($_GET['id'])) {
                                 <?php endforeach; ?>
                             </select>
                         </div>
-                        <div class="col-md-4">
+                        <?php endif; ?>
+                        <div class="col-md-<?php echo $isSalesUser ? '5' : '4'; ?>">
                             <div class="d-flex justify-content-between align-items-center mb-1">
                                 <label class="form-label mb-0">العميل <span class="text-danger">*</span></label>
                                 <div class="form-check form-switch">
@@ -1329,8 +1404,23 @@ if (isset($_GET['id'])) {
                                     <label class="form-check-label small" for="toggleNewCustomer">عميل جديد</label>
                                 </div>
                             </div>
-                            <select class="form-select" name="customer_id" id="existingCustomerSelect" disabled required>
-                                <option value="">اختر المندوب أولاً</option>
+                            <select class="form-select" name="customer_id" id="existingCustomerSelect" <?php echo $isSalesUser ? '' : 'disabled'; ?> required>
+                                <?php if ($isSalesUser): ?>
+                                    <option value="">اختر العميل</option>
+                                    <?php 
+                                    // جلب عملاء المندوب الحالي مباشرة
+                                    $currentUserCustomers = $db->query(
+                                        "SELECT id, name FROM customers WHERE (created_by = ? OR rep_id = ?) AND status = 'active' ORDER BY name ASC",
+                                        [$currentUser['id'], $currentUser['id']]
+                                    );
+                                    foreach ($currentUserCustomers as $customer): ?>
+                                        <option value="<?php echo $customer['id']; ?>">
+                                            <?php echo htmlspecialchars($customer['name']); ?>
+                                        </option>
+                                    <?php endforeach; ?>
+                                <?php else: ?>
+                                    <option value="">اختر المندوب أولاً</option>
+                                <?php endif; ?>
                             </select>
                         </div>
                         <div class="col-md-2">
@@ -1372,14 +1462,8 @@ if (isset($_GET['id'])) {
                         <div id="orderItems">
                             <div class="order-item row mb-2">
                                 <div class="col-md-9">
-                                    <select class="form-select product-select" name="items[0][product_id]" required>
-                                        <option value="">اختر القالب</option>
-                                        <?php foreach ($products as $product): ?>
-                                            <option value="<?php echo $product['id']; ?>">
-                                                <?php echo htmlspecialchars($product['name']); ?>
-                                            </option>
-                                        <?php endforeach; ?>
-                                    </select>
+                                    <input type="text" class="form-control template-input" 
+                                           name="items[0][template_name]" placeholder="اسم القالب" required>
                                 </div>
                                 <div class="col-md-2">
                                     <input type="text" class="form-control quantity" 
@@ -1475,14 +1559,8 @@ if (isset($_GET['id'])) {
                         <div id="companyOrderItems">
                             <div class="order-item row mb-2">
                                 <div class="col-md-9">
-                                    <select class="form-select product-select" name="items[0][product_id]" required>
-                                        <option value="">اختر القالب</option>
-                                        <?php foreach ($products as $product): ?>
-                                            <option value="<?php echo $product['id']; ?>">
-                                                <?php echo htmlspecialchars($product['name']); ?>
-                                            </option>
-                                        <?php endforeach; ?>
-                                    </select>
+                                    <input type="text" class="form-control template-input" 
+                                           name="items[0][template_name]" placeholder="اسم القالب" required>
                                 </div>
                                 <div class="col-md-2">
                                     <input type="text" class="form-control quantity" 
@@ -1546,26 +1624,7 @@ if (isset($_GET['id'])) {
 <script>
 let itemIndex = 1;
 
-// إنشاء options المنتجات من PHP
-const productOptions = <?php 
-    $optionsArray = [];
-    foreach ($products as $product) {
-        $optionsArray[] = [
-            'id' => $product['id'],
-            'name' => htmlspecialchars($product['name'] ?? '')
-        ];
-    }
-    echo json_encode($optionsArray, JSON_UNESCAPED_UNICODE);
-?>;
-
-// دالة لإنشاء HTML options
-function getProductOptionsHTML() {
-    let html = '<option value="">اختر القالب</option>';
-    productOptions.forEach(function(product) {
-        html += '<option value="' + product.id + '">' + product.name + '</option>';
-    });
-    return html;
-}
+// لم نعد بحاجة إلى productOptions لأننا نستخدم input text الآن
 
 // إضافة عنصر جديد
 document.getElementById('addItemBtn')?.addEventListener('click', function() {
@@ -1574,9 +1633,8 @@ document.getElementById('addItemBtn')?.addEventListener('click', function() {
     newItem.className = 'order-item row mb-2';
     newItem.innerHTML = `
         <div class="col-md-9">
-            <select class="form-select product-select" name="items[${itemIndex}][product_id]" required>
-                ${getProductOptionsHTML()}
-            </select>
+            <input type="text" class="form-control template-input" 
+                   name="items[${itemIndex}][template_name]" placeholder="اسم القالب" required>
         </div>
         <div class="col-md-2">
             <input type="text" class="form-control quantity" 
@@ -1673,7 +1731,7 @@ function showStatusModal(orderId, currentStatus) {
     modal.show();
 }
 
-// تحميل عملاء المندوب عند اختياره
+// تحميل عملاء المندوب عند اختياره (فقط إذا لم يكن المستخدم مندوب مبيعات)
 const salesRepSelect = document.getElementById('salesRepSelect');
 const existingCustomerSelect = document.getElementById('existingCustomerSelect');
 
@@ -1731,8 +1789,8 @@ if (salesRepSelect && existingCustomerSelect) {
     }
 }
 
-// تحديث حالة تعطيل العميل عند تغيير toggleNewCustomer
-if (newCustomerToggle) {
+// تحديث حالة تعطيل العميل عند تغيير toggleNewCustomer (فقط إذا لم يكن المستخدم مندوب مبيعات)
+if (newCustomerToggle && salesRepSelect) {
     const originalUpdateNewCustomerState = updateNewCustomerState;
     updateNewCustomerState = function() {
         originalUpdateNewCustomerState();
@@ -1756,9 +1814,8 @@ document.getElementById('addCompanyItemBtn')?.addEventListener('click', function
     newItem.className = 'order-item row mb-2';
     newItem.innerHTML = `
         <div class="col-md-9">
-            <select class="form-select product-select" name="items[${companyItemIndex}][product_id]" required>
-                ${getProductOptionsHTML()}
-            </select>
+            <input type="text" class="form-control template-input" 
+                   name="items[${companyItemIndex}][template_name]" placeholder="اسم القالب" required>
         </div>
         <div class="col-md-2">
             <input type="text" class="form-control quantity" 
@@ -1833,9 +1890,8 @@ if (addCompanyOrderModalElement && typeof bootstrap !== 'undefined') {
             companyOrderItems.innerHTML = `
                 <div class="order-item row mb-2">
                     <div class="col-md-9">
-                        <select class="form-select product-select" name="items[0][product_id]" required>
-                            ${getProductOptionsHTML()}
-                        </select>
+                        <input type="text" class="form-control template-input" 
+                               name="items[0][template_name]" placeholder="اسم القالب" required>
                     </div>
                     <div class="col-md-2">
                         <input type="text" class="form-control quantity" 
@@ -1883,3 +1939,5 @@ if (addCompanyOrderModalElement && typeof bootstrap !== 'undefined') {
 <?php
 // نهاية الملف
 ?>
+
+
