@@ -14,7 +14,7 @@ $currentPage = basename($_SERVER['PHP_SELF']);
 // الحصول على base path فقط (بدون /dashboard/)
 $basePath = getBasePath();
 $baseUrl = rtrim($basePath, '/') . '/dashboard/';
-$role = $currentUser['role'] ?? '';
+$role = (isset($currentUser) && isset($currentUser['role'])) ? $currentUser['role'] : '';
 $currentPageParam = $_GET['page'] ?? '';
 
 // تحديد الروابط بناءً على الدور
