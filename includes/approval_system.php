@@ -681,13 +681,12 @@ function updateEntityStatus($type, $entityId, $status, $approvedBy) {
                 $collectionsBonus = $currentSalaryCalc['collections_bonus'];
                 
                 // حساب الراتب الأساسي بنفس طريقة الحساب في بطاقة الموظف (إعادة الحساب من الساعات)
-                if ($userRole === 'sales') {
-                    // لجميع الأدوار: الراتب الأساسي = الساعات المكتملة فقط × سعر الساعة
-                    // لا يوجد راتب أساسي حتى يتم تسجيل الانصراف
-                    require_once __DIR__ . '/salary_calculator.php';
-                    $completedHours = calculateCompletedMonthlyHours($userId, $month, $year);
-                    $baseAmount = round($completedHours * $hourlyRate, 2);
-                    $actualHours = $completedHours;
+                // لجميع الأدوار: الراتب الأساسي = الساعات المكتملة فقط × سعر الساعة
+                // لا يوجد راتب أساسي حتى يتم تسجيل الانصراف
+                require_once __DIR__ . '/salary_calculator.php';
+                $completedHours = calculateCompletedMonthlyHours($userId, $month, $year);
+                $baseAmount = round($completedHours * $hourlyRate, 2);
+                $actualHours = $completedHours;
                 
                 // حساب الراتب الجديد بنفس طريقة الحساب في بطاقة الموظف
                 $newTotal = round($baseAmount + $bonus + $collectionsBonus - $deductions, 2);
