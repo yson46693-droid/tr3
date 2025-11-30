@@ -610,6 +610,12 @@ if (isset($_GET['month']) && isset($_GET['year'])) {
                     <div class="employee-info-value"><?php echo formatCurrency($employee['hourly_rate'] ?? 0); ?></div>
                 </div>
                 <div class="employee-info-item">
+                    <div class="employee-info-label">الراتب الفعلي</div>
+                    <div class="employee-info-value amount-positive"><?php echo formatCurrency($employee['actual_salary'] ?? 0); ?></div>
+                </div>
+            </div>
+            <div class="employee-info-row">
+                <div class="employee-info-item">
                     <div class="employee-info-label">تاريخ الطباعة</div>
                     <div class="employee-info-value"><?php echo date('d/m/Y H:i'); ?></div>
                 </div>

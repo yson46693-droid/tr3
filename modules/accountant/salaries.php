@@ -1429,6 +1429,114 @@ if (isset($_GET['action']) && $_GET['action'] === 'print_statement') {
     
     $netAmount = $totalSalaries - $totalAdvances - $totalSettlements;
     
+    // حساب المتبقي (المبلغ التراكمي - المبلغ المدفوع)
+    // هذا هو نفس الحساب المستخدم في بطاقة الموظف
+    require_once __DIR__ . '/../../includes/salary_calculator.php';
+    
+    $accumulatedAmount = 0; // المبلغ التراكمي
+    $paidAmount = 0; // المبلغ المدفوع
+    
+    // حساب المبلغ التراكمي: جمع جميع الرواتب حتى نهاية الفترة
+    // يشمل الرواتب المحفوظة في قاعدة البيانات
+    $yearColumnCheck = $db->queryOne("SHOW COLUMNS FROM salaries LIKE 'year'");
+    $hasYearColumn = !empty($yearColumnCheck);
+    
+    if ($hasYearColumn) {
+        // جمع جميع الرواتب المحفوظة حتى نهاية الفترة (شامل)
+        $allSalariesUntilEnd = $db->query(
+            "SELECT total_amount FROM salaries 
+             WHERE user_id = ? 
+             AND (year < ? OR (year = ? AND month <= ?))
+             ORDER BY year ASC, month ASC",
+            [$statementUserId, $toYear, $toYear, $toMonth]
+        );
+    } else {
+        // جمع جميع الرواتب المحفوظة حتى نهاية الفترة
+        $allSalariesUntilEnd = $db->query(
+            "SELECT total_amount FROM salaries 
+             WHERE user_id = ? 
+             AND DATE(month) <= ?
+             ORDER BY month ASC",
+            [$statementUserId, $toDate]
+        );
+    }
+    
+    // حساب مجموع جميع الرواتب المحفوظة حتى نهاية الفترة
+    foreach ($allSalariesUntilEnd as $sal) {
+        $salTotal = cleanFinancialValue($sal['total_amount'] ?? 0);
+        $accumulatedAmount += max(0, $salTotal);
+    }
+    
+    // حساب الراتب للشهر الحالي إذا لم يكن محفوظاً (من الحضور)
+    // هذا يضمن أن المبلغ التراكمي يشمل الراتب الحالي حتى لو لم يكن محفوظاً
+    $currentMonthSalary = 0;
+    $hasCurrentMonthSalary = false;
+    
+    // التحقق من وجود راتب محفوظ للشهر الحالي (آخر شهر في الفترة)
+    if ($hasYearColumn) {
+        $currentMonthSalaryRecord = $db->queryOne(
+            "SELECT total_amount FROM salaries 
+             WHERE user_id = ? AND month = ? AND year = ?",
+            [$statementUserId, $toMonth, $toYear]
+        );
+    } else {
+        $currentMonthSalaryRecord = $db->queryOne(
+            "SELECT total_amount FROM salaries 
+             WHERE user_id = ? AND DATE(month) = ?",
+            [$statementUserId, $toDate]
+        );
+    }
+    
+    if ($currentMonthSalaryRecord) {
+        // الراتب محفوظ، لن نحسبه مرة أخرى
+        $hasCurrentMonthSalary = true;
+    } else {
+        // الراتب غير محفوظ، احسبه من الحضور
+        $userData = $db->queryOne("SELECT hourly_rate, role FROM users WHERE id = ?", [$statementUserId]);
+        if ($userData) {
+            $hourlyRate = cleanFinancialValue($userData['hourly_rate'] ?? 0);
+            if ($hourlyRate > 0) {
+                // حساب الراتب الأساسي من الساعات المكتملة
+                $completedHours = calculateCompletedMonthlyHours($statementUserId, $toMonth, $toYear);
+                $baseAmount = round($completedHours * $hourlyRate, 2);
+                
+                // حساب نسبة التحصيلات إذا كان مندوب مبيعات
+                $collectionsBonus = 0;
+                if ($userData['role'] === 'sales') {
+                    $collectionsAmount = calculateSalesCollections($statementUserId, $toMonth, $toYear);
+                    $collectionsBonus = round($collectionsAmount * 0.02, 2);
+                }
+                
+                $currentMonthSalary = max(0, $baseAmount + $collectionsBonus);
+                
+                // إضافة الراتب الحالي المحسوب إلى المبلغ التراكمي
+                if ($currentMonthSalary > 0) {
+                    $accumulatedAmount += $currentMonthSalary;
+                }
+            }
+        }
+    }
+    
+    // حساب المبلغ المدفوع: من جميع التسويات حتى نهاية الفترة
+    $allSettlementsUntilEnd = $db->query(
+        "SELECT settlement_amount FROM salary_settlements 
+         WHERE user_id = ? 
+         AND DATE(settlement_date) <= ?
+         ORDER BY settlement_date ASC",
+        [$statementUserId, $toDate]
+    );
+    
+    foreach ($allSettlementsUntilEnd as $set) {
+        $setAmount = cleanFinancialValue($set['settlement_amount'] ?? 0);
+        $paidAmount += max(0, $setAmount);
+    }
+    
+    // حساب المتبقي (الراتب الفعلي) = المبلغ التراكمي - المبلغ المدفوع
+    $remainingAmount = max(0, $accumulatedAmount - $paidAmount);
+    
+    // إضافة المتبقي كالراتب الفعلي إلى بيانات الموظف
+    $employee['actual_salary'] = $remainingAmount;
+    
     // عرض صفحة الطباعة
     include __DIR__ . '/salary_statement_print.php';
     exit;
@@ -2670,6 +2778,11 @@ $pageTitle = ($view === 'advances') ? 'السلف' : (($view === 'pending') ? '�
                 
                 $paid = floatval($salary['paid_amount'] ?? 0);
                 $remaining = max(0, $accumulated - $paid);
+                
+                // إضافة المتبقي إلى بيانات $salary لاستخدامه في نافذة تعديل الراتب
+                // هذا يضمن أن نافذة تعديل الراتب تستخدم نفس قيمة المتبقي من بطاقة الموظف
+                $salary['calculated_remaining'] = $remaining;
+                
                 $collapseId = 'collapse_' . ($salary['id'] ?? 'temp_' . uniqid());
                 ?>
                 <div class="employee-card">
@@ -2752,8 +2865,16 @@ $pageTitle = ($view === 'advances') ? 'السلف' : (($view === 'pending') ? '�
                         // لا يوجد راتب أساسي حتى يتم تسجيل الانصراف
                         require_once __DIR__ . '/../../includes/salary_calculator.php';
                         $completedHoursForBase = calculateCompletedMonthlyHours($userId, $selectedMonth, $selectedYear);
-                        // إعادة حساب الراتب الأساسي بناءً على الساعات المكتملة فقط
-                        $baseAmount = round($completedHoursForBase * $hourlyRate, 2);
+                        // استخدام الراتب الأساسي المحسوب من بطاقة الموظف الرئيسية إذا كان متوفراً، وإلا احسبه من جديد
+                        // هذا يضمن أن القيمة المعروضة في قسم التفاصيل هي نفسها المستخدمة في نافذة تعديل الراتب
+                        if (isset($salary['calculated_base_amount'])) {
+                            $baseAmount = $salary['calculated_base_amount'];
+                        } else {
+                            // إعادة حساب الراتب الأساسي بناءً على الساعات المكتملة فقط
+                            $baseAmount = round($completedHoursForBase * $hourlyRate, 2);
+                            // تحديث القيمة في $salary لاستخدامها في نافذة تعديل الراتب
+                            $salary['calculated_base_amount'] = $baseAmount;
+                        }
                         
                         // حساب الراتب الإجمالي دائماً من المكونات لضمان الدقة
                         // الراتب الإجمالي = الراتب الأساسي + المكافآت + نسبة التحصيلات - الخصومات
@@ -2801,8 +2922,14 @@ $pageTitle = ($view === 'advances') ? 'السلف' : (($view === 'pending') ? '�
                         // تحديث القيمة المحسوبة للمبلغ التراكمي في البيانات
                         $salary['calculated_accumulated'] = $accumulated;
                         
+                        // تحديث نسبة التحصيلات المحسوبة في البيانات لاستخدامها في نافذة تعديل الراتب
+                        $salary['calculated_collections_bonus'] = $collectionsBonus;
+                        
                         $paid = floatval($salary['paid_amount'] ?? 0);
                         $remaining = max(0, $accumulated - $paid);
+                        
+                        // تحديث المتبقي في بيانات $salary لاستخدامه في نافذة تعديل الراتب
+                        $salary['calculated_remaining'] = $remaining;
                         ?>
                         <div class="detail-row">
                             <span class="detail-label"><?php echo ($userRole === 'sales') ? 'الراتب الشهري' : 'سعر الساعة'; ?>:</span>
@@ -3575,8 +3702,18 @@ function viewSalaryDetails(salaryId) {
 function openModifyModal(salaryId, salaryData) {
     document.getElementById('modifySalaryId').value = salaryId || '';
     document.getElementById('modifyUserName').value = salaryData.full_name || salaryData.username;
-    // استخدام الراتب الأساسي المحسوب حديثاً إذا كان متوفراً، وإلا استخدم القيمة المحفوظة
-    const baseAmount = salaryData.calculated_base_amount !== undefined ? salaryData.calculated_base_amount : (salaryData.base_amount || 0);
+    
+    // استخدام المتبقي كالراتب الأساسي الفعلي من بطاقة الموظف
+    // هذا يضمن أن نافذة تعديل الراتب تستخدم نفس قيمة المتبقي المعروضة في بطاقة الموظف
+    // حتى لو لم يكن الراتب مسجل في قاعدة البيانات
+    const remaining = salaryData.calculated_remaining !== undefined ? salaryData.calculated_remaining : 
+                      (salaryData.remaining || 
+                       ((salaryData.calculated_accumulated || salaryData.accumulated_amount || salaryData.total_amount || 0) - (salaryData.paid_amount || 0)));
+    
+    // استخدام المتبقي كالراتب الأساسي الفعلي - هذا هو المبلغ الذي يجب أن يتعامل معه المودال
+    // حتى لو لم يكن الراتب مسجل في قاعدة البيانات
+    const baseAmount = Math.max(0, remaining);
+    
     const baseAmountElement = document.getElementById('modifyBaseAmount');
     baseAmountElement.value = formatCurrency(baseAmount);
     // حفظ القيمة الرقمية في data attribute لاستخدامها في الحساب
