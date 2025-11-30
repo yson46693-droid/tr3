@@ -2146,7 +2146,7 @@ if (!$error) {
                                 </div>
                                 <div class="mt-3 d-none" id="posPartialWrapper">
                                     <label class="form-label">مبلغ التحصيل الجزئي</label>
-                                    <input type="number" class="form-control text-muted" id="posPartialAmount" placeholder="0" step="1" required style="opacity: 0.7;">
+                                    <input type="number" class="form-control text-muted" id="posPartialAmount" placeholder="0" step="1" required>
                                 </div>
                                 <div class="mt-3 d-none" id="posDueDateWrapper">
                                     <label class="form-label">تاريخ الاستحقاق <span class="text-muted">(اختياري)</span></label>
@@ -2412,14 +2412,23 @@ if (!$error) {
                 elements.dueDateWrapper.classList.remove('d-none');
             }
             let partialValue = sanitizeNumber(elements.partialInput.value);
+            const inputValue = elements.partialInput.value.trim();
+            const isInputFocused = document.activeElement === elements.partialInput;
+            
             if (isNaN(partialValue) || partialValue <= 0) {
-                elements.partialInput.value = '';
+                // لا نمسح الحقل أثناء الكتابة، فقط نتركه كما هو
+                if (!isInputFocused && (inputValue === '' || inputValue === '0' || inputValue === '0.' || inputValue === '0.00')) {
+                    elements.partialInput.value = '';
+                }
                 paidAmount = 0;
             } else {
                 if (partialValue >= netTotal && netTotal > 0) {
-                    partialValue = Math.max(0, netTotal - 0.01);
+                    partialValue = Math.max(0, netTotal - 0);
                 }
-                elements.partialInput.value = partialValue.toFixed(2);
+                // لا نطبق toFixed أثناء الكتابة، فقط عند blur أو change
+                if (!isInputFocused) {
+                    elements.partialInput.value = partialValue.toFixed(2);
+                }
                 paidAmount = partialValue;
             }
         } else {
@@ -2712,7 +2721,90 @@ if (!$error) {
     }
 
     if (elements.partialInput) {
-        elements.partialInput.addEventListener('input', updateSummary);
+        let previousValue = '';
+        let isUserTyping = false;
+        
+        // تتبع ما إذا كان المستخدم يكتب
+        elements.partialInput.addEventListener('focus', function() {
+            isUserTyping = true;
+            previousValue = this.value;
+        });
+        
+        // معالجة الأسهم (step) - عند الضغط على الأسهم والحقل فارغ، ابدأ من 1
+        elements.partialInput.addEventListener('keydown', function(e) {
+            if (e.key === 'ArrowUp' || e.key === 'ArrowDown') {
+                const currentValue = sanitizeNumber(this.value);
+                if (isNaN(currentValue) || currentValue === 0 || this.value === '' || this.value === '0') {
+                    e.preventDefault();
+                    if (e.key === 'ArrowUp') {
+                        this.value = '1';
+                        updateSummary();
+                    } else {
+                        this.value = '';
+                        updateSummary();
+                    }
+                }
+            }
+        });
+        
+        // تحديث عند الكتابة (بدون تطبيق toFixed أثناء الكتابة)
+        elements.partialInput.addEventListener('input', function() {
+            const currentValue = this.value;
+            // إذا كان المستخدم يكتب، لا نطبق toFixed
+            if (isUserTyping && currentValue !== '' && currentValue !== '0' && currentValue !== '0.') {
+                // فقط تحديث الحسابات، لا نغير قيمة الحقل
+                updateSummary();
+            } else {
+                // إذا كانت القيمة 0 أو فارغة، امسحها
+                if (currentValue === '0' || currentValue === '0.00' || currentValue === '0.') {
+                    this.value = '';
+                }
+                updateSummary();
+            }
+        });
+        
+        // تطبيق التنسيق عند فقدان التركيز
+        elements.partialInput.addEventListener('blur', function() {
+            isUserTyping = false;
+            const value = sanitizeNumber(this.value);
+            if (!isNaN(value) && value > 0) {
+                this.value = value.toFixed(2);
+            } else if (this.value === '' || this.value === '0' || this.value === '0.' || this.value === '0.00') {
+                this.value = '';
+            }
+            updateSummary();
+        });
+        
+        // معالجة الأسهم (step arrows) - عند النقر على الأسهم في المتصفح
+        elements.partialInput.addEventListener('change', function() {
+            const value = sanitizeNumber(this.value);
+            if (!isNaN(value) && value > 0) {
+                // إذا كانت القيمة 0، ابدأ من 1
+                if (value === 0 && previousValue === '') {
+                    this.value = '1';
+                } else {
+                    this.value = value.toFixed(2);
+                }
+            } else if (this.value === '' || this.value === '0' || this.value === '0.' || this.value === '0.00') {
+                this.value = '';
+            }
+            previousValue = this.value;
+            updateSummary();
+        });
+        
+        // معالجة النقر على الأسهم (step arrows) - استخدام mouseup للكشف
+        elements.partialInput.addEventListener('mouseup', function() {
+            setTimeout(function() {
+                const value = sanitizeNumber(elements.partialInput.value);
+                if (value === 0 && elements.partialInput.value === '0') {
+                    elements.partialInput.value = '';
+                    updateSummary();
+                } else if (!isNaN(value) && value > 0) {
+                    elements.partialInput.value = value.toFixed(2);
+                    updateSummary();
+                }
+            }, 10);
+        });
     }
 
     elements.paymentRadios.forEach((radio) => {
