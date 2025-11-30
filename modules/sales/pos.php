@@ -2146,7 +2146,7 @@ if (!$error) {
                                 </div>
                                 <div class="mt-3 d-none" id="posPartialWrapper">
                                     <label class="form-label">مبلغ التحصيل الجزئي</label>
-                                    <input type="number" class="form-control" id="posPartialAmount" placeholder="0" required>
+                                    <input type="number" class="form-control text-muted" id="posPartialAmount" placeholder="0" step="1" required style="opacity: 0.7;">
                                 </div>
                                 <div class="mt-3 d-none" id="posDueDateWrapper">
                                     <label class="form-label">تاريخ الاستحقاق <span class="text-muted">(اختياري)</span></label>
@@ -2402,7 +2402,7 @@ if (!$error) {
         if (paymentType === 'full') {
             paidAmount = netTotal;
             elements.partialWrapper.classList.add('d-none');
-            elements.partialInput.value = '0.00';
+            elements.partialInput.value = '';
             if (elements.dueDateWrapper) {
                 elements.dueDateWrapper.classList.add('d-none');
             }
@@ -2412,17 +2412,19 @@ if (!$error) {
                 elements.dueDateWrapper.classList.remove('d-none');
             }
             let partialValue = sanitizeNumber(elements.partialInput.value);
-            if (partialValue < 0) {
-                partialValue = 0;
+            if (isNaN(partialValue) || partialValue <= 0) {
+                elements.partialInput.value = '';
+                paidAmount = 0;
+            } else {
+                if (partialValue >= netTotal && netTotal > 0) {
+                    partialValue = Math.max(0, netTotal - 0.01);
+                }
+                elements.partialInput.value = partialValue.toFixed(2);
+                paidAmount = partialValue;
             }
-            if (partialValue >= netTotal && netTotal > 0) {
-                partialValue = Math.max(0, netTotal - 0.01);
-            }
-            elements.partialInput.value = partialValue.toFixed(2);
-            paidAmount = partialValue;
         } else {
             elements.partialWrapper.classList.add('d-none');
-            elements.partialInput.value = '0.00';
+            elements.partialInput.value = '';
             if (elements.dueDateWrapper) {
                 elements.dueDateWrapper.classList.remove('d-none');
             }
