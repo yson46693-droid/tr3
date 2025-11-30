@@ -141,20 +141,58 @@ try {
         }
         
         if ($hasInvoiceItemIdColumn) {
-            $exchangedRows = $db->query(
-                "SELECT eri.product_id, eri.invoice_item_id, COALESCE(SUM(eri.quantity), 0) AS exchanged_quantity
-                 FROM exchange_return_items eri
-                 INNER JOIN product_exchanges pe ON pe.id = eri.exchange_id
-                 WHERE pe.customer_id = ?
-                   AND pe.status IN ('pending', 'approved', 'completed')
-                   AND eri.invoice_item_id IS NOT NULL
-                 GROUP BY eri.product_id, eri.invoice_item_id",
-                [$customerId]
-            );
+            // البحث في جدول product_exchanges
+            $hasProductExchangesTable = !empty($db->queryOne("SHOW TABLES LIKE 'product_exchanges'"));
+            if ($hasProductExchangesTable) {
+                try {
+                    $exchangedRows1 = $db->query(
+                        "SELECT eri.product_id, eri.invoice_item_id, COALESCE(SUM(eri.quantity), 0) AS exchanged_quantity
+                         FROM exchange_return_items eri
+                         INNER JOIN product_exchanges pe ON pe.id = eri.exchange_id
+                         WHERE pe.customer_id = ?
+                           AND pe.status IN ('pending', 'approved', 'completed')
+                           AND eri.invoice_item_id IS NOT NULL
+                         GROUP BY eri.product_id, eri.invoice_item_id",
+                        [$customerId]
+                    );
+                    
+                    foreach ($exchangedRows1 as $row) {
+                        $invoiceItemId = (int)$row['invoice_item_id'];
+                        if (!isset($exchangedQuantities[$invoiceItemId])) {
+                            $exchangedQuantities[$invoiceItemId] = 0.0;
+                        }
+                        $exchangedQuantities[$invoiceItemId] += (float)$row['exchanged_quantity'];
+                    }
+                } catch (Throwable $e) {
+                    error_log('Error querying product_exchanges: ' . $e->getMessage());
+                }
+            }
             
-            foreach ($exchangedRows as $row) {
-                $invoiceItemId = (int)$row['invoice_item_id'];
-                $exchangedQuantities[$invoiceItemId] = (float)$row['exchanged_quantity'];
+            // البحث في جدول exchanges أيضاً
+            $hasExchangesTable = !empty($db->queryOne("SHOW TABLES LIKE 'exchanges'"));
+            if ($hasExchangesTable) {
+                try {
+                    $exchangedRows2 = $db->query(
+                        "SELECT eri.product_id, eri.invoice_item_id, COALESCE(SUM(eri.quantity), 0) AS exchanged_quantity
+                         FROM exchange_return_items eri
+                         INNER JOIN exchanges e ON e.id = eri.exchange_id
+                         WHERE e.customer_id = ?
+                           AND e.status IN ('pending', 'approved', 'completed')
+                           AND eri.invoice_item_id IS NOT NULL
+                         GROUP BY eri.product_id, eri.invoice_item_id",
+                        [$customerId]
+                    );
+                    
+                    foreach ($exchangedRows2 as $row) {
+                        $invoiceItemId = (int)$row['invoice_item_id'];
+                        if (!isset($exchangedQuantities[$invoiceItemId])) {
+                            $exchangedQuantities[$invoiceItemId] = 0.0;
+                        }
+                        $exchangedQuantities[$invoiceItemId] += (float)$row['exchanged_quantity'];
+                    }
+                } catch (Throwable $e) {
+                    error_log('Error querying exchanges: ' . $e->getMessage());
+                }
             }
         }
     }
