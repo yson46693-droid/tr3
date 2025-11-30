@@ -676,6 +676,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action'])) {
         $phone = trim($_POST['phone'] ?? '');
         $address = trim($_POST['address'] ?? '');
         $balance = isset($_POST['balance']) ? cleanFinancialValue($_POST['balance'], true) : 0;
+        $latitude = isset($_POST['latitude']) && $_POST['latitude'] !== '' ? trim($_POST['latitude']) : null;
+        $longitude = isset($_POST['longitude']) && $_POST['longitude'] !== '' ? trim($_POST['longitude']) : null;
 
         if (empty($name)) {
             $error = 'يجب إدخال اسم العميل';
@@ -724,18 +726,47 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action'])) {
                     }
                 }
 
+                // التحقق من وجود أعمدة اللوكيشن
+                $hasLatitudeColumn = !empty($db->queryOne("SHOW COLUMNS FROM customers LIKE 'latitude'"));
+                $hasLongitudeColumn = !empty($db->queryOne("SHOW COLUMNS FROM customers LIKE 'longitude'"));
+                $hasLocationCapturedAtColumn = !empty($db->queryOne("SHOW COLUMNS FROM customers LIKE 'location_captured_at'"));
+                
+                $customerColumns = ['name', 'phone', 'balance', 'address', 'status', 'created_by', 'rep_id', 'created_from_pos', 'created_by_admin'];
+                $customerValues = [
+                    $name,
+                    $phone ?: null,
+                    $balance,
+                    $address ?: null,
+                    'active',
+                    $currentUser['id'],
+                    $repIdForCustomer,
+                    0,
+                    $createdByAdminFlag,
+                ];
+                $customerPlaceholders = ['?', '?', '?', '?', '?', '?', '?', '?', '?'];
+                
+                if ($hasLatitudeColumn && $latitude !== null) {
+                    $customerColumns[] = 'latitude';
+                    $customerValues[] = (float)$latitude;
+                    $customerPlaceholders[] = '?';
+                }
+                
+                if ($hasLongitudeColumn && $longitude !== null) {
+                    $customerColumns[] = 'longitude';
+                    $customerValues[] = (float)$longitude;
+                    $customerPlaceholders[] = '?';
+                }
+                
+                if ($hasLocationCapturedAtColumn && $latitude !== null && $longitude !== null) {
+                    $customerColumns[] = 'location_captured_at';
+                    $customerValues[] = date('Y-m-d H:i:s');
+                    $customerPlaceholders[] = '?';
+                }
+
                 $result = $db->execute(
-                    "INSERT INTO customers (name, phone, balance, address, status, created_by, rep_id, created_from_pos, created_by_admin) 
-                     VALUES (?, ?, ?, ?, 'active', ?, ?, 0, ?)",
-                    [
-                        $name,
-                        $phone ?: null,
-                        $balance,
-                        $address ?: null,
-                        $currentUser['id'],
-                        $repIdForCustomer,
-                        $createdByAdminFlag,
-                    ]
+                    "INSERT INTO customers (" . implode(', ', $customerColumns) . ") 
+                     VALUES (" . implode(', ', $customerPlaceholders) . ")",
+                    $customerValues
                 );
 
                 logAudit($currentUser['id'], 'add_customer', 'customer', $result['insert_id'], null, [
@@ -3238,6 +3269,66 @@ document.addEventListener('DOMContentLoaded', function () {
             });
         });
     }
+
+    // JavaScript للحصول على الموقع في نموذج إضافة العميل
+    var getLocationBtn = document.getElementById('getLocationBtn');
+    var addCustomerLatitudeInput = document.getElementById('addCustomerLatitude');
+    var addCustomerLongitudeInput = document.getElementById('addCustomerLongitude');
+    var addCustomerModal = document.getElementById('addCustomerModal');
+
+    if (getLocationBtn && addCustomerLatitudeInput && addCustomerLongitudeInput) {
+        getLocationBtn.addEventListener('click', function() {
+            if (!navigator.geolocation) {
+                showAlert('المتصفح لا يدعم تحديد الموقع الجغرافي.');
+                return;
+            }
+
+            var button = this;
+            var originalText = button.innerHTML;
+            button.disabled = true;
+            button.innerHTML = '<span class="spinner-border spinner-border-sm me-1"></span>جاري الحصول على الموقع...';
+
+            navigator.geolocation.getCurrentPosition(
+                function(position) {
+                    addCustomerLatitudeInput.value = position.coords.latitude.toFixed(8);
+                    addCustomerLongitudeInput.value = position.coords.longitude.toFixed(8);
+                    button.disabled = false;
+                    button.innerHTML = originalText;
+                    showAlert('تم الحصول على الموقع بنجاح!');
+                },
+                function(error) {
+                    button.disabled = false;
+                    button.innerHTML = originalText;
+                    var errorMessage = 'تعذر الحصول على الموقع.';
+                    if (error.code === 1) {
+                        errorMessage = 'تم رفض طلب الحصول على الموقع. يرجى السماح بالوصول إلى الموقع.';
+                    } else if (error.code === 2) {
+                        errorMessage = 'تعذر تحديد الموقع. يرجى المحاولة مرة أخرى.';
+                    } else if (error.code === 3) {
+                        errorMessage = 'انتهت مهلة طلب الموقع. يرجى المحاولة مرة أخرى.';
+                    }
+                    showAlert(errorMessage);
+                },
+                {
+                    enableHighAccuracy: true,
+                    timeout: 10000,
+                    maximumAge: 0
+                }
+            );
+        });
+    }
+
+    // مسح حقول الموقع عند إغلاق النموذج
+    if (addCustomerModal) {
+        addCustomerModal.addEventListener('hidden.bs.modal', function() {
+            if (addCustomerLatitudeInput) {
+                addCustomerLatitudeInput.value = '';
+            }
+            if (addCustomerLongitudeInput) {
+                addCustomerLongitudeInput.value = '';
+            }
+        });
+    }
 });
 </script>
 
@@ -3599,6 +3690,23 @@ document.addEventListener('DOMContentLoaded', function () {
                     <div class="mb-3">
                         <label class="form-label">العنوان</label>
                         <textarea class="form-control" name="address" rows="2"></textarea>
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label">الموقع الجغرافي</label>
+                        <div class="d-flex gap-2 mb-2">
+                            <button type="button" class="btn btn-sm btn-outline-primary" id="getLocationBtn">
+                                <i class="bi bi-geo-alt"></i> الحصول على الموقع الحالي
+                            </button>
+                        </div>
+                        <div class="row g-2">
+                            <div class="col-6">
+                                <input type="text" class="form-control" name="latitude" id="addCustomerLatitude" placeholder="خط العرض" readonly>
+                            </div>
+                            <div class="col-6">
+                                <input type="text" class="form-control" name="longitude" id="addCustomerLongitude" placeholder="خط الطول" readonly>
+                            </div>
+                        </div>
+                        <small class="text-muted">يمكنك الحصول على الموقع تلقائياً أو إدخاله يدوياً</small>
                     </div>
                 </div>
                 <div class="modal-footer">

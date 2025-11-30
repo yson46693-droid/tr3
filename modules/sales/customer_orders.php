@@ -143,6 +143,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         $newCustomerName = trim($_POST['new_customer_name'] ?? '');
         $newCustomerPhone = trim($_POST['new_customer_phone'] ?? '');
         $newCustomerAddress = trim($_POST['new_customer_address'] ?? '');
+        $newCustomerLatitude = isset($_POST['new_customer_latitude']) && $_POST['new_customer_latitude'] !== '' ? trim($_POST['new_customer_latitude']) : null;
+        $newCustomerLongitude = isset($_POST['new_customer_longitude']) && $_POST['new_customer_longitude'] !== '' ? trim($_POST['new_customer_longitude']) : null;
         
         // معالجة العناصر - الآن template_name بدلاً من product_id
         $items = [];
@@ -527,6 +529,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         $newCustomerName = trim($_POST['new_customer_name'] ?? '');
         $newCustomerPhone = trim($_POST['new_customer_phone'] ?? '');
         $newCustomerAddress = trim($_POST['new_customer_address'] ?? '');
+        $newCustomerLatitude = isset($_POST['new_customer_latitude']) && $_POST['new_customer_latitude'] !== '' ? trim($_POST['new_customer_latitude']) : null;
+        $newCustomerLongitude = isset($_POST['new_customer_longitude']) && $_POST['new_customer_longitude'] !== '' ? trim($_POST['new_customer_longitude']) : null;
         
         // معالجة العناصر - الآن template_name بدلاً من product_id
         $items = [];
