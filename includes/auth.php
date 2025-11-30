@@ -47,8 +47,37 @@ function getPasswordMinLength(): int
  * التحقق من تسجيل الدخول
  */
 function isLoggedIn() {
+    // التحقق الأمني: إذا لم يكن هناك session cookie، إلغاء الجلسة
+    $sessionName = session_name();
+    if (!isset($_COOKIE[$sessionName]) && session_status() === PHP_SESSION_ACTIVE) {
+        // إذا تم مسح session cookie من المتصفح، يجب إلغاء الجلسة
+        session_unset();
+        session_destroy();
+        return false;
+    }
+    
+    // التحقق من أن session ID في cookie يطابق session ID الحالي
+    if (session_status() === PHP_SESSION_ACTIVE && isset($_COOKIE[$sessionName])) {
+        $cookieSessionId = $_COOKIE[$sessionName];
+        $currentSessionId = session_id();
+        
+        // إذا كان session ID في cookie لا يطابق session ID الحالي، إلغاء الجلسة
+        if ($cookieSessionId !== $currentSessionId) {
+            session_unset();
+            session_destroy();
+            return false;
+        }
+    }
+    
     // التحقق من الجلسة أولاً
     if (isset($_SESSION['logged_in']) && $_SESSION['logged_in'] === true) {
+        // التحقق الإضافي: التأكد من وجود user_id في الجلسة
+        if (!isset($_SESSION['user_id']) || empty($_SESSION['user_id'])) {
+            // إذا لم يكن هناك user_id، إلغاء الجلسة
+            session_unset();
+            session_destroy();
+            return false;
+        }
         return true;
     }
     
@@ -176,6 +205,7 @@ function checkRememberToken($cookieValue) {
 
 /**
  * الحصول على معلومات المستخدم الحالي
+ * مع التحقق من وجود المستخدم وحالته وإلغاء تسجيل الدخول تلقائياً إذا كان محذوفاً أو غير مفعّل
  */
 function getCurrentUser() {
     if (!isLoggedIn()) {
@@ -191,7 +221,65 @@ function getCurrentUser() {
     $db = db();
     $user = $db->queryOne("SELECT * FROM users WHERE id = ?", [$userId]);
     
+    // إذا كان المستخدم غير موجود أو محذوف من قاعدة البيانات
     if (!$user) {
+        // إلغاء تسجيل الدخول تلقائياً لأسباب أمنية
+        error_log("Security: User ID {$userId} not found in database - Auto logout");
+        // حذف الجلسة مباشرة دون استدعاء logout() لتجنب حلقة لا نهائية
+        session_unset();
+        session_destroy();
+        if (isset($_COOKIE['remember_token'])) {
+            try {
+                if (ensureRememberTokensTable()) {
+                    $decoded = base64_decode($_COOKIE['remember_token']);
+                    if ($decoded) {
+                        $parts = explode(':', $decoded);
+                        if (count($parts) === 2) {
+                            $tokenUserId = intval($parts[0]);
+                            $token = $parts[1];
+                            $db->execute(
+                                "DELETE FROM remember_tokens WHERE user_id = ? AND token = ?",
+                                [$tokenUserId, $token]
+                            );
+                        }
+                    }
+                }
+            } catch (Exception $e) {
+                error_log("Security: Error deleting remember token: " . $e->getMessage());
+            }
+        }
+        setcookie('remember_token', '', time() - 3600, '/');
+        return null;
+    }
+    
+    // التحقق من حالة المستخدم - إذا كان غير مفعّل
+    if (isset($user['status']) && $user['status'] !== 'active') {
+        // إلغاء تسجيل الدخول تلقائياً لأسباب أمنية
+        error_log("Security: User ID {$userId} status is '{$user['status']}' - Auto logout");
+        // حذف الجلسة مباشرة دون استدعاء logout() لتجنب حلقة لا نهائية
+        session_unset();
+        session_destroy();
+        if (isset($_COOKIE['remember_token'])) {
+            try {
+                if (ensureRememberTokensTable()) {
+                    $decoded = base64_decode($_COOKIE['remember_token']);
+                    if ($decoded) {
+                        $parts = explode(':', $decoded);
+                        if (count($parts) === 2) {
+                            $tokenUserId = intval($parts[0]);
+                            $token = $parts[1];
+                            $db->execute(
+                                "DELETE FROM remember_tokens WHERE user_id = ? AND token = ?",
+                                [$tokenUserId, $token]
+                            );
+                        }
+                    }
+                }
+            } catch (Exception $e) {
+                error_log("Security: Error deleting remember token: " . $e->getMessage());
+            }
+        }
+        setcookie('remember_token', '', time() - 3600, '/');
         return null;
     }
     

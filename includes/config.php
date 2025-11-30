@@ -98,6 +98,46 @@ if (session_status() !== PHP_SESSION_ACTIVE) {
     }
 }
 
+// التحقق الأمني: إذا تم مسح session cookie من المتصفح، إلغاء الجلسة
+if (session_status() === PHP_SESSION_ACTIVE) {
+    $sessionName = session_name();
+    
+    // إذا لم يكن هناك session cookie في المتصفح
+    if (!isset($_COOKIE[$sessionName])) {
+        // إذا كانت هناك بيانات جلسة تسجيل دخول، فهذا يعني أن الكوكي تم مسحه
+        // يجب إلغاء الجلسة لأسباب أمنية
+        if (isset($_SESSION['logged_in']) && $_SESSION['logged_in'] === true) {
+            // تسجيل محاولة وصول غير مصرح بها
+            $userId = $_SESSION['user_id'] ?? 'unknown';
+            error_log("Security: Session cookie missing but session data exists for user ID: {$userId} - Destroying session");
+            
+            session_unset();
+            session_destroy();
+            // إعادة بدء جلسة جديدة نظيفة
+            session_set_cookie_params($sessionCookieOptions);
+            session_start();
+        }
+    } else {
+        // التحقق من أن session ID في cookie يطابق session ID الحالي
+        $cookieSessionId = $_COOKIE[$sessionName];
+        $currentSessionId = session_id();
+        
+        if ($cookieSessionId !== $currentSessionId) {
+            // session ID غير متطابق - إلغاء الجلسة الحالية
+            if (isset($_SESSION['logged_in']) && $_SESSION['logged_in'] === true) {
+                $userId = $_SESSION['user_id'] ?? 'unknown';
+                error_log("Security: Session ID mismatch for user ID: {$userId} - Destroying session");
+            }
+            
+            session_unset();
+            session_destroy();
+            // إعادة بدء جلسة جديدة نظيفة
+            session_set_cookie_params($sessionCookieOptions);
+            session_start();
+        }
+    }
+}
+
 // إعدادات الأمان
 define('PASSWORD_MIN_LENGTH', 1);
 define('CSRF_TOKEN_NAME', 'csrf_token');

@@ -10,12 +10,72 @@ if (!defined('ACCESS_ALLOWED')) {
 
 require_once __DIR__ . '/../includes/path_helper.php';
 
+// التأكد من أن $currentUser موجود - إذا لم يكن موجوداً، محاولة تحميله
+if (!isset($currentUser) || $currentUser === null) {
+    // محاولة تحميل auth.php إذا لم يكن محملاً
+    if (!function_exists('getCurrentUser')) {
+        if (!defined('ACCESS_ALLOWED')) {
+            define('ACCESS_ALLOWED', true);
+        }
+        require_once __DIR__ . '/../includes/config.php';
+        require_once __DIR__ . '/../includes/db.php';
+        require_once __DIR__ . '/../includes/auth.php';
+    }
+    if (function_exists('getCurrentUser')) {
+        $currentUser = getCurrentUser();
+    }
+}
+
+// التأكد من أن $lang موجود
+if (!isset($lang) || empty($lang)) {
+    if (!function_exists('getCurrentLanguage')) {
+        if (!defined('ACCESS_ALLOWED')) {
+            define('ACCESS_ALLOWED', true);
+        }
+        require_once __DIR__ . '/../includes/config.php';
+    }
+    if (function_exists('getCurrentLanguage')) {
+        $currentLang = getCurrentLanguage();
+        $langFile = __DIR__ . '/../includes/lang/' . $currentLang . '.php';
+        if (file_exists($langFile)) {
+            require_once $langFile;
+        }
+        if (isset($translations)) {
+            $lang = $translations;
+        }
+    }
+}
+
 $currentPage = basename($_SERVER['PHP_SELF']);
 // الحصول على base path فقط (بدون /dashboard/)
 $basePath = getBasePath();
 $baseUrl = rtrim($basePath, '/') . '/dashboard/';
-$role = (isset($currentUser) && isset($currentUser['role'])) ? $currentUser['role'] : '';
+
+// الحصول على role بأمان
+$role = '';
+if (isset($currentUser) && is_array($currentUser) && isset($currentUser['role'])) {
+    $role = strtolower(trim($currentUser['role']));
+}
+
+// محاولة الحصول على role من session كبديل
+if (empty($role) && isset($_SESSION['role'])) {
+    $role = strtolower(trim($_SESSION['role']));
+}
+
 $currentPageParam = $_GET['page'] ?? '';
+
+// محاولة تحديد role من الصفحة الحالية إذا كان غير معروف
+if (empty($role)) {
+    if ($currentPage === 'sales.php') {
+        $role = 'sales';
+    } elseif ($currentPage === 'manager.php') {
+        $role = 'manager';
+    } elseif ($currentPage === 'accountant.php') {
+        $role = 'accountant';
+    } elseif ($currentPage === 'production.php') {
+        $role = 'production';
+    }
+}
 
 // تحديد الروابط بناءً على الدور
 $menuItems = [];
@@ -506,22 +566,72 @@ switch ($role) {
 }
 
 if (empty($menuItems)) {
-    $menuItems = [
-        [
-            'title' => isset($lang['dashboard']) ? $lang['dashboard'] : 'لوحة التحكم',
-            'icon' => 'bi-speedometer2',
-            'url' => $baseUrl . 'accountant.php',
-            'active' => true,
-            'badge' => null
-        ],
-        [
-            'title' => 'الدردشة الجماعية',
-            'icon' => 'bi-chat-dots',
-            'url' => $baseUrl . 'accountant.php?page=chat',
-            'active' => false,
-            'badge' => null
-        ]
-    ];
+    // إذا كانت الصفحة الحالية هي sales.php، استخدم قائمة sales
+    if ($currentPage === 'sales.php') {
+        $menuItems = [
+            [
+                'title' => isset($lang['dashboard']) ? $lang['dashboard'] : 'لوحة التحكم',
+                'icon' => 'bi-speedometer2',
+                'url' => $baseUrl . 'sales.php',
+                'active' => ($currentPageParam === ''),
+                'badge' => null
+            ],
+            [
+                'title' => 'الدردشة الجماعية',
+                'icon' => 'bi-chat-dots',
+                'url' => $baseUrl . 'sales.php?page=chat',
+                'active' => ($currentPageParam === 'chat'),
+                'badge' => null
+            ],
+            ['divider' => true, 'title' => isset($lang['sales_section']) ? $lang['sales_section'] : 'المبيعات'],
+            [
+                'title' => isset($lang['customers']) ? $lang['customers'] : 'العملاء',
+                'icon' => 'bi-people',
+                'url' => $baseUrl . 'sales.php?page=customers',
+                'active' => ($currentPageParam === 'customers'),
+                'badge' => null
+            ],
+            [
+                'title' => isset($lang['customer_orders']) ? $lang['customer_orders'] : 'طلبات العملاء',
+                'icon' => 'bi-clipboard-check',
+                'url' => $baseUrl . 'sales.php?page=orders',
+                'active' => ($currentPageParam === 'orders'),
+                'badge' => null
+            ],
+            [
+                'title' => 'سجلات المندوب',
+                'icon' => 'bi-journal-text',
+                'url' => $baseUrl . 'sales.php?page=my_records',
+                'active' => ($currentPageParam === 'my_records'),
+                'badge' => null
+            ],
+            [
+                'title' => isset($lang['sales_pos']) ? $lang['sales_pos'] : 'نقطة البيع',
+                'icon' => 'bi-shop',
+                'url' => $baseUrl . 'sales.php?page=pos',
+                'active' => ($currentPageParam === 'pos'),
+                'badge' => null
+            ],
+        ];
+    } else {
+        // القائمة الافتراضية
+        $menuItems = [
+            [
+                'title' => isset($lang['dashboard']) ? $lang['dashboard'] : 'لوحة التحكم',
+                'icon' => 'bi-speedometer2',
+                'url' => $baseUrl . 'accountant.php',
+                'active' => true,
+                'badge' => null
+            ],
+            [
+                'title' => 'الدردشة الجماعية',
+                'icon' => 'bi-chat-dots',
+                'url' => $baseUrl . 'accountant.php?page=chat',
+                'active' => false,
+                'badge' => null
+            ]
+        ];
+    }
 }
 ?>
 

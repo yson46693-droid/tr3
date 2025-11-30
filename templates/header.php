@@ -37,7 +37,28 @@ if (!isset($translations) || empty($translations)) {
 if (!isset($lang) || empty($lang)) {
     $lang = isset($translations) ? $translations : [];
 }
-$currentUser = getCurrentUser();
+// تحميل $currentUser فقط إذا لم يكن محملاً بالفعل
+if (!isset($currentUser) || $currentUser === null) {
+    $currentUser = getCurrentUser();
+}
+
+// فحص أمني: إذا كان المستخدم محذوفاً أو غير موجود، إعادة التوجيه لتسجيل الدخول
+if (isLoggedIn() && (!$currentUser || !is_array($currentUser))) {
+    // المستخدم مسجل دخول لكن غير موجود في قاعدة البيانات - خطأ أمني
+    require_once __DIR__ . '/../includes/auth.php';
+    logout();
+    
+    // إعادة التوجيه لتسجيل الدخول
+    $loginUrl = function_exists('getRelativeUrl') ? getRelativeUrl('index.php') : '/index.php';
+    if (!headers_sent()) {
+        header('Location: ' . $loginUrl);
+        exit;
+    } else {
+        echo '<script>window.location.href = "' . htmlspecialchars($loginUrl) . '";</script>';
+        exit;
+    }
+}
+
 $currentUserRole = strtolower((string) (isset($currentUser['role']) ? $currentUser['role'] : ''));
 if ($currentUser && function_exists('handleAttendanceRemindersForUser')) {
     handleAttendanceRemindersForUser($currentUser);
@@ -847,7 +868,13 @@ if (ob_get_level() > 0) {
                 </div>
                 
                 <!-- User Avatar -->
-                <?php if (isLoggedIn() && $currentUser): ?>
+                <?php 
+                // التأكد من أن $currentUser موجود
+                if (!isset($currentUser) || $currentUser === null) {
+                    $currentUser = getCurrentUser();
+                }
+                if (isLoggedIn() && $currentUser): 
+                ?>
                 <div class="topbar-dropdown">
                     <div class="topbar-user dropdown-toggle" id="userDropdown" data-bs-toggle="dropdown" role="button">
                         <?php if (isset($currentUser['profile_photo']) && !empty($currentUser['profile_photo'])): ?>
