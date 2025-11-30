@@ -986,9 +986,11 @@ if (isset($_GET['id'])) {
             [$orderId]
         );
         
-        // جلب أسماء القوالب
+        // جلب أسماء القوالب والمنتجات
         foreach ($items as &$item) {
-            $templateName = '-';
+            $productName = '-';
+            
+            // أولاً: البحث عن اسم القالب إذا كان template_id موجوداً
             if (!empty($item['template_id'])) {
                 // البحث في unified_product_templates
                 $unifiedCheck = $db->queryOne("SHOW TABLES LIKE 'unified_product_templates'");
@@ -1000,12 +1002,12 @@ if (isset($_GET['id'])) {
                         [$item['template_id']]
                     );
                     if ($template) {
-                        $templateName = $template['name'];
+                        $productName = $template['name'];
                     }
                 }
                 
                 // إذا لم يُعثر عليه، البحث في product_templates
-                if ($templateName === '-') {
+                if ($productName === '-') {
                     $productTemplatesCheck = $db->queryOne("SHOW TABLES LIKE 'product_templates'");
                     if (!empty($productTemplatesCheck)) {
                         $template = $db->queryOne(
@@ -1015,12 +1017,24 @@ if (isset($_GET['id'])) {
                             [$item['template_id']]
                         );
                         if ($template) {
-                            $templateName = $template['name'];
+                            $productName = $template['name'];
                         }
                     }
                 }
             }
-            $item['product_name'] = $templateName;
+            
+            // ثانياً: إذا لم يُعثر على اسم من القالب، البحث عن المنتج إذا كان product_id موجوداً
+            if ($productName === '-' && !empty($item['product_id'])) {
+                $product = $db->queryOne(
+                    "SELECT name FROM products WHERE id = ?",
+                    [$item['product_id']]
+                );
+                if ($product) {
+                    $productName = $product['name'];
+                }
+            }
+            
+            $item['product_name'] = $productName;
             // التأكد من وجود production_status
             if (!isset($item['production_status'])) {
                 $item['production_status'] = 'pending';
@@ -2212,5 +2226,6 @@ if (addCompanyOrderModalElement && typeof bootstrap !== 'undefined') {
 <?php
 // نهاية الملف
 ?>
+
 
 
