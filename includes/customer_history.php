@@ -184,23 +184,33 @@ function customerHistorySyncForCustomer(int $customerId): array
         );
 
         // البحث عن الاستبدالات التي لها invoice_id مباشرة (المعتمدة والمكتملة فقط)
-        $exchangeRowsDirect = $db->query(
-            "SELECT
-                e.id,
-                e.exchange_date,
-                e.exchange_type,
-                e.difference_amount,
-                e.new_total,
-                e.original_total,
-                e.invoice_id
-             FROM exchanges e
-             WHERE e.customer_id = ?
-               AND e.exchange_date >= ?
-               AND e.status IN ('approved', 'completed')
-               AND e.invoice_id IS NOT NULL
-               AND e.invoice_id IN ($placeholders)",
-            array_merge([$customerId, $cutoffDate], $realInvoiceIds)
-        );
+        // التحقق من وجود عمود invoice_id في جدول exchanges أولاً
+        $exchangeRowsDirect = [];
+        try {
+            $hasInvoiceIdColumn = !empty($db->queryOne("SHOW COLUMNS FROM exchanges LIKE 'invoice_id'"));
+            if ($hasInvoiceIdColumn) {
+                $exchangeRowsDirect = $db->query(
+                    "SELECT
+                        e.id,
+                        e.exchange_date,
+                        e.exchange_type,
+                        e.difference_amount,
+                        e.new_total,
+                        e.original_total,
+                        e.invoice_id
+                     FROM exchanges e
+                     WHERE e.customer_id = ?
+                       AND e.exchange_date >= ?
+                       AND e.status IN ('approved', 'completed')
+                       AND e.invoice_id IS NOT NULL
+                       AND e.invoice_id IN ($placeholders)",
+                    array_merge([$customerId, $cutoffDate], $realInvoiceIds)
+                );
+            }
+        } catch (Throwable $e) {
+            // إذا فشل الاستعلام، تجاهل الاستبدالات المباشرة
+            error_log('customerHistorySyncForCustomer: invoice_id column not available in exchanges table -> ' . $e->getMessage());
+        }
 
         // دمج النتائج
         $allExchangeRows = array_merge($exchangeRowsFromReturns, $exchangeRowsDirect);
