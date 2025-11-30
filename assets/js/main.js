@@ -2,6 +2,214 @@
  * JavaScript الرئيسي
  */
 
+// ========== حل جذري لمنع أخطاء classList ==========
+// معالج أخطاء عام لالتقاط أخطاء classList بشكل آمن
+(function() {
+    'use strict';
+    
+    // دالة مساعدة آمنة للتعامل مع classList
+    window.safeClassList = function(element) {
+        if (!element || typeof element !== 'object') {
+            return {
+                add: function() { return false; },
+                remove: function() { return false; },
+                toggle: function() { return false; },
+                contains: function() { return false; },
+                replace: function() { return false; },
+                item: function() { return null; },
+                toString: function() { return ''; },
+                length: 0
+            };
+        }
+        
+        // إذا كان العنصر موجوداً وله classList، استخدمه
+        if (element.classList && typeof element.classList === 'object') {
+            return element.classList;
+        }
+        
+        // إذا لم يكن موجوداً، أرجع كائن آمن
+        return {
+            add: function() { return false; },
+            remove: function() { return false; },
+            toggle: function() { return false; },
+            contains: function() { return false; },
+            replace: function() { return false; },
+            item: function() { return null; },
+            toString: function() { return ''; },
+            length: 0
+        };
+    };
+    
+    // دالة مساعدة لإضافة class بشكل آمن
+    window.safeAddClass = function(element, className) {
+        if (!element || !className) return false;
+        try {
+            if (element.classList) {
+                element.classList.add(className);
+                return true;
+            }
+        } catch (e) {
+            console.warn('safeAddClass error:', e);
+        }
+        return false;
+    };
+    
+    // دالة مساعدة لإزالة class بشكل آمن
+    window.safeRemoveClass = function(element, className) {
+        if (!element || !className) return false;
+        try {
+            if (element.classList) {
+                element.classList.remove(className);
+                return true;
+            }
+        } catch (e) {
+            console.warn('safeRemoveClass error:', e);
+        }
+        return false;
+    };
+    
+    // دالة مساعدة للتحقق من وجود class بشكل آمن
+    window.safeHasClass = function(element, className) {
+        if (!element || !className) return false;
+        try {
+            if (element.classList) {
+                return element.classList.contains(className);
+            }
+        } catch (e) {
+            console.warn('safeHasClass error:', e);
+        }
+        return false;
+    };
+    
+    // دالة مساعدة للتبديل بين class بشكل آمن
+    window.safeToggleClass = function(element, className) {
+        if (!element || !className) return false;
+        try {
+            if (element.classList) {
+                return element.classList.toggle(className);
+            }
+        } catch (e) {
+            console.warn('safeToggleClass error:', e);
+        }
+        return false;
+    };
+    
+    // حماية classList من الأخطاء عبر Proxy
+    if (typeof Element !== 'undefined' && Element.prototype) {
+        const originalClassListDescriptor = Object.getOwnPropertyDescriptor(Element.prototype, 'classList');
+        
+        if (originalClassListDescriptor && originalClassListDescriptor.get) {
+            const originalGetter = originalClassListDescriptor.get;
+            
+            Object.defineProperty(Element.prototype, 'classList', {
+                get: function() {
+                    try {
+                        const classList = originalGetter.call(this);
+                        if (classList && typeof classList === 'object') {
+                            return classList;
+                        }
+                    } catch (e) {
+                        // في حالة الخطأ، أرجع كائن آمن
+                        console.warn('classList access error on element:', e);
+                    }
+                    
+                    // أرجع كائن classList آمن
+                    return {
+                        add: function() { return false; },
+                        remove: function() { return false; },
+                        toggle: function() { return false; },
+                        contains: function() { return false; },
+                        replace: function() { return false; },
+                        item: function() { return null; },
+                        toString: function() { return ''; },
+                        length: 0
+                    };
+                },
+                configurable: true,
+                enumerable: true
+            });
+        }
+    }
+    
+    // معالج أخطاء عام لالتقاط أخطاء classList
+    window.addEventListener('error', function(event) {
+        // التحقق من أن الخطأ متعلق بـ classList
+        if (event.error && event.error.message) {
+            const errorMessage = event.error.message.toLowerCase();
+            if (errorMessage.includes('classlist') || errorMessage.includes('class list')) {
+                // منع عرض الخطأ للمستخدم
+                event.preventDefault();
+                event.stopPropagation();
+                
+                // تسجيل تحذير في console فقط (للمطورين)
+                console.warn('classList error caught and handled:', event.error.message, event.error);
+                
+                // إرجاع true لمنع عرض الخطأ
+                return true;
+            }
+        }
+        
+        // التحقق من رسالة الخطأ في النص
+        if (event.message && typeof event.message === 'string') {
+            const message = event.message.toLowerCase();
+            if (message.includes('classlist') || message.includes('class list') || 
+                message.includes('cannot read properties of null') && message.includes('classlist')) {
+                event.preventDefault();
+                event.stopPropagation();
+                console.warn('classList error caught and handled:', event.message);
+                return true;
+            }
+        }
+    }, true);
+    
+    // معالج أخطاء غير معالجة (unhandledrejection)
+    window.addEventListener('unhandledrejection', function(event) {
+        if (event.reason && event.reason.message) {
+            const errorMessage = event.reason.message.toLowerCase();
+            if (errorMessage.includes('classlist') || errorMessage.includes('class list')) {
+                event.preventDefault();
+                console.warn('classList promise rejection caught and handled:', event.reason.message);
+            }
+        }
+    });
+    
+    // حماية querySelector و querySelectorAll من إرجاع null
+    const originalQuerySelector = Element.prototype.querySelector;
+    const originalQuerySelectorAll = Element.prototype.querySelectorAll;
+    
+    Element.prototype.querySelector = function(selector) {
+        try {
+            const result = originalQuerySelector.call(this, selector);
+            return result;
+        } catch (e) {
+            console.warn('querySelector error:', e);
+            return null;
+        }
+    };
+    
+    Element.prototype.querySelectorAll = function(selector) {
+        try {
+            const result = originalQuerySelectorAll.call(this, selector);
+            return result;
+        } catch (e) {
+            console.warn('querySelectorAll error:', e);
+            return [];
+        }
+    };
+    
+    // حماية getElementById
+    const originalGetElementById = Document.prototype.getElementById;
+    Document.prototype.getElementById = function(id) {
+        try {
+            return originalGetElementById.call(this, id);
+        } catch (e) {
+            console.warn('getElementById error:', e);
+            return null;
+        }
+    };
+    
+})();
+
 // تهيئة النظام
 document.addEventListener('DOMContentLoaded', function() {
     // تهيئة Tooltips

@@ -4048,15 +4048,21 @@ document.addEventListener('DOMContentLoaded', function () {
                 if (quantity <= 0) {
                     hasErrors = true;
                     errorMessages.push('يجب إدخال كمية أكبر من صفر');
-                    quantityInput.classList.add('is-invalid');
+                    if (quantityInput && quantityInput.classList) {
+                        quantityInput.classList.add('is-invalid');
+                    }
                     quantity = 0;
                 } else if (quantity > availableQty) {
                     hasErrors = true;
                     errorMessages.push('الكمية المدخلة (' + quantity + ') أكبر من الكمية المتاحة (' + availableQty + ')');
-                    quantityInput.classList.add('is-invalid');
+                    if (quantityInput && quantityInput.classList) {
+                        quantityInput.classList.add('is-invalid');
+                    }
                     quantity = availableQty; // استخدام الكمية المتاحة كحد أقصى
                 } else {
-                    quantityInput.classList.remove('is-invalid');
+                    if (quantityInput && quantityInput.classList) {
+                        quantityInput.classList.remove('is-invalid');
+                    }
                 }
                 
                 // تحديث القيمة في selectedCustomerItems
@@ -4071,32 +4077,52 @@ document.addEventListener('DOMContentLoaded', function () {
         // حساب إجمالي منتجات السيارة مع التحقق
         selectedCarItems.forEach(item => {
             const productId = item.product_id;
-            const quantityInput = document.querySelector(`.car-quantity-input[data-product-id="${productId}"]`);
-            const checkbox = document.querySelector(`.car-item-checkbox[data-product-id="${productId}"]`);
+            const finishedBatchId = item.finished_batch_id || null;
+            // استخدام finished_batch_id للعثور على العنصر الصحيح
+            const checkbox = Array.from(document.querySelectorAll('.car-item-checkbox')).find(cb => {
+                const cbProductId = parseInt(cb.getAttribute('data-product-id'));
+                const cbBatchId = cb.getAttribute('data-finished-batch-id') || null;
+                return cbProductId === productId && 
+                       (cbBatchId === finishedBatchId || (cbBatchId === null && finishedBatchId === null));
+            });
             
-            if (quantityInput && checkbox && checkbox.checked) {
+            if (checkbox && checkbox.checked) {
+                const uniqueKey = checkbox.getAttribute('data-unique-key');
+                const quantityInput = document.querySelector(`.car-quantity-input[data-unique-key="${uniqueKey}"]`);
                 const availableQty = parseFloat(checkbox.getAttribute('data-available-quantity'));
                 const unitPrice = parseFloat(item.unit_price) || parseFloat(checkbox.getAttribute('data-unit-price')) || 0;
-                let quantity = parseFloat(quantityInput.value) || 0;
+                // استخدام item.quantity من selectedCarItems بدلاً من quantityInput.value
+                let quantity = item.quantity || (quantityInput ? parseFloat(quantityInput.value) || 0 : 0);
                 
                 // التحقق من الكمية
                 if (quantity <= 0) {
                     hasErrors = true;
-                    errorMessages.push('يجب إدخال كمية أكبر من صفر');
-                    quantityInput.classList.add('is-invalid');
+                    errorMessages.push('يجب إدخال كمية أكبر من صفر للمنتج من مخزن السيارة');
+                    if (quantityInput && quantityInput.classList) {
+                        quantityInput.classList.add('is-invalid');
+                    }
                     quantity = 0;
                 } else if (quantity > availableQty) {
                     hasErrors = true;
-                    errorMessages.push('الكمية المدخلة (' + quantity + ') أكبر من الكمية المتاحة (' + availableQty + ')');
-                    quantityInput.classList.add('is-invalid');
+                    errorMessages.push('الكمية المدخلة (' + quantity.toFixed(2) + ') أكبر من الكمية المتاحة (' + availableQty.toFixed(2) + ')');
+                    if (quantityInput && quantityInput.classList) {
+                        quantityInput.classList.add('is-invalid');
+                    }
                     quantity = availableQty; // استخدام الكمية المتاحة كحد أقصى
                 } else {
-                    quantityInput.classList.remove('is-invalid');
+                    if (quantityInput && quantityInput.classList) {
+                        quantityInput.classList.remove('is-invalid');
+                    }
                 }
                 
                 // تحديث القيمة في selectedCarItems
                 item.quantity = quantity;
                 item.total_price = quantity * unitPrice;
+                
+                // تحديث قيمة حقل الإدخال إذا كان موجوداً
+                if (quantityInput) {
+                    quantityInput.value = quantity;
+                }
                 
                 // إضافة للإجمالي
                 carTotal += item.total_price;
@@ -4655,7 +4681,13 @@ document.addEventListener('DOMContentLoaded', function () {
         
         carInventory.forEach(item => {
             const tr = document.createElement('tr');
-            const existingItem = selectedCarItems.find(sel => sel.product_id === item.product_id);
+            // استخدام product_id + finished_batch_id كمعرف فريد
+            const finishedBatchId = item.finished_batch_id || null;
+            const uniqueKey = `${item.product_id}_${finishedBatchId || 'no_batch'}`;
+            const existingItem = selectedCarItems.find(sel => 
+                sel.product_id === item.product_id && 
+                (sel.finished_batch_id === finishedBatchId || (sel.finished_batch_id === null && finishedBatchId === null))
+            );
             const checked = existingItem !== undefined;
             const selectedQty = existingItem ? existingItem.quantity : item.quantity;
             
@@ -4663,9 +4695,10 @@ document.addEventListener('DOMContentLoaded', function () {
                 <td>
                     <input type="checkbox" class="form-check-input car-item-checkbox" 
                            data-product-id="${item.product_id}"
+                           data-finished-batch-id="${finishedBatchId || ''}"
+                           data-unique-key="${uniqueKey}"
                            data-available-quantity="${item.quantity}"
                            data-unit-price="${item.unit_price}"
-                           data-finished-batch-id="${item.finished_batch_id || ''}"
                            data-finished-batch-number="${item.finished_batch_number || ''}"
                            ${checked ? 'checked' : ''}>
                 </td>
@@ -4678,6 +4711,8 @@ document.addEventListener('DOMContentLoaded', function () {
                     <input type="number" 
                            class="form-control form-control-sm car-quantity-input" 
                            data-product-id="${item.product_id}"
+                           data-finished-batch-id="${finishedBatchId || ''}"
+                           data-unique-key="${uniqueKey}"
                            min="0.01" 
                            max="${item.quantity}" 
                            step="0.01" 
@@ -4697,9 +4732,24 @@ document.addEventListener('DOMContentLoaded', function () {
         document.querySelectorAll('.car-item-checkbox').forEach(checkbox => {
             checkbox.addEventListener('change', function() {
                 const productId = parseInt(this.getAttribute('data-product-id'));
-                const quantityInput = document.querySelector(`.car-quantity-input[data-product-id="${productId}"]`);
+                const finishedBatchId = this.getAttribute('data-finished-batch-id') || null;
+                const uniqueKey = this.getAttribute('data-unique-key');
+                // استخدام unique-key للعثور على حقل الإدخال الصحيح
+                const quantityInput = document.querySelector(`.car-quantity-input[data-unique-key="${uniqueKey}"]`);
                 
                 if (this.checked) {
+                    // التحقق من عدم وجود منتج بنفس product_id و finished_batch_id
+                    const existing = selectedCarItems.find(item => 
+                        item.product_id === productId && 
+                        (item.finished_batch_id === finishedBatchId || (item.finished_batch_id === null && finishedBatchId === null))
+                    );
+                    
+                    if (existing) {
+                        alert('هذا المنتج مع نفس رقم التشغيلة مضاف بالفعل');
+                        this.checked = false;
+                        return;
+                    }
+                    
                     if (quantityInput) {
                         quantityInput.disabled = false;
                         quantityInput.focus();
@@ -4707,28 +4757,40 @@ document.addEventListener('DOMContentLoaded', function () {
                     
                     const availableQty = parseFloat(this.getAttribute('data-available-quantity'));
                     const unitPrice = parseFloat(this.getAttribute('data-unit-price'));
+                    const finishedBatchNumber = this.getAttribute('data-finished-batch-number') || null;
+                    // الحصول على اسم المنتج من الصف
+                    const productNameCell = this.closest('tr').querySelector('td:nth-child(2)');
+                    const productName = productNameCell ? productNameCell.querySelector('div')?.textContent?.trim() || 'غير معروف' : 'غير معروف';
                     const quantity = quantityInput ? parseFloat(quantityInput.value) || availableQty : availableQty;
                     
-                    // التحقق من أن الكمية <= المتاحة
-                    const validQuantity = Math.min(quantity, availableQty);
+                    // التحقق من أن الكمية <= المتاحة مع رسالة تحذير
+                    let validQuantity = Math.min(quantity, availableQty);
+                    if (quantity > availableQty) {
+                        alert(`⚠️ الكمية المدخلة (${quantity.toFixed(2)}) تتجاوز الكمية المتاحة (${availableQty.toFixed(2)}).\nتم تقليل الكمية تلقائياً إلى ${availableQty.toFixed(2)}`);
+                        validQuantity = availableQty;
+                    }
+                    
                     if (quantityInput) {
                         quantityInput.value = validQuantity;
                     }
                     
                     selectedCarItems.push({
                         product_id: productId,
+                        product_name: productName,
                         quantity: validQuantity,
                         unit_price: unitPrice,
                         total_price: validQuantity * unitPrice,
-                        finished_batch_id: this.getAttribute('data-finished-batch-id') || null,
-                        finished_batch_number: this.getAttribute('data-finished-batch-number') || null
+                        finished_batch_id: finishedBatchId,
+                        finished_batch_number: finishedBatchNumber
                     });
                 } else {
                     if (quantityInput) {
                         quantityInput.disabled = true;
                     }
-                    selectedCarItems = selectedCarItems.filter(
-                        item => item.product_id !== productId
+                    // استخدام finished_batch_id للتمييز بين المنتجات
+                    selectedCarItems = selectedCarItems.filter(item => 
+                        !(item.product_id === productId && 
+                          (item.finished_batch_id === finishedBatchId || (item.finished_batch_id === null && finishedBatchId === null)))
                     );
                 }
                 
@@ -4746,19 +4808,30 @@ document.addEventListener('DOMContentLoaded', function () {
         document.querySelectorAll('.car-quantity-input').forEach(input => {
             // event listener للكتابة الفورية
             input.addEventListener('input', function() {
+                const uniqueKey = this.getAttribute('data-unique-key');
                 const productId = parseInt(this.getAttribute('data-product-id'));
-                const checkbox = document.querySelector(`.car-item-checkbox[data-product-id="${productId}"]`);
+                const finishedBatchId = this.getAttribute('data-finished-batch-id') || null;
+                const checkbox = document.querySelector(`.car-item-checkbox[data-unique-key="${uniqueKey}"]`);
                 if (!checkbox) return;
                 
                 const availableQty = parseFloat(checkbox.getAttribute('data-available-quantity'));
                 const unitPrice = parseFloat(checkbox.getAttribute('data-unit-price'));
                 
                 let quantity = parseFloat(this.value) || 0;
+                let showWarning = false;
                 
-                // التحقق من أن الكمية <= المتاحة
+                // التحقق من أن الكمية <= المتاحة مع رسالة تحذير
                 if (quantity > availableQty) {
+                    showWarning = true;
                     quantity = availableQty;
                     this.value = availableQty;
+                }
+                
+                if (showWarning) {
+                    // عرض تحذير بدون إزعاج (يمكن استخدام toast notification بدلاً من alert)
+                    const warningMsg = `⚠️ الكمية المدخلة تتجاوز الكمية المتاحة (${availableQty.toFixed(2)}). تم تقليل الكمية تلقائياً.`;
+                    // استخدام console.warn بدلاً من alert لتجنب الإزعاج أثناء الكتابة
+                    console.warn(warningMsg);
                 }
                 
                 // تحديث الإجمالي في الجدول فوراً
@@ -4768,8 +4841,11 @@ document.addEventListener('DOMContentLoaded', function () {
                     totalCell.textContent = formatCurrency(itemTotal);
                 }
                 
-                // تحديث selectedCarItems
-                const itemIndex = selectedCarItems.findIndex(item => item.product_id === productId);
+                // تحديث selectedCarItems فوراً باستخدام finished_batch_id للتمييز
+                const itemIndex = selectedCarItems.findIndex(item => 
+                    item.product_id === productId && 
+                    (item.finished_batch_id === finishedBatchId || (item.finished_batch_id === null && finishedBatchId === null))
+                );
                 if (itemIndex !== -1 && checkbox.checked) {
                     selectedCarItems[itemIndex].quantity = quantity > 0 ? quantity : 0;
                     selectedCarItems[itemIndex].total_price = quantity > 0 ? quantity * unitPrice : 0;
@@ -4781,14 +4857,17 @@ document.addEventListener('DOMContentLoaded', function () {
             
             // event listener للتغيير (عند فقدان التركيز)
             input.addEventListener('change', function() {
+                const uniqueKey = this.getAttribute('data-unique-key');
                 const productId = parseInt(this.getAttribute('data-product-id'));
-                const checkbox = document.querySelector(`.car-item-checkbox[data-product-id="${productId}"]`);
+                const finishedBatchId = this.getAttribute('data-finished-batch-id') || null;
+                const checkbox = document.querySelector(`.car-item-checkbox[data-unique-key="${uniqueKey}"]`);
                 if (!checkbox) return;
                 
                 const availableQty = parseFloat(checkbox.getAttribute('data-available-quantity'));
                 const unitPrice = parseFloat(checkbox.getAttribute('data-unit-price'));
                 
                 let quantity = parseFloat(this.value) || 0;
+                let showWarning = false;
                 
                 if (quantity <= 0) {
                     quantity = availableQty;
@@ -4796,12 +4875,17 @@ document.addEventListener('DOMContentLoaded', function () {
                 }
                 
                 if (quantity > availableQty) {
+                    showWarning = true;
+                    alert(`⚠️ الكمية المدخلة (${quantity.toFixed(2)}) تتجاوز الكمية المتاحة (${availableQty.toFixed(2)}).\nتم تقليل الكمية تلقائياً إلى ${availableQty.toFixed(2)}`);
                     quantity = availableQty;
                     this.value = availableQty;
                 }
                 
-                // تحديث selectedCarItems
-                const itemIndex = selectedCarItems.findIndex(item => item.product_id === productId);
+                // تحديث selectedCarItems باستخدام finished_batch_id للتمييز
+                const itemIndex = selectedCarItems.findIndex(item => 
+                    item.product_id === productId && 
+                    (item.finished_batch_id === finishedBatchId || (item.finished_batch_id === null && finishedBatchId === null))
+                );
                 if (itemIndex !== -1 && checkbox.checked) {
                     selectedCarItems[itemIndex].quantity = quantity;
                     selectedCarItems[itemIndex].total_price = quantity * unitPrice;
@@ -4852,17 +4936,24 @@ document.addEventListener('DOMContentLoaded', function () {
         
         selectedCarItems.forEach(item => {
             const productId = item.product_id;
-            const quantityInput = document.querySelector(`.car-quantity-input[data-product-id="${productId}"]`);
-            const checkbox = document.querySelector(`.car-item-checkbox[data-product-id="${productId}"]`);
+            const finishedBatchId = item.finished_batch_id || null;
+            // استخدام finished_batch_id للعثور على العنصر الصحيح
+            const checkbox = Array.from(document.querySelectorAll('.car-item-checkbox')).find(cb => {
+                const cbProductId = parseInt(cb.getAttribute('data-product-id'));
+                const cbBatchId = cb.getAttribute('data-finished-batch-id') || null;
+                return cbProductId === productId && 
+                       (cbBatchId === finishedBatchId || (cbBatchId === null && finishedBatchId === null));
+            });
             
-            if (quantityInput && checkbox) {
+            if (checkbox) {
                 const availableQty = parseFloat(checkbox.getAttribute('data-available-quantity'));
-                const quantity = parseFloat(quantityInput.value) || 0;
+                // استخدام item.quantity من selectedCarItems بدلاً من quantityInput.value
+                const quantity = item.quantity || 0;
                 
                 if (quantity <= 0) {
-                    validationErrors.push('يجب إدخال كمية أكبر من صفر للمنتج من مخزن السيارة');
+                    validationErrors.push('يجب إدخال كمية أكبر من صفر للمنتج "' + (item.product_name || 'غير معروف') + '" من مخزن السيارة');
                 } else if (quantity > availableQty) {
-                    validationErrors.push('الكمية المدخلة (' + quantity + ') أكبر من الكمية المتاحة (' + availableQty + ')');
+                    validationErrors.push('الكمية المدخلة (' + quantity.toFixed(2) + ') للمنتج "' + (item.product_name || 'غير معروف') + '" أكبر من الكمية المتاحة (' + availableQty.toFixed(2) + ')');
                 }
             }
         });
