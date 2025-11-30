@@ -11,14 +11,22 @@
  * 
  * تاريخ الإنشاء: 2024
  */
-ini_set('display_errors', 1);
-ini_set('display_startup_errors', 1);
+// تعطيل عرض الأخطاء لمنع طباعة HTML في API
+ini_set('display_errors', 0);
+ini_set('display_startup_errors', 0);
 error_reporting(E_ALL);
 define('ACCESS_ALLOWED', true);
 define('IS_API_REQUEST', true);
 
-header('Content-Type: application/json; charset=utf-8');
+// تنظيف أي output buffer موجود
+while (ob_get_level() > 0) {
+    ob_end_clean();
+}
+
+// بدء output buffer جديد
 ob_start();
+
+header('Content-Type: application/json; charset=utf-8');
 
 require_once __DIR__ . '/../includes/config.php';
 require_once __DIR__ . '/../includes/db.php';
@@ -28,7 +36,10 @@ require_once __DIR__ . '/../includes/approval_system.php';
 require_once __DIR__ . '/../includes/path_helper.php';
 require_once __DIR__ . '/../includes/product_name_helper.php';
 
-ob_clean();
+// تنظيف الـ output buffer مرة أخرى بعد التضمين
+while (ob_get_level() > 0) {
+    ob_end_clean();
+}
 
 $action = $_GET['action'] ?? $_POST['action'] ?? null;
 $method = $_SERVER['REQUEST_METHOD'] ?? 'GET';
@@ -114,15 +125,18 @@ try {
 
 function returnJson(array $data, int $status = 200): void
 {
-    if (ob_get_level() > 0) {
-        ob_clean();
+    // تنظيف جميع output buffers
+    while (ob_get_level() > 0) {
+        ob_end_clean();
     }
+    
+    // إرسال headers
     header('Content-Type: application/json; charset=utf-8', true);
     http_response_code($status);
+    
+    // إرسال JSON
     echo json_encode($data, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
-    if (ob_get_level() > 0) {
-        ob_end_flush();
-    }
+    
     exit;
 }
 
@@ -685,13 +699,15 @@ function handleCreateReturn(): void
             'return_number' => $returnNumber,
             'refund_amount' => $totalRefund,
             'status' => 'pending',
-            'print_url' => $printUrl,
             'print_url' => $printUrl
         ]);
         
     } catch (Throwable $e) {
-        $conn->rollback();
+        if (isset($conn)) {
+            $conn->rollback();
+        }
         error_log('Error creating return request: ' . $e->getMessage());
+        error_log('Stack trace: ' . $e->getTraceAsString());
         returnJson([
             'success' => false,
             'message' => 'حدث خطأ أثناء إنشاء طلب المرتجع: ' . $e->getMessage()
