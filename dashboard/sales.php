@@ -836,6 +836,10 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && trim($_P
                     $activeTab = 'collections';
                 } elseif ($activeTab === 'returns') {
                     $activeTab = 'returns';
+                } elseif ($activeTab === 'exchanges') {
+                    $activeTab = 'exchanges';
+                } elseif ($activeTab === 'damaged_returns') {
+                    $activeTab = 'damaged_returns';
                 } else {
                     $activeTab = 'sales';
                 }
@@ -1536,6 +1540,10 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && trim($_P
                     $activeTab = 'collections';
                 } elseif ($activeTab === 'returns') {
                     $activeTab = 'returns';
+                } elseif ($activeTab === 'exchanges') {
+                    $activeTab = 'exchanges';
+                } elseif ($activeTab === 'damaged_returns') {
+                    $activeTab = 'damaged_returns';
                 } else {
                     $activeTab = 'sales';
                 }
@@ -1985,6 +1993,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && trim($_P
             activeTabId = 'collections-tab';
         } else if (section === 'returns') {
             activeTabId = 'returns-tab';
+        } else if (section === 'exchanges') {
+            activeTabId = 'my-exchanges-tab';
         } else if (section === 'damaged_returns') {
             activeTabId = 'my-damaged-returns-tab';
         }

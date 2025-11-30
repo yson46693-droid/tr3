@@ -249,6 +249,8 @@ if ($activeTab !== 'exchanges' && $activeTab !== 'sales') {
 <?php 
 $filterCardClass = $isSalesRecords ? 'border-0 shadow-lg' : 'shadow-sm';
 $filterCardStyle = $isSalesRecords ? 'background: linear-gradient(135deg,rgb(12, 45, 194) 0%,rgb(11, 94, 218) 100%); border-radius: 12px;' : '';
+// استخدام الفلتر المناسب حسب التبويب النشط
+$currentFilters = ($activeTab === 'exchanges') ? $exchangeFilters : $filters;
 ?>
 <div class="card <?php echo $filterCardClass; ?> mb-4" style="<?php echo $filterCardStyle; ?>">
     <div class="card-body" style="<?php echo $isSalesRecords ? 'padding: 1.5rem;' : ''; ?>">
@@ -265,7 +267,7 @@ $filterCardStyle = $isSalesRecords ? 'background: linear-gradient(135deg,rgb(12,
                     <option value="">جميع العملاء</option>
                     <?php 
                     require_once __DIR__ . '/../../includes/path_helper.php';
-                    $selectedCustomerId = isset($filters['customer_id']) ? intval($filters['customer_id']) : 0;
+                    $selectedCustomerId = isset($currentFilters['customer_id']) ? intval($currentFilters['customer_id']) : 0;
                     $customerValid = isValidSelectValue($selectedCustomerId, $customers, 'id');
                     foreach ($customers as $customer): ?>
                         <option value="<?php echo $customer['id']; ?>" <?php echo $customerValid && $selectedCustomerId == $customer['id'] ? 'selected' : ''; ?>>
@@ -278,19 +280,19 @@ $filterCardStyle = $isSalesRecords ? 'background: linear-gradient(135deg,rgb(12,
                 <label class="form-label <?php echo $isSalesRecords ? 'text-white fw-semibold' : ''; ?>">الحالة</label>
                 <select class="form-select <?php echo $isSalesRecords ? 'border-0 shadow-sm' : ''; ?>" name="status">
                     <option value="">جميع الحالات</option>
-                    <option value="pending" <?php echo ($filters['status'] ?? '') === 'pending' ? 'selected' : ''; ?>>معلق</option>
-                    <option value="approved" <?php echo ($filters['status'] ?? '') === 'approved' ? 'selected' : ''; ?>>موافق عليه</option>
-                    <option value="rejected" <?php echo ($filters['status'] ?? '') === 'rejected' ? 'selected' : ''; ?>>مرفوض</option>
-                    <option value="completed" <?php echo ($filters['status'] ?? '') === 'completed' ? 'selected' : ''; ?>>مكتمل</option>
+                    <option value="pending" <?php echo ($currentFilters['status'] ?? '') === 'pending' ? 'selected' : ''; ?>>معلق</option>
+                    <option value="approved" <?php echo ($currentFilters['status'] ?? '') === 'approved' ? 'selected' : ''; ?>>موافق عليه</option>
+                    <option value="rejected" <?php echo ($currentFilters['status'] ?? '') === 'rejected' ? 'selected' : ''; ?>>مرفوض</option>
+                    <option value="completed" <?php echo ($currentFilters['status'] ?? '') === 'completed' ? 'selected' : ''; ?>>مكتمل</option>
                 </select>
             </div>
             <div class="col-md-2">
                 <label class="form-label <?php echo $isSalesRecords ? 'text-white fw-semibold' : ''; ?>">من تاريخ</label>
-                <input type="date" class="form-control <?php echo $isSalesRecords ? 'border-0 shadow-sm' : ''; ?>" name="date_from" value="<?php echo htmlspecialchars($filters['date_from'] ?? ''); ?>">
+                <input type="date" class="form-control <?php echo $isSalesRecords ? 'border-0 shadow-sm' : ''; ?>" name="date_from" value="<?php echo htmlspecialchars($currentFilters['date_from'] ?? ''); ?>">
             </div>
             <div class="col-md-2">
                 <label class="form-label <?php echo $isSalesRecords ? 'text-white fw-semibold' : ''; ?>">إلى تاريخ</label>
-                <input type="date" class="form-control <?php echo $isSalesRecords ? 'border-0 shadow-sm' : ''; ?>" name="date_to" value="<?php echo htmlspecialchars($filters['date_to'] ?? ''); ?>">
+                <input type="date" class="form-control <?php echo $isSalesRecords ? 'border-0 shadow-sm' : ''; ?>" name="date_to" value="<?php echo htmlspecialchars($currentFilters['date_to'] ?? ''); ?>">
             </div>
             <div class="col-md-2">
                 <label class="form-label <?php echo $isSalesRecords ? 'text-white fw-semibold' : ''; ?>">&nbsp;</label>
@@ -529,7 +531,7 @@ $tableHeaderStyle = $isSalesRecords ? 'background: linear-gradient(135deg,rgb(37
         <div class="table-responsive dashboard-table-wrapper">
             <table class="table dashboard-table align-middle <?php echo $isSalesRecords ? 'table-hover' : ''; ?>" style="<?php echo $isSalesRecords ? 'margin-bottom: 0;' : ''; ?>">
                 <thead>
-                    <tr style="<?php echo $isSalesRecords ? 'background: linear-gradient(135deg,rgb(40, 74, 225) 0%, #764ba2 100%);' : ''; ?>">
+                    <tr style="<?php echo $isSalesRecords ? 'background: linear-gradient(135deg,rgb(40, 74, 225) 0%,rgb(2, 71, 220) 100%);' : ''; ?>">
                         <th class="<?php echo $isSalesRecords ? 'text-white fw-bold' : ''; ?>" style="<?php echo $isSalesRecords ? 'border: none; padding: 1rem;' : ''; ?>">التاريخ</th>
                         <th class="<?php echo $isSalesRecords ? 'text-white fw-bold' : ''; ?>" style="<?php echo $isSalesRecords ? 'border: none; padding: 1rem;' : ''; ?>">رقم الفاتورة</th>
                         <th class="<?php echo $isSalesRecords ? 'text-white fw-bold' : ''; ?>" style="<?php echo $isSalesRecords ? 'border: none; padding: 1rem;' : ''; ?>">العميل</th>
