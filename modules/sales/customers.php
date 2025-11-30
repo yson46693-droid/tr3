@@ -244,11 +244,9 @@ if (
                     'total_invoiced' => 0.0,
                     'total_paid' => 0.0,
                     'total_returns' => 0.0,
-                    'total_exchanges' => 0.0,
                     'net_total' => 0.0,
                 ],
                 'returns' => [],
-                'exchanges' => [],
             ];
         }
         

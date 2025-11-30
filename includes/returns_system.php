@@ -167,7 +167,7 @@ function ensureReturnSchemaCompatibility(): void
             if (!empty($refundColumn)) {
                 $type = $refundColumn['Type'] ?? '';
                 if (stripos($type, 'company_request') === false) {
-                    $db->execute("ALTER TABLE returns MODIFY `refund_method` enum('cash','credit','exchange','company_request') DEFAULT 'cash'");
+                    $db->execute("ALTER TABLE returns MODIFY `refund_method` enum('cash','credit','company_request') DEFAULT 'cash'");
                 }
             }
         } catch (Throwable $e) {

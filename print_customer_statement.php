@@ -94,20 +94,6 @@ function getCustomerStatementData($customerId) {
         [$customerId]
     ) ?: [];
     
-    // جلب الاستبدالات
-    $exchanges = $db->query(
-        "SELECT 
-            e.id, e.exchange_date, e.exchange_type, e.difference_amount,
-            e.original_total, e.new_total,
-            r.return_number, r.invoice_id,
-            (SELECT invoice_number FROM invoices WHERE id = r.invoice_id) as invoice_number
-         FROM exchanges e
-         LEFT JOIN returns r ON e.return_id = r.id
-         WHERE e.customer_id = ?
-         ORDER BY e.exchange_date DESC, e.id DESC",
-        [$customerId]
-    ) ?: [];
-    
     // جلب التحصيلات
     // التحقق من وجود عمود invoice_id في جدول collections
     $hasInvoiceIdColumn = false;
@@ -146,7 +132,6 @@ function getCustomerStatementData($customerId) {
     $totalInvoiced = 0;
     $totalPaid = 0;
     $totalReturns = 0;
-    $totalExchanges = 0;
     $totalCollections = 0;
     
     foreach ($invoices as $inv) {
@@ -158,10 +143,6 @@ function getCustomerStatementData($customerId) {
         $totalReturns += (float)($ret['refund_amount'] ?? 0);
     }
     
-    foreach ($exchanges as $exc) {
-        $totalExchanges += (float)($exc['difference_amount'] ?? 0);
-    }
-    
     foreach ($collections as $col) {
         $totalCollections += (float)($col['amount'] ?? 0);
     }
@@ -169,15 +150,13 @@ function getCustomerStatementData($customerId) {
     return [
         'invoices' => $invoices,
         'returns' => $returns,
-        'exchanges' => $exchanges,
         'collections' => $collections,
         'totals' => [
             'total_invoiced' => $totalInvoiced,
             'total_paid' => $totalPaid,
             'total_returns' => $totalReturns,
-            'total_exchanges' => $totalExchanges,
             'total_collections' => $totalCollections,
-            'net_balance' => $totalInvoiced - $totalPaid - $totalReturns + $totalExchanges
+            'net_balance' => $totalInvoiced - $totalPaid - $totalReturns
         ]
     ];
 }
@@ -602,48 +581,6 @@ function getCustomerStatementData($customerId) {
             </tbody>
         </table>
         
-        <!-- الاستبدالات -->
-        <h2 class="section-title">الاستبدالات</h2>
-        <table class="transactions-table">
-            <thead>
-                <tr>
-                    <th>رقم الاستبدال</th>
-                    <th>رقم الفاتورة</th>
-                    <th>التاريخ</th>
-                    <th>الفرق</th>
-                    <th>النوع</th>
-                </tr>
-            </thead>
-            <tbody>
-                <?php if (empty($statementData['exchanges'])): ?>
-                    <tr>
-                        <td colspan="5" class="text-center text-muted">لا توجد استبدالات</td>
-                    </tr>
-                <?php else: ?>
-                    <?php foreach ($statementData['exchanges'] as $exchange): ?>
-                        <tr>
-                            <td>#<?php echo $exchange['id']; ?></td>
-                            <td><?php echo htmlspecialchars($exchange['invoice_number'] ?: '-'); ?></td>
-                            <td><?php echo formatDate($exchange['exchange_date']); ?></td>
-                            <td class="<?php echo $exchange['difference_amount'] >= 0 ? 'amount-positive' : 'amount-negative'; ?>">
-                                <?php echo formatCurrency(abs($exchange['difference_amount'])); ?>
-                            </td>
-                            <td>
-                                <?php 
-                                $typeLabels = [
-                                    'upgrade' => 'ترقية',
-                                    'downgrade' => 'تخفيض',
-                                    'equal' => 'متساوي'
-                                ];
-                                echo $typeLabels[$exchange['exchange_type']] ?? $exchange['exchange_type'];
-                                ?>
-                            </td>
-                        </tr>
-                    <?php endforeach; ?>
-                <?php endif; ?>
-            </tbody>
-        </table>
-        
         <!-- التحصيلات -->
         <h2 class="section-title">التحصيلات</h2>
         <table class="transactions-table">
@@ -698,10 +635,6 @@ function getCustomerStatementData($customerId) {
             <div class="summary-row">
                 <span class="summary-label">إجمالي المرتجعات</span>
                 <span class="summary-value amount-negative"><?php echo formatCurrency($statementData['totals']['total_returns']); ?></span>
-            </div>
-            <div class="summary-row">
-                <span class="summary-label">إجمالي الاستبدالات</span>
-                <span class="summary-value amount-positive"><?php echo formatCurrency($statementData['totals']['total_exchanges']); ?></span>
             </div>
             <div class="summary-row">
                 <span class="summary-label">إجمالي التحصيلات</span>

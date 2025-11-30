@@ -37,8 +37,6 @@ function customerHistoryEnsureSetup(): void
               `invoice_status` varchar(32) DEFAULT NULL,
               `return_total` decimal(15,2) NOT NULL DEFAULT 0.00,
               `return_count` int(11) NOT NULL DEFAULT 0,
-              `exchange_total` decimal(15,2) NOT NULL DEFAULT 0.00,
-              `exchange_count` int(11) NOT NULL DEFAULT 0,
               `created_at` timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP,
               `updated_at` timestamp NULL DEFAULT NULL ON UPDATE CURRENT_TIMESTAMP,
               PRIMARY KEY (`id`),
@@ -57,8 +55,6 @@ function customerHistoryEnsureSetup(): void
               ADD COLUMN IF NOT EXISTS `invoice_status` varchar(32) DEFAULT NULL AFTER `paid_amount`,
               ADD COLUMN IF NOT EXISTS `return_total` decimal(15,2) NOT NULL DEFAULT 0.00 AFTER `invoice_status`,
               ADD COLUMN IF NOT EXISTS `return_count` int(11) NOT NULL DEFAULT 0 AFTER `return_total`,
-              ADD COLUMN IF NOT EXISTS `exchange_total` decimal(15,2) NOT NULL DEFAULT 0.00 AFTER `return_count`,
-              ADD COLUMN IF NOT EXISTS `exchange_count` int(11) NOT NULL DEFAULT 0 AFTER `exchange_total`,
               ADD INDEX IF NOT EXISTS `customer_invoice_date_idx` (`customer_id`,`invoice_date`)
         ");
     } catch (Throwable $alterError) {
@@ -93,7 +89,6 @@ function customerHistoryPruneOlderThan(string $cutoffDate): void
  *   invoices: array<int, array<string, mixed>>,
  *   totals: array<string, float|int>,
  *   returns: array<int, array<string, mixed>>,
- *   exchanges: array<int, array<string, mixed>>,
  *   window_start: string
  * }
  */
@@ -159,153 +154,6 @@ function customerHistorySyncForCustomer(int $customerId): array
         }
     }
 
-    // تجميع بيانات الاستبدالات (من خلال returns المرتبطة بالفواتير أو مباشرة من invoice_id)
-    $exchangesByInvoice = [];
-    if (!empty($realInvoiceIds)) {
-        $placeholders = implode(',', array_fill(0, count($realInvoiceIds), '?'));
-        // البحث عن الاستبدالات من خلال returns المرتبطة بالفواتير (المعتمدة والمكتملة فقط)
-        $exchangeRowsFromReturns = $db->query(
-            "SELECT
-                e.id,
-                e.exchange_date,
-                e.exchange_type,
-                e.difference_amount,
-                e.new_total,
-                e.original_total,
-                r.invoice_id
-             FROM exchanges e
-             LEFT JOIN returns r ON e.return_id = r.id
-             WHERE e.customer_id = ?
-               AND e.exchange_date >= ?
-               AND e.status IN ('approved', 'completed')
-               AND r.invoice_id IS NOT NULL
-               AND r.invoice_id IN ($placeholders)",
-            array_merge([$customerId, $cutoffDate], $realInvoiceIds)
-        );
-
-        // البحث عن الاستبدالات التي لها invoice_id مباشرة (المعتمدة والمكتملة فقط)
-        // التحقق من وجود عمود invoice_id في جدول exchanges أولاً
-        $exchangeRowsDirect = [];
-        try {
-            $hasInvoiceIdColumn = !empty($db->queryOne("SHOW COLUMNS FROM exchanges LIKE 'invoice_id'"));
-            if ($hasInvoiceIdColumn) {
-                $exchangeRowsDirect = $db->query(
-                    "SELECT
-                        e.id,
-                        e.exchange_date,
-                        e.exchange_type,
-                        e.difference_amount,
-                        e.new_total,
-                        e.original_total,
-                        e.invoice_id
-                     FROM exchanges e
-                     WHERE e.customer_id = ?
-                       AND e.exchange_date >= ?
-                       AND e.status IN ('approved', 'completed')
-                       AND e.invoice_id IS NOT NULL
-                       AND e.invoice_id IN ($placeholders)",
-                    array_merge([$customerId, $cutoffDate], $realInvoiceIds)
-                );
-            }
-        } catch (Throwable $e) {
-            // إذا فشل الاستعلام، تجاهل الاستبدالات المباشرة
-            error_log('customerHistorySyncForCustomer: invoice_id column not available in exchanges table -> ' . $e->getMessage());
-        }
-
-        // دمج النتائج
-        $allExchangeRows = array_merge($exchangeRowsFromReturns, $exchangeRowsDirect);
-
-        foreach ($allExchangeRows as $exchangeRow) {
-            $invoiceId = (int)($exchangeRow['invoice_id'] ?? 0);
-            if ($invoiceId <= 0) {
-                continue;
-            }
-            if (!isset($exchangesByInvoice[$invoiceId])) {
-                $exchangesByInvoice[$invoiceId] = [
-                    'count' => 0,
-                    'total' => 0.0,
-                ];
-            }
-            $exchangesByInvoice[$invoiceId]['count']++;
-            $exchangesByInvoice[$invoiceId]['total'] += (float)($exchangeRow['difference_amount'] ?? 0.0);
-        }
-    }
-    
-    // أيضاً حساب الاستبدالات من جدول product_exchanges (للتوافق مع النظام القديم)
-    $hasProductExchangesTable = !empty($db->queryOne("SHOW TABLES LIKE 'product_exchanges'"));
-    if ($hasProductExchangesTable) {
-        try {
-            // التحقق من وجود عمود invoice_id في product_exchanges
-            $hasInvoiceIdColumn = false;
-            try {
-                $columnCheck = $db->queryOne("SHOW COLUMNS FROM product_exchanges LIKE 'invoice_id'");
-                $hasInvoiceIdColumn = !empty($columnCheck);
-            } catch (Throwable $e) {
-                $hasInvoiceIdColumn = false;
-            }
-            
-            if ($hasInvoiceIdColumn) {
-                $productExchangeRows = $db->query(
-                    "SELECT pe.invoice_id, pe.difference_amount
-                     FROM product_exchanges pe
-                     INNER JOIN invoices i ON i.id = pe.invoice_id
-                     WHERE pe.customer_id = ?
-                       AND pe.exchange_date >= ?
-                       AND pe.status = 'completed'
-                       AND pe.invoice_id IS NOT NULL
-                       AND pe.invoice_id IN ($placeholders)",
-                    array_merge([$customerId, $cutoffDate], $realInvoiceIds)
-                );
-            } else {
-                // إذا لم يكن هناك invoice_id، نحاول ربطه من exchange_return_items
-                try {
-                    $hasExchangeReturnItems = !empty($db->queryOne("SHOW TABLES LIKE 'exchange_return_items'"));
-                    if ($hasExchangeReturnItems) {
-                        $hasInvoiceItemIdColumn = !empty($db->queryOne("SHOW COLUMNS FROM exchange_return_items LIKE 'invoice_item_id'"));
-                        if ($hasInvoiceItemIdColumn) {
-                            $productExchangeRows = $db->query(
-                                "SELECT DISTINCT i.id as invoice_id, pe.difference_amount
-                                 FROM product_exchanges pe
-                                 INNER JOIN exchange_return_items eri ON eri.exchange_id = pe.id
-                                 INNER JOIN invoice_items ii ON ii.id = eri.invoice_item_id
-                                 INNER JOIN invoices i ON i.id = ii.invoice_id
-                                 WHERE pe.customer_id = ?
-                                   AND pe.exchange_date >= ?
-                                   AND pe.status = 'completed'
-                                   AND i.id IN ($placeholders)",
-                                array_merge([$customerId, $cutoffDate], $realInvoiceIds)
-                            );
-                        } else {
-                            $productExchangeRows = [];
-                        }
-                    } else {
-                        $productExchangeRows = [];
-                    }
-                } catch (Throwable $e) {
-                    error_log('customerHistorySyncForCustomer: failed linking product_exchanges with invoices -> ' . $e->getMessage());
-                    $productExchangeRows = [];
-                }
-            }
-            
-            foreach ($productExchangeRows as $peRow) {
-                $invoiceId = (int)($peRow['invoice_id'] ?? 0);
-                if ($invoiceId <= 0) {
-                    continue;
-                }
-                if (!isset($exchangesByInvoice[$invoiceId])) {
-                    $exchangesByInvoice[$invoiceId] = [
-                        'count' => 0,
-                        'total' => 0.0,
-                    ];
-                }
-                $exchangesByInvoice[$invoiceId]['count']++;
-                $exchangesByInvoice[$invoiceId]['total'] += (float)($peRow['difference_amount'] ?? 0.0);
-            }
-        } catch (Throwable $e) {
-            error_log('customerHistorySyncForCustomer: failed getting product_exchanges -> ' . $e->getMessage());
-        }
-    }
-
     // تحديث أو إنشاء السجلات في جدول التاريخ (فقط للفواتير الرسمية)
     foreach ($allInvoiceRows as $invoiceRow) {
         $invoiceId = (int)($invoiceRow['id'] ?? 0);
@@ -318,17 +166,16 @@ function customerHistorySyncForCustomer(int $customerId): array
         $paidAmount = (float)($invoiceRow['paid_amount'] ?? 0.0);
         $status = (string)($invoiceRow['status'] ?? '');
 
-        // تجميع بيانات المرتجعات والاستبدالات للفواتير
+        // تجميع بيانات المرتجعات للفواتير
         $returnsData = $returnsByInvoice[$invoiceId] ?? ['count' => 0, 'total' => 0.0];
-        $exchangesData = $exchangesByInvoice[$invoiceId] ?? ['count' => 0, 'total' => 0.0];
 
         try {
             // حفظ سجل الفاتورة في جدول التاريخ
             $db->execute(
                 "INSERT INTO customer_purchase_history
                     (customer_id, invoice_id, invoice_number, invoice_date, invoice_total, paid_amount, invoice_status,
-                     return_total, return_count, exchange_total, exchange_count, created_at)
-                 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NOW())
+                     return_total, return_count, created_at)
+                 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, NOW())
                  ON DUPLICATE KEY UPDATE
                     invoice_number = VALUES(invoice_number),
                     invoice_date = VALUES(invoice_date),
@@ -337,8 +184,6 @@ function customerHistorySyncForCustomer(int $customerId): array
                     invoice_status = VALUES(invoice_status),
                     return_total = VALUES(return_total),
                     return_count = VALUES(return_count),
-                    exchange_total = VALUES(exchange_total),
-                    exchange_count = VALUES(exchange_count),
                     updated_at = NOW()",
                 [
                     $customerId,
@@ -350,8 +195,6 @@ function customerHistorySyncForCustomer(int $customerId): array
                     $status,
                     $returnsData['total'],
                     $returnsData['count'],
-                    $exchangesData['total'],
-                    $exchangesData['count'],
                 ]
             );
         } catch (Throwable $upsertError) {
@@ -401,7 +244,6 @@ function customerHistorySyncForCustomer(int $customerId): array
         'total_invoiced'  => 0.0,
         'total_paid'      => 0.0,
         'total_returns'   => 0.0,
-        'total_exchanges' => 0.0,
         'net_total'       => 0.0,
     ];
 
@@ -410,15 +252,13 @@ function customerHistorySyncForCustomer(int $customerId): array
         $invoiceTotal = (float)($row['invoice_total'] ?? 0.0);
         $paidAmount = (float)($row['paid_amount'] ?? 0.0);
         $returnTotal = (float)($row['return_total'] ?? 0.0);
-        $exchangeTotal = (float)($row['exchange_total'] ?? 0.0);
 
         $summaryTotals['invoice_count']++;
         $summaryTotals['total_invoiced'] += $invoiceTotal;
         $summaryTotals['total_paid'] += $paidAmount;
         $summaryTotals['total_returns'] += $returnTotal;
-        $summaryTotals['total_exchanges'] += $exchangeTotal;
 
-        $net = $invoiceTotal - $returnTotal + $exchangeTotal;
+        $net = $invoiceTotal - $returnTotal;
         $summaryTotals['net_total'] += $net;
 
         // جلب معلومات المنتجات وأرقام التشغيلات للفاتورة
@@ -453,131 +293,8 @@ function customerHistorySyncForCustomer(int $customerId): array
                 [$invoiceId]
             );
             
-            // جلب المنتجات البديلة من الاستبدالات المرتبطة بهذه الفاتورة
-            $exchangeNewItems = [];
-            if ($invoiceId > 0) {
-                try {
-                    $hasInvoiceItemIdColumn = !empty($db->queryOne("SHOW COLUMNS FROM exchange_new_items LIKE 'invoice_item_id'"));
-                    if ($hasInvoiceItemIdColumn) {
-                        $exchangeNewItems = $db->query(
-                            "SELECT 
-                                eni.invoice_item_id,
-                                eni.product_id,
-                                eni.quantity,
-                                eni.unit_price,
-                                eni.total_price,
-                                eni.batch_number,
-                                eni.batch_number_id,
-                                COALESCE(
-                                    (SELECT fp2.product_name 
-                                     FROM finished_products fp2 
-                                     INNER JOIN batch_numbers bn2 ON fp2.batch_id = bn2.id
-                                     WHERE bn2.id = eni.batch_number_id
-                                       AND fp2.product_name IS NOT NULL 
-                                       AND TRIM(fp2.product_name) != ''
-                                       AND fp2.product_name NOT LIKE 'منتج رقم%'
-                                     ORDER BY fp2.id DESC 
-                                     LIMIT 1),
-                                    NULLIF(TRIM(p.name), ''),
-                                    CONCAT('منتج رقم ', eni.product_id)
-                                ) as product_name,
-                                p.unit
-                            FROM exchange_new_items eni
-                            INNER JOIN exchanges e ON eni.exchange_id = e.id
-                            LEFT JOIN products p ON eni.product_id = p.id
-                            WHERE e.invoice_id = ?
-                              AND e.status IN ('approved', 'completed')
-                              AND eni.invoice_item_id IS NOT NULL",
-                            [$invoiceId]
-                        );
-                    } else {
-                        // إذا لم يكن هناك عمود invoice_item_id، جلب المنتجات البديلة مباشرة من الاستبدالات
-                        $exchangeNewItems = $db->query(
-                            "SELECT 
-                                eni.product_id,
-                                eni.quantity,
-                                eni.unit_price,
-                                eni.total_price,
-                                eni.batch_number,
-                                eni.batch_number_id,
-                                COALESCE(
-                                    (SELECT fp2.product_name 
-                                     FROM finished_products fp2 
-                                     INNER JOIN batch_numbers bn2 ON fp2.batch_id = bn2.id
-                                     WHERE bn2.id = eni.batch_number_id
-                                       AND fp2.product_name IS NOT NULL 
-                                       AND TRIM(fp2.product_name) != ''
-                                       AND fp2.product_name NOT LIKE 'منتج رقم%'
-                                     ORDER BY fp2.id DESC 
-                                     LIMIT 1),
-                                    NULLIF(TRIM(p.name), ''),
-                                    CONCAT('منتج رقم ', eni.product_id)
-                                ) as product_name,
-                                p.unit
-                            FROM exchange_new_items eni
-                            INNER JOIN exchanges e ON eni.exchange_id = e.id
-                            LEFT JOIN products p ON eni.product_id = p.id
-                            WHERE e.invoice_id = ?
-                              AND e.status IN ('approved', 'completed')",
-                            [$invoiceId]
-                        );
-                    }
-                } catch (Throwable $e) {
-                    error_log('Error fetching exchange new items: ' . $e->getMessage());
-                }
-            }
-
-            // دمج invoiceItems مع exchangeNewItems
-            $allItems = $invoiceItems;
-            foreach ($exchangeNewItems as $exchangeItem) {
-                $productName = $exchangeItem['product_name'] ?? 'غير معروف';
-                $batchNumber = $exchangeItem['batch_number'] ?? '';
-                
-                // إذا كان هناك invoice_item_id، استخدمه، وإلا أضف كعنصر جديد
-                if (!empty($exchangeItem['invoice_item_id'])) {
-                    // البحث عن invoice_item الموجود وتحديثه
-                    $found = false;
-                    foreach ($allItems as &$item) {
-                        if ($item['invoice_item_id'] == $exchangeItem['invoice_item_id']) {
-                            // تحديث batch_numbers
-                            $existingBatches = !empty($item['batch_numbers']) ? explode(', ', $item['batch_numbers']) : [];
-                            if ($batchNumber && !in_array($batchNumber, $existingBatches)) {
-                                $existingBatches[] = $batchNumber;
-                                $item['batch_numbers'] = implode(', ', $existingBatches);
-                            }
-                            $found = true;
-                            break;
-                        }
-                    }
-                    
-                    if (!$found) {
-                        // إضافة كعنصر جديد
-                        $allItems[] = [
-                            'invoice_item_id' => $exchangeItem['invoice_item_id'],
-                            'product_id' => $exchangeItem['product_id'],
-                            'product_name' => $productName,
-                            'quantity' => $exchangeItem['quantity'],
-                            'unit_price' => $exchangeItem['unit_price'],
-                            'total_price' => $exchangeItem['total_price'],
-                            'batch_numbers' => $batchNumber
-                        ];
-                    }
-                } else {
-                    // إضافة كعنصر جديد بدون invoice_item_id
-                    $allItems[] = [
-                        'invoice_item_id' => null,
-                        'product_id' => $exchangeItem['product_id'],
-                        'product_name' => $productName . ($batchNumber ? ' (تشغيلة: ' . $batchNumber . ')' : ''),
-                        'quantity' => $exchangeItem['quantity'],
-                        'unit_price' => $exchangeItem['unit_price'],
-                        'total_price' => $exchangeItem['total_price'],
-                        'batch_numbers' => $batchNumber
-                    ];
-                }
-            }
-
-            // استخدام $allItems بدلاً من $invoiceItems في باقي الكود
-            foreach ($allItems as $item) {
+            // استخدام $invoiceItems في باقي الكود
+            foreach ($invoiceItems as $item) {
                 $productName = $item['product_name'] ?? 'غير معروف';
                 $batchNumbers = !empty($item['batch_numbers']) ? $item['batch_numbers'] : '';
                 
@@ -602,14 +319,12 @@ function customerHistorySyncForCustomer(int $customerId): array
             'invoice_status'  => $row['invoice_status'],
             'return_total'    => $returnTotal,
             'return_count'    => (int)($row['return_count'] ?? 0),
-            'exchange_total'  => $exchangeTotal,
-            'exchange_count'  => (int)($row['exchange_count'] ?? 0),
             'net_total'       => $net,
             'products_info'   => $productsDisplay, // اسم المنتج ورقم التشغيلة
         ];
     }
 
-    // الحصول على تفاصيل المرتجعات والاستبدالات للعرض المفصل
+    // الحصول على تفاصيل المرتجعات للعرض المفصل
     $recentReturns = $db->query(
         "SELECT r.id, r.invoice_id, r.return_number, r.return_date, r.refund_amount, r.return_type, r.status
          FROM returns r
@@ -619,23 +334,11 @@ function customerHistorySyncForCustomer(int $customerId): array
         [$customerId, $cutoffDate]
     );
 
-    $recentExchanges = $db->query(
-        "SELECT e.id, e.exchange_number, e.exchange_date, e.exchange_type, e.difference_amount, e.status,
-                r.invoice_id
-         FROM exchanges e
-         LEFT JOIN returns r ON e.return_id = r.id
-         WHERE e.customer_id = ?
-           AND e.exchange_date >= ?
-         ORDER BY e.exchange_date DESC",
-        [$customerId, $cutoffDate]
-    );
-
     return [
         'window_start' => $cutoffDate,
         'invoices'     => $invoicesPayload,
         'totals'       => $summaryTotals,
         'returns'      => $recentReturns,
-        'exchanges'    => $recentExchanges,
     ];
 }
 

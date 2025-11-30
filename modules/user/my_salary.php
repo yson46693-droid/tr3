@@ -1646,51 +1646,6 @@ try {
         }
     }
     
-    // جلب سجلات الخصومات من الاستبدال
-    $replacementQuery = "
-        SELECT al.*, u.username, u.full_name
-        FROM audit_logs al
-        LEFT JOIN users u ON al.user_id = u.id
-        WHERE al.action = 'process_replacement'
-        ORDER BY al.created_at DESC
-        LIMIT 100
-    ";
-    
-    $replacementLogs = $db->query($replacementQuery);
-    
-    foreach ($replacementLogs as $log) {
-        $newValue = $log['new_value'] ?? '';
-        if (empty($newValue)) continue;
-        
-        $newValueData = json_decode($newValue, true);
-        if (json_last_error() !== JSON_ERROR_NONE) continue;
-        
-        $customerId = $newValueData['customer_id'] ?? null;
-        if (!$customerId) continue;
-        
-        $customer = $db->queryOne("SELECT created_by FROM customers WHERE id = ?", [$customerId]);
-        if (!$customer || (int)($customer['created_by'] ?? 0) !== (int)$currentUser['id']) continue;
-        
-        $salaryDeduction = floatval($newValueData['salary_deduction'] ?? 0);
-        if ($salaryDeduction > 0) {
-            $exchangeNumber = $newValueData['exchange_number'] ?? '';
-            $description = 'خصم بسبب استبدال';
-            if ($exchangeNumber) {
-                $description .= ' - رقم الاستبدال: ' . htmlspecialchars($exchangeNumber);
-            }
-            
-            $commissionAndDeductionLogs[] = [
-                'id' => 'replacement_' . $log['id'],
-                'action' => 'process_replacement',
-                'operation_type' => 'خصم',
-                'amount' => $salaryDeduction,
-                'description' => $description,
-                'created_at' => $log['created_at'],
-                'username' => $log['username'] ?? $log['full_name'] ?? 'نظام'
-            ];
-        }
-    }
-    
     // ترتيب حسب التاريخ
     usort($commissionAndDeductionLogs, function($a, $b) {
         $timeA = strtotime($a['created_at'] ?? '1970-01-01');

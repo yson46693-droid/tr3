@@ -121,13 +121,6 @@ $baseUrl = getDashboardUrl();
             </li>
             
             <li class="nav-item">
-                <a class="nav-link" href="<?php echo $baseUrl; ?>sales.php?page=exchanges">
-                    <i class="bi bi-arrow-repeat"></i>
-                    <span>الاستبدال</span>
-                </a>
-            </li>
-            
-            <li class="nav-item">
                 <a class="nav-link" href="<?php echo $baseUrl; ?>sales.php?page=reports">
                     <i class="bi bi-file-earmark-text"></i>
                     <span><?php echo $lang['menu_reports']; ?></span>

@@ -961,7 +961,7 @@ function renderRepInvoices(rows, tableBody) {
     if (!Array.isArray(rows) || rows.length === 0) {
         const emptyRow = document.createElement('tr');
         const emptyCell = document.createElement('td');
-        emptyCell.colSpan = 8;
+        emptyCell.colSpan = 7;
         emptyCell.className = 'text-center text-muted py-4';
         emptyCell.textContent = 'لا توجد فواتير خلال النافذة الزمنية.';
         emptyRow.appendChild(emptyCell);
@@ -979,10 +979,6 @@ function renderRepInvoices(rows, tableBody) {
             <td>
                 <span class="text-danger fw-semibold">${formatCurrencySimple(row.return_total || 0)}</span>
                 <div class="text-muted small">${row.return_count || 0} مرتجع</div>
-            </td>
-            <td>
-                <span class="text-success fw-semibold">${formatCurrencySimple(row.exchange_total || 0)}</span>
-                <div class="text-muted small">${row.exchange_count || 0} استبدال</div>
             </td>
             <td>${formatCurrencySimple(row.net_total || 0)}</td>
             <td>${row.invoice_status || '—'}</td>
@@ -1018,45 +1014,6 @@ function renderRepReturns(list, container) {
                     </div>
                 </div>
                 <div class="text-danger fw-semibold">${formatCurrencySimple(item.refund_amount || 0)}</div>
-            </div>
-            <div class="text-muted small mt-1">الحالة: ${item.status || '—'}</div>
-        `;
-        group.appendChild(row);
-    });
-    
-    container.appendChild(group);
-}
-
-function renderRepExchanges(list, container) {
-    if (!container) return;
-    container.innerHTML = '';
-    
-    if (!Array.isArray(list) || list.length === 0) {
-        const empty = document.createElement('div');
-        empty.className = 'text-muted';
-        empty.textContent = 'لا توجد حالات استبدال خلال الفترة.';
-        container.appendChild(empty);
-        return;
-    }
-    
-    const group = document.createElement('div');
-    group.className = 'list-group list-group-flush';
-    
-    list.forEach(function (item) {
-        const difference = Number(item.difference_amount || 0);
-        const row = document.createElement('div');
-        row.className = 'list-group-item';
-        row.innerHTML = `
-            <div class="d-flex justify-content-between align-items-center">
-                <div>
-                    <div class="fw-semibold">رقم الاستبدال: ${item.exchange_number || '—'}</div>
-                    <div class="text-muted small">
-                        التاريخ: ${item.exchange_date || '—'} | النوع: ${item.exchange_type || '—'}
-                    </div>
-                </div>
-                <div class="fw-semibold ${difference >= 0 ? 'text-success' : 'text-danger'}">
-                    ${formatCurrencySimple(difference)}
-                </div>
             </div>
             <div class="text-muted small mt-1">الحالة: ${item.status || '—'}</div>
         `;
@@ -1212,7 +1169,6 @@ document.addEventListener('DOMContentLoaded', function() {
                 const errorElement = historyModal.querySelector('.rep-history-error');
                 const invoicesTableBody = historyModal.querySelector('.rep-history-table tbody');
                 const returnsContainer = historyModal.querySelector('.rep-history-returns');
-                const exchangesContainer = historyModal.querySelector('.rep-history-exchanges');
                 const totalInvoicesEl = historyModal.querySelector('.rep-history-total-invoices');
                 const totalInvoicedEl = historyModal.querySelector('.rep-history-total-invoiced');
                 const totalReturnsEl = historyModal.querySelector('.rep-history-total-returns');
@@ -1224,7 +1180,6 @@ document.addEventListener('DOMContentLoaded', function() {
                 if (errorElement) errorElement.classList.add('d-none');
                 if (invoicesTableBody) invoicesTableBody.innerHTML = '';
                 if (returnsContainer) returnsContainer.innerHTML = '';
-                if (exchangesContainer) exchangesContainer.innerHTML = '';
                 
                 const modalInstance = bootstrap.Modal.getOrCreateInstance(historyModal);
                 modalInstance.show();
@@ -1261,7 +1216,6 @@ document.addEventListener('DOMContentLoaded', function() {
                     // عرض البيانات
                     renderRepInvoices(Array.isArray(history.invoices) ? history.invoices : [], invoicesTableBody);
                     renderRepReturns(Array.isArray(history.returns) ? history.returns : [], returnsContainer);
-                    renderRepExchanges(Array.isArray(history.exchanges) ? history.exchanges : [], exchangesContainer);
                     
                     // إخفاء loading وإظهار المحتوى
                     if (loadingElement) loadingElement.classList.add('d-none');
@@ -1645,7 +1599,6 @@ document.addEventListener('DOMContentLoaded', function() {
                                         <th>إجمالي الفاتورة</th>
                                         <th>المدفوع</th>
                                         <th>المرتجعات</th>
-                                        <th>الاستبدالات</th>
                                         <th>الصافي</th>
                                         <th>الحالة</th>
                                     </tr>
@@ -1659,12 +1612,6 @@ document.addEventListener('DOMContentLoaded', function() {
                     <div class="mb-4">
                         <h6 class="mb-3"><i class="bi bi-arrow-left me-2"></i>المرتجعات</h6>
                         <div class="rep-history-returns"></div>
-                    </div>
-                    
-                    <!-- الاستبدالات -->
-                    <div>
-                        <h6 class="mb-3"><i class="bi bi-arrow-left-right me-2"></i>الاستبدالات</h6>
-                        <div class="rep-history-exchanges"></div>
                     </div>
                 </div>
             </div>

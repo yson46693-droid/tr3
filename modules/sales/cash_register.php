@@ -266,29 +266,6 @@ if (!empty($salesTableExists)) {
 // إجمالي المبيعات (نستخدم الفواتير إذا كانت موجودة، وإلا نستخدم جدول sales)
 $totalSales = $totalSalesFromInvoices > 0 ? $totalSalesFromInvoices : $totalSalesFromSalesTable;
 
-// حساب تأثير الاستبدالات على إجمالي المبيعات
-$exchangesTableExists = $db->queryOne("SHOW TABLES LIKE 'exchanges'");
-$totalExchanges = 0.0;
-if (!empty($exchangesTableExists)) {
-    try {
-        // حساب إجمالي الفرق من الاستبدالات المعتمدة
-        $exchangesResult = $db->queryOne(
-            "SELECT COALESCE(SUM(difference_amount), 0) as total_exchanges
-             FROM exchanges
-             WHERE sales_rep_id = ? 
-               AND status IN ('approved', 'completed')",
-            [$salesRepId]
-        );
-        $totalExchanges = (float)($exchangesResult['total_exchanges'] ?? 0);
-        
-        // إضافة/خصم الاستبدالات من إجمالي المبيعات
-        // الفرق موجب = خصم، الفرق سالب = إضافة
-        $totalSales = $totalSales - $totalExchanges; // سالب الفرق = إضافة إذا كان الفرق سالب
-    } catch (Throwable $exchangesError) {
-        error_log('Exchanges calculation error for total sales: ' . $exchangesError->getMessage());
-    }
-}
-
 // حساب إجمالي المرتجعات للمندوب
 $totalReturns = 0.0;
 $returnsTableExists = $db->queryOne("SHOW TABLES LIKE 'returns'");
@@ -691,12 +668,19 @@ $salesRepInfo = $db->queryOne(
 
 <div class="d-flex justify-content-between align-items-center mb-4">
     <h2><i class="bi bi-cash-stack me-2"></i>خزنة المندوب</h2>
-    <?php if ($salesRepInfo): ?>
-        <div class="text-muted">
-            <i class="bi bi-person-circle me-2"></i>
-            <strong><?php echo htmlspecialchars($salesRepInfo['full_name'] ?? $salesRepInfo['username']); ?></strong>
-        </div>
-    <?php endif; ?>
+    <div class="d-flex align-items-center gap-3">
+        <?php if ($salesRepInfo): ?>
+            <div class="text-muted">
+                <i class="bi bi-person-circle me-2"></i>
+                <strong><?php echo htmlspecialchars($salesRepInfo['full_name'] ?? $salesRepInfo['username']); ?></strong>
+            </div>
+        <?php endif; ?>
+        <a href="<?php echo getRelativeUrl('print_cash_register_statement.php'); ?>?sales_rep_id=<?php echo $salesRepId; ?>" 
+           target="_blank" 
+           class="btn btn-primary">
+            <i class="bi bi-printer me-2"></i>طباعة كشف حساب شامل
+        </a>
+    </div>
 </div>
 
 <!-- بطاقات الإحصائيات الرئيسية -->

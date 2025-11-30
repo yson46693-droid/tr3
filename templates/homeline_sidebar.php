@@ -102,7 +102,7 @@ switch ($role) {
                 'badge' => null
             ],
             [
-                'title' => isset($lang['menu_returns_exchanges']) ? $lang['menu_returns_exchanges'] : 'المرتجعات والاستبدال',
+                'title' => isset($lang['menu_returns_exchanges']) ? $lang['menu_returns_exchanges'] : 'المرتجعات',
                 'icon' => 'bi-arrow-left-right',
                 'url' => $baseUrl . 'manager.php?page=returns',
                 'active' => ($currentPage === 'manager.php' && $currentPageParam === 'returns'),

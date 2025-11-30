@@ -1,6 +1,6 @@
 <?php
 /**
- * API for Customer Purchase History (Full History with Invoices, Returns, Exchanges)
+ * API for Customer Purchase History (Full History with Invoices, Returns)
  * Returns complete purchase history in the format expected by the modal
  */
 
@@ -64,11 +64,9 @@ try {
                 'total_invoiced' => 0.0,
                 'total_paid' => 0.0,
                 'total_returns' => 0.0,
-                'total_exchanges' => 0.0,
                 'net_total' => 0.0,
             ],
             'returns' => [],
-            'exchanges' => [],
         ];
     }
     
@@ -79,7 +77,6 @@ try {
             'total_invoiced' => 0.0,
             'total_paid' => 0.0,
             'total_returns' => 0.0,
-            'total_exchanges' => 0.0,
             'net_total' => 0.0,
         ];
     }
@@ -90,9 +87,6 @@ try {
     }
     if (!isset($historyPayload['history']['returns']) || !is_array($historyPayload['history']['returns'])) {
         $historyPayload['history']['returns'] = [];
-    }
-    if (!isset($historyPayload['history']['exchanges']) || !is_array($historyPayload['history']['exchanges'])) {
-        $historyPayload['history']['exchanges'] = [];
     }
     
     // إرجاع JSON

@@ -928,11 +928,6 @@ $pageTitle = isset($lang['manager_dashboard']) ? $lang['manager_dashboard'] : '�
                 }
                 ?>
                 
-            <?php elseif ($page === 'exchanges'): ?>
-                <?php 
-                header('Location: manager.php?page=returns&section=exchanges');
-                exit;
-                ?>
                 
             <?php elseif ($page === 'packaging_warehouse'): ?>
                 <!-- صفحة مخزن أدوات التعبئة -->

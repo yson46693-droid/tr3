@@ -237,13 +237,6 @@ switch ($role) {
                 'badge' => null
             ],
             [
-                'title' => 'الاستبدال',
-                'icon' => 'bi-arrow-repeat',
-                'url' => $baseUrl . 'sales.php?page=exchanges',
-                'active' => (isset($_GET['page']) && $_GET['page'] === 'exchanges'),
-                'badge' => null
-            ],
-            [
                 'title' => isset($lang['menu_reports']) ? $lang['menu_reports'] : 'التقارير',
                 'icon' => 'bi-file-earmark-text',
                 'url' => $baseUrl . 'sales.php?page=reports',

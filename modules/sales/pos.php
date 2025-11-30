@@ -748,8 +748,8 @@ if (!$error && $_SERVER['REQUEST_METHOD'] === 'POST') {
                     $db->execute(
                         "INSERT INTO customer_purchase_history
                             (customer_id, invoice_id, invoice_number, invoice_date, invoice_total, paid_amount, invoice_status,
-                             return_total, return_count, exchange_total, exchange_count, created_at)
-                         VALUES (?, ?, ?, ?, ?, ?, ?, 0, 0, 0, 0, NOW())
+                             return_total, return_count, created_at)
+                         VALUES (?, ?, ?, ?, ?, ?, ?, 0, 0, NOW())
                          ON DUPLICATE KEY UPDATE
                             invoice_number = VALUES(invoice_number),
                             invoice_date = VALUES(invoice_date),

@@ -171,7 +171,6 @@ $summaryTitleText = $isReturnDocument ? 'ملخص المرتجع' : 'ملخص ا
 $returnRefundLabels = [
     'cash'             => 'إرجاع نقداً',
     'credit'           => 'إضافة لرصيد العميل',
-    'exchange'         => 'استبدال منتجات',
     'company_request'  => 'طلب المبلغ من الشركة'
 ];
 $returnTypeLabels = [
