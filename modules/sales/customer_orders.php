@@ -1663,45 +1663,112 @@ function updateNewCustomerState() {
     const newCustomerToggle = document.getElementById('toggleNewCustomer');
     const existingCustomerSelect = document.getElementById('existingCustomerSelect');
     const newCustomerFields = document.getElementById('newCustomerFields');
-    const newCustomerRequiredInputs = Array.from(document.querySelectorAll('#addOrderModal .new-customer-required'));
     
     if (!newCustomerToggle || !existingCustomerSelect || !newCustomerFields) {
-        return;
+        return false;
     }
 
+    const newCustomerRequiredInputs = Array.from(document.querySelectorAll('#addOrderModal .new-customer-required'));
+    
     if (newCustomerToggle.checked) {
+        // إظهار حقول العميل الجديد
         newCustomerFields.classList.remove('d-none');
+        newCustomerFields.style.display = '';
+        
+        // تعطيل حقل اختيار العميل الموجود
         existingCustomerSelect.value = '';
         existingCustomerSelect.setAttribute('disabled', 'disabled');
         existingCustomerSelect.removeAttribute('required');
+        
+        // تفعيل الحقول المطلوبة للعميل الجديد
         newCustomerRequiredInputs.forEach(function(input) {
             input.setAttribute('required', 'required');
         });
+        return true;
     } else {
+        // إخفاء حقول العميل الجديد
         newCustomerFields.classList.add('d-none');
+        
+        // تفعيل حقل اختيار العميل الموجود
         existingCustomerSelect.removeAttribute('disabled');
         existingCustomerSelect.setAttribute('required', 'required');
+        
+        // إلغاء تفعيل الحقول المطلوبة للعميل الجديد
         newCustomerRequiredInputs.forEach(function(input) {
             input.removeAttribute('required');
         });
+        return false;
     }
 }
 
-// ربط الأحداث عند فتح Modal
-const addOrderModalElement = document.getElementById('addOrderModal');
-if (addOrderModalElement && typeof bootstrap !== 'undefined') {
-    // ربط event listener مباشرة على toggle (event delegation)
-    addOrderModalElement.addEventListener('change', function(e) {
+// ربط الأحداث - استخدام عدة طرق لضمان العمل
+(function() {
+    // ربط مباشر على document للـ event delegation الشامل
+    document.addEventListener('change', function(e) {
         if (e.target && e.target.id === 'toggleNewCustomer') {
             updateNewCustomerState();
         }
     });
     
-    // تحديث الحالة عند فتح Modal
-    addOrderModalElement.addEventListener('shown.bs.modal', function() {
-        updateNewCustomerState();
+    document.addEventListener('click', function(e) {
+        if (e.target && (e.target.id === 'toggleNewCustomer' || e.target.closest('#toggleNewCustomer'))) {
+            setTimeout(function() {
+                updateNewCustomerState();
+            }, 50);
+        }
     });
-}
+    
+    // ربط الأحداث عند فتح Modal
+    const addOrderModalElement = document.getElementById('addOrderModal');
+    if (addOrderModalElement) {
+        // استخدام event delegation على Modal
+        addOrderModalElement.addEventListener('change', function(e) {
+            if (e.target && e.target.id === 'toggleNewCustomer') {
+                updateNewCustomerState();
+            }
+        });
+        
+        addOrderModalElement.addEventListener('click', function(e) {
+            if (e.target && (e.target.id === 'toggleNewCustomer' || e.target.closest('#toggleNewCustomer'))) {
+                setTimeout(function() {
+                    updateNewCustomerState();
+                }, 50);
+            }
+        });
+        
+        // تحديث الحالة عند فتح Modal
+        if (typeof bootstrap !== 'undefined') {
+            addOrderModalElement.addEventListener('shown.bs.modal', function() {
+                // ربط مباشر على toggle عند فتح Modal
+                const toggle = document.getElementById('toggleNewCustomer');
+                if (toggle) {
+                    toggle.addEventListener('change', updateNewCustomerState);
+                    toggle.addEventListener('click', function() {
+                        setTimeout(updateNewCustomerState, 50);
+                    });
+                }
+                updateNewCustomerState();
+            });
+        }
+    }
+    
+    // أيضاً ربط عند تحميل الصفحة
+    function initToggle() {
+        const toggle = document.getElementById('toggleNewCustomer');
+        if (toggle) {
+            toggle.addEventListener('change', updateNewCustomerState);
+            toggle.addEventListener('click', function() {
+                setTimeout(updateNewCustomerState, 50);
+            });
+        }
+    }
+    
+    if (document.readyState === 'loading') {
+        document.addEventListener('DOMContentLoaded', initToggle);
+    } else {
+        initToggle();
+    }
+})();
 
 // إعادة تعيين النموذج عند إغلاق Modal
 if (addOrderModalElement && typeof bootstrap !== 'undefined') {

@@ -3241,9 +3241,8 @@ $filterProduct = isset($_GET['filter_product']) ? trim($_GET['filter_product']) 
                                             <?php if ($warehouse['warehouse_type'] === 'vehicle' && !empty($warehouse['rep_name'])): ?>
                                                 <?php 
                                                 $repName = htmlspecialchars($warehouse['rep_name'] ?? '');
-                                                $repUsername = htmlspecialchars($warehouse['rep_username'] ?? '');
                                                 $vehicleNumber = htmlspecialchars($warehouse['vehicle_number'] ?? '');
-                                                echo $repName . ' - ' . $repUsername . ' - ' . $vehicleNumber;
+                                                echo $repName . ' - ' . $vehicleNumber;
                                                 ?>
                                             <?php else: ?>
                                                 <?php echo htmlspecialchars($warehouse['name']); ?>
