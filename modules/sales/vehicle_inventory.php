@@ -244,7 +244,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     }
                 }
             }
-        }
     } elseif ($action === 'create_vehicle') {
         if (!$canManageVehicles) {
             $error = 'غير مصرح لك بإضافة سيارات جديدة.';
@@ -291,6 +290,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             }
         }
     }
+}
 
 // الحصول على السيارات
 $vehicles = getVehicles(['status' => 'active']);
