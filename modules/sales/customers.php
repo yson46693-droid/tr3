@@ -257,7 +257,6 @@ if (
                 'total_invoiced' => 0.0,
                 'total_paid' => 0.0,
                 'total_returns' => 0.0,
-                'total_exchanges' => 0.0,
                 'net_total' => 0.0,
             ];
         }
@@ -268,9 +267,6 @@ if (
         }
         if (!isset($historyPayload['history']['returns']) || !is_array($historyPayload['history']['returns'])) {
             $historyPayload['history']['returns'] = [];
-        }
-        if (!isset($historyPayload['history']['exchanges']) || !is_array($historyPayload['history']['exchanges'])) {
-            $historyPayload['history']['exchanges'] = [];
         }
         
         echo json_encode($historyPayload, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
@@ -1136,7 +1132,6 @@ $collectionsLabel = $isSalesUser ? 'تحصيلاتي' : 'إجمالي التحص
                                             <th>الإجمالي</th>
                                             <th>المدفوع</th>
                                             <th>المرتجعات</th>
-                                            <th>الاستبدالات</th>
                                             <th>الصافي</th>
                                         </tr>
                                     </thead>
@@ -1147,23 +1142,13 @@ $collectionsLabel = $isSalesUser ? 'تحصيلاتي' : 'إجمالي التحص
                     </div>
 
                     <div class="row g-3">
-                        <div class="col-lg-6">
+                        <div class="col-lg-12">
                             <div class="card shadow-sm h-100">
                                 <div class="card-header bg-secondary text-white">
                                     <h6 class="mb-0"><i class="bi bi-arrow-counterclockwise me-2"></i>المرتجعات الأخيرة</h6>
                                 </div>
                                 <div class="card-body customer-history-returns">
                                     <div class="text-muted">لا توجد مرتجعات خلال الفترة.</div>
-                                </div>
-                            </div>
-                        </div>
-                        <div class="col-lg-6">
-                            <div class="card shadow-sm h-100">
-                                <div class="card-header bg-secondary text-white">
-                                    <h6 class="mb-0"><i class="bi bi-arrow-repeat me-2"></i>حالات الاستبدال</h6>
-                                </div>
-                                <div class="card-body customer-history-exchanges">
-                                    <div class="text-muted">لا توجد حالات استبدال خلال الفترة.</div>
                                 </div>
                             </div>
                         </div>
@@ -1281,7 +1266,6 @@ document.addEventListener('DOMContentLoaded', function () {
     var contentWrapper = historyModal.querySelector('.customer-history-content');
     var invoicesTableBody = historyModal.querySelector('.customer-history-table tbody');
     var returnsContainer = historyModal.querySelector('.customer-history-returns');
-    var exchangesContainer = historyModal.querySelector('.customer-history-exchanges');
     var totalInvoicesEl = historyModal.querySelector('.history-total-invoices');
     var totalInvoicedEl = historyModal.querySelector('.history-total-invoiced');
     var totalReturnsEl = historyModal.querySelector('.history-total-returns');
@@ -1301,7 +1285,7 @@ document.addEventListener('DOMContentLoaded', function () {
         if (!Array.isArray(rows) || rows.length === 0) {
             var emptyRow = document.createElement('tr');
             var emptyCell = document.createElement('td');
-            emptyCell.colSpan = 8;
+            emptyCell.colSpan = 7;
             emptyCell.className = 'text-center text-muted py-4';
             emptyCell.textContent = 'لا توجد فواتير خلال النافذة الزمنية.';
             emptyRow.appendChild(emptyCell);
@@ -1324,10 +1308,6 @@ document.addEventListener('DOMContentLoaded', function () {
                 <td>
                     <span class="text-danger fw-semibold">${formatCurrency(row.return_total || 0)}</span>
                     <div class="text-muted small">${row.return_count || 0} مرتجع</div>
-                </td>
-                <td>
-                    <span class="text-success fw-semibold">${formatCurrency(row.exchange_total || 0)}</span>
-                    <div class="text-muted small">${row.exchange_count || 0} استبدال</div>
                 </td>
                 <td>${formatCurrency(row.net_total || 0)}</td>
             `;
@@ -1373,47 +1353,6 @@ document.addEventListener('DOMContentLoaded', function () {
         returnsContainer.appendChild(group);
     }
 
-    function renderExchanges(list) {
-        if (!exchangesContainer) {
-            return;
-        }
-        exchangesContainer.innerHTML = '';
-
-        if (!Array.isArray(list) || list.length === 0) {
-            var empty = document.createElement('div');
-            empty.className = 'text-muted';
-            empty.textContent = 'لا توجد حالات استبدال خلال الفترة.';
-            exchangesContainer.appendChild(empty);
-            return;
-        }
-
-        var group = document.createElement('div');
-        group.className = 'list-group list-group-flush';
-
-        list.forEach(function (item) {
-            var difference = Number(item.difference_amount || 0);
-            var row = document.createElement('div');
-            row.className = 'list-group-item';
-            row.innerHTML = `
-                <div class="d-flex justify-content-between align-items-center">
-                    <div>
-                        <div class="fw-semibold">رقم الاستبدال: ${item.exchange_number || '—'}</div>
-                        <div class="text-muted small">
-                            التاريخ: ${item.exchange_date || '—'} | النوع: ${item.exchange_type || '—'}
-                        </div>
-                    </div>
-                    <div class="fw-semibold ${difference >= 0 ? 'text-success' : 'text-danger'}">
-                        ${formatCurrency(difference)}
-                    </div>
-                </div>
-                <div class="text-muted small mt-1">الحالة: ${item.status || '—'}</div>
-            `;
-            group.appendChild(row);
-        });
-
-        exchangesContainer.appendChild(group);
-    }
-
     function resetModalState() {
         if (errorAlert && errorAlert.classList) {
             errorAlert.classList.add('d-none');
@@ -1430,9 +1369,6 @@ document.addEventListener('DOMContentLoaded', function () {
         }
         if (returnsContainer) {
             returnsContainer.innerHTML = '';
-        }
-        if (exchangesContainer) {
-            exchangesContainer.innerHTML = '';
         }
     }
 
@@ -1505,7 +1441,6 @@ document.addEventListener('DOMContentLoaded', function () {
                     // عرض البيانات (حتى لو كانت فارغة)
                     renderInvoices(Array.isArray(history.invoices) ? history.invoices : []);
                     renderReturns(Array.isArray(history.returns) ? history.returns : []);
-                    renderExchanges(Array.isArray(history.exchanges) ? history.exchanges : []);
 
                     // إخفاء مؤشر التحميل وإظهار المحتوى دائماً
                     if (loadingIndicator && loadingIndicator.classList) {
