@@ -216,36 +216,56 @@ let selectedReplacementItems = [];
 let customerSearchTimeout;
 
 // Wait for DOM to be ready before accessing elements
+let initializationAttempts = 0;
+const maxInitializationAttempts = 50; // 5 seconds max (50 * 100ms)
+let isInitialized = false;
+
 function initializeExchangeForm() {
+    initializationAttempts++;
+    
+    // Check if we've exceeded max attempts
+    if (initializationAttempts > maxInitializationAttempts) {
+        console.error('Failed to initialize exchange form after multiple attempts');
+        return;
+    }
+    
     const customerSearchInput = document.getElementById('customerSearch');
     if (!customerSearchInput) {
-        console.warn('customerSearch element not found, retrying...');
+        // Retry after a short delay
         setTimeout(initializeExchangeForm, 100);
         return;
     }
     
-    customerSearchInput.addEventListener('input', function() {
-        clearTimeout(customerSearchTimeout);
-        const searchTerm = this.value.trim();
-        
-        if (searchTerm.length < 2) {
-            const dropdown = document.getElementById('customerDropdown');
-            if (dropdown) {
-                dropdown.style.display = 'none';
+    // Check if event listener already exists - if element was recreated, it won't have the attribute
+    if (!customerSearchInput.hasAttribute('data-listener-attached')) {
+        customerSearchInput.setAttribute('data-listener-attached', 'true');
+        customerSearchInput.addEventListener('input', function() {
+            clearTimeout(customerSearchTimeout);
+            const searchTerm = this.value.trim();
+            
+            if (searchTerm.length < 2) {
+                const dropdown = document.getElementById('customerDropdown');
+                if (dropdown) {
+                    dropdown.style.display = 'none';
+                }
+                return;
             }
-            return;
-        }
-        
-        customerSearchTimeout = setTimeout(() => {
-            fetchCustomers(searchTerm);
-        }, 300);
-    });
+            
+            customerSearchTimeout = setTimeout(() => {
+                fetchCustomers(searchTerm);
+            }, 300);
+        });
+    }
     
     // Initialize submit button
     const submitBtn = document.getElementById('submitExchangeRequest');
-    if (submitBtn) {
+    if (submitBtn && !submitBtn.hasAttribute('data-listener-attached')) {
+        submitBtn.setAttribute('data-listener-attached', 'true');
         submitBtn.addEventListener('click', handleSubmitExchange);
     }
+    
+    // Mark as initialized only after successful setup
+    isInitialized = true;
     
     // Load recent requests
     loadRecentRequests();
@@ -331,12 +351,96 @@ function handleSubmitExchange() {
 }
 
 // Initialize when DOM is ready
-if (document.readyState === 'loading') {
-    document.addEventListener('DOMContentLoaded', initializeExchangeForm);
-} else {
-    // DOM is already ready
-    initializeExchangeForm();
+function startInitialization() {
+    // Check if we're in an iframe
+    const isInIframe = window.self !== window.top;
+    
+    if (isInIframe) {
+        // If in iframe, wait a bit longer for content to load
+        setTimeout(() => {
+            if (document.readyState === 'loading') {
+                document.addEventListener('DOMContentLoaded', initializeExchangeForm);
+            } else {
+                initializeExchangeForm();
+            }
+        }, 300);
+    } else {
+        // Normal page load
+        if (document.readyState === 'loading') {
+            document.addEventListener('DOMContentLoaded', initializeExchangeForm);
+        } else {
+            initializeExchangeForm();
+        }
+    }
 }
+
+// Start initialization
+startInitialization();
+
+// Also listen for iframe load event if we're in an iframe
+if (window.self !== window.top) {
+    window.addEventListener('load', function() {
+        // Reset initialization flag when page reloads in iframe
+        isInitialized = false;
+        initializationAttempts = 0;
+        setTimeout(initializeExchangeForm, 200);
+    });
+    
+    // Also listen for visibility change (when modal is reopened)
+    document.addEventListener('visibilitychange', function() {
+        if (!document.hidden && !isInitialized) {
+            // Page became visible, try to initialize
+            isInitialized = false;
+            initializationAttempts = 0;
+            setTimeout(initializeExchangeForm, 100);
+        }
+    });
+}
+
+// Use MutationObserver to detect when elements are added to DOM (for dynamic loading)
+if (typeof MutationObserver !== 'undefined') {
+    const observer = new MutationObserver(function(mutations) {
+        if (!isInitialized) {
+            const customerSearchInput = document.getElementById('customerSearch');
+            if (customerSearchInput) {
+                // Element found, try to initialize
+                setTimeout(initializeExchangeForm, 50);
+            }
+        }
+    });
+    
+    // Start observing when DOM is ready
+    if (document.body) {
+        observer.observe(document.body, {
+            childList: true,
+            subtree: true
+        });
+    } else {
+        document.addEventListener('DOMContentLoaded', function() {
+            if (document.body) {
+                observer.observe(document.body, {
+                    childList: true,
+                    subtree: true
+                });
+            }
+        });
+    }
+}
+
+// Global error handler to catch classList errors
+window.addEventListener('error', function(event) {
+    if (event.message && event.message.includes('classList')) {
+        console.warn('classList error caught:', event.message, event.filename, event.lineno);
+        // Try to reinitialize if not already initialized
+        if (!isInitialized) {
+            setTimeout(function() {
+                isInitialized = false;
+                initializationAttempts = 0;
+                initializeExchangeForm();
+            }, 200);
+        }
+    }
+}, true);
 
 function fetchCustomers(search = '') {
     const url = basePath + '/api/exchange_requests.php?action=get_customers' + (search ? '&search=' + encodeURIComponent(search) : '');
@@ -750,29 +854,37 @@ function calculatePriceDifference() {
     newValueDisplay.textContent = newValue.toFixed(2) + ' ج.م';
     
     if (selectedReturnItems.length > 0 && selectedReplacementItems.length > 0) {
-        priceSection.style.display = 'block';
-        submitBtn.disabled = false;
-        
-        if (difference > 0) {
-            differenceDiv.textContent = '+' + difference.toFixed(2) + ' ج.م';
-            differenceDiv.className = 'h5 text-danger';
-            noteDiv.textContent = 'المنتج البديل أغلى - سيتم إضافة ' + difference.toFixed(2) + ' ج.م لدين العميل';
-            noteDiv.className = 'alert alert-warning mt-3';
-        } else if (difference < 0) {
-            differenceDiv.textContent = difference.toFixed(2) + ' ج.م';
-            differenceDiv.className = 'h5 text-success';
-            noteDiv.textContent = 'المنتج البديل أرخص - سيتم إضافة ' + Math.abs(difference).toFixed(2) + ' ج.م لرصيد العميل الدائن';
-            noteDiv.className = 'alert alert-success mt-3';
-        } else {
-            differenceDiv.textContent = '0.00 ج.م';
-            differenceDiv.className = 'h5 text-secondary';
-            noteDiv.textContent = 'لا يوجد فرق مالي';
-            noteDiv.className = 'alert alert-info mt-3';
+        try {
+            priceSection.style.display = 'block';
+            submitBtn.disabled = false;
+            
+            if (difference > 0) {
+                differenceDiv.textContent = '+' + difference.toFixed(2) + ' ج.م';
+                if (differenceDiv) differenceDiv.className = 'h5 text-danger';
+                noteDiv.textContent = 'المنتج البديل أغلى - سيتم إضافة ' + difference.toFixed(2) + ' ج.م لدين العميل';
+                if (noteDiv) noteDiv.className = 'alert alert-warning mt-3';
+            } else if (difference < 0) {
+                differenceDiv.textContent = difference.toFixed(2) + ' ج.م';
+                if (differenceDiv) differenceDiv.className = 'h5 text-success';
+                noteDiv.textContent = 'المنتج البديل أرخص - سيتم إضافة ' + Math.abs(difference).toFixed(2) + ' ج.م لرصيد العميل الدائن';
+                if (noteDiv) noteDiv.className = 'alert alert-success mt-3';
+            } else {
+                differenceDiv.textContent = '0.00 ج.م';
+                if (differenceDiv) differenceDiv.className = 'h5 text-secondary';
+                noteDiv.textContent = 'لا يوجد فرق مالي';
+                if (noteDiv) noteDiv.className = 'alert alert-info mt-3';
+            }
+            if (noteDiv) noteDiv.style.display = 'block';
+        } catch (error) {
+            console.error('Error updating price difference display:', error);
         }
-        noteDiv.style.display = 'block';
     } else {
-        priceSection.style.display = 'none';
-        submitBtn.disabled = true;
+        try {
+            if (priceSection) priceSection.style.display = 'none';
+            if (submitBtn) submitBtn.disabled = true;
+        } catch (error) {
+            console.error('Error hiding price section:', error);
+        }
     }
 }
 
