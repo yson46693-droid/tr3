@@ -493,10 +493,14 @@ if (!empty($warehousesTableExists)) {
         }
 
         $transferWarehouses = $db->query(
-            "SELECT id, name, warehouse_type, status
-             FROM warehouses
-             WHERE status = 'active'
-             ORDER BY (id = ?) DESC, warehouse_type ASC, name ASC",
+            "SELECT w.id, w.name, w.warehouse_type, w.status,
+                    v.vehicle_number, v.driver_id,
+                    u.full_name as rep_name, u.username as rep_username
+             FROM warehouses w
+             LEFT JOIN vehicles v ON w.vehicle_id = v.id AND w.warehouse_type = 'vehicle'
+             LEFT JOIN users u ON v.driver_id = u.id
+             WHERE w.status = 'active'
+             ORDER BY (w.id = ?) DESC, w.warehouse_type ASC, w.name ASC",
             [$primaryWarehouse['id'] ?? 0]
         );
 
@@ -2910,9 +2914,18 @@ $filterProduct = isset($_GET['filter_product']) ? trim($_GET['filter_product']) 
                         <?php if (!empty($destinationWarehouses)): ?>
                             <?php foreach ($destinationWarehouses as $warehouse): ?>
                                 <option value="<?php echo (int)$warehouse['id']; ?>">
-                                    <?php echo htmlspecialchars($warehouse['name']); ?>
-                                    <?php if (!empty($warehouse['warehouse_type'])): ?>
-                                        (<?php echo htmlspecialchars($warehouse['warehouse_type']); ?>)
+                                    <?php if ($warehouse['warehouse_type'] === 'vehicle' && !empty($warehouse['rep_name'])): ?>
+                                        <?php 
+                                        $repName = htmlspecialchars($warehouse['rep_name'] ?? '');
+                                        $repUsername = htmlspecialchars($warehouse['rep_username'] ?? '');
+                                        $vehicleNumber = htmlspecialchars($warehouse['vehicle_number'] ?? '');
+                                        echo $repName . ' - ' . $repUsername . ' - ' . $vehicleNumber;
+                                        ?>
+                                    <?php else: ?>
+                                        <?php echo htmlspecialchars($warehouse['name']); ?>
+                                        <?php if (!empty($warehouse['warehouse_type'])): ?>
+                                            (<?php echo htmlspecialchars($warehouse['warehouse_type']); ?>)
+                                        <?php endif; ?>
                                     <?php endif; ?>
                                 </option>
                             <?php endforeach; ?>
@@ -3225,8 +3238,17 @@ $filterProduct = isset($_GET['filter_product']) ? trim($_GET['filter_product']) 
                                     <option value="">اختر المخزن الوجهة</option>
                                     <?php foreach ($destinationWarehouses as $warehouse): ?>
                                         <option value="<?php echo intval($warehouse['id']); ?>">
-                                            <?php echo htmlspecialchars($warehouse['name']); ?>
-                                            (<?php echo $warehouse['warehouse_type'] === 'vehicle' ? 'مخزن سيارة' : 'مخزن'; ?>)
+                                            <?php if ($warehouse['warehouse_type'] === 'vehicle' && !empty($warehouse['rep_name'])): ?>
+                                                <?php 
+                                                $repName = htmlspecialchars($warehouse['rep_name'] ?? '');
+                                                $repUsername = htmlspecialchars($warehouse['rep_username'] ?? '');
+                                                $vehicleNumber = htmlspecialchars($warehouse['vehicle_number'] ?? '');
+                                                echo $repName . ' - ' . $repUsername . ' - ' . $vehicleNumber;
+                                                ?>
+                                            <?php else: ?>
+                                                <?php echo htmlspecialchars($warehouse['name']); ?>
+                                                (<?php echo $warehouse['warehouse_type'] === 'vehicle' ? 'مخزن سيارة' : 'مخزن'; ?>)
+                                            <?php endif; ?>
                                         </option>
                                     <?php endforeach; ?>
                                 </select>
