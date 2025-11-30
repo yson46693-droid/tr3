@@ -1759,6 +1759,9 @@ function updateNewCustomerState() {
     }
 }
 
+// تعريف addOrderModalElement خارج الدالة للوصول إليه من أي مكان
+const addOrderModalElement = document.getElementById('addOrderModal');
+
 // ربط الأحداث - استخدام عدة طرق لضمان العمل
 (function() {
     // ربط مباشر على document للـ event delegation الشامل
@@ -1777,7 +1780,6 @@ function updateNewCustomerState() {
     });
     
     // ربط الأحداث عند فتح Modal
-    const addOrderModalElement = document.getElementById('addOrderModal');
     if (addOrderModalElement) {
         // استخدام event delegation على Modal
         addOrderModalElement.addEventListener('change', function(e) {
@@ -1860,34 +1862,63 @@ if (addOrderModalElement && typeof bootstrap !== 'undefined') {
 }
 
 // دالة الحصول على موقع المستخدم للعميل الجديد
-const getLocationBtn = document.getElementById('getLocationBtn');
-const latitudeInput = document.getElementById('newCustomerLatitude');
-const longitudeInput = document.getElementById('newCustomerLongitude');
-
-if (getLocationBtn && latitudeInput && longitudeInput) {
-    getLocationBtn.addEventListener('click', function() {
-        if (!navigator.geolocation) {
-            alert('المتصفح لا يدعم الحصول على الموقع');
-            return;
+// ربط الأحداث عند فتح Modal لضمان وجود العناصر
+function setupLocationButton() {
+    const getLocationBtn = document.getElementById('getLocationBtn');
+    const latitudeInput = document.getElementById('newCustomerLatitude');
+    const longitudeInput = document.getElementById('newCustomerLongitude');
+    
+    if (getLocationBtn && latitudeInput && longitudeInput) {
+        // إزالة أي event listeners سابقة
+        const newBtn = getLocationBtn.cloneNode(true);
+        getLocationBtn.parentNode.replaceChild(newBtn, getLocationBtn);
+        
+        // ربط event listener جديد
+        const newGetLocationBtn = document.getElementById('getLocationBtn');
+        if (newGetLocationBtn) {
+            newGetLocationBtn.addEventListener('click', function() {
+                if (!navigator.geolocation) {
+                    alert('المتصفح لا يدعم الحصول على الموقع');
+                    return;
+                }
+                
+                newGetLocationBtn.disabled = true;
+                newGetLocationBtn.innerHTML = '<i class="bi bi-hourglass-split"></i>';
+                
+                navigator.geolocation.getCurrentPosition(
+                    function(position) {
+                        const latInput = document.getElementById('newCustomerLatitude');
+                        const lngInput = document.getElementById('newCustomerLongitude');
+                        if (latInput && lngInput) {
+                            latInput.value = position.coords.latitude.toFixed(8);
+                            lngInput.value = position.coords.longitude.toFixed(8);
+                        }
+                        newGetLocationBtn.disabled = false;
+                        newGetLocationBtn.innerHTML = '<i class="bi bi-geo-alt"></i>';
+                    },
+                    function(error) {
+                        alert('فشل الحصول على الموقع: ' + error.message);
+                        newGetLocationBtn.disabled = false;
+                        newGetLocationBtn.innerHTML = '<i class="bi bi-geo-alt"></i>';
+                    }
+                );
+            });
         }
-        
-        getLocationBtn.disabled = true;
-        getLocationBtn.innerHTML = '<i class="bi bi-hourglass-split"></i>';
-        
-        navigator.geolocation.getCurrentPosition(
-            function(position) {
-                latitudeInput.value = position.coords.latitude.toFixed(8);
-                longitudeInput.value = position.coords.longitude.toFixed(8);
-                getLocationBtn.disabled = false;
-                getLocationBtn.innerHTML = '<i class="bi bi-geo-alt"></i>';
-            },
-            function(error) {
-                alert('فشل الحصول على الموقع: ' + error.message);
-                getLocationBtn.disabled = false;
-                getLocationBtn.innerHTML = '<i class="bi bi-geo-alt"></i>';
-            }
-        );
+    }
+}
+
+// ربط الأحداث عند فتح Modal
+if (addOrderModalElement && typeof bootstrap !== 'undefined') {
+    addOrderModalElement.addEventListener('shown.bs.modal', function() {
+        setupLocationButton();
     });
+}
+
+// أيضاً محاولة الربط مباشرة عند تحميل الصفحة
+if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', setupLocationButton);
+} else {
+    setupLocationButton();
 }
 
 // ربط أحداث العناصر
