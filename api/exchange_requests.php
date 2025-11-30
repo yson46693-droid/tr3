@@ -438,20 +438,23 @@ function handleCreateExchange(): void
         $newValue = round($newValue, 2);
         $difference = round($newValue - $oldValue, 2);
         
-        // Generate exchange number
-        $year = date('Y');
+        // Generate exchange number: EXCH-YYMMDD-3randomdigits
+        $year = date('y'); // آخر رقمين من السنة
         $month = date('m');
-        $lastExchange = $db->queryOne(
-            "SELECT exchange_number FROM exchanges WHERE exchange_number LIKE ? ORDER BY exchange_number DESC LIMIT 1",
-            ["EXC-{$year}{$month}-%"]
-        );
+        $day = date('d');
+        $datePart = $year . $month . $day;
         
-        $serial = 1;
-        if ($lastExchange) {
-            $parts = explode('-', $lastExchange['exchange_number']);
-            $serial = intval($parts[2] ?? 0) + 1;
+        // توليد 3 أرقام عشوائية
+        $randomDigits = str_pad((string)rand(0, 999), 3, '0', STR_PAD_LEFT);
+        
+        // التأكد من عدم تكرار الرقم
+        $exchangeNumber = "EXCH-{$datePart}-{$randomDigits}";
+        $attempts = 0;
+        while ($db->queryOne("SELECT id FROM exchanges WHERE exchange_number = ?", [$exchangeNumber]) && $attempts < 100) {
+            $randomDigits = str_pad((string)rand(0, 999), 3, '0', STR_PAD_LEFT);
+            $exchangeNumber = "EXCH-{$datePart}-{$randomDigits}";
+            $attempts++;
         }
-        $exchangeNumber = sprintf("EXC-%s%s-%04d", $year, $month, $serial);
         
         // Get first invoice ID for linking
         $firstInvoice = $db->queryOne(
@@ -778,98 +781,6 @@ function handleCreateExchange(): void
                             }
                         }
                     }
-                }
-            }
-        }
-        
-        // تحديث إجمالي المبيعات ومبيعات الشهر بناءً على الفرق
-        // إذا كان الفرق موجب (أحمر): خصم من المبيعات
-        // إذا كان الفرق سالب (أخضر): إضافة إلى المبيعات
-        if (abs($difference) >= 0.01 && $salesRepId > 0) {
-        require_once __DIR__ . '/../includes/approval_system.php';
-            
-            // التحقق من عدم إنشاء سجل تحصيل مسبقاً (منع التكرار)
-            $existingCollection = $db->queryOne(
-                "SELECT id FROM collections 
-                 WHERE reference_number = ? 
-                 AND collected_by = ?",
-                ['EXCHANGE-' . $exchangeNumber, $salesRepId]
-            );
-            
-            if (empty($existingCollection)) {
-                // إنشاء سجل تحصيل (سالب أو موجب) حسب الفرق
-                // الفرق موجب (أحمر) = المنتج البديل أغلى = خصم من المبيعات (سالب)
-                // الفرق سالب (أخضر) = المنتج البديل أرخص = إضافة إلى المبيعات (موجب)
-                $collectionAmount = -$difference; // سالب الفرق = موجب إذا كان الفرق سالب
-                
-                // الحصول على أعمدة جدول collections
-                $columns = $db->query("SHOW COLUMNS FROM collections") ?? [];
-                $columnNames = [];
-                foreach ($columns as $column) {
-                    if (!empty($column['Field'])) {
-                        $columnNames[] = $column['Field'];
-                    }
-                }
-                
-                $hasStatus = in_array('status', $columnNames, true);
-                $hasApprovedBy = in_array('approved_by', $columnNames, true);
-                $hasApprovedAt = in_array('approved_at', $columnNames, true);
-                
-                $fields = [];
-                $placeholders = [];
-                $values = [];
-                
-                $baseData = [
-                    'customer_id' => $customerId,
-                    'amount' => $collectionAmount,
-                    'date' => date('Y-m-d'),
-                    'payment_method' => 'cash',
-                    'reference_number' => 'EXCHANGE-' . $exchangeNumber,
-                    'notes' => 'استبدال رقم ' . $exchangeNumber . ' - ' . ($difference > 0 ? 'خصم' : 'إضافة') . ' ' . number_format(abs($difference), 2) . ' ج.م',
-                    'collected_by' => $salesRepId,
-                ];
-                
-                foreach ($baseData as $column => $value) {
-                    if (in_array($column, $columnNames, true)) {
-                        $fields[] = $column;
-                        $placeholders[] = '?';
-                        $values[] = $value;
-                    }
-                }
-                
-                if ($hasStatus) {
-                    $fields[] = 'status';
-                    $placeholders[] = '?';
-                    $values[] = 'approved';
-                }
-                
-                if ($hasApprovedBy) {
-                    $fields[] = 'approved_by';
-                    $placeholders[] = '?';
-                    $values[] = $currentUser['id'];
-                }
-                
-                if ($hasApprovedAt) {
-                    $fields[] = 'approved_at';
-                    $placeholders[] = '?';
-                    $values[] = date('Y-m-d H:i:s');
-                }
-                
-                if (!empty($fields)) {
-                    $db->execute(
-                        "INSERT INTO collections (" . implode(', ', $fields) . ") 
-                         VALUES (" . implode(', ', $placeholders) . ")",
-                        $values
-                    );
-                    
-                    // تسجيل في سجل التدقيق
-                    logAudit($currentUser['id'], 'exchange_collection', 'collections', $db->getLastInsertId(), null, [
-                        'exchange_id' => $exchangeId,
-                        'exchange_number' => $exchangeNumber,
-                        'difference_amount' => $difference,
-                        'collection_amount' => $collectionAmount,
-                        'sales_rep_id' => $salesRepId
-                    ]);
                 }
             }
         }
