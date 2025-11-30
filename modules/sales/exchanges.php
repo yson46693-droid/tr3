@@ -214,19 +214,129 @@ let selectedReplacementItems = [];
 
 // Customer Search (same as returns)
 let customerSearchTimeout;
-document.getElementById('customerSearch').addEventListener('input', function() {
-    clearTimeout(customerSearchTimeout);
-    const searchTerm = this.value.trim();
-    
-    if (searchTerm.length < 2) {
-        document.getElementById('customerDropdown').style.display = 'none';
+
+// Wait for DOM to be ready before accessing elements
+function initializeExchangeForm() {
+    const customerSearchInput = document.getElementById('customerSearch');
+    if (!customerSearchInput) {
+        console.warn('customerSearch element not found, retrying...');
+        setTimeout(initializeExchangeForm, 100);
         return;
     }
     
-    customerSearchTimeout = setTimeout(() => {
-        fetchCustomers(searchTerm);
-    }, 300);
-});
+    customerSearchInput.addEventListener('input', function() {
+        clearTimeout(customerSearchTimeout);
+        const searchTerm = this.value.trim();
+        
+        if (searchTerm.length < 2) {
+            const dropdown = document.getElementById('customerDropdown');
+            if (dropdown) {
+                dropdown.style.display = 'none';
+            }
+            return;
+        }
+        
+        customerSearchTimeout = setTimeout(() => {
+            fetchCustomers(searchTerm);
+        }, 300);
+    });
+    
+    // Initialize submit button
+    const submitBtn = document.getElementById('submitExchangeRequest');
+    if (submitBtn) {
+        submitBtn.addEventListener('click', handleSubmitExchange);
+    }
+    
+    // Load recent requests
+    loadRecentRequests();
+}
+
+// Handle submit exchange (moved from inline)
+function handleSubmitExchange() {
+    if (!selectedCustomerId || selectedReturnItems.length === 0 || selectedReplacementItems.length === 0) {
+        alert('يرجى اختيار عميل ومنتجات للإرجاع والاستبدال');
+        return;
+    }
+    
+    if (!confirm('هل أنت متأكد من إرسال طلب الاستبدال؟')) {
+        return;
+    }
+    
+    const btn = document.getElementById('submitExchangeRequest');
+    if (!btn) return;
+    
+    const originalHTML = btn.innerHTML;
+    btn.disabled = true;
+    btn.innerHTML = '<span class="spinner-border spinner-border-sm me-2"></span>جاري الإرسال...';
+    
+    const notesInput = document.getElementById('exchangeNotes');
+    const notes = notesInput ? notesInput.value.trim() : '';
+    
+    fetch(basePath + '/api/exchange_requests.php', {
+        method: 'POST',
+        headers: {
+            'Content-Type': 'application/json',
+        },
+        credentials: 'same-origin',
+        body: JSON.stringify({
+            action: 'create',
+            customer_id: selectedCustomerId,
+            return_items: selectedReturnItems,
+            replacement_items: selectedReplacementItems,
+            notes: notes
+        })
+    })
+    .then(response => response.json())
+    .then(data => {
+        if (data.success) {
+            // إظهار رسالة النجاح
+            const successMessage = 'تم إنشاء طلب الاستبدال بنجاح!<br>رقم الاستبدال: <strong>' + data.exchange_number + '</strong>' + (data.balance_note ? '<br>' + data.balance_note : '') + '<br>تم إرساله للموافقة';
+            const successAlert = document.getElementById('dynamicSuccessAlert');
+            const successText = document.getElementById('successMessageText');
+            
+            if (successAlert && successText) {
+                successText.innerHTML = successMessage;
+                successAlert.style.display = 'block';
+                
+                // التمرير إلى أعلى الصفحة لرؤية الرسالة
+                window.scrollTo({ top: 0, behavior: 'smooth' });
+                
+                // الانتظار 3 ثوانٍ ثم إعادة تحميل الصفحة
+                setTimeout(function() {
+                    location.reload();
+                }, 3000);
+            } else {
+                // Fallback: استخدام alert إذا لم يتم العثور على العناصر
+                alert('تم إنشاء الاستبدال بنجاح!\nرقم الاستبدال: ' + data.exchange_number + '\n' + (data.balance_note || ''));
+                setTimeout(function() {
+                    location.reload();
+                }, 2000);
+            }
+        } else {
+            if (btn) {
+                btn.disabled = false;
+                btn.innerHTML = originalHTML;
+            }
+            alert('خطأ: ' + (data.message || 'حدث خطأ غير معروف'));
+        }
+    })
+    .catch(error => {
+        console.error('Error:', error);
+        if (btn) {
+            btn.disabled = false;
+            btn.innerHTML = originalHTML;
+        }
+        alert('حدث خطأ في الاتصال بالخادم. يرجى المحاولة مرة أخرى.');
+    });
+}
+
+// Initialize when DOM is ready
+if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', initializeExchangeForm);
+} else {
+    // DOM is already ready
+    initializeExchangeForm();
+}
 
 function fetchCustomers(search = '') {
     const url = basePath + '/api/exchange_requests.php?action=get_customers' + (search ? '&search=' + encodeURIComponent(search) : '');
@@ -640,78 +750,6 @@ function calculatePriceDifference() {
         submitBtn.disabled = true;
     }
 }
-
-// Submit Exchange Request
-document.getElementById('submitExchangeRequest').addEventListener('click', function() {
-    if (!selectedCustomerId || selectedReturnItems.length === 0 || selectedReplacementItems.length === 0) {
-        alert('يرجى اختيار عميل ومنتجات للإرجاع والاستبدال');
-        return;
-    }
-    
-    if (!confirm('هل أنت متأكد من إرسال طلب الاستبدال؟')) {
-        return;
-    }
-    
-    const btn = this;
-    const originalHTML = btn.innerHTML;
-    btn.disabled = true;
-    btn.innerHTML = '<span class="spinner-border spinner-border-sm me-2"></span>جاري الإرسال...';
-    
-    const notes = document.getElementById('exchangeNotes').value.trim();
-    
-    fetch(basePath + '/api/exchange_requests.php', {
-        method: 'POST',
-        headers: {
-            'Content-Type': 'application/json',
-        },
-        credentials: 'same-origin',
-        body: JSON.stringify({
-            action: 'create',
-            customer_id: selectedCustomerId,
-            return_items: selectedReturnItems,
-            replacement_items: selectedReplacementItems,
-            notes: notes
-        })
-    })
-    .then(response => response.json())
-    .then(data => {
-        if (data.success) {
-            // إظهار رسالة النجاح
-            const successMessage = 'تم إنشاء طلب الاستبدال بنجاح!<br>رقم الاستبدال: <strong>' + data.exchange_number + '</strong>' + (data.balance_note ? '<br>' + data.balance_note : '') + '<br>تم إرساله للموافقة';
-            const successAlert = document.getElementById('dynamicSuccessAlert');
-            const successText = document.getElementById('successMessageText');
-            
-            if (successAlert && successText) {
-                successText.innerHTML = successMessage;
-                successAlert.style.display = 'block';
-                
-                // التمرير إلى أعلى الصفحة لرؤية الرسالة
-                window.scrollTo({ top: 0, behavior: 'smooth' });
-                
-                // الانتظار 3 ثوانٍ ثم إعادة تحميل الصفحة
-                setTimeout(function() {
-                    location.reload();
-                }, 3000);
-            } else {
-                // Fallback: استخدام alert إذا لم يتم العثور على العناصر
-                alert('تم إنشاء الاستبدال بنجاح!\nرقم الاستبدال: ' + data.exchange_number + '\n' + (data.balance_note || ''));
-                setTimeout(function() {
-                    location.reload();
-                }, 2000);
-            }
-        } else {
-            btn.disabled = false;
-            btn.innerHTML = originalHTML;
-            alert('خطأ: ' + (data.message || 'حدث خطأ غير معروف'));
-        }
-    })
-    .catch(error => {
-        console.error('Error:', error);
-        btn.disabled = false;
-        btn.innerHTML = originalHTML;
-        alert('حدث خطأ في الاتصال بالخادم. يرجى المحاولة مرة أخرى.');
-    });
-});
 
 // Close dropdown when clicking outside
 document.addEventListener('click', function(event) {

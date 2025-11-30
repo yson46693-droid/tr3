@@ -76,7 +76,16 @@ try {
             if ($method !== 'GET') {
                 returnJson(['success' => false, 'message' => 'يجب استخدام طلب GET'], 405);
             }
-            handleGetPurchaseHistory();
+            try {
+                handleGetPurchaseHistory();
+            } catch (Throwable $e) {
+                error_log('Error in handleGetPurchaseHistory: ' . $e->getMessage());
+                error_log('Stack trace: ' . $e->getTraceAsString());
+                returnJson([
+                    'success' => false,
+                    'message' => 'حدث خطأ أثناء جلب سجل المشتريات: ' . $e->getMessage()
+                ], 500);
+            }
             break;
             
         case 'create':
@@ -204,6 +213,11 @@ function handleGetPurchaseHistory(): void
 {
     global $currentUser;
     
+    // تنظيف أي output buffer قبل البدء
+    while (ob_get_level() > 0) {
+        ob_end_clean();
+    }
+    
     $customerId = isset($_GET['customer_id']) ? (int)$_GET['customer_id'] : 0;
     
     if ($customerId <= 0) {
@@ -230,48 +244,58 @@ function handleGetPurchaseHistory(): void
     }
     
     // جلب سجل المشتريات - تحسين الاستعلام
-    $purchaseHistory = $db->query(
-        "SELECT 
-            i.id as invoice_id,
-            i.invoice_number,
-            i.date as invoice_date,
-            i.total_amount,
-            i.paid_amount,
-            i.status as invoice_status,
-            ii.id as invoice_item_id,
-            ii.product_id,
-            COALESCE(
-                (SELECT fp2.product_name 
-                 FROM finished_products fp2 
-                 INNER JOIN batch_numbers bn2 ON fp2.batch_id = bn2.id
-                 INNER JOIN sales_batch_numbers sbn2 ON bn2.id = sbn2.batch_number_id
-                 WHERE sbn2.invoice_item_id = ii.id
-                   AND fp2.product_name IS NOT NULL 
-                   AND TRIM(fp2.product_name) != ''
-                   AND fp2.product_name NOT LIKE 'منتج رقم%'
-                 ORDER BY fp2.id DESC 
-                 LIMIT 1),
-                NULLIF(TRIM(p.name), ''),
-                CONCAT('منتج رقم ', ii.product_id)
-            ) as product_name,
-            COALESCE(p.unit, 'قطعة') as unit,
-            ii.quantity,
-            ii.unit_price,
-            ii.total_price,
-            GROUP_CONCAT(DISTINCT bn.batch_number ORDER BY bn.batch_number SEPARATOR ', ') as batch_numbers,
-            GROUP_CONCAT(DISTINCT CAST(bn.id AS CHAR) ORDER BY bn.id SEPARATOR ',') as batch_number_ids
-        FROM invoices i
-        INNER JOIN invoice_items ii ON i.id = ii.invoice_id
-        LEFT JOIN products p ON ii.product_id = p.id
-        LEFT JOIN sales_batch_numbers sbn ON ii.id = sbn.invoice_item_id
-        LEFT JOIN batch_numbers bn ON sbn.batch_number_id = bn.id
-        WHERE i.customer_id = ?
-          AND i.status NOT IN ('cancelled', 'draft')
-        GROUP BY i.id, i.invoice_number, i.date, i.total_amount, i.paid_amount, i.status, 
-                 ii.id, ii.product_id, ii.quantity, ii.unit_price, ii.total_price, p.unit
-        ORDER BY i.date DESC, i.id DESC, ii.id ASC",
-        [$customerId]
-    );
+    try {
+        $purchaseHistory = $db->query(
+            "SELECT 
+                i.id as invoice_id,
+                i.invoice_number,
+                i.date as invoice_date,
+                i.total_amount,
+                i.paid_amount,
+                i.status as invoice_status,
+                ii.id as invoice_item_id,
+                ii.product_id,
+                COALESCE(
+                    (SELECT fp2.product_name 
+                     FROM finished_products fp2 
+                     INNER JOIN batch_numbers bn2 ON fp2.batch_id = bn2.id
+                     INNER JOIN sales_batch_numbers sbn2 ON bn2.id = sbn2.batch_number_id
+                     WHERE sbn2.invoice_item_id = ii.id
+                       AND fp2.product_name IS NOT NULL 
+                       AND TRIM(fp2.product_name) != ''
+                       AND fp2.product_name NOT LIKE 'منتج رقم%'
+                     ORDER BY fp2.id DESC 
+                     LIMIT 1),
+                    NULLIF(TRIM(p.name), ''),
+                    CONCAT('منتج رقم ', ii.product_id)
+                ) as product_name,
+                COALESCE(p.unit, 'قطعة') as unit,
+                ii.quantity,
+                ii.unit_price,
+                ii.total_price,
+                GROUP_CONCAT(DISTINCT bn.batch_number ORDER BY bn.batch_number SEPARATOR ', ') as batch_numbers,
+                GROUP_CONCAT(DISTINCT CAST(bn.id AS CHAR) ORDER BY bn.id SEPARATOR ',') as batch_number_ids
+            FROM invoices i
+            INNER JOIN invoice_items ii ON i.id = ii.invoice_id
+            LEFT JOIN products p ON ii.product_id = p.id
+            LEFT JOIN sales_batch_numbers sbn ON ii.id = sbn.invoice_item_id
+            LEFT JOIN batch_numbers bn ON sbn.batch_number_id = bn.id
+            WHERE i.customer_id = ?
+              AND i.status NOT IN ('cancelled', 'draft')
+            GROUP BY i.id, i.invoice_number, i.date, i.total_amount, i.paid_amount, i.status, 
+                     ii.id, ii.product_id, ii.quantity, ii.unit_price, ii.total_price, p.unit
+            ORDER BY i.date DESC, i.id DESC, ii.id ASC",
+            [$customerId]
+        );
+    } catch (Throwable $e) {
+        error_log('Error executing purchase history query: ' . $e->getMessage());
+        error_log('Stack trace: ' . $e->getTraceAsString());
+        returnJson([
+            'success' => false,
+            'message' => 'حدث خطأ أثناء جلب سجل المشتريات: ' . $e->getMessage()
+        ], 500);
+        return;
+    }
     
     // تأكد من أن $purchaseHistory هو array
     if (!is_array($purchaseHistory)) {
@@ -312,23 +336,28 @@ function handleGetPurchaseHistory(): void
     }
     
     if ($hasInvoiceItemId) {
-        // حساب الكمية المرتجعة لكل invoice_item_id (مجموع الكميات بغض النظر عن batch_number_id)
-        $returnedRows = $db->query(
-            "SELECT ri.invoice_item_id, COALESCE(SUM(ri.quantity), 0) AS returned_quantity
-             FROM return_items ri
-             INNER JOIN returns r ON r.id = ri.return_id
-             WHERE r.customer_id = ?
-               AND r.status IN ('pending', 'approved', 'processed', 'completed')
-               AND ri.invoice_item_id IS NOT NULL
-             GROUP BY ri.invoice_item_id",
-            [$customerId]
-        );
-        
-        foreach ($returnedRows as $row) {
-            $invoiceItemId = (int)$row['invoice_item_id'];
-            $returnedQuantities[$invoiceItemId] = (float)$row['returned_quantity'];
+        try {
+            // حساب الكمية المرتجعة لكل invoice_item_id (مجموع الكميات بغض النظر عن batch_number_id)
+            $returnedRows = $db->query(
+                "SELECT ri.invoice_item_id, COALESCE(SUM(ri.quantity), 0) AS returned_quantity
+                 FROM return_items ri
+                 INNER JOIN returns r ON r.id = ri.return_id
+                 WHERE r.customer_id = ?
+                   AND r.status IN ('pending', 'approved', 'processed', 'completed')
+                   AND ri.invoice_item_id IS NOT NULL
+                 GROUP BY ri.invoice_item_id",
+                [$customerId]
+            );
+            
+            foreach ($returnedRows as $row) {
+                $invoiceItemId = (int)$row['invoice_item_id'];
+                $returnedQuantities[$invoiceItemId] = (float)$row['returned_quantity'];
+            }
+            error_log("Returned quantities for customer {$customerId}: " . json_encode($returnedQuantities));
+        } catch (Throwable $e) {
+            error_log('Error calculating returned quantities: ' . $e->getMessage());
+            // نستمر في العملية حتى لو فشل حساب الكميات المرتجعة
         }
-        error_log("Returned quantities for customer {$customerId}: " . json_encode($returnedQuantities));
     }
     
     // إرجاع كل عنصر فاتورة كصف منفصل
@@ -353,7 +382,12 @@ function handleGetPurchaseHistory(): void
         }
         
         // جلب اسم المنتج الحقيقي
-        $finalProductName = resolveProductName([$item['product_name'] ?? null], 'اسم المنتج غير متوفر');
+        try {
+            $finalProductName = resolveProductName([$item['product_name'] ?? null], 'اسم المنتج غير متوفر');
+        } catch (Throwable $e) {
+            error_log('Error resolving product name: ' . $e->getMessage());
+            $finalProductName = $item['product_name'] ?? 'اسم المنتج غير متوفر';
+        }
         
         // تحويل batch_numbers من string إلى array
         $batchNumbersArray = [];
