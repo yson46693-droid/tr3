@@ -51,38 +51,38 @@ $baseUrl = getDashboardUrl();
                 </a>
             </li>
 
-            <div class="sidebar-section">
+            <li class="nav-item sidebar-section-divider">
                 <div class="sidebar-section-title">Finance</div>
+            </li>
                 
-                <li class="nav-item">
-                    <a class="nav-link" href="<?php echo $baseUrl; ?>accountant.php?page=suppliers">
-                        <i class="bi bi-truck"></i>
-                        <span><?php echo $lang['menu_suppliers']; ?></span>
-                    </a>
-                </li>
+            <li class="nav-item">
+                <a class="nav-link" href="<?php echo $baseUrl; ?>accountant.php?page=suppliers">
+                    <i class="bi bi-truck"></i>
+                    <span><?php echo $lang['menu_suppliers']; ?></span>
+                </a>
+            </li>
                 
-                <li class="nav-item">
-                    <a class="nav-link" href="<?php echo $baseUrl; ?>accountant.php?page=collections">
-                        <i class="bi bi-cash-coin"></i>
-                        <span><?php echo $lang['menu_collections']; ?></span>
-                    </a>
-                </li>
+            <li class="nav-item">
+                <a class="nav-link" href="<?php echo $baseUrl; ?>accountant.php?page=collections">
+                    <i class="bi bi-cash-coin"></i>
+                    <span><?php echo $lang['menu_collections']; ?></span>
+                </a>
+            </li>
                 
-                <li class="nav-item">
-                    <a class="nav-link" href="<?php echo $baseUrl; ?>accountant.php?page=salaries">
-                        <i class="bi bi-currency-dollar"></i>
-                        <span><?php echo $lang['menu_salaries']; ?></span>
-                    </a>
-                </li>
+            <li class="nav-item">
+                <a class="nav-link" href="<?php echo $baseUrl; ?>accountant.php?page=salaries">
+                    <i class="bi bi-currency-dollar"></i>
+                    <span><?php echo $lang['menu_salaries']; ?></span>
+                </a>
+            </li>
                 
-                <li class="nav-item">
-                    <a class="nav-link <?php echo (isset($_GET['page']) && $_GET['page'] === 'local_customers') ? 'active' : ''; ?>" 
-                       href="<?php echo $baseUrl; ?>accountant.php?page=local_customers">
-                        <i class="bi bi-people"></i>
-                        <span>العملاء المحليين</span>
-                    </a>
-                </li>
-            </div>
+            <li class="nav-item">
+                <a class="nav-link <?php echo (isset($_GET['page']) && $_GET['page'] === 'local_customers') ? 'active' : ''; ?>" 
+                   href="<?php echo $baseUrl; ?>accountant.php?page=local_customers">
+                    <i class="bi bi-people"></i>
+                    <span>العملاء المحليين</span>
+                </a>
+            </li>
             <li class="nav-item">
                 <a class="nav-link" href="<?php echo $baseUrl; ?>accountant.php?page=invoices">
                     <i class="bi bi-receipt"></i>

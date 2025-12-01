@@ -273,6 +273,23 @@
     padding: 0;
 }
 
+/* Sidebar Section Divider (for li elements) */
+.sidebar-section-divider {
+    margin-top: var(--spacing-lg);
+    padding-top: var(--spacing-lg);
+    border-top: 1px solid var(--border-color);
+    list-style: none;
+}
+
+.sidebar-section-divider .sidebar-section-title {
+    margin-bottom: var(--spacing-sm);
+}
+
+.dashboard-wrapper.sidebar-collapsed .sidebar-section-divider {
+    margin-top: var(--spacing-md);
+    padding-top: var(--spacing-md);
+}
+
 /* ===== RTL Support ===== */
 [dir="rtl"] .homeline-sidebar {
     left: auto;

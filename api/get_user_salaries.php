@@ -67,45 +67,52 @@ try {
     $monthType = $monthColumnCheck['Type'] ?? '';
     $isMonthDate = stripos($monthType, 'date') !== false;
     
-    // بناء الاستعلام مع تصفية القيم غير الصحيحة
+    // بناء الاستعلام - تبسيط الشروط لتشمل جميع الرواتب
     $query = "SELECT s.*, 
-                     COALESCE(s.accumulated_amount, s.total_amount) as calculated_accumulated,
+                     COALESCE(s.accumulated_amount, s.total_amount, 0) as calculated_accumulated,
                      COALESCE(s.paid_amount, 0) as paid_amount,
-                     (COALESCE(s.accumulated_amount, s.total_amount) - COALESCE(s.paid_amount, 0)) as remaining";
+                     (COALESCE(s.accumulated_amount, s.total_amount, 0) - COALESCE(s.paid_amount, 0)) as remaining";
     
     if ($hasYearColumn) {
         // إذا كان month من نوع INT و year موجود
-        $query .= ", CONCAT(s.year, '-', LPAD(s.month, 2, '0')) as month_label";
-        $whereClause = "WHERE s.user_id = ? 
-                       AND s.month > 0 
-                       AND s.month <= 12 
-                       AND s.year > 0 
-                       AND s.year <= 9999";
-        $orderClause = "ORDER BY s.year DESC, s.month DESC";
+        $query .= ", CASE 
+                       WHEN s.month > 0 AND s.month <= 12 AND s.year > 0 AND s.year <= 9999 
+                       THEN CONCAT(s.year, '-', LPAD(s.month, 2, '0'))
+                       ELSE CONCAT(COALESCE(s.year, YEAR(CURDATE())), '-', LPAD(COALESCE(s.month, MONTH(CURDATE())), 2, '0'))
+                    END as month_label";
+        // تبسيط WHERE clause - فقط التحقق من user_id
+        $whereClause = "WHERE s.user_id = ?";
+        $orderClause = "ORDER BY COALESCE(s.year, YEAR(CURDATE())) DESC, COALESCE(s.month, MONTH(CURDATE())) DESC, s.id DESC";
     } else {
         // إذا كان month من نوع DATE
         if ($isMonthDate) {
-            $query .= ", DATE_FORMAT(s.month, '%Y-%m') as month_label";
-            $whereClause = "WHERE s.user_id = ? 
-                           AND s.month IS NOT NULL 
-                           AND s.month != '0000-00-00' 
-                           AND s.month != '1970-01-01'
-                           AND YEAR(s.month) > 0 
-                           AND YEAR(s.month) <= 9999";
-            $orderClause = "ORDER BY s.month DESC";
+            $query .= ", CASE 
+                           WHEN s.month IS NOT NULL AND s.month != '0000-00-00' AND s.month != '1970-01-01'
+                           THEN DATE_FORMAT(s.month, '%Y-%m')
+                           ELSE DATE_FORMAT(CURDATE(), '%Y-%m')
+                        END as month_label";
+            // تبسيط WHERE clause - فقط التحقق من user_id
+            $whereClause = "WHERE s.user_id = ?";
+            $orderClause = "ORDER BY s.month DESC, s.id DESC";
         } else {
             // إذا كان month من نوع INT بدون year
-            $query .= ", DATE_FORMAT(CONCAT(YEAR(CURDATE()), '-', LPAD(s.month, 2, '0'), '-01'), '%Y-%m') as month_label";
-            $whereClause = "WHERE s.user_id = ? 
-                           AND s.month > 0 
-                           AND s.month <= 12";
-            $orderClause = "ORDER BY s.month DESC";
+            $query .= ", DATE_FORMAT(CONCAT(YEAR(CURDATE()), '-', LPAD(COALESCE(s.month, MONTH(CURDATE())), 2, '0'), '-01'), '%Y-%m') as month_label";
+            // تبسيط WHERE clause - فقط التحقق من user_id
+            $whereClause = "WHERE s.user_id = ?";
+            $orderClause = "ORDER BY s.month DESC, s.id DESC";
         }
     }
     
     $query .= " FROM salaries s " . $whereClause . " " . $orderClause;
     
+    // تسجيل الاستعلام للتdebugging
+    error_log("get_user_salaries.php query: " . $query);
+    error_log("get_user_salaries.php params: " . json_encode([$userId]));
+    
     $salaries = $db->query($query, [$userId]);
+    
+    // تسجيل عدد الرواتب المسترجعة
+    error_log("get_user_salaries.php found " . count($salaries) . " salaries for user_id: " . $userId);
     
     $monthNames = [
         1 => 'يناير', 2 => 'فبراير', 3 => 'مارس', 4 => 'أبريل',
@@ -125,12 +132,15 @@ try {
             $month = intval($salary['month'] ?? 0);
             $year = intval($salary['year'] ?? date('Y'));
             
-            if ($month > 0 && $month <= 12 && $year > 0 && $year <= 9999) {
-                $monthLabel = $monthNames[$month] . ' ' . $year;
-            } else {
-                // تخطي الرواتب ذات القيم غير الصحيحة
-                continue;
+            // استخدام القيم الافتراضية إذا كانت غير صحيحة
+            if ($month <= 0 || $month > 12) {
+                $month = date('n');
             }
+            if ($year <= 0 || $year > 9999) {
+                $year = date('Y');
+            }
+            
+            $monthLabel = ($monthNames[$month] ?? 'شهر غير معروف') . ' ' . $year;
         } else {
             if ($isMonthDate) {
                 // month من نوع DATE
@@ -143,45 +153,58 @@ try {
                         $monthLabel = $monthNames[$month] . ' ' . $year;
                     } else {
                         // محاولة استخدام month_label
-                        $date = date_create_from_format('Y-m', $salary['month_label'] ?? '');
-                        if ($date) {
-                            $year = intval($date->format('Y'));
-                            $month = intval($date->format('n'));
-                            $monthLabel = $monthNames[$month] . ' ' . $year;
+                        if (!empty($salary['month_label'])) {
+                            $date = date_create_from_format('Y-m', $salary['month_label']);
+                            if ($date) {
+                                $year = intval($date->format('Y'));
+                                $month = intval($date->format('n'));
+                                $monthLabel = $monthNames[$month] . ' ' . $year;
+                            } else {
+                                // استخدام التاريخ الحالي كافتراضي
+                                $year = date('Y');
+                                $month = date('n');
+                                $monthLabel = $monthNames[$month] . ' ' . $year;
+                            }
                         } else {
-                            continue; // تخطي الرواتب ذات التواريخ غير الصحيحة
+                            // استخدام التاريخ الحالي كافتراضي
+                            $year = date('Y');
+                            $month = date('n');
+                            $monthLabel = $monthNames[$month] . ' ' . $year;
                         }
                     }
                 } else {
-                    continue; // تخطي الرواتب ذات التواريخ غير الصحيحة
+                    // استخدام التاريخ الحالي كافتراضي
+                    $year = date('Y');
+                    $month = date('n');
+                    $monthLabel = $monthNames[$month] . ' ' . $year;
                 }
             } else {
                 // month من نوع INT بدون year
                 $month = intval($salary['month'] ?? 0);
-                if ($month > 0 && $month <= 12) {
-                    $year = date('Y'); // استخدام السنة الحالية كافتراضي
-                    $monthLabel = $monthNames[$month] . ' ' . $year;
-                } else {
-                    continue; // تخطي الرواتب ذات القيم غير الصحيحة
+                if ($month <= 0 || $month > 12) {
+                    $month = date('n');
                 }
+                $year = date('Y'); // استخدام السنة الحالية كافتراضي
+                $monthLabel = $monthNames[$month] . ' ' . $year;
             }
         }
         
-        // التأكد من أن جميع القيم صحيحة قبل الإضافة
-        if ($month > 0 && $month <= 12 && $year > 0 && $year <= 9999) {
-            $formattedSalaries[] = [
-                'id' => intval($salary['id']),
-                'month' => $month,
-                'year' => $year,
-                'month_label' => $monthLabel,
-                'total_amount' => floatval($salary['total_amount'] ?? 0),
-                'accumulated_amount' => floatval($salary['calculated_accumulated'] ?? 0),
-                'paid_amount' => floatval($salary['paid_amount'] ?? 0),
-                'remaining' => max(0, floatval($salary['remaining'] ?? 0)),
-                'status' => $salary['status'] ?? 'calculated'
-            ];
-        }
+        // إضافة الراتب بغض النظر عن القيم (تم استخدام القيم الافتراضية إذا لزم الأمر)
+        $formattedSalaries[] = [
+            'id' => intval($salary['id'] ?? 0),
+            'month' => $month,
+            'year' => $year,
+            'month_label' => $monthLabel,
+            'total_amount' => floatval($salary['total_amount'] ?? 0),
+            'accumulated_amount' => floatval($salary['calculated_accumulated'] ?? 0),
+            'paid_amount' => floatval($salary['paid_amount'] ?? 0),
+            'remaining' => max(0, floatval($salary['remaining'] ?? 0)),
+            'status' => $salary['status'] ?? 'calculated'
+        ];
     }
+    
+    // تسجيل عدد الرواتب المعالجة
+    error_log("get_user_salaries.php formatted " . count($formattedSalaries) . " salaries for user_id: " . $userId);
     
     ob_end_clean();
     echo json_encode([
