@@ -523,6 +523,7 @@ if (!$error && $_SERVER['REQUEST_METHOD'] === 'POST') {
                     
                     // التحقق من وجود سجل مشتريات سابق للعميل (قبل إنشاء الفاتورة الحالية)
                     // القاعدة: يجب أن يكون للعميل فواتير سابقة أو إرجاعات سابقة
+                    // هذا التحقق مهم لتحديد ما إذا كان يجب حساب نسبة 2% عند خصم من الرصيد الدائن
                     $hasPreviousPurchases = false;
                     try {
                         // التحقق من وجود فواتير سابقة للعميل (قبل الفاتورة الحالية)
@@ -545,13 +546,23 @@ if (!$error && $_SERVER['REQUEST_METHOD'] === 'POST') {
                                 $hasReturns = ($returnsCount > 0);
                             }
                         } catch (Throwable $returnsError) {
-                            error_log('Error checking previous returns: ' . $returnsError->getMessage());
+                            error_log('Error checking previous returns for customer ' . $customerId . ': ' . $returnsError->getMessage());
                         }
                         
                         // العميل لديه سجل مشتريات إذا كان لديه فواتير أو إرجاعات سابقة
                         $hasPreviousPurchases = ($invoiceCount > 0) || $hasReturns;
+                        
+                        // تسجيل معلومات التشخيص
+                        error_log(sprintf(
+                            'Previous purchases check for customer %d: invoiceCount=%d, hasReturns=%s, hasPreviousPurchases=%s',
+                            $customerId,
+                            $invoiceCount,
+                            $hasReturns ? 'true' : 'false',
+                            $hasPreviousPurchases ? 'true' : 'false'
+                        ));
                     } catch (Throwable $e) {
-                        error_log('Error checking previous purchases: ' . $e->getMessage());
+                        error_log('Error checking previous purchases for customer ' . $customerId . ': ' . $e->getMessage());
+                        error_log('Previous purchases check error trace: ' . $e->getTraceAsString());
                         // في حالة الخطأ، نفترض عدم وجود سجل مشتريات سابق (لضمان عدم منح عمولة غير مستحقة)
                         $hasPreviousPurchases = false;
                     }
@@ -1057,15 +1068,24 @@ if (!$error && $_SERVER['REQUEST_METHOD'] === 'POST') {
                         require_once __DIR__ . '/../../includes/salary_calculator.php';
                         
                         // الحالة الخاصة: خصم من الرصيد الدائن لعميل لديه سجل مشتريات
-                        if ($isCreditSale && $creditUsed > 0.0001 && ($hasPreviousPurchases ?? false)) {
+                        // القاعدة: عند خصم أي مبلغ من الرصيد الدائن لعميل لديه سجل مشتريات سابق
+                        // يتم احتساب نسبة 2% من المبلغ المخصوم (حتى لو كان البيع كاش أو جزئي)
+                        if ($creditUsed > 0.0001 && ($hasPreviousPurchases ?? false)) {
                             // حساب نسبة 2% من المبلغ المخصوم من الرصيد الدائن
                             $creditCommissionAmount = round($creditUsed * 0.02, 2);
                             
+                            // تسجيل معلومات التشخيص
+                            error_log(sprintf(
+                                'Credit balance commission calculation: creditUsed=%.2f, hasPreviousPurchases=%s, commissionAmount=%.2f, invoiceId=%d, customerId=%d',
+                                $creditUsed,
+                                ($hasPreviousPurchases ?? false) ? 'true' : 'false',
+                                $creditCommissionAmount,
+                                $invoiceId,
+                                $customerId
+                            ));
+                            
                             if ($creditCommissionAmount > 0) {
                                 // إضافة النسبة مباشرة كـ bonus في الراتب (بدون إضافة للإجمالي أو السجل)
-                                // نستخدم applyCollectionInstantReward ولكن مع reverse=false لإضافة المكافأة
-                                // ولكن يجب التأكد من عدم إضافة المبلغ إلى collections_amount
-                                // لذلك سنضيفها مباشرة إلى bonus فقط
                                 try {
                                     $timestamp = strtotime($saleDate) ?: time();
                                     $targetMonth = (int)date('n', $timestamp);
@@ -1075,7 +1095,7 @@ if (!$error && $_SERVER['REQUEST_METHOD'] === 'POST') {
                                     if (!$summary['exists']) {
                                         $creation = createOrUpdateSalary($currentUser['id'], $targetMonth, $targetYear);
                                         if (!($creation['success'] ?? false)) {
-                                            throw new RuntimeException('Failed to create salary record');
+                                            throw new RuntimeException('Failed to create salary record: ' . ($creation['message'] ?? 'Unknown error'));
                                         }
                                         $summary = getSalarySummary($currentUser['id'], $targetMonth, $targetYear);
                                     }
@@ -1101,20 +1121,53 @@ if (!$error && $_SERVER['REQUEST_METHOD'] === 'POST') {
                                                     null,
                                                     [
                                                         'invoice_id' => $invoiceId,
+                                                        'invoice_number' => $invoiceNumber ?? '',
+                                                        'customer_id' => $customerId,
                                                         'credit_used' => $creditUsed,
                                                         'commission_amount' => $creditCommissionAmount,
                                                         'month' => $targetMonth,
                                                         'year' => $targetYear,
+                                                        'has_previous_purchases' => ($hasPreviousPurchases ?? false),
                                                         'note' => 'نسبة تحصيل 2% من خصم الرصيد الدائن (لعميل لديه سجل مشتريات) - لا تُضاف للإجمالي أو السجل'
                                                     ]
                                                 );
                                             }
+                                            
+                                            error_log(sprintf(
+                                                'Credit balance commission applied successfully: salaryId=%d, commissionAmount=%.2f',
+                                                $salaryId,
+                                                $creditCommissionAmount
+                                            ));
+                                        } else {
+                                            error_log('Credit balance commission: salaryId is invalid or zero');
                                         }
+                                    } else {
+                                        error_log('Credit balance commission: salary summary does not exist after creation attempt');
                                     }
                                 } catch (Throwable $creditCommissionError) {
                                     error_log('Error applying credit balance commission: ' . $creditCommissionError->getMessage());
+                                    error_log('Credit balance commission error trace: ' . $creditCommissionError->getTraceAsString());
                                 }
+                            } else {
+                                error_log('Credit balance commission: commission amount is zero or negative');
                             }
+                        } else {
+                            // تسجيل لماذا لم يتم تطبيق النسبة
+                            $reason = [];
+                            if ($creditUsed <= 0.0001) {
+                                $reason[] = 'no credit used';
+                            }
+                            if (!($hasPreviousPurchases ?? false)) {
+                                $reason[] = 'no previous purchases';
+                            }
+                            error_log(sprintf(
+                                'Credit balance commission NOT applied: creditUsed=%.2f, hasPreviousPurchases=%s, reason=%s, invoiceId=%d, customerId=%d',
+                                $creditUsed,
+                                ($hasPreviousPurchases ?? false) ? 'true' : 'false',
+                                implode(', ', $reason),
+                                $invoiceId,
+                                $customerId
+                            ));
                         }
                         
                         // تحديث عمولة المندوب للحالات العادية

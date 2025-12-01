@@ -3320,6 +3320,12 @@ $pageTitle = ($view === 'advances') ? 'السلف' : (($view === 'pending') ? '�
                             
                             // التأكد من أن القيم المحسوبة موجودة في مصفوفة $salary لتمريرها في JSON
                             $salaryForJson = $salary;
+                            
+                            // التأكد من وجود user_id
+                            if (!isset($salaryForJson['user_id']) && isset($userId)) {
+                                $salaryForJson['user_id'] = $userId;
+                            }
+                            
                             if (!isset($salaryForJson['calculated_remaining'])) {
                                 $salaryForJson['calculated_remaining'] = $settleRemaining;
                             }
@@ -4039,7 +4045,24 @@ function viewAdvanceDetails(advanceId) {
 }
 
 function openSettleModal(salaryId, salaryData, remainingAmount, calculatedAccumulated) {
-    const userId = salaryData.user_id || salaryData.userId;
+    // الحصول على user_id من البيانات
+    const userId = salaryData.user_id || salaryData.userId || (salaryData.user_id === 0 ? 0 : null);
+    
+    // تسجيل للتشخيص
+    console.log('openSettleModal called with:', {
+        salaryId: salaryId,
+        salaryData: salaryData,
+        userId: userId,
+        remainingAmount: remainingAmount,
+        calculatedAccumulated: calculatedAccumulated
+    });
+    
+    // التحقق من وجود user_id
+    if (!userId || userId <= 0) {
+        console.error('Invalid user_id in openSettleModal:', userId);
+        alert('خطأ: لم يتم العثور على معرف الموظف. يرجى المحاولة مرة أخرى.');
+        return;
+    }
     
     // التحقق من وجود العناصر قبل الوصول إليها
     const userIdInput = document.getElementById('settleUserId');
@@ -4047,13 +4070,18 @@ function openSettleModal(salaryId, salaryData, remainingAmount, calculatedAccumu
     
     if (userIdInput) {
         userIdInput.value = userId;
+    } else {
+        console.error('settleUserId element not found');
     }
     
     if (userNameSpan) {
         userNameSpan.textContent = salaryData.full_name || salaryData.username || 'غير محدد';
+    } else {
+        console.error('settleUserName element not found');
     }
     
     // تحميل جميع الرواتب للموظف
+    console.log('Loading salaries for user_id:', userId, 'currentSalaryId:', salaryId);
     loadUserSalariesForSettlement(userId, salaryId);
     
     // تعيين الراتب الحالي كافتراضي
@@ -4069,6 +4097,16 @@ function openSettleModal(salaryId, salaryData, remainingAmount, calculatedAccumu
 }
 
 function loadUserSalariesForSettlement(userId, currentSalaryId) {
+    // التحقق من صحة user_id
+    if (!userId || userId <= 0) {
+        console.error('Invalid user_id in loadUserSalariesForSettlement:', userId);
+        const select = document.getElementById('settleSalarySelect');
+        if (select) {
+            select.innerHTML = '<option value="">خطأ: معرف الموظف غير صحيح</option>';
+        }
+        return;
+    }
+    
     const select = document.getElementById('settleSalarySelect');
     if (!select) {
         console.error('settleSalarySelect element not found');
@@ -4078,8 +4116,11 @@ function loadUserSalariesForSettlement(userId, currentSalaryId) {
     // مسح الخيارات السابقة
     select.innerHTML = '<option value="">-- جاري التحميل --</option>';
     
+    const apiUrl = '<?php echo getBasePath(); ?>/api/get_user_salaries.php?user_id=' + userId;
+    console.log('Fetching salaries from:', apiUrl);
+    
     // جلب الرواتب من API
-    fetch('<?php echo getBasePath(); ?>/api/get_user_salaries.php?user_id=' + userId, {
+    fetch(apiUrl, {
         method: 'GET',
         credentials: 'include', // إرسال الـ cookies (session) مع الطلب
         headers: {
@@ -4127,7 +4168,12 @@ function loadUserSalariesForSettlement(userId, currentSalaryId) {
                 }
             } else {
                 console.warn('No salaries found or invalid data structure:', data);
-                select.innerHTML = '<option value="">لا توجد رواتب متاحة</option>';
+                if (data && data.message) {
+                    console.error('API Error message:', data.message);
+                    select.innerHTML = '<option value="">' + (data.message || 'لا توجد رواتب متاحة') + '</option>';
+                } else {
+                    select.innerHTML = '<option value="">لا توجد رواتب متاحة</option>';
+                }
             }
         })
         .catch(error => {
