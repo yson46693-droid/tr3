@@ -20,6 +20,7 @@ requireRole(['manager', 'accountant', 'production']);
 $currentUser = getCurrentUser();
 $db = db();
 $basePath = getBasePath();
+$apiPath = getRelativeUrl('api/factory_waste.php');
 
 $userRole = $currentUser['role'];
 $canViewFinancials = in_array($userRole, ['manager', 'accountant']);
@@ -1019,6 +1020,32 @@ $totalPages = ceil($totalCount / $perPage);
 let currentDeleteId = null;
 let currentDeleteType = null;
 
+// دالة مساعدة للحصول على مسار API بشكل صحيح
+function getApiPath(endpoint) {
+    const cleanEndpoint = String(endpoint || '').replace(/^\/+/, '');
+    const currentPath = window.location.pathname || '/';
+    const parts = currentPath.split('/').filter(Boolean);
+    const stopSegments = new Set(['dashboard', 'modules', 'api', 'assets', 'includes']);
+    const baseParts = [];
+
+    for (const part of parts) {
+        if (stopSegments.has(part) || part.endsWith('.php')) {
+            break;
+        }
+        baseParts.push(part);
+    }
+
+    const basePath = baseParts.length ? '/' + baseParts.join('/') : '';
+    const apiPath = (basePath + '/api/' + cleanEndpoint).replace(/\/+/g, '/');
+
+    return apiPath.startsWith('/') ? apiPath : '/' + apiPath;
+}
+
+const factoryWasteApiPath = getApiPath('factory_waste.php');
+console.log('API Path from PHP:', '<?php echo $apiPath; ?>');
+console.log('API Path calculated from JS:', factoryWasteApiPath);
+console.log('Window location:', window.location.pathname);
+
 // وظائف تعديل المنتجات التالفة
 function editProduct(item) {
     document.getElementById('edit_product_id').value = item.id;
@@ -1077,18 +1104,27 @@ document.getElementById('editProductForm')?.addEventListener('submit', function(
     formData.append('action', 'edit_product');
     formData.append('tab', '<?php echo $activeTab; ?>');
     
-    fetch('<?php echo $basePath; ?>api/factory_waste.php', {
+    const apiUrl = '<?php echo $apiPath; ?>' || factoryWasteApiPath;
+    console.log('Sending request to:', apiUrl);
+    
+    fetch(apiUrl, {
         method: 'POST',
-        body: formData
+        body: formData,
+        credentials: 'same-origin'
     })
     .then(response => {
-        // التحقق من نوع المحتوى قبل محاولة تحويله إلى JSON
+        console.log('Response status:', response.status);
+        if (!response.ok) {
+            throw new Error(`خطأ في الخادم: ${response.status} ${response.statusText}`);
+        }
         const contentType = response.headers.get('content-type');
         if (contentType && contentType.includes('application/json')) {
             return response.json();
         } else {
-            // إذا لم يكن JSON، إرجاع رسالة خطأ
-            throw new Error('استجابة غير صالحة من الخادم');
+            return response.text().then(text => {
+                console.error('Non-JSON response:', text);
+                throw new Error('استجابة غير صالحة من الخادم');
+            });
         }
     })
     .then(data => {
@@ -1101,7 +1137,11 @@ document.getElementById('editProductForm')?.addEventListener('submit', function(
     })
     .catch(error => {
         console.error('Error:', error);
-        alert('حدث خطأ أثناء التعديل: ' + (error.message || 'يرجى المحاولة مرة أخرى'));
+        let errorMessage = error.message || 'يرجى المحاولة مرة أخرى';
+        if (error.name === 'TypeError' && error.message.includes('Failed to fetch')) {
+            errorMessage = 'فشل الاتصال بالخادم. يرجى التحقق من الاتصال والمحاولة مرة أخرى.';
+        }
+        alert('حدث خطأ أثناء التعديل: ' + errorMessage);
     });
 });
 
@@ -1111,21 +1151,38 @@ document.getElementById('editPackagingForm')?.addEventListener('submit', functio
     formData.append('action', 'edit_packaging');
     formData.append('tab', '<?php echo $activeTab; ?>');
     
-    fetch('<?php echo $basePath; ?>api/factory_waste.php', {
+    // استخدام المسار المحسوب من JavaScript كبديل إذا فشل PHP
+    const apiUrl = '<?php echo $apiPath; ?>' || factoryWasteApiPath;
+    console.log('Sending request to:', apiUrl);
+    
+    fetch(apiUrl, {
         method: 'POST',
-        body: formData
+        body: formData,
+        credentials: 'same-origin'
     })
     .then(response => {
+        console.log('Response status:', response.status);
+        console.log('Response headers:', response.headers);
+        
+        // التحقق من حالة الاستجابة أولاً
+        if (!response.ok) {
+            throw new Error(`خطأ في الخادم: ${response.status} ${response.statusText}`);
+        }
+        
         // التحقق من نوع المحتوى قبل محاولة تحويله إلى JSON
         const contentType = response.headers.get('content-type');
         if (contentType && contentType.includes('application/json')) {
             return response.json();
         } else {
-            // إذا لم يكن JSON، إرجاع رسالة خطأ
-            throw new Error('استجابة غير صالحة من الخادم');
+            // محاولة قراءة الاستجابة كنص لمعرفة المشكلة
+            return response.text().then(text => {
+                console.error('Non-JSON response:', text);
+                throw new Error('استجابة غير صالحة من الخادم: ' + text.substring(0, 100));
+            });
         }
     })
     .then(data => {
+        console.log('Response data:', data);
         if (data.success) {
             alert('تم التعديل بنجاح');
             location.reload();
@@ -1134,8 +1191,23 @@ document.getElementById('editPackagingForm')?.addEventListener('submit', functio
         }
     })
     .catch(error => {
-        console.error('Error:', error);
-        alert('حدث خطأ أثناء التعديل: ' + (error.message || 'يرجى المحاولة مرة أخرى'));
+        console.error('Fetch error:', error);
+        console.error('Error details:', {
+            name: error.name,
+            message: error.message,
+            stack: error.stack
+        });
+        
+        let errorMessage = 'حدث خطأ أثناء التعديل';
+        if (error.message) {
+            errorMessage += ': ' + error.message;
+        } else if (error.name === 'TypeError' && error.message.includes('Failed to fetch')) {
+            errorMessage = 'فشل الاتصال بالخادم. يرجى التحقق من الاتصال بالإنترنت والمحاولة مرة أخرى.';
+        } else {
+            errorMessage += '. يرجى المحاولة مرة أخرى.';
+        }
+        
+        alert(errorMessage);
     });
 });
 
@@ -1145,18 +1217,27 @@ document.getElementById('editRawMaterialForm')?.addEventListener('submit', funct
     formData.append('action', 'edit_raw_material');
     formData.append('tab', '<?php echo $activeTab; ?>');
     
-    fetch('<?php echo $basePath; ?>api/factory_waste.php', {
+    const apiUrl = '<?php echo $apiPath; ?>' || factoryWasteApiPath;
+    console.log('Sending request to:', apiUrl);
+    
+    fetch(apiUrl, {
         method: 'POST',
-        body: formData
+        body: formData,
+        credentials: 'same-origin'
     })
     .then(response => {
-        // التحقق من نوع المحتوى قبل محاولة تحويله إلى JSON
+        console.log('Response status:', response.status);
+        if (!response.ok) {
+            throw new Error(`خطأ في الخادم: ${response.status} ${response.statusText}`);
+        }
         const contentType = response.headers.get('content-type');
         if (contentType && contentType.includes('application/json')) {
             return response.json();
         } else {
-            // إذا لم يكن JSON، إرجاع رسالة خطأ
-            throw new Error('استجابة غير صالحة من الخادم');
+            return response.text().then(text => {
+                console.error('Non-JSON response:', text);
+                throw new Error('استجابة غير صالحة من الخادم');
+            });
         }
     })
     .then(data => {
@@ -1169,7 +1250,11 @@ document.getElementById('editRawMaterialForm')?.addEventListener('submit', funct
     })
     .catch(error => {
         console.error('Error:', error);
-        alert('حدث خطأ أثناء التعديل: ' + (error.message || 'يرجى المحاولة مرة أخرى'));
+        let errorMessage = error.message || 'يرجى المحاولة مرة أخرى';
+        if (error.name === 'TypeError' && error.message.includes('Failed to fetch')) {
+            errorMessage = 'فشل الاتصال بالخادم. يرجى التحقق من الاتصال والمحاولة مرة أخرى.';
+        }
+        alert('حدث خطأ أثناء التعديل: ' + errorMessage);
     });
 });
 
@@ -1198,7 +1283,7 @@ function deleteItem(id, type) {
     formData.append('id', id);
     formData.append('tab', '<?php echo $activeTab; ?>');
     
-    fetch('<?php echo $basePath; ?>api/factory_waste.php', {
+    fetch('<?php echo $apiPath; ?>', {
         method: 'POST',
         body: formData
     })

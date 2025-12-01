@@ -2037,12 +2037,20 @@ document.addEventListener('DOMContentLoaded', function() {
             const existingCustomerSelect = document.getElementById('existingCustomerSelect');
             
             if (salesRepSelect && existingCustomerSelect) {
+                // حفظ القيمة الحالية قبل إعادة الربط
+                const currentValue = salesRepSelect.value;
+                
                 // إزالة أي listeners سابقة لتجنب التكرار
                 const newSelect = salesRepSelect.cloneNode(true);
                 salesRepSelect.parentNode.replaceChild(newSelect, salesRepSelect);
                 
                 const freshSelect = document.getElementById('salesRepSelect');
                 if (freshSelect) {
+                    // استعادة القيمة
+                    if (currentValue) {
+                        freshSelect.value = currentValue;
+                    }
+                    
                     freshSelect.addEventListener('change', function() {
                         loadSalesRepCustomers(this.value);
                     });
@@ -2195,21 +2203,6 @@ function setupCompanyLocationButton() {
     }
 }
 
-// ربط الأحداث عند فتح Modal طلب الشركة
-const addCompanyOrderModalElement = document.getElementById('addCompanyOrderModal');
-if (addCompanyOrderModalElement && typeof bootstrap !== 'undefined') {
-    addCompanyOrderModalElement.addEventListener('shown.bs.modal', function() {
-        setupCompanyLocationButton();
-    });
-}
-
-// أيضاً محاولة الربط مباشرة عند تحميل الصفحة
-if (document.readyState === 'loading') {
-    document.addEventListener('DOMContentLoaded', setupCompanyLocationButton);
-} else {
-    setupCompanyLocationButton();
-}
-
 // ربط أحداث العناصر
 function attachItemEvents(item) {
     // لا حاجة لحسابات السعر والإجمالي
@@ -2332,11 +2325,11 @@ document.getElementById('addCompanyItemBtn')?.addEventListener('click', function
 });
 
 // معالجة toggle عميل جديد للشركة
-const toggleNewCompanyCustomer = document.getElementById('toggleNewCompanyCustomer');
-const companyCustomerSelect = document.getElementById('companyCustomerSelect');
-const newCompanyCustomerFields = document.getElementById('newCompanyCustomerFields');
-
 function updateNewCompanyCustomerState() {
+    const toggleNewCompanyCustomer = document.getElementById('toggleNewCompanyCustomer');
+    const companyCustomerSelect = document.getElementById('companyCustomerSelect');
+    const newCompanyCustomerFields = document.getElementById('newCompanyCustomerFields');
+    
     if (!toggleNewCompanyCustomer || !companyCustomerSelect || !newCompanyCustomerFields) {
         return;
     }
@@ -2346,6 +2339,7 @@ function updateNewCompanyCustomerState() {
 
     if (toggleNewCompanyCustomer.checked) {
         newCompanyCustomerFields.classList.remove('d-none');
+        newCompanyCustomerFields.style.display = '';
         companyCustomerSelect.value = '';
         companyCustomerSelect.setAttribute('disabled', 'disabled');
         companyCustomerSelect.removeAttribute('required');
@@ -2354,6 +2348,7 @@ function updateNewCompanyCustomerState() {
         });
     } else {
         newCompanyCustomerFields.classList.add('d-none');
+        newCompanyCustomerFields.style.display = 'none';
         companyCustomerSelect.removeAttribute('disabled');
         companyCustomerSelect.setAttribute('required', 'required');
         newCompanyCustomerRequiredInputs.forEach(function(input) {
@@ -2362,73 +2357,100 @@ function updateNewCompanyCustomerState() {
     }
 }
 
-if (toggleNewCompanyCustomer) {
-    toggleNewCompanyCustomer.addEventListener('change', updateNewCompanyCustomerState);
-    // لا نستدعي updateNewCompanyCustomerState() هنا لأن الـ modal قد لا يكون مفتوحاً بعد
-}
-
-// إعادة تعيين نموذج طلب الشركة عند إغلاق الـ modal
-const addCompanyOrderModalElement = document.getElementById('addCompanyOrderModal');
-if (addCompanyOrderModalElement && typeof bootstrap !== 'undefined') {
-    // عند فتح الـ modal، تأكد من تحديث الحالة
-    addCompanyOrderModalElement.addEventListener('shown.bs.modal', function() {
-        if (toggleNewCompanyCustomer) {
-            updateNewCompanyCustomerState();
-        }
-    });
+// إعداد Modal طلب الشركة
+document.addEventListener('DOMContentLoaded', function() {
+    const addCompanyOrderModalElement = document.getElementById('addCompanyOrderModal');
     
-    addCompanyOrderModalElement.addEventListener('hidden.bs.modal', function() {
-        if (toggleNewCompanyCustomer) {
-            toggleNewCompanyCustomer.checked = false;
+    if (addCompanyOrderModalElement && typeof bootstrap !== 'undefined') {
+        // ربط أحداث toggle للعميل الجديد للشركة
+        addCompanyOrderModalElement.addEventListener('change', function(e) {
+            if (e.target && e.target.id === 'toggleNewCompanyCustomer') {
+                setTimeout(function() {
+                    updateNewCompanyCustomerState();
+                }, 10);
+            }
+        });
+        
+        // معالجة النقر على label أيضاً
+        addCompanyOrderModalElement.addEventListener('click', function(e) {
+            let toggle = null;
+            
+            if (e.target.id === 'toggleNewCompanyCustomer') {
+                toggle = e.target;
+            } else if (e.target.tagName === 'LABEL' && e.target.getAttribute('for') === 'toggleNewCompanyCustomer') {
+                toggle = document.getElementById('toggleNewCompanyCustomer');
+            } else if (e.target.closest('label[for="toggleNewCompanyCustomer"]')) {
+                toggle = document.getElementById('toggleNewCompanyCustomer');
+            }
+            
+            if (toggle) {
+                setTimeout(function() {
+                    updateNewCompanyCustomerState();
+                }, 50);
+            }
+        });
+        
+        // عند فتح الـ modal، تأكد من تحديث الحالة
+        addCompanyOrderModalElement.addEventListener('shown.bs.modal', function() {
             updateNewCompanyCustomerState();
-        }
-        // مسح حقول العميل الجديد
-        if (newCompanyCustomerFields) {
-            const requiredInputs = newCompanyCustomerFields.querySelectorAll('.new-company-customer-required');
-            requiredInputs.forEach(function(input) {
-                input.value = '';
-            });
-        }
-        const newCustomerPhoneInput = document.querySelector('#addCompanyOrderModal input[name="new_customer_phone"]');
-        const newCustomerAddressInput = document.querySelector('#addCompanyOrderModal textarea[name="new_customer_address"]');
-        const newCustomerLatitudeInput = document.querySelector('#addCompanyOrderModal input[name="new_customer_latitude"]');
-        const newCustomerLongitudeInput = document.querySelector('#addCompanyOrderModal input[name="new_customer_longitude"]');
-        if (newCustomerPhoneInput) {
-            newCustomerPhoneInput.value = '';
-        }
-        if (newCustomerAddressInput) {
-            newCustomerAddressInput.value = '';
-        }
-        if (newCustomerLatitudeInput) {
-            newCustomerLatitudeInput.value = '';
-        }
-        if (newCustomerLongitudeInput) {
-            newCustomerLongitudeInput.value = '';
-        }
-        // إعادة تعيين العناصر
-        const companyOrderItems = document.getElementById('companyOrderItems');
-        if (companyOrderItems) {
-            companyOrderItems.innerHTML = `
-                <div class="order-item row mb-2">
-                    <div class="col-md-9">
-                        <input type="text" class="form-control template-input" 
-                               name="items[0][template_name]" placeholder="اسم القالب" required>
+            setupCompanyLocationButton();
+        });
+        
+        addCompanyOrderModalElement.addEventListener('hidden.bs.modal', function() {
+            const toggleNewCompanyCustomer = document.getElementById('toggleNewCompanyCustomer');
+            if (toggleNewCompanyCustomer) {
+                toggleNewCompanyCustomer.checked = false;
+                updateNewCompanyCustomerState();
+            }
+            // مسح حقول العميل الجديد
+            const newCompanyCustomerFields = document.getElementById('newCompanyCustomerFields');
+            if (newCompanyCustomerFields) {
+                const requiredInputs = newCompanyCustomerFields.querySelectorAll('.new-company-customer-required');
+                requiredInputs.forEach(function(input) {
+                    input.value = '';
+                });
+            }
+            const newCustomerPhoneInput = document.querySelector('#addCompanyOrderModal input[name="new_customer_phone"]');
+            const newCustomerAddressInput = document.querySelector('#addCompanyOrderModal textarea[name="new_customer_address"]');
+            const newCustomerLatitudeInput = document.querySelector('#addCompanyOrderModal input[name="new_customer_latitude"]');
+            const newCustomerLongitudeInput = document.querySelector('#addCompanyOrderModal input[name="new_customer_longitude"]');
+            if (newCustomerPhoneInput) {
+                newCustomerPhoneInput.value = '';
+            }
+            if (newCustomerAddressInput) {
+                newCustomerAddressInput.value = '';
+            }
+            if (newCustomerLatitudeInput) {
+                newCustomerLatitudeInput.value = '';
+            }
+            if (newCustomerLongitudeInput) {
+                newCustomerLongitudeInput.value = '';
+            }
+            // إعادة تعيين العناصر
+            const companyOrderItems = document.getElementById('companyOrderItems');
+            if (companyOrderItems) {
+                companyOrderItems.innerHTML = `
+                    <div class="order-item row mb-2">
+                        <div class="col-md-9">
+                            <input type="text" class="form-control template-input" 
+                                   name="items[0][template_name]" placeholder="اسم القالب" required>
+                        </div>
+                        <div class="col-md-2">
+                            <input type="text" class="form-control quantity" 
+                                   name="items[0][quantity]" placeholder="الكمية" required>
+                        </div>
+                        <div class="col-md-1">
+                            <button type="button" class="btn btn-danger w-100 remove-item">
+                                <i class="bi bi-trash"></i>
+                            </button>
+                        </div>
                     </div>
-                    <div class="col-md-2">
-                        <input type="text" class="form-control quantity" 
-                               name="items[0][quantity]" placeholder="الكمية" required>
-                    </div>
-                    <div class="col-md-1">
-                        <button type="button" class="btn btn-danger w-100 remove-item">
-                            <i class="bi bi-trash"></i>
-                        </button>
-                    </div>
-                </div>
-            `;
-            companyItemIndex = 1;
-        }
-    });
-}
+                `;
+                companyItemIndex = 1;
+            }
+        });
+    }
+});
 <?php endif; ?>
 </script>
 
