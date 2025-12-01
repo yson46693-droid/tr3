@@ -13,9 +13,9 @@ if (!defined('HEADER_INCLUDED')) {
     define('HEADER_INCLUDED', true);
 }
 
-// إضافة Permissions-Policy header للسماح بالوصول إلى Geolocation
+// إضافة Permissions-Policy header للسماح بالوصول إلى Geolocation, Camera, Notifications
 if (!headers_sent()) {
-    header("Permissions-Policy: geolocation=(self)");
+    header("Permissions-Policy: geolocation=(self), camera=(self), notifications=(self)");
 }
 
 require_once __DIR__ . '/../includes/config.php';
@@ -133,7 +133,7 @@ if (ob_get_level() > 0) {
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <meta http-equiv="X-UA-Compatible" content="IE=edge">
-    <meta http-equiv="Permissions-Policy" content="geolocation=(self)">
+    <meta http-equiv="Permissions-Policy" content="geolocation=(self), camera=(self), notifications=(self)">
     <title><?php echo isset($pageTitle) ? $pageTitle . ' - ' : ''; ?><?php echo APP_NAME; ?></title>
     
     <?php
