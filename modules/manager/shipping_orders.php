@@ -822,19 +822,19 @@ try {
                 
                 $availableQuantity = max(0, $quantity - $soldQty - $pendingQty - $pendingShippingQty);
                 
-                if ($availableQuantity > 0) {
-                    $productsList[] = [
-                        'id' => (int)$fp['id'] + 1000000, // استخدام رقم فريد لمنتجات المصنع
-                        'name' => $productName . ($batchNumber ? ' (' . $batchNumber . ')' : ''),
-                        'quantity' => $availableQuantity,
-                        'unit' => $fp['unit'] ?? 'قطعة',
-                        'unit_price' => $unitPrice,
-                        'batch_number' => $batchNumber,
-                        'batch_id' => $fp['batch_id'] ?? null,
-                        'product_type' => 'factory',
-                        'original_id' => (int)$fp['id']
-                    ];
-                }
+                // عرض جميع المنتجات حتى لو كانت الكمية المتاحة صفر (مثل نقطة بيع المدير)
+                $productsList[] = [
+                    'id' => (int)$fp['id'] + 1000000, // استخدام رقم فريد لمنتجات المصنع
+                    'name' => $productName . ($batchNumber ? ' (' . $batchNumber . ')' : ''),
+                    'quantity' => $availableQuantity,
+                    'total_quantity' => $quantity, // الكمية الإجمالية قبل طرح المبيعات
+                    'unit' => $fp['unit'] ?? 'قطعة',
+                    'unit_price' => $unitPrice,
+                    'batch_number' => $batchNumber,
+                    'batch_id' => $fp['batch_id'] ?? null,
+                    'product_type' => 'factory',
+                    'original_id' => (int)$fp['id']
+                ];
             }
         } catch (Throwable $factoryError) {
             error_log('shipping_orders: failed fetching factory products -> ' . $factoryError->getMessage());
