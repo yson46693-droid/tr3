@@ -490,10 +490,6 @@ $statementTime = date('H:i:s');
                     <div class="sales-rep-info-value"><?php echo htmlspecialchars($salesRepInfo['username'] ?? '-'); ?></div>
                 </div>
                 <div class="sales-rep-info-item">
-                    <div class="sales-rep-info-label">البريد الإلكتروني</div>
-                    <div class="sales-rep-info-value"><?php echo htmlspecialchars($salesRepInfo['email'] ?? '-'); ?></div>
-                </div>
-                <div class="sales-rep-info-item">
                     <div class="sales-rep-info-label">الهاتف</div>
                     <div class="sales-rep-info-value"><?php echo htmlspecialchars($salesRepInfo['phone'] ?? '-'); ?></div>
                 </div>
