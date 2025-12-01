@@ -145,10 +145,15 @@ if (ob_get_level() > 0) {
     
     <!-- Meta Tags for SEO -->
     <meta name="description" content="<?php echo htmlspecialchars($pageDescription, ENT_QUOTES, 'UTF-8'); ?>">
-    <meta name="keywords" content="نظام إدارة, شركة البركة, إدارة المخازن, إدارة المبيعات, إدارة الموارد البشرية">
+    <meta name="keywords" content="نظام إدارة, شركة البركة, إدارة المخازن, إدارة المبيعات, إدارة الموارد البشرية, نظام محاسبة, إدارة العملاء">
     <meta name="author" content="<?php echo COMPANY_NAME; ?>">
-    <meta name="robots" content="index, follow">
+    <meta name="robots" content="index, follow, max-snippet:-1, max-image-preview:large, max-video-preview:-1">
     <meta name="language" content="Arabic">
+    <meta name="geo.region" content="EG">
+    <meta name="geo.placename" content="مصر">
+    <meta name="application-name" content="<?php echo htmlspecialchars(APP_NAME, ENT_QUOTES, 'UTF-8'); ?>">
+    <meta name="apple-mobile-web-app-title" content="<?php echo htmlspecialchars(APP_NAME, ENT_QUOTES, 'UTF-8'); ?>">
+    <meta name="mobile-web-app-capable" content="yes">
     
     <!-- Open Graph Tags -->
     <meta property="og:title" content="<?php echo isset($pageTitle) ? htmlspecialchars($pageTitle, ENT_QUOTES, 'UTF-8') . ' - ' : ''; ?><?php echo htmlspecialchars(APP_NAME, ENT_QUOTES, 'UTF-8'); ?>">
@@ -257,22 +262,61 @@ if (ob_get_level() > 0) {
       "@context": "https://schema.org",
       "@type": "WebApplication",
       "name": "<?php echo htmlspecialchars(APP_NAME, ENT_QUOTES, 'UTF-8'); ?>",
+      "alternateName": "<?php echo htmlspecialchars(COMPANY_NAME, ENT_QUOTES, 'UTF-8'); ?>",
       "description": "<?php echo htmlspecialchars($pageDescription, ENT_QUOTES, 'UTF-8'); ?>",
-      "url": "<?php echo htmlspecialchars($baseUrl, ENT_QUOTES, 'UTF-8'); ?>",
+      "url": "<?php echo htmlspecialchars($canonicalUrl, ENT_QUOTES, 'UTF-8'); ?>",
       "applicationCategory": "BusinessApplication",
       "operatingSystem": "Web Browser",
+      "softwareVersion": "<?php echo defined('APP_VERSION') ? htmlspecialchars(APP_VERSION, ENT_QUOTES, 'UTF-8') : '1.0.0'; ?>",
       "offers": {
         "@type": "Offer",
         "price": "0",
-        "priceCurrency": "EGP"
+        "priceCurrency": "EGP",
+        "availability": "https://schema.org/InStock"
       },
       "provider": {
         "@type": "Organization",
         "name": "<?php echo htmlspecialchars(COMPANY_NAME, ENT_QUOTES, 'UTF-8'); ?>",
-        "url": "<?php echo htmlspecialchars($baseUrl, ENT_QUOTES, 'UTF-8'); ?>"
+        "url": "<?php echo htmlspecialchars($baseUrl, ENT_QUOTES, 'UTF-8'); ?>",
+        "logo": {
+          "@type": "ImageObject",
+          "url": "<?php echo htmlspecialchars($ogImage, ENT_QUOTES, 'UTF-8'); ?>",
+          "width": 512,
+          "height": 512
+        }
       },
       "inLanguage": "<?php echo $currentLang; ?>",
-      "browserRequirements": "Requires JavaScript. Requires HTML5."
+      "browserRequirements": "Requires JavaScript. Requires HTML5.",
+      "featureList": [
+        "إدارة المخازن",
+        "إدارة المبيعات",
+        "إدارة العملاء",
+        "إدارة الموارد البشرية",
+        "تقارير شاملة"
+      ],
+      "screenshot": "<?php echo htmlspecialchars($ogImage, ENT_QUOTES, 'UTF-8'); ?>"
+    }
+    </script>
+    
+    <!-- Additional Structured Data: BreadcrumbList for SEO -->
+    <script type="application/ld+json">
+    {
+      "@context": "https://schema.org",
+      "@type": "BreadcrumbList",
+      "itemListElement": [
+        {
+          "@type": "ListItem",
+          "position": 1,
+          "name": "<?php echo htmlspecialchars(APP_NAME, ENT_QUOTES, 'UTF-8'); ?>",
+          "item": "<?php echo htmlspecialchars($baseUrl, ENT_QUOTES, 'UTF-8'); ?>"
+        },
+        {
+          "@type": "ListItem",
+          "position": 2,
+          "name": "<?php echo isset($pageTitle) ? htmlspecialchars($pageTitle, ENT_QUOTES, 'UTF-8') : 'الصفحة'; ?>",
+          "item": "<?php echo htmlspecialchars($canonicalUrl, ENT_QUOTES, 'UTF-8'); ?>"
+        }
+      ]
     }
     </script>
     
