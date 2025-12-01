@@ -1256,6 +1256,12 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     throw new Exception('أداة التعبئة غير موجودة أو غير مفعّلة.');
                 }
 
+                // التحقق من وجود المورد
+                $supplierId = isset($_POST['supplier_id']) ? intval($_POST['supplier_id']) : 0;
+                if ($supplierId <= 0) {
+                    throw new Exception('يجب اختيار مورد لإتمام العملية.');
+                }
+
                 $quantityBefore = floatval($material['quantity'] ?? 0);
                 $quantityAfter = $quantityBefore + $additionalQuantity;
                 $unitLabel = $material['unit'] ?? 'وحدة';
@@ -1296,12 +1302,21 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
                 $db->commit();
 
+                // الحصول على بيانات المورد (تم التحقق من وجوده مسبقاً)
+                $supplierName = null;
+                $supplierData = $db->queryOne("SELECT name FROM suppliers WHERE id = ? LIMIT 1", [$supplierId]);
+                if ($supplierData) {
+                    $supplierName = $supplierData['name'];
+                }
+
                 $supplyDetails = $notes !== '' ? mb_substr($notes, 0, 300, 'UTF-8') : 'إضافة كمية عبر مخزن أدوات التعبئة';
                 $supplyLogged = recordProductionSupplyLog([
                     'material_category' => 'packaging',
                     'material_label' => $material['name'] ?? ('أداة #' . $materialId),
                     'stock_source' => $usePackagingTable ? 'packaging_materials' : 'products',
                     'stock_id' => $materialId,
+                    'supplier_id' => $supplierId,
+                    'supplier_name' => $supplierName,
                     'quantity' => $additionalQuantity,
                     'unit' => $unitLabel,
                     'details' => $supplyDetails,
@@ -1673,6 +1688,27 @@ if ($usePackagingTable) {
 
 $packagingTypeOptions = getPackagingTypeOptions($db, $usePackagingTable);
 $nextMaterialCode = generateNextPackagingMaterialCode($db, $usePackagingTable);
+
+// جلب الموردين المتاحين لأدوات التعبئة
+$packagingSuppliers = [];
+try {
+    $packagingSuppliers = $db->query(
+        "SELECT id, name, supplier_code 
+         FROM suppliers 
+         WHERE status = 'active' 
+           AND (type = 'packaging' OR type IS NULL)
+         ORDER BY name ASC"
+    );
+} catch (Exception $e) {
+    error_log("Error loading packaging suppliers: " . $e->getMessage());
+    $packagingSuppliers = [];
+}
+
+// تحديد المورد الافتراضي (إذا كان هناك مورد واحد فقط)
+$defaultSupplierId = null;
+if (count($packagingSuppliers) === 1) {
+    $defaultSupplierId = $packagingSuppliers[0]['id'];
+}
 
 if (isset($_GET['ajax']) && $_GET['ajax'] === 'next_code') {
     while (ob_get_level() > 0) {
@@ -2889,6 +2925,22 @@ $packagingReportGeneratedAt = $packagingReport['generated_at'] ?? date('Y-m-d H:
                             <span class="input-group-text" id="add_quantity_unit_suffix"></span>
                         </div>
                         <small class="text-muted">سيتم جمع الكمية المدخلة مع الموجود حالياً في المخزون.</small>
+                    </div>
+
+                    <div class="mb-3">
+                        <label class="form-label fw-bold">المورد <span class="text-danger">*</span></label>
+                        <select class="form-select" name="supplier_id" id="add_quantity_supplier_id" required>
+                            <option value="">اختر المورد</option>
+                            <?php foreach ($packagingSuppliers as $supplier): ?>
+                                <option value="<?php echo $supplier['id']; ?>" <?php echo ($defaultSupplierId === $supplier['id']) ? 'selected' : ''; ?>>
+                                    <?php echo htmlspecialchars($supplier['name']); ?>
+                                    <?php if (!empty($supplier['supplier_code'])): ?>
+                                        (<?php echo htmlspecialchars($supplier['supplier_code']); ?>)
+                                    <?php endif; ?>
+                                </option>
+                            <?php endforeach; ?>
+                        </select>
+                        <small class="text-muted">سيتم تسجيل هذه الإضافة في سجل توريدات المورد خلال الشهر الحالي.</small>
                     </div>
 
                     <div class="mb-3">
