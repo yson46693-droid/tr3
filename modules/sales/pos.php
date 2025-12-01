@@ -1710,6 +1710,74 @@ if (!$error) {
             font-size: 0.82rem;
             color: #64748b;
         }
+        /* تحسين أزرار اختيار نوع العميل */
+        .pos-customer-mode-toggle {
+            display: flex;
+            gap: 0.5rem;
+            border-radius: 12px;
+            padding: 0.25rem;
+            background: #f8f9fa;
+            border: 1px solid rgba(15, 23, 42, 0.08);
+            box-shadow: 0 2px 8px rgba(15, 23, 42, 0.06);
+        }
+        .pos-customer-mode-toggle .btn-check {
+            position: absolute;
+            clip: rect(0, 0, 0, 0);
+            pointer-events: none;
+        }
+        .pos-customer-mode-toggle .btn {
+            flex: 1;
+            padding: 0.75rem 1rem;
+            border: none;
+            border-radius: 10px;
+            font-weight: 600;
+            font-size: 0.95rem;
+            color: #64748b;
+            background: transparent;
+            transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 0.5rem;
+            position: relative;
+            overflow: hidden;
+        }
+        .pos-customer-mode-toggle .btn i {
+            font-size: 1.1rem;
+            transition: transform 0.3s ease;
+        }
+        .pos-customer-mode-toggle .btn:hover {
+            color: #1e40af;
+            background: rgba(30, 64, 175, 0.08);
+            transform: translateY(-1px);
+        }
+        .pos-customer-mode-toggle .btn:hover i {
+            transform: scale(1.1);
+        }
+        .pos-customer-mode-toggle .btn-check:checked + .btn {
+            background: linear-gradient(135deg, #1e40af 0%, #3b82f6 100%);
+            color: #ffffff;
+            box-shadow: 0 4px 16px rgba(30, 64, 175, 0.35);
+            transform: translateY(-2px);
+        }
+        .pos-customer-mode-toggle .btn-check:checked + .btn i {
+            transform: scale(1.15);
+            filter: drop-shadow(0 2px 4px rgba(0, 0, 0, 0.2));
+        }
+        .pos-customer-mode-toggle .btn-check:focus + .btn {
+            outline: none;
+            box-shadow: 0 0 0 3px rgba(30, 64, 175, 0.25);
+        }
+        .pos-customer-mode-toggle .btn-check:checked + .btn::before {
+            content: '';
+            position: absolute;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            background: linear-gradient(135deg, rgba(255, 255, 255, 0.2) 0%, rgba(255, 255, 255, 0) 100%);
+            pointer-events: none;
+        }
         @media (max-width: 992px) {
             .pos-content {
                 grid-template-columns: 1fr;
@@ -1774,6 +1842,11 @@ if (!$error) {
             .pos-customer-mode-toggle .btn {
                 flex: 1 1 auto;
                 min-width: 0;
+                padding: 0.65rem 0.85rem;
+                font-size: 0.9rem;
+            }
+            .pos-customer-mode-toggle .btn i {
+                font-size: 1rem;
             }
         }
         
@@ -1826,11 +1899,20 @@ if (!$error) {
             .pos-customer-mode-toggle {
                 width: 100% !important;
                 display: flex;
+                gap: 0.4rem;
+                padding: 0.2rem;
             }
             .pos-customer-mode-toggle .btn {
                 flex: 1 1 50%;
-                padding: 0.6rem 0.75rem;
-                font-size: 0.9rem;
+                padding: 0.65rem 0.7rem;
+                font-size: 0.85rem;
+                gap: 0.4rem;
+            }
+            .pos-customer-mode-toggle .btn i {
+                font-size: 0.95rem;
+            }
+            .pos-customer-mode-toggle .btn span {
+                font-size: 0.85rem;
             }
         }
             .pos-cart-empty {
@@ -2233,14 +2315,16 @@ if (!$error) {
                                 </div>
                                 <div class="col-12 col-sm-6">
                                     <label class="form-label">اختيار العميل</label>
-                                    <div class="btn-group w-100 pos-customer-mode-toggle" role="group" aria-label="Customer mode options">
+                                    <div class="pos-customer-mode-toggle" role="group" aria-label="Customer mode options">
                                         <input class="btn-check" type="radio" name="customer_mode" id="posCustomerModeExisting" value="existing" autocomplete="off" checked>
-                                        <label class="btn btn-outline-primary flex-fill" for="posCustomerModeExisting">
-                                            <i class="bi bi-person-check me-1"></i>عميل حالي
+                                        <label class="btn" for="posCustomerModeExisting">
+                                            <i class="bi bi-person-check"></i>
+                                            <span>عميل حالي</span>
                                         </label>
                                         <input class="btn-check" type="radio" name="customer_mode" id="posCustomerModeNew" value="new" autocomplete="off">
-                                        <label class="btn btn-outline-secondary flex-fill" for="posCustomerModeNew">
-                                            <i class="bi bi-person-plus me-1"></i>عميل جديد
+                                        <label class="btn" for="posCustomerModeNew">
+                                            <i class="bi bi-person-plus"></i>
+                                            <span>عميل جديد</span>
                                         </label>
                                     </div>
                                 </div>

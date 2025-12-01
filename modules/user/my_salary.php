@@ -1607,7 +1607,7 @@ try {
         SELECT al.*, u.username, u.full_name
         FROM audit_logs al
         LEFT JOIN users u ON al.user_id = u.id
-        WHERE al.action = 'return_salary_deduction'
+        WHERE al.action IN ('return_salary_deduction', 'return_deduction')
         ORDER BY al.created_at DESC
         LIMIT 100
     ";
@@ -1634,13 +1634,127 @@ try {
             
             $commissionAndDeductionLogs[] = [
                 'id' => 'return_' . $log['id'],
-                'action' => 'return_salary_deduction',
+                'action' => $log['action'],
                 'operation_type' => 'خصم',
                 'amount' => $deductionAmount,
                 'description' => $description,
                 'created_at' => $log['created_at'],
                 'username' => $log['username'] ?? $log['full_name'] ?? 'نظام'
             ];
+        }
+    }
+    
+    // جلب سجلات الخصومات من تعديلات الراتب
+    $salaryModificationQuery = "
+        SELECT al.*, u.username, u.full_name, s.month, s.year, s.deductions as current_deductions
+        FROM audit_logs al
+        LEFT JOIN users u ON al.user_id = u.id
+        LEFT JOIN salaries s ON al.entity_id = s.id AND s.user_id = ?
+        WHERE al.action IN ('modify_salary', 'request_salary_modification')
+        AND al.entity_type = 'salary'
+        AND s.id IS NOT NULL
+        ORDER BY al.created_at DESC
+        LIMIT 100
+    ";
+    
+    $salaryModificationLogs = $db->query($salaryModificationQuery, [$currentUser['id']]);
+    
+    foreach ($salaryModificationLogs as $log) {
+        // التحقق من أن السجل متعلق بالشهر والسنة المحددين
+        $logMonth = isset($log['month']) ? (int)$log['month'] : null;
+        $logYear = isset($log['year']) ? (int)$log['year'] : null;
+        
+        // إذا كان الشهر والسنة متطابقين مع المحددين، أو إذا لم يكن هناك شهر وسنة محددين، اعرض السجل
+        if (($logMonth === $selectedMonth && $logYear === $selectedYear) || ($logMonth === null && $logYear === null)) {
+            $newValue = $log['new_value'] ?? '';
+            $oldValue = $log['old_value'] ?? '';
+            
+            // محاولة استخراج الخصومات من new_value
+            $deductions = 0;
+            $oldDeductions = 0;
+            
+            if (!empty($newValue)) {
+                $newValueData = json_decode($newValue, true);
+                if (json_last_error() === JSON_ERROR_NONE && isset($newValueData['deductions'])) {
+                    $deductions = abs(floatval($newValueData['deductions'] ?? 0));
+                }
+            }
+            
+            if (!empty($oldValue)) {
+                $oldValueData = json_decode($oldValue, true);
+                if (json_last_error() === JSON_ERROR_NONE && isset($oldValueData['deductions'])) {
+                    $oldDeductions = abs(floatval($oldValueData['deductions'] ?? 0));
+                }
+            }
+            
+            // إذا لم يكن هناك old_value، استخدم القيمة الحالية من جدول salaries
+            if ($oldDeductions == 0 && isset($log['current_deductions'])) {
+                // محاولة الحصول على القيمة السابقة من سجل audit_logs السابق
+                $previousLog = $db->queryOne(
+                    "SELECT new_value, old_value FROM audit_logs 
+                     WHERE entity_type = 'salary' AND entity_id = ? AND created_at < ? 
+                     ORDER BY created_at DESC LIMIT 1",
+                    [$log['entity_id'] ?? 0, $log['created_at'] ?? '']
+                );
+                
+                if ($previousLog) {
+                    $prevNewValue = $previousLog['new_value'] ?? '';
+                    if (!empty($prevNewValue)) {
+                        $prevData = json_decode($prevNewValue, true);
+                        if (json_last_error() === JSON_ERROR_NONE && isset($prevData['deductions'])) {
+                            $oldDeductions = abs(floatval($prevData['deductions'] ?? 0));
+                        }
+                    }
+                }
+            }
+            
+            // حساب الفرق في الخصومات
+            $deductionDiff = $deductions - $oldDeductions;
+            
+            if (abs($deductionDiff) > 0.01) {
+                $operationType = $deductionDiff > 0 ? 'خصم' : 'إضافة';
+                $description = 'تعديل راتب';
+                if ($log['action'] === 'request_salary_modification') {
+                    $description = 'طلب تعديل راتب';
+                }
+                
+                // إضافة معلومات إضافية من notes إذا كانت موجودة
+                $notes = $log['notes'] ?? '';
+                if (!empty($notes)) {
+                    $description .= ' - ' . htmlspecialchars(substr($notes, 0, 100));
+                }
+                
+                $commissionAndDeductionLogs[] = [
+                    'id' => 'salary_mod_' . $log['id'],
+                    'action' => $log['action'],
+                    'operation_type' => $operationType,
+                    'amount' => abs($deductionDiff),
+                    'description' => $description,
+                    'created_at' => $log['created_at'],
+                    'username' => $log['username'] ?? $log['full_name'] ?? 'نظام'
+                ];
+            } elseif ($deductions > 0 && $oldDeductions == 0) {
+                // إذا كانت هناك خصومات جديدة بدون old_value، اعرضها كخصم
+                $description = 'تعديل راتب - خصومات';
+                if ($log['action'] === 'request_salary_modification') {
+                    $description = 'طلب تعديل راتب - خصومات';
+                }
+                
+                $notes = $log['notes'] ?? '';
+                if (!empty($notes)) {
+                    $description .= ' - ' . htmlspecialchars(substr($notes, 0, 100));
+                }
+                
+                $commissionAndDeductionLogs[] = [
+                    'id' => 'salary_mod_' . $log['id'],
+                    'action' => $log['action'],
+                    'operation_type' => 'خصم',
+                    'amount' => $deductions,
+                    'description' => $description,
+                    'created_at' => $log['created_at'],
+                    'username' => $log['username'] ?? $log['full_name'] ?? 'نظام'
+                ];
+            }
         }
     }
     
