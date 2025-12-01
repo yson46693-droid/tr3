@@ -1151,6 +1151,68 @@ if (isset($_GET['id'])) {
     }
 }
 ?>
+<style>
+/* تحسينات عرض الفلترة على الهواتف الصغيرة */
+@media (max-width: 767.98px) {
+    /* تقليل المسافات بين الحقول على الهواتف */
+    .card-body form.row {
+        margin-bottom: 0;
+    }
+    
+    /* تحسين حجم الخطوط في التسميات */
+    .card-body .form-label.small {
+        font-size: 0.8rem;
+        margin-bottom: 0.25rem;
+        font-weight: 500;
+    }
+    
+    /* تحسين حجم حقول الإدخال */
+    .card-body .form-control-sm,
+    .card-body .form-select-sm {
+        font-size: 0.85rem;
+        padding: 0.4rem 0.5rem;
+        height: auto;
+        min-height: 38px;
+    }
+    
+    /* تحسين الأزرار */
+    .card-body .btn-sm {
+        font-size: 0.85rem;
+        padding: 0.4rem 0.75rem;
+        min-height: 38px;
+    }
+    
+    /* تقليل المسافات بين الصفوف */
+    .card-body .row.g-2 {
+        --bs-gutter-y: 0.5rem;
+    }
+    
+    /* تحسين عرض الحقول على الشاشات الصغيرة جداً */
+    @media (max-width: 400px) {
+        .card-body .col-6 {
+            flex: 0 0 auto;
+            width: 50%;
+        }
+        
+        .card-body .form-label.small {
+            font-size: 0.75rem;
+        }
+        
+        .card-body .form-control-sm,
+        .card-body .form-select-sm {
+            font-size: 0.8rem;
+            padding: 0.35rem 0.45rem;
+        }
+    }
+}
+
+/* تحسينات إضافية للشاشات المتوسطة */
+@media (min-width: 768px) and (max-width: 991.98px) {
+    .card-body .form-label.small {
+        font-size: 0.85rem;
+    }
+}
+</style>
 <div class="d-flex flex-column flex-md-row justify-content-between align-items-md-center mb-4 gap-3">
     <h2 class="mb-0"><i class="bi bi-cart-check me-2"></i>إدارة طلبات العملاء</h2>
     <div class="d-flex flex-wrap gap-2">
@@ -1320,17 +1382,17 @@ if (isset($_GET['id'])) {
 <!-- البحث والفلترة -->
 <div class="card shadow-sm mb-4">
     <div class="card-body">
-        <form method="GET" class="row g-3">
+        <form method="GET" class="row g-2 g-md-3">
             <input type="hidden" name="page" value="orders">
-            <div class="col-md-3">
-                <label class="form-label">رقم الطلب</label>
-                <input type="text" class="form-control" name="order_number" 
+            <div class="col-6 col-md-3">
+                <label class="form-label small">رقم الطلب</label>
+                <input type="text" class="form-control form-control-sm" name="order_number" 
                        value="<?php echo htmlspecialchars($filters['order_number'] ?? ''); ?>" 
                        placeholder="ORD-...">
             </div>
-            <div class="col-md-2">
-                <label class="form-label">العميل</label>
-                <select class="form-select" name="customer_id">
+            <div class="col-6 col-md-2">
+                <label class="form-label small">العميل</label>
+                <select class="form-select form-select-sm" name="customer_id">
                     <option value="">جميع العملاء</option>
                     <?php 
                     require_once __DIR__ . '/../../includes/path_helper.php';
@@ -1345,9 +1407,9 @@ if (isset($_GET['id'])) {
                 </select>
             </div>
             <?php if ($isManagerOrAccountant): ?>
-            <div class="col-md-2">
-                <label class="form-label">المندوب</label>
-                <select class="form-select" name="sales_rep_id">
+            <div class="col-6 col-md-2">
+                <label class="form-label small">المندوب</label>
+                <select class="form-select form-select-sm" name="sales_rep_id">
                     <option value="">جميع المناديب</option>
                     <?php 
                     $selectedRepId = isset($filters['sales_rep_id']) ? intval($filters['sales_rep_id']) : 0;
@@ -1360,9 +1422,9 @@ if (isset($_GET['id'])) {
                 </select>
             </div>
             <?php endif; ?>
-            <div class="col-md-2">
-                <label class="form-label">الحالة</label>
-                <select class="form-select" name="status">
+            <div class="col-6 col-md-2">
+                <label class="form-label small">الحالة</label>
+                <select class="form-select form-select-sm" name="status">
                     <option value="">جميع الحالات</option>
                     <option value="pending" <?php echo ($filters['status'] ?? '') === 'pending' ? 'selected' : ''; ?>>معلق</option>
                     <option value="confirmed" <?php echo ($filters['status'] ?? '') === 'confirmed' ? 'selected' : ''; ?>>مؤكد</option>
@@ -1372,9 +1434,9 @@ if (isset($_GET['id'])) {
                     <option value="cancelled" <?php echo ($filters['status'] ?? '') === 'cancelled' ? 'selected' : ''; ?>>ملغى</option>
                 </select>
             </div>
-            <div class="col-md-2">
-                <label class="form-label">الأولوية</label>
-                <select class="form-select" name="priority">
+            <div class="col-6 col-md-2">
+                <label class="form-label small">الأولوية</label>
+                <select class="form-select form-select-sm" name="priority">
                     <option value="">جميع الأولويات</option>
                     <option value="low" <?php echo ($filters['priority'] ?? '') === 'low' ? 'selected' : ''; ?>>منخفضة</option>
                     <option value="normal" <?php echo ($filters['priority'] ?? '') === 'normal' ? 'selected' : ''; ?>>عادية</option>
@@ -1382,14 +1444,14 @@ if (isset($_GET['id'])) {
                     <option value="urgent" <?php echo ($filters['priority'] ?? '') === 'urgent' ? 'selected' : ''; ?>>عاجلة</option>
                 </select>
             </div>
-            <div class="col-md-2">
-                <label class="form-label">من تاريخ</label>
-                <input type="date" class="form-control" name="date_from" 
+            <div class="col-6 col-md-2">
+                <label class="form-label small">من تاريخ</label>
+                <input type="date" class="form-control form-control-sm" name="date_from" 
                        value="<?php echo htmlspecialchars($filters['date_from'] ?? ''); ?>">
             </div>
-            <div class="col-md-1">
-                <label class="form-label">&nbsp;</label>
-                <button type="submit" class="btn btn-primary w-100">
+            <div class="col-6 col-md-1">
+                <label class="form-label small d-block">&nbsp;</label>
+                <button type="submit" class="btn btn-primary btn-sm w-100">
                     <i class="bi bi-search"></i>
                 </button>
             </div>
