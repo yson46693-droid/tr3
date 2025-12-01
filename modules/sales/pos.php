@@ -1686,6 +1686,14 @@ if (!$error) {
             .pos-payment-option-desc {
                 font-size: 0.8rem;
             }
+            /* جعل قسم اختيار العميل يأخذ العرض الكامل على الهواتف */
+            .pos-customer-mode-toggle {
+                width: 100% !important;
+            }
+            .pos-customer-mode-toggle .btn {
+                flex: 1 1 auto;
+                min-width: 0;
+            }
         }
         
         @media (max-width: 576px) {
@@ -1728,6 +1736,22 @@ if (!$error) {
                 font-size: 0.85rem;
                 padding: 0.5rem 0.75rem;
             }
+            /* جعل قسم اختيار العميل يأخذ العرض الكامل على الهواتف الصغيرة */
+            .row.g-3 > .col-sm-6:last-child {
+                width: 100%;
+                flex: 0 0 100%;
+                max-width: 100%;
+            }
+            .pos-customer-mode-toggle {
+                width: 100% !important;
+                display: flex;
+            }
+            .pos-customer-mode-toggle .btn {
+                flex: 1 1 50%;
+                padding: 0.6rem 0.75rem;
+                font-size: 0.9rem;
+            }
+        }
             .pos-cart-empty {
                 padding: 1.5rem 1rem;
             }
@@ -2122,11 +2146,11 @@ if (!$error) {
                             <input type="hidden" name="paid_amount" id="posPaidField" value="0">
 
                             <div class="row g-3 mb-3 align-items-end">
-                                <div class="col-sm-6">
+                                <div class="col-12 col-sm-6">
                                     <label class="form-label">تاريخ العملية</label>
                                     <input type="date" class="form-control" name="sale_date" id="posSaleDate" value="<?php echo date('Y-m-d'); ?>">
                                 </div>
-                                <div class="col-sm-6">
+                                <div class="col-12 col-sm-6">
                                     <label class="form-label">اختيار العميل</label>
                                     <div class="btn-group w-100 pos-customer-mode-toggle" role="group" aria-label="Customer mode options">
                                         <input class="btn-check" type="radio" name="customer_mode" id="posCustomerModeExisting" value="existing" autocomplete="off" checked>

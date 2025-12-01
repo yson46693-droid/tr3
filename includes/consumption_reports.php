@@ -902,35 +902,82 @@ function buildConsumptionReportHtml($summary, $meta)
     $secondary = '#2c5282';
     $accent = '#3498db';
     $gradient = 'linear-gradient(135deg, #1e3a5f 0%, #3498db 100%)';
-    $html = '<!DOCTYPE html><html lang="ar" dir="rtl"><head><meta charset="UTF-8"><title>' . htmlspecialchars($title) . '</title><style>
-    body{font-family:"Segoe UI",Arial,sans-serif;background:#f5f8fd;color:#1f2937;padding:40px;}
-    .actions{display:flex;gap:10px;align-items:center;margin-bottom:24px;}
-    .actions button{background:' . $secondary . ';color:#fff;border:none;padding:10px 18px;border-radius:12px;font-size:14px;cursor:pointer;transition:opacity .2s ease;}
+    $html = '<!DOCTYPE html><html lang="ar" dir="rtl"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1.0,maximum-scale=5.0,user-scalable=yes"><title>' . htmlspecialchars($title) . '</title><style>
+    *{box-sizing:border-box;}
+    body{font-family:"Segoe UI",Arial,sans-serif;background:#f5f8fd;color:#1f2937;padding:40px;margin:0;width:100%;max-width:100%;overflow-x:hidden;}
+    .actions{display:flex;gap:10px;align-items:center;margin-bottom:24px;flex-wrap:wrap;}
+    .actions button{background:' . $secondary . ';color:#fff;border:none;padding:10px 18px;border-radius:12px;font-size:14px;cursor:pointer;transition:opacity .2s ease;white-space:nowrap;}
     .actions button:hover{opacity:.92;}
     .actions .hint{font-size:12px;color:#475569;}
-    .header{background:' . $gradient . ';color:#fff;padding:30px;border-radius:18px;box-shadow:0 12px 32px rgba(30,58,95,0.28);margin-bottom:35px;text-align:center;}
-    .header h1{font-size:28px;margin:0;}
-    .header p{margin:8px 0 0;font-size:15px;opacity:0.9;}
+    .header{background:' . $gradient . ';color:#fff;padding:30px;border-radius:18px;box-shadow:0 12px 32px rgba(30,58,95,0.28);margin-bottom:35px;text-align:center;width:100%;max-width:100%;}
+    .header h1{font-size:28px;margin:0;word-wrap:break-word;}
+    .header p{margin:8px 0 0;font-size:15px;opacity:0.9;word-wrap:break-word;}
     .chips{display:flex;gap:12px;flex-wrap:wrap;justify-content:center;margin-top:18px;}
-    .chip{background:rgba(255,255,255,0.18);padding:8px 18px;border-radius:999px;font-size:13px;backdrop-filter:blur(6px);}
-    .cards{display:grid;grid-template-columns:repeat(auto-fit,minmax(240px,1fr));gap:18px;margin-bottom:28px;}
-    .card{background:#fff;border-radius:16px;padding:20px;box-shadow:0 10px 28px rgba(15,23,42,0.08);}
-    .card h3{font-size:16px;margin:0;color:' . $primary . ';}
-    .card .fig{font-size:24px;font-weight:700;margin-top:12px;color:' . $secondary . ';}
-    .section{margin-top:40px;}
-    .section-title{display:flex;align-items:center;justify-content:space-between;margin-bottom:18px;}
-    .section-title h2{font-size:22px;color:' . $primary . ';margin:0;}
-    .table-wrapper{background:#fff;border-radius:16px;box-shadow:0 10px 28px rgba(15,23,42,0.07);overflow:hidden;}
-    table{width:100%;border-collapse:collapse;}
-    th{background:' . $primary . ';color:#fff;padding:14px;font-size:13px;text-align:right;}
-    td{padding:12px 14px;border-bottom:1px solid #eef2f7;font-size:13px;}
+    .chip{background:rgba(255,255,255,0.18);padding:8px 18px;border-radius:999px;font-size:13px;backdrop-filter:blur(6px);white-space:nowrap;}
+    .cards{display:grid;grid-template-columns:repeat(auto-fit,minmax(240px,1fr));gap:18px;margin-bottom:28px;width:100%;}
+    .card{background:#fff;border-radius:16px;padding:20px;box-shadow:0 10px 28px rgba(15,23,42,0.08);width:100%;max-width:100%;}
+    .card h3{font-size:16px;margin:0;color:' . $primary . ';word-wrap:break-word;}
+    .card .fig{font-size:24px;font-weight:700;margin-top:12px;color:' . $secondary . ';word-wrap:break-word;}
+    .section{margin-top:40px;width:100%;max-width:100%;}
+    .section-title{display:flex;align-items:center;justify-content:space-between;margin-bottom:18px;flex-wrap:wrap;gap:10px;}
+    .section-title h2{font-size:22px;color:' . $primary . ';margin:0;word-wrap:break-word;}
+    .table-wrapper{background:#fff;border-radius:16px;box-shadow:0 10px 28px rgba(15,23,42,0.07);overflow-x:auto;overflow-y:visible;width:100%;max-width:100%;-webkit-overflow-scrolling:touch;}
+    .table-wrapper::-webkit-scrollbar{height:8px;}
+    .table-wrapper::-webkit-scrollbar-track{background:#f1f1f1;border-radius:4px;}
+    .table-wrapper::-webkit-scrollbar-thumb{background:#888;border-radius:4px;}
+    .table-wrapper::-webkit-scrollbar-thumb:hover{background:#555;}
+    table{width:100%;border-collapse:collapse;min-width:600px;table-layout:auto;}
+    th{background:' . $primary . ';color:#fff;padding:14px;font-size:13px;text-align:right;white-space:nowrap;position:sticky;top:0;z-index:10;}
+    td{padding:12px 14px;border-bottom:1px solid #eef2f7;font-size:13px;word-wrap:break-word;}
     tr:nth-child(even){background:#f8fafc;}
-    .tag{display:inline-flex;align-items:center;padding:4px 12px;border-radius:999px;font-size:12px;background:rgba(52,152,219,0.15);color:' . $secondary . ';}
+    .tag{display:inline-flex;align-items:center;padding:4px 12px;border-radius:999px;font-size:12px;background:rgba(52,152,219,0.15);color:' . $secondary . ';white-space:nowrap;}
     .empty{padding:40px;text-align:center;color:#94a3b8;}
-    .subtotals{display:flex;gap:12px;flex-wrap:wrap;margin-top:16px;}
-    .subtotal{background:#fff;border-radius:14px;padding:16px;box-shadow:0 8px 20px rgba(15,23,42,0.06);min-width:180px;}
-    .footer{margin-top:40px;text-align:center;font-size:12px;color:#94a3b8;}
-    @media print{body{background:#fff;padding:0;}.actions{display:none !important;}}
+    .subtotals{display:flex;gap:12px;flex-wrap:wrap;margin-top:16px;width:100%;}
+    .subtotal{background:#fff;border-radius:14px;padding:16px;box-shadow:0 8px 20px rgba(15,23,42,0.06);min-width:180px;flex:1 1 auto;max-width:100%;}
+    .footer{margin-top:40px;text-align:center;font-size:12px;color:#94a3b8;width:100%;}
+    @media screen and (max-width:768px){
+        body{padding:15px 10px;}
+        .header{padding:20px 15px;border-radius:12px;margin-bottom:20px;}
+        .header h1{font-size:22px;}
+        .header p{font-size:14px;}
+        .chips{gap:8px;margin-top:12px;}
+        .chip{padding:6px 12px;font-size:12px;}
+        .cards{grid-template-columns:1fr;gap:12px;margin-bottom:20px;}
+        .card{padding:15px;border-radius:12px;}
+        .card h3{font-size:14px;}
+        .card .fig{font-size:20px;margin-top:8px;}
+        .section{margin-top:25px;}
+        .section-title{margin-bottom:12px;}
+        .section-title h2{font-size:18px;}
+        .table-wrapper{border-radius:12px;margin:0 -10px;width:calc(100% + 20px);max-width:calc(100% + 20px);}
+        table{min-width:500px;font-size:12px;}
+        th{padding:10px 8px;font-size:11px;}
+        td{padding:10px 8px;font-size:11px;}
+        .actions{flex-direction:column;align-items:stretch;gap:8px;}
+        .actions button{width:100%;padding:12px;}
+        .actions .hint{font-size:11px;text-align:center;}
+        .subtotals{gap:10px;margin-top:12px;}
+        .subtotal{min-width:100%;padding:12px;}
+        .empty{padding:30px 15px;font-size:13px;}
+        .footer{margin-top:30px;font-size:11px;padding:0 10px;}
+    }
+    @media screen and (max-width:480px){
+        body{padding:10px 8px;}
+        .header{padding:15px 12px;border-radius:10px;}
+        .header h1{font-size:20px;}
+        .header p{font-size:13px;}
+        .chip{padding:5px 10px;font-size:11px;}
+        .card{padding:12px;}
+        .card h3{font-size:13px;}
+        .card .fig{font-size:18px;}
+        .section-title h2{font-size:16px;}
+        table{min-width:450px;font-size:11px;}
+        th{padding:8px 6px;font-size:10px;}
+        td{padding:8px 6px;font-size:10px;}
+        .tag{font-size:11px;padding:3px 10px;}
+        .subtotal{padding:10px;}
+    }
+    @media print{body{background:#fff;padding:0;}.actions{display:none !important;}.table-wrapper{overflow:visible;}table{min-width:auto;}}
     </style></head><body>';
     $html .= '<div class="actions"><button id="printReportButton" type="button">طباعة / حفظ كـ PDF</button><span class="hint">يمكنك أيضاً استخدام المتصفح لحفظ التقرير كملف PDF.</span></div>';
     $html .= '<div class="header"><h1>' . htmlspecialchars($title) . '</h1>';
