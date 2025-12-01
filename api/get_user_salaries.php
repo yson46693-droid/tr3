@@ -146,6 +146,8 @@ try {
     ];
     
     $formattedSalaries = [];
+    $monthYearMap = []; // لتجميع الرواتب حسب الشهر والسنة
+    
     foreach ($salaries as $salary) {
         $month = 0;
         $year = date('Y');
@@ -214,19 +216,120 @@ try {
             }
         }
         
-        // إضافة الراتب بغض النظر عن القيم (تم استخدام القيم الافتراضية إذا لزم الأمر)
-        $formattedSalaries[] = [
-            'id' => intval($salary['id'] ?? 0),
-            'month' => $month,
-            'year' => $year,
-            'month_label' => $monthLabel,
-            'total_amount' => floatval($salary['total_amount'] ?? 0),
-            'accumulated_amount' => floatval($salary['calculated_accumulated'] ?? 0),
-            'paid_amount' => floatval($salary['paid_amount'] ?? 0),
-            'remaining' => max(0, floatval($salary['remaining'] ?? 0)),
-            'status' => $salary['status'] ?? 'calculated'
-        ];
+        // حساب المبلغ التراكمي بشكل صحيح (نفس طريقة get_salary_details.php)
+        $currentTotal = floatval($salary['total_amount'] ?? 0);
+        $accumulated = $currentTotal;
+        $salaryId = intval($salary['id'] ?? 0);
+        
+        // جلب الرواتب السابقة وحساب المتبقي منها
+        if ($hasYearColumn) {
+            $previousSalaries = $db->query(
+                "SELECT s.total_amount, s.paid_amount, s.accumulated_amount,
+                        COALESCE(s.accumulated_amount, s.total_amount) as prev_accumulated
+                 FROM salaries s
+                 WHERE s.user_id = ? AND s.id != ? 
+                 AND (s.year < ? OR (s.year = ? AND s.month < ?))
+                 ORDER BY s.year ASC, s.month ASC",
+                [$userId, $salaryId, $year, $year, $month]
+            );
+        } else {
+            if ($isMonthDate) {
+                $salaryMonthDate = $salary['month'] ?? null;
+                if ($salaryMonthDate && $salaryMonthDate !== '0000-00-00' && $salaryMonthDate !== '1970-01-01') {
+                    $previousSalaries = $db->query(
+                        "SELECT s.total_amount, s.paid_amount, s.accumulated_amount,
+                                COALESCE(s.accumulated_amount, s.total_amount) as prev_accumulated
+                         FROM salaries s
+                         WHERE s.user_id = ? AND s.id != ? 
+                         AND s.month < ?
+                         ORDER BY s.month ASC",
+                        [$userId, $salaryId, $salaryMonthDate]
+                    );
+                } else {
+                    $previousSalaries = [];
+                }
+            } else {
+                $previousSalaries = $db->query(
+                    "SELECT s.total_amount, s.paid_amount, s.accumulated_amount,
+                            COALESCE(s.accumulated_amount, s.total_amount) as prev_accumulated
+                     FROM salaries s
+                     WHERE s.user_id = ? AND s.id != ? 
+                     AND s.month < ?
+                     ORDER BY s.month ASC",
+                    [$userId, $salaryId, $month]
+                );
+            }
+        }
+        
+        foreach ($previousSalaries as $prevSalary) {
+            $prevTotal = floatval($prevSalary['total_amount'] ?? 0);
+            $prevPaid = floatval($prevSalary['paid_amount'] ?? 0);
+            $prevAccumulated = floatval($prevSalary['prev_accumulated'] ?? $prevTotal);
+            
+            $prevRemaining = max(0, $prevAccumulated - $prevPaid);
+            
+            if ($prevRemaining > 0.01) {
+                $accumulated += $prevRemaining;
+            }
+        }
+        
+        $paid = floatval($salary['paid_amount'] ?? 0);
+        $remaining = max(0, $accumulated - $paid);
+        
+        // تصفية الرواتب التي بقيمة المتبقي = 0.00 أو أقل من 0.01
+        if ($remaining < 0.01) {
+            continue; // تخطي هذا الراتب
+        }
+        
+        // إنشاء مفتاح فريد للشهر والسنة
+        $monthYearKey = $year . '-' . str_pad($month, 2, '0', STR_PAD_LEFT);
+        
+        // إذا كان هناك راتب آخر لنفس الشهر والسنة، نأخذ الراتب الأحدث (id أكبر)
+        if (isset($monthYearMap[$monthYearKey])) {
+            $existingId = intval($monthYearMap[$monthYearKey]['id']);
+            $currentId = intval($salary['id'] ?? 0);
+            
+            // إذا كان الراتب الحالي أحدث (id أكبر)، نستبدله
+            if ($currentId > $existingId) {
+                $monthYearMap[$monthYearKey] = [
+                    'id' => $salaryId,
+                    'month' => $month,
+                    'year' => $year,
+                    'month_label' => $monthLabel,
+                    'total_amount' => $currentTotal,
+                    'accumulated_amount' => $accumulated,
+                    'paid_amount' => $paid,
+                    'remaining' => $remaining,
+                    'status' => $salary['status'] ?? 'calculated'
+                ];
+            }
+        } else {
+            // إضافة الراتب الجديد
+            $monthYearMap[$monthYearKey] = [
+                'id' => $salaryId,
+                'month' => $month,
+                'year' => $year,
+                'month_label' => $monthLabel,
+                'total_amount' => $currentTotal,
+                'accumulated_amount' => $accumulated,
+                'paid_amount' => $paid,
+                'remaining' => $remaining,
+                'status' => $salary['status'] ?? 'calculated'
+            ];
+        }
     }
+    
+    // تحويل الخريطة إلى مصفوفة وترتيبها حسب السنة والشهر (الأحدث أولاً)
+    $formattedSalaries = array_values($monthYearMap);
+    usort($formattedSalaries, function($a, $b) {
+        if ($a['year'] != $b['year']) {
+            return $b['year'] - $a['year']; // الأحدث أولاً
+        }
+        if ($a['month'] != $b['month']) {
+            return $b['month'] - $a['month']; // الأحدث أولاً
+        }
+        return $b['id'] - $a['id']; // الأحدث أولاً
+    });
     
     // تسجيل عدد الرواتب المعالجة
     error_log("get_user_salaries.php formatted " . count($formattedSalaries) . " salaries for user_id: " . $userId);

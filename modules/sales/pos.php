@@ -1095,25 +1095,38 @@ if (!$error && $_SERVER['REQUEST_METHOD'] === 'POST') {
                     try {
                         require_once __DIR__ . '/../../includes/salary_calculator.php';
                         
-                        // الحالة الخاصة: خصم من الرصيد الدائن لعميل لديه سجل مشتريات
-                        // القاعدة: عند خصم أي مبلغ من الرصيد الدائن لعميل لديه سجل مشتريات سابق
-                        // يتم احتساب نسبة 2% من المبلغ المخصوم (حتى لو كان البيع كاش أو جزئي)
-                        if ($creditUsed > 0.0001 && ($hasPreviousPurchases ?? false)) {
+                        // الحالة الخاصة: خصم من الرصيد الدائن لعميل لديه رصيد دائن وسجل مرتجعات
+                        // القاعدة الجديدة: عند خصم أي مبلغ من الرصيد الدائن لعميل لديه:
+                        //   1. رصيد دائن (credit balance < 0)
+                        //   2. سجل مرتجعات (returns record)
+                        // يتم احتساب نسبة 2% من المبلغ المخصوم وتضاف إلى نسبة التحصيلات (collections_bonus)
+                        // مع إضافة المبلغ الأساسي إلى collections_amount
+                        // بدون إضافة إلى رصيد الخزنة الإجمالي
+                        
+                        // التحقق من أن العميل لديه رصيد دائن (قبل البيع)
+                        $hasCreditBalance = ($currentBalance < 0);
+                        
+                        // التحقق من أن العميل لديه سجل مرتجعات
+                        $hasReturnsRecord = ($hasReturns ?? false);
+                        
+                        // تطبيق القاعدة الجديدة: رصيد دائن + سجل مرتجعات
+                        if ($creditUsed > 0.0001 && $hasCreditBalance && $hasReturnsRecord) {
                             // حساب نسبة 2% من المبلغ المخصوم من الرصيد الدائن
                             $creditCommissionAmount = round($creditUsed * 0.02, 2);
                             
                             // تسجيل معلومات التشخيص
                             error_log(sprintf(
-                                'Credit balance commission calculation: creditUsed=%.2f, hasPreviousPurchases=%s, commissionAmount=%.2f, invoiceId=%d, customerId=%d',
+                                'Credit balance collections commission calculation: creditUsed=%.2f, hasCreditBalance=%s, hasReturnsRecord=%s, commissionAmount=%.2f, invoiceId=%d, customerId=%d',
                                 $creditUsed,
-                                ($hasPreviousPurchases ?? false) ? 'true' : 'false',
+                                $hasCreditBalance ? 'true' : 'false',
+                                $hasReturnsRecord ? 'true' : 'false',
                                 $creditCommissionAmount,
                                 $invoiceId,
                                 $customerId
                             ));
                             
                             if ($creditCommissionAmount > 0) {
-                                // إضافة النسبة مباشرة كـ bonus في الراتب (بدون إضافة للإجمالي أو السجل)
+                                // إضافة النسبة إلى collections_bonus والمبلغ الأساسي إلى collections_amount
                                 try {
                                     $timestamp = strtotime($saleDate) ?: time();
                                     $targetMonth = (int)date('n', $timestamp);
@@ -1133,69 +1146,185 @@ if (!$error && $_SERVER['REQUEST_METHOD'] === 'POST') {
                                         $salaryId = (int)($salary['id'] ?? 0);
                                         
                                         if ($salaryId > 0) {
-                                            // إضافة النسبة إلى bonus فقط (بدون إضافة إلى collections_amount)
-                                            $db->execute(
-                                                "UPDATE salaries SET bonus = COALESCE(bonus, 0) + ?, total_amount = COALESCE(total_amount, 0) + ?, updated_at = NOW() WHERE id = ?",
-                                                [$creditCommissionAmount, $creditCommissionAmount, $salaryId]
-                                            );
+                                            // التحقق من وجود أعمدة collections_bonus و collections_amount
+                                            $hasCollectionsBonusColumn = ensureCollectionsBonusColumn();
                                             
-                                            // تسجيل العملية في السجل
-                                            if (function_exists('logAudit')) {
-                                                logAudit(
-                                                    $currentUser['id'],
-                                                    'credit_balance_commission',
-                                                    'salary',
+                                            if ($hasCollectionsBonusColumn) {
+                                                // إضافة المبلغ الأساسي إلى collections_amount والنسبة إلى collections_bonus
+                                                // إضافة النسبة إلى total_amount (لأنها جزء من الراتب الإجمالي)
+                                                // لا تُضاف إلى amount_added_to_sales (لأنها لا تُضاف إلى رصيد الخزنة الإجمالي)
+                                                $db->execute(
+                                                    "UPDATE salaries SET 
+                                                        collections_amount = COALESCE(collections_amount, 0) + ?,
+                                                        collections_bonus = COALESCE(collections_bonus, 0) + ?,
+                                                        total_amount = COALESCE(total_amount, 0) + ?,
+                                                        updated_at = NOW() 
+                                                     WHERE id = ?",
+                                                    [$creditUsed, $creditCommissionAmount, $creditCommissionAmount, $salaryId]
+                                                );
+                                                
+                                                // تسجيل العملية في السجل
+                                                if (function_exists('logAudit')) {
+                                                    logAudit(
+                                                        $currentUser['id'],
+                                                        'credit_balance_collections_commission',
+                                                        'salary',
+                                                        $salaryId,
+                                                        null,
+                                                        [
+                                                            'invoice_id' => $invoiceId,
+                                                            'invoice_number' => $invoiceNumber ?? '',
+                                                            'customer_id' => $customerId,
+                                                            'credit_used' => $creditUsed,
+                                                            'collections_amount' => $creditUsed,
+                                                            'commission_amount' => $creditCommissionAmount,
+                                                            'month' => $targetMonth,
+                                                            'year' => $targetYear,
+                                                            'has_credit_balance' => $hasCreditBalance,
+                                                            'has_returns_record' => $hasReturnsRecord,
+                                                            'note' => 'نسبة تحصيل 2% من خصم الرصيد الدائن (لعميل لديه رصيد دائن وسجل مرتجعات) - تُضاف إلى نسبة التحصيلات فقط'
+                                                        ]
+                                                    );
+                                                }
+                                                
+                                                error_log(sprintf(
+                                                    'Credit balance collections commission applied successfully: salaryId=%d, collectionsAmount=%.2f, commissionAmount=%.2f',
                                                     $salaryId,
-                                                    null,
-                                                    [
-                                                        'invoice_id' => $invoiceId,
-                                                        'invoice_number' => $invoiceNumber ?? '',
-                                                        'customer_id' => $customerId,
-                                                        'credit_used' => $creditUsed,
-                                                        'commission_amount' => $creditCommissionAmount,
-                                                        'month' => $targetMonth,
-                                                        'year' => $targetYear,
-                                                        'has_previous_purchases' => ($hasPreviousPurchases ?? false),
-                                                        'note' => 'نسبة تحصيل 2% من خصم الرصيد الدائن (لعميل لديه سجل مشتريات) - لا تُضاف للإجمالي أو السجل'
-                                                    ]
+                                                    $creditUsed,
+                                                    $creditCommissionAmount
+                                                ));
+                                            } else {
+                                                // إذا لم تكن الأعمدة موجودة، نستخدم bonus كحل بديل
+                                                error_log('Collections bonus columns not available, using bonus as fallback');
+                                                $db->execute(
+                                                    "UPDATE salaries SET bonus = COALESCE(bonus, 0) + ?, total_amount = COALESCE(total_amount, 0) + ?, updated_at = NOW() WHERE id = ?",
+                                                    [$creditCommissionAmount, $creditCommissionAmount, $salaryId]
                                                 );
                                             }
-                                            
-                                            error_log(sprintf(
-                                                'Credit balance commission applied successfully: salaryId=%d, commissionAmount=%.2f',
-                                                $salaryId,
-                                                $creditCommissionAmount
-                                            ));
                                         } else {
-                                            error_log('Credit balance commission: salaryId is invalid or zero');
+                                            error_log('Credit balance collections commission: salaryId is invalid or zero');
                                         }
                                     } else {
-                                        error_log('Credit balance commission: salary summary does not exist after creation attempt');
+                                        error_log('Credit balance collections commission: salary summary does not exist after creation attempt');
                                     }
                                 } catch (Throwable $creditCommissionError) {
-                                    error_log('Error applying credit balance commission: ' . $creditCommissionError->getMessage());
-                                    error_log('Credit balance commission error trace: ' . $creditCommissionError->getTraceAsString());
+                                    error_log('Error applying credit balance collections commission: ' . $creditCommissionError->getMessage());
+                                    error_log('Credit balance collections commission error trace: ' . $creditCommissionError->getTraceAsString());
                                 }
                             } else {
-                                error_log('Credit balance commission: commission amount is zero or negative');
+                                error_log('Credit balance collections commission: commission amount is zero or negative');
                             }
                         } else {
-                            // تسجيل لماذا لم يتم تطبيق النسبة
-                            $reason = [];
-                            if ($creditUsed <= 0.0001) {
-                                $reason[] = 'no credit used';
+                            // الحالة القديمة: خصم من الرصيد الدائن لعميل لديه سجل مشتريات (وليس بالضرورة رصيد دائن + مرتجعات)
+                            // القاعدة: عند خصم أي مبلغ من الرصيد الدائن لعميل لديه سجل مشتريات سابق
+                            // يتم احتساب نسبة 2% من المبلغ المخصوم (حتى لو كان البيع كاش أو جزئي)
+                            if ($creditUsed > 0.0001 && ($hasPreviousPurchases ?? false)) {
+                                // حساب نسبة 2% من المبلغ المخصوم من الرصيد الدائن
+                                $creditCommissionAmount = round($creditUsed * 0.02, 2);
+                                
+                                // تسجيل معلومات التشخيص
+                                error_log(sprintf(
+                                    'Credit balance commission calculation (old rule): creditUsed=%.2f, hasPreviousPurchases=%s, commissionAmount=%.2f, invoiceId=%d, customerId=%d',
+                                    $creditUsed,
+                                    ($hasPreviousPurchases ?? false) ? 'true' : 'false',
+                                    $creditCommissionAmount,
+                                    $invoiceId,
+                                    $customerId
+                                ));
+                                
+                                if ($creditCommissionAmount > 0) {
+                                    // إضافة النسبة مباشرة كـ bonus في الراتب (بدون إضافة للإجمالي أو السجل)
+                                    try {
+                                        $timestamp = strtotime($saleDate) ?: time();
+                                        $targetMonth = (int)date('n', $timestamp);
+                                        $targetYear = (int)date('Y', $timestamp);
+                                        
+                                        $summary = getSalarySummary($currentUser['id'], $targetMonth, $targetYear);
+                                        if (!$summary['exists']) {
+                                            $creation = createOrUpdateSalary($currentUser['id'], $targetMonth, $targetYear);
+                                            if (!($creation['success'] ?? false)) {
+                                                throw new RuntimeException('Failed to create salary record: ' . ($creation['message'] ?? 'Unknown error'));
+                                            }
+                                            $summary = getSalarySummary($currentUser['id'], $targetMonth, $targetYear);
+                                        }
+                                        
+                                        if ($summary['exists']) {
+                                            $salary = $summary['salary'];
+                                            $salaryId = (int)($salary['id'] ?? 0);
+                                            
+                                            if ($salaryId > 0) {
+                                                // إضافة النسبة إلى bonus فقط (بدون إضافة إلى collections_amount)
+                                                $db->execute(
+                                                    "UPDATE salaries SET bonus = COALESCE(bonus, 0) + ?, total_amount = COALESCE(total_amount, 0) + ?, updated_at = NOW() WHERE id = ?",
+                                                    [$creditCommissionAmount, $creditCommissionAmount, $salaryId]
+                                                );
+                                                
+                                                // تسجيل العملية في السجل
+                                                if (function_exists('logAudit')) {
+                                                    logAudit(
+                                                        $currentUser['id'],
+                                                        'credit_balance_commission',
+                                                        'salary',
+                                                        $salaryId,
+                                                        null,
+                                                        [
+                                                            'invoice_id' => $invoiceId,
+                                                            'invoice_number' => $invoiceNumber ?? '',
+                                                            'customer_id' => $customerId,
+                                                            'credit_used' => $creditUsed,
+                                                            'commission_amount' => $creditCommissionAmount,
+                                                            'month' => $targetMonth,
+                                                            'year' => $targetYear,
+                                                            'has_previous_purchases' => ($hasPreviousPurchases ?? false),
+                                                            'note' => 'نسبة تحصيل 2% من خصم الرصيد الدائن (لعميل لديه سجل مشتريات) - لا تُضاف للإجمالي أو السجل'
+                                                        ]
+                                                    );
+                                                }
+                                                
+                                                error_log(sprintf(
+                                                    'Credit balance commission applied successfully: salaryId=%d, commissionAmount=%.2f',
+                                                    $salaryId,
+                                                    $creditCommissionAmount
+                                                ));
+                                            } else {
+                                                error_log('Credit balance commission: salaryId is invalid or zero');
+                                            }
+                                        } else {
+                                            error_log('Credit balance commission: salary summary does not exist after creation attempt');
+                                        }
+                                    } catch (Throwable $creditCommissionError) {
+                                        error_log('Error applying credit balance commission: ' . $creditCommissionError->getMessage());
+                                        error_log('Credit balance commission error trace: ' . $creditCommissionError->getTraceAsString());
+                                    }
+                                } else {
+                                    error_log('Credit balance commission: commission amount is zero or negative');
+                                }
+                            } else {
+                                // تسجيل لماذا لم يتم تطبيق النسبة
+                                $reason = [];
+                                if ($creditUsed <= 0.0001) {
+                                    $reason[] = 'no credit used';
+                                }
+                                if (!$hasCreditBalance) {
+                                    $reason[] = 'no credit balance';
+                                }
+                                if (!$hasReturnsRecord) {
+                                    $reason[] = 'no returns record';
+                                }
+                                if (!($hasPreviousPurchases ?? false)) {
+                                    $reason[] = 'no previous purchases';
+                                }
+                                error_log(sprintf(
+                                    'Credit balance commission NOT applied: creditUsed=%.2f, hasCreditBalance=%s, hasReturnsRecord=%s, hasPreviousPurchases=%s, reason=%s, invoiceId=%d, customerId=%d',
+                                    $creditUsed,
+                                    $hasCreditBalance ? 'true' : 'false',
+                                    $hasReturnsRecord ? 'true' : 'false',
+                                    ($hasPreviousPurchases ?? false) ? 'true' : 'false',
+                                    implode(', ', $reason),
+                                    $invoiceId,
+                                    $customerId
+                                ));
                             }
-                            if (!($hasPreviousPurchases ?? false)) {
-                                $reason[] = 'no previous purchases';
-                            }
-                            error_log(sprintf(
-                                'Credit balance commission NOT applied: creditUsed=%.2f, hasPreviousPurchases=%s, reason=%s, invoiceId=%d, customerId=%d',
-                                $creditUsed,
-                                ($hasPreviousPurchases ?? false) ? 'true' : 'false',
-                                implode(', ', $reason),
-                                $invoiceId,
-                                $customerId
-                            ));
                         }
                         
                         // تحديث عمولة المندوب للحالات العادية

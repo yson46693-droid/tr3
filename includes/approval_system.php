@@ -352,12 +352,27 @@ function approveRequest($approvalId, $approvedBy, $notes = null) {
             }
         }
         
+        // الحفاظ على البيانات الأصلية في notes (خاصة [DATA]: لطلبات تعديل الرواتب)
+        $currentNotes = $approval['notes'] ?? $approval['approval_notes'] ?? '';
+        $finalNotes = $currentNotes;
+        
+        // إذا كانت هناك ملاحظات جديدة من المدير، أضفها دون استبدال البيانات الأصلية
+        if ($notes && trim($notes) !== '') {
+            // إذا كانت الملاحظات الحالية تحتوي على [DATA]:، احتفظ بها وأضف الملاحظات الجديدة
+            if (strpos($currentNotes, '[DATA]:') !== false) {
+                $finalNotes = $currentNotes . "\n\n[ملاحظات الموافقة]: " . $notes;
+            } else {
+                // إذا لم تكن هناك بيانات، استخدم الملاحظات الجديدة
+                $finalNotes = $notes;
+            }
+        }
+        
         // بناء استعلام التحديث بناءً على الأعمدة المتاحة
         if ($hasNotesColumn || $hasApprovalNotesColumn) {
             $db->execute(
                 "UPDATE approvals SET status = 'approved', approved_by = ?, {$notesColumn} = ? 
                  WHERE id = ?",
-                [$approvedBy, $notes, $approvalId]
+                [$approvedBy, $finalNotes, $approvalId]
             );
         } else {
             // إذا لم يكن هناك عمود ملاحظات، تحديث بدون ملاحظات
@@ -634,11 +649,11 @@ function updateEntityStatus($type, $entityId, $status, $approvedBy) {
                 
                 if ($approvalNotes) {
                     // محاولة استخراج JSON من notes بعد [DATA]:
-                    if (preg_match('/\[DATA\]:(.+)/s', $approvalNotes, $matches)) {
+                    if (preg_match('/\[DATA\]:(.+?)(?=\n\n\[ملاحظات الموافقة\]:|$)/s', $approvalNotes, $matches)) {
                         $jsonData = trim($matches[1]);
                         $modificationData = json_decode($jsonData, true);
                         if (json_last_error() !== JSON_ERROR_NONE) {
-                            error_log("Failed to decode JSON from approval notes: " . json_last_error_msg());
+                            error_log("Failed to decode JSON from approval notes: " . json_last_error_msg() . " | JSON: " . substr($jsonData, 0, 200));
                         }
                     } else {
                         // محاولة بديلة: استخراج من notes في جدول salaries
@@ -654,7 +669,8 @@ function updateEntityStatus($type, $entityId, $status, $approvedBy) {
                 }
                 
                 if (!$modificationData) {
-                    throw new Exception('تعذر استخراج بيانات التعديل من طلب الموافقة');
+                    error_log("Failed to extract modification data. Approval notes: " . substr($approvalNotes ?? '', 0, 500));
+                    throw new Exception('تعذر استخراج بيانات التعديل من طلب الموافقة. يرجى التحقق من أن البيانات موجودة في طلب الموافقة.');
                 }
                 
                 $bonus = floatval($modificationData['bonus'] ?? 0);

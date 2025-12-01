@@ -1197,9 +1197,11 @@ $pageDescription = 'لوحة تحكم المحاسب - إدارة المعامل
                 
             <?php elseif ($page === 'local_customers'): ?>
                 <?php 
-                $modulePath = __DIR__ . '/../modules/accountant/local_customers.php';
+                $modulePath = __DIR__ . '/../modules/manager/local_customers.php';
                 if (file_exists($modulePath)) {
                     include $modulePath;
+                } else {
+                    echo '<div class="alert alert-warning">صفحة العملاء المحليين غير متاحة حالياً</div>';
                 }
                 ?>
                 

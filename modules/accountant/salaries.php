@@ -4188,20 +4188,35 @@ function loadSelectedSalaryData() {
     const select = document.getElementById('settleSalarySelect');
     const salaryId = select ? select.value : '';
     
+    // الحصول على جميع العناصر المطلوبة
+    const settleSalaryIdEl = document.getElementById('settleSalaryId');
+    const settleAccumulatedAmountEl = document.getElementById('settleAccumulatedAmount');
+    const settlePaidAmountEl = document.getElementById('settlePaidAmount');
+    const settleRemainingAmountEl = document.getElementById('settleRemainingAmount');
+    const settleRemainingAmount2El = document.getElementById('settleRemainingAmount2');
+    const settleAmountEl = document.getElementById('settleAmount');
+    
     if (!salaryId || salaryId === '') {
-        // إعادة تعيين القيم
-        document.getElementById('settleSalaryId').value = '';
-        document.getElementById('settleAccumulatedAmount').textContent = formatCurrency(0);
-        document.getElementById('settlePaidAmount').textContent = formatCurrency(0);
-        document.getElementById('settleRemainingAmount').textContent = formatCurrency(0);
-        document.getElementById('settleRemainingAmount2').textContent = formatCurrency(0);
-        document.getElementById('settleAmount').value = '';
-        document.getElementById('settleAmount').max = 0;
+        // إعادة تعيين القيم مع التحقق من وجود العناصر
+        if (settleSalaryIdEl) settleSalaryIdEl.value = '';
+        if (settleAccumulatedAmountEl) settleAccumulatedAmountEl.textContent = formatCurrency(0);
+        if (settlePaidAmountEl) settlePaidAmountEl.textContent = formatCurrency(0);
+        if (settleRemainingAmountEl) settleRemainingAmountEl.textContent = formatCurrency(0);
+        if (settleRemainingAmount2El) settleRemainingAmount2El.textContent = formatCurrency(0);
+        if (settleAmountEl) {
+            settleAmountEl.value = '';
+            settleAmountEl.max = 0;
+        }
         updateSettleRemaining();
         return;
     }
     
-    document.getElementById('settleSalaryId').value = salaryId;
+    if (!settleSalaryIdEl) {
+        console.error('settleSalaryId element not found');
+        return;
+    }
+    
+    settleSalaryIdEl.value = salaryId;
     
     // جلب بيانات الراتب المحدد
     const apiUrl = '<?php echo getBasePath(); ?>/api/get_salary_details.php?salary_id=' + salaryId;
@@ -4245,12 +4260,15 @@ function loadSelectedSalaryData() {
                     remaining: remaining
                 });
                 
-                document.getElementById('settleAccumulatedAmount').textContent = formatCurrency(accumulated);
-                document.getElementById('settlePaidAmount').textContent = formatCurrency(paid);
-                document.getElementById('settleRemainingAmount').textContent = formatCurrency(remaining);
-                document.getElementById('settleRemainingAmount2').textContent = formatCurrency(remaining);
-                document.getElementById('settleAmount').value = '';
-                document.getElementById('settleAmount').max = remaining;
+                // تحديث القيم مع التحقق من وجود العناصر
+                if (settleAccumulatedAmountEl) settleAccumulatedAmountEl.textContent = formatCurrency(accumulated);
+                if (settlePaidAmountEl) settlePaidAmountEl.textContent = formatCurrency(paid);
+                if (settleRemainingAmountEl) settleRemainingAmountEl.textContent = formatCurrency(remaining);
+                if (settleRemainingAmount2El) settleRemainingAmount2El.textContent = formatCurrency(remaining);
+                if (settleAmountEl) {
+                    settleAmountEl.value = '';
+                    settleAmountEl.max = remaining;
+                }
                 updateSettleRemaining();
             } else {
                 const errorMsg = data && data.message ? data.message : 'خطأ في تحميل بيانات الراتب';
@@ -4266,10 +4284,21 @@ function loadSelectedSalaryData() {
 }
 
 function updateSettleRemaining() {
-    const remaining = parseFloat(document.getElementById('settleRemainingAmount').textContent.replace(/[^\d.]/g, '')) || 0;
-    const settleAmount = parseFloat(document.getElementById('settleAmount').value) || 0;
+    const remainingElement = document.getElementById('settleRemainingAmount');
+    const settleAmountElement = document.getElementById('settleAmount');
+    const settleNewRemainingElement = document.getElementById('settleNewRemaining');
+    
+    // التحقق من وجود جميع العناصر المطلوبة
+    if (!remainingElement || !settleAmountElement || !settleNewRemainingElement) {
+        console.warn('updateSettleRemaining: بعض العناصر غير موجودة في DOM');
+        return;
+    }
+    
+    const remaining = parseFloat(remainingElement.textContent.replace(/[^\d.]/g, '')) || 0;
+    const settleAmount = parseFloat(settleAmountElement.value) || 0;
     const newRemaining = Math.max(0, remaining - settleAmount);
-    document.getElementById('settleNewRemaining').textContent = formatCurrency(newRemaining);
+    
+    settleNewRemainingElement.textContent = formatCurrency(newRemaining);
     
     const submitBtn = document.getElementById('settleSubmitBtn');
     if (submitBtn) {
@@ -4414,14 +4443,22 @@ function printSalaryStatement() {
 // تحديث المتبقي عند فتح modal
 document.getElementById('settleAmount')?.addEventListener('input', function() {
     updateSettleRemaining();
-    const remaining = parseFloat(document.getElementById('settleRemainingAmount').textContent.replace(/[^\d.]/g, '')) || 0;
-    document.getElementById('settleRemainingAmount2').textContent = formatCurrency(remaining);
+    const remainingEl = document.getElementById('settleRemainingAmount');
+    const remainingAmount2El = document.getElementById('settleRemainingAmount2');
+    if (remainingEl && remainingAmount2El) {
+        const remaining = parseFloat(remainingEl.textContent.replace(/[^\d.]/g, '')) || 0;
+        remainingAmount2El.textContent = formatCurrency(remaining);
+    }
 });
 
 // تحديث المتبقي عند فتح modal
 document.getElementById('settleSalaryModal')?.addEventListener('shown.bs.modal', function() {
-    const remaining = parseFloat(document.getElementById('settleRemainingAmount').textContent.replace(/[^\d.]/g, '')) || 0;
-    document.getElementById('settleRemainingAmount2').textContent = formatCurrency(remaining);
+    const remainingEl = document.getElementById('settleRemainingAmount');
+    const remainingAmount2El = document.getElementById('settleRemainingAmount2');
+    if (remainingEl && remainingAmount2El) {
+        const remaining = parseFloat(remainingEl.textContent.replace(/[^\d.]/g, '')) || 0;
+        remainingAmount2El.textContent = formatCurrency(remaining);
+    }
 });
 </script>
 

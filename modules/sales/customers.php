@@ -1845,7 +1845,7 @@ document.addEventListener('DOMContentLoaded', function () {
 
 <!-- Create Return Modal -->
 <div class="modal fade" id="createReturnModal" tabindex="-1" aria-hidden="true">
-    <div class="modal-dialog modal-lg">
+    <div class="modal-dialog modal-lg modal-fullscreen-md-down">
         <div class="modal-content">
             <div class="modal-header bg-success text-white">
                 <h5 class="modal-title">
@@ -2427,19 +2427,20 @@ function buildReturnModalContent() {
         const firstItem = itemsByInvoice[invoiceId][0];
         html += `<div class="card mb-3">
             <div class="card-header">فاتورة رقم: ${firstItem.invoice_number || invoiceId}</div>
-            <div class="card-body">
-                <table class="table table-sm">
-                    <thead>
-                        <tr>
-                            <th>المنتج</th>
-                            <th>رقم التشغيلة</th>
-                            <th>الكمية المتاحة</th>
-                            <th>الكمية للإرجاع</th>
-                            <th>تالف</th>
-                            <th>سبب التلف</th>
-                        </tr>
-                    </thead>
-                    <tbody>`;
+            <div class="card-body p-0">
+                <div class="table-responsive">
+                    <table class="table table-sm table-hover mb-0">
+                        <thead class="table-light">
+                            <tr>
+                                <th class="text-nowrap">المنتج</th>
+                                <th class="text-nowrap">رقم التشغيلة</th>
+                                <th class="text-nowrap">الكمية المتاحة</th>
+                                <th class="text-nowrap">الكمية للإرجاع</th>
+                                <th class="text-nowrap">تالف</th>
+                                <th class="text-nowrap">سبب التلف</th>
+                            </tr>
+                        </thead>
+                        <tbody>`;
         
         itemsByInvoice[invoiceId].forEach(function(item, index) {
             const batchNumbers = (item.batch_numbers || []).join(', ') || '-';
@@ -2479,6 +2480,7 @@ function buildReturnModalContent() {
         });
         
         html += `</tbody></table>
+                </div>
             </div>
         </div>`;
     });
@@ -3047,6 +3049,101 @@ $delegateCards = [
         .delegates-table-container table {
             min-width: 720px;
             font-size: 0.88rem;
+        }
+    }
+
+    /* تحسين تصميم نموذج المرتجع على الهاتف */
+    @media (max-width: 767.98px) {
+        #createReturnModal .modal-dialog {
+            margin: 0;
+            max-width: 100%;
+        }
+
+        #createReturnModal .modal-content {
+            border-radius: 0;
+            min-height: 100vh;
+            display: flex;
+            flex-direction: column;
+        }
+
+        #createReturnModal .modal-header {
+            border-radius: 0;
+            padding: 1rem;
+        }
+
+        #createReturnModal .modal-body {
+            flex: 1;
+            overflow-y: auto;
+            padding: 1rem;
+        }
+
+        #createReturnModal .modal-footer {
+            border-radius: 0;
+            padding: 0.75rem;
+            flex-wrap: wrap;
+            gap: 0.5rem;
+        }
+
+        #createReturnModal .modal-footer .btn {
+            flex: 1;
+            min-width: calc(50% - 0.25rem);
+            font-size: 0.875rem;
+            padding: 0.5rem;
+        }
+
+        /* تحسين الجدول داخل نموذج المرتجع */
+        #createReturnModal .table-responsive {
+            overflow-x: auto;
+            -webkit-overflow-scrolling: touch;
+            margin: 0;
+            border-radius: 0.375rem;
+        }
+
+        #createReturnModal .table {
+            min-width: 650px;
+            font-size: 0.8rem;
+            margin-bottom: 0;
+        }
+
+        #createReturnModal .table th,
+        #createReturnModal .table td {
+            padding: 0.5rem 0.4rem;
+            white-space: nowrap;
+            vertical-align: middle;
+        }
+
+        #createReturnModal .table th {
+            font-size: 0.75rem;
+            font-weight: 600;
+            background-color: #f8f9fa;
+        }
+
+        #createReturnModal .form-control-sm {
+            font-size: 0.8rem;
+            padding: 0.35rem 0.5rem;
+        }
+
+        #createReturnModal .card {
+            margin-bottom: 1rem;
+        }
+
+        #createReturnModal .card-header {
+            padding: 0.75rem 1rem;
+            font-size: 0.9rem;
+        }
+
+        #createReturnModal .card-body {
+            padding: 0;
+        }
+
+        #createReturnModal .form-label {
+            font-size: 0.875rem;
+            margin-bottom: 0.5rem;
+        }
+
+        #createReturnModal .form-select,
+        #createReturnModal .form-control {
+            font-size: 0.875rem;
         }
     }
 </style>

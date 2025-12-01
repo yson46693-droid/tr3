@@ -1334,7 +1334,7 @@ document.addEventListener('DOMContentLoaded', function() {
 <div class="modal fade" id="printSupplierReportModal" tabindex="-1">
     <div class="modal-dialog modal-dialog-scrollable">
         <div class="modal-content">
-            <form method="GET" action="print_supplier_report.php" target="_blank">
+            <form method="GET" action="<?php echo getRelativeUrl('print_supplier_report.php'); ?>" target="_blank">
                 <div class="modal-header">
                     <h5 class="modal-title"><i class="bi bi-printer me-2"></i>طباعة تقرير التوريدات</h5>
                     <button type="button" class="btn-close" data-bs-dismiss="modal"></button>

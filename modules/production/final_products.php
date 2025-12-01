@@ -1649,6 +1649,12 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
         productionSafeRedirect($managerInventoryUrl, $managerRedirectParams, $managerRedirectRole);
     } elseif ($isManager && $postAction === 'update_external_product') {
+        // منع المحاسب من التعديل على المنتجات الخارجية
+        if ($currentUser['role'] === 'accountant') {
+            $_SESSION[$sessionErrorKey] = 'ليس لديك صلاحية لتعديل المنتجات الخارجية.';
+            productionSafeRedirect($managerInventoryUrl, $managerRedirectParams, $managerRedirectRole);
+        }
+        
         $productId = intval($_POST['product_id'] ?? 0);
         $name = trim((string)($_POST['edit_name'] ?? ''));
         $channel = $_POST['edit_channel'] ?? 'company';
@@ -2803,6 +2809,7 @@ $filterProduct = isset($_GET['filter_product']) ? trim($_GET['filter_product']) 
                                     <i class="bi bi-trash3"></i>
                                     إتلاف
                                 </button>
+                                <?php if ($isManager): ?>
                                 <button
                                     type="button"
                                     class="btn btn-outline-primary js-external-edit"
@@ -2816,6 +2823,7 @@ $filterProduct = isset($_GET['filter_product']) ? trim($_GET['filter_product']) 
                                     <i class="bi bi-pencil-square"></i>
                                     تعديل
                                 </button>
+                                <?php endif; ?>
                             </div>
                         </td>
                     </tr>

@@ -73,51 +73,61 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             }
         }
     } elseif ($action === 'update_external_product') {
-        $productId = intval($_POST['product_id'] ?? 0);
-        $name = trim($_POST['product_name'] ?? '');
-        $quantity = max(0, floatval($_POST['quantity'] ?? 0));
-        $unitPrice = max(0, floatval($_POST['unit_price'] ?? 0));
-        $unit = trim($_POST['unit'] ?? 'قطعة');
-        
-        if ($productId <= 0 || $name === '') {
-            $error = 'بيانات غير صحيحة.';
+        // منع المحاسب من التعديل على المنتجات الخارجية
+        if ($currentUser['role'] === 'accountant') {
+            $error = 'ليس لديك صلاحية لتعديل المنتجات الخارجية.';
         } else {
-            try {
-                $db->execute(
-                    "UPDATE products SET name = ?, quantity = ?, unit = ?, unit_price = ?, updated_at = NOW()
-                     WHERE id = ? AND product_type = 'external'",
-                    [$name, $quantity, $unit, $unitPrice, $productId]
-                );
-                
-                logAudit($currentUser['id'], 'update_external_product', 'product', $productId, null, [
-                    'name' => $name,
-                    'quantity' => $quantity,
-                    'unit_price' => $unitPrice
-                ]);
-                
-                $success = 'تم تحديث المنتج الخارجي بنجاح.';
-            } catch (Exception $e) {
-                error_log('update_external_product error: ' . $e->getMessage());
-                $error = 'تعذر تحديث المنتج الخارجي. يرجى المحاولة لاحقاً.';
+            $productId = intval($_POST['product_id'] ?? 0);
+            $name = trim($_POST['product_name'] ?? '');
+            $quantity = max(0, floatval($_POST['quantity'] ?? 0));
+            $unitPrice = max(0, floatval($_POST['unit_price'] ?? 0));
+            $unit = trim($_POST['unit'] ?? 'قطعة');
+            
+            if ($productId <= 0 || $name === '') {
+                $error = 'بيانات غير صحيحة.';
+            } else {
+                try {
+                    $db->execute(
+                        "UPDATE products SET name = ?, quantity = ?, unit = ?, unit_price = ?, updated_at = NOW()
+                         WHERE id = ? AND product_type = 'external'",
+                        [$name, $quantity, $unit, $unitPrice, $productId]
+                    );
+                    
+                    logAudit($currentUser['id'], 'update_external_product', 'product', $productId, null, [
+                        'name' => $name,
+                        'quantity' => $quantity,
+                        'unit_price' => $unitPrice
+                    ]);
+                    
+                    $success = 'تم تحديث المنتج الخارجي بنجاح.';
+                } catch (Exception $e) {
+                    error_log('update_external_product error: ' . $e->getMessage());
+                    $error = 'تعذر تحديث المنتج الخارجي. يرجى المحاولة لاحقاً.';
+                }
             }
         }
     } elseif ($action === 'delete_external_product') {
-        $productId = intval($_POST['product_id'] ?? 0);
-        
-        if ($productId <= 0) {
-            $error = 'بيانات غير صحيحة.';
+        // منع المحاسب من الحذف على المنتجات الخارجية
+        if ($currentUser['role'] === 'accountant') {
+            $error = 'ليس لديك صلاحية لحذف المنتجات الخارجية.';
         } else {
-            try {
-                $db->execute(
-                    "DELETE FROM products WHERE id = ? AND product_type = 'external'",
-                    [$productId]
-                );
-                
-                logAudit($currentUser['id'], 'delete_external_product', 'product', $productId, null, []);
-                $success = 'تم حذف المنتج الخارجي بنجاح.';
-            } catch (Exception $e) {
-                error_log('delete_external_product error: ' . $e->getMessage());
-                $error = 'تعذر حذف المنتج الخارجي. يرجى المحاولة لاحقاً.';
+            $productId = intval($_POST['product_id'] ?? 0);
+            
+            if ($productId <= 0) {
+                $error = 'بيانات غير صحيحة.';
+            } else {
+                try {
+                    $db->execute(
+                        "DELETE FROM products WHERE id = ? AND product_type = 'external'",
+                        [$productId]
+                    );
+                    
+                    logAudit($currentUser['id'], 'delete_external_product', 'product', $productId, null, []);
+                    $success = 'تم حذف المنتج الخارجي بنجاح.';
+                } catch (Exception $e) {
+                    error_log('delete_external_product error: ' . $e->getMessage());
+                    $error = 'تعذر حذف المنتج الخارجي. يرجى المحاولة لاحقاً.';
+                }
             }
         }
     }
@@ -1237,6 +1247,7 @@ foreach ($factoryProducts as $product) {
                             <div class="product-detail-row"><span>سعر الوحدة:</span> <span><?php echo formatCurrency($unitPrice); ?></span></div>
                             <div class="product-detail-row"><span>الإجمالي:</span> <span><strong class="text-success"><?php echo formatCurrency($totalValue); ?></strong></span></div>
                             
+                            <?php if ($currentUser['role'] !== 'accountant'): ?>
                             <div class="product-actions" style="display: flex; gap: 10px; margin-top: 15px; flex-wrap: wrap;">
                                 <button type="button" 
                                         class="btn btn-outline-primary js-edit-external" 
@@ -1256,6 +1267,7 @@ foreach ($factoryProducts as $product) {
                                     <i class="bi bi-trash me-1"></i>حذف
                                 </button>
                             </div>
+                            <?php endif; ?>
                         </div>
                     <?php endforeach; ?>
                 </div>

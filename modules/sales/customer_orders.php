@@ -1942,7 +1942,8 @@ function updateNewCustomerState() {
         return false;
     }
 
-    const newCustomerRequiredInputs = Array.from(document.querySelectorAll('#addOrderModal .new-customer-required'));
+    // البحث عن العناصر داخل الـ function لضمان الوصول إليها
+    const newCustomerRequiredInputs = Array.from(newCustomerFields.querySelectorAll('.new-customer-required'));
     
     if (newCustomerToggle.checked) {
         // إظهار حقول العميل الجديد
@@ -1963,9 +1964,12 @@ function updateNewCustomerState() {
         // إخفاء حقول العميل الجديد
         newCustomerFields.classList.add('d-none');
         
-        // تفعيل حقل اختيار العميل الموجود
-        existingCustomerSelect.removeAttribute('disabled');
-        existingCustomerSelect.setAttribute('required', 'required');
+        // تفعيل حقل اختيار العميل الموجود (فقط إذا تم اختيار مندوب)
+        const salesRepSelect = document.getElementById('salesRepSelect');
+        if (!salesRepSelect || salesRepSelect.value) {
+            existingCustomerSelect.removeAttribute('disabled');
+            existingCustomerSelect.setAttribute('required', 'required');
+        }
         
         // إلغاء تفعيل الحقول المطلوبة للعميل الجديد
         newCustomerRequiredInputs.forEach(function(input) {
@@ -2015,15 +2019,17 @@ const addOrderModalElement = document.getElementById('addOrderModal');
         // تحديث الحالة عند فتح Modal
         if (typeof bootstrap !== 'undefined') {
             addOrderModalElement.addEventListener('shown.bs.modal', function() {
-                // ربط مباشر على toggle عند فتح Modal
+                // تحديث الحالة عند فتح الـ modal
+                updateNewCustomerState();
+                
+                // التأكد من أن toggle يعمل بشكل صحيح
                 const toggle = document.getElementById('toggleNewCustomer');
                 if (toggle) {
-                    toggle.addEventListener('change', updateNewCustomerState);
-                    toggle.addEventListener('click', function() {
-                        setTimeout(updateNewCustomerState, 50);
+                    // إضافة event listener مباشر
+                    toggle.addEventListener('change', function() {
+                        updateNewCustomerState();
                     });
                 }
-                updateNewCustomerState();
             });
         }
     }
@@ -2221,6 +2227,7 @@ const existingCustomerSelect = document.getElementById('existingCustomerSelect')
 if (salesRepSelect && existingCustomerSelect) {
     salesRepSelect.addEventListener('change', function() {
         const salesRepId = this.value;
+        const newCustomerToggle = document.getElementById('toggleNewCustomer');
         
         // إعادة تعيين حقل العميل
         existingCustomerSelect.innerHTML = '<option value="">جاري التحميل...</option>';
@@ -2238,13 +2245,23 @@ if (salesRepSelect && existingCustomerSelect) {
         
         // جلب عملاء المندوب عبر AJAX
         const currentUrl = new URL(window.location.href);
-        const baseUrl = currentUrl.pathname + '?page=orders&ajax=get_customers';
-        fetch(baseUrl + '&sales_rep_id=' + encodeURIComponent(salesRepId))
-            .then(response => response.json())
+        // استخدام المسار الصحيح بناءً على الصفحة الحالية
+        let baseUrl = currentUrl.pathname;
+        // إزالة أي معاملات موجودة وإضافة المعاملات الجديدة
+        const separator = baseUrl.includes('?') ? '&' : '?';
+        baseUrl = baseUrl + separator + 'page=orders&ajax=get_customers&sales_rep_id=' + encodeURIComponent(salesRepId);
+        
+        fetch(baseUrl)
+            .then(response => {
+                if (!response.ok) {
+                    throw new Error('Network response was not ok');
+                }
+                return response.json();
+            })
             .then(data => {
                 existingCustomerSelect.innerHTML = '<option value="">اختر العميل</option>';
                 
-                if (data.success && data.customers) {
+                if (data.success && data.customers && data.customers.length > 0) {
                     data.customers.forEach(function(customer) {
                         const option = document.createElement('option');
                         option.value = customer.id;
@@ -2263,6 +2280,7 @@ if (salesRepSelect && existingCustomerSelect) {
             .catch(error => {
                 console.error('Error loading customers:', error);
                 existingCustomerSelect.innerHTML = '<option value="">خطأ في تحميل العملاء</option>';
+                existingCustomerSelect.disabled = false;
             });
     });
     
@@ -2326,12 +2344,14 @@ document.getElementById('addCompanyItemBtn')?.addEventListener('click', function
 const toggleNewCompanyCustomer = document.getElementById('toggleNewCompanyCustomer');
 const companyCustomerSelect = document.getElementById('companyCustomerSelect');
 const newCompanyCustomerFields = document.getElementById('newCompanyCustomerFields');
-const newCompanyCustomerRequiredInputs = Array.from(document.querySelectorAll('.new-company-customer-required'));
 
 function updateNewCompanyCustomerState() {
     if (!toggleNewCompanyCustomer || !companyCustomerSelect || !newCompanyCustomerFields) {
         return;
     }
+
+    // البحث عن العناصر داخل الـ function لضمان الوصول إليها
+    const newCompanyCustomerRequiredInputs = Array.from(newCompanyCustomerFields.querySelectorAll('.new-company-customer-required'));
 
     if (toggleNewCompanyCustomer.checked) {
         newCompanyCustomerFields.classList.remove('d-none');
@@ -2353,20 +2373,31 @@ function updateNewCompanyCustomerState() {
 
 if (toggleNewCompanyCustomer) {
     toggleNewCompanyCustomer.addEventListener('change', updateNewCompanyCustomerState);
-    updateNewCompanyCustomerState();
+    // لا نستدعي updateNewCompanyCustomerState() هنا لأن الـ modal قد لا يكون مفتوحاً بعد
 }
 
 // إعادة تعيين نموذج طلب الشركة عند إغلاق الـ modal
 const addCompanyOrderModalElement = document.getElementById('addCompanyOrderModal');
 if (addCompanyOrderModalElement && typeof bootstrap !== 'undefined') {
+    // عند فتح الـ modal، تأكد من تحديث الحالة
+    addCompanyOrderModalElement.addEventListener('shown.bs.modal', function() {
+        if (toggleNewCompanyCustomer) {
+            updateNewCompanyCustomerState();
+        }
+    });
+    
     addCompanyOrderModalElement.addEventListener('hidden.bs.modal', function() {
         if (toggleNewCompanyCustomer) {
             toggleNewCompanyCustomer.checked = false;
             updateNewCompanyCustomerState();
         }
-        newCompanyCustomerRequiredInputs.forEach(function(input) {
-            input.value = '';
-        });
+        // مسح حقول العميل الجديد
+        if (newCompanyCustomerFields) {
+            const requiredInputs = newCompanyCustomerFields.querySelectorAll('.new-company-customer-required');
+            requiredInputs.forEach(function(input) {
+                input.value = '';
+            });
+        }
         const newCustomerPhoneInput = document.querySelector('#addCompanyOrderModal input[name="new_customer_phone"]');
         const newCustomerAddressInput = document.querySelector('#addCompanyOrderModal textarea[name="new_customer_address"]');
         const newCustomerLatitudeInput = document.querySelector('#addCompanyOrderModal input[name="new_customer_latitude"]');
