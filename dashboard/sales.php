@@ -961,8 +961,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['
                     $activeTab = 'collections';
                 } elseif ($activeTab === 'returns') {
                     $activeTab = 'returns';
-                } elseif ($activeTab === 'exchanges') {
-                    $activeTab = 'exchanges';
                 } elseif ($activeTab === 'damaged_returns') {
                     $activeTab = 'damaged_returns';
                 } else {
@@ -1078,19 +1076,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['
                             </button>
                         </li>
                         <li class="nav-item" role="presentation">
-                            <button class="nav-link <?php echo $activeTab === 'exchanges' ? 'active' : ''; ?>" 
-                                    id="my-exchanges-tab" 
-                                    data-bs-toggle="tab" 
-                                    data-bs-target="#my-exchanges-section" 
-                                    type="button" 
-                                    role="tab" 
-                                    aria-controls="my-exchanges-section" 
-                                    aria-selected="<?php echo $activeTab === 'exchanges' ? 'true' : 'false'; ?>">
-                                <i class="bi bi-arrow-left-right"></i>
-                                <span>الاستبدالات</span>
-                            </button>
-                        </li>
-                        <li class="nav-item" role="presentation">
                             <button class="nav-link <?php echo $activeTab === 'damaged_returns' ? 'active' : ''; ?>" 
                                     id="my-damaged-returns-tab" 
                                     data-bs-toggle="tab" 
@@ -1195,28 +1180,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['
                                     <div class="empty-state-icon"><i class="bi bi-arrow-return-left"></i></div>
                                     <div class="empty-state-title">المرتجعات</div>
                                     <div class="empty-state-description">صفحة المرتجعات - سيتم إضافتها قريباً</div>
-                                </div>
-                                <?php } ?>
-                            </div>
-                        </div>
-
-                        <div class="tab-pane fade <?php echo $activeTab === 'exchanges' ? 'show active' : ''; ?> combined-tab-pane" 
-                             id="my-exchanges-section" 
-                             role="tabpanel" 
-                             aria-labelledby="my-exchanges-tab">
-                            <div id="my-exchanges-section-content" class="printable-section">
-                                <?php 
-                                $salesModulePath = __DIR__ . '/../modules/sales/sales.php';
-                                if (file_exists($salesModulePath)) {
-                                    $_GET['page'] = 'sales_records';
-                                    $_GET['section'] = 'exchanges';  // تحديث دائماً إلى 'exchanges'
-                                    include $salesModulePath;
-                                } else {
-                                ?>
-                                <div class="empty-state-card">
-                                    <div class="empty-state-icon"><i class="bi bi-arrow-left-right"></i></div>
-                                    <div class="empty-state-title">الاستبدالات</div>
-                                    <div class="empty-state-description">صفحة الاستبدالات - سيتم إضافتها</div>
                                 </div>
                                 <?php } ?>
                             </div>
@@ -1484,8 +1447,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['
             section = 'collections';
         } else if (targetId === '#my-returns-section') {
             section = 'returns';
-        } else if (targetId === '#my-exchanges-section') {
-            section = 'exchanges';
         } else if (targetId === '#my-damaged-returns-section') {
             section = 'damaged_returns';
         }
@@ -1674,8 +1635,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['
                     $activeTab = 'collections';
                 } elseif ($activeTab === 'returns') {
                     $activeTab = 'returns';
-                } elseif ($activeTab === 'exchanges') {
-                    $activeTab = 'exchanges';
                 } elseif ($activeTab === 'damaged_returns') {
                     $activeTab = 'damaged_returns';
                 } else {
@@ -2137,8 +2096,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['
             activeTabId = 'collections-tab';
         } else if (section === 'returns' && availableTabIds.includes('returns-tab')) {
             activeTabId = 'returns-tab';
-        } else if (section === 'exchanges' && availableTabIds.includes('my-exchanges-tab')) {
-            activeTabId = 'my-exchanges-tab';
         } else if (section === 'damaged_returns' && availableTabIds.includes('my-damaged-returns-tab')) {
             activeTabId = 'my-damaged-returns-tab';
         } else if (section === 'sales' && availableTabIds.includes('sales-tab')) {
