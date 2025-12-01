@@ -1554,125 +1554,132 @@ try {
 }
 
 // جلب المنتجات المتاحة لطلبات الشحن (من finished_products و products)
+// جلب المنتجات بنفس منطق صفحة company_products بالضبط - بدون أي شروط أو قيود
 $availableProductsForShipping = [];
 try {
-    // جلب منتجات المصنع من finished_products
-    $factoryProductsForShipping = [];
     $finishedProductsTableExists = $db->queryOne("SHOW TABLES LIKE 'finished_products'");
     
+    // جلب منتجات المصنع - نفس الاستعلام المستخدم في company_products
     if (!empty($finishedProductsTableExists)) {
-        $factoryProductsRaw = $db->query("
+        $factoryProducts = $db->query("
             SELECT 
-                fp.id as batch_id,
-                fp.batch_number,
-                COALESCE(NULLIF(TRIM(fp.product_name), ''), pr.name, 'غير محدد') AS name,
-                fp.quantity_produced as quantity,
-                COALESCE(
-                    NULLIF(fp.unit_price, 0),
-                    (SELECT pt.unit_price 
-                     FROM product_templates pt 
-                     WHERE pt.status = 'active' 
-                       AND pt.unit_price IS NOT NULL 
-                       AND pt.unit_price > 0
-                       AND pt.unit_price <= 10000
-                       AND (
-                           (COALESCE(fp.product_id, bn.product_id) IS NOT NULL 
-                            AND COALESCE(fp.product_id, bn.product_id) > 0
-                            AND pt.product_id IS NOT NULL 
-                            AND pt.product_id > 0 
-                            AND pt.product_id = COALESCE(fp.product_id, bn.product_id))
-                           OR (pt.product_name IS NOT NULL 
-                               AND pt.product_name != ''
-                               AND COALESCE(NULLIF(TRIM(fp.product_name), ''), pr.name) IS NOT NULL
-                               AND COALESCE(NULLIF(TRIM(fp.product_name), ''), pr.name) != ''
-                               AND (LOWER(TRIM(pt.product_name)) = LOWER(TRIM(COALESCE(NULLIF(TRIM(fp.product_name), ''), pr.name)))
-                                    OR LOWER(TRIM(pt.product_name)) LIKE CONCAT('%', LOWER(TRIM(COALESCE(NULLIF(TRIM(fp.product_name), ''), pr.name))), '%')
-                                    OR LOWER(TRIM(COALESCE(NULLIF(TRIM(fp.product_name), ''), pr.name))) LIKE CONCAT('%', LOWER(TRIM(pt.product_name)), '%')))
+                base.id,
+                base.batch_id,
+                base.batch_number,
+                base.product_id,
+                base.product_name,
+                base.product_category,
+                base.production_date,
+                base.quantity_produced,
+                base.unit_price,
+                base.total_price
+            FROM (
+                SELECT 
+                    fp.id,
+                    fp.batch_id,
+                    fp.batch_number,
+                    COALESCE(fp.product_id, bn.product_id) AS product_id,
+                    COALESCE(NULLIF(TRIM(fp.product_name), ''), pr.name, 'غير محدد') AS product_name,
+                    pr.category as product_category,
+                    fp.production_date,
+                    fp.quantity_produced,
+                    COALESCE(
+                        NULLIF(fp.unit_price, 0),
+                        (SELECT pt.unit_price 
+                         FROM product_templates pt 
+                         WHERE pt.status = 'active' 
+                           AND pt.unit_price IS NOT NULL 
+                           AND pt.unit_price > 0
+                           AND pt.unit_price <= 10000
+                           AND (
+                               -- مطابقة product_id أولاً (الأكثر دقة)
+                               (
+                                   COALESCE(fp.product_id, bn.product_id) IS NOT NULL 
+                                   AND COALESCE(fp.product_id, bn.product_id) > 0
+                                   AND pt.product_id IS NOT NULL 
+                                   AND pt.product_id > 0 
+                                   AND pt.product_id = COALESCE(fp.product_id, bn.product_id)
+                               )
+                               -- مطابقة product_name (مطابقة دقيقة أو جزئية)
+                               OR (
+                                   pt.product_name IS NOT NULL 
+                                   AND pt.product_name != ''
+                                   AND COALESCE(NULLIF(TRIM(fp.product_name), ''), pr.name) IS NOT NULL
+                                   AND COALESCE(NULLIF(TRIM(fp.product_name), ''), pr.name) != ''
+                                   AND (
+                                       LOWER(TRIM(pt.product_name)) = LOWER(TRIM(COALESCE(NULLIF(TRIM(fp.product_name), ''), pr.name)))
+                                       OR LOWER(TRIM(pt.product_name)) LIKE CONCAT('%', LOWER(TRIM(COALESCE(NULLIF(TRIM(fp.product_name), ''), pr.name))), '%')
+                                       OR LOWER(TRIM(COALESCE(NULLIF(TRIM(fp.product_name), ''), pr.name))) LIKE CONCAT('%', LOWER(TRIM(pt.product_name)), '%')
+                                   )
+                               )
+                               -- إذا لم يكن هناك product_id في القالب، نبحث فقط بالاسم
+                               OR (
+                                   (pt.product_id IS NULL OR pt.product_id = 0)
+                                   AND pt.product_name IS NOT NULL 
+                                   AND pt.product_name != ''
+                                   AND COALESCE(NULLIF(TRIM(fp.product_name), ''), pr.name) IS NOT NULL
+                                   AND COALESCE(NULLIF(TRIM(fp.product_name), ''), pr.name) != ''
+                                   AND (
+                                       LOWER(TRIM(pt.product_name)) = LOWER(TRIM(COALESCE(NULLIF(TRIM(fp.product_name), ''), pr.name)))
+                                       OR LOWER(TRIM(pt.product_name)) LIKE CONCAT('%', LOWER(TRIM(COALESCE(NULLIF(TRIM(fp.product_name), ''), pr.name))), '%')
+                                       OR LOWER(TRIM(COALESCE(NULLIF(TRIM(fp.product_name), ''), pr.name))) LIKE CONCAT('%', LOWER(TRIM(pt.product_name)), '%')
+                                   )
+                               )
                            )
-                     ORDER BY pt.unit_price DESC
-                     LIMIT 1),
-                    0
-                ) AS unit_price,
-                COALESCE(pr.unit, 'قطعة') as unit,
-                fp.production_date
-            FROM finished_products fp
-            LEFT JOIN batch_numbers bn ON fp.batch_number = bn.batch_number
-            LEFT JOIN products pr ON COALESCE(fp.product_id, bn.product_id) = pr.id
-            WHERE (fp.quantity_produced IS NULL OR fp.quantity_produced > 0)
-            ORDER BY fp.production_date DESC, fp.id DESC
+                         ORDER BY pt.unit_price DESC
+                         LIMIT 1),
+                        0
+                    ) AS unit_price,
+                    fp.total_price
+                FROM finished_products fp
+                LEFT JOIN batch_numbers bn ON fp.batch_number = bn.batch_number
+                LEFT JOIN products pr ON COALESCE(fp.product_id, bn.product_id) = pr.id
+                WHERE (fp.quantity_produced IS NULL OR fp.quantity_produced > 0)
+                GROUP BY fp.id
+            ) AS base
+            ORDER BY base.production_date DESC, base.id DESC
         ");
         
-        // حساب الكمية المتاحة بعد خصم المبيعات والتحويلات
-        foreach ($factoryProductsRaw as $fp) {
-            $batchId = (int)($fp['batch_id'] ?? 0);
-            $quantityProduced = (float)($fp['quantity'] ?? 0);
-            
-            // حساب الكمية المباعة من هذا التشغيلة
-            $soldQuantity = $db->queryOne(
-                "SELECT COALESCE(SUM(si.quantity), 0) AS sold_qty
-                 FROM sale_items si
-                 INNER JOIN sales s ON si.sale_id = s.id
-                 WHERE si.batch_id = ? AND s.status IN ('approved', 'completed')",
-                [$batchId]
-            );
-            $soldQty = (float)($soldQuantity['sold_qty'] ?? 0);
-            
-            // حساب الكمية المحجوزة في طلبات النقل المعلقة
-            $pendingTransfers = $db->queryOne(
-                "SELECT COALESCE(SUM(wti.quantity), 0) AS pending_quantity
-                 FROM warehouse_transfer_items wti
-                 INNER JOIN warehouse_transfers wt ON wt.id = wti.transfer_id
-                 WHERE wti.batch_id = ? AND wt.status = 'pending'",
-                [$batchId]
-            );
-            $pendingQty = (float)($pendingTransfers['pending_quantity'] ?? 0);
-            
-            // حساب الكمية المحجوزة في طلبات الشحن المعلقة
-            $pendingShipping = $db->queryOne(
-                "SELECT COALESCE(SUM(soi.quantity), 0) AS pending_quantity
-                 FROM shipping_company_order_items soi
-                 INNER JOIN shipping_company_orders sco ON soi.order_id = sco.id
-                 WHERE soi.batch_id = ? AND sco.status IN ('assigned', 'in_transit')",
-                [$batchId]
-            );
-            $pendingShippingQty = (float)($pendingShipping['pending_quantity'] ?? 0);
-            
-            // الكمية المتاحة = الكمية المنتجة - المباعة - المحجوزة في النقل - المحجوزة في الشحن
-            $availableQty = max(0, $quantityProduced - $soldQty - $pendingQty - $pendingShippingQty);
-            
-            // عرض جميع المنتجات حتى لو كانت الكمية المتاحة صفر (مثل صفحة company_products)
+        // تحويل المنتجات إلى نفس التنسيق المستخدم في طلبات الشحن - بدون أي حساب للكمية المتاحة
+        foreach ($factoryProducts as $fp) {
+            $batchId = (int)($fp['id'] ?? 0);
             $batchNumber = $fp['batch_number'] ?? '';
-            $productName = $fp['name'] ?? 'غير محدد';
-            $displayName = $batchNumber ? $productName . ' - تشغيلة ' . $batchNumber : $productName;
+            $productName = $fp['product_name'] ?? 'غير محدد';
+            $quantityProduced = (float)($fp['quantity_produced'] ?? 0);
             
-            $factoryProductsForShipping[] = [
+            $availableProductsForShipping[] = [
                 'id' => $batchId + 1000000, // استخدام رقم فريد لمنتجات المصنع
                 'batch_id' => $batchId,
                 'batch_number' => $batchNumber,
-                'name' => $productName, // اسم المنتج بدون رقم التشغيلة
-                'quantity' => $availableQty,
-                'total_quantity' => $quantityProduced, // الكمية الإجمالية قبل طرح المبيعات
-                'unit' => $fp['unit'] ?? 'قطعة',
+                'name' => $productName,
+                'quantity' => $quantityProduced, // الكمية الإجمالية بدون أي طرح
+                'unit' => 'قطعة',
                 'unit_price' => (float)($fp['unit_price'] ?? 0),
                 'is_factory_product' => true
             ];
         }
     }
     
-    // جلب المنتجات الخارجية من products (مثل صفحة company_products - بدون شرط quantity > 0)
-    $externalProductsForShipping = $db->query(
-        "SELECT id, name, quantity, COALESCE(unit, 'قطعة') as unit, unit_price 
-         FROM products 
-         WHERE status = 'active' 
-           AND (product_type = 'external' OR product_type IS NULL)
-         ORDER BY name ASC"
-    );
+    // جلب المنتجات الخارجية - نفس الاستعلام المستخدم في company_products
+    $externalProducts = $db->query("
+        SELECT 
+            id,
+            name,
+            quantity,
+            COALESCE(unit, 'قطعة') as unit,
+            unit_price
+        FROM products
+        WHERE product_type = 'external'
+          AND status = 'active'
+        ORDER BY name ASC
+    ");
     
-    // دمج المنتجات مع إضافة batch_id = null للمنتجات الخارجية
-    foreach ($externalProductsForShipping as $ep) {
+    // إضافة المنتجات الخارجية
+    foreach ($externalProducts as $ep) {
         $availableProductsForShipping[] = [
             'id' => (int)($ep['id'] ?? 0),
             'batch_id' => null,
+            'batch_number' => null,
             'name' => $ep['name'] ?? '',
             'quantity' => (float)($ep['quantity'] ?? 0),
             'unit' => $ep['unit'] ?? 'قطعة',
@@ -1681,16 +1688,14 @@ try {
         ];
     }
     
-    // إضافة منتجات المصنع
-    $availableProductsForShipping = array_merge($availableProductsForShipping, $factoryProductsForShipping);
-    
     // ترتيب حسب الاسم
     usort($availableProductsForShipping, function($a, $b) {
-        return strcmp($a['name'], $b['name']);
+        return strcmp($a['name'] ?? '', $b['name'] ?? '');
     });
     
 } catch (Throwable $e) {
     error_log('Error fetching products for shipping: ' . $e->getMessage());
+    $availableProductsForShipping = [];
 }
 ?>
 
