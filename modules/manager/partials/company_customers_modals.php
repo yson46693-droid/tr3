@@ -2,6 +2,10 @@
 /**
  * Modals for managing company customers (add / edit / delete).
  */
+// التأكد من وجود المتغيرات المطلوبة
+if (!isset($dashboardScript)) {
+    $dashboardScript = basename($_SERVER['PHP_SELF'] ?? 'manager.php');
+}
 $formAction = getRelativeUrl($dashboardScript);
 ?>
 
@@ -9,7 +13,7 @@ $formAction = getRelativeUrl($dashboardScript);
 <div class="modal fade" id="addCustomerModal" tabindex="-1" aria-hidden="true">
     <div class="modal-dialog modal-dialog-centered">
         <div class="modal-content">
-            <form method="POST" action="<?php echo htmlspecialchars($formAction); ?>">
+            <form id="addCustomerForm" method="POST" action="<?php echo htmlspecialchars($formAction); ?>">
                 <input type="hidden" name="page" value="customers">
                 <input type="hidden" name="section" value="company">
                 <input type="hidden" name="action" value="add_company_customer">
@@ -122,10 +126,36 @@ $formAction = getRelativeUrl($dashboardScript);
 document.addEventListener('DOMContentLoaded', function () {
     var editModal = document.getElementById('editCustomerModal');
     var deleteModal = document.getElementById('deleteCustomerModal');
+    var addModal = document.getElementById('addCustomerModal');
+    var addForm = document.getElementById('addCustomerForm');
 
     if (!editModal || !deleteModal) {
         console.warn('Company customers modals not found in DOM');
         return;
+    }
+
+    // معالجة إرسال نموذج إضافة العميل
+    if (addForm) {
+        addForm.addEventListener('submit', function(e) {
+            // التأكد من صحة البيانات قبل الإرسال
+            var nameInput = addForm.querySelector('input[name="name"]');
+            if (!nameInput || !nameInput.value || nameInput.value.trim() === '') {
+                e.preventDefault();
+                alert('يجب إدخال اسم العميل');
+                nameInput.focus();
+                return false;
+            }
+            
+            // السماح بإرسال النموذج بشكل طبيعي
+            return true;
+        });
+    }
+
+    // إعادة تعيين النموذج عند إغلاق الـ modal
+    if (addModal && addForm) {
+        addModal.addEventListener('hidden.bs.modal', function () {
+            addForm.reset();
+        });
     }
 
     editModal.addEventListener('show.bs.modal', function (event) {

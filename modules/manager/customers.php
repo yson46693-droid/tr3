@@ -162,34 +162,51 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             $address = trim($_POST['address'] ?? '');
             $balance = isset($_POST['balance']) ? cleanFinancialValue($_POST['balance'], true) : 0.0;
 
-            if ($name === '') {
+            if (empty($name)) {
                 $error = 'يجب إدخال اسم العميل.';
             } else {
                 try {
-                    $db->execute(
-                        "INSERT INTO customers (name, phone, email, address, balance, status, created_by, rep_id, created_from_pos, created_by_admin)
-                         VALUES (?, ?, ?, ?, ?, 'active', ?, NULL, 0, 1)",
-                        [
-                            $name,
-                            $phone !== '' ? $phone : null,
-                            $email !== '' ? $email : null,
-                            $address !== '' ? $address : null,
-                            $balance,
-                            $currentUser['id'],
-                        ]
+                    // التحقق من عدم وجود عميل بنفس الاسم للشركة
+                    $existingCustomer = $db->queryOne(
+                        "SELECT id FROM customers WHERE name = ? AND created_by_admin = 1 AND (rep_id IS NULL OR rep_id = 0)",
+                        [$name]
                     );
+                    
+                    if ($existingCustomer) {
+                        $error = 'يوجد عميل مسجل مسبقاً بنفس الاسم.';
+                    } else {
+                        $db->execute(
+                            "INSERT INTO customers (name, phone, email, address, balance, status, created_by, rep_id, created_from_pos, created_by_admin)
+                             VALUES (?, ?, ?, ?, ?, 'active', ?, NULL, 0, 1)",
+                            [
+                                $name,
+                                $phone !== '' ? $phone : null,
+                                $email !== '' ? $email : null,
+                                $address !== '' ? $address : null,
+                                $balance,
+                                $currentUser['id'],
+                            ]
+                        );
 
-                    $customerId = (int)$db->getLastInsertId();
-                    logAudit($currentUser['id'], 'manager_add_company_customer', 'customer', $customerId, null, [
-                        'name' => $name,
-                        'created_by_admin' => 1,
-                    ]);
+                        $customerId = (int)$db->getLastInsertId();
+                        if ($customerId <= 0) {
+                            throw new RuntimeException('فشل إضافة العميل: لم يتم الحصول على معرف العميل.');
+                        }
+                        
+                        logAudit($currentUser['id'], 'manager_add_company_customer', 'customer', $customerId, null, [
+                            'name' => $name,
+                            'created_by_admin' => 1,
+                        ]);
 
-                    $_SESSION['success_message'] = 'تمت إضافة العميل بنجاح.';
-                    redirectAfterPost('customers', ['section' => 'company'], [], $currentRole);
+                        $_SESSION['success_message'] = 'تمت إضافة العميل بنجاح.';
+                        redirectAfterPost('customers', ['section' => 'company'], [], $currentRole);
+                    }
+                } catch (InvalidArgumentException $invalidError) {
+                    $error = $invalidError->getMessage();
                 } catch (Throwable $addError) {
                     error_log('Manager add customer error: ' . $addError->getMessage());
-                    $error = 'تعذر إضافة العميل. يرجى المحاولة لاحقاً.';
+                    error_log('Stack trace: ' . $addError->getTraceAsString());
+                    $error = 'تعذر إضافة العميل: ' . htmlspecialchars($addError->getMessage());
                 }
             }
         } elseif ($action === 'edit_company_customer') {
