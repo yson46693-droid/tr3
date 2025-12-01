@@ -129,6 +129,22 @@ if (!defined('ACCESS_ALLOWED')) {
     <?php endif; ?>
     
     <script>
+        // تنظيف console.log في production (Best Practices)
+        (function() {
+            const isProduction = window.location.hostname !== 'localhost' && 
+                                 window.location.hostname !== '127.0.0.1' && 
+                                 !window.location.hostname.includes('.local');
+            
+            if (isProduction && typeof console !== 'undefined') {
+                const noop = function() {};
+                // الاحتفاظ بـ console.error للخطوط الحقيقية
+                console.log = noop;
+                console.debug = noop;
+                console.info = noop;
+                // console.warn و console.error تبقى كما هي للأخطاء المهمة
+            }
+        })();
+        
         // تهيئة النظام
         document.addEventListener('DOMContentLoaded', function() {
             // تحميل العمليات الخلفية بشكل غير متزامن (بعد تحميل الصفحة)

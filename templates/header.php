@@ -130,6 +130,56 @@ if (ob_get_level() > 0) {
     <meta http-equiv="X-UA-Compatible" content="IE=edge">
     <title><?php echo isset($pageTitle) ? $pageTitle . ' - ' : ''; ?><?php echo APP_NAME; ?></title>
     
+    <?php
+    // تحديد pageDescription إذا لم يكن محدداً
+    if (!isset($pageDescription)) {
+        $pageDescription = 'نظام إدارة متكامل لشركة البركة - إدارة المخازن والمبيعات والموارد البشرية';
+    }
+    
+    // تحديد Canonical URL
+    $protocol = (isset($_SERVER['HTTPS']) && $_SERVER['HTTPS'] === 'on') ? 'https' : 'http';
+    $canonicalUrl = $protocol . '://' . $_SERVER['HTTP_HOST'] . $_SERVER['REQUEST_URI'];
+    $baseUrl = $protocol . '://' . $_SERVER['HTTP_HOST'];
+    $ogImage = $baseUrl . ASSETS_URL . 'icons/icon-512x512.png';
+    ?>
+    
+    <!-- Meta Tags for SEO -->
+    <meta name="description" content="<?php echo htmlspecialchars($pageDescription, ENT_QUOTES, 'UTF-8'); ?>">
+    <meta name="keywords" content="نظام إدارة, شركة البركة, إدارة المخازن, إدارة المبيعات, إدارة الموارد البشرية">
+    <meta name="author" content="<?php echo COMPANY_NAME; ?>">
+    <meta name="robots" content="index, follow">
+    <meta name="language" content="Arabic">
+    
+    <!-- Open Graph Tags -->
+    <meta property="og:title" content="<?php echo isset($pageTitle) ? htmlspecialchars($pageTitle, ENT_QUOTES, 'UTF-8') . ' - ' : ''; ?><?php echo htmlspecialchars(APP_NAME, ENT_QUOTES, 'UTF-8'); ?>">
+    <meta property="og:description" content="<?php echo htmlspecialchars($pageDescription, ENT_QUOTES, 'UTF-8'); ?>">
+    <meta property="og:type" content="website">
+    <meta property="og:url" content="<?php echo htmlspecialchars($canonicalUrl, ENT_QUOTES, 'UTF-8'); ?>">
+    <meta property="og:image" content="<?php echo htmlspecialchars($ogImage, ENT_QUOTES, 'UTF-8'); ?>">
+    <meta property="og:image:width" content="512">
+    <meta property="og:image:height" content="512">
+    <meta property="og:locale" content="ar_EG">
+    <meta property="og:site_name" content="<?php echo htmlspecialchars(APP_NAME, ENT_QUOTES, 'UTF-8'); ?>">
+    
+    <!-- Twitter Card -->
+    <meta name="twitter:card" content="summary_large_image">
+    <meta name="twitter:title" content="<?php echo isset($pageTitle) ? htmlspecialchars($pageTitle, ENT_QUOTES, 'UTF-8') . ' - ' : ''; ?><?php echo htmlspecialchars(APP_NAME, ENT_QUOTES, 'UTF-8'); ?>">
+    <meta name="twitter:description" content="<?php echo htmlspecialchars($pageDescription, ENT_QUOTES, 'UTF-8'); ?>">
+    <meta name="twitter:image" content="<?php echo htmlspecialchars($ogImage, ENT_QUOTES, 'UTF-8'); ?>">
+    
+    <!-- Canonical URL -->
+    <link rel="canonical" href="<?php echo htmlspecialchars($canonicalUrl, ENT_QUOTES, 'UTF-8'); ?>">
+    
+    <!-- Performance: Preconnect to CDNs -->
+    <link rel="preconnect" href="https://cdn.jsdelivr.net" crossorigin>
+    <link rel="dns-prefetch" href="https://cdn.jsdelivr.net">
+    <link rel="preconnect" href="https://code.jquery.com" crossorigin>
+    <link rel="dns-prefetch" href="https://code.jquery.com">
+    
+    <!-- Performance: Preload Critical Resources -->
+    <link rel="preload" href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" as="style">
+    <link rel="preload" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.0/font/bootstrap-icons.css" as="style">
+    
     <!-- Bootstrap 5 CSS -->
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
     <!-- Bootstrap Icons -->
@@ -200,6 +250,32 @@ if (ob_get_level() > 0) {
     <?php if ($dir === 'rtl'): ?>
     <link href="<?php echo $assetsUrl; ?>css/rtl.css?v=<?php echo $cacheVersion; ?>" rel="stylesheet">
     <?php endif; ?>
+    
+    <!-- Structured Data (JSON-LD) for SEO -->
+    <script type="application/ld+json">
+    {
+      "@context": "https://schema.org",
+      "@type": "WebApplication",
+      "name": "<?php echo htmlspecialchars(APP_NAME, ENT_QUOTES, 'UTF-8'); ?>",
+      "description": "<?php echo htmlspecialchars($pageDescription, ENT_QUOTES, 'UTF-8'); ?>",
+      "url": "<?php echo htmlspecialchars($baseUrl, ENT_QUOTES, 'UTF-8'); ?>",
+      "applicationCategory": "BusinessApplication",
+      "operatingSystem": "Web Browser",
+      "offers": {
+        "@type": "Offer",
+        "price": "0",
+        "priceCurrency": "EGP"
+      },
+      "provider": {
+        "@type": "Organization",
+        "name": "<?php echo htmlspecialchars(COMPANY_NAME, ENT_QUOTES, 'UTF-8'); ?>",
+        "url": "<?php echo htmlspecialchars($baseUrl, ENT_QUOTES, 'UTF-8'); ?>"
+      },
+      "inLanguage": "<?php echo $currentLang; ?>",
+      "browserRequirements": "Requires JavaScript. Requires HTML5."
+    }
+    </script>
+    
     <style>
         /* منع Layout forced - إخفاء المحتوى حتى تحميل CSS */
         body:not(.css-loaded) {
@@ -207,6 +283,62 @@ if (ob_get_level() > 0) {
         }
         body.css-loaded {
             visibility: visible;
+        }
+        
+        /* Accessibility: Skip to main content link */
+        .skip-link {
+            position: absolute;
+            top: -40px;
+            left: 0;
+            background: #000;
+            color: #fff;
+            padding: 8px 16px;
+            text-decoration: none;
+            z-index: 10000;
+            border-radius: 0 0 4px 0;
+        }
+        .skip-link:focus {
+            top: 0;
+            outline: 3px solid #3498db;
+            outline-offset: 2px;
+        }
+        
+        /* Accessibility: Enhanced Focus Indicators */
+        *:focus-visible {
+            outline: 3px solid #3498db;
+            outline-offset: 2px;
+            border-radius: 2px;
+        }
+        button:focus-visible,
+        a:focus-visible,
+        input:focus-visible,
+        select:focus-visible,
+        textarea:focus-visible {
+            outline: 3px solid #3498db;
+            outline-offset: 2px;
+        }
+        
+        /* Accessibility: Visually Hidden but accessible to screen readers */
+        .visually-hidden {
+            position: absolute;
+            width: 1px;
+            height: 1px;
+            padding: 0;
+            margin: -1px;
+            overflow: hidden;
+            clip: rect(0, 0, 0, 0);
+            white-space: nowrap;
+            border-width: 0;
+        }
+        .visually-hidden-focusable:focus {
+            position: static;
+            width: auto;
+            height: auto;
+            padding: inherit;
+            margin: inherit;
+            overflow: visible;
+            clip: auto;
+            white-space: normal;
         }
     </style>
     <script>
@@ -774,11 +906,21 @@ if (ob_get_level() > 0) {
 <body class="dashboard-body"
       data-user-role="<?php echo htmlspecialchars(isset($currentUser['role']) ? $currentUser['role'] : ''); ?>"
       data-user-id="<?php echo isset($currentUser['id']) ? (int) $currentUser['id'] : 0; ?>">
+    <!-- Accessibility: Skip to main content -->
+    <a href="#main-content" class="skip-link visually-hidden-focusable">
+        <?php echo isset($lang['skip_to_main']) ? $lang['skip_to_main'] : 'تخطي إلى المحتوى الرئيسي'; ?>
+    </a>
     <!-- 🎬 PWA Splash Screen -->
     <?php if (!defined('ENABLE_PAGE_LOADER') || ENABLE_PAGE_LOADER): ?>
-    <div id="pageLoader">
-        <img src="<?php echo ASSETS_URL; ?>icons/icon-192x192.png" alt="<?php echo APP_NAME; ?>" class="loader-logo">
-        <div class="loader-title"><?php echo APP_NAME; ?></div>
+    <div id="pageLoader" role="status" aria-live="polite" aria-label="<?php echo isset($lang['loading']) ? $lang['loading'] : 'جاري التحميل'; ?>">
+        <img src="<?php echo ASSETS_URL; ?>icons/icon-192x192.png" 
+             alt="<?php echo htmlspecialchars(APP_NAME, ENT_QUOTES, 'UTF-8'); ?>" 
+             class="loader-logo"
+             width="192"
+             height="192"
+             loading="eager"
+             decoding="async">
+        <div class="loader-title"><?php echo htmlspecialchars(APP_NAME, ENT_QUOTES, 'UTF-8'); ?></div>
     </div>
     <?php endif; ?>
     
@@ -811,14 +953,29 @@ if (ob_get_level() > 0) {
         <div class="homeline-topbar">
             <div class="topbar-left">
                 <!-- Mobile Menu Toggle -->
-                 <button class="mobile-menu-toggle d-md-none" id="mobileMenuToggle" type="button">
-                     <i class="bi bi-list"></i>
+                 <button class="mobile-menu-toggle d-md-none" 
+                         id="mobileMenuToggle" 
+                         type="button"
+                         aria-label="<?php echo isset($lang['menu']) ? $lang['menu'] : 'القائمة'; ?>"
+                         aria-expanded="false"
+                         aria-controls="sidebar">
+                     <i class="bi bi-list" aria-hidden="true"></i>
+                     <span class="visually-hidden"><?php echo isset($lang['menu']) ? $lang['menu'] : 'القائمة'; ?></span>
                  </button>
-                 <button class="mobile-reload-btn d-md-none" id="mobileReloadBtn" type="button">
-                     <i class="bi bi-arrow-clockwise"></i>
+                 <button class="mobile-reload-btn d-md-none" 
+                         id="mobileReloadBtn" 
+                         type="button"
+                         aria-label="<?php echo isset($lang['refresh']) ? $lang['refresh'] : 'تحديث الصفحة'; ?>">
+                     <i class="bi bi-arrow-clockwise" aria-hidden="true"></i>
+                     <span class="visually-hidden"><?php echo isset($lang['refresh']) ? $lang['refresh'] : 'تحديث الصفحة'; ?></span>
                  </button>
-                 <button class="mobile-dark-toggle d-md-none" id="mobileDarkToggle" type="button">
-                     <i class="bi bi-moon-stars"></i>
+                 <button class="mobile-dark-toggle d-md-none" 
+                         id="mobileDarkToggle" 
+                         type="button"
+                         aria-label="<?php echo isset($lang['dark_mode']) ? $lang['dark_mode'] : 'الوضع الداكن'; ?>"
+                         aria-pressed="false">
+                     <i class="bi bi-moon-stars" aria-hidden="true"></i>
+                     <span class="visually-hidden"><?php echo isset($lang['dark_mode']) ? $lang['dark_mode'] : 'الوضع الداكن'; ?></span>
                  </button>
                 <div class="breadcrumb-nav">
                     <?php 
@@ -832,24 +989,50 @@ if (ob_get_level() > 0) {
             
             <div class="topbar-center">
                 <div class="topbar-search">
-                    <i class="bi bi-search"></i>
-                    <input type="text" placeholder="<?php echo isset($lang['search']) ? $lang['search'] : 'بحث'; ?>" id="globalSearch">
-                    <span class="search-shortcut">⌘K</span>
+                    <label for="globalSearch" class="visually-hidden">
+                        <?php echo isset($lang['search']) ? $lang['search'] : 'بحث'; ?>
+                    </label>
+                    <i class="bi bi-search" aria-hidden="true"></i>
+                    <input type="text" 
+                           placeholder="<?php echo isset($lang['search']) ? $lang['search'] : 'بحث'; ?>" 
+                           id="globalSearch"
+                           aria-label="<?php echo isset($lang['search']) ? $lang['search'] : 'بحث'; ?>"
+                           autocomplete="off"
+                           aria-describedby="search-help">
+                    <span class="search-shortcut" aria-hidden="true">⌘K</span>
+                    <span id="search-help" class="visually-hidden">
+                        <?php echo isset($lang['search_help']) ? $lang['search_help'] : 'استخدم للبحث في النظام'; ?>
+                    </span>
                 </div>
             </div>
             
             <div class="topbar-right">
                 <!-- Settings -->
-                <a href="<?php echo getRelativeUrl('profile.php'); ?>" class="topbar-action" data-bs-toggle="tooltip" title="<?php echo isset($lang['settings']) ? $lang['settings'] : 'الإعدادات'; ?>">
-                    <i class="bi bi-gear"></i>
+                <a href="<?php echo getRelativeUrl('profile.php'); ?>" 
+                   class="topbar-action" 
+                   data-bs-toggle="tooltip" 
+                   title="<?php echo isset($lang['settings']) ? $lang['settings'] : 'الإعدادات'; ?>"
+                   aria-label="<?php echo isset($lang['settings']) ? $lang['settings'] : 'الإعدادات'; ?>">
+                    <i class="bi bi-gear" aria-hidden="true"></i>
+                    <span class="visually-hidden"><?php echo isset($lang['settings']) ? $lang['settings'] : 'الإعدادات'; ?></span>
                 </a>
                 
                 <!-- Notifications -->
                 <?php if (isLoggedIn()): ?>
                 <div class="topbar-dropdown">
-                    <a href="#" class="topbar-action" id="notificationsDropdown" role="button" data-bs-toggle="dropdown" data-bs-toggle="tooltip" title="<?php echo isset($lang['notifications']) ? $lang['notifications'] : 'الإشعارات'; ?>">
-                        <i class="bi bi-bell"></i>
-                        <span class="badge" id="notificationBadge">0</span>
+                    <a href="#" 
+                       class="topbar-action" 
+                       id="notificationsDropdown" 
+                       role="button" 
+                       aria-label="<?php echo isset($lang['notifications']) ? $lang['notifications'] : 'الإشعارات'; ?>"
+                       aria-expanded="false"
+                       aria-haspopup="true"
+                       data-bs-toggle="dropdown" 
+                       data-bs-toggle="tooltip" 
+                       title="<?php echo isset($lang['notifications']) ? $lang['notifications'] : 'الإشعارات'; ?>">
+                        <i class="bi bi-bell" aria-hidden="true"></i>
+                        <span class="badge" id="notificationBadge" aria-live="polite" aria-atomic="true">0</span>
+                        <span class="visually-hidden"><?php echo isset($lang['notifications']) ? $lang['notifications'] : 'الإشعارات'; ?></span>
                     </a>
                     <ul class="dropdown-menu dropdown-menu-end notifications-dropdown" aria-labelledby="notificationsDropdown">
                         <li><h6 class="dropdown-header">
@@ -867,14 +1050,30 @@ if (ob_get_level() > 0) {
                 <?php endif; ?>
                 
                 <!-- Refresh Page Button -->
-                <a href="#" class="topbar-action" id="refreshPageBtn" role="button" data-bs-toggle="tooltip" title="<?php echo isset($lang['refresh']) ? $lang['refresh'] : 'تحديث الصفحة'; ?>" onclick="event.preventDefault(); window.location.reload(); return false;">
-                    <i class="bi bi-arrow-clockwise"></i>
+                <a href="#" 
+                   class="topbar-action" 
+                   id="refreshPageBtn" 
+                   role="button" 
+                   data-bs-toggle="tooltip" 
+                   title="<?php echo isset($lang['refresh']) ? $lang['refresh'] : 'تحديث الصفحة'; ?>" 
+                   aria-label="<?php echo isset($lang['refresh']) ? $lang['refresh'] : 'تحديث الصفحة'; ?>"
+                   onclick="event.preventDefault(); window.location.reload(); return false;">
+                    <i class="bi bi-arrow-clockwise" aria-hidden="true"></i>
+                    <span class="visually-hidden"><?php echo isset($lang['refresh']) ? $lang['refresh'] : 'تحديث الصفحة'; ?></span>
                 </a>
                 
                 <!-- Dark Mode Toggle -->
                 <div class="topbar-action" data-bs-toggle="tooltip" title="<?php echo isset($lang['dark_mode']) ? $lang['dark_mode'] : 'الوضع الداكن'; ?>">
                     <div class="form-check form-switch mb-0">
-                        <input class="form-check-input" type="checkbox" id="darkModeToggle" style="cursor: pointer;">
+                        <label for="darkModeToggle" class="visually-hidden">
+                            <?php echo isset($lang['dark_mode']) ? $lang['dark_mode'] : 'الوضع الداكن'; ?>
+                        </label>
+                        <input class="form-check-input" 
+                               type="checkbox" 
+                               id="darkModeToggle" 
+                               aria-label="<?php echo isset($lang['dark_mode']) ? $lang['dark_mode'] : 'الوضع الداكن'; ?>"
+                               aria-pressed="false"
+                               style="cursor: pointer;">
                     </div>
                 </div>
                 
@@ -885,13 +1084,26 @@ if (ob_get_level() > 0) {
                     $currentUser = getCurrentUser();
                 }
                 if (isLoggedIn() && $currentUser): 
+                    $userFullName = htmlspecialchars($currentUser['full_name'] ?? $currentUser['username'] ?? '');
                 ?>
                 <div class="topbar-dropdown">
-                    <div class="topbar-user dropdown-toggle" id="userDropdown" data-bs-toggle="dropdown" role="button">
+                    <div class="topbar-user dropdown-toggle" 
+                         id="userDropdown" 
+                         data-bs-toggle="dropdown" 
+                         role="button"
+                         aria-label="<?php echo isset($lang['user_menu']) ? $lang['user_menu'] : 'قائمة المستخدم'; ?>"
+                         aria-expanded="false"
+                         aria-haspopup="true">
                         <?php if (isset($currentUser['profile_photo']) && !empty($currentUser['profile_photo'])): ?>
-                            <img src="<?php echo htmlspecialchars($currentUser['profile_photo']); ?>" alt="Profile">
+                            <img src="<?php echo htmlspecialchars($currentUser['profile_photo'], ENT_QUOTES, 'UTF-8'); ?>" 
+                                 alt="<?php echo $userFullName; ?>"
+                                 width="40"
+                                 height="40"
+                                 loading="lazy"
+                                 decoding="async">
                         <?php else: ?>
-                            <?php echo htmlspecialchars(mb_substr(isset($currentUser['username']) ? $currentUser['username'] : '', 0, 1)); ?>
+                            <span aria-hidden="true"><?php echo htmlspecialchars(mb_substr(isset($currentUser['username']) ? $currentUser['username'] : '', 0, 1)); ?></span>
+                            <span class="visually-hidden"><?php echo $userFullName; ?></span>
                         <?php endif; ?>
                     </div>
                     <ul class="dropdown-menu dropdown-menu-end" aria-labelledby="userDropdown">
@@ -916,5 +1128,5 @@ if (ob_get_level() > 0) {
         </div>
         
         <!-- Main Content Area -->
-        <main class="dashboard-main">
+        <main class="dashboard-main" id="main-content" role="main" aria-label="<?php echo isset($pageTitle) ? htmlspecialchars($pageTitle, ENT_QUOTES, 'UTF-8') : 'المحتوى الرئيسي'; ?>">
 
