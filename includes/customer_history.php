@@ -295,15 +295,62 @@ function customerHistorySyncForCustomer(int $customerId): array
                 [$invoiceId]
             );
             
+            // حساب الكميات المرتجعة لكل invoice_item_id
+            $returnedQuantities = [];
+            $hasInvoiceItemId = false;
+            try {
+                $columnCheck = $db->queryOne("SHOW COLUMNS FROM return_items LIKE 'invoice_item_id'");
+                $hasInvoiceItemId = !empty($columnCheck);
+            } catch (Throwable $e) {
+                $hasInvoiceItemId = false;
+            }
+            
+            if ($hasInvoiceItemId && !empty($invoiceItems)) {
+                $invoiceItemIds = array_map(function($item) {
+                    return (int)($item['invoice_item_id'] ?? 0);
+                }, $invoiceItems);
+                $invoiceItemIds = array_filter($invoiceItemIds, function($id) { return $id > 0; });
+                
+                if (!empty($invoiceItemIds)) {
+                    $placeholders = implode(',', array_fill(0, count($invoiceItemIds), '?'));
+                    $returnedRows = $db->query(
+                        "SELECT ri.invoice_item_id, COALESCE(SUM(ri.quantity), 0) AS returned_quantity
+                         FROM return_items ri
+                         INNER JOIN returns r ON r.id = ri.return_id
+                         WHERE r.customer_id = ?
+                           AND r.status IN ('pending', 'approved', 'processed', 'completed')
+                           AND ri.invoice_item_id IN ($placeholders)
+                         GROUP BY ri.invoice_item_id",
+                        array_merge([$customerId], $invoiceItemIds)
+                    );
+                    
+                    foreach ($returnedRows as $row) {
+                        $itemId = (int)$row['invoice_item_id'];
+                        $returnedQuantities[$itemId] = (float)$row['returned_quantity'];
+                    }
+                }
+            }
+            
             // استخدام $invoiceItems في باقي الكود
             foreach ($invoiceItems as $item) {
                 $productName = $item['product_name'] ?? 'غير معروف';
                 $batchNumbers = !empty($item['batch_numbers']) ? $item['batch_numbers'] : '';
+                $invoiceItemId = (int)($item['invoice_item_id'] ?? 0);
+                $originalQuantity = (float)($item['quantity'] ?? 0);
+                
+                // حساب الكمية المتبقية بعد خصم المرتجعات
+                $returnedQuantity = 0.0;
+                if ($hasInvoiceItemId && $invoiceItemId > 0) {
+                    $returnedQuantity = $returnedQuantities[$invoiceItemId] ?? 0.0;
+                }
+                $remainingQuantity = max(0, $originalQuantity - $returnedQuantity);
                 
                 $productsList[] = [
                     'product_name' => $productName,
                     'batch_numbers' => $batchNumbers,
-                    'quantity' => (float)($item['quantity'] ?? 0),
+                    'quantity' => $remainingQuantity, // الكمية المتبقية بعد خصم المرتجعات
+                    'original_quantity' => $originalQuantity, // الكمية الأصلية (للحسابات)
+                    'returned_quantity' => $returnedQuantity, // الكمية المرتجعة
                     'unit_price' => (float)($item['unit_price'] ?? 0),
                 ];
             }

@@ -449,6 +449,11 @@ function approveReturn(returnId, event) {
                     row.remove();
                 }, 500);
             }
+            
+            // إعادة تحميل الصفحة تلقائياً بعد 2.5 ثانية
+            setTimeout(() => {
+                location.reload();
+            }, 2500);
         } else {
             console.error('Approval failed:', data.message);
             if (btn) {
@@ -518,7 +523,10 @@ function rejectReturn(returnId, event) {
     .then(data => {
         if (data.success) {
             alert('تم رفض الطلب بنجاح');
-            location.reload();
+            // إعادة تحميل الصفحة تلقائياً بعد 2.5 ثانية
+            setTimeout(() => {
+                location.reload();
+            }, 2500);
         } else {
             if (btn) {
                 btn.disabled = false;

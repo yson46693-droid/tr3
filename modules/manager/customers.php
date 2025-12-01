@@ -410,9 +410,7 @@ try {
     <h2 class="mb-2 mb-md-0">
         <i class="bi bi-building me-2"></i>عملاء الشركة
     </h2>
-    <button class="btn btn-primary" data-bs-toggle="modal" data-bs-target="#addCustomerModal">
-        <i class="bi bi-person-plus me-2"></i>إضافة عميل جديد
-    </button>
+    
 </div>
 
 <?php if ($error): ?>
