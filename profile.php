@@ -119,6 +119,11 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     $params
                 );
                 
+                // تنظيف Cache للمستخدم بعد التحديث
+                if (function_exists('clearUserCache')) {
+                    clearUserCache($currentUser['id']);
+                }
+                
                 // تحديث كلمة المرور إذا تم إدخالها
                 if (!empty($newPassword)) {
                     if (empty($currentPassword)) {

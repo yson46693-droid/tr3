@@ -110,6 +110,11 @@ if ($action === 'update_profile') {
         $params
     );
     
+    // تنظيف Cache للمستخدم بعد التحديث
+    if (function_exists('clearUserCache')) {
+        clearUserCache($currentUser['id']);
+    }
+    
     logAudit($currentUser['id'], 'update_profile', 'user', $currentUser['id'], null, ['full_name' => $fullName, 'email' => $email]);
     
     echo json_encode([

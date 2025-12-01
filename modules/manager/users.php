@@ -131,6 +131,11 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                         [$role, $fullName, $phone, $hourlyRate, $status, $userId]
                     );
                     
+                    // تنظيف Cache للمستخدم بعد التحديث
+                    if (function_exists('clearUserCache')) {
+                        clearUserCache($userId);
+                    }
+                    
                     logAudit($currentUser['id'], 'update_user', 'user', $userId, 
                              json_encode($user), ['role' => $role]);
                     
@@ -235,6 +240,11 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 "UPDATE users SET password_hash = ?, updated_at = NOW() WHERE id = ?",
                 [$passwordHash, $userId]
             );
+            
+            // تنظيف Cache للمستخدم بعد تغيير كلمة المرور
+            if (function_exists('clearUserCache')) {
+                clearUserCache($userId);
+            }
             
             logAudit($currentUser['id'], 'reset_password', 'user', $userId, null, null);
             

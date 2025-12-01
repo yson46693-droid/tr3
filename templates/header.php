@@ -58,15 +58,28 @@ if (isLoggedIn() && (!$currentUser || !is_array($currentUser) || empty($currentU
 }
 
 $currentUserRole = strtolower((string) (isset($currentUser['role']) ? $currentUser['role'] : ''));
+
+// تم نقل العمليات الثقيلة إلى api/background-tasks.php لتحسين الأداء
+// سيتم تنفيذها بشكل غير متزامن بعد تحميل الصفحة
+
+// العمليات السريعة فقط - يمكن تنفيذها مباشرة
 if ($currentUser && function_exists('handleAttendanceRemindersForUser')) {
-    handleAttendanceRemindersForUser($currentUser);
+    // هذا قد يحتاج أن يعمل مباشرة لإظهار الإشعارات
+    // لكن يمكن تحسينه لاحقاً ليعمل عبر AJAX أيضاً
+    try {
+        handleAttendanceRemindersForUser($currentUser);
+    } catch (Throwable $e) {
+        error_log('Attendance reminders error: ' . $e->getMessage());
+    }
 }
 
+/* تم نقل العمليات التالية إلى api/background-tasks.php
+ * سيتم تنفيذها بشكل غير متزامن بعد تحميل الصفحة لتحسين الأداء
+ * 
 if (function_exists('processDailyPackagingAlert')) {
     processDailyPackagingAlert();
 }
 
-// معالجة الانصراف التلقائي للموظفين الذين لم يسجلوا انصراف
 if (function_exists('processAutoCheckoutForMissingEmployees')) {
     try {
         processAutoCheckoutForMissingEmployees();
@@ -75,7 +88,6 @@ if (function_exists('processAutoCheckoutForMissingEmployees')) {
     }
 }
 
-// تصفير عداد الإنذارات مع بداية كل شهر جديد
 if (function_exists('resetWarningCountsForNewMonth')) {
     try {
         resetWarningCountsForNewMonth();
@@ -99,6 +111,7 @@ if ($currentUser) {
         error_log('Automatic monthly production detailed report dispatch failed: ' . $productionReportAutoError->getMessage());
     }
 }
+*/
 
 // التأكد من عدم وجود محتوى قبل DOCTYPE - تنظيف أي output غير مرغوب
 if (ob_get_level() > 0) {

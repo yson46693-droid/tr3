@@ -206,6 +206,7 @@ function checkRememberToken($cookieValue) {
 /**
  * الحصول على معلومات المستخدم الحالي
  * مع التحقق من وجود المستخدم وحالته وإلغاء تسجيل الدخول تلقائياً إذا كان محذوفاً أو غير مفعّل
+ * مع استخدام Cache لتحسين الأداء
  */
 function getCurrentUser() {
     if (!isLoggedIn()) {
@@ -217,6 +218,43 @@ function getCurrentUser() {
         return null;
     }
     
+    // تحميل نظام Cache
+    if (!class_exists('Cache')) {
+        $cacheFile = __DIR__ . '/cache.php';
+        if (file_exists($cacheFile)) {
+            require_once $cacheFile;
+        }
+    }
+    
+    // استخدام Cache لحفظ بيانات المستخدم لمدة 5 دقائق
+    $cacheKey = "user_{$userId}";
+    
+    // إذا كان Cache متاحاً، استخدمه
+    if (class_exists('Cache')) {
+        $user = Cache::remember($cacheKey, function() use ($userId) {
+            return getCurrentUserFromDatabase($userId);
+        }, 300); // 5 دقائق
+        
+        // إذا كان المستخدم null (محذوف)، احذف من Cache
+        if ($user === null) {
+            Cache::forget($cacheKey);
+            return null;
+        }
+        
+        return $user;
+    }
+    
+    // إذا لم يكن Cache متاحاً، استخدم الطريقة القديمة
+    return getCurrentUserFromDatabase($userId);
+}
+
+/**
+ * جلب بيانات المستخدم من قاعدة البيانات (دالة مساعدة)
+ * 
+ * @param int $userId معرف المستخدم
+ * @return array|null بيانات المستخدم أو null
+ */
+function getCurrentUserFromDatabase($userId) {
     // جلب جميع بيانات المستخدم من قاعدة البيانات
     $db = db();
     $user = $db->queryOne("SELECT * FROM users WHERE id = ?", [$userId]);
@@ -436,9 +474,37 @@ function login($username, $password, $rememberMe = false) {
 }
 
 /**
+ * تنظيف Cache للمستخدم
+ * 
+ * @param int|null $userId معرف المستخدم (null لحذف Cache المستخدم الحالي)
+ */
+function clearUserCache($userId = null) {
+    if ($userId === null) {
+        $userId = $_SESSION['user_id'] ?? null;
+    }
+    
+    if ($userId) {
+        // تحميل نظام Cache
+        if (!class_exists('Cache')) {
+            $cacheFile = __DIR__ . '/cache.php';
+            if (file_exists($cacheFile)) {
+                require_once $cacheFile;
+            }
+        }
+        
+        if (class_exists('Cache')) {
+            Cache::forget("user_{$userId}");
+        }
+    }
+}
+
+/**
  * تسجيل الخروج
  */
 function logout() {
+    // تنظيف Cache قبل تسجيل الخروج
+    clearUserCache();
+    
     // حذف remember token من قاعدة البيانات
     if (isset($_SESSION['user_id']) && isset($_COOKIE['remember_token'])) {
         try {

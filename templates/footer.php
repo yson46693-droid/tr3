@@ -131,6 +131,36 @@ if (!defined('ACCESS_ALLOWED')) {
     <script>
         // تهيئة النظام
         document.addEventListener('DOMContentLoaded', function() {
+            // تحميل العمليات الخلفية بشكل غير متزامن (بعد تحميل الصفحة)
+            // هذا يحسن الأداء عن طريق تأخير العمليات الثقيلة
+            setTimeout(function() {
+                try {
+                    // حساب مسار API
+                    const currentPath = window.location.pathname;
+                    const pathParts = currentPath.split('/').filter(p => p && !p.endsWith('.php'));
+                    let apiPath = '/api/background-tasks.php';
+                    if (pathParts.length > 0) {
+                        apiPath = '/' + pathParts[0] + '/api/background-tasks.php';
+                    }
+                    
+                    // استدعاء API للعمليات الخلفية (بدون انتظار النتيجة)
+                    fetch(apiPath, {
+                        method: 'GET',
+                        credentials: 'same-origin',
+                        cache: 'no-cache',
+                        headers: {
+                            'X-Requested-With': 'XMLHttpRequest'
+                        }
+                    }).catch(function(error) {
+                        // تجاهل الأخطاء بصمت - العمليات الخلفية اختيارية
+                        console.log('Background tasks skipped:', error.message);
+                    });
+                } catch (error) {
+                    // تجاهل الأخطاء
+                    console.log('Background tasks error:', error.message);
+                }
+            }, 2000); // بعد ثانيتين من تحميل الصفحة
+            
             // إغلاق القائمة المنسدلة عند النقر على أي رابط
             const mainMenuDropdown = document.getElementById('mainMenuDropdown');
             const mainMenuDropdownMenu = document.querySelector('.main-menu-dropdown');
