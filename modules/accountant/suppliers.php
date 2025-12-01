@@ -1334,58 +1334,95 @@ document.addEventListener('DOMContentLoaded', function() {
 <div class="modal fade" id="printSupplierReportModal" tabindex="-1">
     <div class="modal-dialog modal-dialog-scrollable">
         <div class="modal-content">
-            <?php 
-            // حساب المسار الصحيح - print_supplier_report.php موجود في الجذر
-            $basePath = getBasePath();
-            $printReportUrl = !empty($basePath) ? rtrim($basePath, '/') . '/print_supplier_report.php' : '/print_supplier_report.php';
-            ?>
-            <form method="GET" action="<?php echo htmlspecialchars($printReportUrl); ?>" target="_blank">
-                <div class="modal-header">
-                    <h5 class="modal-title"><i class="bi bi-printer me-2"></i>طباعة تقرير التوريدات</h5>
-                    <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            <div class="modal-header">
+                <h5 class="modal-title"><i class="bi bi-printer me-2"></i>طباعة تقرير التوريدات</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body">
+                <div class="mb-3">
+                    <label class="form-label">المورد <span class="text-danger">*</span></label>
+                    <select class="form-select" name="supplier_id" required id="reportSupplierId">
+                        <option value="">اختر المورد</option>
+                        <?php 
+                        $allSuppliers = $db->query("SELECT id, name, supplier_code FROM suppliers WHERE status = 'active' ORDER BY name ASC");
+                        foreach ($allSuppliers as $supp): ?>
+                            <option value="<?php echo $supp['id']; ?>">
+                                <?php echo htmlspecialchars($supp['name']); ?> 
+                                <?php if (!empty($supp['supplier_code'])): ?>
+                                    (<?php echo htmlspecialchars($supp['supplier_code']); ?>)
+                                <?php endif; ?>
+                            </option>
+                        <?php endforeach; ?>
+                    </select>
                 </div>
-                <div class="modal-body">
-                    <div class="mb-3">
-                        <label class="form-label">المورد <span class="text-danger">*</span></label>
-                        <select class="form-select" name="supplier_id" required id="reportSupplierId">
-                            <option value="">اختر المورد</option>
-                            <?php 
-                            $allSuppliers = $db->query("SELECT id, name, supplier_code FROM suppliers WHERE status = 'active' ORDER BY name ASC");
-                            foreach ($allSuppliers as $supp): ?>
-                                <option value="<?php echo $supp['id']; ?>">
-                                    <?php echo htmlspecialchars($supp['name']); ?> 
-                                    <?php if (!empty($supp['supplier_code'])): ?>
-                                        (<?php echo htmlspecialchars($supp['supplier_code']); ?>)
-                                    <?php endif; ?>
-                                </option>
-                            <?php endforeach; ?>
-                        </select>
+                <div class="row">
+                    <div class="col-md-6 mb-3">
+                        <label class="form-label">من تاريخ</label>
+                        <input type="date" class="form-control" name="date_from" id="reportDateFrom" value="<?php echo date('Y-m-01'); ?>">
                     </div>
-                    <div class="row">
-                        <div class="col-md-6 mb-3">
-                            <label class="form-label">من تاريخ</label>
-                            <input type="date" class="form-control" name="date_from" id="reportDateFrom" value="<?php echo date('Y-m-01'); ?>">
-                        </div>
-                        <div class="col-md-6 mb-3">
-                            <label class="form-label">إلى تاريخ</label>
-                            <input type="date" class="form-control" name="date_to" id="reportDateTo" value="<?php echo date('Y-m-d'); ?>">
-                        </div>
-                    </div>
-                    <div class="alert alert-info">
-                        <i class="bi bi-info-circle me-2"></i>
-                        سيتم فتح التقرير في نافذة جديدة للطباعة
+                    <div class="col-md-6 mb-3">
+                        <label class="form-label">إلى تاريخ</label>
+                        <input type="date" class="form-control" name="date_to" id="reportDateTo" value="<?php echo date('Y-m-d'); ?>">
                     </div>
                 </div>
-                <div class="modal-footer">
-                    <button type="button" class="btn btn-outline" data-bs-dismiss="modal">إلغاء</button>
-                    <button type="submit" class="btn btn-success">
-                        <i class="bi bi-printer me-2"></i>طباعة التقرير
-                    </button>
+                <div class="alert alert-info">
+                    <i class="bi bi-info-circle me-2"></i>
+                    سيتم فتح التقرير في نافذة جديدة للطباعة
                 </div>
-            </form>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-outline" data-bs-dismiss="modal">إلغاء</button>
+                <button type="button" class="btn btn-success" id="printSupplierReportBtn">
+                    <i class="bi bi-printer me-2"></i>طباعة التقرير
+                </button>
+            </div>
         </div>
     </div>
 </div>
+
+<script>
+document.addEventListener('DOMContentLoaded', function() {
+    const printBtn = document.getElementById('printSupplierReportBtn');
+    if (printBtn) {
+        printBtn.addEventListener('click', function() {
+            const supplierId = document.getElementById('reportSupplierId').value;
+            const dateFrom = document.getElementById('reportDateFrom').value;
+            const dateTo = document.getElementById('reportDateTo').value;
+            
+            if (!supplierId) {
+                alert('يرجى اختيار مورد');
+                return;
+            }
+            
+            // حساب المسار الصحيح
+            const currentPath = window.location.pathname;
+            const pathParts = currentPath.split('/').filter(p => p);
+            const stopIndex = pathParts.findIndex(part => part === 'dashboard' || part === 'modules');
+            const baseParts = stopIndex === -1 ? pathParts : pathParts.slice(0, stopIndex);
+            
+            let basePath = '/';
+            if (baseParts.length > 0) {
+                basePath = '/' + baseParts.join('/') + '/';
+            }
+            
+            // بناء URL للتقرير
+            const reportUrl = basePath + 'print_supplier_report.php' + 
+                '?supplier_id=' + encodeURIComponent(supplierId) +
+                '&date_from=' + encodeURIComponent(dateFrom) +
+                '&date_to=' + encodeURIComponent(dateTo);
+            
+            // فتح التقرير في نافذة جديدة
+            window.open(reportUrl, '_blank');
+            
+            // إغلاق النافذة المنبثقة
+            const modal = bootstrap.Modal.getInstance(document.getElementById('printSupplierReportModal'));
+            if (modal) {
+                modal.hide();
+            }
+        });
+    }
+});
+</script>
 
 <!-- إعادة تحميل الصفحة تلقائياً بعد أي رسالة (نجاح أو خطأ) لمنع تكرار الطلبات -->
 <script>
