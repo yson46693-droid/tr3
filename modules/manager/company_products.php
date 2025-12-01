@@ -279,6 +279,13 @@ foreach ($factoryProducts as $product) {
     width: 100%;
     max-width: 100%;
     overflow-x: hidden;
+    box-sizing: border-box;
+}
+
+/* ضمان أن جميع العناصر داخل الصفحة لا تتجاوز العرض */
+.company-products-page * {
+    max-width: 100%;
+    box-sizing: border-box;
 }
 
 .section-header {
@@ -331,6 +338,7 @@ foreach ($factoryProducts as $product) {
     transition: all 0.3s ease;
     width: 100%;
     max-width: 100%;
+    box-sizing: border-box;
 }
 
 .company-card:hover {
