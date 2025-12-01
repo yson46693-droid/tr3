@@ -116,6 +116,13 @@ $baseUrl = getDashboardUrl();
                     </a>
                 </li>
                 
+                <li class="nav-item">
+                    <a class="nav-link <?php echo (isset($_GET['page']) && $_GET['page'] === 'local_customers') ? 'active' : ''; ?>" 
+                       href="<?php echo $baseUrl; ?>manager.php?page=local_customers">
+                        <i class="bi bi-people"></i>
+                        <span>العملاء المحليين</span>
+                    </a>
+                </li>
             </div>
             
             <div class="sidebar-section">
