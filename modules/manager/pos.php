@@ -282,12 +282,76 @@ if (!$mainWarehouse) {
 
 $mainWarehouseId = $mainWarehouse['id'] ?? null;
 
+// معالجة إضافة عميل جديد من صفحة طلبات الشحن
+if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['action'] === 'add_customer_from_shipping') {
+    $name = trim($_POST['name'] ?? '');
+    $phone = trim($_POST['phone'] ?? '');
+    $address = trim($_POST['address'] ?? '');
+    $balance = isset($_POST['balance']) ? cleanFinancialValue($_POST['balance'], true) : 0.0;
+
+    if (empty($name)) {
+        $error = 'يجب إدخال اسم العميل.';
+    } else {
+        try {
+            // التحقق من عدم وجود عميل بنفس الاسم للشركة
+            $existingCustomer = $db->queryOne(
+                "SELECT id FROM customers WHERE name = ? AND created_by_admin = 1 AND (rep_id IS NULL OR rep_id = 0)",
+                [$name]
+            );
+            
+            if ($existingCustomer) {
+                $error = 'يوجد عميل مسجل مسبقاً بنفس الاسم.';
+            } else {
+                $result = $db->execute(
+                    "INSERT INTO customers (name, phone, address, balance, status, created_by, rep_id, created_from_pos, created_by_admin)
+                     VALUES (?, ?, ?, ?, 'active', ?, NULL, 0, 1)",
+                    [
+                        $name,
+                        $phone !== '' ? $phone : null,
+                        $address !== '' ? $address : null,
+                        $balance,
+                        $currentUser['id'],
+                    ]
+                );
+
+                $customerId = (int)($result['insert_id'] ?? 0);
+                if ($customerId <= 0) {
+                    throw new RuntimeException('فشل إضافة العميل: لم يتم الحصول على معرف العميل.');
+                }
+                
+                logAudit($currentUser['id'], 'manager_add_company_customer', 'customer', $customerId, null, [
+                    'name' => $name,
+                    'created_by_admin' => 1,
+                    'from_shipping_page' => true,
+                ]);
+
+                $success = 'تمت إضافة العميل بنجاح. يمكنك الآن اختياره من القائمة.';
+                
+                // إعادة تحميل قائمة العملاء
+                $customers = [];
+                try {
+                    $customers = $db->query("SELECT id, name FROM customers WHERE status = 'active' ORDER BY name ASC");
+                } catch (Throwable $e) {
+                    error_log('Error fetching customers after add: ' . $e->getMessage());
+                }
+            }
+        } catch (InvalidArgumentException $invalidError) {
+            $error = $invalidError->getMessage();
+        } catch (Throwable $addError) {
+            error_log('Manager add customer from shipping error: ' . $addError->getMessage());
+            $error = 'تعذر إضافة العميل: ' . htmlspecialchars($addError->getMessage());
+        }
+    }
+}
+
 // تحميل قائمة العملاء
-$customers = [];
-try {
-    $customers = $db->query("SELECT id, name FROM customers WHERE status = 'active' ORDER BY name ASC");
-} catch (Throwable $e) {
-    error_log('Error fetching customers: ' . $e->getMessage());
+if (empty($customers)) {
+    $customers = [];
+    try {
+        $customers = $db->query("SELECT id, name FROM customers WHERE status = 'active' ORDER BY name ASC");
+    } catch (Throwable $e) {
+        error_log('Error fetching customers: ' . $e->getMessage());
+    }
 }
 
 // تحميل منتجات الشركة (منتجات المصنع + المنتجات الخارجية)
@@ -407,6 +471,67 @@ foreach ($companyInventory as $item) {
         $inventoryByProduct[$key]['unit_price'] = (float)($item['unit_price'] ?? 0);
     }
     $inventoryByProduct[$key]['items'][] = $item;
+}
+
+// معالجة إضافة عميل جديد من صفحة طلبات الشحن
+if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['action'] === 'add_customer_from_shipping') {
+    $name = trim($_POST['name'] ?? '');
+    $phone = trim($_POST['phone'] ?? '');
+    $address = trim($_POST['address'] ?? '');
+    $balance = isset($_POST['balance']) ? cleanFinancialValue($_POST['balance'], true) : 0.0;
+
+    if (empty($name)) {
+        $error = 'يجب إدخال اسم العميل.';
+    } else {
+        try {
+            // التحقق من عدم وجود عميل بنفس الاسم للشركة
+            $existingCustomer = $db->queryOne(
+                "SELECT id FROM customers WHERE name = ? AND created_by_admin = 1 AND (rep_id IS NULL OR rep_id = 0)",
+                [$name]
+            );
+            
+            if ($existingCustomer) {
+                $error = 'يوجد عميل مسجل مسبقاً بنفس الاسم.';
+            } else {
+                $result = $db->execute(
+                    "INSERT INTO customers (name, phone, address, balance, status, created_by, rep_id, created_from_pos, created_by_admin)
+                     VALUES (?, ?, ?, ?, 'active', ?, NULL, 0, 1)",
+                    [
+                        $name,
+                        $phone !== '' ? $phone : null,
+                        $address !== '' ? $address : null,
+                        $balance,
+                        $currentUser['id'],
+                    ]
+                );
+
+                $customerId = (int)($result['insert_id'] ?? 0);
+                if ($customerId <= 0) {
+                    throw new RuntimeException('فشل إضافة العميل: لم يتم الحصول على معرف العميل.');
+                }
+                
+                logAudit($currentUser['id'], 'manager_add_company_customer', 'customer', $customerId, null, [
+                    'name' => $name,
+                    'created_by_admin' => 1,
+                    'from_shipping_page' => true,
+                ]);
+
+                $success = 'تمت إضافة العميل بنجاح. يمكنك الآن اختياره من القائمة.';
+                
+                // إعادة تحميل قائمة العملاء
+                try {
+                    $customers = $db->query("SELECT id, name FROM customers WHERE status = 'active' ORDER BY name ASC");
+                } catch (Throwable $e) {
+                    error_log('Error fetching customers after add: ' . $e->getMessage());
+                }
+            }
+        } catch (InvalidArgumentException $invalidError) {
+            $error = $invalidError->getMessage();
+        } catch (Throwable $addError) {
+            error_log('Manager add customer from shipping error: ' . $addError->getMessage());
+            $error = 'تعذر إضافة العميل: ' . htmlspecialchars($addError->getMessage());
+        }
+    }
 }
 
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
@@ -2489,7 +2614,10 @@ try {
         <?php elseif (empty($customers)): ?>
             <div class="alert alert-warning d-flex align-items-center gap-2">
                 <i class="bi bi-people fs-5"></i>
-                <div>لا توجد عملاء نشطون في النظام. قم بإضافة عميل أولاً.</div>
+                <div class="flex-grow-1">لا توجد عملاء نشطون في النظام. قم بإضافة عميل أولاً.</div>
+                <button type="button" class="btn btn-primary" data-bs-toggle="modal" data-bs-target="#addCustomerFromShippingModal" style="padding: 0.65rem 1.25rem; font-weight: 600;">
+                    <i class="bi bi-person-plus me-1"></i>إضافة عميل جديد
+                </button>
             </div>
         <?php else: ?>
             <!-- نموذج POS لتسجيل طلب الشحن -->
@@ -2513,7 +2641,7 @@ try {
                                             <?php endif; ?>
                                         <?php endforeach; ?>
                                     </select>
-                                    <button class="btn btn-outline-secondary" type="button" data-bs-toggle="modal" data-bs-target="#addShippingCompanyModal" title="إضافة شركة شحن">
+                                    <button class="btn btn-outline-secondary btn-lg" type="button" data-bs-toggle="modal" data-bs-target="#addShippingCompanyModal" title="إضافة شركة شحن">
                                         <i class="bi bi-plus"></i>
                                     </button>
                                 </div>
@@ -2521,14 +2649,19 @@ try {
                             </div>
                             <div class="col-lg-4 col-md-6">
                                 <label class="form-label fw-semibold">العميل <span class="text-danger">*</span></label>
-                                <select class="form-select form-select-lg" name="customer_id" required>
-                                    <option value="">اختر العميل</option>
-                                    <?php foreach ($customers as $customer): ?>
-                                        <option value="<?php echo (int)$customer['id']; ?>">
-                                            <?php echo htmlspecialchars($customer['name']); ?>
-                                        </option>
-                                    <?php endforeach; ?>
-                                </select>
+                                <div class="input-group">
+                                    <select class="form-select form-select-lg" name="customer_id" id="shippingCustomerSelect" required>
+                                        <option value="">اختر العميل</option>
+                                        <?php foreach ($customers as $customer): ?>
+                                            <option value="<?php echo (int)$customer['id']; ?>">
+                                                <?php echo htmlspecialchars($customer['name']); ?>
+                                            </option>
+                                        <?php endforeach; ?>
+                                    </select>
+                                    <button class="btn btn-outline-primary btn-lg" type="button" data-bs-toggle="modal" data-bs-target="#addCustomerFromShippingModal" title="إضافة عميل جديد">
+                                        <i class="bi bi-person-plus"></i>
+                                    </button>
+                                </div>
                             </div>
                             <div class="col-lg-4">
                                 <label class="form-label fw-semibold">المخزن المصدر</label>
@@ -2584,7 +2717,7 @@ try {
                                                 <span>المتاح</span>
                                                 <span class="shipping-pos-product-qty"><?php echo number_format((float)($product['quantity'] ?? 0), 2); ?></span>
                                             </div>
-                                            <button type="button" class="btn btn-primary btn-sm w-100 mt-2 add-to-shipping-cart-btn">
+                                            <button type="button" class="btn btn-primary w-100 mt-3 add-to-shipping-cart-btn" style="padding: 0.65rem 1rem; font-weight: 600;">
                                                 <i class="bi bi-plus-circle me-1"></i>إضافة للسلة
                                             </button>
                                         </div>
@@ -2597,8 +2730,8 @@ try {
                         <div class="shipping-pos-cart-panel">
                             <div class="shipping-pos-panel-header">
                                 <h4>سلة طلب الشحن</h4>
-                                <button type="button" class="btn btn-outline-danger btn-sm" id="clearShippingCartBtn">
-                                    <i class="bi bi-trash me-1"></i>تفريغ
+                                <button type="button" class="btn btn-outline-danger" id="clearShippingCartBtn" style="padding: 0.5rem 1rem; font-weight: 600;">
+                                    <i class="bi bi-trash me-1"></i>تفريغ السلة
                                 </button>
                             </div>
                             
@@ -2609,17 +2742,17 @@ try {
                             
                             <div class="shipping-pos-cart-content d-none" id="shippingCartContent">
                                 <div class="table-responsive mb-3">
-                                    <table class="table table-sm align-middle" id="shippingItemsTable">
-                                        <thead class="table-light">
+                                    <table class="table align-middle" id="shippingItemsTable" style="margin-bottom: 0;">
+                                        <thead class="table-light" style="background: linear-gradient(135deg, #f8f9fa 0%, #e9ecef 100%);">
                                             <tr>
-                                                <th>المنتج</th>
-                                                <th style="width: 100px;">الكمية</th>
-                                                <th style="width: 120px;">السعر</th>
-                                                <th style="width: 120px;">الإجمالي</th>
-                                                <th style="width: 60px;"></th>
+                                                <th style="font-weight: 700; padding: 1rem 0.75rem; border-bottom: 2px solid #dee2e6;">المنتج</th>
+                                                <th style="width: 110px; font-weight: 700; padding: 1rem 0.75rem; border-bottom: 2px solid #dee2e6;">الكمية</th>
+                                                <th style="width: 130px; font-weight: 700; padding: 1rem 0.75rem; border-bottom: 2px solid #dee2e6;">السعر</th>
+                                                <th style="width: 130px; font-weight: 700; padding: 1rem 0.75rem; border-bottom: 2px solid #dee2e6;">الإجمالي</th>
+                                                <th style="width: 70px; font-weight: 700; padding: 1rem 0.75rem; border-bottom: 2px solid #dee2e6; text-align: center;">حذف</th>
                                             </tr>
                                         </thead>
-                                        <tbody id="shippingItemsBody"></tbody>
+                                        <tbody id="shippingItemsBody" style="background: #ffffff;"></tbody>
                                     </table>
                                 </div>
                                 
@@ -2646,8 +2779,8 @@ try {
                                     سيتم تسجيل هذا الطلب على شركة الشحن كدين لحين تأكيد التسليم للعميل.
                                 </div>
                                 
-                                <button type="submit" class="btn btn-success btn-lg w-100" id="submitShippingOrderBtn">
-                                    <i class="bi bi-send-check me-1"></i>تسجيل الطلب وتسليم المنتجات
+                                <button type="submit" class="btn btn-success w-100" id="submitShippingOrderBtn" style="padding: 1rem 1.5rem; font-size: 1.1rem; font-weight: 700; border-radius: 12px;">
+                                    <i class="bi bi-send-check me-2"></i>تسجيل الطلب وتسليم المنتجات
                                 </button>
                             </div>
                         </div>
@@ -2659,7 +2792,7 @@ try {
         <div class="card shadow-sm mb-4">
             <div class="card-header d-flex justify-content-between align-items-center">
                 <h5 class="mb-0"><i class="bi bi-truck me-2"></i>شركات الشحن</h5>
-                <button type="button" class="btn btn-outline-primary btn-sm" data-bs-toggle="modal" data-bs-target="#addShippingCompanyModal">
+                <button type="button" class="btn btn-outline-primary" data-bs-toggle="modal" data-bs-target="#addShippingCompanyModal" style="padding: 0.65rem 1.25rem; font-weight: 600;">
                     <i class="bi bi-plus-circle me-1"></i>إضافة شركة جديدة
                 </button>
             </div>
@@ -2714,7 +2847,7 @@ try {
                                     </div>
                                     <?php if ($isActive): ?>
                                         <div class="shipping-company-card-footer">
-                                            <button type="button" class="btn btn-primary btn-sm w-100 select-shipping-company-btn">
+                                            <button type="button" class="btn btn-primary w-100 select-shipping-company-btn" style="padding: 0.65rem 1rem; font-weight: 600;">
                                                 <i class="bi bi-check-circle me-1"></i>اختر للشحن
                                             </button>
                                         </div>
@@ -2799,7 +2932,7 @@ try {
                                                         <input type="hidden" name="action" value="update_shipping_status">
                                                         <input type="hidden" name="order_id" value="<?php echo (int)$order['id']; ?>">
                                                         <input type="hidden" name="status" value="in_transit">
-                                                        <button type="submit" class="btn btn-outline-warning btn-sm">
+                                                        <button type="submit" class="btn btn-outline-warning" style="padding: 0.5rem 1rem; font-weight: 600;">
                                                             <i class="bi bi-truck me-1"></i>بدء الشحن
                                                         </button>
                                                     </form>
@@ -2809,7 +2942,7 @@ try {
                                                     <form method="POST" class="d-inline" onsubmit="return confirm('هل ترغب في تأكيد تسليم الطلب للعميل ونقل الدين؟');">
                                                         <input type="hidden" name="action" value="complete_shipping_order">
                                                         <input type="hidden" name="order_id" value="<?php echo (int)$order['id']; ?>">
-                                                        <button type="submit" class="btn btn-success btn-sm">
+                                                        <button type="submit" class="btn btn-success" style="padding: 0.5rem 1rem; font-weight: 600;">
                                                             <i class="bi bi-check-circle me-1"></i>إجراءات التسليم
                                                         </button>
                                                     </form>
@@ -2822,6 +2955,46 @@ try {
                         </table>
                     </div>
                 <?php endif; ?>
+            </div>
+        </div>
+
+        <!-- Modal إضافة عميل جديد من صفحة طلبات الشحن -->
+        <div class="modal fade" id="addCustomerFromShippingModal" tabindex="-1" aria-hidden="true">
+            <div class="modal-dialog modal-dialog-centered">
+                <div class="modal-content">
+                    <form id="addCustomerFromShippingForm" method="POST">
+                        <input type="hidden" name="action" value="add_customer_from_shipping">
+                        <div class="modal-header">
+                            <h5 class="modal-title"><i class="bi bi-person-plus me-2"></i>إضافة عميل جديد</h5>
+                            <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="إغلاق"></button>
+                        </div>
+                        <div class="modal-body">
+                            <div class="mb-3">
+                                <label class="form-label">اسم العميل <span class="text-danger">*</span></label>
+                                <input type="text" name="name" class="form-control" required autofocus>
+                            </div>
+                            <div class="mb-3">
+                                <label class="form-label">رقم الهاتف</label>
+                                <input type="text" name="phone" class="form-control" maxlength="20" placeholder="اختياري">
+                            </div>
+                            <div class="mb-3">
+                                <label class="form-label">العنوان</label>
+                                <textarea name="address" class="form-control" rows="2" placeholder="اختياري"></textarea>
+                            </div>
+                            <div class="mb-3">
+                                <label class="form-label">الرصيد الحالي</label>
+                                <input type="number" name="balance" class="form-control" step="0.01" value="0" min="0">
+                                <div class="form-text">أدخل قيمة موجبة للديون الحالية (إن وجدت).</div>
+                            </div>
+                        </div>
+                        <div class="modal-footer">
+                            <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">إلغاء</button>
+                            <button type="submit" class="btn btn-primary">
+                                <i class="bi bi-check-circle me-1"></i>حفظ وإضافة
+                            </button>
+                        </div>
+                    </form>
+                </div>
             </div>
         </div>
 
@@ -2876,6 +3049,33 @@ try {
 
         <script>
         (function() {
+            // معالجة إضافة عميل جديد
+            const addCustomerForm = document.getElementById('addCustomerFromShippingForm');
+            const customerSelect = document.getElementById('shippingCustomerSelect');
+            
+            if (addCustomerForm && customerSelect) {
+                addCustomerForm.addEventListener('submit', function(e) {
+                    // التحقق من صحة النموذج قبل الإرسال
+                    if (!this.checkValidity()) {
+                        e.preventDefault();
+                        this.reportValidity();
+                        return false;
+                    }
+                });
+                
+                // عند إغلاق الـ modal بعد إضافة عميل ناجحة، تحديث قائمة العملاء
+                const addCustomerModal = document.getElementById('addCustomerFromShippingModal');
+                if (addCustomerModal) {
+                    addCustomerModal.addEventListener('hidden.bs.modal', function() {
+                        // إعادة تحميل الصفحة لتحديث قائمة العملاء
+                        <?php if (!empty($success) && strpos($success, 'تمت إضافة العميل') !== false): ?>
+                        // إذا كانت هناك رسالة نجاح، نعيد تحميل الصفحة
+                        window.location.reload();
+                        <?php endif; ?>
+                    });
+                }
+            }
+            
             const products = <?php echo json_encode(array_map(function ($product) {
                 return [
                     'id' => (int)($product['id'] ?? 0),
@@ -3638,26 +3838,29 @@ try {
 <!-- أنماط بطاقات شركات الشحن -->
 <style>
 .shipping-company-card {
-    background: #ffffff;
+    background: linear-gradient(135deg, #ffffff 0%, #f8f9fa 100%);
     border: 2px solid #e5e7eb;
-    border-radius: 16px;
-    padding: 1.5rem;
+    border-radius: 18px;
+    padding: 1.75rem;
     transition: all 0.3s ease;
     display: flex;
     flex-direction: column;
     height: 100%;
-    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.05);
+    box-shadow: 0 2px 10px rgba(0, 0, 0, 0.06);
 }
 
 .shipping-company-card:hover {
-    transform: translateY(-4px);
-    box-shadow: 0 8px 24px rgba(13, 110, 253, 0.15);
-    border-color: rgba(13, 110, 253, 0.3);
+    transform: translateY(-5px);
+    box-shadow: 0 10px 30px rgba(13, 110, 253, 0.2);
+    border-color: rgba(13, 110, 253, 0.4);
+    background: linear-gradient(135deg, #ffffff 0%, #f0f7ff 100%);
 }
 
 .shipping-company-card.active {
     border-color: #0d6efd;
-    background: linear-gradient(135deg, #ffffff 0%, #f0f7ff 100%);
+    border-width: 3px;
+    background: linear-gradient(135deg, #ffffff 0%, #e0f2fe 100%);
+    box-shadow: 0 4px 16px rgba(13, 110, 253, 0.25);
 }
 
 .shipping-company-card.inactive {
@@ -3670,17 +3873,22 @@ try {
 }
 
 .shipping-company-icon {
-    width: 56px;
-    height: 56px;
+    width: 60px;
+    height: 60px;
     background: linear-gradient(135deg, #0d6efd 0%, #0dcaf0 100%);
-    border-radius: 12px;
+    border-radius: 14px;
     display: flex;
     align-items: center;
     justify-content: center;
     color: #ffffff;
-    font-size: 1.5rem;
-    margin-bottom: 0.75rem;
-    box-shadow: 0 4px 12px rgba(13, 110, 253, 0.25);
+    font-size: 1.75rem;
+    margin-bottom: 1rem;
+    box-shadow: 0 6px 16px rgba(13, 110, 253, 0.3);
+    transition: transform 0.3s ease;
+}
+
+.shipping-company-card:hover .shipping-company-icon {
+    transform: scale(1.1) rotate(5deg);
 }
 
 .shipping-company-card.inactive .shipping-company-icon {
@@ -3688,10 +3896,12 @@ try {
 }
 
 .shipping-company-name {
-    font-size: 1.1rem;
+    font-size: 1.2rem;
     font-weight: 700;
     color: #1f2937;
     margin: 0;
+    letter-spacing: -0.01em;
+    line-height: 1.4;
 }
 
 .shipping-company-card-body {
@@ -3702,10 +3912,11 @@ try {
 .shipping-company-info-item {
     display: flex;
     align-items: center;
-    gap: 0.5rem;
-    margin-bottom: 0.5rem;
-    font-size: 0.9rem;
+    gap: 0.75rem;
+    margin-bottom: 0.75rem;
+    font-size: 0.95rem;
     color: #4b5563;
+    padding: 0.4rem 0;
 }
 
 .shipping-company-info-item i {
@@ -3724,8 +3935,8 @@ try {
 
 .shipping-company-card-footer {
     margin-top: auto;
-    padding-top: 1rem;
-    border-top: 1px solid #e5e7eb;
+    padding-top: 1.25rem;
+    border-top: 2px solid #e5e7eb;
 }
 
 .shipping-company-card.inactive .shipping-company-card-footer {
@@ -3734,14 +3945,21 @@ try {
 
 .select-shipping-company-btn {
     font-weight: 600;
-    border-radius: 8px;
-    padding: 0.5rem 1rem;
-    transition: all 0.2s ease;
+    border-radius: 10px;
+    padding: 0.65rem 1rem;
+    transition: all 0.3s ease;
+    font-size: 0.95rem;
+    border: 2px solid transparent;
 }
 
 .select-shipping-company-btn:hover {
-    transform: scale(1.02);
-    box-shadow: 0 4px 12px rgba(13, 110, 253, 0.3);
+    transform: translateY(-2px);
+    box-shadow: 0 6px 16px rgba(13, 110, 253, 0.3);
+    border-color: #0d6efd;
+}
+
+.select-shipping-company-btn:active {
+    transform: translateY(0);
 }
 
 @media (max-width: 768px) {
@@ -3770,9 +3988,14 @@ try {
 .shipping-pos-header-card {
     background: #ffffff;
     border-radius: 16px;
-    padding: 1.5rem;
-    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.08);
+    padding: 1.75rem;
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.06);
     border: 1px solid #e5e7eb;
+    transition: box-shadow 0.2s ease;
+}
+
+.shipping-pos-header-card:hover {
+    box-shadow: 0 4px 16px rgba(0, 0, 0, 0.1);
 }
 
 .shipping-pos-content {
@@ -3785,9 +4008,15 @@ try {
 .shipping-pos-cart-panel {
     background: #ffffff;
     border-radius: 16px;
-    padding: 1.5rem;
-    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.08);
+    padding: 1.75rem;
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.06);
     border: 1px solid #e5e7eb;
+    transition: box-shadow 0.2s ease;
+}
+
+.shipping-pos-products-panel:hover,
+.shipping-pos-cart-panel:hover {
+    box-shadow: 0 4px 16px rgba(0, 0, 0, 0.1);
 }
 
 .shipping-pos-panel-header {
@@ -3803,7 +4032,8 @@ try {
     margin: 0;
     font-weight: 700;
     color: #1f2937;
-    font-size: 1.25rem;
+    font-size: 1.35rem;
+    letter-spacing: -0.02em;
 }
 
 .shipping-pos-panel-header p {
@@ -3819,9 +4049,18 @@ try {
 }
 
 .shipping-pos-search input {
-    border-radius: 10px;
+    border-radius: 12px;
     padding-right: 2.5rem;
-    height: 2.75rem;
+    padding-left: 1rem;
+    height: 3rem;
+    border: 2px solid #e5e7eb;
+    transition: all 0.2s ease;
+    font-size: 0.95rem;
+}
+
+.shipping-pos-search input:focus {
+    border-color: #0d6efd;
+    box-shadow: 0 0 0 0.2rem rgba(13, 110, 253, 0.15);
 }
 
 .shipping-pos-search i {
@@ -3842,35 +4081,43 @@ try {
 }
 
 .shipping-pos-product-card {
-    background: #f8f9fa;
+    background: linear-gradient(135deg, #ffffff 0%, #f8f9fa 100%);
     border: 2px solid #e5e7eb;
-    border-radius: 12px;
-    padding: 1rem;
-    transition: all 0.2s ease;
+    border-radius: 14px;
+    padding: 1.25rem;
+    transition: all 0.3s ease;
     cursor: pointer;
+    display: flex;
+    flex-direction: column;
+    height: 100%;
 }
 
 .shipping-pos-product-card:hover {
-    transform: translateY(-2px);
+    transform: translateY(-4px);
     border-color: #0d6efd;
-    box-shadow: 0 4px 12px rgba(13, 110, 253, 0.15);
-    background: #ffffff;
+    box-shadow: 0 8px 20px rgba(13, 110, 253, 0.2);
+    background: linear-gradient(135deg, #ffffff 0%, #f0f7ff 100%);
 }
 
 .shipping-pos-product-name {
-    font-size: 1rem;
-    font-weight: 600;
+    font-size: 1.05rem;
+    font-weight: 700;
     color: #1f2937;
-    margin-bottom: 0.75rem;
+    margin-bottom: 1rem;
+    line-height: 1.4;
+    min-height: 2.8rem;
+    display: flex;
+    align-items: center;
 }
 
 .shipping-pos-product-meta {
     display: flex;
     justify-content: space-between;
     align-items: center;
-    margin-bottom: 0.5rem;
-    font-size: 0.85rem;
+    margin-bottom: 0.75rem;
+    font-size: 0.9rem;
     color: #4b5563;
+    padding: 0.4rem 0;
 }
 
 .shipping-pos-product-meta strong {
@@ -3901,9 +4148,10 @@ try {
 
 .shipping-pos-summary-card {
     background: linear-gradient(135deg, #f0f7ff 0%, #e0f2fe 100%);
-    border-radius: 12px;
-    padding: 1rem;
-    border: 1px solid #bae6fd;
+    border-radius: 14px;
+    padding: 1.25rem;
+    border: 2px solid #bae6fd;
+    box-shadow: 0 2px 8px rgba(59, 130, 246, 0.1);
 }
 
 .shipping-pos-cart-footer {
@@ -3922,6 +4170,106 @@ try {
     }
 }
 
+/* تحسينات إضافية للجداول */
+#shippingItemsTable tbody tr {
+    transition: background-color 0.2s ease;
+    border-bottom: 1px solid #f0f0f0;
+}
+
+#shippingItemsTable tbody tr:hover {
+    background-color: #f8f9fa;
+}
+
+#shippingItemsTable tbody td {
+    padding: 1rem 0.75rem;
+    vertical-align: middle;
+    font-size: 0.95rem;
+}
+
+/* تحسينات للأزرار في الجداول */
+#shippingItemsTable .btn {
+    padding: 0.4rem 0.75rem;
+    font-size: 0.875rem;
+    font-weight: 600;
+    border-radius: 8px;
+    transition: all 0.2s ease;
+}
+
+#shippingItemsTable .btn:hover {
+    transform: scale(1.05);
+}
+
+/* تحسينات للـ input groups */
+.input-group .btn {
+    border-left: none;
+    border-radius: 0 0.5rem 0.5rem 0;
+    padding: 0.65rem 1rem;
+    font-weight: 600;
+    transition: all 0.2s ease;
+}
+
+.input-group .btn:hover {
+    background-color: #0d6efd;
+    color: #ffffff;
+    border-color: #0d6efd;
+}
+
+.input-group .form-select-lg + .btn {
+    height: 100%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
+
+/* تحسينات للبطاقات */
+.shipping-pos-product-card .btn {
+    margin-top: auto;
+    border-radius: 10px;
+    font-weight: 600;
+    letter-spacing: 0.01em;
+    transition: all 0.3s ease;
+}
+
+.shipping-pos-product-card .btn:hover {
+    transform: translateY(-2px);
+    box-shadow: 0 4px 12px rgba(13, 110, 253, 0.3);
+}
+
+/* تحسينات للـ form controls */
+.shipping-pos-header-card .form-select-lg,
+.shipping-pos-header-card .form-control-lg {
+    border-radius: 12px;
+    border: 2px solid #e5e7eb;
+    transition: all 0.2s ease;
+    font-weight: 500;
+}
+
+.shipping-pos-header-card .form-select-lg:focus,
+.shipping-pos-header-card .form-control-lg:focus {
+    border-color: #0d6efd;
+    box-shadow: 0 0 0 0.2rem rgba(13, 110, 253, 0.15);
+}
+
+/* تحسينات للـ labels */
+.shipping-pos-header-card .form-label {
+    font-size: 0.95rem;
+    margin-bottom: 0.5rem;
+    color: #374151;
+}
+
+/* تحسينات للـ textarea */
+.shipping-pos-cart-footer textarea {
+    border-radius: 10px;
+    border: 2px solid #e5e7eb;
+    transition: all 0.2s ease;
+    resize: vertical;
+}
+
+.shipping-pos-cart-footer textarea:focus {
+    border-color: #0d6efd;
+    box-shadow: 0 0 0 0.2rem rgba(13, 110, 253, 0.15);
+}
+
 @media (max-width: 768px) {
     .shipping-pos-product-grid {
         grid-template-columns: repeat(auto-fill, minmax(180px, 1fr));
@@ -3931,7 +4279,26 @@ try {
     .shipping-pos-header-card,
     .shipping-pos-products-panel,
     .shipping-pos-cart-panel {
-        padding: 1rem;
+        padding: 1.25rem;
+    }
+    
+    .shipping-pos-header-card .row {
+        gap: 1rem;
+    }
+    
+    .input-group {
+        flex-wrap: nowrap;
+    }
+    
+    .input-group .btn {
+        padding: 0.5rem 0.75rem;
+        font-size: 0.9rem;
+    }
+    
+    #shippingItemsTable thead th,
+    #shippingItemsTable tbody td {
+        padding: 0.75rem 0.5rem;
+        font-size: 0.875rem;
     }
 }
 </style>

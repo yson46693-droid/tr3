@@ -51,8 +51,8 @@ if (!defined('ACCESS_ALLOWED')) {
     </div>
     
     <?php
-    // استخدام timestamp لـ cache busting (نفس المستخدم في header.php)
-    $cacheVersion = time();
+    // استخدام نفس cache version من header.php لتحسين caching
+    $cacheVersion = defined('ASSETS_VERSION') ? ASSETS_VERSION : (defined('APP_VERSION') ? APP_VERSION : '1.0.0');
     ?>
     <!-- Performance: Load jQuery with defer for better performance -->
     <script src="https://code.jquery.com/jquery-3.7.0.min.js" defer crossorigin="anonymous"></script>

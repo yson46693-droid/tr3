@@ -33,6 +33,11 @@ if (!in_array($section, $allowedSections, true)) {
     $section = 'company';
 }
 
+// تسجيل معلومات التصحيح
+if ($_SERVER['REQUEST_METHOD'] === 'POST') {
+    error_log('Manager customers POST - Action: ' . ($_POST['action'] ?? 'N/A') . ', Section: ' . $section . ', POST data: ' . json_encode($_POST));
+}
+
 $dashboardScript = basename($_SERVER['PHP_SELF'] ?? 'manager.php');
 $basePageUrl = getRelativeUrl($dashboardScript . '?page=customers');
 
@@ -153,6 +158,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST'
 
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     $action = $_POST['action'] ?? '';
+    
+    error_log('Manager customers - Processing POST request. Action: ' . $action . ', Section: ' . $section);
 
     if ($section === 'company') {
         if ($action === 'add_company_customer') {
@@ -161,8 +168,11 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             $address = trim($_POST['address'] ?? '');
             $balance = isset($_POST['balance']) ? cleanFinancialValue($_POST['balance'], true) : 0.0;
 
+            error_log('Manager add customer attempt - Name: ' . $name . ', Phone: ' . $phone . ', User ID: ' . ($currentUser['id'] ?? 'N/A'));
+
             if (empty($name)) {
                 $error = 'يجب إدخال اسم العميل.';
+                error_log('Manager add customer error: Name is empty');
             } else {
                 try {
                     // التحقق من عدم وجود عميل بنفس الاسم للشركة
@@ -173,7 +183,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     
                     if ($existingCustomer) {
                         $error = 'يوجد عميل مسجل مسبقاً بنفس الاسم.';
+                        error_log('Manager add customer error: Customer with same name exists - ID: ' . ($existingCustomer['id'] ?? 'N/A'));
                     } else {
+                        error_log('Manager add customer - Executing INSERT query');
                         $result = $db->execute(
                             "INSERT INTO customers (name, phone, address, balance, status, created_by, rep_id, created_from_pos, created_by_admin)
                              VALUES (?, ?, ?, ?, 'active', ?, NULL, 0, 1)",
@@ -186,21 +198,32 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                             ]
                         );
 
+                        error_log('Manager add customer - INSERT result: ' . json_encode($result));
+
                         $customerId = (int)($result['insert_id'] ?? 0);
                         if ($customerId <= 0) {
+                            error_log('Manager add customer error: insert_id is 0 or missing. Result: ' . json_encode($result));
                             throw new RuntimeException('فشل إضافة العميل: لم يتم الحصول على معرف العميل.');
                         }
                         
-                        logAudit($currentUser['id'], 'manager_add_company_customer', 'customer', $customerId, null, [
-                            'name' => $name,
-                            'created_by_admin' => 1,
-                        ]);
+                        error_log('Manager add customer - Customer ID: ' . $customerId);
+                        
+                        try {
+                            logAudit($currentUser['id'], 'manager_add_company_customer', 'customer', $customerId, null, [
+                                'name' => $name,
+                                'created_by_admin' => 1,
+                            ]);
+                        } catch (Throwable $auditError) {
+                            error_log('Manager add customer - Audit log error (non-critical): ' . $auditError->getMessage());
+                        }
 
                         $_SESSION['success_message'] = 'تمت إضافة العميل بنجاح.';
+                        error_log('Manager add customer - Success, redirecting...');
                         redirectAfterPost('customers', ['section' => 'company'], [], $currentRole);
                     }
                 } catch (InvalidArgumentException $invalidError) {
                     $error = $invalidError->getMessage();
+                    error_log('Manager add customer - InvalidArgumentException: ' . $invalidError->getMessage());
                 } catch (Throwable $addError) {
                     error_log('Manager add customer error: ' . $addError->getMessage());
                     error_log('Stack trace: ' . $addError->getTraceAsString());

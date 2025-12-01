@@ -190,8 +190,12 @@ if (ob_get_level() > 0) {
     
     <!-- Performance: Preload Critical Resources - فقط على Desktop -->
     <?php if (!$isMobile): ?>
-    <link rel="preload" href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" as="style">
-    <link rel="preload" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.0/font/bootstrap-icons.css" as="style">
+    <link rel="preload" href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" as="style" crossorigin>
+    <link rel="preload" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.0/font/bootstrap-icons.css" as="style" crossorigin>
+    <link rel="preload" href="<?php echo $assetsUrl; ?>css/homeline-dashboard.css?v=<?php echo $cacheVersion; ?>" as="style">
+    <link rel="preload" href="<?php echo $assetsUrl; ?>css/topbar.css?v=<?php echo $cacheVersion; ?>" as="style">
+    <link rel="preload" href="https://code.jquery.com/jquery-3.7.0.min.js" as="script" crossorigin>
+    <link rel="preload" href="<?php echo $assetsUrl; ?>js/main.js?v=<?php echo $cacheVersion; ?>" as="script">
     <?php endif; ?>
     
     <!-- Performance: Resource Hints للموبايل -->
@@ -214,8 +218,9 @@ if (ob_get_level() > 0) {
     // إزالة /assets/ المكرر
     $assetsUrl = rtrim($assetsUrl, '/') . '/';
     
-    // استخدام timestamp لـ cache busting
-    $cacheVersion = time(); // أو يمكن استخدام رقم version ثابت وتحديثه يدوياً
+    // استخدام رقم version ثابت لتحسين caching - يمكن تحديثه يدوياً عند الحاجة
+    // بدلاً من time() لتجنب cache invalidation في كل طلب وتحسين الأداء
+    $cacheVersion = defined('ASSETS_VERSION') ? ASSETS_VERSION : (defined('APP_VERSION') ? APP_VERSION : '1.0.0');
     ?>
     
     <!-- Bootstrap 5 CSS -->
@@ -341,6 +346,24 @@ if (ob_get_level() > 0) {
         "تقارير شاملة"
       ],
       "screenshot": "<?php echo htmlspecialchars($ogImage, ENT_QUOTES, 'UTF-8'); ?>"
+    }
+    </script>
+    
+    <!-- Additional Structured Data: Organization for SEO -->
+    <script type="application/ld+json">
+    {
+      "@context": "https://schema.org",
+      "@type": "Organization",
+      "name": "<?php echo htmlspecialchars(COMPANY_NAME, ENT_QUOTES, 'UTF-8'); ?>",
+      "url": "<?php echo htmlspecialchars($baseUrl, ENT_QUOTES, 'UTF-8'); ?>",
+      "logo": "<?php echo htmlspecialchars($ogImage, ENT_QUOTES, 'UTF-8'); ?>",
+      "contactPoint": {
+        "@type": "ContactPoint",
+        "contactType": "customer service",
+        "areaServed": "EG",
+        "availableLanguage": ["ar", "Arabic"]
+      },
+      "sameAs": []
     }
     </script>
     

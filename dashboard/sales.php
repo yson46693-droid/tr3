@@ -5,6 +5,16 @@
 
 define('ACCESS_ALLOWED', true);
 
+// تنظيف أي output buffer سابق قبل أي شيء - لتحسين الأداء
+while (ob_get_level() > 0) {
+    ob_end_clean();
+}
+
+// بدء output buffering لضمان عدم وجود محتوى قبل DOCTYPE وتحسين الأداء
+if (!ob_get_level()) {
+    ob_start();
+}
+
 // معالجة طلبات AJAX قبل أي require قد يطبع HTML
 if (isset($_GET['ajax']) && $_GET['ajax'] === 'load_products') {
     $pageParam = $_GET['page'] ?? 'dashboard';

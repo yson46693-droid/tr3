@@ -264,6 +264,10 @@ if (empty($basePath)) {
 // إعدادات التطبيق
 define('APP_NAME', 'شركة البركة');
 define('APP_VERSION', '1.0.0');
+// إصدار الملفات الثابتة (Assets) - يتم تحديثه يدوياً عند تغيير CSS/JS
+if (!defined('ASSETS_VERSION')) {
+    define('ASSETS_VERSION', '1.0.0');
+}
 define('COMPANY_NAME', 'شركة البركة');
 
 // إعدادات التقارير
