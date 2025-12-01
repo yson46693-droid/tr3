@@ -457,31 +457,63 @@ $totalPages = ceil($totalCount / $perPage);
     <?php endif; ?>
 
     <!-- Filters -->
+    <style>
+    /* تحسين حقول الفلترة على الهواتف */
+    @media (max-width: 767.98px) {
+        .filter-form .row {
+            margin-bottom: 0;
+        }
+        
+        .filter-form .form-label {
+            font-size: 0.8rem;
+            margin-bottom: 0.25rem;
+            font-weight: 500;
+        }
+        
+        .filter-form .form-control {
+            font-size: 0.85rem;
+            padding: 0.4rem 0.5rem;
+            height: auto;
+            min-height: 38px;
+        }
+        
+        .filter-form .btn {
+            font-size: 0.85rem;
+            padding: 0.4rem 0.75rem;
+            min-height: 38px;
+        }
+        
+        /* تقليل المسافات بين الحقول */
+        .filter-form .row.g-2 {
+            --bs-gutter-y: 0.5rem;
+        }
+    }
+    </style>
     <div class="row mb-4">
         <div class="col-12">
             <div class="card">
                 <div class="card-body">
-                    <form method="GET" action="" class="row g-3">
+                    <form method="GET" action="" class="row g-2 g-md-3 filter-form">
                         <input type="hidden" name="page" value="factory_waste_warehouse">
                         <input type="hidden" name="tab" value="<?php echo htmlspecialchars($activeTab); ?>">
                         
-                        <div class="col-md-3">
-                            <label class="form-label">من تاريخ</label>
-                            <input type="date" name="date_from" class="form-control" value="<?php echo htmlspecialchars($dateFrom); ?>">
+                        <div class="col-6 col-md-3">
+                            <label class="form-label small">من تاريخ</label>
+                            <input type="date" name="date_from" class="form-control form-control-sm" value="<?php echo htmlspecialchars($dateFrom); ?>">
                         </div>
 
-                        <div class="col-md-3">
-                            <label class="form-label">إلى تاريخ</label>
-                            <input type="date" name="date_to" class="form-control" value="<?php echo htmlspecialchars($dateTo); ?>">
+                        <div class="col-6 col-md-3">
+                            <label class="form-label small">إلى تاريخ</label>
+                            <input type="date" name="date_to" class="form-control form-control-sm" value="<?php echo htmlspecialchars($dateTo); ?>">
                         </div>
 
-                        <div class="col-md-4">
-                            <label class="form-label">بحث</label>
-                            <input type="text" name="search" class="form-control" value="<?php echo htmlspecialchars($search); ?>" placeholder="ابحث...">
+                        <div class="col-12 col-md-4">
+                            <label class="form-label small">بحث</label>
+                            <input type="text" name="search" class="form-control form-control-sm" value="<?php echo htmlspecialchars($search); ?>" placeholder="ابحث...">
                         </div>
 
-                        <div class="col-md-2 d-flex align-items-end">
-                            <button type="submit" class="btn btn-primary w-100">
+                        <div class="col-12 col-md-2 d-flex align-items-end">
+                            <button type="submit" class="btn btn-primary btn-sm w-100">
                                 <i class="bi bi-search"></i> بحث
                             </button>
                         </div>
@@ -492,26 +524,95 @@ $totalPages = ceil($totalCount / $perPage);
     </div>
 
     <!-- Tabs -->
-    <ul class="nav nav-tabs mb-3" role="tablist">
-        <li class="nav-item">
-            <a class="nav-link <?php echo $activeTab === 'products' ? 'active' : ''; ?>" 
-               href="?page=factory_waste_warehouse&tab=products<?php echo $dateFrom ? '&date_from=' . urlencode($dateFrom) : ''; ?><?php echo $dateTo ? '&date_to=' . urlencode($dateTo) : ''; ?><?php echo $search ? '&search=' . urlencode($search) : ''; ?>">
-                <i class="bi bi-box-seam me-1"></i>المنتجات التالفة
-            </a>
-        </li>
-        <li class="nav-item">
-            <a class="nav-link <?php echo $activeTab === 'packaging' ? 'active' : ''; ?>" 
-               href="?page=factory_waste_warehouse&tab=packaging<?php echo $dateFrom ? '&date_from=' . urlencode($dateFrom) : ''; ?><?php echo $dateTo ? '&date_to=' . urlencode($dateTo) : ''; ?><?php echo $search ? '&search=' . urlencode($search) : ''; ?>">
-                <i class="bi bi-box me-1"></i>أدوات التعبئة التالفة
-            </a>
-        </li>
-        <li class="nav-item">
-            <a class="nav-link <?php echo $activeTab === 'raw_materials' ? 'active' : ''; ?>" 
-               href="?page=factory_waste_warehouse&tab=raw_materials<?php echo $dateFrom ? '&date_from=' . urlencode($dateFrom) : ''; ?><?php echo $dateTo ? '&date_to=' . urlencode($dateTo) : ''; ?><?php echo $search ? '&search=' . urlencode($search) : ''; ?>">
-                <i class="bi bi-flower1 me-1"></i>الخامات المهدرة
-            </a>
-        </li>
-    </ul>
+    <style>
+    /* تحسين التبويبات على الهواتف */
+    @media (max-width: 767.98px) {
+        .nav-tabs {
+            display: flex !important;
+            flex-wrap: nowrap;
+            overflow-x: auto;
+            -webkit-overflow-scrolling: touch;
+            scrollbar-width: thin;
+            border-bottom: 1px solid #dee2e6;
+            margin-bottom: 1rem;
+        }
+        
+        .nav-tabs::-webkit-scrollbar {
+            height: 4px;
+        }
+        
+        .nav-tabs::-webkit-scrollbar-track {
+            background: #f1f1f1;
+        }
+        
+        .nav-tabs::-webkit-scrollbar-thumb {
+            background: #888;
+            border-radius: 2px;
+        }
+        
+        .nav-tabs .nav-item {
+            flex: 0 0 auto;
+            min-width: auto;
+            white-space: nowrap;
+        }
+        
+        .nav-tabs .nav-link {
+            padding: 0.5rem 0.75rem;
+            font-size: 0.85rem;
+            border-radius: 0.375rem 0.375rem 0 0;
+            margin-right: 0.25rem;
+            display: flex;
+            align-items: center;
+            gap: 0.25rem;
+        }
+        
+        .nav-tabs .nav-link i {
+            font-size: 0.9rem;
+        }
+        
+        /* تقليل حجم النص على الشاشات الصغيرة جداً */
+        @media (max-width: 400px) {
+            .nav-tabs .nav-link {
+                padding: 0.4rem 0.6rem;
+                font-size: 0.75rem;
+            }
+            
+            .nav-tabs .nav-link i {
+                font-size: 0.8rem;
+            }
+        }
+    }
+    
+    /* تحسين التبويبات على الشاشات المتوسطة */
+    @media (min-width: 768px) and (max-width: 991.98px) {
+        .nav-tabs .nav-link {
+            padding: 0.6rem 0.9rem;
+            font-size: 0.9rem;
+        }
+    }
+    </style>
+    <div class="tabs-wrapper">
+        <ul class="nav nav-tabs mb-3" role="tablist">
+            <li class="nav-item">
+                <a class="nav-link <?php echo $activeTab === 'products' ? 'active' : ''; ?>" 
+                   href="?page=factory_waste_warehouse&tab=products<?php echo $dateFrom ? '&date_from=' . urlencode($dateFrom) : ''; ?><?php echo $dateTo ? '&date_to=' . urlencode($dateTo) : ''; ?><?php echo $search ? '&search=' . urlencode($search) : ''; ?>">
+                    <i class="bi bi-box-seam me-1"></i>المنتجات التالفة
+                </a>
+            </li>
+            <li class="nav-item">
+                <a class="nav-link <?php echo $activeTab === 'packaging' ? 'active' : ''; ?>" 
+                   href="?page=factory_waste_warehouse&tab=packaging<?php echo $dateFrom ? '&date_from=' . urlencode($dateFrom) : ''; ?><?php echo $dateTo ? '&date_to=' . urlencode($dateTo) : ''; ?><?php echo $search ? '&search=' . urlencode($search) : ''; ?>">
+                    <i class="bi bi-box me-1"></i>أدوات التعبئة التالفة
+                </a>
+            </li>
+            <li class="nav-item">
+                <a class="nav-link <?php echo $activeTab === 'raw_materials' ? 'active' : ''; ?>" 
+                   href="?page=factory_waste_warehouse&tab=raw_materials<?php echo $dateFrom ? '&date_from=' . urlencode($dateFrom) : ''; ?><?php echo $dateTo ? '&date_to=' . urlencode($dateTo) : ''; ?><?php echo $search ? '&search=' . urlencode($search) : ''; ?>">
+                    <i class="bi bi-flower1 me-1"></i>الخامات المهدرة
+                </a>
+            </li>
+        </ul>
+    </div>
 
     <!-- Tab Content -->
     <div class="row">
