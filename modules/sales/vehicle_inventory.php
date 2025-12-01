@@ -375,12 +375,12 @@ foreach ($vehicleInventory as $item) {
     $inventoryStats['total_value'] += floatval($item['total_value'] ?? 0);
 }
 ?>
-<div class="d-flex justify-content-between align-items-center mb-4">
+<div class="d-flex flex-column flex-md-row justify-content-between align-items-start align-items-md-center mb-4 gap-3">
     <h2 class="mb-0"><i class="bi bi-truck me-2"></i>مخازن سيارات المندوبين</h2>
-    <div class="d-flex flex-wrap gap-2">
+    <div class="d-flex flex-wrap gap-2 w-100 w-md-auto">
         <?php if ($canManageVehicles): ?>
-        <button class="btn btn-success" data-bs-toggle="modal" data-bs-target="#addVehicleModal">
-            <i class="bi bi-plus-circle me-2"></i>إضافة سيارة جديدة
+        <button class="btn btn-success flex-fill flex-md-grow-0" data-bs-toggle="modal" data-bs-target="#addVehicleModal">
+            <i class="bi bi-plus-circle me-2"></i><span class="d-none d-sm-inline">إضافة سيارة جديدة</span><span class="d-sm-none">إضافة</span>
         </button>
         <?php endif; ?>
         <?php
@@ -389,12 +389,12 @@ foreach ($vehicleInventory as $item) {
                          (isset($_SERVER['HTTP_REFERER']) && strpos($_SERVER['HTTP_REFERER'], 'manager.php') !== false));
         
         if ($isFromManager && $currentUser['role'] === 'manager'): ?>
-            <a href="<?php echo getDashboardUrl('manager'); ?>?page=vehicles" class="btn btn-secondary">
-                <i class="bi bi-arrow-right me-2"></i>الرجوع للخلف
+            <a href="<?php echo getDashboardUrl('manager'); ?>?page=vehicles" class="btn btn-secondary flex-fill flex-md-grow-0">
+                <i class="bi bi-arrow-right me-2"></i><span class="d-none d-sm-inline">الرجوع للخلف</span><span class="d-sm-none">رجوع</span>
             </a>
         <?php else: ?>
-            <button class="btn btn-primary" data-bs-toggle="modal" data-bs-target="#createTransferModal">
-                <i class="bi bi-arrow-left-right me-2"></i>طلب نقل منتجات
+            <button class="btn btn-primary flex-fill flex-md-grow-0" data-bs-toggle="modal" data-bs-target="#createTransferModal">
+                <i class="bi bi-arrow-left-right me-2"></i><span class="d-none d-sm-inline">طلب نقل منتجات</span><span class="d-sm-none">نقل</span>
             </button>
         <?php endif; ?>
     </div>
@@ -429,40 +429,42 @@ foreach ($vehicleInventory as $item) {
             </a>
         </div>
         <div class="card-body">
-            <div class="row mb-3">
-                <div class="col-12 col-md-6 mb-3 mb-md-0">
-                    <table class="table table-no-hover dashboard-table-details">
-                        <tr>
-                            <th width="40%">رقم السيارة:</th>
-                            <td><?php echo htmlspecialchars($selectedVehicle['vehicle_number']); ?></td>
-                        </tr>
-                        <tr>
-                            <th>الموديل:</th>
-                            <td><?php echo htmlspecialchars($selectedVehicle['model'] ?? '-'); ?></td>
-                        </tr>
-                        <tr>
-                            <th>المندوب:</th>
-                            <td><?php echo htmlspecialchars($selectedVehicle['driver_name'] ?? '-'); ?></td>
-                        </tr>
-                        <tr>
-                            <th>الحالة:</th>
-                            <td>
-                                <span class="badge bg-<?php 
-                                    echo $selectedVehicle['status'] === 'active' ? 'success' : 
-                                        ($selectedVehicle['status'] === 'maintenance' ? 'warning' : 'secondary'); 
-                                ?>">
-                                    <?php 
-                                    $statuses = [
-                                        'active' => 'نشطة',
-                                        'inactive' => 'غير نشطة',
-                                        'maintenance' => 'صيانة'
-                                    ];
-                                    echo $statuses[$selectedVehicle['status']] ?? $selectedVehicle['status'];
-                                    ?>
-                                </span>
-                            </td>
-                        </tr>
-                    </table>
+            <div class="row g-3 mb-3">
+                <div class="col-12 col-md-6">
+                    <div class="table-responsive">
+                        <table class="table table-no-hover dashboard-table-details mb-0">
+                            <tr>
+                                <th width="40%">رقم السيارة:</th>
+                                <td><?php echo htmlspecialchars($selectedVehicle['vehicle_number']); ?></td>
+                            </tr>
+                            <tr>
+                                <th>الموديل:</th>
+                                <td><?php echo htmlspecialchars($selectedVehicle['model'] ?? '-'); ?></td>
+                            </tr>
+                            <tr>
+                                <th>المندوب:</th>
+                                <td><?php echo htmlspecialchars($selectedVehicle['driver_name'] ?? '-'); ?></td>
+                            </tr>
+                            <tr>
+                                <th>الحالة:</th>
+                                <td>
+                                    <span class="badge bg-<?php 
+                                        echo $selectedVehicle['status'] === 'active' ? 'success' : 
+                                            ($selectedVehicle['status'] === 'maintenance' ? 'warning' : 'secondary'); 
+                                    ?>">
+                                        <?php 
+                                        $statuses = [
+                                            'active' => 'نشطة',
+                                            'inactive' => 'غير نشطة',
+                                            'maintenance' => 'صيانة'
+                                        ];
+                                        echo $statuses[$selectedVehicle['status']] ?? $selectedVehicle['status'];
+                                        ?>
+                                    </span>
+                                </td>
+                            </tr>
+                        </table>
+                    </div>
                 </div>
                 <div class="col-12 col-md-6">
                     <div class="card bg-light h-100">
@@ -522,81 +524,297 @@ foreach ($vehicleInventory as $item) {
                     font-family: 'Cairo', sans-serif;
                 }
 
+                /* تحسين الجداول للهاتف */
+                @media (max-width: 768px) {
+                    .dashboard-table-details {
+                        font-size: 14px;
+                    }
+                    .dashboard-table-details th {
+                        width: 35% !important;
+                        font-size: 13px;
+                        padding: 8px 6px;
+                    }
+                    .dashboard-table-details td {
+                        font-size: 13px;
+                        padding: 8px 6px;
+                        word-break: break-word;
+                    }
+                }
+
+                /* تحسين بطاقة الإحصائيات للهاتف */
+                @media (max-width: 768px) {
+                    .card.bg-light .card-body {
+                        padding: 15px;
+                    }
+                    .card.bg-light h6 {
+                        font-size: 16px;
+                        margin-bottom: 12px;
+                    }
+                    .card.bg-light .d-flex {
+                        font-size: 14px;
+                        margin-bottom: 10px;
+                    }
+                }
+
+                /* تحسين grid المنتجات للهاتف */
                 .inventory-grid {
-                    padding: 25px;
+                    padding: 15px 10px;
                     display: grid;
-                    grid-template-columns: repeat(auto-fit, minmax(340px, 1fr));
-                    gap: 20px;
+                    grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+                    gap: 15px;
+                }
+
+                @media (max-width: 576px) {
+                    .inventory-grid {
+                        padding: 10px 5px;
+                        grid-template-columns: 1fr;
+                        gap: 12px;
+                    }
                 }
 
                 .inventory-card {
                     background: white;
-                    padding: 25px;
-                    border-radius: 18px;
-                    box-shadow: 0px 4px 20px rgba(0,0,0,0.07);
+                    padding: 20px 15px;
+                    border-radius: 16px;
+                    box-shadow: 0px 3px 15px rgba(0,0,0,0.08);
                     border: 1px solid #e2e6f3;
                     position: relative;
+                    transition: transform 0.2s, box-shadow 0.2s;
+                }
+
+                @media (max-width: 576px) {
+                    .inventory-card {
+                        padding: 18px 12px;
+                        border-radius: 14px;
+                    }
+                }
+
+                .inventory-card:hover {
+                    transform: translateY(-2px);
+                    box-shadow: 0px 5px 20px rgba(0,0,0,0.12);
                 }
 
                 .inventory-status {
                     position: absolute;
-                    top: 15px;
-                    left: 15px;
+                    top: 12px;
+                    left: 12px;
                     background: #2e89ff;
-                    padding: 6px 14px;
-                    border-radius: 20px;
+                    padding: 5px 12px;
+                    border-radius: 18px;
                     color: white;
-                    font-size: 12px;
+                    font-size: 11px;
                     font-weight: bold;
+                    white-space: nowrap;
+                }
+
+                @media (max-width: 576px) {
+                    .inventory-status {
+                        top: 10px;
+                        left: 10px;
+                        padding: 4px 10px;
+                        font-size: 10px;
+                    }
                 }
 
                 .inventory-prod-name {
-                    font-size: 18px;
+                    font-size: 17px;
                     font-weight: bold;
                     color: #0d2f66;
-                    margin-bottom: 6px;
+                    margin-bottom: 8px;
+                    margin-top: 35px;
+                    line-height: 1.4;
+                    word-break: break-word;
+                }
+
+                @media (max-width: 576px) {
+                    .inventory-prod-name {
+                        font-size: 16px;
+                        margin-top: 32px;
+                    }
                 }
 
                 .inventory-batch-id {
                     color: #2767ff;
                     font-weight: bold;
                     text-decoration: none;
+                    font-size: 13px;
+                    display: block;
+                    margin-bottom: 10px;
+                }
+
+                @media (max-width: 576px) {
+                    .inventory-batch-id {
+                        font-size: 12px;
+                    }
                 }
 
                 .inventory-barcode-box {
                     background: #f8faff;
                     border: 1px solid #d7e1f3;
-                    padding: 15px;
-                    border-radius: 12px;
+                    padding: 12px;
+                    border-radius: 10px;
                     text-align: center;
-                    margin: 15px 0;
+                    margin: 12px 0;
+                }
+
+                @media (max-width: 576px) {
+                    .inventory-barcode-box {
+                        padding: 10px;
+                        margin: 10px 0;
+                    }
                 }
 
                 .inventory-barcode-id {
                     font-weight: bold;
-                    margin-top: 8px;
+                    margin-top: 6px;
                     color: #123c90;
+                    font-size: 12px;
+                }
+
+                @media (max-width: 576px) {
+                    .inventory-barcode-id {
+                        font-size: 11px;
+                    }
                 }
 
                 .inventory-detail-row {
-                    font-size: 14px;
-                    margin-top: 5px;
+                    font-size: 13px;
+                    margin-top: 8px;
                     color: #4b5772;
                     display: flex;
                     justify-content: space-between;
+                    align-items: center;
+                    padding: 4px 0;
+                }
+
+                @media (max-width: 576px) {
+                    .inventory-detail-row {
+                        font-size: 12px;
+                        margin-top: 6px;
+                        padding: 3px 0;
+                    }
                 }
 
                 .inventory-barcode-container {
                     width: 100%;
-                    min-height: 60px;
+                    min-height: 50px;
                     display: flex;
                     justify-content: center;
                     align-items: center;
                 }
 
+                @media (max-width: 576px) {
+                    .inventory-barcode-container {
+                        min-height: 45px;
+                    }
+                }
+
                 .inventory-barcode-container svg {
                     max-width: 100%;
                     height: auto;
+                }
+
+                /* تحسين بطاقات السيارات للهاتف */
+                @media (max-width: 768px) {
+                    .card.shadow-sm .card-body {
+                        padding: 15px;
+                    }
+                    .card.shadow-sm .card-title {
+                        font-size: 16px;
+                    }
+                    .card.shadow-sm .card-text {
+                        font-size: 14px;
+                    }
+                    .card.shadow-sm .btn {
+                        font-size: 14px;
+                        padding: 8px 16px;
+                    }
+                }
+
+                /* تحسين الأزرار للهاتف */
+                @media (max-width: 768px) {
+                    .btn {
+                        font-size: 14px;
+                        padding: 8px 16px;
+                    }
+                    .btn-sm {
+                        font-size: 13px;
+                        padding: 6px 12px;
+                    }
+                    .btn-lg {
+                        font-size: 16px;
+                        padding: 10px 20px;
+                    }
+                }
+
+                /* تحسين النماذج للهاتف */
+                @media (max-width: 768px) {
+                    .modal-dialog {
+                        margin: 10px;
+                    }
+                    .modal-content {
+                        border-radius: 12px;
+                    }
+                    .modal-header {
+                        padding: 15px;
+                    }
+                    .modal-body {
+                        padding: 15px;
+                    }
+                    .modal-footer {
+                        padding: 15px;
+                    }
+                    .form-label {
+                        font-size: 14px;
+                        margin-bottom: 6px;
+                    }
+                    .form-control, .form-select {
+                        font-size: 14px;
+                        padding: 8px 12px;
+                    }
+                }
+
+                /* تحسين البحث للهاتف */
+                @media (max-width: 576px) {
+                    .card.shadow-sm .card-body {
+                        padding: 12px;
+                    }
+                    .card.shadow-sm .form-label {
+                        font-size: 13px;
+                        margin-bottom: 5px;
+                    }
+                    .card.shadow-sm .form-control {
+                        font-size: 14px;
+                        padding: 8px 10px;
+                    }
+                }
+
+                /* تحسين رأس البطاقة للهاتف */
+                @media (max-width: 768px) {
+                    .card-header {
+                        padding: 12px 15px;
+                    }
+                    .card-header h5 {
+                        font-size: 16px;
+                    }
+                    .card-header .btn {
+                        padding: 4px 8px;
+                        font-size: 14px;
+                    }
+                }
+
+                /* تحسين بطاقة السيارة المحددة للهاتف */
+                @media (max-width: 768px) {
+                    .card.shadow-sm.mb-4 .card-body {
+                        padding: 15px;
+                    }
+                }
+
+                /* تحسين responsive للجداول */
+                @media (max-width: 576px) {
+                    .table-responsive {
+                        border: none;
+                    }
                 }
             </style>
 
@@ -735,36 +953,38 @@ foreach ($vehicleInventory as $item) {
 <!-- قائمة السيارات -->
 <div class="card shadow-sm">
     <div class="card-body">
-        <div class="row">
+        <div class="row g-3">
             <?php if (empty($vehicles)): ?>
                 <div class="col-12">
-                    <p class="text-center text-muted">لا توجد سيارات مسجلة</p>
+                    <p class="text-center text-muted py-4">لا توجد سيارات مسجلة</p>
                 </div>
             <?php else: ?>
                 <?php foreach ($vehicles as $vehicle): ?>
-                    <div class="col-md-4 mb-3">
-                        <div class="card h-100">
-                            <div class="card-body">
-                                <h6 class="card-title">
-                                    <i class="bi bi-truck me-2"></i>
+                    <div class="col-12 col-sm-6 col-md-4 col-lg-3">
+                        <div class="card h-100 shadow-sm vehicle-card">
+                            <div class="card-body d-flex flex-column">
+                                <h6 class="card-title mb-2">
+                                    <i class="bi bi-truck me-2 text-primary"></i>
                                     <?php echo htmlspecialchars($vehicle['vehicle_number']); ?>
                                 </h6>
-                                <p class="card-text">
-                                    <small class="text-muted">
-                                        <i class="bi bi-person me-1"></i>
-                                        <?php echo htmlspecialchars($vehicle['driver_name'] ?? 'لا يوجد مندوب'); ?>
-                                    </small>
-                                </p>
-                                <?php if ($vehicle['model']): ?>
-                                <p class="card-text">
-                                    <small class="text-muted">
-                                        <i class="bi bi-car-front me-1"></i>
-                                        <?php echo htmlspecialchars($vehicle['model']); ?>
-                                    </small>
-                                </p>
-                                <?php endif; ?>
+                                <div class="mb-2 flex-grow-1">
+                                    <p class="card-text mb-1">
+                                        <small class="text-muted d-flex align-items-center">
+                                            <i class="bi bi-person me-1"></i>
+                                            <?php echo htmlspecialchars($vehicle['driver_name'] ?? 'لا يوجد مندوب'); ?>
+                                        </small>
+                                    </p>
+                                    <?php if ($vehicle['model']): ?>
+                                    <p class="card-text mb-0">
+                                        <small class="text-muted d-flex align-items-center">
+                                            <i class="bi bi-car-front me-1"></i>
+                                            <?php echo htmlspecialchars($vehicle['model']); ?>
+                                        </small>
+                                    </p>
+                                    <?php endif; ?>
+                                </div>
                                 <a href="<?php echo $baseQueryString; ?>&vehicle_id=<?php echo $vehicle['id']; ?>" 
-                                   class="btn btn-primary btn-sm w-100">
+                                   class="btn btn-primary btn-sm w-100 mt-auto">
                                     <i class="bi bi-box-seam me-2"></i>عرض المخزون
                                 </a>
                             </div>
@@ -775,12 +995,33 @@ foreach ($vehicleInventory as $item) {
         </div>
     </div>
 </div>
+<style>
+    .vehicle-card {
+        transition: transform 0.2s, box-shadow 0.2s;
+        border: 1px solid #e9ecef;
+    }
+    .vehicle-card:hover {
+        transform: translateY(-3px);
+        box-shadow: 0 4px 12px rgba(0,0,0,0.15) !important;
+    }
+    @media (max-width: 576px) {
+        .vehicle-card .card-body {
+            padding: 15px;
+        }
+        .vehicle-card .card-title {
+            font-size: 15px;
+        }
+        .vehicle-card .card-text {
+            font-size: 13px;
+        }
+    }
+</style>
 <?php endif; ?>
 
 <?php if ($canManageVehicles): ?>
 <!-- Modal إضافة سيارة جديدة -->
 <div class="modal fade" id="addVehicleModal" tabindex="-1">
-    <div class="modal-dialog">
+    <div class="modal-dialog modal-dialog-centered modal-dialog-scrollable">
         <div class="modal-content">
             <div class="modal-header">
                 <h5 class="modal-title">إضافة سيارة جديدة</h5>
@@ -791,25 +1032,25 @@ foreach ($vehicleInventory as $item) {
                 <div class="modal-body">
                     <div class="mb-3">
                         <label class="form-label">رقم السيارة <span class="text-danger">*</span></label>
-                        <input type="text" class="form-control" name="vehicle_number" required>
+                        <input type="text" class="form-control form-control-lg" name="vehicle_number" required>
                     </div>
                     <div class="mb-3">
                         <label class="form-label">نوع السيارة</label>
-                        <input type="text" class="form-control" name="vehicle_type" placeholder="مثال: شاحنة">
+                        <input type="text" class="form-control form-control-lg" name="vehicle_type" placeholder="مثال: شاحنة">
                     </div>
                     <div class="mb-3">
                         <label class="form-label">الموديل</label>
-                        <input type="text" class="form-control" name="model" placeholder="مثال: تويوتا هايلكس">
+                        <input type="text" class="form-control form-control-lg" name="model" placeholder="مثال: تويوتا هايلكس">
                     </div>
                     <div class="mb-3">
                         <label class="form-label">السنة</label>
-                        <input type="number" class="form-control" name="year" 
+                        <input type="number" class="form-control form-control-lg" name="year" 
                                min="2000" max="<?php echo date('Y'); ?>" 
                                placeholder="<?php echo date('Y'); ?>">
                     </div>
                     <div class="mb-3">
                         <label class="form-label">المندوب (السائق)</label>
-                        <select class="form-select" name="driver_id">
+                        <select class="form-select form-select-lg" name="driver_id">
                             <option value="">لا يوجد</option>
                             <?php foreach ($salesReps as $rep): ?>
                                 <option value="<?php echo $rep['id']; ?>">
@@ -820,7 +1061,7 @@ foreach ($vehicleInventory as $item) {
                     </div>
                     <div class="mb-3">
                         <label class="form-label">الحالة</label>
-                        <select class="form-select" name="status">
+                        <select class="form-select form-select-lg" name="status">
                             <option value="active">نشطة</option>
                             <option value="inactive">غير نشطة</option>
                             <option value="maintenance">صيانة</option>
@@ -828,12 +1069,12 @@ foreach ($vehicleInventory as $item) {
                     </div>
                     <div class="mb-3">
                         <label class="form-label">ملاحظات</label>
-                        <textarea class="form-control" name="notes" rows="3"></textarea>
+                        <textarea class="form-control form-control-lg" name="notes" rows="3"></textarea>
                     </div>
                 </div>
-                <div class="modal-footer">
-                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">إلغاء</button>
-                    <button type="submit" class="btn btn-primary">إضافة</button>
+                <div class="modal-footer d-flex flex-column flex-md-row gap-2">
+                    <button type="button" class="btn btn-secondary btn-lg flex-fill flex-md-grow-0" data-bs-dismiss="modal">إلغاء</button>
+                    <button type="submit" class="btn btn-primary btn-lg flex-fill flex-md-grow-0">إضافة</button>
                 </div>
             </form>
         </div>
@@ -843,7 +1084,7 @@ foreach ($vehicleInventory as $item) {
 
 <!-- Modal إنشاء طلب نقل -->
 <div class="modal fade" id="createTransferModal" tabindex="-1">
-    <div class="modal-dialog modal-lg">
+    <div class="modal-dialog modal-lg modal-dialog-centered modal-dialog-scrollable">
         <div class="modal-content">
             <div class="modal-header">
                 <h5 class="modal-title">طلب نقل منتجات بين المخازن</h5>
@@ -852,8 +1093,8 @@ foreach ($vehicleInventory as $item) {
             <form method="POST" id="transferForm">
                 <input type="hidden" name="action" value="create_transfer">
                 <div class="modal-body">
-                    <div class="row mb-3">
-                        <div class="col-md-6">
+                    <div class="row g-3 mb-3">
+                        <div class="col-12 col-md-6">
                             <label class="form-label">من المخزن <span class="text-danger">*</span></label>
                             <?php if ($currentUser['role'] === 'sales' && $defaultFromWarehouseId): ?>
                                 <?php 
@@ -879,9 +1120,9 @@ foreach ($vehicleInventory as $item) {
                                 </select>
                             <?php endif; ?>
                         </div>
-                        <div class="col-md-6">
+                        <div class="col-12 col-md-6">
                             <label class="form-label">إلى المخزن <span class="text-danger">*</span></label>
-                            <select class="form-select" name="to_warehouse_id" id="toWarehouse" required>
+                            <select class="form-select form-select-lg" name="to_warehouse_id" id="toWarehouse" required>
                                 <option value="">اختر المخزن الوجهة</option>
                                 <?php foreach ($warehouses as $warehouse): ?>
                                     <?php 
@@ -900,15 +1141,15 @@ foreach ($vehicleInventory as $item) {
                         </div>
                     </div>
                     
-                    <div class="row mb-3">
-                        <div class="col-md-6">
+                    <div class="row g-3 mb-3">
+                        <div class="col-12 col-md-6">
                             <label class="form-label">تاريخ النقل <span class="text-danger">*</span></label>
-                            <input type="date" class="form-control" name="transfer_date" 
+                            <input type="date" class="form-control form-control-lg" name="transfer_date" 
                                    value="<?php echo date('Y-m-d'); ?>" required>
                         </div>
-                        <div class="col-md-6">
+                        <div class="col-12 col-md-6">
                             <label class="form-label">السبب</label>
-                            <input type="text" class="form-control" name="reason" 
+                            <input type="text" class="form-control form-control-lg" name="reason" 
                                    placeholder="مثال: تعبئة سيارة المندوب">
                         </div>
                     </div>
@@ -920,30 +1161,30 @@ foreach ($vehicleInventory as $item) {
                             <div>يرجى اختيار المخزن المصدر أولاً لعرض المنتجات المتاحة.</div>
                         </div>
                         <div id="transferItems">
-                            <div class="transfer-item row mb-2">
-                                <div class="col-md-5">
-                                    <select class="form-select product-select" required>
+                            <div class="transfer-item row g-2 mb-3">
+                                <div class="col-12 col-md-5">
+                                    <select class="form-select form-select-lg product-select" required>
                                         <option value="">اختر المنتج</option>
                                     </select>
                                 </div>
-                                <div class="col-md-4">
-                                    <input type="number" step="0.01" class="form-control quantity" 
+                                <div class="col-8 col-md-4">
+                                    <input type="number" step="0.01" class="form-control form-control-lg quantity" 
                                            name="items[0][quantity]" placeholder="الكمية" required min="0.01">
                                 </div>
-                                <div class="col-md-3">
-                                    <button type="button" class="btn btn-danger remove-item w-100">
-                                        <i class="bi bi-trash"></i> حذف
+                                <div class="col-4 col-md-3">
+                                    <button type="button" class="btn btn-danger btn-lg remove-item w-100">
+                                        <i class="bi bi-trash"></i> <span class="d-none d-md-inline">حذف</span>
                                     </button>
                                 </div>
                                 <div class="col-12">
-                                    <small class="text-muted available-hint d-block"></small>
+                                    <small class="text-muted available-hint d-block mt-1"></small>
                                     <input type="hidden" name="items[0][product_id]" class="selected-product-id">
                                     <input type="hidden" name="items[0][batch_id]" class="selected-batch-id">
                                     <input type="hidden" name="items[0][batch_number]" class="selected-batch-number">
                                 </div>
                             </div>
                         </div>
-                        <button type="button" class="btn btn-sm btn-outline-primary" id="addItemBtn" <?php echo empty($finishedProductOptions) ? 'disabled' : ''; ?>>
+                        <button type="button" class="btn btn-lg btn-outline-primary w-100 w-md-auto" id="addItemBtn" <?php echo empty($finishedProductOptions) ? 'disabled' : ''; ?>>
                             <i class="bi bi-plus-circle me-2"></i>إضافة عنصر
                         </button>
                     </div>
@@ -953,9 +1194,9 @@ foreach ($vehicleInventory as $item) {
                         سيتم إرسال طلب النقل للمدير للموافقة عليه قبل التنفيذ
                     </div>
                 </div>
-                <div class="modal-footer">
-                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">إلغاء</button>
-                    <button type="submit" class="btn btn-primary" <?php echo empty($finishedProductOptions) ? 'disabled' : ''; ?>>إنشاء الطلب</button>
+                <div class="modal-footer d-flex flex-column flex-md-row gap-2">
+                    <button type="button" class="btn btn-secondary btn-lg flex-fill flex-md-grow-0" data-bs-dismiss="modal">إلغاء</button>
+                    <button type="submit" class="btn btn-primary btn-lg flex-fill flex-md-grow-0" <?php echo empty($finishedProductOptions) ? 'disabled' : ''; ?>>إنشاء الطلب</button>
                 </div>
             </form>
         </div>
@@ -1176,22 +1417,22 @@ document.getElementById('addItemBtn')?.addEventListener('click', function() {
     });
     
     newItem.innerHTML = `
-        <div class="col-md-5">
-            <select class="form-select product-select" required>
+        <div class="col-12 col-md-5">
+            <select class="form-select form-select-lg product-select" required>
                 ${optionsHtml}
             </select>
         </div>
-        <div class="col-md-4">
-            <input type="number" step="0.01" class="form-control quantity" 
+        <div class="col-8 col-md-4">
+            <input type="number" step="0.01" class="form-control form-control-lg quantity" 
                    name="items[${itemIndex}][quantity]" placeholder="الكمية" required min="0.01">
         </div>
-        <div class="col-md-3">
-            <button type="button" class="btn btn-danger remove-item w-100">
-                <i class="bi bi-trash"></i> حذف
+        <div class="col-4 col-md-3">
+            <button type="button" class="btn btn-danger btn-lg remove-item w-100">
+                <i class="bi bi-trash"></i> <span class="d-none d-md-inline">حذف</span>
             </button>
         </div>
         <div class="col-12">
-            <small class="text-muted available-hint d-block"></small>
+            <small class="text-muted available-hint d-block mt-1"></small>
             <input type="hidden" name="items[${itemIndex}][product_id]" class="selected-product-id">
             <input type="hidden" name="items[${itemIndex}][batch_id]" class="selected-batch-id">
             <input type="hidden" name="items[${itemIndex}][batch_number]" class="selected-batch-number">
