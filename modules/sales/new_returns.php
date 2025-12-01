@@ -178,7 +178,7 @@ if ($currentUser['role'] === 'sales') {
                     <form method="GET" action="" class="row g-3">
                         <input type="hidden" name="page" value="sales_collections">
                         
-                        <div class="col-md-2">
+                        <div class="col-6 col-md-6">
                             <label class="form-label">الحالة</label>
                             <select name="status" class="form-select">
                                 <option value="">جميع الحالات</option>
@@ -189,7 +189,7 @@ if ($currentUser['role'] === 'sales') {
                             </select>
                         </div>
 
-                        <div class="col-md-3">
+                        <div class="col-6 col-md-6">
                             <label class="form-label">العميل</label>
                             <select name="customer_id" class="form-select">
                                 <option value="">جميع العملاء</option>
@@ -201,24 +201,25 @@ if ($currentUser['role'] === 'sales') {
                             </select>
                         </div>
 
-                        <div class="col-md-2">
+                        <div class="col-6 col-md-6">
                             <label class="form-label">من تاريخ</label>
                             <input type="date" name="date_from" class="form-control" value="<?php echo htmlspecialchars($dateFrom); ?>">
                         </div>
 
-                        <div class="col-md-2">
+                        <div class="col-6 col-md-6">
                             <label class="form-label">إلى تاريخ</label>
                             <input type="date" name="date_to" class="form-control" value="<?php echo htmlspecialchars($dateTo); ?>">
                         </div>
 
-                        <div class="col-md-2">
+                        <div class="col-6 col-md-6">
                             <label class="form-label">رقم التشغيلة</label>
                             <input type="text" name="batch_number" class="form-control" value="<?php echo htmlspecialchars($batchFilter); ?>" placeholder="البحث برقم التشغيلة">
                         </div>
 
-                        <div class="col-md-1 d-flex align-items-end">
+                        <div class="col-12 col-md-12">
+                            <label class="form-label">&nbsp;</label>
                             <button type="submit" class="btn btn-primary w-100">
-                                <i class="bi bi-search"></i> بحث
+                                <i class="bi bi-search me-2"></i>بحث
                             </button>
                         </div>
                     </form>

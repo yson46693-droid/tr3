@@ -519,7 +519,7 @@ try {
     <div class="card-body">
         <form method="GET" action="" class="row g-3">
             <input type="hidden" name="page" value="sales_collections">
-            <div class="col-md-3">
+            <div class="col-6 col-md-6">
                 <label class="form-label">العميل</label>
                 <select class="form-select" name="customer_id">
                     <option value="">جميع العملاء</option>
@@ -536,7 +536,7 @@ try {
             </div>
             
             <?php if ($hasStatusColumn): ?>
-            <div class="col-md-2">
+            <div class="col-6 col-md-6">
                 <label class="form-label">الحالة</label>
                 <select class="form-select" name="status">
                     <option value="">جميع الحالات</option>
@@ -547,15 +547,15 @@ try {
             </div>
             <?php endif; ?>
             
-            <div class="col-md-2">
+            <div class="col-6 col-md-6">
                 <label class="form-label">من تاريخ</label>
                 <input type="date" class="form-control" name="date_from" value="<?php echo htmlspecialchars($filters['date_from'] ?? ''); ?>">
             </div>
-            <div class="col-md-2">
+            <div class="col-6 col-md-6">
                 <label class="form-label">إلى تاريخ</label>
                 <input type="date" class="form-control" name="date_to" value="<?php echo htmlspecialchars($filters['date_to'] ?? ''); ?>">
             </div>
-            <div class="col-md-2">
+            <div class="col-6 col-md-6">
                 <label class="form-label">طريقة الدفع</label>
                 <select class="form-select" name="payment_method">
                     <option value="">جميع الطرق</option>
@@ -564,10 +564,10 @@ try {
                     <option value="check" <?php echo ($filters['payment_method'] ?? '') === 'check' ? 'selected' : ''; ?>>شيك</option>
                 </select>
             </div>
-            <div class="col-md-1">
+            <div class="col-12 col-md-12">
                 <label class="form-label">&nbsp;</label>
                 <button type="submit" class="btn btn-primary w-100">
-                    <i class="bi bi-search"></i>
+                    <i class="bi bi-search me-2"></i>بحث
                 </button>
             </div>
         </form>
