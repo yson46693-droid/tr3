@@ -8,21 +8,12 @@
 if (!defined('ACCESS_ALLOWED')) {
     die('Direct access not allowed');
 }
-// إعدادات قاعدة البيانات - يمكن تعديلها حسب الاستضافة
-// للاستضافة المحلية (localhost/XAMPP):
-if ($_SERVER['HTTP_HOST'] == 'localhost' || $_SERVER['SERVER_NAME'] == 'localhost') {
-    define('DB_HOST', 'localhost');
-    define('DB_PORT', '3306');
-    define('DB_USER', 'root');
-    define('DB_PASS', '');
-    define('DB_NAME', 'tr'); // يمكن تغيير اسم قاعدة البيانات هنا
-} else {
-    define('DB_HOST', 'sql110.infinityfree.com');
-    define('DB_PORT', '3306');
-    define('DB_USER', 'if0_40278066');
-    define('DB_PASS', 'Osama744');
-    define('DB_NAME', 'if0_40278066_co_db');
-}
+
+define('DB_HOST', 'sql110.infinityfree.com');
+define('DB_PORT', '3306');
+define('DB_USER', 'if0_40278066');
+define('DB_PASS', 'Osama744');
+define('DB_NAME', 'if0_40278066_co_db');
 
 // إعدادات المنطقة الزمنية - مصر/القاهرة
 date_default_timezone_set('Africa/Cairo');
