@@ -734,10 +734,25 @@ if (!$error && $_SERVER['REQUEST_METHOD'] === 'POST') {
                 $invoiceUpdateParams = [$effectivePaidAmount, $dueAmount, $invoiceStatus];
                 
                 // إضافة فلاج للفاتورة إذا كان هناك عمود paid_from_credit
+                // هذا الفلاج مهم جداً: يستخدم لاستبعاد الفواتير المدفوعة من الرصيد الدائن من حساب التحصيلات
+                // في calculateSalesCollections، يتم استبعاد الفواتير التي لديها paid_from_credit = 1
+                // لأن المبالغ المدفوعة من الرصيد الدائن لا تُحسب في التحصيلات (المندوب لم يقم بتحصيلها نقدياً)
                 $hasPaidFromCreditColumn = !empty($db->queryOne("SHOW COLUMNS FROM invoices LIKE 'paid_from_credit'"));
                 if ($hasPaidFromCreditColumn) {
+                    // إذا تم استخدام أي مبلغ من الرصيد الدائن، نضع الفلاج = 1
+                    // هذا يضمن استبعاد هذه الفاتورة من حساب التحصيلات في calculateSalesCollections
+                    $paidFromCreditFlag = ($creditUsed > 0.0001) ? 1 : 0;
                     $invoiceUpdateSql .= ", paid_from_credit = ?";
-                    $invoiceUpdateParams[] = $isCreditSale ? 1 : 0;
+                    $invoiceUpdateParams[] = $paidFromCreditFlag;
+                    
+                    // تسجيل معلومات التشخيص
+                    error_log(sprintf(
+                        'Setting paid_from_credit flag: creditUsed=%.2f, paidFromCreditFlag=%d, invoiceId=%d, invoiceNumber=%s',
+                        $creditUsed,
+                        $paidFromCreditFlag,
+                        $invoiceId,
+                        $invoiceNumber ?? 'N/A'
+                    ));
                 }
                 
                 // إضافة مبلغ credit_used إذا كان هناك عمود credit_used
@@ -1172,28 +1187,40 @@ if (!$error && $_SERVER['REQUEST_METHOD'] === 'POST') {
                         
                         // تحديث عمولة المندوب للحالات العادية
                         // القاعدة 3: نسبة التحصيل تضاف للمندوب فقط في 3 حالات:
-                        //   1. البيع الكاش (full payment) - تُحتسب على كامل المبلغ
+                        //   1. البيع الكاش (full payment) - تُحتسب على كامل المبلغ (وليس على الرصيد الدائن)
                         //   2. البيع بالتحصيل الجزئي - تُحتسب فقط على المبلغ المحصل (وليس على المبلغ المخصوم من الرصيد الدائن)
                         //   3. تحصيل من صفحة العملاء - يتم معالجته في صفحة العملاء نفسها
-                        // ملاحظة: إذا كان البيع بالرصيد الدائن فقط (credit sale بدون كاش أو جزئي)، 
-                        //          فإن العمولة تُحسب في الحالة الخاصة أعلاه (لعميل لديه سجل مشتريات)
-                        //          أو لا تُحسب (لعميل ليس لديه سجل مشتريات)
+                        // 
+                        // ملاحظة مهمة: عند استخدام الرصيد الدائن:
+                        //   - لا يتم استدعاء refreshSalesCommissionForUser لأنها تحسب من الفواتير المدفوعة بالكامل
+                        //   - النسبة تُحسب مباشرة كـ bonus في الحالة الخاصة أعلاه (لعميل لديه سجل مشتريات)
+                        //   - لا تُحسب نسبة (لعميل ليس لديه سجل مشتريات)
                         
-                        // البيع الكاش: حساب عمولة على كامل المبلغ
+                        // البيع الكاش: حساب عمولة على كامل المبلغ (فقط إذا لم يكن هناك استخدام للرصيد الدائن)
+                        // إذا كان البيع كاش ولكن تم استخدام الرصيد الدائن، لا نحسب عمولة على الرصيد الدائن هنا
+                        // (لأنها تُحسب في الحالة الخاصة أعلاه)
                         if ($paymentType === 'cash' && $effectivePaidAmount > 0.0001) {
-                            // تحديث عمولة المندوب للبيع الكاش
-                            refreshSalesCommissionForUser(
-                                $currentUser['id'],
-                                $saleDate,
-                                'تحديث تلقائي بعد بيع كاش من نقطة البيع'
-                            );
+                            // فقط إذا لم يكن هناك استخدام للرصيد الدائن، أو كان هناك مبلغ كاش فعلي
+                            // نحسب العمولة على المبلغ الكاش فقط (وليس على الرصيد الدائن)
+                            if ($creditUsed <= 0.0001) {
+                                // لا يوجد استخدام للرصيد الدائن - بيع كاش عادي
+                                refreshSalesCommissionForUser(
+                                    $currentUser['id'],
+                                    $saleDate,
+                                    'تحديث تلقائي بعد بيع كاش من نقطة البيع'
+                                );
+                            } else {
+                                // هناك استخدام للرصيد الدائن - لا نحسب عمولة هنا
+                                // (لأنها تُحسب في الحالة الخاصة أعلاه إذا كان للعميل سجل مشتريات)
+                                error_log('Cash sale with credit balance: skipping refreshSalesCommissionForUser to avoid double calculation');
+                            }
                         }
                         
                         // البيع بالتحصيل الجزئي: حساب عمولة فقط على المبلغ المحصل (وليس على الرصيد الدائن)
                         if ($paymentType === 'partial' && $effectivePaidAmount > 0.0001) {
-                            // تحديث عمولة المندوب للبيع الجزئي
-                            // ملاحظة: يتم حساب العمولة على المبلغ المحصل فقط ($effectivePaidAmount)
-                            //          وليس على المبلغ المخصوم من الرصيد الدائن ($creditUsed)
+                            // نحسب العمولة على المبلغ المحصل فقط ($effectivePaidAmount)
+                            // وليس على المبلغ المخصوم من الرصيد الدائن ($creditUsed)
+                            // ملاحظة: حتى لو كان هناك استخدام للرصيد الدائن، نحسب عمولة على المبلغ المحصل فقط
                             refreshSalesCommissionForUser(
                                 $currentUser['id'],
                                 $saleDate,
@@ -1205,6 +1232,7 @@ if (!$error && $_SERVER['REQUEST_METHOD'] === 'POST') {
                         //   - إذا كان هناك خصم من رصيد دائن لعميل لديه سجل مشتريات: تُحسب النسبة في الحالة الخاصة أعلاه
                         //   - إذا كان هناك خصم من رصيد دائن لعميل ليس لديه سجل مشتريات: لا تُحسب نسبة
                         //   - إذا لم يكن هناك خصم من رصيد دائن: لا تُحسب نسبة (بيع بالآجل فقط)
+                        //   - لا يتم استدعاء refreshSalesCommissionForUser هنا لتجنب إضافة المبلغ المدفوع من الرصيد الدائن
                     } catch (Throwable $commissionError) {
                         error_log('Error updating sales commission after POS sale: ' . $commissionError->getMessage());
                         // لا نوقف العملية إذا فشل تحديث العمولة
