@@ -39,7 +39,7 @@ if (empty($salesTableCheck)) {
     // البحث والفلترة
     $filters = [
         'customer_id' => $_GET['customer_id'] ?? '',
-        'status' => $_GET['status'] ?? '',
+        'invoice_number' => $_GET['invoice_number'] ?? '',
         'date_from' => $_GET['date_from'] ?? '',
         'date_to' => $_GET['date_to'] ?? ''
     ];
@@ -172,11 +172,12 @@ if (empty($salesTableCheck)) {
         $countParams[] = $filters['customer_id'];
     }
 
-    if (!empty($filters['status'])) {
-        $sql .= " AND i.status = ?";
-        $countSql .= " AND i.status = ?";
-        $params[] = $filters['status'];
-        $countParams[] = $filters['status'];
+    if (!empty($filters['invoice_number'])) {
+        $sql .= " AND i.invoice_number LIKE ?";
+        $countSql .= " AND i.invoice_number LIKE ?";
+        $invoiceNumberParam = '%' . $filters['invoice_number'] . '%';
+        $params[] = $invoiceNumberParam;
+        $countParams[] = $invoiceNumberParam;
     }
 
     if (!empty($filters['date_from'])) {
@@ -321,14 +322,8 @@ $currentFilters = $filters;
                 </select>
             </div>
             <div class="col-6 col-md-6">
-                <label class="form-label <?php echo $isSalesRecords ? 'text-white fw-semibold' : ''; ?>">الحالة</label>
-                <select class="form-select <?php echo $isSalesRecords ? 'border-0 shadow-sm' : ''; ?>" name="status">
-                    <option value="">جميع الحالات</option>
-                    <option value="pending" <?php echo ($currentFilters['status'] ?? '') === 'pending' ? 'selected' : ''; ?>>معلق</option>
-                    <option value="approved" <?php echo ($currentFilters['status'] ?? '') === 'approved' ? 'selected' : ''; ?>>موافق عليه</option>
-                    <option value="rejected" <?php echo ($currentFilters['status'] ?? '') === 'rejected' ? 'selected' : ''; ?>>مرفوض</option>
-                    <option value="completed" <?php echo ($currentFilters['status'] ?? '') === 'completed' ? 'selected' : ''; ?>>مكتمل</option>
-                </select>
+                <label class="form-label <?php echo $isSalesRecords ? 'text-white fw-semibold' : ''; ?>">البحث برقم الفاتورة</label>
+                <input type="text" class="form-control <?php echo $isSalesRecords ? 'border-0 shadow-sm' : ''; ?>" name="invoice_number" value="<?php echo htmlspecialchars($currentFilters['invoice_number'] ?? ''); ?>" placeholder="أدخل رقم الفاتورة">
             </div>
             <div class="col-6 col-md-6">
                 <label class="form-label <?php echo $isSalesRecords ? 'text-white fw-semibold' : ''; ?>">من تاريخ</label>
@@ -466,7 +461,7 @@ $tableHeaderStyle = $isSalesRecords ? 'background: linear-gradient(135deg,rgb(37
         <nav aria-label="Page navigation" class="mt-3">
             <ul class="pagination justify-content-center">
                 <li class="page-item <?php echo $pageNum <= 1 ? 'disabled' : ''; ?>">
-                    <a class="page-link <?php echo $isSalesRecords ? 'shadow-sm' : ''; ?>" href="?<?php echo isset($_GET['section']) ? 'page=' . ($isSalesRecords ? 'sales_records' : 'sales_collections') . '&section=' . urlencode($activeTab) : 'page=' . ($isSalesRecords ? 'sales_records' : 'sales_collections') . '&tab=' . urlencode($activeTab); ?>&p=<?php echo $pageNum - 1; ?><?php echo !empty($filters['customer_id']) ? '&customer_id=' . urlencode($filters['customer_id']) : ''; ?><?php echo !empty($filters['status']) ? '&status=' . urlencode($filters['status']) : ''; ?><?php echo !empty($filters['date_from']) ? '&date_from=' . urlencode($filters['date_from']) : ''; ?><?php echo !empty($filters['date_to']) ? '&date_to=' . urlencode($filters['date_to']) : ''; ?>">
+                    <a class="page-link <?php echo $isSalesRecords ? 'shadow-sm' : ''; ?>" href="?<?php echo isset($_GET['section']) ? 'page=' . ($isSalesRecords ? 'sales_records' : 'sales_collections') . '&section=' . urlencode($activeTab) : 'page=' . ($isSalesRecords ? 'sales_records' : 'sales_collections') . '&tab=' . urlencode($activeTab); ?>&p=<?php echo $pageNum - 1; ?><?php echo !empty($filters['customer_id']) ? '&customer_id=' . urlencode($filters['customer_id']) : ''; ?><?php echo !empty($filters['invoice_number']) ? '&invoice_number=' . urlencode($filters['invoice_number']) : ''; ?><?php echo !empty($filters['date_from']) ? '&date_from=' . urlencode($filters['date_from']) : ''; ?><?php echo !empty($filters['date_to']) ? '&date_to=' . urlencode($filters['date_to']) : ''; ?>">
                         <i class="bi bi-chevron-right"></i>
                     </a>
                 </li>
@@ -476,7 +471,7 @@ $tableHeaderStyle = $isSalesRecords ? 'background: linear-gradient(135deg,rgb(37
                 $endPage = min($totalPages, $pageNum + 2);
                 
                 if ($startPage > 1): ?>
-                    <li class="page-item"><a class="page-link <?php echo $isSalesRecords ? 'shadow-sm' : ''; ?>" href="?<?php echo isset($_GET['section']) ? 'page=' . ($isSalesRecords ? 'sales_records' : 'sales_collections') . '&section=' . urlencode($activeTab) : 'page=' . ($isSalesRecords ? 'sales_records' : 'sales_collections') . '&tab=' . urlencode($activeTab); ?>&p=1<?php echo !empty($filters['customer_id']) ? '&customer_id=' . urlencode($filters['customer_id']) : ''; ?><?php echo !empty($filters['status']) ? '&status=' . urlencode($filters['status']) : ''; ?><?php echo !empty($filters['date_from']) ? '&date_from=' . urlencode($filters['date_from']) : ''; ?><?php echo !empty($filters['date_to']) ? '&date_to=' . urlencode($filters['date_to']) : ''; ?>">1</a></li>
+                    <li class="page-item"><a class="page-link <?php echo $isSalesRecords ? 'shadow-sm' : ''; ?>" href="?<?php echo isset($_GET['section']) ? 'page=' . ($isSalesRecords ? 'sales_records' : 'sales_collections') . '&section=' . urlencode($activeTab) : 'page=' . ($isSalesRecords ? 'sales_records' : 'sales_collections') . '&tab=' . urlencode($activeTab); ?>&p=1<?php echo !empty($filters['customer_id']) ? '&customer_id=' . urlencode($filters['customer_id']) : ''; ?><?php echo !empty($filters['invoice_number']) ? '&invoice_number=' . urlencode($filters['invoice_number']) : ''; ?><?php echo !empty($filters['date_from']) ? '&date_from=' . urlencode($filters['date_from']) : ''; ?><?php echo !empty($filters['date_to']) ? '&date_to=' . urlencode($filters['date_to']) : ''; ?>">1</a></li>
                     <?php if ($startPage > 2): ?>
                         <li class="page-item disabled"><span class="page-link">...</span></li>
                     <?php endif; ?>
@@ -484,7 +479,7 @@ $tableHeaderStyle = $isSalesRecords ? 'background: linear-gradient(135deg,rgb(37
                 
                 <?php for ($i = $startPage; $i <= $endPage; $i++): ?>
                     <li class="page-item <?php echo $i == $pageNum ? 'active' : ''; ?>">
-                        <a class="page-link <?php echo $isSalesRecords ? 'shadow-sm' : ''; ?>" href="?<?php echo isset($_GET['section']) ? 'page=' . ($isSalesRecords ? 'sales_records' : 'sales_collections') . '&section=' . urlencode($activeTab) : 'page=' . ($isSalesRecords ? 'sales_records' : 'sales_collections') . '&tab=' . urlencode($activeTab); ?>&p=<?php echo $i; ?><?php echo !empty($filters['customer_id']) ? '&customer_id=' . urlencode($filters['customer_id']) : ''; ?><?php echo !empty($filters['status']) ? '&status=' . urlencode($filters['status']) : ''; ?><?php echo !empty($filters['date_from']) ? '&date_from=' . urlencode($filters['date_from']) : ''; ?><?php echo !empty($filters['date_to']) ? '&date_to=' . urlencode($filters['date_to']) : ''; ?>"><?php echo $i; ?></a>
+                        <a class="page-link <?php echo $isSalesRecords ? 'shadow-sm' : ''; ?>" href="?<?php echo isset($_GET['section']) ? 'page=' . ($isSalesRecords ? 'sales_records' : 'sales_collections') . '&section=' . urlencode($activeTab) : 'page=' . ($isSalesRecords ? 'sales_records' : 'sales_collections') . '&tab=' . urlencode($activeTab); ?>&p=<?php echo $i; ?><?php echo !empty($filters['customer_id']) ? '&customer_id=' . urlencode($filters['customer_id']) : ''; ?><?php echo !empty($filters['invoice_number']) ? '&invoice_number=' . urlencode($filters['invoice_number']) : ''; ?><?php echo !empty($filters['date_from']) ? '&date_from=' . urlencode($filters['date_from']) : ''; ?><?php echo !empty($filters['date_to']) ? '&date_to=' . urlencode($filters['date_to']) : ''; ?>"><?php echo $i; ?></a>
                     </li>
                 <?php endfor; ?>
                 
@@ -492,11 +487,11 @@ $tableHeaderStyle = $isSalesRecords ? 'background: linear-gradient(135deg,rgb(37
                     <?php if ($endPage < $totalPages - 1): ?>
                         <li class="page-item disabled"><span class="page-link">...</span></li>
                     <?php endif; ?>
-                    <li class="page-item"><a class="page-link <?php echo $isSalesRecords ? 'shadow-sm' : ''; ?>" href="?<?php echo isset($_GET['section']) ? 'page=' . ($isSalesRecords ? 'sales_records' : 'sales_collections') . '&section=' . urlencode($activeTab) : 'page=' . ($isSalesRecords ? 'sales_records' : 'sales_collections') . '&tab=' . urlencode($activeTab); ?>&p=<?php echo $totalPages; ?><?php echo !empty($filters['customer_id']) ? '&customer_id=' . urlencode($filters['customer_id']) : ''; ?><?php echo !empty($filters['status']) ? '&status=' . urlencode($filters['status']) : ''; ?><?php echo !empty($filters['date_from']) ? '&date_from=' . urlencode($filters['date_from']) : ''; ?><?php echo !empty($filters['date_to']) ? '&date_to=' . urlencode($filters['date_to']) : ''; ?>"><?php echo $totalPages; ?></a></li>
+                    <li class="page-item"><a class="page-link <?php echo $isSalesRecords ? 'shadow-sm' : ''; ?>" href="?<?php echo isset($_GET['section']) ? 'page=' . ($isSalesRecords ? 'sales_records' : 'sales_collections') . '&section=' . urlencode($activeTab) : 'page=' . ($isSalesRecords ? 'sales_records' : 'sales_collections') . '&tab=' . urlencode($activeTab); ?>&p=<?php echo $totalPages; ?><?php echo !empty($filters['customer_id']) ? '&customer_id=' . urlencode($filters['customer_id']) : ''; ?><?php echo !empty($filters['invoice_number']) ? '&invoice_number=' . urlencode($filters['invoice_number']) : ''; ?><?php echo !empty($filters['date_from']) ? '&date_from=' . urlencode($filters['date_from']) : ''; ?><?php echo !empty($filters['date_to']) ? '&date_to=' . urlencode($filters['date_to']) : ''; ?>"><?php echo $totalPages; ?></a></li>
                 <?php endif; ?>
                 
                 <li class="page-item <?php echo $pageNum >= $totalPages ? 'disabled' : ''; ?>">
-                    <a class="page-link <?php echo $isSalesRecords ? 'shadow-sm' : ''; ?>" href="?<?php echo isset($_GET['section']) ? 'page=' . ($isSalesRecords ? 'sales_records' : 'sales_collections') . '&section=' . urlencode($activeTab) : 'page=' . ($isSalesRecords ? 'sales_records' : 'sales_collections') . '&tab=' . urlencode($activeTab); ?>&p=<?php echo $pageNum + 1; ?><?php echo !empty($filters['customer_id']) ? '&customer_id=' . urlencode($filters['customer_id']) : ''; ?><?php echo !empty($filters['status']) ? '&status=' . urlencode($filters['status']) : ''; ?><?php echo !empty($filters['date_from']) ? '&date_from=' . urlencode($filters['date_from']) : ''; ?><?php echo !empty($filters['date_to']) ? '&date_to=' . urlencode($filters['date_to']) : ''; ?>">
+                    <a class="page-link <?php echo $isSalesRecords ? 'shadow-sm' : ''; ?>" href="?<?php echo isset($_GET['section']) ? 'page=' . ($isSalesRecords ? 'sales_records' : 'sales_collections') . '&section=' . urlencode($activeTab) : 'page=' . ($isSalesRecords ? 'sales_records' : 'sales_collections') . '&tab=' . urlencode($activeTab); ?>&p=<?php echo $pageNum + 1; ?><?php echo !empty($filters['customer_id']) ? '&customer_id=' . urlencode($filters['customer_id']) : ''; ?><?php echo !empty($filters['invoice_number']) ? '&invoice_number=' . urlencode($filters['invoice_number']) : ''; ?><?php echo !empty($filters['date_from']) ? '&date_from=' . urlencode($filters['date_from']) : ''; ?><?php echo !empty($filters['date_to']) ? '&date_to=' . urlencode($filters['date_to']) : ''; ?>">
                         <i class="bi bi-chevron-left"></i>
                     </a>
                 </li>
