@@ -1,0 +1,420 @@
+/**
+ * Accessibility Improvements
+ * تحسينات إمكانية الوصول
+ * WCAG 2.1 AA Compliant
+ */
+
+/* ===== Button Sizes - Touch Targets ===== */
+/* جميع الأزرار يجب أن تكون 44x44px كحد أدنى حسب WCAG */
+
+/* Base button improvements */
+button,
+.btn,
+input[type="button"],
+input[type="submit"],
+input[type="reset"],
+a.btn,
+.topbar-action,
+.mobile-menu-toggle,
+.sidebar-toggle,
+.mobile-reload-btn,
+.mobile-dark-toggle {
+    min-width: 44px;
+    min-height: 44px;
+    padding: 0.5rem 1rem;
+    font-size: 1rem;
+    line-height: 1.5;
+    cursor: pointer;
+    border-radius: 0.375rem;
+    transition: all 0.2s ease;
+}
+
+/* Small buttons - still maintain minimum size */
+.btn-sm {
+    min-width: 44px;
+    min-height: 44px;
+    padding: 0.375rem 0.75rem;
+    font-size: 0.875rem;
+}
+
+/* Extra small buttons - override with padding to maintain 44px */
+.btn-xs {
+    min-width: 44px;
+    min-height: 44px;
+    padding: 0.5rem;
+}
+
+/* Icon-only buttons */
+button.icon-only,
+.btn.icon-only,
+.topbar-action,
+.mobile-menu-toggle {
+    min-width: 44px;
+    min-height: 44px;
+    padding: 0.5rem;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+}
+
+/* ===== Color Contrast Improvements ===== */
+
+/* Primary buttons - improved contrast */
+.btn-primary {
+    background-color: #0066cc;
+    border-color: #0066cc;
+    color: #ffffff;
+}
+
+.btn-primary:hover,
+.btn-primary:focus {
+    background-color: #0052a3;
+    border-color: #0052a3;
+    color: #ffffff;
+}
+
+/* Secondary buttons */
+.btn-secondary {
+    background-color: #6c757d;
+    border-color: #6c757d;
+    color: #ffffff;
+}
+
+.btn-secondary:hover,
+.btn-secondary:focus {
+    background-color: #5a6268;
+    border-color: #5a6268;
+    color: #ffffff;
+}
+
+/* Success buttons */
+.btn-success {
+    background-color: #198754;
+    border-color: #198754;
+    color: #ffffff;
+}
+
+.btn-success:hover,
+.btn-success:focus {
+    background-color: #157347;
+    border-color: #157347;
+    color: #ffffff;
+}
+
+/* Danger buttons */
+.btn-danger {
+    background-color: #dc3545;
+    border-color: #dc3545;
+    color: #ffffff;
+}
+
+.btn-danger:hover,
+.btn-danger:focus {
+    background-color: #bb2d3b;
+    border-color: #bb2d3b;
+    color: #ffffff;
+}
+
+/* Warning buttons */
+.btn-warning {
+    background-color: #ffc107;
+    border-color: #ffc107;
+    color: #000000;
+}
+
+.btn-warning:hover,
+.btn-warning:focus {
+    background-color: #ffcd39;
+    border-color: #ffcd39;
+    color: #000000;
+}
+
+/* Info buttons */
+.btn-info {
+    background-color: #0dcaf0;
+    border-color: #0dcaf0;
+    color: #000000;
+}
+
+.btn-info:hover,
+.btn-info:focus {
+    background-color: #31d2f2;
+    border-color: #31d2f2;
+    color: #000000;
+}
+
+/* ===== Text Contrast Improvements ===== */
+
+/* Improve text contrast on light backgrounds */
+body,
+.text-dark {
+    color: #212529;
+}
+
+/* Improve text contrast on gray backgrounds */
+.text-muted {
+    color: #6c757d !important;
+}
+
+/* Improve link contrast */
+a {
+    color: #0066cc;
+}
+
+a:hover,
+a:focus {
+    color: #0052a3;
+    text-decoration: underline;
+}
+
+/* ===== Focus Indicators ===== */
+
+/* Enhanced focus indicators for better visibility */
+*:focus {
+    outline: 2px solid #0066cc;
+    outline-offset: 2px;
+}
+
+*:focus:not(:focus-visible) {
+    outline: none;
+}
+
+*:focus-visible {
+    outline: 3px solid #0066cc;
+    outline-offset: 2px;
+}
+
+/* Buttons focus */
+button:focus,
+.btn:focus,
+input[type="button"]:focus,
+input[type="submit"]:focus,
+input[type="reset"]:focus,
+a.btn:focus {
+    outline: 3px solid #0066cc;
+    outline-offset: 2px;
+    box-shadow: 0 0 0 3px rgba(0, 102, 204, 0.25);
+}
+
+/* Links focus */
+a:focus {
+    outline: 2px solid #0066cc;
+    outline-offset: 2px;
+    text-decoration: underline;
+}
+
+/* Form inputs focus */
+input:focus,
+textarea:focus,
+select:focus {
+    outline: 2px solid #0066cc;
+    outline-offset: 2px;
+    border-color: #0066cc;
+    box-shadow: 0 0 0 3px rgba(0, 102, 204, 0.1);
+}
+
+/* ===== High Contrast Mode Support ===== */
+
+@media (prefers-contrast: high) {
+    /* Increase contrast for high contrast mode */
+    body {
+        color: #000000;
+        background-color: #ffffff;
+    }
+    
+    .btn {
+        border-width: 2px;
+    }
+    
+    a {
+        text-decoration: underline;
+    }
+}
+
+/* ===== Reduced Motion Support ===== */
+
+@media (prefers-reduced-motion: reduce) {
+    *,
+    *::before,
+    *::after {
+        animation-duration: 0.01ms !important;
+        animation-iteration-count: 1 !important;
+        transition-duration: 0.01ms !important;
+        scroll-behavior: auto !important;
+    }
+}
+
+/* ===== Screen Reader Only ===== */
+
+.sr-only {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    padding: 0;
+    margin: -1px;
+    overflow: hidden;
+    clip: rect(0, 0, 0, 0);
+    white-space: nowrap;
+    border-width: 0;
+}
+
+.sr-only-focusable:focus {
+    position: static;
+    width: auto;
+    height: auto;
+    padding: inherit;
+    margin: inherit;
+    overflow: visible;
+    clip: auto;
+    white-space: normal;
+}
+
+/* ===== ARIA Labels Enhancement ===== */
+
+/* Ensure interactive elements have proper labels */
+[aria-label]:not([aria-label=""]) {
+    position: relative;
+}
+
+/* ===== Mobile Specific Accessibility ===== */
+
+@media (max-width: 768px) {
+    /* Ensure buttons are large enough on mobile */
+    button,
+    .btn,
+    .topbar-action,
+    .mobile-menu-toggle {
+        min-width: 48px;
+        min-height: 48px;
+        font-size: 1rem;
+        padding: 0.75rem;
+    }
+    
+    /* Improve touch targets spacing */
+    .btn-group .btn {
+        margin: 0.25rem;
+    }
+    
+    /* Increase text size for readability */
+    body {
+        font-size: 1rem;
+        line-height: 1.6;
+    }
+    
+    h1 {
+        font-size: 1.75rem;
+    }
+    
+    h2 {
+        font-size: 1.5rem;
+    }
+    
+    h3 {
+        font-size: 1.25rem;
+    }
+}
+
+/* ===== Dark Mode Accessibility ===== */
+
+@media (prefers-color-scheme: dark) {
+    /* Maintain contrast in dark mode */
+    .btn-primary {
+        background-color: #3399ff;
+        border-color: #3399ff;
+        color: #ffffff;
+    }
+    
+    .btn-primary:hover,
+    .btn-primary:focus {
+        background-color: #66b3ff;
+        border-color: #66b3ff;
+        color: #ffffff;
+    }
+    
+    a {
+        color: #66b3ff;
+    }
+    
+    a:hover,
+    a:focus {
+        color: #99ccff;
+    }
+    
+    *:focus,
+    *:focus-visible {
+        outline-color: #66b3ff;
+    }
+}
+
+/* ===== Form Accessibility ===== */
+
+/* Label associations */
+label {
+    font-weight: 600;
+    margin-bottom: 0.5rem;
+    display: block;
+    color: #212529;
+}
+
+/* Required field indicators */
+.required::after,
+label.required::after {
+    content: " *";
+    color: #dc3545;
+    font-weight: bold;
+}
+
+/* Error states */
+.is-invalid {
+    border-color: #dc3545;
+}
+
+.is-invalid:focus {
+    outline-color: #dc3545;
+    box-shadow: 0 0 0 3px rgba(220, 53, 69, 0.25);
+}
+
+.invalid-feedback {
+    color: #dc3545;
+    font-size: 0.875rem;
+    margin-top: 0.25rem;
+    display: block;
+}
+
+/* ===== Table Accessibility ===== */
+
+/* Ensure tables have proper headers */
+table th {
+    font-weight: 600;
+    text-align: left;
+    padding: 0.75rem;
+}
+
+/* Improve table readability */
+table {
+    border-collapse: collapse;
+}
+
+table th,
+table td {
+    border: 1px solid #dee2e6;
+    padding: 0.75rem;
+}
+
+/* ===== Skip Links ===== */
+
+.skip-link {
+    position: absolute;
+    top: -40px;
+    left: 0;
+    background: #000000;
+    color: #ffffff;
+    padding: 8px;
+    text-decoration: none;
+    z-index: 100;
+}
+
+.skip-link:focus {
+    top: 0;
+}
+

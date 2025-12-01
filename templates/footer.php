@@ -108,6 +108,7 @@ if (!defined('ACCESS_ALLOWED')) {
     <!-- Medium Priority JS - تحميل مباشر -->
     <script src="<?php echo $assetsUrl; ?>js/fix-modal-interaction.js?v=<?php echo $cacheVersion; ?>" defer></script>
     <script src="<?php echo $assetsUrl; ?>js/notifications.js?v=<?php echo $cacheVersion; ?>" defer></script>
+    <script src="<?php echo $assetsUrl; ?>js/image-lazy-loading.js?v=<?php echo $cacheVersion; ?>" defer></script>
     
     <!-- Low Priority JS - تحميل متأخر على الموبايل -->
     <?php if (!$isMobile): ?>

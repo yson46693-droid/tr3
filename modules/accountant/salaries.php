@@ -2740,33 +2740,49 @@ $pageTitle = ($view === 'advances') ? 'السلف' : (($view === 'pending') ? '�
                 
                 if ($salaryId > 0) {
                     // حساب مجموع جميع الرواتب السابقة (حسب التاريخ)
+                    // نضيف المتبقي من الرواتب السابقة التي لم يتم تسويتها بالكامل
                     $yearColumnCheck = $db->queryOne("SHOW COLUMNS FROM salaries LIKE 'year'");
                     $hasYearColumn = !empty($yearColumnCheck);
                     
                     if ($hasYearColumn) {
                         // إذا كان عمود year موجوداً، استخدمه للترتيب
+                        // جلب الرواتب السابقة مع المبلغ المدفوع والمتبقي
                         $previousSalaries = $db->query(
-                            "SELECT total_amount FROM salaries 
-                             WHERE user_id = ? AND id != ? 
-                             AND (year < ? OR (year = ? AND month < ?))
-                             ORDER BY year ASC, month ASC",
+                            "SELECT s.total_amount, s.paid_amount, s.accumulated_amount,
+                                    COALESCE(s.accumulated_amount, s.total_amount) as prev_accumulated
+                             FROM salaries s
+                             WHERE s.user_id = ? AND s.id != ? 
+                             AND (s.year < ? OR (s.year = ? AND s.month < ?))
+                             ORDER BY s.year ASC, s.month ASC",
                             [$userId, $salaryId, $selectedYear, $selectedYear, $selectedMonth]
                         );
                     } else {
                         // إذا لم يكن year موجوداً، استخدم month فقط
                         $previousSalaries = $db->query(
-                            "SELECT total_amount FROM salaries 
-                             WHERE user_id = ? AND id != ? 
-                             AND month < ?
-                             ORDER BY month ASC",
+                            "SELECT s.total_amount, s.paid_amount, s.accumulated_amount,
+                                    COALESCE(s.accumulated_amount, s.total_amount) as prev_accumulated
+                             FROM salaries s
+                             WHERE s.user_id = ? AND s.id != ? 
+                             AND s.month < ?
+                             ORDER BY s.month ASC",
                             [$userId, $salaryId, $selectedMonth]
                         );
                     }
                     
-                    // جمع جميع الرواتب السابقة
+                    // جمع المتبقي من الرواتب السابقة (التي لم يتم تسويتها بالكامل)
                     foreach ($previousSalaries as $prevSalary) {
                         $prevTotal = cleanFinancialValue($prevSalary['total_amount'] ?? 0);
-                        $accumulated += max(0, $prevTotal);
+                        $prevPaid = cleanFinancialValue($prevSalary['paid_amount'] ?? 0);
+                        $prevAccumulated = cleanFinancialValue($prevSalary['prev_accumulated'] ?? $prevTotal);
+                        
+                        // حساب المتبقي من الراتب السابق
+                        // المتبقي = المبلغ التراكمي السابق - المبلغ المدفوع
+                        $prevRemaining = max(0, $prevAccumulated - $prevPaid);
+                        
+                        // إضافة المتبقي إلى المبلغ التراكمي فقط إذا كان هناك متبقي
+                        if ($prevRemaining > 0.01) {
+                            $accumulated += $prevRemaining;
+                        }
                     }
                 } else {
                     // إذا لم يكن هناك راتب محفوظ، استخدم القيمة المحسوبة فقط
@@ -2888,34 +2904,49 @@ $pageTitle = ($view === 'advances') ? 'السلف' : (($view === 'pending') ? '�
                         $accumulated = $totalSalary; // ابدأ بالراتب الحالي
                         
                         if ($salaryId > 0) {
-                            // حساب مجموع جميع الرواتب السابقة (حسب التاريخ)
+                            // حساب مجموع المتبقي من الرواتب السابقة (التي لم يتم تسويتها بالكامل)
                             $yearColumnCheck = $db->queryOne("SHOW COLUMNS FROM salaries LIKE 'year'");
                             $hasYearColumn = !empty($yearColumnCheck);
                             
                             if ($hasYearColumn) {
                                 // إذا كان عمود year موجوداً، استخدمه للترتيب
+                                // جلب الرواتب السابقة مع المبلغ المدفوع والمتبقي
                                 $previousSalaries = $db->query(
-                                    "SELECT total_amount FROM salaries 
-                                     WHERE user_id = ? AND id != ? 
-                                     AND (year < ? OR (year = ? AND month < ?))
-                                     ORDER BY year ASC, month ASC",
+                                    "SELECT s.total_amount, s.paid_amount, s.accumulated_amount,
+                                            COALESCE(s.accumulated_amount, s.total_amount) as prev_accumulated
+                                     FROM salaries s
+                                     WHERE s.user_id = ? AND s.id != ? 
+                                     AND (s.year < ? OR (s.year = ? AND s.month < ?))
+                                     ORDER BY s.year ASC, s.month ASC",
                                     [$userId, $salaryId, $selectedYear, $selectedYear, $selectedMonth]
                                 );
                             } else {
                                 // إذا لم يكن year موجوداً، استخدم month فقط
                                 $previousSalaries = $db->query(
-                                    "SELECT total_amount FROM salaries 
-                                     WHERE user_id = ? AND id != ? 
-                                     AND month < ?
-                                     ORDER BY month ASC",
+                                    "SELECT s.total_amount, s.paid_amount, s.accumulated_amount,
+                                            COALESCE(s.accumulated_amount, s.total_amount) as prev_accumulated
+                                     FROM salaries s
+                                     WHERE s.user_id = ? AND s.id != ? 
+                                     AND s.month < ?
+                                     ORDER BY s.month ASC",
                                     [$userId, $salaryId, $selectedMonth]
                                 );
                             }
                             
-                            // جمع جميع الرواتب السابقة
+                            // جمع المتبقي من الرواتب السابقة (التي لم يتم تسويتها بالكامل)
                             foreach ($previousSalaries as $prevSalary) {
                                 $prevTotal = cleanFinancialValue($prevSalary['total_amount'] ?? 0);
-                                $accumulated += max(0, $prevTotal);
+                                $prevPaid = cleanFinancialValue($prevSalary['paid_amount'] ?? 0);
+                                $prevAccumulated = cleanFinancialValue($prevSalary['prev_accumulated'] ?? $prevTotal);
+                                
+                                // حساب المتبقي من الراتب السابق
+                                // المتبقي = المبلغ التراكمي السابق - المبلغ المدفوع
+                                $prevRemaining = max(0, $prevAccumulated - $prevPaid);
+                                
+                                // إضافة المتبقي إلى المبلغ التراكمي فقط إذا كان هناك متبقي
+                                if ($prevRemaining > 0.01) {
+                                    $accumulated += $prevRemaining;
+                                }
                             }
                         }
                         
@@ -3056,7 +3087,7 @@ $pageTitle = ($view === 'advances') ? 'السلف' : (($view === 'pending') ? '�
                             <?php endif; ?>
                             
                             <button class="btn btn-warning btn-sm" 
-                                    onclick="openModifyModal(<?php echo $hasSalaryId ? $salary['id'] : 'null'; ?>, <?php echo htmlspecialchars(json_encode($salary), ENT_QUOTES); ?>)" 
+                                    onclick="openModifyModal(<?php echo $hasSalaryId ? $salary['id'] : 0; ?>, <?php echo htmlspecialchars(json_encode($salary), ENT_QUOTES); ?>)" 
                                     data-bs-toggle="modal" 
                                     data-bs-target="#modifySalaryModal"
                                     title="تعديل">
@@ -3715,7 +3746,9 @@ function viewSalaryDetails(salaryId) {
 }
 
 function openModifyModal(salaryId, salaryData) {
-    document.getElementById('modifySalaryId').value = salaryId || '';
+    // التحقق من أن salaryId صحيح (ليس null أو 0 أو 'null')
+    const validSalaryId = (salaryId && salaryId !== 'null' && salaryId !== null && salaryId !== 0) ? salaryId : '';
+    document.getElementById('modifySalaryId').value = validSalaryId;
     document.getElementById('modifyUserName').value = salaryData.full_name || salaryData.username;
     
     // استخدام المتبقي كالراتب الأساسي الفعلي من بطاقة الموظف

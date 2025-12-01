@@ -190,11 +190,11 @@ if (ob_get_level() > 0) {
     
     <!-- Performance: Preload Critical Resources - فقط على Desktop -->
     <?php if (!$isMobile): ?>
-    <link rel="preload" href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" as="style" crossorigin>
-    <link rel="preload" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.0/font/bootstrap-icons.css" as="style" crossorigin>
+    <link rel="preload" href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" as="style" crossorigin="anonymous">
+    <link rel="preload" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.0/font/bootstrap-icons.css" as="style" crossorigin="anonymous">
     <link rel="preload" href="<?php echo $assetsUrl; ?>css/homeline-dashboard.css?v=<?php echo $cacheVersion; ?>" as="style">
     <link rel="preload" href="<?php echo $assetsUrl; ?>css/topbar.css?v=<?php echo $cacheVersion; ?>" as="style">
-    <link rel="preload" href="https://code.jquery.com/jquery-3.7.0.min.js" as="script" crossorigin>
+    <link rel="preload" href="https://code.jquery.com/jquery-3.7.0.min.js" as="script" crossorigin="anonymous">
     <link rel="preload" href="<?php echo $assetsUrl; ?>js/main.js?v=<?php echo $cacheVersion; ?>" as="script">
     <?php endif; ?>
     
@@ -224,16 +224,16 @@ if (ob_get_level() > 0) {
     ?>
     
     <!-- Bootstrap 5 CSS -->
-    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet" crossorigin="anonymous">
     
     <!-- Bootstrap Icons - تحميل مشروط للموبايل (أقل) -->
     <?php if ($isMobile): ?>
     <!-- Mobile: تحميل Bootstrap Icons مع lazy loading -->
-    <link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.0/font/bootstrap-icons.css" rel="stylesheet" media="print" onload="this.media='all'">
-    <noscript><link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.0/font/bootstrap-icons.css" rel="stylesheet"></noscript>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.0/font/bootstrap-icons.css" rel="stylesheet" media="print" onload="this.media='all'" crossorigin="anonymous">
+    <noscript><link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.0/font/bootstrap-icons.css" rel="stylesheet" crossorigin="anonymous"></noscript>
     <?php else: ?>
     <!-- Desktop: تحميل عادي -->
-    <link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.0/font/bootstrap-icons.css" rel="stylesheet">
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.0/font/bootstrap-icons.css" rel="stylesheet" crossorigin="anonymous">
     <?php endif; ?>
     
     <!-- Custom CSS - Homeline Dashboard Design -->
@@ -269,6 +269,12 @@ if (ob_get_level() > 0) {
     
     <link href="<?php echo $assetsUrl; ?>css/dark-mode.css?v=<?php echo $cacheVersion; ?>" rel="stylesheet" media="print" onload="this.media='all'">
     <noscript><link href="<?php echo $assetsUrl; ?>css/dark-mode.css?v=<?php echo $cacheVersion; ?>" rel="stylesheet"></noscript>
+    
+    <!-- Accessibility Improvements -->
+    <link href="<?php echo $assetsUrl; ?>css/accessibility-improvements.css?v=<?php echo $cacheVersion; ?>" rel="stylesheet">
+    
+    <!-- Image Optimization -->
+    <link href="<?php echo $assetsUrl; ?>css/image-optimization.css?v=<?php echo $cacheVersion; ?>" rel="stylesheet">
     <?php if (!empty($pageStylesheets) && is_array($pageStylesheets)): ?>
         <?php foreach ($pageStylesheets as $stylesheetPath): ?>
             <?php
