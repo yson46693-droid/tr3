@@ -10,15 +10,15 @@ if (!defined('ACCESS_ALLOWED')) {
 if (!defined('COMPANY_CUSTOMERS_MODULE_BOOTSTRAPPED')) {
     define('COMPANY_CUSTOMERS_MODULE_BOOTSTRAPPED', true);
 
-    require_once __DIR__ . '/../../includes/config.php';
-    require_once __DIR__ . '/../../includes/db.php';
-    require_once __DIR__ . '/../../includes/auth.php';
-    require_once __DIR__ . '/../../includes/audit_log.php';
-    require_once __DIR__ . '/../../includes/path_helper.php';
+require_once __DIR__ . '/../../includes/config.php';
+require_once __DIR__ . '/../../includes/db.php';
+require_once __DIR__ . '/../../includes/auth.php';
+require_once __DIR__ . '/../../includes/audit_log.php';
+require_once __DIR__ . '/../../includes/path_helper.php';
     require_once __DIR__ . '/../../includes/customer_history.php';
     require_once __DIR__ . '/../../includes/invoices.php';
 
-    requireRole(['manager', 'accountant']);
+requireRole(['manager', 'accountant']);
 }
 
 require_once __DIR__ . '/../sales/table_styles.php';
@@ -44,22 +44,55 @@ $currentRole = strtolower((string)($currentUser['role'] ?? 'manager'));
 $customersBaseScript = 'manager.php';
 $customersPageBase = $customersBaseScript . '?page=customers';
 
+// دالة مساعدة لتسجيل الأخطاء في ملف السجل
+function logToFile($message, $context = []) {
+    $logDir = __DIR__ . '/../../storage/logs';
+    if (!is_dir($logDir)) {
+        @mkdir($logDir, 0755, true);
+    }
+    $logFile = $logDir . '/php-errors.log';
+    $timestamp = date('Y-m-d H:i:s');
+    $contextStr = !empty($context) ? ' | Context: ' . json_encode($context, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES) : '';
+    $logMessage = "[{$timestamp}] {$message}{$contextStr}" . PHP_EOL;
+    @file_put_contents($logFile, $logMessage, FILE_APPEND | LOCK_EX);
+}
+
 // معالجة POST requests
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     $action = $_POST['action'] ?? '';
+    
+    logToFile('POST request received', [
+        'action' => $action,
+        'POST_data' => $_POST,
+        'GET_data' => $_GET,
+        'user_id' => $currentUser['id'] ?? 'unknown',
+        'script_name' => $_SERVER['SCRIPT_NAME'] ?? 'unknown'
+    ]);
 
     if ($action === 'add_customer') {
-        $name = trim($_POST['name'] ?? '');
-        $phone = trim($_POST['phone'] ?? '');
-        $address = trim($_POST['address'] ?? '');
-        $balance = isset($_POST['balance']) ? cleanFinancialValue($_POST['balance'], true) : 0;
-        $latitude = isset($_POST['latitude']) && $_POST['latitude'] !== '' ? trim($_POST['latitude']) : null;
-        $longitude = isset($_POST['longitude']) && $_POST['longitude'] !== '' ? trim($_POST['longitude']) : null;
+        logToFile('Starting add_customer process');
+        
+        try {
+            $name = trim($_POST['name'] ?? '');
+            $phone = trim($_POST['phone'] ?? '');
+            $address = trim($_POST['address'] ?? '');
+            $balance = isset($_POST['balance']) ? cleanFinancialValue($_POST['balance'], true) : 0;
+            $latitude = isset($_POST['latitude']) && $_POST['latitude'] !== '' ? trim($_POST['latitude']) : null;
+            $longitude = isset($_POST['longitude']) && $_POST['longitude'] !== '' ? trim($_POST['longitude']) : null;
 
-        if (empty($name)) {
-            $error = 'يجب إدخال اسم العميل';
-        } else {
-            try {
+            logToFile('Customer data extracted', [
+                'name' => $name,
+                'phone' => $phone,
+                'address' => $address,
+                'balance' => $balance,
+                'latitude' => $latitude,
+                'longitude' => $longitude
+            ]);
+
+            if (empty($name)) {
+                $error = 'يجب إدخال اسم العميل';
+                logToFile('Validation failed: Empty name');
+            } else {
                 // التحقق من عدم تكرار بيانات العميل
                 $duplicateCheckConditions = [
                     "created_by_admin = 1",
@@ -79,9 +112,15 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 }
                 
                 $duplicateQuery = "SELECT id, name, phone, address FROM customers WHERE " . implode(" AND ", $duplicateCheckConditions) . " LIMIT 1";
+                logToFile('Checking for duplicate customer', [
+                    'query' => $duplicateQuery,
+                    'params' => $duplicateCheckParams
+                ]);
+                
                 $duplicateCustomer = $db->queryOne($duplicateQuery, $duplicateCheckParams);
                 
                 if ($duplicateCustomer) {
+                    logToFile('Duplicate customer found', ['duplicate' => $duplicateCustomer]);
                     $duplicateInfo = [];
                     if (!empty($duplicateCustomer['phone'])) {
                         $duplicateInfo[] = "رقم الهاتف: " . $duplicateCustomer['phone'];
@@ -98,9 +137,15 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 }
 
                 // التحقق من وجود أعمدة اللوكيشن
+                logToFile('Checking location columns');
                 $hasLatitudeColumn = !empty($db->queryOne("SHOW COLUMNS FROM customers LIKE 'latitude'"));
                 $hasLongitudeColumn = !empty($db->queryOne("SHOW COLUMNS FROM customers LIKE 'longitude'"));
                 $hasLocationCapturedAtColumn = !empty($db->queryOne("SHOW COLUMNS FROM customers LIKE 'location_captured_at'"));
+                logToFile('Location columns check result', [
+                    'has_latitude' => $hasLatitudeColumn,
+                    'has_longitude' => $hasLongitudeColumn,
+                    'has_location_captured_at' => $hasLocationCapturedAtColumn
+                ]);
                 
                 $customerColumns = ['name', 'phone', 'balance', 'address', 'status', 'created_by', 'rep_id', 'created_from_pos', 'created_by_admin'];
                 $customerValues = [
@@ -109,7 +154,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     $balance,
                     $address ?: null,
                     'active',
-                    $currentUser['id'],
+                $currentUser['id'],
                     null, // rep_id = NULL لعملاء الشركة
                     0,
                     1, // created_by_admin = 1 لعملاء الشركة
@@ -134,22 +179,44 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     $customerPlaceholders[] = '?';
                 }
 
-                $result = $db->execute(
-                    "INSERT INTO customers (" . implode(', ', $customerColumns) . ") 
-                     VALUES (" . implode(', ', $customerPlaceholders) . ")",
-                    $customerValues
-                );
-
-                $customerId = (int)($result['insert_id'] ?? 0);
-                if ($customerId <= 0) {
-                    throw new RuntimeException('فشل إضافة العميل: لم يتم الحصول على معرف العميل.');
-                }
-
-                logAudit($currentUser['id'], 'manager_add_company_customer', 'customer', $customerId, null, [
-                    'name' => $name,
-                    'created_by_admin' => 1,
+                $insertQuery = "INSERT INTO customers (" . implode(', ', $customerColumns) . ") 
+                     VALUES (" . implode(', ', $customerPlaceholders) . ")";
+                
+                logToFile('Preparing INSERT query', [
+                    'query' => $insertQuery,
+                    'columns' => $customerColumns,
+                    'values_count' => count($customerValues),
+                    'values' => array_map(function($v) {
+                        return is_string($v) && strlen($v) > 50 ? substr($v, 0, 50) . '...' : $v;
+                    }, $customerValues)
+                ]);
+                
+                $result = $db->execute($insertQuery, $customerValues);
+                
+                logToFile('INSERT query executed', [
+                    'result' => $result,
+                    'insert_id' => $result['insert_id'] ?? 'not_set',
+                    'affected_rows' => $result['affected_rows'] ?? 'not_set'
                 ]);
 
+                $customerId = (int)($result['insert_id'] ?? 0);
+                        if ($customerId <= 0) {
+                    logToFile('ERROR: Failed to get insert_id', [
+                        'result' => $result,
+                        'result_type' => gettype($result)
+                    ]);
+                            throw new RuntimeException('فشل إضافة العميل: لم يتم الحصول على معرف العميل.');
+                        }
+                        
+                logToFile('Customer added successfully', ['customer_id' => $customerId]);
+                        
+                logToFile('Logging audit trail', ['customer_id' => $customerId]);
+                        logAudit($currentUser['id'], 'manager_add_company_customer', 'customer', $customerId, null, [
+                            'name' => $name,
+                            'created_by_admin' => 1,
+                        ]);
+
+                logToFile('Setting success message in session');
                 $_SESSION['success_message'] = 'تم إضافة العميل بنجاح';
 
                 $redirectFilters = [];
@@ -168,96 +235,122 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     $redirectFilters['p'] = $currentPageParam;
                 }
 
+                logToFile('Preparing redirect', [
+                    'redirect_filters' => $redirectFilters,
+                    'current_user' => $currentUser['id'] ?? 'unknown'
+                ]);
+                
                 redirectAfterPost(
                     'customers',
                     $redirectFilters,
                     [],
                     'manager'
                 );
-            } catch (InvalidArgumentException $userError) {
-                $error = $userError->getMessage();
-            } catch (Throwable $addCustomerError) {
-                error_log('Add company customer error: ' . $addCustomerError->getMessage());
-                error_log('Stack trace: ' . $addCustomerError->getTraceAsString());
-                $error = 'حدث خطأ أثناء إضافة العميل. يرجى المحاولة لاحقاً.';
             }
+        } catch (InvalidArgumentException $userError) {
+            logToFile('User validation error', [
+                'error' => $userError->getMessage(),
+                'file' => $userError->getFile(),
+                'line' => $userError->getLine()
+            ]);
+            $error = $userError->getMessage();
+        } catch (Throwable $addCustomerError) {
+            $errorMessage = $addCustomerError->getMessage();
+            $errorFile = $addCustomerError->getFile();
+            $errorLine = $addCustomerError->getLine();
+            $errorTrace = $addCustomerError->getTraceAsString();
+            
+            logToFile('CRITICAL ERROR in add_customer', [
+                'error_message' => $errorMessage,
+                'error_file' => $errorFile,
+                'error_line' => $errorLine,
+                'error_class' => get_class($addCustomerError),
+                'stack_trace' => $errorTrace,
+                'POST_data' => $_POST,
+                'GET_data' => $_GET,
+                'session_id' => session_id()
+            ]);
+            
+            error_log('Add company customer error: ' . $errorMessage);
+            error_log('Stack trace: ' . $errorTrace);
+            $error = 'حدث خطأ أثناء إضافة العميل. يرجى المحاولة لاحقاً.';
         }
     } elseif ($action === 'edit_customer') {
-        $customerId = isset($_POST['customer_id']) ? (int)$_POST['customer_id'] : 0;
-        $name = trim($_POST['name'] ?? '');
-        $phone = trim($_POST['phone'] ?? '');
-        $address = trim($_POST['address'] ?? '');
+            $customerId = isset($_POST['customer_id']) ? (int)$_POST['customer_id'] : 0;
+            $name = trim($_POST['name'] ?? '');
+            $phone = trim($_POST['phone'] ?? '');
+            $address = trim($_POST['address'] ?? '');
         $balance = isset($_POST['balance']) ? cleanFinancialValue($_POST['balance'], true) : 0;
 
-        if ($customerId <= 0) {
-            $error = 'معرف العميل غير صالح.';
-        } elseif (empty($name)) {
-            $error = 'يجب إدخال اسم العميل.';
-        } else {
-            try {
-                // التحقق من أن العميل هو عميل شركة
-                $existing = $db->queryOne(
-                    "SELECT id FROM customers WHERE id = ? AND created_by_admin = 1 AND (rep_id IS NULL OR rep_id = 0)",
-                    [$customerId]
-                );
-                if (!$existing) {
-                    throw new InvalidArgumentException('لا يمكن تعديل هذا العميل من هذا القسم.');
-                }
-
-                $db->execute(
-                    "UPDATE customers SET name = ?, phone = ?, address = ?, balance = ? WHERE id = ?",
-                    [
-                        $name,
-                        $phone !== '' ? $phone : null,
-                        $address !== '' ? $address : null,
-                        $balance,
-                        $customerId,
-                    ]
-                );
-
-                logAudit($currentUser['id'], 'manager_edit_company_customer', 'customer', $customerId, null, [
-                    'name' => $name,
-                ]);
-
-                $_SESSION['success_message'] = 'تم تحديث بيانات العميل بنجاح.';
-                redirectAfterPost('customers', [], [], 'manager');
-            } catch (InvalidArgumentException $invalidEdit) {
-                $error = $invalidEdit->getMessage();
-            } catch (Throwable $editError) {
-                error_log('Manager edit company customer error: ' . $editError->getMessage());
-                $error = 'تعذر تحديث بيانات العميل.';
-            }
-        }
-    } elseif ($action === 'delete_customer') {
-        if ($currentRole !== 'manager') {
-            $error = 'يُسمح للمدير فقط بحذف العملاء.';
-        } else {
-            $customerId = isset($_POST['customer_id']) ? (int)$_POST['customer_id'] : 0;
             if ($customerId <= 0) {
                 $error = 'معرف العميل غير صالح.';
+        } elseif (empty($name)) {
+                $error = 'يجب إدخال اسم العميل.';
             } else {
                 try {
+                // التحقق من أن العميل هو عميل شركة
                     $existing = $db->queryOne(
-                        "SELECT id FROM customers WHERE id = ? AND created_by_admin = 1 AND (rep_id IS NULL OR rep_id = 0)",
+                    "SELECT id FROM customers WHERE id = ? AND created_by_admin = 1 AND (rep_id IS NULL OR rep_id = 0)",
                         [$customerId]
                     );
                     if (!$existing) {
-                        throw new InvalidArgumentException('لا يمكن حذف هذا العميل من هذا القسم.');
+                        throw new InvalidArgumentException('لا يمكن تعديل هذا العميل من هذا القسم.');
                     }
 
-                    $db->execute("DELETE FROM customers WHERE id = ?", [$customerId]);
-                    logAudit($currentUser['id'], 'manager_delete_company_customer', 'customer', $customerId);
+                    $db->execute(
+                    "UPDATE customers SET name = ?, phone = ?, address = ?, balance = ? WHERE id = ?",
+                        [
+                            $name,
+                            $phone !== '' ? $phone : null,
+                            $address !== '' ? $address : null,
+                            $balance,
+                            $customerId,
+                        ]
+                    );
 
-                    $_SESSION['success_message'] = 'تم حذف العميل بنجاح.';
-                    redirectAfterPost('customers', [], [], 'manager');
-                } catch (InvalidArgumentException $invalidDelete) {
-                    $error = $invalidDelete->getMessage();
-                } catch (Throwable $deleteError) {
-                    error_log('Manager delete company customer error: ' . $deleteError->getMessage());
-                    $error = 'تعذر حذف العميل. تحقق من عدم وجود معاملات مرتبطة به.';
+                    logAudit($currentUser['id'], 'manager_edit_company_customer', 'customer', $customerId, null, [
+                        'name' => $name,
+                    ]);
+
+                    $_SESSION['success_message'] = 'تم تحديث بيانات العميل بنجاح.';
+                redirectAfterPost('customers', [], [], 'manager');
+                } catch (InvalidArgumentException $invalidEdit) {
+                    $error = $invalidEdit->getMessage();
+                } catch (Throwable $editError) {
+                error_log('Manager edit company customer error: ' . $editError->getMessage());
+                    $error = 'تعذر تحديث بيانات العميل.';
                 }
             }
-        }
+    } elseif ($action === 'delete_customer') {
+            if ($currentRole !== 'manager') {
+                $error = 'يُسمح للمدير فقط بحذف العملاء.';
+            } else {
+                $customerId = isset($_POST['customer_id']) ? (int)$_POST['customer_id'] : 0;
+                if ($customerId <= 0) {
+                    $error = 'معرف العميل غير صالح.';
+                } else {
+                    try {
+                        $existing = $db->queryOne(
+                        "SELECT id FROM customers WHERE id = ? AND created_by_admin = 1 AND (rep_id IS NULL OR rep_id = 0)",
+                            [$customerId]
+                        );
+                        if (!$existing) {
+                            throw new InvalidArgumentException('لا يمكن حذف هذا العميل من هذا القسم.');
+                        }
+
+                        $db->execute("DELETE FROM customers WHERE id = ?", [$customerId]);
+                        logAudit($currentUser['id'], 'manager_delete_company_customer', 'customer', $customerId);
+
+                        $_SESSION['success_message'] = 'تم حذف العميل بنجاح.';
+                    redirectAfterPost('customers', [], [], 'manager');
+                    } catch (InvalidArgumentException $invalidDelete) {
+                        $error = $invalidDelete->getMessage();
+                    } catch (Throwable $deleteError) {
+                    error_log('Manager delete company customer error: ' . $deleteError->getMessage());
+                        $error = 'تعذر حذف العميل. تحقق من عدم وجود معاملات مرتبطة به.';
+                    }
+                }
+            }
     }
 }
 
@@ -317,26 +410,26 @@ $statsSql = "SELECT
             FROM customers
             WHERE created_by_admin = 1 AND (rep_id IS NULL OR rep_id = 0)";
 $params = [];
-$countParams = [];
-$statsParams = [];
+    $countParams = [];
+    $statsParams = [];
 
 // إضافة فلاتر البحث
-if ($search !== '') {
+    if ($search !== '') {
     $sql .= " AND (c.name LIKE ? OR c.phone LIKE ? OR c.address LIKE ?)";
     $countSql .= " AND (name LIKE ? OR phone LIKE ? OR address LIKE ?)";
     $statsSql .= " AND (name LIKE ? OR phone LIKE ? OR address LIKE ?)";
-    $searchWildcard = '%' . $search . '%';
+        $searchWildcard = '%' . $search . '%';
     $params[] = $searchWildcard;
     $params[] = $searchWildcard;
     $params[] = $searchWildcard;
-    $countParams[] = $searchWildcard;
-    $countParams[] = $searchWildcard;
-    $countParams[] = $searchWildcard;
-    $statsParams[] = $searchWildcard;
-    $statsParams[] = $searchWildcard;
-    $statsParams[] = $searchWildcard;
-}
-
+        $countParams[] = $searchWildcard;
+        $countParams[] = $searchWildcard;
+        $countParams[] = $searchWildcard;
+        $statsParams[] = $searchWildcard;
+        $statsParams[] = $searchWildcard;
+        $statsParams[] = $searchWildcard;
+    }
+    
 // فلتر حالة الديون
 if ($debtStatus === 'debtor') {
     $sql .= " AND (c.balance IS NOT NULL AND c.balance > 0)";
@@ -401,9 +494,9 @@ try {
         $collectionsResult = $db->queryOne($collectionsSql, $collectionsParams);
         $totalCollectionsAmount = (float)($collectionsResult['total_collections'] ?? 0);
     }
-} catch (Throwable $collectionsError) {
+    } catch (Throwable $collectionsError) {
     error_log('Company customers collections error: ' . $collectionsError->getMessage());
-}
+    }
 ?>
 
 <div class="d-flex flex-column flex-md-row justify-content-between align-items-md-center mb-3">
@@ -470,52 +563,52 @@ try {
     }
 </style>
 
-<div class="row g-3 mb-4">
-    <div class="col-12 col-md-4 col-xl-3">
-        <div class="card shadow-sm border-0 h-100">
-            <div class="card-body d-flex align-items-center justify-content-between">
-                <div>
-                    <div class="text-muted small fw-semibold">عدد العملاء</div>
+    <div class="row g-3 mb-4">
+        <div class="col-12 col-md-4 col-xl-3">
+            <div class="card shadow-sm border-0 h-100">
+                <div class="card-body d-flex align-items-center justify-content-between">
+                    <div>
+                        <div class="text-muted small fw-semibold">عدد العملاء</div>
                     <div class="fs-4 fw-bold mb-0"><?php echo number_format($customerStats['total_count']); ?></div>
+                    </div>
+                    <span class="text-primary display-6"><i class="bi bi-people-fill"></i></span>
                 </div>
-                <span class="text-primary display-6"><i class="bi bi-people-fill"></i></span>
             </div>
         </div>
-    </div>
-    <div class="col-12 col-md-4 col-xl-3">
-        <div class="card shadow-sm border-0 h-100">
-            <div class="card-body d-flex align-items-center justify-content-between">
-                <div>
-                    <div class="text-muted small fw-semibold">العملاء المدينون</div>
+        <div class="col-12 col-md-4 col-xl-3">
+            <div class="card shadow-sm border-0 h-100">
+                <div class="card-body d-flex align-items-center justify-content-between">
+                    <div>
+                        <div class="text-muted small fw-semibold">العملاء المدينون</div>
                     <div class="fs-4 fw-bold text-warning mb-0"><?php echo number_format($customerStats['debtor_count']); ?></div>
+                    </div>
+                    <span class="text-warning display-6"><i class="bi bi-cash-coin"></i></span>
                 </div>
-                <span class="text-warning display-6"><i class="bi bi-cash-coin"></i></span>
             </div>
         </div>
-    </div>
-    <div class="col-12 col-md-4 col-xl-3">
-        <div class="card shadow-sm border-0 h-100">
-            <div class="card-body d-flex align-items-center justify-content-between">
-                <div>
-                    <div class="text-muted small fw-semibold">إجمالي الديون</div>
+        <div class="col-12 col-md-4 col-xl-3">
+            <div class="card shadow-sm border-0 h-100">
+                <div class="card-body d-flex align-items-center justify-content-between">
+                    <div>
+                        <div class="text-muted small fw-semibold">إجمالي الديون</div>
                     <div class="fs-4 fw-bold text-danger mb-0"><?php echo formatCurrency($customerStats['total_debt']); ?></div>
+                    </div>
+                    <span class="text-danger display-6"><i class="bi bi-bar-chart"></i></span>
                 </div>
-                <span class="text-danger display-6"><i class="bi bi-bar-chart"></i></span>
             </div>
         </div>
-    </div>
-    <div class="col-12 col-md-4 col-xl-3">
-        <div class="card shadow-sm border-0 h-100">
-            <div class="card-body d-flex align-items-center justify-content-between">
-                <div>
-                    <div class="text-muted small fw-semibold">إجمالي التحصيلات</div>
+        <div class="col-12 col-md-4 col-xl-3">
+            <div class="card shadow-sm border-0 h-100">
+                <div class="card-body d-flex align-items-center justify-content-between">
+                    <div>
+                        <div class="text-muted small fw-semibold">إجمالي التحصيلات</div>
                     <div class="fs-4 fw-bold text-success mb-0"><?php echo formatCurrency($totalCollectionsAmount); ?></div>
+                    </div>
+                    <span class="text-success display-6"><i class="bi bi-wallet2"></i></span>
                 </div>
-                <span class="text-success display-6"><i class="bi bi-wallet2"></i></span>
             </div>
         </div>
     </div>
-</div>
 
 <!-- البحث -->
 <div class="card shadow-sm mb-4 customers-search-card">
@@ -595,7 +688,7 @@ try {
                                 <td><strong><?php echo htmlspecialchars($customer['name']); ?></strong></td>
                                 <td><?php echo htmlspecialchars($customer['phone'] ?? '-'); ?></td>
                                 <td>
-                                    <?php
+    <?php
                                         $customerBalanceValue = isset($customer['balance']) ? (float) $customer['balance'] : 0.0;
                                         $balanceBadgeClass = $customerBalanceValue > 0
                                             ? 'bg-warning-subtle text-warning'
@@ -611,7 +704,7 @@ try {
                                 </td>
                                 <td><?php echo htmlspecialchars($customer['address'] ?? '-'); ?></td>
                                 <td>
-                                    <?php
+    <?php
                                     $hasLocation = isset($customer['latitude'], $customer['longitude']) &&
                                         $customer['latitude'] !== null &&
                                         $customer['longitude'] !== null;
@@ -814,7 +907,7 @@ try {
         </div>
     </div>
 </div>
-
+   
 <script>
 document.addEventListener('DOMContentLoaded', function () {
     var editModal = document.getElementById('editCustomerModal');
