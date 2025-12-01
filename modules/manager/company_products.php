@@ -600,18 +600,23 @@ foreach ($factoryProducts as $product) {
     
     .products-grid {
         padding: 15px;
-        grid-template-columns: 1fr;
+        grid-template-columns: 1fr !important;
         gap: 15px;
-        width: 100%;
-        max-width: 100%;
+        width: 100% !important;
+        max-width: 100% !important;
+        box-sizing: border-box;
+        margin: 0;
     }
     
     .product-card {
         padding: 20px;
         border-radius: 12px;
-        width: 100%;
-        max-width: 100%;
-        min-width: 0;
+        width: 100% !important;
+        max-width: 100% !important;
+        min-width: 0 !important;
+        box-sizing: border-box;
+        margin: 0;
+        overflow: hidden;
     }
     
     .product-status {
@@ -885,6 +890,40 @@ foreach ($factoryProducts as $product) {
                     width: 100%;
                     max-width: 100%;
                     overflow: hidden;
+                    box-sizing: border-box;
+                }
+                
+                /* تحسين عرض البطاقات على الهواتف */
+                @media (max-width: 768px) {
+                    .products-grid {
+                        padding: 15px;
+                        grid-template-columns: 1fr;
+                        gap: 15px;
+                        width: 100%;
+                        max-width: 100%;
+                        box-sizing: border-box;
+                    }
+                    
+                    .product-card {
+                        width: 100% !important;
+                        max-width: 100% !important;
+                        min-width: 0 !important;
+                        padding: 20px;
+                        margin: 0;
+                        box-sizing: border-box;
+                    }
+                }
+                
+                @media (max-width: 576px) {
+                    .products-grid {
+                        padding: 12px;
+                        gap: 12px;
+                    }
+                    
+                    .product-card {
+                        padding: 15px;
+                        border-radius: 12px;
+                    }
                 }
 
                 .product-status {

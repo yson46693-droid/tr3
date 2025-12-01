@@ -1,0 +1,11 @@
+# حماية جميع ملفات PHP في مجلد includes من الوصول المباشر
+<FilesMatch "\.php$">
+    <IfModule mod_authz_core.c>
+        Require all denied
+    </IfModule>
+    <IfModule !mod_authz_core.c>
+        Order allow,deny
+        Deny from all
+    </IfModule>
+</FilesMatch>
+

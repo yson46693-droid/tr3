@@ -105,6 +105,9 @@ class Database {
             // $this->ensureVehicleInventoryAutoUpgrade();
             
         } catch (Exception $e) {
+            // تسجيل الخطأ في ملف السجل
+            error_log("Database connection error: " . $e->getMessage());
+            // عرض رسالة الخطأ (للتطوير - سيتم تعطيلها لاحقاً)
             die("Database connection error: " . $e->getMessage());
         }
     }
