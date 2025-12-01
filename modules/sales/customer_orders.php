@@ -88,40 +88,7 @@ $filters = array_filter($filters, function($value) {
     return $value !== '';
 });
 
-// معالجة طلبات AJAX لجلب عملاء المندوب
-if (isset($_GET['ajax']) && $_GET['ajax'] === 'get_customers' && isset($_GET['sales_rep_id'])) {
-    $salesRepId = intval($_GET['sales_rep_id']);
-    
-    if ($salesRepId > 0) {
-        // تنظيف أي output buffer
-        while (ob_get_level() > 0) {
-            ob_end_clean();
-        }
-        
-        header('Content-Type: application/json; charset=utf-8');
-        
-        $customers = $db->query(
-            "SELECT id, name FROM customers WHERE (created_by = ? OR rep_id = ?) AND status = 'active' ORDER BY name ASC",
-            [$salesRepId, $salesRepId]
-        );
-        
-        echo json_encode([
-            'success' => true,
-            'customers' => $customers
-        ], JSON_UNESCAPED_UNICODE);
-        exit;
-    } else {
-        while (ob_get_level() > 0) {
-            ob_end_clean();
-        }
-        header('Content-Type: application/json; charset=utf-8');
-        echo json_encode([
-            'success' => false,
-            'message' => 'معرف المندوب غير صحيح'
-        ], JSON_UNESCAPED_UNICODE);
-        exit;
-    }
-}
+// معالجة AJAX يتم التعامل معها في manager.php قبل تضمين هذا الملف
 
 // معالجة العمليات
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
