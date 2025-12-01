@@ -85,11 +85,24 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             } else {
                 $passwordHash = hashPassword($password);
                 
-                $result = $db->execute(
-                    "INSERT INTO users (username, email, password_hash, role, full_name, phone, hourly_rate, status) 
-                     VALUES (?, '', ?, ?, ?, ?, ?, 'active')",
-                    [$username, $passwordHash, $role, $fullName, $phone, $hourlyRate]
-                );
+                // التحقق من وجود عمود email في جدول users
+                $emailColumnCheck = $db->queryOne("SHOW COLUMNS FROM users WHERE Field = 'email'");
+                $hasEmailColumn = !empty($emailColumnCheck);
+                
+                // بناء استعلام INSERT ديناميكي بناءً على وجود عمود email
+                if ($hasEmailColumn) {
+                    $result = $db->execute(
+                        "INSERT INTO users (username, email, password_hash, role, full_name, phone, hourly_rate, status) 
+                         VALUES (?, '', ?, ?, ?, ?, ?, 'active')",
+                        [$username, $passwordHash, $role, $fullName, $phone, $hourlyRate]
+                    );
+                } else {
+                    $result = $db->execute(
+                        "INSERT INTO users (username, password_hash, role, full_name, phone, hourly_rate, status) 
+                         VALUES (?, ?, ?, ?, ?, ?, 'active')",
+                        [$username, $passwordHash, $role, $fullName, $phone, $hourlyRate]
+                    );
+                }
                 
                 logAudit($currentUser['id'], 'create_user', 'user', $result['insert_id'], null, [
                     'username' => $username,
