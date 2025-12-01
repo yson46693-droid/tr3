@@ -6196,7 +6196,10 @@ $lang = isset($translations) ? $translations : [];
     // التحقق من وضع التقارير للمدير
     $isReportsMode = defined('PRODUCTION_REPORTS_MODE') && PRODUCTION_REPORTS_MODE === true;
     $reportsSection = $_GET['section'] ?? '';
-    $isReportsMode = $isReportsMode || ($reportsSection === 'reports' && ($currentUser['role'] ?? '') === 'manager');
+    $currentPage = $_GET['page'] ?? '';
+    $isReportsMode = $isReportsMode 
+        || ($reportsSection === 'reports' && ($currentUser['role'] ?? '') === 'manager')
+        || ($currentPage === 'reports' && ($currentUser['role'] ?? '') === 'manager');
     ?>
     
     <?php if (!$isReportsMode): ?>
@@ -6618,8 +6621,12 @@ $lang = isset($translations) ? $translations : [];
     <div class="card shadow-sm mb-4">
         <div class="card-body">
             <form method="get" class="row g-3 align-items-end" action="<?php echo htmlspecialchars(getDashboardUrl($currentUser['role'] ?? 'production')); ?>">
-                <input type="hidden" name="page" value="production">
-                <input type="hidden" name="section" value="reports">
+                <?php if (($currentUser['role'] ?? '') === 'manager'): ?>
+                    <input type="hidden" name="page" value="reports">
+                <?php else: ?>
+                    <input type="hidden" name="page" value="production">
+                    <input type="hidden" name="section" value="reports">
+                <?php endif; ?>
                 <div class="col-lg-3 col-md-4 col-sm-6">
                     <label class="form-label fw-semibold"><i class="bi bi-calendar-month me-2"></i>اختيار الشهر</label>
                     <input type="month"
@@ -6672,7 +6679,15 @@ $lang = isset($translations) ? $translations : [];
                 </div>
                 <?php if ($hasActiveFilters): ?>
                     <div class="col-12 d-flex justify-content-end">
-                        <a href="<?php echo htmlspecialchars(getDashboardUrl($currentUser['role'] ?? 'production') . '?page=production&section=reports'); ?>"
+                        <?php 
+                        $resetUrl = getDashboardUrl($currentUser['role'] ?? 'production');
+                        if (($currentUser['role'] ?? '') === 'manager') {
+                            $resetUrl .= '?page=reports';
+                        } else {
+                            $resetUrl .= '?page=production&section=reports';
+                        }
+                        ?>
+                        <a href="<?php echo htmlspecialchars($resetUrl); ?>"
                            class="btn btn-link text-decoration-none">
                             <i class="bi bi-arrow-counterclockwise me-1"></i>إعادة التعيين
                         </a>
@@ -7989,6 +8004,8 @@ document.addEventListener('DOMContentLoaded', function() {
 
     const params = new URLSearchParams(window.location.search);
     const shouldShowReports = params.get('section') === 'reports'
+        || params.get('page') === 'reports'
+        || params.has('report_month')
         || params.has('report_day')
         || params.has('report_type')
         || params.has('report_query');
@@ -8002,9 +8019,10 @@ document.addEventListener('DOMContentLoaded', function() {
     // إصلاح نموذج الفلترة في قسم التقارير
     const reportsForm = document.querySelector('#productionReportsSection form[method="get"]');
     if (reportsForm) {
-        // التأكد من أن section=reports موجود دائماً
+        // التأكد من أن section=reports موجود دائماً (فقط إذا لم يكن page=reports)
+        const currentPageParam = new URLSearchParams(window.location.search).get('page');
         let sectionInput = reportsForm.querySelector('input[name="section"]');
-        if (!sectionInput) {
+        if (!sectionInput && currentPageParam !== 'reports') {
             sectionInput = document.createElement('input');
             sectionInput.type = 'hidden';
             sectionInput.name = 'section';
@@ -8012,13 +8030,15 @@ document.addEventListener('DOMContentLoaded', function() {
             reportsForm.appendChild(sectionInput);
         }
         
-        // التأكد من أن page=production موجود دائماً
+        // التأكد من أن page موجود دائماً (production أو reports حسب الدور)
         let pageInput = reportsForm.querySelector('input[name="page"]');
         if (!pageInput) {
             pageInput = document.createElement('input');
             pageInput.type = 'hidden';
             pageInput.name = 'page';
-            pageInput.value = 'production';
+            // تحديد القيمة بناءً على الصفحة الحالية أو الدور
+            const currentPage = new URLSearchParams(window.location.search).get('page');
+            pageInput.value = currentPage === 'reports' ? 'reports' : 'production';
             reportsForm.appendChild(pageInput);
         }
         
@@ -8029,15 +8049,13 @@ document.addEventListener('DOMContentLoaded', function() {
             const supplyCategory = reportsForm.querySelector('select[name="supply_category"]');
             const reportQuery = reportsForm.querySelector('input[name="report_query"]');
             
-            // التأكد من أن section=reports موجود دائماً
-            if (sectionInput) {
+            // التأكد من أن section=reports موجود دائماً (فقط إذا لم يكن page=reports)
+            if (sectionInput && pageInput && pageInput.value !== 'reports') {
                 sectionInput.value = 'reports';
             }
             
-            // التأكد من أن page=production موجود دائماً
-            if (pageInput) {
-                pageInput.value = 'production';
-            }
+            // عدم تغيير قيمة page إذا كانت موجودة بالفعل
+            // القيمة الصحيحة تم تعيينها في HTML بناءً على الدور
             
             // التحقق من صحة التاريخ
             if (reportDay && reportDay.value) {
