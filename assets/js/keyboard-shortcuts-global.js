@@ -66,7 +66,6 @@
             links.packaging_warehouse = 'manager.php?page=packaging_warehouse';
             links.raw_materials_warehouse = 'manager.php?page=raw_materials_warehouse';
             links.suppliers = 'manager.php?page=suppliers';
-            links.customers = 'manager.php?page=customers';
             links.orders = 'manager.php?page=orders';
             links.pos = 'manager.php?page=pos';
         }

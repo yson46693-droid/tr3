@@ -171,11 +171,6 @@ $pageDescription = 'لوحة تحكم المدير - إدارة شاملة لل�
                         'url' => getRelativeUrl('dashboard/manager.php?page=suppliers')
                     ],
                     [
-                        'label' => 'العملاء',
-                        'icon' => 'bi-people',
-                        'url' => getRelativeUrl('dashboard/manager.php?page=customers')
-                    ],
-                    [
                         'label' => 'طلبات العملاء',
                         'icon' => 'bi-cart-check',
                         'url' => getRelativeUrl('dashboard/manager.php?page=orders')
@@ -824,21 +819,6 @@ $pageDescription = 'لوحة تحكم المدير - إدارة شاملة لل�
                     include $modulePath;
                 } else {
                     echo '<div class="alert alert-warning">صفحة الموردين غير متاحة حالياً</div>';
-                }
-                ?>
-                
-            <?php elseif ($page === 'customers'): ?>
-                <?php 
-                $modulePath = __DIR__ . '/../modules/manager/customers.php';
-                if (file_exists($modulePath)) {
-                    try {
-                        include $modulePath;
-                    } catch (Throwable $e) {
-                        error_log('Manager customers module error: ' . $e->getMessage());
-                        echo '<div class="alert alert-danger">حدث خطأ أثناء تحميل صفحة العملاء: ' . htmlspecialchars($e->getMessage()) . '</div>';
-                    }
-                } else {
-                    echo '<div class="alert alert-warning">صفحة العملاء غير متاحة حالياً</div>';
                 }
                 ?>
                 

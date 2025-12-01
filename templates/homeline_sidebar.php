@@ -120,13 +120,6 @@ switch ($role) {
                 'badge' => null
             ],
             [
-                'title' => ' عملاء الشركة',
-                'icon' => 'bi-people',
-                'url' => $baseUrl . 'manager.php?page=customers',
-                'active' => ($currentPage === 'manager.php' && $currentPageParam === 'customers'),
-                'badge' => null
-            ],
-            [
                 'title' => 'عملاء المندوبين',
                 'icon' => 'bi-people-fill',
                 'url' => $baseUrl . 'manager.php?page=representatives_customers',
@@ -353,13 +346,6 @@ switch ($role) {
                 'icon' => 'bi-receipt',
                 'url' => $baseUrl . 'accountant.php?page=invoices',
                 'active' => ($currentPage === 'accountant.php' && $currentPageParam === 'invoices'),
-                'badge' => null
-            ],
-            [
-                'title' => isset($lang['customers']) ? $lang['customers'] : 'العملاء',
-                'icon' => 'bi-people',
-                'url' => $baseUrl . 'accountant.php?page=customers',
-                'active' => ($currentPage === 'accountant.php' && $currentPageParam === 'customers'),
                 'badge' => null
             ],
             [

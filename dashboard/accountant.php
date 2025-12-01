@@ -1098,22 +1098,6 @@ $pageDescription = 'لوحة تحكم المحاسب - إدارة المعامل
                 }
                 ?>
                 
-            <?php elseif ($page === 'customers'): ?>
-                <!-- صفحة العملاء -->
-                <?php 
-                $modulePath = __DIR__ . '/../modules/accountant/customers.php';
-                if (file_exists($modulePath)) {
-                    try {
-                        include $modulePath;
-                    } catch (Throwable $e) {
-                        error_log('Accountant customers module error: ' . $e->getMessage());
-                        echo '<div class="alert alert-danger">حدث خطأ أثناء تحميل صفحة العملاء: ' . htmlspecialchars($e->getMessage()) . '</div>';
-                    }
-                } else {
-                    echo '<div class="alert alert-warning">صفحة العملاء غير متاحة حالياً</div>';
-                }
-                ?>
-
             <?php elseif ($page === 'rep_customers_view'): ?>
                 <!-- صفحة عملاء المندوب -->
                 <?php 

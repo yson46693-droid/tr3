@@ -13,6 +13,11 @@ if (!defined('HEADER_INCLUDED')) {
     define('HEADER_INCLUDED', true);
 }
 
+// إضافة Permissions-Policy header للسماح بالوصول إلى Geolocation
+if (!headers_sent()) {
+    header("Permissions-Policy: geolocation=(self)");
+}
+
 require_once __DIR__ . '/../includes/config.php';
 require_once __DIR__ . '/../includes/auth.php';
 require_once __DIR__ . '/../includes/path_helper.php';
@@ -128,6 +133,7 @@ if (ob_get_level() > 0) {
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <meta http-equiv="X-UA-Compatible" content="IE=edge">
+    <meta http-equiv="Permissions-Policy" content="geolocation=(self)">
     <title><?php echo isset($pageTitle) ? $pageTitle . ' - ' : ''; ?><?php echo APP_NAME; ?></title>
     
     <?php
