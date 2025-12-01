@@ -9,6 +9,8 @@ define('ACCESS_ALLOWED', true);
 // يجب أن يكون في البداية قبل أي output
 if (!headers_sent()) {
     header("Permissions-Policy: geolocation=(self), camera=(self), notifications=(self)");
+    // Feature-Policy كبديل للمتصفحات القديمة
+    header("Feature-Policy: geolocation 'self'; camera 'self'; notifications 'self'");
 }
 
 // تنظيف أي output buffer سابق قبل أي شيء

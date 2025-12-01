@@ -11,6 +11,8 @@ if (!defined('ACCESS_ALLOWED')) {
 // إضافة Permissions-Policy header للسماح بالوصول إلى Geolocation, Camera, Notifications
 if (!headers_sent()) {
     header("Permissions-Policy: geolocation=(self), camera=(self), notifications=(self)");
+    // Feature-Policy كبديل للمتصفحات القديمة
+    header("Feature-Policy: geolocation 'self'; camera 'self'; notifications 'self'");
 }
 
 if (!defined('LOCAL_CUSTOMERS_MODULE_BOOTSTRAPPED')) {
