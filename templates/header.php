@@ -175,6 +175,13 @@ if (ob_get_level() > 0) {
     <!-- Canonical URL -->
     <link rel="canonical" href="<?php echo htmlspecialchars($canonicalUrl, ENT_QUOTES, 'UTF-8'); ?>">
     
+    <?php
+    // كشف الموبايل لتحسين الأداء (يجب أن يكون قبل استخدامه)
+    if (!isset($isMobile)) {
+        $isMobile = preg_match('/(android|iphone|ipad|ipod|blackberry|iemobile|opera mini)/i', $_SERVER['HTTP_USER_AGENT'] ?? '');
+    }
+    ?>
+    
     <!-- Performance: Preconnect to CDNs - محسّن للموبايل -->
     <link rel="preconnect" href="https://cdn.jsdelivr.net" crossorigin>
     <link rel="dns-prefetch" href="https://cdn.jsdelivr.net">
@@ -209,9 +216,6 @@ if (ob_get_level() > 0) {
     
     // استخدام timestamp لـ cache busting
     $cacheVersion = time(); // أو يمكن استخدام رقم version ثابت وتحديثه يدوياً
-    
-    // كشف الموبايل لتحسين الأداء
-    $isMobile = preg_match('/(android|iphone|ipad|ipod|blackberry|iemobile|opera mini)/i', $_SERVER['HTTP_USER_AGENT'] ?? '');
     ?>
     
     <!-- Bootstrap 5 CSS -->
