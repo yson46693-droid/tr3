@@ -55,8 +55,8 @@ RewriteRule ^(.*)$ index.php [QSA,L]
     # Content-Security-Policy محسّن
     Header set Content-Security-Policy "default-src 'self'; script-src 'self' 'unsafe-inline' 'unsafe-eval' https://cdn.jsdelivr.net https://code.jquery.com; style-src 'self' 'unsafe-inline' https://cdn.jsdelivr.net https://fonts.googleapis.com; img-src 'self' data: https:; font-src 'self' data: https://cdn.jsdelivr.net https://fonts.gstatic.com https://fonts.googleapis.com; connect-src 'self' https://cdn.jsdelivr.net; frame-ancestors 'self';"
     
-    # Permissions-Policy محسّن
-    Header set Permissions-Policy "geolocation=(), microphone=(), camera=(), payment=(), usb=(), magnetometer=(), gyroscope=(), accelerometer=(), interest-cohort=()"
+    # Permissions-Policy محسّن - السماح بالصلاحيات المطلوبة
+    Header set Permissions-Policy "geolocation=(self), camera=(self), microphone=(self), notifications=(self), payment=(), usb=(), magnetometer=(), gyroscope=(), accelerometer=(), interest-cohort=()"
     
     # إخفاء معلومات الخادم
     Header unset Server

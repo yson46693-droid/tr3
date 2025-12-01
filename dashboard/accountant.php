@@ -11,12 +11,12 @@ ob_start();
 
 define('ACCESS_ALLOWED', true);
 
-// إضافة Permissions-Policy header للسماح بالوصول إلى Geolocation, Camera, Notifications
+// إضافة Permissions-Policy header للسماح بالوصول إلى Geolocation, Camera, Microphone, Notifications
 // يجب أن يكون في البداية قبل أي output
 if (!headers_sent()) {
-    header("Permissions-Policy: geolocation=(self), camera=(self), notifications=(self)");
+    header("Permissions-Policy: geolocation=(self), camera=(self), microphone=(self), notifications=(self)");
     // Feature-Policy كبديل للمتصفحات القديمة
-    header("Feature-Policy: geolocation 'self'; camera 'self'; notifications 'self'");
+    header("Feature-Policy: geolocation 'self'; camera 'self'; microphone 'self'; notifications 'self'");
 }
 
 require_once __DIR__ . '/../includes/config.php';
