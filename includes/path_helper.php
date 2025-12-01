@@ -234,6 +234,15 @@ function redirectAfterPost($page, $filters = [], $excludeParams = ['id'], $role 
     
     $redirectUrl = getDashboardUrl($role) . '?' . http_build_query($redirectParams);
     
+    // تسجيل محاولة الـ redirect
+    $logDir = __DIR__ . '/../storage/logs';
+    if (is_dir($logDir) || @mkdir($logDir, 0755, true)) {
+        $logFile = $logDir . '/php-errors.log';
+        $timestamp = date('Y-m-d H:i:s');
+        $logMessage = "[{$timestamp}] redirectAfterPost called | URL: {$redirectUrl} | Page: {$page} | Role: {$role} | Headers sent: " . (headers_sent() ? 'yes' : 'no') . PHP_EOL;
+        @file_put_contents($logFile, $logMessage, FILE_APPEND | LOCK_EX);
+    }
+    
     if (!headers_sent()) {
         header('Location: ' . $redirectUrl);
         exit;

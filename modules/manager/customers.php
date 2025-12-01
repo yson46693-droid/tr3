@@ -46,15 +46,24 @@ $customersPageBase = $customersBaseScript . '?page=customers';
 
 // دالة مساعدة لتسجيل الأخطاء في ملف السجل
 function logToFile($message, $context = []) {
-    $logDir = __DIR__ . '/../../storage/logs';
-    if (!is_dir($logDir)) {
-        @mkdir($logDir, 0755, true);
+    try {
+        $logDir = __DIR__ . '/../../storage/logs';
+        if (!is_dir($logDir)) {
+            @mkdir($logDir, 0755, true);
+        }
+        $logFile = $logDir . '/php-errors.log';
+        $timestamp = date('Y-m-d H:i:s');
+        $contextStr = !empty($context) ? ' | Context: ' . json_encode($context, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES) : '';
+        $logMessage = "[{$timestamp}] {$message}{$contextStr}" . PHP_EOL;
+        $result = @file_put_contents($logFile, $logMessage, FILE_APPEND | LOCK_EX);
+        
+        // تسجيل فشل الكتابة
+        if ($result === false) {
+            error_log("Failed to write to log file: {$logFile}");
+        }
+    } catch (Throwable $e) {
+        error_log("logToFile error: " . $e->getMessage());
     }
-    $logFile = $logDir . '/php-errors.log';
-    $timestamp = date('Y-m-d H:i:s');
-    $contextStr = !empty($context) ? ' | Context: ' . json_encode($context, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES) : '';
-    $logMessage = "[{$timestamp}] {$message}{$contextStr}" . PHP_EOL;
-    @file_put_contents($logFile, $logMessage, FILE_APPEND | LOCK_EX);
 }
 
 // معالجة POST requests
@@ -209,12 +218,23 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                         }
                         
                 logToFile('Customer added successfully', ['customer_id' => $customerId]);
-                        
-                logToFile('Logging audit trail', ['customer_id' => $customerId]);
-                        logAudit($currentUser['id'], 'manager_add_company_customer', 'customer', $customerId, null, [
-                            'name' => $name,
-                            'created_by_admin' => 1,
-                        ]);
+                
+                // إضافة try-catch حول logAudit
+                logToFile('Attempting to log audit trail', ['customer_id' => $customerId]);
+                try {
+                    logAudit($currentUser['id'], 'manager_add_company_customer', 'customer', $customerId, null, [
+                        'name' => $name,
+                        'created_by_admin' => 1,
+                    ]);
+                    logToFile('Audit trail logged successfully');
+                } catch (Throwable $auditError) {
+                    logToFile('ERROR: Failed to log audit trail', [
+                        'error' => $auditError->getMessage(),
+                        'file' => $auditError->getFile(),
+                        'line' => $auditError->getLine()
+                    ]);
+                    // لا نوقف العملية بسبب فشل audit
+                }
 
                 logToFile('Setting success message in session');
                 $_SESSION['success_message'] = 'تم إضافة العميل بنجاح';
@@ -237,15 +257,34 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
                 logToFile('Preparing redirect', [
                     'redirect_filters' => $redirectFilters,
-                    'current_user' => $currentUser['id'] ?? 'unknown'
+                    'current_user' => $currentUser['id'] ?? 'unknown',
+                    'function_exists_redirectAfterPost' => function_exists('redirectAfterPost')
                 ]);
                 
-                redirectAfterPost(
-                    'customers',
-                    $redirectFilters,
-                    [],
-                    'manager'
-                );
+                // التحقق من وجود الدالة قبل استدعائها
+                if (!function_exists('redirectAfterPost')) {
+                    logToFile('ERROR: redirectAfterPost function does not exist');
+                    $error = 'خطأ في النظام: دالة إعادة التوجيه غير موجودة';
+                } else {
+                    // الحصول على URL قبل redirect لتسجيله
+                    $baseUrl = getDashboardUrl('manager');
+                    $redirectUrl = $baseUrl . '?page=customers' . (!empty($redirectFilters) ? '&' . http_build_query($redirectFilters) : '');
+                    logToFile('About to call redirectAfterPost', [
+                        'redirect_url' => $redirectUrl,
+                        'page' => 'customers',
+                        'filters' => $redirectFilters
+                    ]);
+                    
+                    redirectAfterPost(
+                        'customers',
+                        $redirectFilters,
+                        [],
+                        'manager'
+                    );
+                    
+                    // هذا السطر لن يتم الوصول إليه أبداً، لكن فقط للتأكد
+                    logToFile('ERROR: redirectAfterPost did not exit');
+                }
             }
         } catch (InvalidArgumentException $userError) {
             logToFile('User validation error', [
