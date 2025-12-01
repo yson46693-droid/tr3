@@ -228,6 +228,13 @@ switch ($role) {
                 'badge' => null
             ],
             [
+                'title' => 'العملاء المحليين',
+                'icon' => 'bi-people',
+                'url' => $baseUrl . 'manager.php?page=local_customers',
+                'active' => ($currentPage === 'manager.php' && $currentPageParam === 'local_customers'),
+                'badge' => null
+            ],
+            [
                 'title' => 'طلبات العملاء',
                 'icon' => 'bi-bag-check',
                 'url' => $baseUrl . 'manager.php?page=orders',
@@ -311,6 +318,13 @@ switch ($role) {
                 'icon' => 'bi-currency-dollar',
                 'url' => $baseUrl . 'accountant.php?page=salaries',
                 'active' => ($currentPage === 'accountant.php' && ($currentPageParam === 'salaries' || $currentPageParam === 'salary_details')),
+                'badge' => null
+            ],
+            [
+                'title' => 'العملاء المحليين',
+                'icon' => 'bi-people',
+                'url' => $baseUrl . 'accountant.php?page=local_customers',
+                'active' => ($currentPage === 'accountant.php' && $currentPageParam === 'local_customers'),
                 'badge' => null
             ],
             [
