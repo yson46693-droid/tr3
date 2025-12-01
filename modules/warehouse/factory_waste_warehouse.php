@@ -23,6 +23,7 @@ $basePath = getBasePath();
 
 $userRole = $currentUser['role'];
 $canViewFinancials = in_array($userRole, ['manager', 'accountant']);
+$isManager = ($userRole === 'manager'); // السماح للمدير فقط بالحذف والتعديل
 
 // إنشاء الجداول إذا لم تكن موجودة
 try {
@@ -640,6 +641,9 @@ $totalPages = ceil($totalCount / $perPage);
                                             <?php if ($canViewFinancials): ?>
                                                 <th>قيمة التوالف</th>
                                             <?php endif; ?>
+                                            <?php if ($isManager): ?>
+                                                <th>إجراءات</th>
+                                            <?php endif; ?>
                                         </tr>
                                     </thead>
                                     <tbody>
@@ -670,6 +674,29 @@ $totalPages = ceil($totalCount / $perPage);
                                                 <?php if ($canViewFinancials): ?>
                                                     <td><?php echo number_format((float)$item['waste_value'], 2); ?> جنيه</td>
                                                 <?php endif; ?>
+                                                <?php if ($isManager): ?>
+                                                    <td>
+                                                        <?php 
+                                                        // السماح بالتعديل والحذف فقط للسجلات من factory_waste_products (وليس damaged_returns)
+                                                        if (($item['data_source'] ?? '') === 'factory_waste'): 
+                                                        ?>
+                                                            <div class="btn-group btn-group-sm" role="group">
+                                                                <button type="button" class="btn btn-warning btn-sm" 
+                                                                        onclick="editProduct(<?php echo htmlspecialchars(json_encode($item), ENT_QUOTES); ?>)" 
+                                                                        title="تعديل">
+                                                                    <i class="bi bi-pencil"></i>
+                                                                </button>
+                                                                <button type="button" class="btn btn-danger btn-sm" 
+                                                                        onclick="deleteProduct(<?php echo $item['id']; ?>, '<?php echo htmlspecialchars(addslashes($productName), ENT_QUOTES); ?>')" 
+                                                                        title="حذف">
+                                                                    <i class="bi bi-trash"></i>
+                                                                </button>
+                                                            </div>
+                                                        <?php else: ?>
+                                                            <span class="text-muted small">-</span>
+                                                        <?php endif; ?>
+                                                    </td>
+                                                <?php endif; ?>
                                             </tr>
                                         <?php endforeach; ?>
                                     </tbody>
@@ -684,6 +711,9 @@ $totalPages = ceil($totalCount / $perPage);
                                             <th>الكمية التالفة</th>
                                             <th>تاريخ الإضافة</th>
                                             <th>المستخدم</th>
+                                            <?php if ($isManager): ?>
+                                                <th>إجراءات</th>
+                                            <?php endif; ?>
                                         </tr>
                                     </thead>
                                     <tbody>
@@ -698,6 +728,22 @@ $totalPages = ceil($totalCount / $perPage);
                                                 </td>
                                                 <td><?php echo htmlspecialchars($item['added_date'] ?? '-'); ?></td>
                                                 <td><?php echo htmlspecialchars($item['recorded_by_user_name'] ?? '-'); ?></td>
+                                                <?php if ($isManager): ?>
+                                                    <td>
+                                                        <div class="btn-group btn-group-sm" role="group">
+                                                            <button type="button" class="btn btn-warning btn-sm" 
+                                                                    onclick="editPackaging(<?php echo htmlspecialchars(json_encode($item), ENT_QUOTES); ?>)" 
+                                                                    title="تعديل">
+                                                                <i class="bi bi-pencil"></i>
+                                                            </button>
+                                                            <button type="button" class="btn btn-danger btn-sm" 
+                                                                    onclick="deletePackaging(<?php echo $item['id']; ?>, '<?php echo htmlspecialchars(addslashes($item['tool_type']), ENT_QUOTES); ?>')" 
+                                                                    title="حذف">
+                                                                <i class="bi bi-trash"></i>
+                                                            </button>
+                                                        </div>
+                                                    </td>
+                                                <?php endif; ?>
                                             </tr>
                                         <?php endforeach; ?>
                                     </tbody>
@@ -715,6 +761,9 @@ $totalPages = ceil($totalCount / $perPage);
                                             <th>المستخدم</th>
                                             <?php if ($canViewFinancials): ?>
                                                 <th>قيمة الهدر</th>
+                                            <?php endif; ?>
+                                            <?php if ($isManager): ?>
+                                                <th>إجراءات</th>
                                             <?php endif; ?>
                                         </tr>
                                     </thead>
@@ -741,6 +790,22 @@ $totalPages = ceil($totalCount / $perPage);
                                                 <td><?php echo htmlspecialchars($item['recorded_by_user_name'] ?? '-'); ?></td>
                                                 <?php if ($canViewFinancials): ?>
                                                     <td><?php echo number_format((float)($item['waste_value'] ?? 0), 2); ?> جنيه</td>
+                                                <?php endif; ?>
+                                                <?php if ($isManager): ?>
+                                                    <td>
+                                                        <div class="btn-group btn-group-sm" role="group">
+                                                            <button type="button" class="btn btn-warning btn-sm" 
+                                                                    onclick="editRawMaterial(<?php echo htmlspecialchars(json_encode($item), ENT_QUOTES); ?>)" 
+                                                                    title="تعديل">
+                                                                <i class="bi bi-pencil"></i>
+                                                            </button>
+                                                            <button type="button" class="btn btn-danger btn-sm" 
+                                                                    onclick="deleteRawMaterial(<?php echo $item['id']; ?>, '<?php echo htmlspecialchars(addslashes($item['material_name']), ENT_QUOTES); ?>')" 
+                                                                    title="حذف">
+                                                                <i class="bi bi-trash"></i>
+                                                            </button>
+                                                        </div>
+                                                    </td>
                                                 <?php endif; ?>
                                             </tr>
                                         <?php endforeach; ?>
@@ -786,4 +851,344 @@ $totalPages = ceil($totalCount / $perPage);
         </div>
     </div>
 </div>
+
+<?php if ($isManager): ?>
+<!-- Modal تعديل منتج تالف -->
+<div class="modal fade" id="editProductModal" tabindex="-1">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title">تعديل منتج تالف</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <form id="editProductForm">
+                <div class="modal-body">
+                    <input type="hidden" id="edit_product_id" name="id">
+                    <div class="mb-3">
+                        <label class="form-label">الكمية التالفة</label>
+                        <input type="number" step="0.01" min="0" class="form-control" id="edit_product_quantity" name="damaged_quantity" required>
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label">تاريخ الإضافة</label>
+                        <input type="date" class="form-control" id="edit_product_date" name="added_date" required>
+                    </div>
+                    <?php if ($canViewFinancials): ?>
+                    <div class="mb-3">
+                        <label class="form-label">قيمة التوالف</label>
+                        <input type="number" step="0.01" min="0" class="form-control" id="edit_product_value" name="waste_value">
+                    </div>
+                    <?php endif; ?>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">إلغاء</button>
+                    <button type="submit" class="btn btn-primary">حفظ التعديلات</button>
+                </div>
+            </form>
+        </div>
+    </div>
+</div>
+
+<!-- Modal حذف منتج تالف -->
+<div class="modal fade" id="deleteProductModal" tabindex="-1">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title">حذف منتج تالف</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body">
+                <p>هل أنت متأكد من حذف هذا المنتج التالف؟</p>
+                <p class="text-danger"><strong id="delete_product_name"></strong></p>
+                <p class="text-muted small">هذه العملية لا يمكن التراجع عنها.</p>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">إلغاء</button>
+                <button type="button" class="btn btn-danger" id="confirmDeleteProduct">حذف</button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Modal تعديل أداة تعبئة تالفة -->
+<div class="modal fade" id="editPackagingModal" tabindex="-1">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title">تعديل أداة تعبئة تالفة</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <form id="editPackagingForm">
+                <div class="modal-body">
+                    <input type="hidden" id="edit_packaging_id" name="id">
+                    <div class="mb-3">
+                        <label class="form-label">الكمية التالفة</label>
+                        <input type="number" step="0.01" min="0" class="form-control" id="edit_packaging_quantity" name="damaged_quantity" required>
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label">تاريخ الإضافة</label>
+                        <input type="date" class="form-control" id="edit_packaging_date" name="added_date" required>
+                    </div>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">إلغاء</button>
+                    <button type="submit" class="btn btn-primary">حفظ التعديلات</button>
+                </div>
+            </form>
+        </div>
+    </div>
+</div>
+
+<!-- Modal حذف أداة تعبئة تالفة -->
+<div class="modal fade" id="deletePackagingModal" tabindex="-1">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title">حذف أداة تعبئة تالفة</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body">
+                <p>هل أنت متأكد من حذف هذه الأداة التالفة؟</p>
+                <p class="text-danger"><strong id="delete_packaging_name"></strong></p>
+                <p class="text-muted small">هذه العملية لا يمكن التراجع عنها.</p>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">إلغاء</button>
+                <button type="button" class="btn btn-danger" id="confirmDeletePackaging">حذف</button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Modal تعديل خامة مهدرة -->
+<div class="modal fade" id="editRawMaterialModal" tabindex="-1">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title">تعديل خامة مهدرة</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <form id="editRawMaterialForm">
+                <div class="modal-body">
+                    <input type="hidden" id="edit_raw_material_id" name="id">
+                    <div class="mb-3">
+                        <label class="form-label">الكمية المهدرة</label>
+                        <input type="number" step="0.01" min="0" class="form-control" id="edit_raw_material_quantity" name="wasted_quantity" required>
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label">تاريخ الإضافة</label>
+                        <input type="date" class="form-control" id="edit_raw_material_date" name="added_date" required>
+                    </div>
+                    <?php if ($canViewFinancials): ?>
+                    <div class="mb-3">
+                        <label class="form-label">قيمة الهدر</label>
+                        <input type="number" step="0.01" min="0" class="form-control" id="edit_raw_material_value" name="waste_value">
+                    </div>
+                    <?php endif; ?>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">إلغاء</button>
+                    <button type="submit" class="btn btn-primary">حفظ التعديلات</button>
+                </div>
+            </form>
+        </div>
+    </div>
+</div>
+
+<!-- Modal حذف خامة مهدرة -->
+<div class="modal fade" id="deleteRawMaterialModal" tabindex="-1">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title">حذف خامة مهدرة</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body">
+                <p>هل أنت متأكد من حذف هذه الخامة المهدرة؟</p>
+                <p class="text-danger"><strong id="delete_raw_material_name"></strong></p>
+                <p class="text-muted small">هذه العملية لا يمكن التراجع عنها.</p>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">إلغاء</button>
+                <button type="button" class="btn btn-danger" id="confirmDeleteRawMaterial">حذف</button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<script>
+let currentDeleteId = null;
+let currentDeleteType = null;
+
+// وظائف تعديل المنتجات التالفة
+function editProduct(item) {
+    document.getElementById('edit_product_id').value = item.id;
+    document.getElementById('edit_product_quantity').value = item.damaged_quantity || '';
+    document.getElementById('edit_product_date').value = item.added_date || '';
+    <?php if ($canViewFinancials): ?>
+    document.getElementById('edit_product_value').value = item.waste_value || '';
+    <?php endif; ?>
+    new bootstrap.Modal(document.getElementById('editProductModal')).show();
+}
+
+function deleteProduct(id, name) {
+    currentDeleteId = id;
+    currentDeleteType = 'product';
+    document.getElementById('delete_product_name').textContent = name;
+    new bootstrap.Modal(document.getElementById('deleteProductModal')).show();
+}
+
+// وظائف تعديل أدوات التعبئة التالفة
+function editPackaging(item) {
+    document.getElementById('edit_packaging_id').value = item.id;
+    document.getElementById('edit_packaging_quantity').value = item.damaged_quantity || '';
+    document.getElementById('edit_packaging_date').value = item.added_date || '';
+    new bootstrap.Modal(document.getElementById('editPackagingModal')).show();
+}
+
+function deletePackaging(id, name) {
+    currentDeleteId = id;
+    currentDeleteType = 'packaging';
+    document.getElementById('delete_packaging_name').textContent = name;
+    new bootstrap.Modal(document.getElementById('deletePackagingModal')).show();
+}
+
+// وظائف تعديل الخامات المهدرة
+function editRawMaterial(item) {
+    document.getElementById('edit_raw_material_id').value = item.id;
+    document.getElementById('edit_raw_material_quantity').value = item.wasted_quantity || '';
+    document.getElementById('edit_raw_material_date').value = item.added_date || '';
+    <?php if ($canViewFinancials): ?>
+    document.getElementById('edit_raw_material_value').value = item.waste_value || '';
+    <?php endif; ?>
+    new bootstrap.Modal(document.getElementById('editRawMaterialModal')).show();
+}
+
+function deleteRawMaterial(id, name) {
+    currentDeleteId = id;
+    currentDeleteType = 'raw_material';
+    document.getElementById('delete_raw_material_name').textContent = name;
+    new bootstrap.Modal(document.getElementById('deleteRawMaterialModal')).show();
+}
+
+// معالجة النماذج
+document.getElementById('editProductForm')?.addEventListener('submit', function(e) {
+    e.preventDefault();
+    const formData = new FormData(this);
+    formData.append('action', 'edit_product');
+    formData.append('tab', '<?php echo $activeTab; ?>');
+    
+    fetch('<?php echo $basePath; ?>api/factory_waste.php', {
+        method: 'POST',
+        body: formData
+    })
+    .then(response => response.json())
+    .then(data => {
+        if (data.success) {
+            alert('تم التعديل بنجاح');
+            location.reload();
+        } else {
+            alert('حدث خطأ: ' + (data.message || 'خطأ غير معروف'));
+        }
+    })
+    .catch(error => {
+        console.error('Error:', error);
+        alert('حدث خطأ أثناء التعديل');
+    });
+});
+
+document.getElementById('editPackagingForm')?.addEventListener('submit', function(e) {
+    e.preventDefault();
+    const formData = new FormData(this);
+    formData.append('action', 'edit_packaging');
+    formData.append('tab', '<?php echo $activeTab; ?>');
+    
+    fetch('<?php echo $basePath; ?>api/factory_waste.php', {
+        method: 'POST',
+        body: formData
+    })
+    .then(response => response.json())
+    .then(data => {
+        if (data.success) {
+            alert('تم التعديل بنجاح');
+            location.reload();
+        } else {
+            alert('حدث خطأ: ' + (data.message || 'خطأ غير معروف'));
+        }
+    })
+    .catch(error => {
+        console.error('Error:', error);
+        alert('حدث خطأ أثناء التعديل');
+    });
+});
+
+document.getElementById('editRawMaterialForm')?.addEventListener('submit', function(e) {
+    e.preventDefault();
+    const formData = new FormData(this);
+    formData.append('action', 'edit_raw_material');
+    formData.append('tab', '<?php echo $activeTab; ?>');
+    
+    fetch('<?php echo $basePath; ?>api/factory_waste.php', {
+        method: 'POST',
+        body: formData
+    })
+    .then(response => response.json())
+    .then(data => {
+        if (data.success) {
+            alert('تم التعديل بنجاح');
+            location.reload();
+        } else {
+            alert('حدث خطأ: ' + (data.message || 'خطأ غير معروف'));
+        }
+    })
+    .catch(error => {
+        console.error('Error:', error);
+        alert('حدث خطأ أثناء التعديل');
+    });
+});
+
+// معالجة الحذف
+document.getElementById('confirmDeleteProduct')?.addEventListener('click', function() {
+    if (currentDeleteId && currentDeleteType === 'product') {
+        deleteItem(currentDeleteId, 'product');
+    }
+});
+
+document.getElementById('confirmDeletePackaging')?.addEventListener('click', function() {
+    if (currentDeleteId && currentDeleteType === 'packaging') {
+        deleteItem(currentDeleteId, 'packaging');
+    }
+});
+
+document.getElementById('confirmDeleteRawMaterial')?.addEventListener('click', function() {
+    if (currentDeleteId && currentDeleteType === 'raw_material') {
+        deleteItem(currentDeleteId, 'raw_material');
+    }
+});
+
+function deleteItem(id, type) {
+    const formData = new FormData();
+    formData.append('action', 'delete_' + type);
+    formData.append('id', id);
+    formData.append('tab', '<?php echo $activeTab; ?>');
+    
+    fetch('<?php echo $basePath; ?>api/factory_waste.php', {
+        method: 'POST',
+        body: formData
+    })
+    .then(response => response.json())
+    .then(data => {
+        if (data.success) {
+            alert('تم الحذف بنجاح');
+            location.reload();
+        } else {
+            alert('حدث خطأ: ' + (data.message || 'خطأ غير معروف'));
+        }
+    })
+    .catch(error => {
+        console.error('Error:', error);
+        alert('حدث خطأ أثناء الحذف');
+    });
+}
+</script>
+<?php endif; ?>
 
