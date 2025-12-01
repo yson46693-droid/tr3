@@ -161,7 +161,7 @@ function getConsumptionSummary($dateFrom, $dateTo)
             $select[] = "p.{$col}";
         }
     }
-    $sql = "SELECT " . implode(', ', $select) . " FROM inventory_movements im INNER JOIN products p ON im.product_id = p.id WHERE DATE(im.created_at) BETWEEN ? AND ? GROUP BY im.product_id";
+    $sql = "SELECT " . implode(', ', $select) . " FROM inventory_movements im INNER JOIN products p ON im.product_id = p.id WHERE DATE(im.created_at) BETWEEN ? AND ? AND im.reference_type = 'production' GROUP BY im.product_id";
     $rows = [];
     try {
         $rows = $db->query($sql, [$from, $to]);
