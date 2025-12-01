@@ -94,15 +94,50 @@ if (!defined('ACCESS_ALLOWED')) {
     // إزالة /assets/ المكرر
     $assetsUrl = rtrim($assetsUrl, '/') . '/';
     ?>
-    <script src="<?php echo $assetsUrl; ?>js/fix-modal-interaction.js?v=<?php echo $cacheVersion; ?>" defer></script>
+    <?php
+    // كشف الموبايل لتحسين الأداء (نفس المستخدم في header.php)
+    $isMobile = preg_match('/(android|iphone|ipad|ipod|blackberry|iemobile|opera mini)/i', $_SERVER['HTTP_USER_AGENT'] ?? '');
+    ?>
+    
+    <!-- Critical JS - تحميل مباشر -->
     <script src="<?php echo $assetsUrl; ?>js/main.js?v=<?php echo $cacheVersion; ?>" defer></script>
     <script src="<?php echo $assetsUrl; ?>js/sidebar.js?v=<?php echo $cacheVersion; ?>" defer></script>
-    <script src="<?php echo $assetsUrl; ?>js/tables.js?v=<?php echo $cacheVersion; ?>" defer></script>
+    
+    <!-- Medium Priority JS - تحميل مباشر -->
+    <script src="<?php echo $assetsUrl; ?>js/fix-modal-interaction.js?v=<?php echo $cacheVersion; ?>" defer></script>
     <script src="<?php echo $assetsUrl; ?>js/notifications.js?v=<?php echo $cacheVersion; ?>" defer></script>
+    
+    <!-- Low Priority JS - تحميل متأخر على الموبايل -->
+    <?php if (!$isMobile): ?>
+    <!-- Desktop: تحميل جميع الملفات -->
+    <script src="<?php echo $assetsUrl; ?>js/tables.js?v=<?php echo $cacheVersion; ?>" defer></script>
     <script src="<?php echo $assetsUrl; ?>js/dark-mode.js?v=<?php echo $cacheVersion; ?>" defer></script>
     <script src="<?php echo $assetsUrl; ?>js/pwa-install.js?v=<?php echo $cacheVersion; ?>" defer></script>
     <script src="<?php echo $assetsUrl; ?>js/modal-link-interceptor.js?v=<?php echo $cacheVersion; ?>" defer></script>
     <script src="<?php echo $assetsUrl; ?>js/keyboard-shortcuts-global.js?v=<?php echo $cacheVersion; ?>" defer></script>
+    <?php else: ?>
+    <!-- Mobile: تحميل متأخر للـ JS غير الحرجة -->
+    <script>
+        // تحميل JS غير الحرجة بعد تحميل الصفحة على الموبايل
+        window.addEventListener('load', function() {
+            setTimeout(function() {
+                const scripts = [
+                    '<?php echo $assetsUrl; ?>js/tables.js?v=<?php echo $cacheVersion; ?>',
+                    '<?php echo $assetsUrl; ?>js/dark-mode.js?v=<?php echo $cacheVersion; ?>',
+                    '<?php echo $assetsUrl; ?>js/pwa-install.js?v=<?php echo $cacheVersion; ?>',
+                    '<?php echo $assetsUrl; ?>js/modal-link-interceptor.js?v=<?php echo $cacheVersion; ?>'
+                ];
+                
+                scripts.forEach(function(src) {
+                    const script = document.createElement('script');
+                    script.src = src;
+                    script.defer = true;
+                    document.body.appendChild(script);
+                });
+            }, 1000); // بعد ثانية من تحميل الصفحة
+        });
+    </script>
+    <?php endif; ?>
     <script>
     // التحقق من تحميل ملفات JavaScript بشكل صحيح
     (function() {

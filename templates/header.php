@@ -175,21 +175,24 @@ if (ob_get_level() > 0) {
     <!-- Canonical URL -->
     <link rel="canonical" href="<?php echo htmlspecialchars($canonicalUrl, ENT_QUOTES, 'UTF-8'); ?>">
     
-    <!-- Performance: Preconnect to CDNs -->
+    <!-- Performance: Preconnect to CDNs - محسّن للموبايل -->
     <link rel="preconnect" href="https://cdn.jsdelivr.net" crossorigin>
     <link rel="dns-prefetch" href="https://cdn.jsdelivr.net">
     <link rel="preconnect" href="https://code.jquery.com" crossorigin>
     <link rel="dns-prefetch" href="https://code.jquery.com">
     
-    <!-- Performance: Preload Critical Resources -->
+    <!-- Performance: Preload Critical Resources - فقط على Desktop -->
+    <?php if (!$isMobile): ?>
     <link rel="preload" href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" as="style">
     <link rel="preload" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.0/font/bootstrap-icons.css" as="style">
+    <?php endif; ?>
     
-    <!-- Bootstrap 5 CSS -->
-    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
-    <!-- Bootstrap Icons -->
-    <link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.0/font/bootstrap-icons.css" rel="stylesheet">
-    <!-- Custom CSS - Homeline Dashboard Design -->
+    <!-- Performance: Resource Hints للموبايل -->
+    <?php if ($isMobile): ?>
+    <link rel="dns-prefetch" href="https://cdn.jsdelivr.net">
+    <link rel="dns-prefetch" href="https://code.jquery.com">
+    <?php endif; ?>
+    
     <?php
     // تحديد ASSETS_URL بشكل صحيح
     $assetsUrl = ASSETS_URL;
@@ -203,21 +206,60 @@ if (ob_get_level() > 0) {
     }
     // إزالة /assets/ المكرر
     $assetsUrl = rtrim($assetsUrl, '/') . '/';
-    ?>
-    <?php
+    
     // استخدام timestamp لـ cache busting
     $cacheVersion = time(); // أو يمكن استخدام رقم version ثابت وتحديثه يدوياً
+    
+    // كشف الموبايل لتحسين الأداء
+    $isMobile = preg_match('/(android|iphone|ipad|ipod|blackberry|iemobile|opera mini)/i', $_SERVER['HTTP_USER_AGENT'] ?? '');
     ?>
+    
+    <!-- Bootstrap 5 CSS -->
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+    
+    <!-- Bootstrap Icons - تحميل مشروط للموبايل (أقل) -->
+    <?php if ($isMobile): ?>
+    <!-- Mobile: تحميل Bootstrap Icons مع lazy loading -->
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.0/font/bootstrap-icons.css" rel="stylesheet" media="print" onload="this.media='all'">
+    <noscript><link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.0/font/bootstrap-icons.css" rel="stylesheet"></noscript>
+    <?php else: ?>
+    <!-- Desktop: تحميل عادي -->
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.0/font/bootstrap-icons.css" rel="stylesheet">
+    <?php endif; ?>
+    
+    <!-- Custom CSS - Homeline Dashboard Design -->
+    <!-- Critical CSS - تحميل مباشر -->
     <link href="<?php echo $assetsUrl; ?>css/homeline-dashboard.css?v=<?php echo $cacheVersion; ?>" rel="stylesheet">
-    <link href="<?php echo $assetsUrl; ?>css/sidebar.css?v=<?php echo $cacheVersion; ?>" rel="stylesheet">
     <link href="<?php echo $assetsUrl; ?>css/topbar.css?v=<?php echo $cacheVersion; ?>" rel="stylesheet">
-    <link href="<?php echo $assetsUrl; ?>css/cards.css?v=<?php echo $cacheVersion; ?>" rel="stylesheet">
     <link href="<?php echo $assetsUrl; ?>css/responsive.css?v=<?php echo $cacheVersion; ?>" rel="stylesheet">
-    <link href="<?php echo $assetsUrl; ?>css/tables.css?v=<?php echo $cacheVersion; ?>" rel="stylesheet">
+    
+    <!-- Medium Priority CSS - تحميل مشروط -->
+    <link href="<?php echo $assetsUrl; ?>css/sidebar.css?v=<?php echo $cacheVersion; ?>" rel="stylesheet" media="print" onload="this.media='all'">
+    <noscript><link href="<?php echo $assetsUrl; ?>css/sidebar.css?v=<?php echo $cacheVersion; ?>" rel="stylesheet"></noscript>
+    
+    <link href="<?php echo $assetsUrl; ?>css/cards.css?v=<?php echo $cacheVersion; ?>" rel="stylesheet" media="print" onload="this.media='all'">
+    <noscript><link href="<?php echo $assetsUrl; ?>css/cards.css?v=<?php echo $cacheVersion; ?>" rel="stylesheet"></noscript>
+    
+    <link href="<?php echo $assetsUrl; ?>css/tables.css?v=<?php echo $cacheVersion; ?>" rel="stylesheet" media="print" onload="this.media='all'">
+    <noscript><link href="<?php echo $assetsUrl; ?>css/tables.css?v=<?php echo $cacheVersion; ?>" rel="stylesheet"></noscript>
+    
+    <!-- Mobile-specific CSS - تحميل فقط على الموبايل -->
+    <?php if ($isMobile): ?>
     <link href="<?php echo $assetsUrl; ?>css/mobile-tables.css?v=<?php echo $cacheVersion; ?>" rel="stylesheet">
-    <link href="<?php echo $assetsUrl; ?>css/pwa.css?v=<?php echo $cacheVersion; ?>" rel="stylesheet">
-    <link href="<?php echo $assetsUrl; ?>css/modal-iframe.css?v=<?php echo $cacheVersion; ?>" rel="stylesheet">
-    <link href="<?php echo $assetsUrl; ?>css/dark-mode.css?v=<?php echo $cacheVersion; ?>" rel="stylesheet">
+    <?php else: ?>
+    <!-- Desktop: تحميل مع lazy loading -->
+    <link href="<?php echo $assetsUrl; ?>css/mobile-tables.css?v=<?php echo $cacheVersion; ?>" rel="stylesheet" media="(max-width: 767.98px)">
+    <?php endif; ?>
+    
+    <!-- Low Priority CSS - تحميل متأخر -->
+    <link href="<?php echo $assetsUrl; ?>css/pwa.css?v=<?php echo $cacheVersion; ?>" rel="stylesheet" media="print" onload="this.media='all'">
+    <noscript><link href="<?php echo $assetsUrl; ?>css/pwa.css?v=<?php echo $cacheVersion; ?>" rel="stylesheet"></noscript>
+    
+    <link href="<?php echo $assetsUrl; ?>css/modal-iframe.css?v=<?php echo $cacheVersion; ?>" rel="stylesheet" media="print" onload="this.media='all'">
+    <noscript><link href="<?php echo $assetsUrl; ?>css/modal-iframe.css?v=<?php echo $cacheVersion; ?>" rel="stylesheet"></noscript>
+    
+    <link href="<?php echo $assetsUrl; ?>css/dark-mode.css?v=<?php echo $cacheVersion; ?>" rel="stylesheet" media="print" onload="this.media='all'">
+    <noscript><link href="<?php echo $assetsUrl; ?>css/dark-mode.css?v=<?php echo $cacheVersion; ?>" rel="stylesheet"></noscript>
     <?php if (!empty($pageStylesheets) && is_array($pageStylesheets)): ?>
         <?php foreach ($pageStylesheets as $stylesheetPath): ?>
             <?php
