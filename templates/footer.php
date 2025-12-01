@@ -55,7 +55,7 @@ if (!defined('ACCESS_ALLOWED')) {
     $cacheVersion = time();
     ?>
     <!-- Performance: Load jQuery with defer for better performance -->
-    <script src="https://code.jquery.com/jquery-3.7.0.min.js" defer crossorigin="anonymous" integrity="sha384-9aIt2nRpC12Uk9gS9baDl411NQApFmC26EwAOH8WgZl5MYYxFfc+NcPb1dKGj7Sk"></script>
+    <script src="https://code.jquery.com/jquery-3.7.0.min.js" defer crossorigin="anonymous"></script>
     <script>
         // الانتظار حتى تحميل jQuery
         (function() {
@@ -78,7 +78,7 @@ if (!defined('ACCESS_ALLOWED')) {
         })();
     </script>
     <!-- Performance: Load Bootstrap JS with defer -->
-    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js" defer crossorigin="anonymous" integrity="sha384-fbbOQedDUMZZ5KreZpsbe1LCZPVmfTnH7ois6mU1QK+m14rQ1l2bGBq41eYeM/fS"></script>
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js" defer crossorigin="anonymous"></script>
     <!-- Custom JS -->
     <?php
     // التأكد من أن ASSETS_URL صحيح

@@ -9,8 +9,10 @@ while (ob_get_level()) {
     ob_end_clean();
 }
 
-// بدء output buffering جديد لضمان عدم وجود output قبل headers
-ob_start();
+// التأكد من عدم وجود أي output قبل headers
+if (ob_get_level() === 0) {
+    ob_start();
+}
 
 // قراءة ملف manifest.json مباشرة
 $manifestPath = __DIR__ . '/manifest.json';
@@ -106,11 +108,14 @@ $content = json_encode($json, JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE);
 // تنظيف output buffer قبل إرسال headers
 ob_clean();
 
-// إرسال headers
-header('Content-Type: application/manifest+json; charset=utf-8');
-header('Cache-Control: public, max-age=3600');
-header('X-Content-Type-Options: nosniff');
+// إرسال headers - يجب أن يكون قبل أي output
+if (!headers_sent()) {
+    header('Content-Type: application/manifest+json; charset=utf-8');
+    header('Cache-Control: public, max-age=3600');
+    header('X-Content-Type-Options: nosniff');
+}
 
 // إرسال المحتوى بدون أي output إضافي
 echo $content;
+ob_end_flush();
 exit(0);
