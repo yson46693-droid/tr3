@@ -2137,6 +2137,51 @@ if (document.readyState === 'loading') {
     setupLocationButton();
 }
 
+// دالة لإعداد زر الموقع لطلب الشركة
+function setupCompanyLocationButton() {
+    const getLocationBtn = document.getElementById('companyGetLocationBtn');
+    const latitudeInput = document.getElementById('companyNewCustomerLatitude');
+    const longitudeInput = document.getElementById('companyNewCustomerLongitude');
+    
+    if (getLocationBtn && latitudeInput && longitudeInput) {
+        // إزالة أي event listeners سابقة
+        const newBtn = getLocationBtn.cloneNode(true);
+        getLocationBtn.parentNode.replaceChild(newBtn, getLocationBtn);
+        
+        // ربط event listener جديد
+        const newGetLocationBtn = document.getElementById('companyGetLocationBtn');
+        if (newGetLocationBtn) {
+            newGetLocationBtn.addEventListener('click', function() {
+                if (!navigator.geolocation) {
+                    alert('المتصفح لا يدعم الحصول على الموقع');
+                    return;
+                }
+                
+                newGetLocationBtn.disabled = true;
+                newGetLocationBtn.innerHTML = '<i class="bi bi-hourglass-split"></i>';
+                
+                navigator.geolocation.getCurrentPosition(
+                    function(position) {
+                        const latInput = document.getElementById('companyNewCustomerLatitude');
+                        const lngInput = document.getElementById('companyNewCustomerLongitude');
+                        if (latInput && lngInput) {
+                            latInput.value = position.coords.latitude.toFixed(8);
+                            lngInput.value = position.coords.longitude.toFixed(8);
+                        }
+                        newGetLocationBtn.disabled = false;
+                        newGetLocationBtn.innerHTML = '<i class="bi bi-geo-alt"></i>';
+                    },
+                    function(error) {
+                        alert('فشل الحصول على الموقع: ' + error.message);
+                        newGetLocationBtn.disabled = false;
+                        newGetLocationBtn.innerHTML = '<i class="bi bi-geo-alt"></i>';
+                    }
+                );
+            });
+        }
+    }
+}
+
 // ربط الأحداث عند فتح Modal طلب الشركة
 const addCompanyOrderModalElement = document.getElementById('addCompanyOrderModal');
 if (addCompanyOrderModalElement && typeof bootstrap !== 'undefined') {
