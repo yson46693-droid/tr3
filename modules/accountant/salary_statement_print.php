@@ -44,7 +44,7 @@ if (isset($_GET['month']) && isset($_GET['year'])) {
 <html lang="ar" dir="rtl">
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="viewport" content="width=device-width,initial-scale=1.0,maximum-scale=5.0,user-scalable=yes">
     <title>كشف حساب المرتب - <?php echo htmlspecialchars($employee['full_name'] ?? $employee['username']); ?></title>
     <link href="https://fonts.googleapis.com/css2?family=Tajawal:wght@400;500;700&display=swap" rel="stylesheet">
     <link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.0/font/bootstrap-icons.css" rel="stylesheet">
@@ -78,6 +78,9 @@ if (isset($_GET['month']) && isset($_GET['year'])) {
             background: #f5f7fa;
             padding: 20px;
             color: #1f2937;
+            width: 100%;
+            max-width: 100%;
+            overflow-x: hidden;
         }
         
         .statement-wrapper {
@@ -90,6 +93,8 @@ if (isset($_GET['month']) && isset($_GET['year'])) {
             box-shadow: 0 20px 45px rgba(15, 23, 42, 0.12);
             position: relative;
             overflow: hidden;
+            width: 100%;
+            max-width: 100%;
         }
         
         .statement-wrapper::before {
@@ -236,6 +241,25 @@ if (isset($_GET['month']) && isset($_GET['year'])) {
             display: block;
             overflow-x: auto;
             -webkit-overflow-scrolling: touch;
+            max-width: 100%;
+        }
+        
+        .transactions-table::-webkit-scrollbar {
+            height: 8px;
+        }
+        
+        .transactions-table::-webkit-scrollbar-track {
+            background: #f1f1f1;
+            border-radius: 4px;
+        }
+        
+        .transactions-table::-webkit-scrollbar-thumb {
+            background: #888;
+            border-radius: 4px;
+        }
+        
+        .transactions-table::-webkit-scrollbar-thumb:hover {
+            background: #555;
         }
         
         .transactions-table thead {
@@ -477,6 +501,9 @@ if (isset($_GET['month']) && isset($_GET['year'])) {
             
             .transactions-table {
                 font-size: 12px;
+                margin: 0 -10px;
+                width: calc(100% + 20px);
+                max-width: calc(100% + 20px);
             }
             
             .transactions-table th,
@@ -484,6 +511,10 @@ if (isset($_GET['month']) && isset($_GET['year'])) {
                 padding: 10px 8px;
                 font-size: 12px;
                 min-width: 80px;
+            }
+            
+            .transactions-table table {
+                min-width: 500px;
             }
             
             .section-title {
@@ -538,6 +569,16 @@ if (isset($_GET['month']) && isset($_GET['year'])) {
             
             .statement-title {
                 font-size: 16px;
+            }
+            
+            .transactions-table {
+                margin: 0 -8px;
+                width: calc(100% + 16px);
+                max-width: calc(100% + 16px);
+            }
+            
+            .transactions-table table {
+                min-width: 450px;
             }
             
             .transactions-table th,

@@ -17,6 +17,7 @@ $db = db();
 $currentUser = getCurrentUser();
 
 // معالجة المعاملات
+$reportMonthParam = isset($_GET['report_month']) ? trim((string)$_GET['report_month']) : '';
 $reportDayParam = isset($_GET['report_day']) ? trim((string)$_GET['report_day']) : '';
 $reportFilterType = isset($_GET['report_type']) ? strtolower(trim((string)$_GET['report_type'])) : 'all';
 if (!in_array($reportFilterType, ['all', 'packaging', 'raw'], true)) {
@@ -27,9 +28,25 @@ $reportFilterQuery = isset($_GET['report_query']) ? trim((string)$_GET['report_q
 $period = isset($_GET['period']) ? trim((string)$_GET['period']) : 'month'; // 'day' or 'month'
 
 $productionReportsTodayDate = date('Y-m-d');
-$productionReportsMonthStart = date('Y-m-01');
-$productionReportsMonthEnd = date('Y-m-t');
-if (strtotime($productionReportsMonthEnd) > strtotime($productionReportsTodayDate)) {
+
+// معالجة فلترة الشهر
+$selectedMonth = date('Y-m'); // الشهر الحالي كافتراضي
+if ($reportMonthParam !== '') {
+    // التحقق من صحة تنسيق الشهر (YYYY-MM)
+    $monthDate = DateTime::createFromFormat('Y-m', $reportMonthParam);
+    if ($monthDate && $monthDate->format('Y-m') === $reportMonthParam) {
+        $selectedMonth = $reportMonthParam;
+    }
+}
+
+// حساب بداية ونهاية الشهر المحدد
+$selectedMonthDate = DateTime::createFromFormat('Y-m', $selectedMonth);
+$productionReportsMonthStart = $selectedMonthDate->format('Y-m-01');
+$lastDayOfMonth = $selectedMonthDate->format('t');
+$productionReportsMonthEnd = $selectedMonthDate->format('Y-m-' . $lastDayOfMonth);
+
+// إذا كان الشهر المحدد هو الشهر الحالي، لا نعرض أيام بعد اليوم
+if ($selectedMonth === date('Y-m') && strtotime($productionReportsMonthEnd) > strtotime($productionReportsTodayDate)) {
     $productionReportsMonthEnd = $productionReportsTodayDate;
 }
 

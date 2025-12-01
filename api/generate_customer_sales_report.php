@@ -132,7 +132,7 @@ $generatedAt = formatDateTime(date('Y-m-d H:i:s'));
 <html lang="ar" dir="rtl">
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="viewport" content="width=device-width,initial-scale=1.0,maximum-scale=5.0,user-scalable=yes">
     <title>تقرير مبيعات العميل - <?php echo htmlspecialchars($customer['name']); ?></title>
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
     <link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.0/font/bootstrap-icons.css" rel="stylesheet">
@@ -149,6 +149,9 @@ $generatedAt = formatDateTime(date('Y-m-d H:i:s'));
             color: #1f2937;
             padding: 20px;
             line-height: 1.6;
+            width: 100%;
+            max-width: 100%;
+            overflow-x: hidden;
         }
 
         .report-wrapper {
@@ -158,6 +161,8 @@ $generatedAt = formatDateTime(date('Y-m-d H:i:s'));
             border-radius: 20px;
             box-shadow: 0 12px 40px rgba(15, 23, 42, 0.12);
             overflow: hidden;
+            width: 100%;
+            max-width: 100%;
         }
 
         .report-header {
@@ -171,12 +176,14 @@ $generatedAt = formatDateTime(date('Y-m-d H:i:s'));
             font-size: 28px;
             font-weight: 700;
             margin-bottom: 10px;
+            word-wrap: break-word;
         }
 
         .report-header .subtitle {
             font-size: 16px;
             opacity: 0.9;
             margin-bottom: 20px;
+            word-wrap: break-word;
         }
 
         .report-header .meta-info {
@@ -193,10 +200,13 @@ $generatedAt = formatDateTime(date('Y-m-d H:i:s'));
             padding: 8px 16px;
             border-radius: 8px;
             backdrop-filter: blur(10px);
+            white-space: nowrap;
         }
 
         .report-content {
             padding: 30px;
+            width: 100%;
+            max-width: 100%;
         }
 
         .customer-info {
@@ -275,12 +285,37 @@ $generatedAt = formatDateTime(date('Y-m-d H:i:s'));
 
         .table-responsive {
             border-radius: 16px;
-            overflow: hidden;
+            overflow-x: auto;
+            overflow-y: visible;
             border: 1px solid #e2e8f0;
+            width: 100%;
+            max-width: 100%;
+            -webkit-overflow-scrolling: touch;
+        }
+
+        .table-responsive::-webkit-scrollbar {
+            height: 8px;
+        }
+
+        .table-responsive::-webkit-scrollbar-track {
+            background: #f1f1f1;
+            border-radius: 4px;
+        }
+
+        .table-responsive::-webkit-scrollbar-thumb {
+            background: #888;
+            border-radius: 4px;
+        }
+
+        .table-responsive::-webkit-scrollbar-thumb:hover {
+            background: #555;
         }
 
         .table {
             margin-bottom: 0;
+            width: 100%;
+            min-width: 600px;
+            table-layout: auto;
         }
 
         .table thead {
@@ -294,12 +329,17 @@ $generatedAt = formatDateTime(date('Y-m-d H:i:s'));
             padding: 14px;
             border-bottom: 2px solid #e2e8f0;
             text-align: right;
+            white-space: nowrap;
+            position: sticky;
+            top: 0;
+            z-index: 10;
         }
 
         .table tbody td {
             padding: 12px 14px;
             border-bottom: 1px solid #f1f5f9;
             vertical-align: middle;
+            word-wrap: break-word;
         }
 
         .table tbody tr:hover {
@@ -421,20 +461,106 @@ $generatedAt = formatDateTime(date('Y-m-d H:i:s'));
             .table {
                 page-break-inside: avoid;
             }
-        }
 
-        @media (max-width: 768px) {
-            .stats-grid {
-                grid-template-columns: 1fr;
+            .table-responsive {
+                overflow: visible;
             }
 
-            .customer-details {
-                grid-template-columns: 1fr;
+            .table {
+                min-width: auto;
+            }
+        }
+
+        @media screen and (max-width: 768px) {
+            body {
+                padding: 15px 10px;
+            }
+
+            .report-wrapper {
+                border-radius: 12px;
+            }
+
+            .report-header {
+                padding: 20px 15px;
+            }
+
+            .report-header h1 {
+                font-size: 22px;
+            }
+
+            .report-header .subtitle {
+                font-size: 14px;
             }
 
             .report-header .meta-info {
                 flex-direction: column;
                 gap: 10px;
+                font-size: 13px;
+            }
+
+            .report-header .meta-item {
+                padding: 6px 12px;
+                font-size: 12px;
+            }
+
+            .report-content {
+                padding: 20px 15px;
+            }
+
+            .stats-grid {
+                grid-template-columns: 1fr;
+                gap: 15px;
+                margin-bottom: 20px;
+            }
+
+            .stat-card {
+                padding: 15px;
+                border-radius: 12px;
+            }
+
+            .stat-card .stat-label {
+                font-size: 13px;
+            }
+
+            .stat-card .stat-value {
+                font-size: 20px;
+            }
+
+            .customer-info {
+                padding: 15px;
+                border-radius: 12px;
+            }
+
+            .customer-details {
+                grid-template-columns: 1fr;
+                gap: 12px;
+            }
+
+            .section-title {
+                font-size: 18px;
+                margin-bottom: 15px;
+            }
+
+            .table-responsive {
+                border-radius: 12px;
+                margin: 0 -10px;
+                width: calc(100% + 20px);
+                max-width: calc(100% + 20px);
+            }
+
+            .table {
+                min-width: 500px;
+                font-size: 12px;
+            }
+
+            .table thead th {
+                padding: 10px 8px;
+                font-size: 11px;
+            }
+
+            .table tbody td {
+                padding: 10px 8px;
+                font-size: 11px;
             }
 
             .print-actions {
@@ -443,11 +569,69 @@ $generatedAt = formatDateTime(date('Y-m-d H:i:s'));
                 transform: none;
                 flex-direction: column;
                 padding: 15px;
+                border-radius: 12px;
             }
 
             .btn-print {
                 width: 100%;
                 justify-content: center;
+            }
+        }
+
+        @media screen and (max-width: 480px) {
+            body {
+                padding: 10px 8px;
+            }
+
+            .report-header {
+                padding: 15px 12px;
+            }
+
+            .report-header h1 {
+                font-size: 20px;
+            }
+
+            .report-header .subtitle {
+                font-size: 13px;
+            }
+
+            .report-content {
+                padding: 15px 12px;
+            }
+
+            .stat-card {
+                padding: 12px;
+            }
+
+            .stat-card .stat-label {
+                font-size: 12px;
+            }
+
+            .stat-card .stat-value {
+                font-size: 18px;
+            }
+
+            .section-title {
+                font-size: 16px;
+            }
+
+            .table {
+                min-width: 450px;
+                font-size: 11px;
+            }
+
+            .table thead th {
+                padding: 8px 6px;
+                font-size: 10px;
+            }
+
+            .table tbody td {
+                padding: 8px 6px;
+                font-size: 10px;
+            }
+
+            .print-actions {
+                padding: 12px;
             }
         }
     </style>

@@ -5886,9 +5886,27 @@ if (!empty($packagingTableCheck)) {
 }
 
 $productionReportsTodayDate = date('Y-m-d');
-$productionReportsMonthStart = date('Y-m-01');
-$productionReportsMonthEnd = date('Y-m-t');
-if (strtotime($productionReportsMonthEnd) > strtotime($productionReportsTodayDate)) {
+
+// معالجة فلترة الشهر
+$reportMonthParam = isset($_GET['report_month']) ? trim((string)$_GET['report_month']) : '';
+$selectedMonth = date('Y-m'); // الشهر الحالي كافتراضي
+
+if ($reportMonthParam !== '') {
+    // التحقق من صحة تنسيق الشهر (YYYY-MM)
+    $monthDate = DateTime::createFromFormat('Y-m', $reportMonthParam);
+    if ($monthDate && $monthDate->format('Y-m') === $reportMonthParam) {
+        $selectedMonth = $reportMonthParam;
+    }
+}
+
+// حساب بداية ونهاية الشهر المحدد
+$selectedMonthDate = DateTime::createFromFormat('Y-m', $selectedMonth);
+$productionReportsMonthStart = $selectedMonthDate->format('Y-m-01');
+$lastDayOfMonth = $selectedMonthDate->format('t');
+$productionReportsMonthEnd = $selectedMonthDate->format('Y-m-' . $lastDayOfMonth);
+
+// إذا كان الشهر المحدد هو الشهر الحالي، لا نعرض أيام بعد اليوم
+if ($selectedMonth === date('Y-m') && strtotime($productionReportsMonthEnd) > strtotime($productionReportsTodayDate)) {
     $productionReportsMonthEnd = $productionReportsTodayDate;
 }
 
@@ -5921,7 +5939,7 @@ if ($reportDayParam !== '') {
     }
 }
 if (strtotime($selectedReportDay) < strtotime($productionReportsMonthStart)) {
-    $selectedReportDay = $productionReportsMonthStart;
+$selectedReportDay = $productionReportsMonthStart;
 }
 if (strtotime($selectedReportDay) > strtotime($productionReportsMonthEnd)) {
     $selectedReportDay = $productionReportsMonthEnd;
@@ -5991,7 +6009,7 @@ $damageDayTotal = $damageDayPayload['total'];
 $damageDayEntries = $damageDayPayload['entries'];
 $damageDayLatestLabel = $damageDayPayload['latest_label'];
 
-$hasActiveFilters = ($reportFilterType !== 'all') || ($reportFilterQuery !== '') || ($selectedReportDay !== $productionReportsTodayDate);
+$hasActiveFilters = ($reportFilterType !== 'all') || ($reportFilterQuery !== '') || ($selectedReportDay !== $productionReportsTodayDate) || ($selectedMonth !== date('Y-m'));
 
 $selectedDayLabel = function_exists('formatDate') ? formatDate($selectedReportDay) : $selectedReportDay;
 $monthRangeLabelStart = function_exists('formatDate') ? formatDate($productionReportsMonthStart) : $productionReportsMonthStart;
@@ -6000,6 +6018,11 @@ $monthGeneratedAt = $productionReportsMonth['generated_at'] ?? date('Y-m-d H:i:s
 $dayGeneratedAt = $productionReportsSelectedDay['generated_at'] ?? date('Y-m-d H:i:s');
 
 $activeFilterLabels = [];
+if ($selectedMonth !== date('Y-m')) {
+    $selectedMonthDate = DateTime::createFromFormat('Y-m', $selectedMonth);
+    $monthName = $selectedMonthDate ? $selectedMonthDate->format('Y-m') : $selectedMonth;
+    $activeFilterLabels[] = 'شهر: ' . $monthName;
+}
 if ($reportFilterType === 'packaging') {
     $activeFilterLabels[] = 'عرض أدوات التعبئة فقط';
 } elseif ($reportFilterType === 'raw') {
@@ -6597,7 +6620,15 @@ $lang = isset($translations) ? $translations : [];
             <form method="get" class="row g-3 align-items-end" action="<?php echo htmlspecialchars(getDashboardUrl($currentUser['role'] ?? 'production')); ?>">
                 <input type="hidden" name="page" value="production">
                 <input type="hidden" name="section" value="reports">
-                <div class="col-lg-3 col-md-4">
+                <div class="col-lg-3 col-md-4 col-sm-6">
+                    <label class="form-label fw-semibold"><i class="bi bi-calendar-month me-2"></i>اختيار الشهر</label>
+                    <input type="month"
+                           class="form-control"
+                           name="report_month"
+                           value="<?php echo htmlspecialchars($selectedMonth); ?>"
+                           max="<?php echo date('Y-m'); ?>">
+                </div>
+                <div class="col-lg-3 col-md-4 col-sm-6">
                     <label class="form-label fw-semibold"><i class="bi bi-calendar-day me-2"></i>اليوم المراد تحليله</label>
                     <input type="date"
                            class="form-control"
@@ -6606,7 +6637,7 @@ $lang = isset($translations) ? $translations : [];
                            min="<?php echo htmlspecialchars($productionReportsMonthStart); ?>"
                            max="<?php echo htmlspecialchars($productionReportsMonthEnd); ?>">
                 </div>
-                <div class="col-lg-3 col-md-4">
+                <div class="col-lg-2 col-md-4 col-sm-6">
                     <label class="form-label fw-semibold">نوع المواد</label>
                     <select class="form-select" name="report_type">
                         <option value="all" <?php echo $reportFilterType === 'all' ? 'selected' : ''; ?>>الكل</option>
@@ -6614,7 +6645,7 @@ $lang = isset($translations) ? $translations : [];
                         <option value="raw" <?php echo $reportFilterType === 'raw' ? 'selected' : ''; ?>>المواد الخام</option>
                     </select>
                 </div>
-                <div class="col-lg-3 col-md-4">
+                <div class="col-lg-2 col-md-4 col-sm-6">
                     <label class="form-label fw-semibold">قسم التوريدات</label>
                     <select class="form-select" name="supply_category">
                         <option value="">جميع الأقسام</option>
@@ -6626,7 +6657,7 @@ $lang = isset($translations) ? $translations : [];
                         <?php endforeach; ?>
                     </select>
                 </div>
-                <div class="col-lg-4 col-md-6">
+                <div class="col-lg-3 col-md-6 col-sm-12">
                     <label class="form-label fw-semibold">بحث عن مادة</label>
                     <input type="search"
                            class="form-control"
@@ -6634,7 +6665,7 @@ $lang = isset($translations) ? $translations : [];
                            placeholder="مثال: عبوات زجاجية أو عسل سداسي"
                            value="<?php echo htmlspecialchars($reportFilterQuery); ?>">
                 </div>
-                <div class="col-lg-2 col-md-4">
+                <div class="col-lg-2 col-md-4 col-sm-6">
                     <button type="submit" class="btn btn-primary w-100">
                         <i class="bi bi-funnel me-2"></i>تطبيق
                     </button>
@@ -6673,6 +6704,7 @@ $lang = isset($translations) ? $translations : [];
                     <?php
                     $printUrl = getRelativeUrl('print_production_report.php');
                     $printParams = [
+                        'report_month' => $selectedMonth,
                         'report_day' => $selectedReportDay,
                         'report_type' => $reportFilterType,
                         'supply_category' => $supplyCategoryParam,
@@ -6680,11 +6712,15 @@ $lang = isset($translations) ? $translations : [];
                         'period' => ($selectedReportDay === $productionReportsTodayDate && $selectedReportDay === $productionReportsMonthEnd) ? 'day' : 'month'
                     ];
                     $printUrlWithParams = $printUrl . '?' . http_build_query($printParams);
+                    
+                    // تنسيق اسم الشهر للعرض
+                    $selectedMonthDate = DateTime::createFromFormat('Y-m', $selectedMonth);
+                    $monthName = $selectedMonthDate ? $selectedMonthDate->format('Y-m') : $selectedMonth;
                     ?>
                     <a href="<?php echo htmlspecialchars($printUrlWithParams); ?>" 
                        target="_blank" 
                        class="btn btn-primary">
-                        <i class="bi bi-printer me-2"></i>طباعة التقرير الشامل
+                        <i class="bi bi-printer me-2"></i>طباعة تقرير شهر <?php echo htmlspecialchars($monthName); ?>
                     </a>
                 </div>
             </div>
@@ -6695,12 +6731,12 @@ $lang = isset($translations) ? $translations : [];
         <div class="card-body">
             <div class="d-flex justify-content-between align-items-center flex-wrap gap-3">
                 <div>
-                    <h4 class="mb-1"><i class="bi bi-calendar-month me-2"></i>ملخص الشهر الحالي (تراكمي)</h4>
+                    <h4 class="mb-1"><i class="bi bi-calendar-month me-2"></i>ملخص شهر <?php echo htmlspecialchars($selectedMonth); ?> (تراكمي)</h4>
                     <p class="text-muted mb-0">
                         <?php echo htmlspecialchars($monthRangeLabelStart); ?>
                         إلى
                         <?php echo htmlspecialchars($monthRangeLabelEnd); ?>
-                        <?php if ($productionReportsMonthEnd === $productionReportsTodayDate): ?>
+                        <?php if ($productionReportsMonthEnd === $productionReportsTodayDate && $selectedMonth === date('Y-m')): ?>
                             <span class="badge bg-info text-white ms-2">حتى اليوم</span>
                         <?php endif; ?>
                     </p>

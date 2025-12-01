@@ -193,9 +193,48 @@ $pageTitle = isset($lang['manager_dashboard']) ? $lang['manager_dashboard'] : '�
                         <span class="text-muted small">روابط سريعة لأهم الصفحات</span>
                     </div>
                     <div class="card-body">
-                        <div class="row g-3">
+                        <style>
+                        /* تحسين عرض الروابط السريعة على الهواتف */
+                        @media (max-width: 575.98px) {
+                            .quick-links-grid .col-6 {
+                                flex: 0 0 auto;
+                                width: 50%;
+                            }
+                            
+                            .quick-links-grid .btn {
+                                font-size: 0.85rem;
+                                padding: 0.6rem 0.5rem;
+                                white-space: nowrap;
+                                overflow: hidden;
+                                text-overflow: ellipsis;
+                            }
+                            
+                            .quick-links-grid .btn i {
+                                font-size: 1rem;
+                                flex-shrink: 0;
+                            }
+                            
+                            .quick-links-grid .btn span {
+                                overflow: hidden;
+                                text-overflow: ellipsis;
+                            }
+                        }
+                        
+                        @media (max-width: 400px) {
+                            .quick-links-grid .btn {
+                                font-size: 0.75rem;
+                                padding: 0.5rem 0.4rem;
+                                gap: 0.3rem;
+                            }
+                            
+                            .quick-links-grid .btn i {
+                                font-size: 0.9rem;
+                            }
+                        }
+                        </style>
+                        <div class="row g-2 g-md-3 quick-links-grid">
                             <?php foreach ($quickLinks as $shortcut): ?>
-                                <div class="col-md-4 col-lg-3 col-sm-6">
+                                <div class="col-6 col-md-4 col-lg-3 col-sm-6">
                                     <a href="<?php echo htmlspecialchars($shortcut['url']); ?>" class="btn btn-outline-primary w-100 d-flex align-items-center justify-content-center gap-2">
                                         <i class="bi <?php echo htmlspecialchars($shortcut['icon']); ?>"></i>
                                         <span><?php echo htmlspecialchars($shortcut['label']); ?></span>
