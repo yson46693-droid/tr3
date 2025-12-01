@@ -1037,8 +1037,14 @@ if (ob_get_level() > 0) {
                     <ul class="dropdown-menu dropdown-menu-end notifications-dropdown" aria-labelledby="notificationsDropdown">
                         <li><h6 class="dropdown-header">
                             <?php echo isset($lang['notifications']) ? $lang['notifications'] : 'الإشعارات'; ?>
-                            <button type="button" class="btn btn-sm btn-link text-danger float-end p-0 ms-2" id="clearAllNotificationsBtn" title="مسح كل الإشعارات" style="font-size: 11px; text-decoration: none;">
-                                <i class="bi bi-trash"></i> مسح الكل
+                            <button type="button" 
+                                    class="btn btn-sm btn-link text-danger float-end p-0 ms-2" 
+                                    id="clearAllNotificationsBtn" 
+                                    title="مسح كل الإشعارات" 
+                                    aria-label="<?php echo isset($lang['clear_all_notifications']) ? $lang['clear_all_notifications'] : 'مسح كل الإشعارات'; ?>"
+                                    style="font-size: 11px; text-decoration: none;">
+                                <i class="bi bi-trash" aria-hidden="true"></i> 
+                                <span>مسح الكل</span>
                             </button>
                         </h6></li>
                         <li><hr class="dropdown-divider"></li>
