@@ -10,6 +10,13 @@ if (ob_get_level() > 0) {
 ob_start();
 
 define('ACCESS_ALLOWED', true);
+
+// إضافة Permissions-Policy header للسماح بالوصول إلى Geolocation, Camera, Notifications
+// يجب أن يكون في البداية قبل أي output
+if (!headers_sent()) {
+    header("Permissions-Policy: geolocation=(self), camera=(self), notifications=(self)");
+}
+
 require_once __DIR__ . '/../includes/config.php';
 require_once __DIR__ . '/../includes/db.php';
 require_once __DIR__ . '/../includes/auth.php';

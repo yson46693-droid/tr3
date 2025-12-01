@@ -5,6 +5,12 @@
 
 define('ACCESS_ALLOWED', true);
 
+// إضافة Permissions-Policy header للسماح بالوصول إلى Geolocation, Camera, Notifications
+// يجب أن يكون في البداية قبل أي output
+if (!headers_sent()) {
+    header("Permissions-Policy: geolocation=(self), camera=(self), notifications=(self)");
+}
+
 // تنظيف أي output buffer سابق قبل أي شيء
 while (ob_get_level() > 0) {
     ob_end_clean();

@@ -8,6 +8,11 @@ if (!defined('ACCESS_ALLOWED')) {
     die('Direct access not allowed');
 }
 
+// إضافة Permissions-Policy header للسماح بالوصول إلى Geolocation, Camera, Notifications
+if (!headers_sent()) {
+    header("Permissions-Policy: geolocation=(self), camera=(self), notifications=(self)");
+}
+
 if (!defined('LOCAL_CUSTOMERS_MODULE_BOOTSTRAPPED')) {
     define('LOCAL_CUSTOMERS_MODULE_BOOTSTRAPPED', true);
 
@@ -955,6 +960,7 @@ $summaryTotalCustomers = $customerStats['total_count'] ?? $totalCustomers;
                         title="معاينة موقع العميل"
                         allowfullscreen
                         loading="lazy"
+                        allow="geolocation; camera; microphone"
                     ></iframe>
                 </div>
                 <p class="mt-3 text-muted mb-0">
