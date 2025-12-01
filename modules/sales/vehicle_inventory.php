@@ -137,6 +137,9 @@ $filters = array_filter($filters, function($value) {
 
 // إذا كان المستخدم مندوب مبيعات، عرض فقط سيارته
 $defaultFromWarehouseId = null; // مخزن افتراضي للمخزن المصدر في نموذج النقل
+$userVehicle = null;
+$hasNoVehicle = false;
+
 if ($currentUser['role'] === 'sales') {
     $userVehicle = $db->queryOne("SELECT id FROM vehicles WHERE driver_id = ? AND status = 'active'", [$currentUser['id']]);
     if ($userVehicle) {
@@ -164,6 +167,9 @@ if ($currentUser['role'] === 'sales') {
                 $defaultFromWarehouseId = (int)$result['warehouse_id'];
             }
         }
+    } else {
+        // المندوب ليس له سيارة
+        $hasNoVehicle = true;
     }
 }
 
@@ -374,7 +380,21 @@ foreach ($vehicleInventory as $item) {
     $inventoryStats['total_quantity'] += floatval($item['quantity'] ?? 0);
     $inventoryStats['total_value'] += floatval($item['total_value'] ?? 0);
 }
-?>
+
+// إذا كان المندوب ليس له سيارة، عرض رسالة فقط بدون أي أزرار
+if ($hasNoVehicle && $currentUser['role'] === 'sales'): ?>
+    <div class="card shadow-sm">
+        <div class="card-body text-center py-5">
+            <div class="mb-4">
+                <i class="bi bi-truck" style="font-size: 4rem; color: #6c757d;"></i>
+            </div>
+            <h4 class="mb-3">تواصل مع الإدارة</h4>
+            <p class="text-muted mb-0" style="font-size: 1.1rem;">
+                تواصل مع الإدارة لإدراج السيارة الخاصة بك ضمن قاعدة البيانات للتمكن من استخدام الصفحة
+            </p>
+        </div>
+    </div>
+<?php else: ?>
 <div class="d-flex flex-column flex-md-row justify-content-between align-items-start align-items-md-center mb-4 gap-3">
     <h2 class="mb-0"><i class="bi bi-truck me-2"></i>مخازن سيارات المندوبين</h2>
     <div class="d-flex flex-wrap gap-2 w-100 w-md-auto">
@@ -1713,4 +1733,6 @@ document.getElementById('transferForm')?.addEventListener('submit', function(e) 
     }
 })();
 </script>
+
+<?php endif; // نهاية if ($hasNoVehicle && $currentUser['role'] === 'sales') ?>
 

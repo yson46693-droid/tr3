@@ -630,6 +630,31 @@ if (!$error && $_SERVER['REQUEST_METHOD'] === 'POST') {
                         $db->execute("UPDATE customers SET balance = ? WHERE id = ?", [$newBalance, $customerId]);
                         $customer['balance'] = $newBalance;
                     }
+                    
+                    // التحقق من وجود العميل في جدول returns (أصحاب الرصيد الدائن)
+                    // إذا كان العميل موجوداً في returns، يتم احتساب نسبة 2% من المبلغ المدفوع من الرصيد الدائن
+                    $customerInReturns = false;
+                    try {
+                        $returnsCustomers = $db->query("SELECT * FROM `returns` ORDER BY `customer_id` ASC");
+                        $returnsCustomerIds = [];
+                        foreach ($returnsCustomers as $returnRecord) {
+                            $returnCustomerId = (int)($returnRecord['customer_id'] ?? 0);
+                            if ($returnCustomerId > 0 && !in_array($returnCustomerId, $returnsCustomerIds)) {
+                                $returnsCustomerIds[] = $returnCustomerId;
+                            }
+                        }
+                        $customerInReturns = in_array($customerId, $returnsCustomerIds);
+                        
+                        error_log(sprintf(
+                            'Returns table check: customerId=%d, customerInReturns=%s, creditUsed=%.2f',
+                            $customerId,
+                            $customerInReturns ? 'true' : 'false',
+                            $creditUsed
+                        ));
+                    } catch (Throwable $returnsCheckError) {
+                        error_log('Error checking returns table for customer ' . $customerId . ': ' . $returnsCheckError->getMessage());
+                        $customerInReturns = false;
+                    }
                 }
 
                 $invoiceItems = [];
@@ -1166,6 +1191,34 @@ if (!$error && $_SERVER['REQUEST_METHOD'] === 'POST') {
                             $customerId
                         ));
                         
+                        // التحقق من وجود العميل في جدول returns (أصحاب الرصيد الدائن)
+                        // إذا كان العميل موجوداً في returns، يتم احتساب نسبة 2% من المبلغ المدفوع من الرصيد الدائن
+                        // هذا التحقق يتم فقط إذا لم يتم التحقق مسبقاً (في حالة العميل الجديد)
+                        if (!isset($customerInReturns)) {
+                            $customerInReturns = false;
+                            try {
+                                $returnsCustomers = $db->query("SELECT * FROM `returns` ORDER BY `customer_id` ASC");
+                                $returnsCustomerIds = [];
+                                foreach ($returnsCustomers as $returnRecord) {
+                                    $returnCustomerId = (int)($returnRecord['customer_id'] ?? 0);
+                                    if ($returnCustomerId > 0 && !in_array($returnCustomerId, $returnsCustomerIds)) {
+                                        $returnsCustomerIds[] = $returnCustomerId;
+                                    }
+                                }
+                                $customerInReturns = in_array($customerId, $returnsCustomerIds);
+                                
+                                error_log(sprintf(
+                                    'Returns table check in commission section: customerId=%d, customerInReturns=%s, creditUsed=%.2f',
+                                    $customerId,
+                                    $customerInReturns ? 'true' : 'false',
+                                    $creditUsed
+                                ));
+                            } catch (Throwable $returnsCheckError) {
+                                error_log('Error checking returns table for customer ' . $customerId . ' in commission section: ' . $returnsCheckError->getMessage());
+                                $customerInReturns = false;
+                            }
+                        }
+                        
                         // تطبيق القاعدة الجديدة: رصيد دائن + سجل مرتجعات
                         // يجب أن يكون هناك استخدام للرصيد الدائن، وأن يكون للعميل رصيد دائن قبل البيع، وأن يكون لديه سجل مرتجعات
                         // هذا يعمل بغض النظر عن نوع الدفع (كاش، جزئي، أو آجل)
@@ -1274,10 +1327,114 @@ if (!$error && $_SERVER['REQUEST_METHOD'] === 'POST') {
                                 error_log('Credit balance collections commission: commission amount is zero or negative');
                             }
                         } else {
-                            // الحالة القديمة: خصم من الرصيد الدائن لعميل لديه سجل مشتريات (وليس بالضرورة رصيد دائن + مرتجعات)
-                            // القاعدة: عند خصم أي مبلغ من الرصيد الدائن لعميل لديه سجل مشتريات سابق
-                            // يتم احتساب نسبة 2% من المبلغ المخصوم (حتى لو كان البيع كاش أو جزئي)
-                            if ($creditUsed > 0.0001 && ($hasPreviousPurchases ?? false)) {
+                            // القاعدة الجديدة المطلوبة: التحقق من وجود العميل في جدول returns
+                            // إذا كان العميل موجوداً في returns وكان هناك استخدام للرصيد الدائن:
+                            // يتم احتساب نسبة 2% من المبلغ المدفوع من الرصيد الدائن وإضافتها إلى نسبة التحصيلات
+                            if ($creditUsed > 0.0001 && $customerInReturns) {
+                                // حساب نسبة 2% من المبلغ المدفوع من الرصيد الدائن
+                                $creditCommissionAmount = round($creditUsed * 0.02, 2);
+                                
+                                // تسجيل معلومات التشخيص
+                                error_log(sprintf(
+                                    'Returns table commission calculation: creditUsed=%.2f, customerInReturns=%s, commissionAmount=%.2f, invoiceId=%d, customerId=%d',
+                                    $creditUsed,
+                                    $customerInReturns ? 'true' : 'false',
+                                    $creditCommissionAmount,
+                                    $invoiceId,
+                                    $customerId
+                                ));
+                                
+                                if ($creditCommissionAmount > 0) {
+                                    // إضافة النسبة إلى collections_bonus والمبلغ الأساسي إلى collections_amount
+                                    try {
+                                        $timestamp = strtotime($saleDate) ?: time();
+                                        $targetMonth = (int)date('n', $timestamp);
+                                        $targetYear = (int)date('Y', $timestamp);
+                                        
+                                        $summary = getSalarySummary($currentUser['id'], $targetMonth, $targetYear);
+                                        if (!$summary['exists']) {
+                                            $creation = createOrUpdateSalary($currentUser['id'], $targetMonth, $targetYear);
+                                            if (!($creation['success'] ?? false)) {
+                                                throw new RuntimeException('Failed to create salary record: ' . ($creation['message'] ?? 'Unknown error'));
+                                            }
+                                            $summary = getSalarySummary($currentUser['id'], $targetMonth, $targetYear);
+                                        }
+                                        
+                                        if ($summary['exists']) {
+                                            $salary = $summary['salary'];
+                                            $salaryId = (int)($salary['id'] ?? 0);
+                                            
+                                            if ($salaryId > 0) {
+                                                // التحقق من وجود أعمدة collections_bonus و collections_amount
+                                                $hasCollectionsBonusColumn = ensureCollectionsBonusColumn();
+                                                
+                                                if ($hasCollectionsBonusColumn) {
+                                                    // إضافة المبلغ الأساسي إلى collections_amount والنسبة إلى collections_bonus
+                                                    // إضافة النسبة إلى total_amount (لأنها جزء من الراتب الإجمالي)
+                                                    $db->execute(
+                                                        "UPDATE salaries SET 
+                                                            collections_amount = COALESCE(collections_amount, 0) + ?,
+                                                            collections_bonus = COALESCE(collections_bonus, 0) + ?,
+                                                            total_amount = COALESCE(total_amount, 0) + ?,
+                                                            updated_at = NOW() 
+                                                         WHERE id = ?",
+                                                        [$creditUsed, $creditCommissionAmount, $creditCommissionAmount, $salaryId]
+                                                    );
+                                                    
+                                                    // تسجيل العملية في السجل
+                                                    if (function_exists('logAudit')) {
+                                                        logAudit(
+                                                            $currentUser['id'],
+                                                            'returns_table_collections_commission',
+                                                            'salary',
+                                                            $salaryId,
+                                                            null,
+                                                            [
+                                                                'invoice_id' => $invoiceId,
+                                                                'invoice_number' => $invoiceNumber ?? '',
+                                                                'customer_id' => $customerId,
+                                                                'credit_used' => $creditUsed,
+                                                                'collections_amount' => $creditUsed,
+                                                                'commission_amount' => $creditCommissionAmount,
+                                                                'month' => $targetMonth,
+                                                                'year' => $targetYear,
+                                                                'customer_in_returns' => $customerInReturns,
+                                                                'note' => 'نسبة تحصيل 2% من المبلغ المدفوع من الرصيد الدائن (لعميل موجود في جدول returns) - تُضاف إلى نسبة التحصيلات'
+                                                            ]
+                                                        );
+                                                    }
+                                                    
+                                                    error_log(sprintf(
+                                                        'Returns table collections commission applied successfully: salaryId=%d, collectionsAmount=%.2f, commissionAmount=%.2f',
+                                                        $salaryId,
+                                                        $creditUsed,
+                                                        $creditCommissionAmount
+                                                    ));
+                                                } else {
+                                                    // إذا لم تكن الأعمدة موجودة، نستخدم bonus كحل بديل
+                                                    error_log('Collections bonus columns not available, using bonus as fallback');
+                                                    $db->execute(
+                                                        "UPDATE salaries SET bonus = COALESCE(bonus, 0) + ?, total_amount = COALESCE(total_amount, 0) + ?, updated_at = NOW() WHERE id = ?",
+                                                        [$creditCommissionAmount, $creditCommissionAmount, $salaryId]
+                                                    );
+                                                }
+                                            } else {
+                                                error_log('Returns table collections commission: salaryId is invalid or zero');
+                                            }
+                                        } else {
+                                            error_log('Returns table collections commission: salary summary does not exist after creation attempt');
+                                        }
+                                    } catch (Throwable $creditCommissionError) {
+                                        error_log('Error applying returns table collections commission: ' . $creditCommissionError->getMessage());
+                                        error_log('Returns table collections commission error trace: ' . $creditCommissionError->getTraceAsString());
+                                    }
+                                } else {
+                                    error_log('Returns table collections commission: commission amount is zero or negative');
+                                }
+                            } elseif ($creditUsed > 0.0001 && ($hasPreviousPurchases ?? false)) {
+                                // الحالة القديمة: خصم من الرصيد الدائن لعميل لديه سجل مشتريات (وليس بالضرورة رصيد دائن + مرتجعات)
+                                // القاعدة: عند خصم أي مبلغ من الرصيد الدائن لعميل لديه سجل مشتريات سابق
+                                // يتم احتساب نسبة 2% من المبلغ المخصوم (حتى لو كان البيع كاش أو جزئي)
                                 // حساب نسبة 2% من المبلغ المخصوم من الرصيد الدائن
                                 $creditCommissionAmount = round($creditUsed * 0.02, 2);
                                 
