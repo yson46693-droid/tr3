@@ -418,7 +418,7 @@ switch ($role) {
                 'icon' => 'bi-clipboard-check',
                 'url' => $baseUrl . 'sales.php?page=orders',
                 'active' => ($currentPage === 'sales.php' && $currentPageParam === 'orders'),
-                'badge' => null
+                'badge' => (isset($currentUser) && $currentUser['role'] === 'sales' && function_exists('getNewOrdersCount')) ? getNewOrdersCount($currentUser['id']) : null
             ],
             [
                 'title' => isset($lang['payment_schedules']) ? $lang['payment_schedules'] : 'جداول التحصيل',
@@ -596,7 +596,7 @@ if (empty($menuItems)) {
                 'icon' => 'bi-clipboard-check',
                 'url' => $baseUrl . 'sales.php?page=orders',
                 'active' => ($currentPageParam === 'orders'),
-                'badge' => null
+                'badge' => (isset($currentUser) && $currentUser['role'] === 'sales' && function_exists('getNewOrdersCount')) ? getNewOrdersCount($currentUser['id']) : null
             ],
             [
                 'title' => 'سجلات المندوب',

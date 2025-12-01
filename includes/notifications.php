@@ -205,6 +205,28 @@ function getUnreadNotificationCount($userId) {
 }
 
 /**
+ * الحصول على عدد الطلبات الجديدة غير المقروءة للمندوب
+ */
+function getNewOrdersCount($salesRepId) {
+    $db = db();
+    
+    // حساب الإشعارات غير المقروءة المرتبطة بالطلبات
+    $result = $db->queryOne(
+        "SELECT COUNT(*) as count
+         FROM notifications n
+         WHERE n.user_id = ?
+            AND n.`read` = 0
+            AND n.type = 'info'
+            AND n.title IN ('طلب جديد', 'طلب شركة جديد')
+            AND n.link LIKE '%sales.php?page=orders%'
+            AND n.created_at >= DATE_SUB(NOW(), INTERVAL 30 DAY)",
+        [$salesRepId]
+    );
+    
+    return $result['count'] ?? 0;
+}
+
+/**
  * تحديد إشعار كمقروء
  */
 function markNotificationAsRead($notificationId, $userId) {

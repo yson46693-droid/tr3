@@ -513,6 +513,21 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     "dashboard/sales.php?page=orders&id={$orderId}"
                 );
 
+                // إرسال إشعار للمندوب إذا كان الطلب من المدير أو المحاسب
+                if ($isManagerOrAccountant && $salesRepId && $salesRepId > 0) {
+                    $salesRep = $db->queryOne("SELECT full_name, username FROM users WHERE id = ?", [$salesRepId]);
+                    $salesRepName = $salesRep['full_name'] ?? $salesRep['username'] ?? 'المندوب';
+                    
+                    createNotification(
+                        $salesRepId,
+                        'طلب جديد',
+                        "تم إنشاء طلب جديد رقم {$orderNumber} لك من قبل " . ($currentUser['full_name'] ?? $currentUser['username'] ?? 'الإدارة'),
+                        'info',
+                        getRelativeUrl("dashboard/sales.php?page=orders&id={$orderId}"),
+                        true // إرسال Telegram
+                    );
+                }
+
                 logAudit($currentUser['id'], 'create_order', 'customer_order', $orderId, null, [
                     'order_number' => $orderNumber,
                     'total_amount' => $totalAmount
@@ -826,6 +841,26 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     'order_number' => $orderNumber,
                     'total_amount' => $totalAmount
                 ]);
+
+                // ملاحظة: طلبات الشركة لا ترتبط بمندوب محدد، لذلك لا نرسل إشعار لمندوب معين
+                // إذا كان هناك مندوب مرتبط بالعميل، يمكن إرسال إشعار له
+                $customer = $db->queryOne("SELECT rep_id, created_by FROM customers WHERE id = ?", [$customerId]);
+                if ($customer && ($customer['rep_id'] || $customer['created_by'])) {
+                    $repId = $customer['rep_id'] ?: $customer['created_by'];
+                    if ($repId && $repId > 0) {
+                        $rep = $db->queryOne("SELECT id, full_name, username FROM users WHERE id = ? AND role = 'sales'", [$repId]);
+                        if ($rep) {
+                            createNotification(
+                                $repId,
+                                'طلب شركة جديد',
+                                "تم إنشاء طلب شركة جديد رقم {$orderNumber} للعميل المرتبط بك من قبل " . ($currentUser['full_name'] ?? $currentUser['username'] ?? 'الإدارة'),
+                                'info',
+                                getRelativeUrl("dashboard/sales.php?page=orders&id={$orderId}"),
+                                true // إرسال Telegram
+                            );
+                        }
+                    }
+                }
 
                 $db->commit();
                 $transactionStarted = false;
@@ -2449,6 +2484,58 @@ document.addEventListener('DOMContentLoaded', function() {
 <?php
 // نهاية الملف
 ?>
+
+<script>
+// تحديث badge الطلبات الجديدة عند فتح صفحة الطلبات
+document.addEventListener('DOMContentLoaded', function() {
+    // إذا كان المستخدم مندوب مبيعات، قم بتحديث الإشعارات المرتبطة بالطلبات
+    <?php if ($isSalesUser): ?>
+    // تحديد إشعارات الطلبات كمقروءة عند فتح الصفحة
+    fetch('<?php echo getRelativeUrl("api/notifications.php"); ?>?action=get_unread', {
+        credentials: 'same-origin'
+    })
+    .then(response => response.json())
+    .then(data => {
+        if (data.success && data.notifications) {
+            // البحث عن إشعارات الطلبات الجديدة
+            const orderNotifications = data.notifications.filter(n => 
+                (n.title === 'طلب جديد' || n.title === 'طلب شركة جديد') &&
+                n.link && n.link.includes('sales.php?page=orders')
+            );
+            
+            // تحديدها كمقروءة
+            orderNotifications.forEach(notification => {
+                if (notification.id) {
+                    fetch('<?php echo getRelativeUrl("api/notifications.php"); ?>', {
+                        method: 'POST',
+                        headers: {
+                            'Content-Type': 'application/x-www-form-urlencoded',
+                        },
+                        credentials: 'same-origin',
+                        body: new URLSearchParams({
+                            action: 'mark_read',
+                            id: notification.id
+                        })
+                    }).catch(err => console.error('Error marking notification as read:', err));
+                }
+            });
+            
+            // تحديث badge في الشريط الجانبي
+            if (orderNotifications.length > 0) {
+                const badge = document.getElementById('newOrdersBadge');
+                if (badge) {
+                    // إعادة حساب العدد بعد تحديث الإشعارات
+                    setTimeout(() => {
+                        location.reload();
+                    }, 500);
+                }
+            }
+        }
+    })
+    .catch(err => console.error('Error loading notifications:', err));
+    <?php endif; ?>
+});
+</script>
 
 
 

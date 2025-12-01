@@ -35,15 +35,44 @@ $endDate = date('Y-m-d 23:59:59', strtotime($dateTo));
 $supplyLogs = [];
 if (ensureProductionSupplyLogsTable()) {
     try {
+        // التحقق من وجود سجلات أولاً (للتشخيص)
+        $testQuery = $db->queryOne(
+            "SELECT COUNT(*) as total FROM production_supply_logs WHERE supplier_id = ?",
+            [$supplierId]
+        );
+        $totalRecords = $testQuery['total'] ?? 0;
+        error_log("Supplier report debug: Total records for supplier_id=$supplierId: $totalRecords");
+        
+        $testDateQuery = $db->queryOne(
+            "SELECT COUNT(*) as total FROM production_supply_logs 
+             WHERE supplier_id = ? AND recorded_at >= ? AND recorded_at <= ?",
+            [$supplierId, $startDate, $endDate]
+        );
+        $totalInRange = $testDateQuery['total'] ?? 0;
+        error_log("Supplier report debug: Records in date range ($dateFrom to $dateTo): $totalInRange");
+        error_log("Supplier report debug: Query dates - start: $startDate, end: $endDate");
+        
+        // البحث عن السجلات - معالجة NULL وتمكين البحث المرن
+        // نستخدم OR للبحث أيضاً في supplier_name إذا كان supplier_id NULL
+        $supplierName = $supplier['name'] ?? '';
+        
         $supplyLogs = $db->query(
             "SELECT id, supplier_id, supplier_name, material_category, material_label, quantity, unit, details, recorded_at
              FROM production_supply_logs
-             WHERE supplier_id = ? AND recorded_at BETWEEN ? AND ?
+             WHERE (
+                 (supplier_id IS NOT NULL AND supplier_id = ?) 
+                 OR (supplier_id IS NULL AND supplier_name = ?)
+             )
+               AND recorded_at >= ? 
+               AND recorded_at <= ?
              ORDER BY recorded_at DESC, id DESC",
-            [$supplierId, $startDate, $endDate]
+            [$supplierId, $supplierName, $startDate, $endDate]
         );
+        
+        error_log("Supplier report: Found " . count($supplyLogs) . " records for supplier_id=$supplierId, supplier_name='$supplierName' in date range ($dateFrom to $dateTo)");
     } catch (Exception $e) {
         error_log('Supplier report: failed to load supply logs -> ' . $e->getMessage());
+        error_log('Supplier report: Stack trace -> ' . $e->getTraceAsString());
         $supplyLogs = [];
     }
 }
@@ -266,6 +295,12 @@ $companyName = COMPANY_NAME;
                             <tr>
                                 <td colspan="7" class="text-center text-muted py-4">
                                     <i class="bi bi-inbox me-2"></i>لا توجد توريدات في الفترة المحددة
+                                    <br>
+                                    <small class="text-muted mt-2 d-block">
+                                        المورد: <?php echo htmlspecialchars($supplier['name']); ?> (ID: <?php echo $supplierId; ?>)
+                                        <br>
+                                        الفترة: من <?php echo htmlspecialchars($dateFrom); ?> إلى <?php echo htmlspecialchars($dateTo); ?>
+                                    </small>
                                 </td>
                             </tr>
                         <?php else: ?>
