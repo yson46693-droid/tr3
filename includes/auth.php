@@ -341,13 +341,13 @@ function getUserById($userId) {
 }
 
 /**
- * الحصول على معلومات المستخدم حسب اسم المستخدم أو البريد
+ * الحصول على معلومات المستخدم حسب اسم المستخدم
  */
 function getUserByUsername($username) {
     $db = db();
     return $db->queryOne(
-        "SELECT * FROM users WHERE username = ? OR email = ?",
-        [$username, $username]
+        "SELECT * FROM users WHERE username = ?",
+        [$username]
     );
 }
 

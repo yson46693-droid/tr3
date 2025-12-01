@@ -123,6 +123,7 @@ if ($page === 'reports' && !in_array('assets/css/production-page.css', $pageStyl
 require_once __DIR__ . '/../includes/lang/' . getCurrentLanguage() . '.php';
 $lang = $translations;
 $pageTitle = isset($lang['manager_dashboard']) ? $lang['manager_dashboard'] : 'لوحة المدير';
+$pageDescription = 'لوحة تحكم المدير - إدارة شاملة للنظام والمخازن والموظفين والتقارير - ' . APP_NAME;
 ?>
 <?php include __DIR__ . '/../templates/header.php'; ?>
 

@@ -75,6 +75,7 @@ $extraScripts = isset($extraScripts) && is_array($extraScripts) ? $extraScripts 
 require_once __DIR__ . '/../includes/lang/' . getCurrentLanguage() . '.php';
 $lang = isset($translations) ? $translations : [];
 $pageTitle = isset($lang['sales_dashboard']) ? $lang['sales_dashboard'] : 'لوحة المبيعات';
+$pageDescription = 'لوحة تحكم المبيعات - عرض الإحصائيات والمبيعات والعملاء والمخزون - ' . APP_NAME;
 
 // معالجة طلبات AJAX قبل إرسال أي HTML
 if (isset($_GET['ajax'], $_GET['action'])) {

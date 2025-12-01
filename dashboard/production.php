@@ -658,6 +658,7 @@ if ($page === 'packaging_warehouse' && isset($_GET['ajax']) && $_GET['ajax'] == 
 require_once __DIR__ . '/../includes/lang/' . getCurrentLanguage() . '.php';
 $lang = isset($translations) ? $translations : [];
 $pageTitle = isset($lang['production_dashboard']) ? $lang['production_dashboard'] : 'لوحة الإنتاج';
+$pageDescription = 'لوحة تحكم الإنتاج - إدارة المواد الخام والمخازن والمنتجات النهائية - ' . APP_NAME;
 ?>
 <?php include __DIR__ . '/../templates/header.php'; ?>
 

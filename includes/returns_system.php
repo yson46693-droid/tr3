@@ -1233,7 +1233,7 @@ function applyReturnSalaryDeduction(int $returnId, ?int $salesRepId = null, ?int
             
             // إرسال تنبيه للمندوب
             $salesRep = $db->queryOne(
-                "SELECT full_name, email FROM users WHERE id = ?",
+                "SELECT full_name FROM users WHERE id = ?",
                 [$salesRepId]
             );
             

@@ -469,6 +469,7 @@ $extraScripts = isset($extraScripts) && is_array($extraScripts) ? $extraScripts 
 require_once __DIR__ . '/../includes/lang/' . getCurrentLanguage() . '.php';
 $lang = isset($translations) ? $translations : [];
 $pageTitle = isset($lang['accountant_dashboard']) ? $lang['accountant_dashboard'] : 'لوحة المحاسب';
+$pageDescription = 'لوحة تحكم المحاسب - إدارة المعاملات المالية والمصروفات والتقارير - ' . APP_NAME;
 ?>
 <?php include __DIR__ . '/../templates/header.php'; ?>
 

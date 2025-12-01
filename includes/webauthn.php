@@ -314,7 +314,7 @@ class WebAuthn {
      */
     public static function createLoginChallenge($username) {
         $db = db();
-        $user = $db->queryOne("SELECT id, username FROM users WHERE username = ? OR email = ?", [$username, $username]);
+        $user = $db->queryOne("SELECT id, username FROM users WHERE username = ?", [$username]);
         
         if (!$user) {
             return null;
