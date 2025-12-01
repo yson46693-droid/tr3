@@ -781,15 +781,6 @@ function loadRepDetails(repId, repName) {
                                     >
                                         <i class="bi bi-journal-text me-1"></i>سجل المشتريات
                                     </button>
-                                    <button
-                                        type="button"
-                                        class="btn btn-sm btn-outline-primary rep-return-btn js-customer-purchase-history"
-                                        data-customer-id="${customer.id || 0}"
-                                        data-customer-name="${escapeHtml(customer.name || '—')}"
-                                        title="سجل مشتريات العميل - إنشاء مرتجع"
-                                    >
-                                        <i class="bi bi-arrow-return-left me-1"></i>إرجاع
-                                    </button>
                                 </div>
                             </td>
                         </tr>
@@ -961,7 +952,7 @@ function renderRepInvoices(rows, tableBody) {
     if (!Array.isArray(rows) || rows.length === 0) {
         const emptyRow = document.createElement('tr');
         const emptyCell = document.createElement('td');
-        emptyCell.colSpan = 7;
+        emptyCell.colSpan = 8;
         emptyCell.className = 'text-center text-muted py-4';
         emptyCell.textContent = 'لا توجد فواتير خلال النافذة الزمنية.';
         emptyRow.appendChild(emptyCell);
@@ -969,8 +960,18 @@ function renderRepInvoices(rows, tableBody) {
         return;
     }
     
+    const basePath = '<?php echo getBasePath(); ?>';
+    
     rows.forEach(function (row) {
         const tr = document.createElement('tr');
+        const invoiceId = row.invoice_id || 0;
+        const printUrl = basePath + '/print_invoice.php?id=' + encodeURIComponent(invoiceId);
+        const printButton = invoiceId > 0 ? `
+            <a href="${printUrl}" target="_blank" class="btn btn-sm btn-outline-primary" title="طباعة الفاتورة">
+                <i class="bi bi-printer me-1"></i>طباعة
+            </a>
+        ` : '<span class="text-muted">—</span>';
+        
         tr.innerHTML = `
             <td>${row.invoice_number || '—'}</td>
             <td>${row.invoice_date || '—'}</td>
@@ -982,6 +983,7 @@ function renderRepInvoices(rows, tableBody) {
             </td>
             <td>${formatCurrencySimple(row.net_total || 0)}</td>
             <td>${row.invoice_status || '—'}</td>
+            <td>${printButton}</td>
         `;
         tableBody.appendChild(tr);
     });
@@ -1601,6 +1603,7 @@ document.addEventListener('DOMContentLoaded', function() {
                                         <th>المرتجعات</th>
                                         <th>الصافي</th>
                                         <th>الحالة</th>
+                                        <th>إجراءات</th>
                                     </tr>
                                 </thead>
                                 <tbody></tbody>
