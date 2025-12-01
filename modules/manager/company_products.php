@@ -912,10 +912,10 @@ foreach ($factoryProducts as $product) {
                 @media (max-width: 768px) {
                     .products-grid {
                         padding: 15px;
-                        grid-template-columns: 1fr;
+                        grid-template-columns: 1fr !important;
                         gap: 15px;
-                        width: 100%;
-                        max-width: 100%;
+                        width: 100% !important;
+                        max-width: 100% !important;
                         box-sizing: border-box;
                     }
                     
@@ -926,6 +926,17 @@ foreach ($factoryProducts as $product) {
                         padding: 20px;
                         margin: 0;
                         box-sizing: border-box;
+                    }
+                    
+                    .product-actions {
+                        flex-direction: row !important;
+                        flex-wrap: wrap;
+                    }
+                    
+                    .product-actions button,
+                    .product-actions .btn-view {
+                        flex: 1 1 auto !important;
+                        min-width: calc(50% - 5px) !important;
                     }
                 }
                 
@@ -938,6 +949,17 @@ foreach ($factoryProducts as $product) {
                     .product-card {
                         padding: 15px;
                         border-radius: 12px;
+                    }
+                    
+                    .product-actions {
+                        gap: 8px;
+                    }
+                    
+                    .product-actions button,
+                    .product-actions .btn-view {
+                        min-width: calc(50% - 4px) !important;
+                        font-size: 12px !important;
+                        padding: 8px 12px !important;
                     }
                 }
 
@@ -1061,10 +1083,10 @@ foreach ($factoryProducts as $product) {
                                 <?php
                                     $viewUrl = getRelativeUrl('production.php?page=batch_numbers&batch_number=' . urlencode($batchNumber));
                                 ?>
-                                <div style="display: flex; gap: 10px; margin-top: 15px;">
+                                <div class="product-actions" style="display: flex; gap: 10px; margin-top: 15px; flex-wrap: wrap;">
                                     <button type="button" 
                                             class="btn-view js-batch-details" 
-                                            style="border: none; cursor: pointer; flex: 1; background: #0c2c80; color: white; padding: 10px 16px; border-radius: 10px; font-weight: bold; font-size: 13px;"
+                                            style="border: none; cursor: pointer; flex: 1; min-width: calc(50% - 5px); background: #0c2c80; color: white; padding: 10px 16px; border-radius: 10px; font-weight: bold; font-size: 13px;"
                                             data-batch="<?php echo htmlspecialchars($batchNumber); ?>"
                                             data-product="<?php echo htmlspecialchars($productName); ?>"
                                             data-view-url="<?php echo htmlspecialchars($viewUrl); ?>">
@@ -1072,7 +1094,7 @@ foreach ($factoryProducts as $product) {
                                     </button>
                                     <button type="button" 
                                             class="btn-view js-print-barcode" 
-                                            style="border: none; cursor: pointer; flex: 1; background: #28a745; color: white; padding: 10px 16px; border-radius: 10px; font-weight: bold; font-size: 13px;"
+                                            style="border: none; cursor: pointer; flex: 1; min-width: calc(50% - 5px); background: #28a745; color: white; padding: 10px 16px; border-radius: 10px; font-weight: bold; font-size: 13px;"
                                             data-batch="<?php echo htmlspecialchars($batchNumber); ?>"
                                             data-product="<?php echo htmlspecialchars($productName); ?>"
                                             data-quantity="<?php echo htmlspecialchars($quantity); ?>">
@@ -1207,10 +1229,10 @@ foreach ($factoryProducts as $product) {
                             <div class="product-detail-row"><span>سعر الوحدة:</span> <span><?php echo formatCurrency($unitPrice); ?></span></div>
                             <div class="product-detail-row"><span>الإجمالي:</span> <span><strong class="text-success"><?php echo formatCurrency($totalValue); ?></strong></span></div>
                             
-                            <div style="display: flex; gap: 10px; margin-top: 15px;">
+                            <div class="product-actions" style="display: flex; gap: 10px; margin-top: 15px; flex-wrap: wrap;">
                                 <button type="button" 
                                         class="btn btn-outline-primary js-edit-external" 
-                                        style="flex: 1; border-radius: 10px; padding: 10px 16px; font-weight: bold; font-size: 13px;"
+                                        style="flex: 1; min-width: calc(50% - 5px); border-radius: 10px; padding: 10px 16px; font-weight: bold; font-size: 13px;"
                                         data-id="<?php echo $product['id']; ?>"
                                         data-name="<?php echo htmlspecialchars($product['name'], ENT_QUOTES); ?>"
                                         data-quantity="<?php echo $product['quantity']; ?>"
@@ -1220,7 +1242,7 @@ foreach ($factoryProducts as $product) {
                                 </button>
                                 <button type="button" 
                                         class="btn btn-outline-danger js-delete-external" 
-                                        style="flex: 1; border-radius: 10px; padding: 10px 16px; font-weight: bold; font-size: 13px;"
+                                        style="flex: 1; min-width: calc(50% - 5px); border-radius: 10px; padding: 10px 16px; font-weight: bold; font-size: 13px;"
                                         data-id="<?php echo $product['id']; ?>"
                                         data-name="<?php echo htmlspecialchars($product['name'], ENT_QUOTES); ?>">
                                     <i class="bi bi-trash me-1"></i>حذف
