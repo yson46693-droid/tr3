@@ -317,16 +317,37 @@ if (!empty($collectionsTableExists)) {
 }
 
 // حساب المبيعات المدفوعة بالكامل (من الفواتير)
-// استخدام total_amount دائماً لعرض إجمالي المبيعات المدفوعة بالكامل
+// استخدام amount_added_to_sales إذا كان موجوداً (للفواتير المدفوعة من الرصيد الدائن)
+// أو total_amount للفواتير العادية
 $fullyPaidSales = 0.0;
 if (!empty($invoicesTableExists)) {
-    // استخدام total_amount دائماً لجميع الفواتير المدفوعة بالكامل
-    $fullyPaidSql = "SELECT COALESCE(SUM(total_amount), 0) as fully_paid
+    // التحقق من وجود عمود amount_added_to_sales
+    $hasAmountAddedToSalesColumn = !empty($db->queryOne("SHOW COLUMNS FROM invoices LIKE 'amount_added_to_sales'"));
+    
+    if ($hasAmountAddedToSalesColumn) {
+        // استخدام amount_added_to_sales إذا كان محدداً، وإلا استخدام total_amount
+        // هذا يضمن أن المبالغ المدفوعة من الرصيد الدائن لا تُضاف إلى خزنة المندوب
+        $fullyPaidSql = "SELECT COALESCE(SUM(
+            CASE 
+                WHEN amount_added_to_sales IS NOT NULL AND amount_added_to_sales > 0 
+                THEN amount_added_to_sales 
+                ELSE total_amount 
+            END
+        ), 0) as fully_paid
          FROM invoices
          WHERE sales_rep_id = ? 
          AND status = 'paid' 
          AND paid_amount >= total_amount
          AND status != 'cancelled'";
+    } else {
+        // إذا لم يكن العمود موجوداً، نستخدم total_amount (للتوافق مع الإصدارات القديمة)
+        $fullyPaidSql = "SELECT COALESCE(SUM(total_amount), 0) as fully_paid
+         FROM invoices
+         WHERE sales_rep_id = ? 
+         AND status = 'paid' 
+         AND paid_amount >= total_amount
+         AND status != 'cancelled'";
+    }
     
     $fullyPaidResult = $db->queryOne($fullyPaidSql, [$salesRepId]);
     $fullyPaidSales = (float)($fullyPaidResult['fully_paid'] ?? 0);

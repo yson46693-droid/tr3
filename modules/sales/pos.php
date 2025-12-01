@@ -1106,9 +1106,19 @@ if (!$error && $_SERVER['REQUEST_METHOD'] === 'POST') {
                 //   - البيع الكاش (full payment)
                 //   - البيع بالتحصيل الجزئي (تُحتسب النسبة فقط على المبلغ الذي تم تحصيله جزئيًا)
                 //   - أي مبلغ يقوم المندوب بتحصيله من العملاء من خلال صفحة العملاء
+                //   - البيع بالآجل مع استخدام الرصيد الدائن لعميل لديه رصيد دائن وسجل مرتجعات (نسبة 2%)
                 if (($currentUser['role'] ?? '') === 'sales') {
                     try {
                         require_once __DIR__ . '/../../includes/salary_calculator.php';
+                        
+                        // تسجيل معلومات التشخيص العامة
+                        error_log(sprintf(
+                            'Sales commission calculation started: paymentType=%s, creditUsed=%.2f, invoiceId=%d, customerId=%d',
+                            $paymentType ?? 'unknown',
+                            $creditUsed,
+                            $invoiceId,
+                            $customerId
+                        ));
                         
                         // الحالة الخاصة: خصم من الرصيد الدائن لعميل لديه رصيد دائن وسجل مرتجعات
                         // القاعدة الجديدة: عند خصم أي مبلغ من الرصيد الدائن لعميل لديه:
@@ -1158,6 +1168,7 @@ if (!$error && $_SERVER['REQUEST_METHOD'] === 'POST') {
                         
                         // تطبيق القاعدة الجديدة: رصيد دائن + سجل مرتجعات
                         // يجب أن يكون هناك استخدام للرصيد الدائن، وأن يكون للعميل رصيد دائن قبل البيع، وأن يكون لديه سجل مرتجعات
+                        // هذا يعمل بغض النظر عن نوع الدفع (كاش، جزئي، أو آجل)
                         if ($creditUsed > 0.0001 && $hasCreditBalance && $hasReturnsRecord) {
                             // حساب نسبة 2% من المبلغ المخصوم من الرصيد الدائن
                             $creditCommissionAmount = round($creditUsed * 0.02, 2);
