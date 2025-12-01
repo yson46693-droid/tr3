@@ -297,7 +297,7 @@ if (ob_get_level() > 0) {
     <meta name="mobile-web-app-capable" content="yes">
     
     <!-- Manifest -->
-    <link rel="manifest" href="<?php echo getRelativeUrl('manifest.json'); ?>">
+    <link rel="manifest" href="<?php echo getRelativeUrl('manifest.php'); ?>">
     
     <!-- 🎬 Page Loading Animation CSS -->
     <?php if (!defined('ENABLE_PAGE_LOADER') || ENABLE_PAGE_LOADER): ?>

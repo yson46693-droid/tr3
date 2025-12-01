@@ -25,12 +25,23 @@ if ($content === false) {
     exit(0);
 }
 
-// إزالة BOM إذا كان موجوداً
-$content = preg_replace('/^\xEF\xBB\xBF/', '', $content);
-$content = trim($content);
+// إزالة BOM بطرق متعددة (UTF-8, UTF-16, UTF-32)
+$content = preg_replace('/^\xEF\xBB\xBF/', '', $content); // UTF-8 BOM
+$content = preg_replace('/^\xFF\xFE/', '', $content); // UTF-16 LE BOM
+$content = preg_replace('/^\xFE\xFF/', '', $content); // UTF-16 BE BOM
+$content = preg_replace('/^\x00\x00\xFE\xFF/', '', $content); // UTF-32 BE BOM
+$content = preg_replace('/^\xFF\xFE\x00\x00/', '', $content); // UTF-32 LE BOM
 
-// إزالة أي مسافات أو أحرف غير مرئية في البداية
+// إزالة أي مسافات أو أحرف غير مرئية في البداية والنهاية
+$content = trim($content);
 $content = ltrim($content);
+$content = rtrim($content);
+
+// إزالة أي أحرف غير مرئية أخرى في البداية
+$content = preg_replace('/^[\x00-\x1F\x7F-\x9F]+/u', '', $content);
+
+// إزالة أي أحرف غير مرئية أخرى في البداية
+$content = preg_replace('/^[\x00-\x1F\x7F-\x9F]+/u', '', $content);
 
 // التحقق من أن المحتوى JSON صحيح
 $json = @json_decode($content, true);
