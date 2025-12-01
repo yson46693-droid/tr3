@@ -4079,7 +4079,13 @@ function loadUserSalariesForSettlement(userId, currentSalaryId) {
     select.innerHTML = '<option value="">-- جاري التحميل --</option>';
     
     // جلب الرواتب من API
-    fetch('<?php echo getBasePath(); ?>/api/get_user_salaries.php?user_id=' + userId)
+    fetch('<?php echo getBasePath(); ?>/api/get_user_salaries.php?user_id=' + userId, {
+        method: 'GET',
+        credentials: 'include', // إرسال الـ cookies (session) مع الطلب
+        headers: {
+            'Accept': 'application/json'
+        }
+    })
         .then(response => {
             // التحقق من نوع الاستجابة
             const contentType = response.headers.get('content-type');
@@ -4152,7 +4158,13 @@ function loadSelectedSalaryData() {
     document.getElementById('settleSalaryId').value = salaryId;
     
     // جلب بيانات الراتب المحدد
-    fetch('<?php echo getBasePath(); ?>/api/get_salary_details.php?salary_id=' + salaryId)
+    fetch('<?php echo getBasePath(); ?>/api/get_salary_details.php?salary_id=' + salaryId, {
+        method: 'GET',
+        credentials: 'include', // إرسال الـ cookies (session) مع الطلب
+        headers: {
+            'Accept': 'application/json'
+        }
+    })
         .then(response => response.json())
         .then(data => {
             if (data.success && data.salary) {

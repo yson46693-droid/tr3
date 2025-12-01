@@ -26,25 +26,38 @@ try {
     require_once __DIR__ . '/../includes/db.php';
     require_once __DIR__ . '/../includes/auth.php';
     require_once __DIR__ . '/../includes/functions.php';
-    
-    // التحقق من تسجيل الدخول
+} catch (Throwable $e) {
+    ob_end_clean();
+    error_log('Error loading includes in get_user_salaries.php: ' . $e->getMessage());
+    error_log('Stack trace: ' . $e->getTraceAsString());
+    echo json_encode(['success' => false, 'message' => 'خطأ في تحميل الملفات المطلوبة: ' . $e->getMessage()], JSON_UNESCAPED_UNICODE);
+    exit;
+}
+
+// التحقق من تسجيل الدخول
+try {
     if (session_status() === PHP_SESSION_NONE) {
         session_start();
     }
     
+    // تسجيل معلومات الـ session للتشخيص
+    error_log('get_user_salaries.php - Session status: ' . session_status());
+    error_log('get_user_salaries.php - Session user_id: ' . ($_SESSION['user_id'] ?? 'NOT SET'));
+    error_log('get_user_salaries.php - Session role: ' . ($_SESSION['role'] ?? 'NOT SET'));
+    
     if (empty($_SESSION['user_id']) || empty($_SESSION['role'])) {
         ob_end_clean();
+        error_log('get_user_salaries.php - User not logged in. user_id: ' . ($_SESSION['user_id'] ?? 'empty') . ', role: ' . ($_SESSION['role'] ?? 'empty'));
         echo json_encode(['success' => false, 'message' => 'يجب تسجيل الدخول أولاً'], JSON_UNESCAPED_UNICODE);
         exit;
     }
 } catch (Throwable $e) {
     ob_end_clean();
-    error_log('Error in get_user_salaries.php: ' . $e->getMessage());
-    echo json_encode(['success' => false, 'message' => 'خطأ في التحقق من الصلاحيات'], JSON_UNESCAPED_UNICODE);
+    error_log('Error checking session in get_user_salaries.php: ' . $e->getMessage());
+    error_log('Stack trace: ' . $e->getTraceAsString());
+    echo json_encode(['success' => false, 'message' => 'خطأ في التحقق من الصلاحيات: ' . $e->getMessage()], JSON_UNESCAPED_UNICODE);
     exit;
 }
-
-ob_end_clean();
 
 try {
     $userId = intval($_GET['user_id'] ?? 0);
