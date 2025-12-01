@@ -2628,18 +2628,18 @@ $pageTitle = ($view === 'advances') ? 'السلف' : (($view === 'pending') ? '�
             </div>
             <div class="col-md-2">
                 <label class="form-label">&nbsp;</label>
-                <form method="POST" style="display: inline-block;" onsubmit="return confirm('هل تريد تحديث عدد الساعات (total_hours) لجميع الرواتب من سجلات الحضور؟');">
-                    <input type="hidden" name="action" value="update_total_hours">
-                    <input type="hidden" name="month" value="<?php echo $selectedMonth; ?>">
-                    <input type="hidden" name="year" value="<?php echo $selectedYear; ?>">
-                    <?php if ($selectedUserId > 0): ?>
-                        <input type="hidden" name="user_id" value="<?php echo $selectedUserId; ?>">
-                    <?php endif; ?>
-                    <button type="submit" class="btn btn-info w-100" title="تحديث عدد الساعات من سجلات الحضور">
-                        <i class="bi bi-clock-history me-1"></i>تحديث الساعات
-                    </button>
-                </form>
+                <button type="button" class="btn btn-info w-100" onclick="updateTotalHours()" title="تحديث عدد الساعات من سجلات الحضور">
+                    <i class="bi bi-clock-history me-1"></i>تحديث الساعات
+                </button>
             </div>
+        </form>
+        
+        <!-- نموذج منفصل لتحديث الساعات -->
+        <form method="POST" id="updateHoursForm" style="display: none;" onsubmit="return confirm('هل تريد تحديث عدد الساعات (total_hours) لجميع الرواتب من سجلات الحضور؟');">
+            <input type="hidden" name="action" value="update_total_hours">
+            <input type="hidden" name="month" id="updateHoursMonth" value="<?php echo $selectedMonth; ?>">
+            <input type="hidden" name="year" id="updateHoursYear" value="<?php echo $selectedYear; ?>">
+            <input type="hidden" name="user_id" id="updateHoursUserId" value="<?php echo $selectedUserId; ?>">
         </form>
     </div>
 
@@ -4048,6 +4048,32 @@ document.getElementById('settleSalaryModal')?.addEventListener('shown.bs.modal',
 
 <!-- إعادة تحميل الصفحة تلقائياً بعد أي رسالة (نجاح أو خطأ) لمنع تكرار الطلبات -->
 <script>
+// دالة تحديث الساعات
+function updateTotalHours() {
+    if (confirm('هل تريد تحديث عدد الساعات (total_hours) لجميع الرواتب من سجلات الحضور؟')) {
+        // تحديث القيم في النموذج المخفي
+        const filterForm = document.querySelector('.filter-card form');
+        if (filterForm) {
+            const monthInput = filterForm.querySelector('select[name="month"]');
+            const yearInput = filterForm.querySelector('select[name="year"]');
+            const userIdInput = filterForm.querySelector('select[name="user_id"]');
+            
+            if (monthInput) {
+                document.getElementById('updateHoursMonth').value = monthInput.value;
+            }
+            if (yearInput) {
+                document.getElementById('updateHoursYear').value = yearInput.value;
+            }
+            if (userIdInput) {
+                document.getElementById('updateHoursUserId').value = userIdInput.value || '0';
+            }
+        }
+        
+        // إرسال النموذج
+        document.getElementById('updateHoursForm').submit();
+    }
+}
+
 // إعادة تحميل الصفحة تلقائياً بعد أي رسالة (نجاح أو خطأ) لمنع تكرار الطلبات
 (function() {
     const successAlert = document.getElementById('successAlert');
