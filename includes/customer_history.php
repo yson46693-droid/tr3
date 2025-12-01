@@ -258,6 +258,30 @@ function customerHistorySyncForCustomer(int $customerId): array
         $invoiceTotal = (float)($row['invoice_total'] ?? 0.0);
         $paidAmount = (float)($row['paid_amount'] ?? 0.0);
         $returnTotal = (float)($row['return_total'] ?? 0.0);
+        
+        // الحصول على رقم الفاتورة من الجدول إذا لم يكن موجوداً في السجل
+        $invoiceNumber = $row['invoice_number'] ?? '';
+        if (empty($invoiceNumber) && $invoiceId > 0) {
+            try {
+                $invoiceData = $db->queryOne(
+                    "SELECT invoice_number FROM invoices WHERE id = ? LIMIT 1",
+                    [$invoiceId]
+                );
+                if ($invoiceData && !empty($invoiceData['invoice_number'])) {
+                    $invoiceNumber = $invoiceData['invoice_number'];
+                } else {
+                    $invoiceNumber = 'INV-' . $invoiceId;
+                }
+            } catch (Throwable $e) {
+                error_log('Error fetching invoice number: ' . $e->getMessage());
+                $invoiceNumber = 'INV-' . $invoiceId;
+            }
+        }
+        
+        // التأكد من وجود رقم الفاتورة
+        if (empty($invoiceNumber)) {
+            $invoiceNumber = 'INV-' . $invoiceId;
+        }
 
         $summaryTotals['invoice_count']++;
         $summaryTotals['total_invoiced'] += $invoiceTotal;
@@ -403,11 +427,11 @@ function customerHistorySyncForCustomer(int $customerId): array
 
         $invoicesPayload[] = [
             'invoice_id'      => $invoiceId,
-            'invoice_number'  => $row['invoice_number'],
-            'invoice_date'    => $row['invoice_date'],
+            'invoice_number'  => $invoiceNumber,
+            'invoice_date'    => $row['invoice_date'] ?? date('Y-m-d'),
             'invoice_total'   => $invoiceTotal,
             'paid_amount'     => $paidAmount,
-            'invoice_status'  => $row['invoice_status'],
+            'invoice_status'  => $row['invoice_status'] ?? 'completed',
             'return_total'    => $returnTotal,
             'return_count'    => (int)($row['return_count'] ?? 0),
             'net_total'       => $net,

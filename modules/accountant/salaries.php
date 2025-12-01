@@ -25,6 +25,34 @@ $approvalsEntityColumn = getApprovalsEntityColumn();
 $error = '';
 $success = '';
 
+/**
+ * حساب صافي رصيد خزنة الشركة
+ * الصيغة: الإيرادات المعتمدة - المصروفات المعتمدة - المدفوعات
+ * ملاحظة: تسويات الرواتب تُحسب كـ expenses في accountant_transactions، لذلك لا نحتاج لخصم إجمالي المرتبات منفصلاً
+ */
+function calculateCompanyCashBalance($db) {
+    // حساب ملخص الخزنة من financial_transactions و accountant_transactions
+    $treasurySummary = $db->queryOne("
+        SELECT
+            (SELECT COALESCE(SUM(CASE WHEN type = 'income' AND status = 'approved' THEN amount ELSE 0 END), 0) FROM financial_transactions) +
+            (SELECT COALESCE(SUM(CASE WHEN transaction_type IN ('collection_from_sales_rep', 'income') AND status = 'approved' THEN amount ELSE 0 END), 0) FROM accountant_transactions) AS approved_income,
+            (SELECT COALESCE(SUM(CASE WHEN type = 'expense' AND status = 'approved' THEN amount ELSE 0 END), 0) FROM financial_transactions) +
+            (SELECT COALESCE(SUM(CASE WHEN transaction_type = 'expense' AND status = 'approved' THEN amount ELSE 0 END), 0) FROM accountant_transactions) AS approved_expense,
+            (SELECT COALESCE(SUM(CASE WHEN type = 'payment' AND status = 'approved' THEN amount ELSE 0 END), 0) FROM financial_transactions) +
+            (SELECT COALESCE(SUM(CASE WHEN transaction_type = 'payment' AND status = 'approved' THEN amount ELSE 0 END), 0) FROM accountant_transactions) AS approved_payment
+    ");
+    
+    $approvedIncome = (float) ($treasurySummary['approved_income'] ?? 0);
+    $approvedExpense = (float) ($treasurySummary['approved_expense'] ?? 0);
+    $approvedPayment = (float) ($treasurySummary['approved_payment'] ?? 0);
+    
+    // حساب صافي الرصيد
+    // ملاحظة: تسويات الرواتب تُحسب كـ expenses في accountant_transactions، لذلك تُخصم تلقائياً
+    $netBalance = $approvedIncome - $approvedExpense - $approvedPayment;
+    
+    return $netBalance; // يمكن أن يكون سالباً إذا كانت المصروفات أكبر من الإيرادات
+}
+
 // إنشاء جدول السلف
 $advancesTableCheck = $db->queryOne("SHOW TABLES LIKE 'salary_advances'");
 if (empty($advancesTableCheck)) {
@@ -899,7 +927,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         }
     } elseif ($action === 'settle_salary') {
         // معالجة تسوية مستحقات الموظف
-        $salaryId = intval($_POST['salary_id'] ?? 0);
+        // استخدام selected_salary_id إذا كان موجوداً (من قائمة الرواتب)، وإلا استخدام salary_id
+        $salaryId = intval($_POST['selected_salary_id'] ?? $_POST['salary_id'] ?? 0);
         $settlementAmount = floatval($_POST['settlement_amount'] ?? 0);
         $settlementDate = trim($_POST['settlement_date'] ?? date('Y-m-d'));
         $notes = trim($_POST['notes'] ?? '');
@@ -985,6 +1014,17 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     header('Location: ' . $redirectUrl);
                     exit;
                 } else {
+                    // التحقق من رصيد خزنة الشركة قبل التسوية
+                    $companyBalance = calculateCompanyCashBalance($db);
+                    
+                    if ($settlementAmount > $companyBalance) {
+                        $_SESSION['salaries_error'] = 'رصيد خزنة الشركة غير كافي. الرصيد المتاح: ' . formatCurrency($companyBalance) . 
+                                                       ' | المبلغ المطلوب: ' . formatCurrency($settlementAmount);
+                        $redirectUrl = $buildViewUrl($view, ['month' => $selectedMonth, 'year' => $selectedYear]);
+                        header('Location: ' . $redirectUrl);
+                        exit;
+                    }
+                    
                     try {
                         $db->getConnection()->beginTransaction();
                         
@@ -992,9 +1032,19 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                         $remainingAfter = $currentAccumulated - $settlementAmount;
                         $settlementType = ($remainingAfter <= 0.01) ? 'full' : 'partial';
                         
+                        // التحقق المنطقي: التأكد من أن المتبقي بعد التسوية لا يكون سالباً
+                        if ($remainingAfter < -0.01) {
+                            throw new Exception('خطأ في الحساب: المتبقي بعد التسوية سالب (' . formatCurrency($remainingAfter) . ')');
+                        }
+                        
                         // تحديث الراتب: خصم من accumulated_amount وإضافة لـ paid_amount
                         $newPaidAmount = floatval($salary['paid_amount'] ?? 0) + $settlementAmount;
                         $newAccumulated = max(0, $remainingAfter);
+                        
+                        // التحقق المنطقي: التأكد من أن المبلغ المدفوع لا يتجاوز المبلغ التراكمي
+                        if ($newPaidAmount > $currentAccumulated + 0.01) {
+                            throw new Exception('خطأ في الحساب: المبلغ المدفوع (' . formatCurrency($newPaidAmount) . ') يتجاوز المبلغ التراكمي (' . formatCurrency($currentAccumulated) . ')');
+                        }
                         
                         $db->execute(
                             "UPDATE salaries SET 
@@ -1026,6 +1076,32 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                         
                         $settlementId = $db->getLastInsertId();
                         
+                        // إضافة تسوية الراتب كـ expense في accountant_transactions
+                        $employeeName = $salary['full_name'] ?? $salary['username'];
+                        $settlementDescription = 'تسوية راتب موظف: ' . $employeeName . 
+                                                 ' (الراتب #' . $salaryId . 
+                                                 ' - ' . $salaryMonth . '/' . $salaryYear . ')';
+                        $referenceNumber = 'SAL-SETTLE-' . $salaryId . '-' . date('YmdHis');
+                        
+                        // التأكد من وجود جدول accountant_transactions
+                        $accountantTableCheck = $db->queryOne("SHOW TABLES LIKE 'accountant_transactions'");
+                        if (!empty($accountantTableCheck)) {
+                            $db->execute(
+                                "INSERT INTO accountant_transactions 
+                                    (transaction_type, amount, description, reference_number, 
+                                     status, approved_by, created_by, approved_at)
+                                 VALUES (?, ?, ?, ?, 'approved', ?, ?, NOW())",
+                                [
+                                    'expense',
+                                    $settlementAmount,
+                                    $settlementDescription,
+                                    $referenceNumber,
+                                    $currentUser['id'],
+                                    $currentUser['id']
+                                ]
+                            );
+                        }
+                        
                         // إنشاء فاتورة PDF
                         require_once __DIR__ . '/../../includes/invoices.php';
                         $invoicePath = generateSalarySettlementInvoice($settlementId, $salary, $settlementAmount, $currentAccumulated, $remainingAfter, $settlementDate, $notes);
@@ -1055,11 +1131,14 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                             'settlement_amount' => $settlementAmount,
                             'previous_accumulated' => $currentAccumulated,
                             'remaining' => $remainingAfter,
-                            'settlement_type' => $settlementType
+                            'settlement_type' => $settlementType,
+                            'company_balance_before' => $companyBalance,
+                            'company_balance_after' => $companyBalance - $settlementAmount
                         ]);
                         
                         $_SESSION['salaries_success'] = 'تم تسوية مستحقات الموظف بنجاح. المبلغ المسدد: ' . formatCurrency($settlementAmount) . 
-                                   ($remainingAfter > 0 ? ' | المتبقي: ' . formatCurrency($remainingAfter) : '');
+                                   ($remainingAfter > 0 ? ' | المتبقي: ' . formatCurrency($remainingAfter) : '') .
+                                   ' | رصيد الخزنة بعد التسوية: ' . formatCurrency($companyBalance - $settlementAmount);
                         $redirectUrl = $buildViewUrl($view, ['month' => $selectedMonth, 'year' => $selectedYear]);
                         header('Location: ' . $redirectUrl);
                         exit;
@@ -1189,7 +1268,7 @@ foreach ($users as $user) {
         // المستخدم لديه راتب مسجل
         $salaries[] = $salariesMap[$userId];
     } else {
-        // المستخدم ليس لديه راتب مسجل - إنشاء سجل فارغ
+        // المستخدم ليس لديه راتب مسجل - إنشاء راتب محسوب تلقائياً
         $hourlyRate = cleanFinancialValue($user['hourly_rate'] ?? 0);
         // حساب الساعات المكتملة فقط (التي تم تسجيل الانصراف لها)
         require_once __DIR__ . '/../../includes/salary_calculator.php';
@@ -1203,11 +1282,103 @@ foreach ($users as $user) {
         $collectionsBonus = 0;
         if ($user['role'] === 'sales') {
             $collectionsAmount = calculateSalesCollections($userId, $selectedMonth, $selectedYear);
-            $collectionsBonus = $collectionsAmount * 0.02;
+            $collectionsBonus = round($collectionsAmount * 0.02, 2);
         }
         
         $totalAmount = round($baseAmount + $collectionsBonus, 2);
         
+        // إنشاء راتب محسوب تلقائياً في قاعدة البيانات
+        try {
+            $yearColumnCheck = $db->queryOne("SHOW COLUMNS FROM salaries LIKE 'year'");
+            $hasYearColumn = !empty($yearColumnCheck);
+            $hasBonusColumn = !empty($db->queryOne("SHOW COLUMNS FROM salaries LIKE 'bonus'"));
+            $hasCollectionsBonusColumn = !empty($db->queryOne("SHOW COLUMNS FROM salaries LIKE 'collections_bonus'"));
+            $hasCreatedByColumn = !empty($db->queryOne("SHOW COLUMNS FROM salaries LIKE 'created_by'"));
+            
+            if ($hasYearColumn) {
+                if ($hasBonusColumn && $hasCollectionsBonusColumn) {
+                    if ($hasCreatedByColumn) {
+                        $db->execute(
+                            "INSERT INTO salaries (user_id, month, year, hourly_rate, total_hours, base_amount, bonus, collections_bonus, deductions, total_amount, status, created_by) 
+                             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'calculated', ?)",
+                            [$userId, $selectedMonth, $selectedYear, $hourlyRate, $monthHours, $baseAmount, 0, $collectionsBonus, 0, $totalAmount, $currentUser['id']]
+                        );
+                    } else {
+                        $db->execute(
+                            "INSERT INTO salaries (user_id, month, year, hourly_rate, total_hours, base_amount, bonus, collections_bonus, deductions, total_amount, status) 
+                             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'calculated')",
+                            [$userId, $selectedMonth, $selectedYear, $hourlyRate, $monthHours, $baseAmount, 0, $collectionsBonus, 0, $totalAmount]
+                        );
+                    }
+                } else {
+                    if ($hasCreatedByColumn) {
+                        $db->execute(
+                            "INSERT INTO salaries (user_id, month, year, hourly_rate, total_hours, base_amount, deductions, total_amount, status, created_by) 
+                             VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'calculated', ?)",
+                            [$userId, $selectedMonth, $selectedYear, $hourlyRate, $monthHours, $baseAmount, 0, $totalAmount, $currentUser['id']]
+                        );
+                    } else {
+                        $db->execute(
+                            "INSERT INTO salaries (user_id, month, year, hourly_rate, total_hours, base_amount, deductions, total_amount, status) 
+                             VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'calculated')",
+                            [$userId, $selectedMonth, $selectedYear, $hourlyRate, $monthHours, $baseAmount, 0, $totalAmount]
+                        );
+                    }
+                }
+            } else {
+                if ($hasBonusColumn && $hasCollectionsBonusColumn) {
+                    if ($hasCreatedByColumn) {
+                        $db->execute(
+                            "INSERT INTO salaries (user_id, month, hourly_rate, total_hours, base_amount, bonus, collections_bonus, deductions, total_amount, status, created_by) 
+                             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'calculated', ?)",
+                            [$userId, $selectedMonth, $hourlyRate, $monthHours, $baseAmount, 0, $collectionsBonus, 0, $totalAmount, $currentUser['id']]
+                        );
+                    } else {
+                        $db->execute(
+                            "INSERT INTO salaries (user_id, month, hourly_rate, total_hours, base_amount, bonus, collections_bonus, deductions, total_amount, status) 
+                             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'calculated')",
+                            [$userId, $selectedMonth, $hourlyRate, $monthHours, $baseAmount, 0, $collectionsBonus, 0, $totalAmount]
+                        );
+                    }
+                } else {
+                    if ($hasCreatedByColumn) {
+                        $db->execute(
+                            "INSERT INTO salaries (user_id, month, hourly_rate, total_hours, base_amount, deductions, total_amount, status, created_by) 
+                             VALUES (?, ?, ?, ?, ?, ?, ?, 'calculated', ?)",
+                            [$userId, $selectedMonth, $hourlyRate, $monthHours, $baseAmount, 0, $totalAmount, $currentUser['id']]
+                        );
+                    } else {
+                        $db->execute(
+                            "INSERT INTO salaries (user_id, month, hourly_rate, total_hours, base_amount, deductions, total_amount, status) 
+                             VALUES (?, ?, ?, ?, ?, ?, ?, 'calculated')",
+                            [$userId, $selectedMonth, $hourlyRate, $monthHours, $baseAmount, 0, $totalAmount]
+                        );
+                    }
+                }
+            }
+            
+            // جلب الراتب المحفوظ حديثاً
+            $newSalaryId = (int)$db->getLastInsertId();
+            if ($newSalaryId > 0) {
+                $newSalary = $db->queryOne(
+                    "SELECT s.*, u.full_name, u.username, u.role, u.hourly_rate as current_hourly_rate,
+                            approver.full_name as approver_name
+                     FROM salaries s
+                     LEFT JOIN users u ON s.user_id = u.id
+                     LEFT JOIN users approver ON s.approved_by = approver.id
+                     WHERE s.id = ?",
+                    [$newSalaryId]
+                );
+                if ($newSalary) {
+                    $salaries[] = $newSalary;
+                    continue; // تخطي إنشاء السجل الافتراضي
+                }
+            }
+        } catch (Throwable $e) {
+            error_log("Error auto-creating salary for user {$userId}: " . $e->getMessage());
+        }
+        
+        // في حالة فشل الحفظ، استخدم السجل الافتراضي مع status = 'calculated'
         $salaries[] = [
             'id' => null,
             'user_id' => $userId,
@@ -1223,7 +1394,7 @@ foreach ($users as $user) {
             'collections_amount' => $collectionsAmount,
             'deductions' => 0,
             'total_amount' => $totalAmount,
-            'status' => 'not_calculated',
+            'status' => 'calculated',
             'approved_by' => null,
             'approver_name' => null,
             'created_at' => null,
@@ -1864,9 +2035,9 @@ body {
     color: #991b1b;
 }
 
-.status-badge.not_calculated {
-    background: #f3f4f6;
-    color: #6b7280;
+.status-badge.calculated {
+    background: #dbeafe;
+    color: #1e40af;
 }
 
 /* Legacy status classes for advances section */
@@ -2335,7 +2506,7 @@ $pageTitle = ($view === 'advances') ? 'السلف' : (($view === 'pending') ? '�
                                         echo $salary['status'] === 'approved' ? 'success' : 
                                             ($salary['status'] === 'rejected' ? 'danger' : 
                                             ($salary['status'] === 'paid' ? 'info' : 
-                                            ($salary['status'] === 'not_calculated' ? 'secondary' : 'warning'))); 
+                                            ($salary['status'] === 'calculated' ? 'primary' : 'warning'))); 
                                     ?>">
                                         <?php 
                                         $statusLabels = [
@@ -2343,7 +2514,7 @@ $pageTitle = ($view === 'advances') ? 'السلف' : (($view === 'pending') ? '�
                                             'approved' => 'موافق عليه',
                                             'rejected' => 'مرفوض',
                                             'paid' => 'مدفوع',
-                                            'not_calculated' => 'غير محسوب'
+                                            'calculated' => 'محسوب'
                                         ];
                                         echo $statusLabels[$salary['status']] ?? $salary['status']; 
                                         ?>
@@ -2663,7 +2834,7 @@ $pageTitle = ($view === 'advances') ? 'السلف' : (($view === 'pending') ? '�
                 $roleClass = $salary['role'] ?? 'production';
                 $employeeName = htmlspecialchars($salary['full_name'] ?? $salary['username']);
                 $firstName = mb_substr($employeeName, 0, 1, 'UTF-8');
-                $status = $salary['status'] ?? 'not_calculated';
+                $status = $salary['status'] ?? 'calculated';
                 
                 // حساب الإجمالي الصحيح مع تضمين نسبة التحصيلات للمندوبين
                 $userId = intval($salary['user_id'] ?? 0);
@@ -2842,7 +3013,7 @@ $pageTitle = ($view === 'advances') ? 'السلف' : (($view === 'pending') ? '�
                             echo $status === 'approved' ? 'approved' : 
                                 ($status === 'rejected' ? 'rejected' : 
                                 ($status === 'paid' ? 'paid' : 
-                                ($status === 'not_calculated' ? 'not_calculated' : 'pending'))); 
+                                ($status === 'calculated' ? 'calculated' : 'pending'))); 
                         ?>">
                             <?php 
                             $statusLabels = [
@@ -2850,7 +3021,7 @@ $pageTitle = ($view === 'advances') ? 'السلف' : (($view === 'pending') ? '�
                                 'approved' => 'موافق عليه',
                                 'rejected' => 'مرفوض',
                                 'paid' => 'مدفوع',
-                                'not_calculated' => 'غير محسوب'
+                                'calculated' => 'محسوب'
                             ];
                             echo $statusLabels[$status] ?? 'غير محدد';
                             ?>
@@ -3868,37 +4039,104 @@ function viewAdvanceDetails(advanceId) {
 }
 
 function openSettleModal(salaryId, salaryData, remainingAmount, calculatedAccumulated) {
-    document.getElementById('settleSalaryId').value = salaryId;
+    const userId = salaryData.user_id || salaryData.userId;
+    document.getElementById('settleUserId').value = userId;
     document.getElementById('settleUserName').textContent = salaryData.full_name || salaryData.username;
     
-    // استخدام القيمة المحسوبة الفعلية للمبلغ التراكمي (من بطاقة الموظف) بدلاً من القيمة المخزنة
-    // أولوية الاستخدام: calculated_accumulated من salaryData > المعامل الممرر > القيم المخزنة
-    const actualAccumulated = salaryData.calculated_accumulated !== undefined ? salaryData.calculated_accumulated :
-                               (calculatedAccumulated !== undefined ? calculatedAccumulated :
-                                (salaryData.accumulated_amount || salaryData.total_amount || 0));
+    // تحميل جميع الرواتب للموظف
+    loadUserSalariesForSettlement(userId, salaryId);
     
-    // حساب المبلغ المدفوع
-    const paidAmount = parseFloat(salaryData.paid_amount || 0);
-    
-    // استخدام المتبقي المحسوب الفعلي من بطاقة الموظف
-    // أولوية الاستخدام: calculated_remaining من salaryData > المعامل الممرر > الحساب من التراكمي والمدفوع
-    const actualRemaining = salaryData.calculated_remaining !== undefined ? salaryData.calculated_remaining :
-                             (remainingAmount !== undefined && remainingAmount !== null ? remainingAmount :
-                              Math.max(0, actualAccumulated - paidAmount));
-    
-    document.getElementById('settleAccumulatedAmount').textContent = formatCurrency(actualAccumulated);
-    document.getElementById('settlePaidAmount').textContent = formatCurrency(paidAmount);
-    document.getElementById('settleRemainingAmount').textContent = formatCurrency(actualRemaining);
-    // تحديث النص المساعد أيضاً
-    const settleRemainingAmount2 = document.getElementById('settleRemainingAmount2');
-    if (settleRemainingAmount2) {
-        settleRemainingAmount2.textContent = formatCurrency(actualRemaining);
+    // تعيين الراتب الحالي كافتراضي
+    if (salaryId > 0) {
+        setTimeout(() => {
+            document.getElementById('settleSalarySelect').value = salaryId;
+            loadSelectedSalaryData();
+        }, 100);
     }
-    document.getElementById('settleAmount').value = '';
-    document.getElementById('settleAmount').max = actualRemaining;
-    document.getElementById('settleDate').value = new Date().toISOString().split('T')[0];
-    document.getElementById('settleNotes').value = '';
-    updateSettleRemaining();
+}
+
+function loadUserSalariesForSettlement(userId, currentSalaryId) {
+    const select = document.getElementById('settleSalarySelect');
+    if (!select) return;
+    
+    // مسح الخيارات السابقة
+    select.innerHTML = '<option value="">-- جاري التحميل --</option>';
+    
+    // جلب الرواتب من API
+    fetch('<?php echo getBasePath(); ?>/api/get_user_salaries.php?user_id=' + userId)
+        .then(response => response.json())
+        .then(data => {
+            select.innerHTML = '<option value="">-- اختر راتب للتسوية --</option>';
+            
+            if (data.success && data.salaries && data.salaries.length > 0) {
+                data.salaries.forEach(salary => {
+                    const option = document.createElement('option');
+                    option.value = salary.id;
+                    option.textContent = salary.month_label + ' - المتبقي: ' + formatCurrency(salary.remaining || 0);
+                    if (salary.id == currentSalaryId) {
+                        option.selected = true;
+                    }
+                    select.appendChild(option);
+                });
+                
+                // تحميل بيانات الراتب المحدد
+                if (currentSalaryId > 0) {
+                    loadSelectedSalaryData();
+                }
+            } else {
+                select.innerHTML = '<option value="">لا توجد رواتب متاحة</option>';
+            }
+        })
+        .catch(error => {
+            console.error('Error loading salaries:', error);
+            select.innerHTML = '<option value="">خطأ في تحميل الرواتب</option>';
+        });
+}
+
+function loadSelectedSalaryData() {
+    const select = document.getElementById('settleSalarySelect');
+    const salaryId = select ? select.value : '';
+    
+    if (!salaryId || salaryId === '') {
+        // إعادة تعيين القيم
+        document.getElementById('settleSalaryId').value = '';
+        document.getElementById('settleAccumulatedAmount').textContent = formatCurrency(0);
+        document.getElementById('settlePaidAmount').textContent = formatCurrency(0);
+        document.getElementById('settleRemainingAmount').textContent = formatCurrency(0);
+        document.getElementById('settleRemainingAmount2').textContent = formatCurrency(0);
+        document.getElementById('settleAmount').value = '';
+        document.getElementById('settleAmount').max = 0;
+        updateSettleRemaining();
+        return;
+    }
+    
+    document.getElementById('settleSalaryId').value = salaryId;
+    
+    // جلب بيانات الراتب المحدد
+    fetch('<?php echo getBasePath(); ?>/api/get_salary_details.php?salary_id=' + salaryId)
+        .then(response => response.json())
+        .then(data => {
+            if (data.success && data.salary) {
+                const salary = data.salary;
+                const accumulated = parseFloat(salary.calculated_accumulated || salary.accumulated_amount || salary.total_amount || 0);
+                const paid = parseFloat(salary.paid_amount || 0);
+                const remaining = Math.max(0, accumulated - paid);
+                
+                document.getElementById('settleAccumulatedAmount').textContent = formatCurrency(accumulated);
+                document.getElementById('settlePaidAmount').textContent = formatCurrency(paid);
+                document.getElementById('settleRemainingAmount').textContent = formatCurrency(remaining);
+                document.getElementById('settleRemainingAmount2').textContent = formatCurrency(remaining);
+                document.getElementById('settleAmount').value = '';
+                document.getElementById('settleAmount').max = remaining;
+                updateSettleRemaining();
+            } else {
+                alert('خطأ في تحميل بيانات الراتب');
+            }
+        })
+        .catch(error => {
+            console.error('Error loading salary details:', error);
+            alert('خطأ في تحميل بيانات الراتب');
+        });
 }
 
 function updateSettleRemaining() {
@@ -3982,10 +4220,19 @@ function printSalaryStatement() {
             <form method="POST" id="settleSalaryForm">
                 <input type="hidden" name="action" value="settle_salary">
                 <input type="hidden" name="salary_id" id="settleSalaryId">
+                <input type="hidden" name="user_id" id="settleUserId">
                 <div class="modal-body">
                     <div class="alert alert-info">
                         <i class="bi bi-info-circle me-2"></i>
                         <strong>الموظف:</strong> <span id="settleUserName"></span>
+                    </div>
+                    
+                    <div class="mb-3">
+                        <label class="form-label">اختر الراتب للتسوية <span class="text-danger">*</span></label>
+                        <select class="form-select" name="selected_salary_id" id="settleSalarySelect" required onchange="loadSelectedSalaryData()">
+                            <option value="">-- اختر راتب للتسوية --</option>
+                        </select>
+                        <small class="text-muted">يمكنك اختيار راتب من الشهر الحالي أو شهر ماضي</small>
                     </div>
                     
                     <div class="row mb-3">
