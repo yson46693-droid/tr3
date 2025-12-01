@@ -270,8 +270,15 @@ foreach ($factoryProducts as $product) {
 ?>
 
 <style>
+* {
+    box-sizing: border-box;
+}
+
 .company-products-page {
     padding: 1.5rem 0;
+    width: 100%;
+    max-width: 100%;
+    overflow-x: hidden;
 }
 
 .section-header {
@@ -283,6 +290,10 @@ foreach ($factoryProducts as $product) {
     justify-content: space-between;
     align-items: center;
     box-shadow: 0 4px 12px rgba(29, 78, 216, 0.15);
+    width: 100%;
+    max-width: 100%;
+    flex-wrap: wrap;
+    gap: 1rem;
 }
 
 .section-header h5 {
@@ -318,6 +329,8 @@ foreach ($factoryProducts as $product) {
     overflow: hidden;
     background: #ffffff;
     transition: all 0.3s ease;
+    width: 100%;
+    max-width: 100%;
 }
 
 .company-card:hover {
@@ -327,6 +340,9 @@ foreach ($factoryProducts as $product) {
 
 .company-card .card-body {
     padding: 2rem;
+    width: 100%;
+    max-width: 100%;
+    overflow-x: hidden;
 }
 
 /* تحسين تصميم الجداول */
@@ -422,6 +438,9 @@ foreach ($factoryProducts as $product) {
     border-radius: 12px;
     padding: 1.25rem 1.5rem;
     margin-bottom: 1.5rem;
+    width: 100%;
+    max-width: 100%;
+    overflow: hidden;
 }
 
 .total-value-box .fw-bold {
@@ -520,15 +539,165 @@ foreach ($factoryProducts as $product) {
 }
 
 @media (max-width: 768px) {
+    .company-products-page {
+        padding: 1rem 0;
+    }
+    
     .section-header {
         flex-direction: column;
         align-items: flex-start;
         gap: 1rem;
         padding: 1.25rem 1.5rem;
+        width: 100%;
+        max-width: 100%;
+    }
+    
+    .section-header h5 {
+        font-size: 1rem;
+        word-wrap: break-word;
+        width: 100%;
+    }
+    
+    .section-header .badge {
+        font-size: 0.8rem;
+        padding: 0.4rem 0.8rem;
+    }
+    
+    .company-card {
+        width: 100%;
+        max-width: 100%;
+        margin-bottom: 1.5rem;
     }
     
     .company-card .card-body {
         padding: 1.25rem;
+        width: 100%;
+        max-width: 100%;
+        overflow-x: hidden;
+    }
+    
+    .total-value-box {
+        padding: 1rem 1.25rem;
+        margin-bottom: 1.25rem;
+        width: 100%;
+        max-width: 100%;
+    }
+    
+    .total-value-box .d-flex {
+        flex-direction: column;
+        gap: 0.5rem;
+        align-items: flex-start !important;
+    }
+    
+    .total-value-box .fw-bold {
+        font-size: 0.9rem;
+        word-wrap: break-word;
+    }
+    
+    .total-value-box .text-success {
+        font-size: 1.25rem !important;
+    }
+    
+    .products-grid {
+        padding: 15px;
+        grid-template-columns: 1fr;
+        gap: 15px;
+        width: 100%;
+        max-width: 100%;
+    }
+    
+    .product-card {
+        padding: 20px;
+        border-radius: 12px;
+        width: 100%;
+        max-width: 100%;
+        min-width: 0;
+    }
+    
+    .product-status {
+        top: 10px;
+        left: 10px;
+        padding: 5px 12px;
+        font-size: 11px;
+    }
+    
+    .product-name {
+        font-size: 16px;
+        margin-bottom: 5px;
+        word-wrap: break-word;
+    }
+    
+    .product-batch-id {
+        font-size: 13px;
+        word-wrap: break-word;
+    }
+    
+    .product-barcode-box {
+        padding: 12px;
+        margin: 12px 0;
+    }
+    
+    .product-barcode-container {
+        min-height: 50px;
+    }
+    
+    .product-barcode-container svg {
+        max-width: 100%;
+        height: auto;
+    }
+    
+    .product-barcode-id {
+        font-size: 12px;
+        margin-top: 6px;
+        word-wrap: break-word;
+    }
+    
+    .product-detail-row {
+        font-size: 13px;
+        margin-top: 4px;
+        flex-wrap: wrap;
+        gap: 0.5rem;
+    }
+    
+    .product-detail-row span {
+        word-wrap: break-word;
+    }
+    
+    .product-card > div[style*="display: flex"] {
+        flex-direction: column;
+        gap: 8px;
+    }
+    
+    .product-card button {
+        width: 100% !important;
+        flex: 1 1 100% !important;
+        padding: 10px 14px !important;
+        font-size: 12px !important;
+    }
+    
+    .company-card .dashboard-table-wrapper {
+        overflow-x: auto;
+        -webkit-overflow-scrolling: touch;
+        width: 100%;
+        max-width: 100%;
+    }
+    
+    .company-card .dashboard-table-wrapper::-webkit-scrollbar {
+        height: 8px;
+    }
+    
+    .company-card .dashboard-table-wrapper::-webkit-scrollbar-track {
+        background: #f1f1f1;
+        border-radius: 4px;
+    }
+    
+    .company-card .dashboard-table-wrapper::-webkit-scrollbar-thumb {
+        background: #888;
+        border-radius: 4px;
+    }
+    
+    .company-card .dashboard-table {
+        min-width: 500px;
     }
     
     .company-card .dashboard-table thead th,
@@ -547,12 +716,96 @@ foreach ($factoryProducts as $product) {
 }
 
 @media (max-width: 576px) {
+    .company-products-page {
+        padding: 0.75rem 0;
+    }
+    
+    .company-products-page h2 {
+        font-size: 1.25rem;
+        word-wrap: break-word;
+    }
+    
+    .section-header {
+        padding: 1rem 1.25rem;
+        gap: 0.75rem;
+    }
+    
     .section-header h5 {
-        font-size: 1rem;
+        font-size: 0.95rem;
+    }
+    
+    .section-header .badge {
+        font-size: 0.75rem;
+        padding: 0.35rem 0.7rem;
     }
     
     .company-card .card-body {
         padding: 1rem;
+    }
+    
+    .total-value-box {
+        padding: 0.875rem 1rem;
+        margin-bottom: 1rem;
+    }
+    
+    .total-value-box .fw-bold {
+        font-size: 0.85rem;
+    }
+    
+    .total-value-box .text-success {
+        font-size: 1.1rem !important;
+    }
+    
+    .products-grid {
+        padding: 12px;
+        gap: 12px;
+    }
+    
+    .product-card {
+        padding: 15px;
+        border-radius: 10px;
+    }
+    
+    .product-status {
+        top: 8px;
+        left: 8px;
+        padding: 4px 10px;
+        font-size: 10px;
+    }
+    
+    .product-name {
+        font-size: 15px;
+    }
+    
+    .product-batch-id {
+        font-size: 12px;
+    }
+    
+    .product-barcode-box {
+        padding: 10px;
+        margin: 10px 0;
+    }
+    
+    .product-barcode-container {
+        min-height: 45px;
+    }
+    
+    .product-barcode-id {
+        font-size: 11px;
+    }
+    
+    .product-detail-row {
+        font-size: 12px;
+    }
+    
+    .product-card button {
+        padding: 8px 12px !important;
+        font-size: 11px !important;
+    }
+    
+    .company-card .dashboard-table {
+        min-width: 450px;
+        font-size: 0.8rem;
     }
     
     .company-card .dashboard-table thead th,
@@ -560,12 +813,17 @@ foreach ($factoryProducts as $product) {
         padding: 0.6rem 0.7rem;
         font-size: 0.8rem;
     }
+    
+    .btn-success-custom.btn-sm {
+        padding: 0.4rem 0.8rem;
+        font-size: 0.8rem;
+    }
 }
 </style>
 
 <div class="company-products-page">
-    <div class="d-flex justify-content-between align-items-center mb-4">
-        <h2 class="mb-0"><i class="bi bi-box-seam me-2 text-primary"></i>منتجات الشركة</h2>
+    <div class="d-flex justify-content-between align-items-center mb-4 flex-wrap gap-2" style="width: 100%; max-width: 100%;">
+        <h2 class="mb-0" style="word-wrap: break-word; width: 100%; max-width: 100%;"><i class="bi bi-box-seam me-2 text-primary"></i>منتجات الشركة</h2>
     </div>
 
     <?php if ($error): ?>
@@ -613,6 +871,8 @@ foreach ($factoryProducts as $product) {
                     display: grid;
                     grid-template-columns: repeat(auto-fit, minmax(340px, 1fr));
                     gap: 20px;
+                    width: 100%;
+                    max-width: 100%;
                 }
 
                 .product-card {
@@ -622,6 +882,9 @@ foreach ($factoryProducts as $product) {
                     box-shadow: 0px 4px 20px rgba(0,0,0,0.07);
                     border: 1px solid #e2e6f3;
                     position: relative;
+                    width: 100%;
+                    max-width: 100%;
+                    overflow: hidden;
                 }
 
                 .product-status {
