@@ -6,7 +6,14 @@ define('ACCESS_ALLOWED', true);
 
 // تعطيل عرض الأخطاء في المتصفح لمنع HTML في JSON
 ini_set('display_errors', 0);
+ini_set('log_errors', 1);
 error_reporting(E_ALL);
+
+// تعيين error handler لمنع عرض الأخطاء
+set_error_handler(function($errno, $errstr, $errfile, $errline) {
+    error_log("PHP Error [$errno]: $errstr in $errfile on line $errline");
+    return true; // منع عرض الخطأ الافتراضي
+}, E_ALL);
 
 // تنظيف أي output buffer موجود
 while (ob_get_level() > 0) {
@@ -25,6 +32,12 @@ try {
     require_once __DIR__ . '/../includes/config.php';
     require_once __DIR__ . '/../includes/db.php';
     require_once __DIR__ . '/../includes/auth.php';
+    
+    // تنظيف أي output تم إنتاجه من الملفات المحملة
+    if (ob_get_level() > 0) {
+        ob_end_clean();
+    }
+    ob_start();
 } catch (Throwable $e) {
     ob_end_clean();
     error_log('Error loading includes in get_user_salaries.php: ' . $e->getMessage());

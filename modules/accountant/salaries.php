@@ -4204,20 +4204,46 @@ function loadSelectedSalaryData() {
     document.getElementById('settleSalaryId').value = salaryId;
     
     // جلب بيانات الراتب المحدد
-    fetch('<?php echo getBasePath(); ?>/api/get_salary_details.php?salary_id=' + salaryId, {
+    const apiUrl = '<?php echo getBasePath(); ?>/api/get_salary_details.php?salary_id=' + salaryId;
+    console.log('Fetching salary details from:', apiUrl);
+    
+    fetch(apiUrl, {
         method: 'GET',
         credentials: 'include', // إرسال الـ cookies (session) مع الطلب
         headers: {
             'Accept': 'application/json'
         }
     })
-        .then(response => response.json())
+        .then(response => {
+            // التحقق من نوع الاستجابة
+            const contentType = response.headers.get('content-type');
+            if (!contentType || !contentType.includes('application/json')) {
+                return response.text().then(text => {
+                    console.error('Invalid response type. Expected JSON but got:', contentType);
+                    console.error('Response text:', text.substring(0, 500));
+                    throw new Error('Invalid response type. Expected JSON but got: ' + contentType + '. Response: ' + text.substring(0, 200));
+                });
+            }
+            return response.json();
+        })
         .then(data => {
+            console.log('Salary details received:', data);
+            
+            if (!data) {
+                throw new Error('Empty response from server');
+            }
+            
             if (data.success && data.salary) {
                 const salary = data.salary;
                 const accumulated = parseFloat(salary.calculated_accumulated || salary.accumulated_amount || salary.total_amount || 0);
                 const paid = parseFloat(salary.paid_amount || 0);
                 const remaining = Math.max(0, accumulated - paid);
+                
+                console.log('Salary data:', {
+                    accumulated: accumulated,
+                    paid: paid,
+                    remaining: remaining
+                });
                 
                 document.getElementById('settleAccumulatedAmount').textContent = formatCurrency(accumulated);
                 document.getElementById('settlePaidAmount').textContent = formatCurrency(paid);
@@ -4227,12 +4253,15 @@ function loadSelectedSalaryData() {
                 document.getElementById('settleAmount').max = remaining;
                 updateSettleRemaining();
             } else {
-                alert('خطأ في تحميل بيانات الراتب');
+                const errorMsg = data && data.message ? data.message : 'خطأ في تحميل بيانات الراتب';
+                console.error('API Error:', errorMsg);
+                alert(errorMsg);
             }
         })
         .catch(error => {
             console.error('Error loading salary details:', error);
-            alert('خطأ في تحميل بيانات الراتب');
+            const errorMsg = error.message || 'خطأ في تحميل بيانات الراتب';
+            alert('خطأ في تحميل بيانات الراتب: ' + errorMsg);
         });
 }
 
