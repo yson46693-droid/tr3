@@ -3064,8 +3064,23 @@ $pageTitle = ($view === 'advances') ? 'السلف' : (($view === 'pending') ? '�
                             </button>
                             
                             <?php if ($hasSalaryId && $remaining > 0): ?>
+                            <?php
+                            // التأكد من أن القيم المحسوبة موجودة في $salary قبل إنشاء JSON
+                            // استخدام القيم المحسوبة إذا كانت موجودة، وإلا استخدام القيم الحالية
+                            $settleRemaining = isset($salary['calculated_remaining']) ? (float)$salary['calculated_remaining'] : (float)$remaining;
+                            $settleAccumulated = isset($salary['calculated_accumulated']) ? (float)$salary['calculated_accumulated'] : (float)$accumulated;
+                            
+                            // التأكد من أن القيم المحسوبة موجودة في مصفوفة $salary لتمريرها في JSON
+                            $salaryForJson = $salary;
+                            if (!isset($salaryForJson['calculated_remaining'])) {
+                                $salaryForJson['calculated_remaining'] = $settleRemaining;
+                            }
+                            if (!isset($salaryForJson['calculated_accumulated'])) {
+                                $salaryForJson['calculated_accumulated'] = $settleAccumulated;
+                            }
+                            ?>
                             <button class="btn btn-success btn-sm" 
-                                    onclick="openSettleModal(<?php echo $salary['id']; ?>, <?php echo htmlspecialchars(json_encode($salary), ENT_QUOTES); ?>, <?php echo $remaining; ?>, <?php echo $accumulated; ?>)" 
+                                    onclick="openSettleModal(<?php echo $salary['id']; ?>, <?php echo htmlspecialchars(json_encode($salaryForJson, JSON_UNESCAPED_UNICODE), ENT_QUOTES); ?>, <?php echo $settleRemaining; ?>, <?php echo $settleAccumulated; ?>)" 
                                     data-bs-toggle="modal" 
                                     data-bs-target="#settleSalaryModal"
                                     title="تسوية مستحقات">
@@ -3776,14 +3791,32 @@ function viewAdvanceDetails(advanceId) {
 function openSettleModal(salaryId, salaryData, remainingAmount, calculatedAccumulated) {
     document.getElementById('settleSalaryId').value = salaryId;
     document.getElementById('settleUserName').textContent = salaryData.full_name || salaryData.username;
+    
     // استخدام القيمة المحسوبة الفعلية للمبلغ التراكمي (من بطاقة الموظف) بدلاً من القيمة المخزنة
-    const actualAccumulated = calculatedAccumulated !== undefined ? calculatedAccumulated : (salaryData.calculated_accumulated || salaryData.accumulated_amount || salaryData.total_amount || 0);
-    document.getElementById('settleAccumulatedAmount').textContent = formatCurrency(actualAccumulated);
-    document.getElementById('settlePaidAmount').textContent = formatCurrency(salaryData.paid_amount || 0);
+    // أولوية الاستخدام: calculated_accumulated من salaryData > المعامل الممرر > القيم المخزنة
+    const actualAccumulated = salaryData.calculated_accumulated !== undefined ? salaryData.calculated_accumulated :
+                               (calculatedAccumulated !== undefined ? calculatedAccumulated :
+                                (salaryData.accumulated_amount || salaryData.total_amount || 0));
+    
+    // حساب المبلغ المدفوع
+    const paidAmount = parseFloat(salaryData.paid_amount || 0);
+    
     // استخدام المتبقي المحسوب الفعلي من بطاقة الموظف
-    document.getElementById('settleRemainingAmount').textContent = formatCurrency(remainingAmount);
+    // أولوية الاستخدام: calculated_remaining من salaryData > المعامل الممرر > الحساب من التراكمي والمدفوع
+    const actualRemaining = salaryData.calculated_remaining !== undefined ? salaryData.calculated_remaining :
+                             (remainingAmount !== undefined && remainingAmount !== null ? remainingAmount :
+                              Math.max(0, actualAccumulated - paidAmount));
+    
+    document.getElementById('settleAccumulatedAmount').textContent = formatCurrency(actualAccumulated);
+    document.getElementById('settlePaidAmount').textContent = formatCurrency(paidAmount);
+    document.getElementById('settleRemainingAmount').textContent = formatCurrency(actualRemaining);
+    // تحديث النص المساعد أيضاً
+    const settleRemainingAmount2 = document.getElementById('settleRemainingAmount2');
+    if (settleRemainingAmount2) {
+        settleRemainingAmount2.textContent = formatCurrency(actualRemaining);
+    }
     document.getElementById('settleAmount').value = '';
-    document.getElementById('settleAmount').max = remainingAmount;
+    document.getElementById('settleAmount').max = actualRemaining;
     document.getElementById('settleDate').value = new Date().toISOString().split('T')[0];
     document.getElementById('settleNotes').value = '';
     updateSettleRemaining();
