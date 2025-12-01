@@ -25,7 +25,6 @@ try {
     require_once __DIR__ . '/../includes/config.php';
     require_once __DIR__ . '/../includes/db.php';
     require_once __DIR__ . '/../includes/auth.php';
-    require_once __DIR__ . '/../includes/functions.php';
 } catch (Throwable $e) {
     ob_end_clean();
     error_log('Error loading includes in get_user_salaries.php: ' . $e->getMessage());

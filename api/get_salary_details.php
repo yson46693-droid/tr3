@@ -25,7 +25,6 @@ try {
     require_once __DIR__ . '/../includes/config.php';
     require_once __DIR__ . '/../includes/db.php';
     require_once __DIR__ . '/../includes/auth.php';
-    require_once __DIR__ . '/../includes/functions.php';
     
     // التحقق من تسجيل الدخول
     if (session_status() === PHP_SESSION_NONE) {

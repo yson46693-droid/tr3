@@ -260,8 +260,16 @@ function calculateSalesCollections($userId, $month, $year) {
         // استبعاد الفواتير المدفوعة من رصيد دائن
         // هذه الفواتير لها معاملة خاصة: تُحسب النسبة مباشرة كـ bonus في pos.php
         // (لعميل لديه سجل مشتريات) أو لا تُحسب (لعميل ليس لديه سجل مشتريات)
+        // المبالغ المدفوعة من الرصيد الدائن لا تُحسب في التحصيلات لأن المندوب لم يقم بتحصيلها نقدياً
         if ($hasPaidFromCreditColumn) {
             $fullPaymentSalesSql .= " AND (paid_from_credit IS NULL OR paid_from_credit = 0)";
+        } else {
+            // إذا لم يكن العمود موجوداً، استبعد الفواتير التي لديها credit_used > 0
+            // كحل بديل لضمان عدم حساب الفواتير المدفوعة من الرصيد الدائن
+            $hasCreditUsedColumn = !empty($db->queryOne("SHOW COLUMNS FROM invoices LIKE 'credit_used'"));
+            if ($hasCreditUsedColumn) {
+                $fullPaymentSalesSql .= " AND (credit_used IS NULL OR credit_used = 0 OR credit_used <= 0.01)";
+            }
         }
         
         $fullPaymentSales = $db->queryOne($fullPaymentSalesSql, [$userId, $month, $year]);

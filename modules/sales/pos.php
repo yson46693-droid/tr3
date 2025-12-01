@@ -792,8 +792,21 @@ if (!$error && $_SERVER['REQUEST_METHOD'] === 'POST') {
                     }
                 }
                 
+                // تنفيذ تحديث الفاتورة فوراً قبل أي استدعاء لـ refreshSalesCommissionForUser
+                // هذا يضمن أن paid_from_credit يتم تعيينه بشكل صحيح قبل حساب التحصيلات
                 $invoiceUpdateParams[] = $invoiceId;
                 $db->execute($invoiceUpdateSql . " WHERE id = ?", $invoiceUpdateParams);
+                
+                // تسجيل معلومات التشخيص بعد التحديث
+                if ($hasPaidFromCreditColumn && $creditUsed > 0.0001) {
+                    error_log(sprintf(
+                        'Invoice updated with paid_from_credit flag: invoiceId=%d, invoiceNumber=%s, paidFromCreditFlag=%d, creditUsed=%.2f',
+                        $invoiceId,
+                        $invoiceNumber ?? 'N/A',
+                        $paidFromCreditFlag ?? 0,
+                        $creditUsed
+                    ));
+                }
                 
                 // إضافة الفاتورة إلى سجل مشتريات العميل
                 try {
@@ -1200,8 +1213,9 @@ if (!$error && $_SERVER['REQUEST_METHOD'] === 'POST') {
                         // إذا كان البيع كاش ولكن تم استخدام الرصيد الدائن، لا نحسب عمولة على الرصيد الدائن هنا
                         // (لأنها تُحسب في الحالة الخاصة أعلاه)
                         if ($paymentType === 'cash' && $effectivePaidAmount > 0.0001) {
-                            // فقط إذا لم يكن هناك استخدام للرصيد الدائن، أو كان هناك مبلغ كاش فعلي
-                            // نحسب العمولة على المبلغ الكاش فقط (وليس على الرصيد الدائن)
+                            // فقط إذا لم يكن هناك استخدام للرصيد الدائن، نحسب العمولة
+                            // إذا كان هناك استخدام للرصيد الدائن، لا نحسب عمولة هنا
+                            // (لأنها تُحسب في الحالة الخاصة أعلاه إذا كان للعميل سجل مشتريات)
                             if ($creditUsed <= 0.0001) {
                                 // لا يوجد استخدام للرصيد الدائن - بيع كاش عادي
                                 refreshSalesCommissionForUser(
@@ -1212,15 +1226,20 @@ if (!$error && $_SERVER['REQUEST_METHOD'] === 'POST') {
                             } else {
                                 // هناك استخدام للرصيد الدائن - لا نحسب عمولة هنا
                                 // (لأنها تُحسب في الحالة الخاصة أعلاه إذا كان للعميل سجل مشتريات)
-                                error_log('Cash sale with credit balance: skipping refreshSalesCommissionForUser to avoid double calculation');
+                                error_log(sprintf(
+                                    'Cash sale with credit balance: skipping refreshSalesCommissionForUser to avoid double calculation. creditUsed=%.2f, invoiceId=%d',
+                                    $creditUsed,
+                                    $invoiceId
+                                ));
                             }
                         }
                         
                         // البيع بالتحصيل الجزئي: حساب عمولة فقط على المبلغ المحصل (وليس على الرصيد الدائن)
+                        // ملاحظة: حتى لو كان هناك استخدام للرصيد الدائن، نحسب عمولة على المبلغ المحصل فقط
+                        // لأن المبلغ المحصل هو مبلغ نقدي فعلي تم تحصيله من العميل
                         if ($paymentType === 'partial' && $effectivePaidAmount > 0.0001) {
                             // نحسب العمولة على المبلغ المحصل فقط ($effectivePaidAmount)
                             // وليس على المبلغ المخصوم من الرصيد الدائن ($creditUsed)
-                            // ملاحظة: حتى لو كان هناك استخدام للرصيد الدائن، نحسب عمولة على المبلغ المحصل فقط
                             refreshSalesCommissionForUser(
                                 $currentUser['id'],
                                 $saleDate,
