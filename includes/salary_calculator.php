@@ -709,6 +709,32 @@ function calculateSalary($userId, $month, $year, $bonus = 0, $deductions = 0) {
  * إنشاء أو تحديث راتب للمستخدم
  */
 function createOrUpdateSalary($userId, $month, $year, $bonus = 0, $deductions = 0, $notes = null) {
+    // التحقق من صحة المعاملات
+    $userId = (int)$userId;
+    $month = (int)$month;
+    $year = (int)$year;
+    
+    if ($userId <= 0) {
+        return [
+            'success' => false,
+            'message' => 'معرف المستخدم غير صالح'
+        ];
+    }
+    
+    if ($month < 1 || $month > 12) {
+        return [
+            'success' => false,
+            'message' => 'الشهر يجب أن يكون بين 1 و 12. القيمة المستلمة: ' . $month
+        ];
+    }
+    
+    if ($year < 2000 || $year > 2100) {
+        return [
+            'success' => false,
+            'message' => 'السنة غير صحيحة. يجب أن تكون بين 2000 و 2100. القيمة المستلمة: ' . $year
+        ];
+    }
+    
     $db = db();
     $hasCollectionsBonusColumn = ensureCollectionsBonusColumn();
     
@@ -836,15 +862,22 @@ function createOrUpdateSalary($userId, $month, $year, $bonus = 0, $deductions = 
             "SELECT id FROM salaries WHERE user_id = ? AND month = ? AND year = ?",
             [$userId, $month, $year]
         );
-    } else {
-        // إذا لم يكن year موجوداً، تحقق من نوع month
-        if (stripos($monthType, 'date') !== false) {
-            // إذا كان month من نوع DATE
-            $targetDate = sprintf('%04d-%02d-01', $year, $month);
-            $existingSalary = $db->queryOne(
-                "SELECT id FROM salaries WHERE user_id = ? AND DATE_FORMAT(month, '%Y-%m') = ?",
-                [$userId, sprintf('%04d-%02d', $year, $month)]
-            );
+        } else {
+            // إذا لم يكن year موجوداً، تحقق من نوع month
+            if (stripos($monthType, 'date') !== false) {
+                // إذا كان month من نوع DATE
+                // التحقق من صحة year و month قبل إنشاء التاريخ
+                if ($year < 2000 || $year > 2100 || $month < 1 || $month > 12) {
+                    return [
+                        'success' => false,
+                        'message' => 'السنة أو الشهر غير صحيحين. السنة: ' . $year . ', الشهر: ' . $month
+                    ];
+                }
+                $targetDate = sprintf('%04d-%02d-01', $year, $month);
+                $existingSalary = $db->queryOne(
+                    "SELECT id FROM salaries WHERE user_id = ? AND DATE_FORMAT(month, '%Y-%m') = ?",
+                    [$userId, sprintf('%04d-%02d', $year, $month)]
+                );
         } else {
             // إذا كان month من نوع INT فقط
             $existingSalary = $db->queryOne(
@@ -1280,6 +1313,13 @@ function createOrUpdateSalary($userId, $month, $year, $bonus = 0, $deductions = 
             // إذا لم يكن year موجوداً
             if (stripos($monthType, 'date') !== false) {
                 // إذا كان month من نوع DATE
+                // التحقق من صحة year و month قبل إنشاء التاريخ
+                if ($year < 2000 || $year > 2100 || $month < 1 || $month > 12) {
+                    return [
+                        'success' => false,
+                        'message' => 'السنة أو الشهر غير صحيحين. السنة: ' . $year . ', الشهر: ' . $month
+                    ];
+                }
                 $targetDate = sprintf('%04d-%02d-01', $year, $month);
                 if ($hasBonusColumn) {
                     if ($hasNotesColumn) {
