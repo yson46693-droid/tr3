@@ -406,7 +406,14 @@ try {
 }
 ?>
 
-<?php require_once __DIR__ . '/../../includes/components/customers/section_header.php'; ?>
+<div class="d-flex flex-column flex-md-row justify-content-between align-items-md-center mb-3">
+    <h2 class="mb-2 mb-md-0">
+        <i class="bi bi-building me-2"></i>عملاء الشركة
+    </h2>
+    <button class="btn btn-primary" data-bs-toggle="modal" data-bs-target="#addCustomerModal">
+        <i class="bi bi-person-plus me-2"></i>إضافة عميل جديد
+    </button>
+</div>
 
 <?php if ($error): ?>
     <div class="alert alert-danger alert-dismissible fade show" role="alert">
@@ -510,33 +517,201 @@ try {
     </div>
 </div>
 
-<?php
-renderCustomerListSection([
-    'form_action' => getRelativeUrl($customersBaseScript),
-    'hidden_fields' => [
-        'page' => 'customers',
-    ],
-    'search' => $search,
-    'debt_status' => $debtStatus,
-    'customers' => $customers,
-    'total_customers' => $customerStats['total_count'],
-    'pagination' => [
-        'page' => $pageNum,
-        'total_pages' => $totalPages,
-        'base_url' => getRelativeUrl($customersPageBase),
-    ],
-    'current_role' => $currentRole,
-    'actions' => [
-        'collect' => false,
-        'history' => false,
-        'returns' => false,
-        'edit' => true,
-        'delete' => ($currentRole === 'manager'),
-        'location_capture' => false,
-        'location_view' => true,
-    ],
-]);
-?>
+<!-- البحث -->
+<div class="card shadow-sm mb-4 customers-search-card">
+    <div class="card-body">
+        <form method="GET" action="<?php echo htmlspecialchars(getRelativeUrl($customersBaseScript)); ?>" class="row g-2 g-md-3 align-items-end">
+            <input type="hidden" name="page" value="customers">
+            <div class="col-12 col-md-6 col-lg-5">
+                <label for="customerSearch" class="visually-hidden">بحث عن العملاء</label>
+                <div class="input-group input-group-sm shadow-sm">
+                    <span class="input-group-text bg-light text-muted border-end-0">
+                        <i class="bi bi-search"></i>
+                    </span>
+                    <input
+                        type="text"
+                        class="form-control border-start-0"
+                        id="customerSearch"
+                        name="search"
+                        value="<?php echo htmlspecialchars($search); ?>"
+                        placeholder="بحث سريع بالاسم أو الهاتف"
+                        autocomplete="off"
+                    >
+                </div>
+            </div>
+            <div class="col-6 col-md-3 col-lg-3">
+                <label for="debtStatusFilter" class="visually-hidden">تصفية حسب حالة الديون</label>
+                <select class="form-select form-select-sm shadow-sm" id="debtStatusFilter" name="debt_status">
+                    <option value="all" <?php echo $debtStatus === 'all' ? 'selected' : ''; ?>>الكل</option>
+                    <option value="debtor" <?php echo $debtStatus === 'debtor' ? 'selected' : ''; ?>>مدين</option>
+                    <option value="clear" <?php echo $debtStatus === 'clear' ? 'selected' : ''; ?>>غير مدين / لديه رصيد</option>
+                </select>
+            </div>
+            <div class="col-6 col-md-3 col-lg-2 d-grid">
+                <button type="submit" class="btn btn-primary btn-sm">
+                    <i class="bi bi-search me-1"></i>
+                    <span>بحث</span>
+                </button>
+            </div>
+        </form>
+    </div>
+</div>
+
+<!-- قائمة العملاء -->
+<div class="card shadow-sm customers-list-card">
+    <div class="card-header bg-primary text-white">
+        <div class="d-flex flex-column flex-md-row align-items-md-center justify-content-between gap-2">
+            <h5 class="mb-0">
+                <i class="bi bi-people-fill me-2"></i>قائمة عملاء الشركة
+                (<?php echo number_format($totalCustomers); ?>)
+            </h5>
+            <button class="btn btn-light btn-sm" data-bs-toggle="modal" data-bs-target="#addCustomerModal">
+                <i class="bi bi-person-plus me-1"></i>إضافة عميل جديد
+            </button>
+        </div>
+    </div>
+    <div class="card-body">
+        <div class="table-responsive dashboard-table-wrapper customers-table-container">
+            <table class="table dashboard-table align-middle">
+                <thead>
+                    <tr>
+                        <th>الاسم</th>
+                        <th>رقم الهاتف</th>
+                        <th>الرصيد</th>
+                        <th>العنوان</th>
+                        <th>الموقع</th>
+                        <th>تاريخ الإضافة</th>
+                        <th>الإجراءات</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    <?php if (empty($customers)): ?>
+                        <tr>
+                            <td colspan="7" class="text-center text-muted py-4">لا توجد عملاء</td>
+                        </tr>
+                    <?php else: ?>
+                        <?php foreach ($customers as $customer): ?>
+                            <tr>
+                                <td><strong><?php echo htmlspecialchars($customer['name']); ?></strong></td>
+                                <td><?php echo htmlspecialchars($customer['phone'] ?? '-'); ?></td>
+                                <td>
+                                    <?php
+                                        $customerBalanceValue = isset($customer['balance']) ? (float) $customer['balance'] : 0.0;
+                                        $balanceBadgeClass = $customerBalanceValue > 0
+                                            ? 'bg-warning-subtle text-warning'
+                                            : ($customerBalanceValue < 0 ? 'bg-info-subtle text-info' : 'bg-secondary-subtle text-secondary');
+                                        $displayBalanceValue = $customerBalanceValue < 0 ? abs($customerBalanceValue) : $customerBalanceValue;
+                                    ?>
+                                    <strong><?php echo formatCurrency($displayBalanceValue); ?></strong>
+                                    <?php if ($customerBalanceValue !== 0.0): ?>
+                                        <span class="badge <?php echo $balanceBadgeClass; ?> ms-1">
+                                            <?php echo $customerBalanceValue > 0 ? 'رصيد مدين' : 'رصيد دائن'; ?>
+                                        </span>
+                                    <?php endif; ?>
+                                </td>
+                                <td><?php echo htmlspecialchars($customer['address'] ?? '-'); ?></td>
+                                <td>
+                                    <?php
+                                    $hasLocation = isset($customer['latitude'], $customer['longitude']) &&
+                                        $customer['latitude'] !== null &&
+                                        $customer['longitude'] !== null;
+                                    $latValue = $hasLocation ? (float)$customer['latitude'] : null;
+                                    $lngValue = $hasLocation ? (float)$customer['longitude'] : null;
+                                    ?>
+                                    <?php if ($hasLocation): ?>
+                                        <button
+                                            type="button"
+                                            class="btn btn-sm btn-outline-info location-view-btn"
+                                            data-latitude="<?php echo htmlspecialchars(number_format($latValue, 8, '.', '')); ?>"
+                                            data-longitude="<?php echo htmlspecialchars(number_format($lngValue, 8, '.', '')); ?>"
+                                        >
+                                            <i class="bi bi-map me-1"></i>عرض
+                                        </button>
+                                    <?php else: ?>
+                                        <span class="badge bg-secondary-subtle text-secondary">غير محدد</span>
+                                    <?php endif; ?>
+                                </td>
+                                <td><?php echo formatDate($customer['created_at'] ?? ''); ?></td>
+                                <td>
+                                    <div class="d-flex flex-wrap align-items-center gap-2">
+                                        <button
+                                            type="button"
+                                            class="btn btn-sm btn-outline-primary"
+                                            data-bs-toggle="modal"
+                                            data-bs-target="#editCustomerModal"
+                                            data-customer-id="<?php echo (int)$customer['id']; ?>"
+                                            data-customer-name="<?php echo htmlspecialchars($customer['name']); ?>"
+                                            data-customer-phone="<?php echo htmlspecialchars($customer['phone'] ?? ''); ?>"
+                                            data-customer-address="<?php echo htmlspecialchars($customer['address'] ?? ''); ?>"
+                                            data-customer-balance="<?php echo number_format($customerBalanceValue, 2, '.', ''); ?>"
+                                        >
+                                            <i class="bi bi-pencil me-1"></i>تعديل
+                                        </button>
+                                        <?php if ($currentRole === 'manager'): ?>
+                                        <button
+                                            type="button"
+                                            class="btn btn-sm btn-outline-danger"
+                                            data-bs-toggle="modal"
+                                            data-bs-target="#deleteCustomerModal"
+                                            data-customer-id="<?php echo (int)$customer['id']; ?>"
+                                            data-customer-name="<?php echo htmlspecialchars($customer['name']); ?>"
+                                        >
+                                            <i class="bi bi-trash me-1"></i>حذف
+                                        </button>
+                                        <?php endif; ?>
+                                    </div>
+                                </td>
+                            </tr>
+                        <?php endforeach; ?>
+                    <?php endif; ?>
+                </tbody>
+            </table>
+        </div>
+        
+        <!-- Pagination -->
+        <?php if ($totalPages > 1): ?>
+        <nav aria-label="Page navigation" class="mt-3">
+            <ul class="pagination justify-content-center">
+                <li class="page-item <?php echo $pageNum <= 1 ? 'disabled' : ''; ?>">
+                    <a class="page-link" href="<?php echo $baseQueryString; ?>&p=<?php echo $pageNum - 1; ?><?php echo $search ? '&search=' . urlencode($search) : ''; ?>&debt_status=<?php echo urlencode($debtStatus); ?>">
+                        <i class="bi bi-chevron-right"></i>
+                    </a>
+                </li>
+                
+                <?php
+                $startPage = max(1, $pageNum - 2);
+                $endPage = min($totalPages, $pageNum + 2);
+                
+                if ($startPage > 1): ?>
+                    <li class="page-item"><a class="page-link" href="<?php echo $baseQueryString; ?>&p=1<?php echo $search ? '&search=' . urlencode($search) : ''; ?>&debt_status=<?php echo urlencode($debtStatus); ?>">1</a></li>
+                    <?php if ($startPage > 2): ?>
+                        <li class="page-item disabled"><span class="page-link">...</span></li>
+                    <?php endif; ?>
+                <?php endif; ?>
+                
+                <?php for ($i = $startPage; $i <= $endPage; $i++): ?>
+                    <li class="page-item <?php echo $i == $pageNum ? 'active' : ''; ?>">
+                        <a class="page-link" href="<?php echo $baseQueryString; ?>&p=<?php echo $i; ?><?php echo $search ? '&search=' . urlencode($search) : ''; ?>&debt_status=<?php echo urlencode($debtStatus); ?>"><?php echo $i; ?></a>
+                    </li>
+                <?php endfor; ?>
+                
+                <?php if ($endPage < $totalPages): ?>
+                    <?php if ($endPage < $totalPages - 1): ?>
+                        <li class="page-item disabled"><span class="page-link">...</span></li>
+                    <?php endif; ?>
+                    <li class="page-item"><a class="page-link" href="<?php echo $baseQueryString; ?>&p=<?php echo $totalPages; ?><?php echo $search ? '&search=' . urlencode($search) : ''; ?>&debt_status=<?php echo urlencode($debtStatus); ?>"><?php echo $totalPages; ?></a></li>
+                <?php endif; ?>
+                
+                <li class="page-item <?php echo $pageNum >= $totalPages ? 'disabled' : ''; ?>">
+                    <a class="page-link" href="<?php echo $baseQueryString; ?>&p=<?php echo $pageNum + 1; ?><?php echo $search ? '&search=' . urlencode($search) : ''; ?>&debt_status=<?php echo urlencode($debtStatus); ?>">
+                        <i class="bi bi-chevron-left"></i>
+                    </a>
+                </li>
+            </ul>
+        </nav>
+        <?php endif; ?>
+    </div>
+</div>
 
 <!-- Add Customer Modal -->
 <div class="modal fade" id="addCustomerModal" tabindex="-1" aria-hidden="true">

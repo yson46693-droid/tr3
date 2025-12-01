@@ -2738,15 +2738,15 @@ $pageTitle = ($view === 'advances') ? 'السلف' : (($view === 'pending') ? '�
                 // حفظ القيمة المحسوبة للمبلغ التراكمي لاستخدامها في التسوية
                 $salary['calculated_accumulated'] = $accumulated;
                 
-                if ($salaryId > 0) {
-                    // حساب مجموع جميع الرواتب السابقة (حسب التاريخ)
-                    // نضيف المتبقي من الرواتب السابقة التي لم يتم تسويتها بالكامل
-                    $yearColumnCheck = $db->queryOne("SHOW COLUMNS FROM salaries LIKE 'year'");
-                    $hasYearColumn = !empty($yearColumnCheck);
-                    
-                    if ($hasYearColumn) {
-                        // إذا كان عمود year موجوداً، استخدمه للترتيب
-                        // جلب الرواتب السابقة مع المبلغ المدفوع والمتبقي
+                // البحث عن الرواتب السابقة دائماً (حتى لو لم يكن هناك راتب محفوظ للشهر الحالي)
+                // هذا يضمن أن الرواتب التراكمية تظهر حتى لو كان الراتب الحالي "غير محسوب"
+                $yearColumnCheck = $db->queryOne("SHOW COLUMNS FROM salaries LIKE 'year'");
+                $hasYearColumn = !empty($yearColumnCheck);
+                
+                if ($hasYearColumn) {
+                    // إذا كان عمود year موجوداً، استخدمه للترتيب
+                    // جلب الرواتب السابقة مع المبلغ المدفوع والمتبقي
+                    if ($salaryId > 0) {
                         $previousSalaries = $db->query(
                             "SELECT s.total_amount, s.paid_amount, s.accumulated_amount,
                                     COALESCE(s.accumulated_amount, s.total_amount) as prev_accumulated
@@ -2757,7 +2757,20 @@ $pageTitle = ($view === 'advances') ? 'السلف' : (($view === 'pending') ? '�
                             [$userId, $salaryId, $selectedYear, $selectedYear, $selectedMonth]
                         );
                     } else {
-                        // إذا لم يكن year موجوداً، استخدم month فقط
+                        // إذا لم يكن هناك راتب محفوظ للشهر الحالي، ابحث عن جميع الرواتب السابقة
+                        $previousSalaries = $db->query(
+                            "SELECT s.total_amount, s.paid_amount, s.accumulated_amount,
+                                    COALESCE(s.accumulated_amount, s.total_amount) as prev_accumulated
+                             FROM salaries s
+                             WHERE s.user_id = ? 
+                             AND (s.year < ? OR (s.year = ? AND s.month < ?))
+                             ORDER BY s.year ASC, s.month ASC",
+                            [$userId, $selectedYear, $selectedYear, $selectedMonth]
+                        );
+                    }
+                } else {
+                    // إذا لم يكن year موجوداً، استخدم month فقط
+                    if ($salaryId > 0) {
                         $previousSalaries = $db->query(
                             "SELECT s.total_amount, s.paid_amount, s.accumulated_amount,
                                     COALESCE(s.accumulated_amount, s.total_amount) as prev_accumulated
@@ -2767,26 +2780,34 @@ $pageTitle = ($view === 'advances') ? 'السلف' : (($view === 'pending') ? '�
                              ORDER BY s.month ASC",
                             [$userId, $salaryId, $selectedMonth]
                         );
+                    } else {
+                        // إذا لم يكن هناك راتب محفوظ للشهر الحالي، ابحث عن جميع الرواتب السابقة
+                        $previousSalaries = $db->query(
+                            "SELECT s.total_amount, s.paid_amount, s.accumulated_amount,
+                                    COALESCE(s.accumulated_amount, s.total_amount) as prev_accumulated
+                             FROM salaries s
+                             WHERE s.user_id = ? 
+                             AND s.month < ?
+                             ORDER BY s.month ASC",
+                            [$userId, $selectedMonth]
+                        );
                     }
+                }
+                
+                // جمع المتبقي من الرواتب السابقة (التي لم يتم تسويتها بالكامل)
+                foreach ($previousSalaries as $prevSalary) {
+                    $prevTotal = cleanFinancialValue($prevSalary['total_amount'] ?? 0);
+                    $prevPaid = cleanFinancialValue($prevSalary['paid_amount'] ?? 0);
+                    $prevAccumulated = cleanFinancialValue($prevSalary['prev_accumulated'] ?? $prevTotal);
                     
-                    // جمع المتبقي من الرواتب السابقة (التي لم يتم تسويتها بالكامل)
-                    foreach ($previousSalaries as $prevSalary) {
-                        $prevTotal = cleanFinancialValue($prevSalary['total_amount'] ?? 0);
-                        $prevPaid = cleanFinancialValue($prevSalary['paid_amount'] ?? 0);
-                        $prevAccumulated = cleanFinancialValue($prevSalary['prev_accumulated'] ?? $prevTotal);
-                        
-                        // حساب المتبقي من الراتب السابق
-                        // المتبقي = المبلغ التراكمي السابق - المبلغ المدفوع
-                        $prevRemaining = max(0, $prevAccumulated - $prevPaid);
-                        
-                        // إضافة المتبقي إلى المبلغ التراكمي فقط إذا كان هناك متبقي
-                        if ($prevRemaining > 0.01) {
-                            $accumulated += $prevRemaining;
-                        }
+                    // حساب المتبقي من الراتب السابق
+                    // المتبقي = المبلغ التراكمي السابق - المبلغ المدفوع
+                    $prevRemaining = max(0, $prevAccumulated - $prevPaid);
+                    
+                    // إضافة المتبقي إلى المبلغ التراكمي فقط إذا كان هناك متبقي
+                    if ($prevRemaining > 0.01) {
+                        $accumulated += $prevRemaining;
                     }
-                } else {
-                    // إذا لم يكن هناك راتب محفوظ، استخدم القيمة المحسوبة فقط
-                    $accumulated = $totalAmount;
                 }
                 
                 // تحديث القيمة المحسوبة للمبلغ التراكمي
@@ -2903,14 +2924,15 @@ $pageTitle = ($view === 'advances') ? 'السلف' : (($view === 'pending') ? '�
                         $salaryId = intval($salary['id'] ?? 0);
                         $accumulated = $totalSalary; // ابدأ بالراتب الحالي
                         
-                        if ($salaryId > 0) {
-                            // حساب مجموع المتبقي من الرواتب السابقة (التي لم يتم تسويتها بالكامل)
-                            $yearColumnCheck = $db->queryOne("SHOW COLUMNS FROM salaries LIKE 'year'");
-                            $hasYearColumn = !empty($yearColumnCheck);
-                            
-                            if ($hasYearColumn) {
-                                // إذا كان عمود year موجوداً، استخدمه للترتيب
-                                // جلب الرواتب السابقة مع المبلغ المدفوع والمتبقي
+                        // البحث عن الرواتب السابقة دائماً (حتى لو لم يكن هناك راتب محفوظ للشهر الحالي)
+                        // هذا يضمن أن الرواتب التراكمية تظهر حتى لو كان الراتب الحالي "غير محسوب"
+                        $yearColumnCheck = $db->queryOne("SHOW COLUMNS FROM salaries LIKE 'year'");
+                        $hasYearColumn = !empty($yearColumnCheck);
+                        
+                        if ($hasYearColumn) {
+                            // إذا كان عمود year موجوداً، استخدمه للترتيب
+                            // جلب الرواتب السابقة مع المبلغ المدفوع والمتبقي
+                            if ($salaryId > 0) {
                                 $previousSalaries = $db->query(
                                     "SELECT s.total_amount, s.paid_amount, s.accumulated_amount,
                                             COALESCE(s.accumulated_amount, s.total_amount) as prev_accumulated
@@ -2921,7 +2943,20 @@ $pageTitle = ($view === 'advances') ? 'السلف' : (($view === 'pending') ? '�
                                     [$userId, $salaryId, $selectedYear, $selectedYear, $selectedMonth]
                                 );
                             } else {
-                                // إذا لم يكن year موجوداً، استخدم month فقط
+                                // إذا لم يكن هناك راتب محفوظ للشهر الحالي، ابحث عن جميع الرواتب السابقة
+                                $previousSalaries = $db->query(
+                                    "SELECT s.total_amount, s.paid_amount, s.accumulated_amount,
+                                            COALESCE(s.accumulated_amount, s.total_amount) as prev_accumulated
+                                     FROM salaries s
+                                     WHERE s.user_id = ? 
+                                     AND (s.year < ? OR (s.year = ? AND s.month < ?))
+                                     ORDER BY s.year ASC, s.month ASC",
+                                    [$userId, $selectedYear, $selectedYear, $selectedMonth]
+                                );
+                            }
+                        } else {
+                            // إذا لم يكن year موجوداً، استخدم month فقط
+                            if ($salaryId > 0) {
                                 $previousSalaries = $db->query(
                                     "SELECT s.total_amount, s.paid_amount, s.accumulated_amount,
                                             COALESCE(s.accumulated_amount, s.total_amount) as prev_accumulated
@@ -2931,22 +2966,33 @@ $pageTitle = ($view === 'advances') ? 'السلف' : (($view === 'pending') ? '�
                                      ORDER BY s.month ASC",
                                     [$userId, $salaryId, $selectedMonth]
                                 );
+                            } else {
+                                // إذا لم يكن هناك راتب محفوظ للشهر الحالي، ابحث عن جميع الرواتب السابقة
+                                $previousSalaries = $db->query(
+                                    "SELECT s.total_amount, s.paid_amount, s.accumulated_amount,
+                                            COALESCE(s.accumulated_amount, s.total_amount) as prev_accumulated
+                                     FROM salaries s
+                                     WHERE s.user_id = ? 
+                                     AND s.month < ?
+                                     ORDER BY s.month ASC",
+                                    [$userId, $selectedMonth]
+                                );
                             }
+                        }
+                        
+                        // جمع المتبقي من الرواتب السابقة (التي لم يتم تسويتها بالكامل)
+                        foreach ($previousSalaries as $prevSalary) {
+                            $prevTotal = cleanFinancialValue($prevSalary['total_amount'] ?? 0);
+                            $prevPaid = cleanFinancialValue($prevSalary['paid_amount'] ?? 0);
+                            $prevAccumulated = cleanFinancialValue($prevSalary['prev_accumulated'] ?? $prevTotal);
                             
-                            // جمع المتبقي من الرواتب السابقة (التي لم يتم تسويتها بالكامل)
-                            foreach ($previousSalaries as $prevSalary) {
-                                $prevTotal = cleanFinancialValue($prevSalary['total_amount'] ?? 0);
-                                $prevPaid = cleanFinancialValue($prevSalary['paid_amount'] ?? 0);
-                                $prevAccumulated = cleanFinancialValue($prevSalary['prev_accumulated'] ?? $prevTotal);
-                                
-                                // حساب المتبقي من الراتب السابق
-                                // المتبقي = المبلغ التراكمي السابق - المبلغ المدفوع
-                                $prevRemaining = max(0, $prevAccumulated - $prevPaid);
-                                
-                                // إضافة المتبقي إلى المبلغ التراكمي فقط إذا كان هناك متبقي
-                                if ($prevRemaining > 0.01) {
-                                    $accumulated += $prevRemaining;
-                                }
+                            // حساب المتبقي من الراتب السابق
+                            // المتبقي = المبلغ التراكمي السابق - المبلغ المدفوع
+                            $prevRemaining = max(0, $prevAccumulated - $prevPaid);
+                            
+                            // إضافة المتبقي إلى المبلغ التراكمي فقط إذا كان هناك متبقي
+                            if ($prevRemaining > 0.01) {
+                                $accumulated += $prevRemaining;
                             }
                         }
                         
