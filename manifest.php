@@ -1,6 +1,7 @@
 <?php
 /**
  * Serve manifest.json with correct Content-Type
+ * This file ensures the manifest is served without BOM or encoding issues
  */
 
 // إزالة أي output buffer قديم
@@ -8,9 +9,13 @@ while (ob_get_level()) {
     ob_end_clean();
 }
 
+// بدء output buffering جديد لضمان عدم وجود output قبل headers
+ob_start();
+
 // قراءة ملف manifest.json مباشرة
 $manifestPath = __DIR__ . '/manifest.json';
 if (!file_exists($manifestPath)) {
+    ob_clean();
     http_response_code(404);
     header('Content-Type: application/manifest+json; charset=utf-8');
     echo json_encode(['error' => 'Manifest not found'], JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE);
@@ -19,6 +24,7 @@ if (!file_exists($manifestPath)) {
 
 $content = @file_get_contents($manifestPath);
 if ($content === false) {
+    ob_clean();
     http_response_code(500);
     header('Content-Type: application/manifest+json; charset=utf-8');
     echo json_encode(['error' => 'Failed to read manifest'], JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE);
@@ -40,12 +46,10 @@ $content = rtrim($content);
 // إزالة أي أحرف غير مرئية أخرى في البداية
 $content = preg_replace('/^[\x00-\x1F\x7F-\x9F]+/u', '', $content);
 
-// إزالة أي أحرف غير مرئية أخرى في البداية
-$content = preg_replace('/^[\x00-\x1F\x7F-\x9F]+/u', '', $content);
-
 // التحقق من أن المحتوى JSON صحيح
 $json = @json_decode($content, true);
 if (json_last_error() !== JSON_ERROR_NONE) {
+    ob_clean();
     http_response_code(500);
     header('Content-Type: application/manifest+json; charset=utf-8');
     echo json_encode(['error' => 'Invalid JSON: ' . json_last_error_msg()], JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE);
@@ -98,6 +102,9 @@ if (isset($json['scope']) && strpos($json['scope'], $basePath) !== 0) {
 
 // تحويل JSON مرة أخرى
 $content = json_encode($json, JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE);
+
+// تنظيف output buffer قبل إرسال headers
+ob_clean();
 
 // إرسال headers
 header('Content-Type: application/manifest+json; charset=utf-8');

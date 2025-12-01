@@ -1,9 +1,13 @@
 # Apache Configuration for InfinityFree
 RewriteEngine On
 
-# استثناء manifest.json و service-worker.js من إعادة التوجيه
+# إعادة توجيه manifest.json إلى manifest.php لضمان معالجة BOM
+RewriteCond %{REQUEST_URI} manifest\.json$ [NC]
+RewriteRule ^(.*)manifest\.json$ $1manifest.php [L]
+
+# استثناء manifest.php و service-worker.js من إعادة التوجيه
 RewriteCond %{REQUEST_URI} \.(json|js)$ [OR]
-RewriteCond %{REQUEST_URI} manifest\.(json|php) [OR]
+RewriteCond %{REQUEST_URI} manifest\.php [OR]
 RewriteCond %{REQUEST_URI} service-worker\.js
 RewriteRule ^ - [L]
 
