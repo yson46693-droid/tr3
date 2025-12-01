@@ -669,13 +669,14 @@ foreach ($factoryProducts as $product) {
     }
     
     .product-card > div[style*="display: flex"] {
-        flex-direction: column;
-        gap: 8px;
+        flex-direction: row !important;
+        gap: 10px;
+        flex-wrap: wrap;
     }
     
     .product-card button {
-        width: 100% !important;
-        flex: 1 1 100% !important;
+        flex: 1 1 auto !important;
+        min-width: calc(50% - 5px);
         padding: 10px 14px !important;
         font-size: 12px !important;
     }
@@ -764,11 +765,18 @@ foreach ($factoryProducts as $product) {
     .products-grid {
         padding: 12px;
         gap: 12px;
+        width: 100% !important;
+        max-width: 100% !important;
+        box-sizing: border-box;
     }
     
     .product-card {
         padding: 15px;
         border-radius: 10px;
+        width: 100% !important;
+        max-width: 100% !important;
+        min-width: 0 !important;
+        box-sizing: border-box;
     }
     
     .product-status {
@@ -803,7 +811,14 @@ foreach ($factoryProducts as $product) {
         font-size: 12px;
     }
     
+    .product-card > div[style*="display: flex"] {
+        flex-direction: row !important;
+        gap: 8px;
+    }
+    
     .product-card button {
+        flex: 1 1 auto !important;
+        min-width: calc(50% - 4px);
         padding: 8px 12px !important;
         font-size: 11px !important;
     }
