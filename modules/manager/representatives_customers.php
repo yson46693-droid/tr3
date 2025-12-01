@@ -400,7 +400,6 @@ try {
             c.id,
             c.name,
             c.phone,
-            c.email,
             c.address,
             c.balance,
             c.created_at,

@@ -286,9 +286,8 @@ document.addEventListener('DOMContentLoaded', function() {
                 alert('حدث خطأ أثناء محاولة التثبيت: ' + error.message);
             }
         });
-    } else {
-        console.warn('Install button not found');
     }
+    // Silent fail - install button may not exist on all pages
 });
 
 // تتبع التثبيت

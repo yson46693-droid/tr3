@@ -6,7 +6,7 @@
     const closeBtn = backdrop?.querySelector("button[data-modal-close]");
 
     if (!backdrop || !iframe || !closeBtn) {
-        console.error("Modal interception disabled: required modal elements not found.");
+        // Silent fail - modal elements may not exist on all pages
         return;
     }
 
