@@ -434,24 +434,29 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     $collectionsBonus = cleanFinancialValue($salary['collections_bonus'] ?? 0);
                 }
                 
-                // الحصول على المكافآت الحالية من الراتب
-                $currentBonus = cleanFinancialValue($salary['bonus'] ?? 0);
-                // المكافآت الجديدة = المكافآت الحالية + المكافآت الجديدة المضافة
-                // (إذا كان المستخدم يريد إضافة مكافأة جديدة، يجب أن تُضاف إلى المكافآت الحالية)
-                $finalBonus = $currentBonus + $bonus;
+                // التحقق من وجود عمود bonus أولاً
+                $bonusColumnCheck = $db->queryOne("SHOW COLUMNS FROM salaries LIKE 'bonus'");
+                $hasBonusColumn = !empty($bonusColumnCheck);
                 
-                // الحصول على الخصومات الحالية من الراتب
+                // الحصول على المكافآت والخصومات الحالية من الراتب
+                $currentBonus = cleanFinancialValue($salary['bonus'] ?? 0);
                 $currentDeductions = cleanFinancialValue($salary['deductions'] ?? 0);
-                // الخصومات الجديدة = الخصومات الحالية + الخصومات الجديدة المضافة
-                $finalDeductions = $currentDeductions + $deductions;
+                
+                // حساب المكافآت والخصومات النهائية
+                if ($hasBonusColumn) {
+                    // المكافآت النهائية = المكافآت الحالية + المكافآت الجديدة المضافة
+                    $finalBonus = $currentBonus + $bonus;
+                    // الخصومات النهائية = الخصومات الحالية + الخصومات الجديدة المضافة
+                    $finalDeductions = $currentDeductions + $deductions;
+                } else {
+                    // إذا لم يكن هناك عمود bonus، استخدم القيم المضافة فقط
+                    $finalBonus = $bonus;
+                    $finalDeductions = $deductions;
+                }
                 
                 // حساب الراتب الجديد: الراتب الأساسي + المكافآت (الحالية + الجديدة) + نسبة التحصيلات - الخصومات (الحالية + الجديدة)
                 $newTotalAmount = $newBaseAmount + $finalBonus + $collectionsBonus - $finalDeductions;
                 $newTotalAmount = max(0, $newTotalAmount);
-                
-                // التحقق من وجود عمود bonus
-                $bonusColumnCheck = $db->queryOne("SHOW COLUMNS FROM salaries LIKE 'bonus'");
-                $hasBonusColumn = !empty($bonusColumnCheck);
                 
                 // إذا كان المحاسب فقط (وليس المدير)، يحتاج موافقة
                 if ($currentUser['role'] === 'accountant') {
@@ -504,15 +509,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     }
                 } else {
                     // المدير - يمكنه الموافقة مباشرة
-                    // الحصول على المكافآت والخصومات الحالية
-                    $currentBonus = cleanFinancialValue($salary['bonus'] ?? 0);
-                    $currentDeductions = cleanFinancialValue($salary['deductions'] ?? 0);
-                    
-                    // المكافآت النهائية = المكافآت الحالية + المكافآت الجديدة المضافة
-                    $finalBonus = $currentBonus + $bonus;
-                    // الخصومات النهائية = الخصومات الحالية + الخصومات الجديدة المضافة
-                    $finalDeductions = $currentDeductions + $deductions;
-                    
                     // تسجيل القيم للتأكد من صحتها
                     error_log("Modify salary - salaryId: {$salaryId}, currentBonus: {$currentBonus}, bonus: {$bonus}, finalBonus: {$finalBonus}, currentDeductions: {$currentDeductions}, deductions: {$deductions}, finalDeductions: {$finalDeductions}, newTotalAmount: {$newTotalAmount}, collectionsBonus: {$collectionsBonus}");
                     
@@ -562,15 +558,17 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     createNotification(
                         $salary['user_id'],
                         'تم تعديل راتبك',
-                        "تم تعديل راتبك للشهر " . date('F', mktime(0, 0, 0, $selectedMonth, 1)) . ". مكافأة: " . formatCurrency($bonus) . ", خصومات: " . formatCurrency($deductions),
+                        "تم تعديل راتبك للشهر " . date('F', mktime(0, 0, 0, $selectedMonth, 1)) . ". مكافأة: " . formatCurrency($finalBonus) . ", خصومات: " . formatCurrency($finalDeductions),
                         'info',
                         null,
                         false
                     );
                     
                     logAudit($currentUser['id'], 'modify_salary', 'salary', $salaryId, null, [
-                        'bonus' => $bonus,
-                        'deductions' => $deductions
+                        'bonus' => $finalBonus,
+                        'deductions' => $finalDeductions,
+                        'bonus_added' => $bonus,
+                        'deductions_added' => $deductions
                     ]);
                     
                     $_SESSION['salaries_success'] = 'تم تعديل الراتب بنجاح';
