@@ -1063,41 +1063,11 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                             
                             $quantityProduced = (float)($factoryProduct['quantity_produced'] ?? 0);
                             
-                            // حساب الكمية المباعة
-                            $soldQuantity = $db->queryOne(
-                                "SELECT COALESCE(SUM(si.quantity), 0) AS sold_qty
-                                 FROM sale_items si
-                                 INNER JOIN sales s ON si.sale_id = s.id
-                                 WHERE si.batch_id = ? AND s.status IN ('approved', 'completed')",
-                                [$batchId]
-                            );
-                            $soldQty = (float)($soldQuantity['sold_qty'] ?? 0);
-                            
-                            // حساب الكمية المحجوزة في طلبات النقل
-                            $pendingTransfers = $db->queryOne(
-                                "SELECT COALESCE(SUM(wti.quantity), 0) AS pending_quantity
-                                 FROM warehouse_transfer_items wti
-                                 INNER JOIN warehouse_transfers wt ON wt.id = wti.transfer_id
-                                 WHERE wti.batch_id = ? AND wt.status = 'pending'",
-                                [$batchId]
-                            );
-                            $pendingQty = (float)($pendingTransfers['pending_quantity'] ?? 0);
-                            
-                            // حساب الكمية المحجوزة في طلبات الشحن المعلقة
-                            $pendingShipping = $db->queryOne(
-                                "SELECT COALESCE(SUM(soi.quantity), 0) AS pending_quantity
-                                 FROM shipping_company_order_items soi
-                                 INNER JOIN shipping_company_orders sco ON soi.order_id = sco.id
-                                 WHERE soi.batch_id = ? AND sco.status IN ('assigned', 'in_transit')",
-                                [$batchId]
-                            );
-                            $pendingShippingQty = (float)($pendingShipping['pending_quantity'] ?? 0);
-                            
-                            $availableQuantity = max(0, $quantityProduced - $soldQty - $pendingQty - $pendingShippingQty);
-                            
-                            if ($availableQuantity < $requestedQuantity) {
+                            // لا نتحقق من الكمية المتاحة - نعرض جميع المنتجات بدون قيود (مثل صفحة company_products)
+                            // التحقق فقط من أن الكمية المطلوبة لا تتجاوز الكمية المنتجة
+                            if ($requestedQuantity > $quantityProduced) {
                                 $productName = $factoryProduct['name'] ?? 'غير محدد';
-                                throw new InvalidArgumentException('الكمية المتاحة للمنتج ' . $productName . ' غير كافية. المتاح: ' . number_format($availableQuantity, 2));
+                                throw new InvalidArgumentException('الكمية المطلوبة (' . number_format($requestedQuantity, 2) . ') تتجاوز الكمية المنتجة (' . number_format($quantityProduced, 2) . ') للمنتج: ' . $productName);
                             }
                         } else {
                             $productId = $normalizedItem['product_id'];
