@@ -174,7 +174,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     if ($existingCustomer) {
                         $error = 'يوجد عميل مسجل مسبقاً بنفس الاسم.';
                     } else {
-                        $db->execute(
+                        $result = $db->execute(
                             "INSERT INTO customers (name, phone, address, balance, status, created_by, rep_id, created_from_pos, created_by_admin)
                              VALUES (?, ?, ?, ?, 'active', ?, NULL, 0, 1)",
                             [
@@ -186,7 +186,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                             ]
                         );
 
-                        $customerId = (int)$db->getLastInsertId();
+                        $customerId = (int)($result['insert_id'] ?? 0);
                         if ($customerId <= 0) {
                             throw new RuntimeException('فشل إضافة العميل: لم يتم الحصول على معرف العميل.');
                         }
