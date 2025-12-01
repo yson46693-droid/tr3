@@ -24,7 +24,7 @@ if (!$salesRepId) {
 
 // جلب معلومات المندوب
 $salesRepInfo = $db->queryOne(
-    "SELECT id, full_name, username, email, phone
+    "SELECT id, full_name, username, phone
      FROM users
      WHERE id = ? AND role = 'sales'",
     [$salesRepId]
