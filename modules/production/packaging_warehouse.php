@@ -764,10 +764,7 @@ $offset = ($pageNum - 1) * $perPage;
 
 // الفلترة والبحث
 $filters = [
-    'search' => $_GET['search'] ?? '',
-    'material_id' => isset($_GET['material_id']) ? intval($_GET['material_id']) : 0,
-    'date_from' => $_GET['date_from'] ?? '',
-    'date_to' => $_GET['date_to'] ?? ''
+    'material_id' => isset($_GET['material_id']) ? intval($_GET['material_id']) : 0
 ];
 
 // التحقق من وجود جدول packaging_materials
@@ -2126,44 +2123,9 @@ $filteredMaterials = [];
 foreach ($packagingMaterials as $material) {
     $materialId = $material['id'];
     
-    // فلترة البحث
-    if (!empty($filters['search'])) {
-        $search = strtolower($filters['search']);
-        $name = strtolower($material['name'] ?? '');
-        $category = strtolower($material['category'] ?? '');
-        $type = strtolower($material['type'] ?? '');
-        $specifications = strtolower($material['specifications'] ?? '');
-        $materialIdStr = strtolower($material['material_id'] ?? '');
-        $aliasValue = strtolower($material['alias'] ?? '');
-        
-        if (strpos($name, $search) === false && 
-            strpos($category, $search) === false &&
-            strpos($type, $search) === false &&
-            strpos($specifications, $search) === false &&
-            strpos($materialIdStr, $search) === false &&
-            strpos($aliasValue, $search) === false) {
-            continue;
-        }
-    }
-    
     // فلترة حسب المادة
     if ($filters['material_id'] > 0 && $materialId != $filters['material_id']) {
         continue;
-    }
-    
-    // فلترة حسب التاريخ
-    if (!empty($filters['date_from']) || !empty($filters['date_to'])) {
-        $usage = $usageData[$materialId] ?? null;
-        if (!$usage) {
-            continue; // إذا لم تُستخدم، تخطيها
-        }
-        
-        if (!empty($filters['date_from']) && $usage['last_used'] < $filters['date_from']) {
-            continue;
-        }
-        if (!empty($filters['date_to']) && $usage['first_used'] > $filters['date_to']) {
-            continue;
-        }
     }
     
     $material['usage'] = $usageData[$materialId] ?? [
@@ -2409,13 +2371,7 @@ $packagingReportGeneratedAt = $packagingReport['generated_at'] ?? date('Y-m-d H:
     <div class="card-body">
         <form method="GET" class="row g-3">
             <input type="hidden" name="page" value="packaging_warehouse">
-            <div class="col-md-4">
-                <label class="form-label">البحث</label>
-                <input type="text" class="form-control" name="search" 
-                       value="<?php echo htmlspecialchars($filters['search']); ?>" 
-                       placeholder="اسم أو فئة...">
-            </div>
-            <div class="col-md-3">
+            <div class="col-md-6">
                 <label class="form-label">أداة محددة</label>
                 <select class="form-select" name="material_id">
                     <option value="0">جميع الأدوات</option>
@@ -2431,21 +2387,13 @@ $packagingReportGeneratedAt = $packagingReport['generated_at'] ?? date('Y-m-d H:
                     <?php endforeach; ?>
                 </select>
             </div>
-            <div class="col-md-2">
-                <label class="form-label">من تاريخ</label>
-                <input type="date" class="form-control" name="date_from" 
-                       value="<?php echo htmlspecialchars($filters['date_from']); ?>">
-            </div>
-            <div class="col-md-2">
-                <label class="form-label">إلى تاريخ</label>
-                <input type="date" class="form-control" name="date_to" 
-                       value="<?php echo htmlspecialchars($filters['date_to']); ?>">
-            </div>
-            <div class="col-md-1">
-                <label class="form-label">&nbsp;</label>
-                <button type="submit" class="btn btn-primary w-100">
-                    <i class="bi bi-search"></i>
+            <div class="col-md-6 d-flex align-items-end">
+                <button type="submit" class="btn btn-primary me-2">
+                    <i class="bi bi-search"></i> بحث
                 </button>
+                <a href="?page=packaging_warehouse" class="btn btn-secondary">
+                    <i class="bi bi-x-circle"></i> إعادة تعيين
+                </a>
             </div>
         </form>
     </div>

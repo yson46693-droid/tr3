@@ -282,6 +282,14 @@ function getConsumptionSummary($dateFrom, $dateTo)
             $isRawMaterial = isset($rawMaterialsMeta[$productId]);
         }
         
+        // فلتر مهم: تجاهل المنتجات النهائية - يجب أن يكون المنتج إما أداة تعبئة أو مادة خام
+        // إذا لم يكن المنتج موجوداً في packaging_materials أو raw_materials، فهو على الأرجح منتج نهائي
+        if (!$isPackagingMaterial && !$isRawMaterial) {
+            // تجاهل هذا المنتج لأنه ليس من أدوات التعبئة أو المواد الخام
+            // (هذا يمنع عرض المنتجات النهائية في تقارير الاستهلاك)
+            continue;
+        }
+        
         $classification = consumptionClassifyProduct($row, $packagingMap);
         if (!$classification) {
             continue;
@@ -321,6 +329,12 @@ function getConsumptionSummary($dateFrom, $dateTo)
         // ولا يجب أن يكون مادة خام
         if ($category === 'packaging' && (!$isPackagingMaterial || $isRawMaterial)) {
             // تجاهل هذا العنصر من أدوات التعبئة
+            continue;
+        }
+        
+        // التأكد من أن المنتجات النهائية لا تظهر في تقارير المواد الخام
+        if ($category === 'raw' && !$isRawMaterial) {
+            // إذا كان التصنيف raw لكن المنتج ليس مادة خام، تجاهله
             continue;
         }
         

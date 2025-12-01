@@ -26,12 +26,8 @@ $perPage = 20;
 $offset = ($pageNum - 1) * $perPage;
 
 // Filters
-$statusFilter = isset($_GET['status']) ? trim($_GET['status']) : '';
 $salesRepFilter = isset($_GET['sales_rep_id']) ? (int)$_GET['sales_rep_id'] : 0;
 $customerFilter = isset($_GET['customer_id']) ? (int)$_GET['customer_id'] : 0;
-$dateFrom = isset($_GET['date_from']) ? trim($_GET['date_from']) : '';
-$dateTo = isset($_GET['date_to']) ? trim($_GET['date_to']) : '';
-$batchFilter = isset($_GET['batch_number']) ? trim($_GET['batch_number']) : '';
 
 // Build query
 $sql = "SELECT 
@@ -58,11 +54,6 @@ $sql = "SELECT
 $params = [];
 
 // Apply filters
-if ($statusFilter && in_array($statusFilter, ['pending', 'approved', 'rejected', 'processed'])) {
-    $sql .= " AND r.status = ?";
-    $params[] = $statusFilter;
-}
-
 if ($salesRepFilter > 0) {
     $sql .= " AND r.sales_rep_id = ?";
     $params[] = $salesRepFilter;
@@ -71,21 +62,6 @@ if ($salesRepFilter > 0) {
 if ($customerFilter > 0) {
     $sql .= " AND r.customer_id = ?";
     $params[] = $customerFilter;
-}
-
-if ($dateFrom) {
-    $sql .= " AND r.return_date >= ?";
-    $params[] = $dateFrom;
-}
-
-if ($dateTo) {
-    $sql .= " AND r.return_date <= ?";
-    $params[] = $dateTo;
-}
-
-if ($batchFilter) {
-    $sql .= " AND ri.batch_number LIKE ?";
-    $params[] = "%{$batchFilter}%";
 }
 
 $sql .= " GROUP BY r.id
@@ -106,11 +82,6 @@ $countSql = "SELECT COUNT(DISTINCT r.id) as total
 
 $countParams = [];
 
-if ($statusFilter && in_array($statusFilter, ['pending', 'approved', 'rejected', 'processed'])) {
-    $countSql .= " AND r.status = ?";
-    $countParams[] = $statusFilter;
-}
-
 if ($salesRepFilter > 0) {
     $countSql .= " AND r.sales_rep_id = ?";
     $countParams[] = $salesRepFilter;
@@ -119,21 +90,6 @@ if ($salesRepFilter > 0) {
 if ($customerFilter > 0) {
     $countSql .= " AND r.customer_id = ?";
     $countParams[] = $customerFilter;
-}
-
-if ($dateFrom) {
-    $countSql .= " AND r.return_date >= ?";
-    $countParams[] = $dateFrom;
-}
-
-if ($dateTo) {
-    $countSql .= " AND r.return_date <= ?";
-    $countParams[] = $dateTo;
-}
-
-if ($batchFilter) {
-    $countSql .= " AND ri.batch_number LIKE ?";
-    $countParams[] = "%{$batchFilter}%";
 }
 
 $totalResult = $db->queryOne($countSql, $countParams);
@@ -249,18 +205,7 @@ $stats = [
                     <form method="GET" action="" class="row g-3">
                         <input type="hidden" name="page" value="returns">
                         
-                        <div class="col-md-2">
-                            <label class="form-label">الحالة</label>
-                            <select name="status" class="form-select">
-                                <option value="">جميع الحالات</option>
-                                <option value="pending" <?php echo $statusFilter === 'pending' ? 'selected' : ''; ?>>قيد المراجعة</option>
-                                <option value="approved" <?php echo $statusFilter === 'approved' ? 'selected' : ''; ?>>مقبول</option>
-                                <option value="rejected" <?php echo $statusFilter === 'rejected' ? 'selected' : ''; ?>>مرفوض</option>
-                                <option value="processed" <?php echo $statusFilter === 'processed' ? 'selected' : ''; ?>>مكتمل</option>
-                            </select>
-                        </div>
-
-                        <div class="col-md-2">
+                        <div class="col-md-4">
                             <label class="form-label">المندوب</label>
                             <select name="sales_rep_id" class="form-select">
                                 <option value="">جميع المندوبين</option>
@@ -272,7 +217,7 @@ $stats = [
                             </select>
                         </div>
 
-                        <div class="col-md-2">
+                        <div class="col-md-4">
                             <label class="form-label">العميل</label>
                             <select name="customer_id" class="form-select">
                                 <option value="">جميع العملاء</option>
@@ -284,23 +229,8 @@ $stats = [
                             </select>
                         </div>
 
-                        <div class="col-md-2">
-                            <label class="form-label">من تاريخ</label>
-                            <input type="date" name="date_from" class="form-control" value="<?php echo htmlspecialchars($dateFrom); ?>">
-                        </div>
-
-                        <div class="col-md-2">
-                            <label class="form-label">إلى تاريخ</label>
-                            <input type="date" name="date_to" class="form-control" value="<?php echo htmlspecialchars($dateTo); ?>">
-                        </div>
-
-                        <div class="col-md-2">
-                            <label class="form-label">رقم التشغيلة</label>
-                            <input type="text" name="batch_number" class="form-control" value="<?php echo htmlspecialchars($batchFilter); ?>" placeholder="البحث برقم التشغيلة">
-                        </div>
-
-                        <div class="col-md-12">
-                            <button type="submit" class="btn btn-primary">
+                        <div class="col-md-4 d-flex align-items-end">
+                            <button type="submit" class="btn btn-primary me-2">
                                 <i class="bi bi-search"></i> بحث
                             </button>
                             <a href="?page=returns" class="btn btn-secondary">

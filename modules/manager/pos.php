@@ -948,15 +948,20 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 $productId = isset($itemRow['product_id']) ? (int)$itemRow['product_id'] : 0;
                 $quantity = isset($itemRow['quantity']) ? (float)$itemRow['quantity'] : 0.0;
                 $unitPrice = isset($itemRow['unit_price']) ? (float)$itemRow['unit_price'] : 0.0;
+                $batchId = isset($itemRow['batch_id']) && !empty($itemRow['batch_id']) ? (int)$itemRow['batch_id'] : null;
 
                 if ($productId <= 0 || $quantity <= 0 || $unitPrice < 0) {
                     continue;
                 }
 
-                // تحديد إذا كان منتج مصنع (id > 1000000)
-                $batchId = null;
+                // تحديد إذا كان منتج مصنع
                 $isFactoryProduct = false;
-                if ($productId > 1000000) {
+                if (!empty($batchId)) {
+                    // إذا كان هناك batch_id، فهو منتج مصنع
+                    $isFactoryProduct = true;
+                    $batchIds[] = $batchId;
+                } elseif ($productId > 1000000) {
+                    // دعم الطريقة القديمة (id > 1000000)
                     $batchId = $productId - 1000000;
                     $isFactoryProduct = true;
                     $batchIds[] = $batchId;
@@ -1643,7 +1648,8 @@ try {
                 $factoryProductsForShipping[] = [
                     'id' => $batchId + 1000000, // استخدام رقم فريد لمنتجات المصنع
                     'batch_id' => $batchId,
-                    'name' => $displayName,
+                    'batch_number' => $batchNumber,
+                    'name' => $productName, // اسم المنتج بدون رقم التشغيلة
                     'quantity' => $availableQty,
                     'unit' => $fp['unit'] ?? 'قطعة',
                     'unit_price' => (float)($fp['unit_price'] ?? 0),
@@ -2466,58 +2472,52 @@ try {
             </div>
         </div>
 
-        <div class="card shadow-sm mb-4">
-            <div class="card-header d-flex justify-content-between align-items-center">
-                <div>
-                    <h5 class="mb-1">تسجيل طلب شحن جديد</h5>
-                    <small class="text-muted">قم بتسليم المنتجات لشركة الشحن وتتبع الدين عليها لحين استلام العميل.</small>
-                </div>
-                <button type="button" class="btn btn-outline-primary btn-sm" data-bs-toggle="modal" data-bs-target="#addShippingCompanyModal">
-                    <i class="bi bi-plus-circle me-1"></i>شركة شحن جديدة
-                </button>
+        <?php if (empty($shippingCompanies)): ?>
+            <div class="alert alert-warning d-flex align-items-center gap-2">
+                <i class="bi bi-info-circle-fill fs-5"></i>
+                <div>لم يتم إضافة شركات شحن بعد. يرجى إضافة شركة شحن قبل تسجيل الطلبات.</div>
             </div>
-            <div class="card-body">
-                <?php if (empty($shippingCompanies)): ?>
-                    <div class="alert alert-warning d-flex align-items-center gap-2 mb-0">
-                        <i class="bi bi-info-circle-fill fs-5"></i>
-                        <div>لم يتم إضافة شركات شحن بعد. يرجى إضافة شركة شحن قبل تسجيل الطلبات.</div>
-                    </div>
-                <?php elseif (empty($availableProductsForShipping)): ?>
-                    <div class="alert alert-warning d-flex align-items-center gap-2 mb-0">
-                        <i class="bi bi-box-seam fs-5"></i>
-                        <div>لا توجد منتجات متاحة في المخزن الرئيسي حالياً.</div>
-                    </div>
-                <?php elseif (empty($customers)): ?>
-                    <div class="alert alert-warning d-flex align-items-center gap-2 mb-0">
-                        <i class="bi bi-people fs-5"></i>
-                        <div>لا توجد عملاء نشطون في النظام. قم بإضافة عميل أولاً.</div>
-                    </div>
-                <?php else: ?>
-                    <form method="POST" id="shippingOrderForm" class="needs-validation" novalidate>
-                        <input type="hidden" name="action" value="create_shipping_order">
-                        <div class="row g-3 mb-3">
+        <?php elseif (empty($availableProductsForShipping)): ?>
+            <div class="alert alert-warning d-flex align-items-center gap-2">
+                <i class="bi bi-box-seam fs-5"></i>
+                <div>لا توجد منتجات متاحة في المخزن الرئيسي حالياً.</div>
+            </div>
+        <?php elseif (empty($customers)): ?>
+            <div class="alert alert-warning d-flex align-items-center gap-2">
+                <i class="bi bi-people fs-5"></i>
+                <div>لا توجد عملاء نشطون في النظام. قم بإضافة عميل أولاً.</div>
+            </div>
+        <?php else: ?>
+            <!-- نموذج POS لتسجيل طلب الشحن -->
+            <div class="shipping-pos-wrapper">
+                <form method="POST" id="shippingOrderForm" class="needs-validation" novalidate>
+                    <input type="hidden" name="action" value="create_shipping_order">
+                    
+                    <!-- معلومات الطلب الأساسية -->
+                    <div class="shipping-pos-header-card mb-4">
+                        <div class="row g-3 align-items-end">
                             <div class="col-lg-4 col-md-6">
-                                <label class="form-label">شركة الشحن <span class="text-danger">*</span></label>
+                                <label class="form-label fw-semibold">شركة الشحن <span class="text-danger">*</span></label>
                                 <div class="input-group">
-                                    <select class="form-select" name="shipping_company_id" required>
+                                    <select class="form-select form-select-lg" name="shipping_company_id" id="shippingCompanySelect" required>
                                         <option value="">اختر شركة الشحن</option>
                                         <?php foreach ($shippingCompanies as $company): ?>
-                                            <option value="<?php echo (int)$company['id']; ?>">
-                                                <?php echo htmlspecialchars($company['name']); ?>
-                                                <?php if (!empty($company['phone'])): ?>
-                                                    - <?php echo htmlspecialchars($company['phone']); ?>
-                                                <?php endif; ?>
-                                            </option>
+                                            <?php if (($company['status'] ?? '') === 'active'): ?>
+                                                <option value="<?php echo (int)$company['id']; ?>">
+                                                    <?php echo htmlspecialchars($company['name']); ?>
+                                                </option>
+                                            <?php endif; ?>
                                         <?php endforeach; ?>
                                     </select>
                                     <button class="btn btn-outline-secondary" type="button" data-bs-toggle="modal" data-bs-target="#addShippingCompanyModal" title="إضافة شركة شحن">
                                         <i class="bi bi-plus"></i>
                                     </button>
                                 </div>
+                                <small class="text-muted">أو اختر من البطاقات أعلاه</small>
                             </div>
                             <div class="col-lg-4 col-md-6">
-                                <label class="form-label">العميل <span class="text-danger">*</span></label>
-                                <select class="form-select" name="customer_id" required>
+                                <label class="form-label fw-semibold">العميل <span class="text-danger">*</span></label>
+                                <select class="form-select form-select-lg" name="customer_id" required>
                                     <option value="">اختر العميل</option>
                                     <?php foreach ($customers as $customer): ?>
                                         <option value="<?php echo (int)$customer['id']; ?>">
@@ -2527,69 +2527,130 @@ try {
                                 </select>
                             </div>
                             <div class="col-lg-4">
-                                <label class="form-label">المخزن المصدر</label>
-                                <div class="form-control bg-light">
+                                <label class="form-label fw-semibold">المخزن المصدر</label>
+                                <div class="form-control form-control-lg bg-light">
                                     <i class="bi bi-building me-1"></i>
                                     <?php echo htmlspecialchars($mainWarehouse['name'] ?? 'المخزن الرئيسي'); ?>
                                 </div>
                             </div>
                         </div>
+                    </div>
 
-                        <div class="table-responsive mb-3">
-                            <table class="table table-sm align-middle" id="shippingItemsTable">
-                                <thead class="table-light">
-                                    <tr>
-                                        <th style="min-width: 220px;">المنتج</th>
-                                        <th style="width: 110px;">المتاح</th>
-                                        <th style="width: 140px;">الكمية <span class="text-danger">*</span></th>
-                                        <th style="width: 160px;">سعر الوحدة <span class="text-danger">*</span></th>
-                                        <th style="width: 160px;">الإجمالي</th>
-                                        <th style="width: 80px;">حذف</th>
-                                    </tr>
-                                </thead>
-                                <tbody id="shippingItemsBody"></tbody>
-                            </table>
+                    <!-- المنتجات والسلة -->
+                    <div class="shipping-pos-content">
+                        <!-- بطاقات المنتجات -->
+                        <div class="shipping-pos-products-panel">
+                            <div class="shipping-pos-panel-header">
+                                <div>
+                                    <h4>المنتجات المتاحة للشحن</h4>
+                                    <p>اضغط على المنتج لإضافته إلى السلة</p>
+                                </div>
+                                <div class="shipping-pos-search">
+                                    <i class="bi bi-search"></i>
+                                    <input type="text" id="shippingProductsSearch" class="form-control" placeholder="بحث سريع عن منتج...">
+                                </div>
+                            </div>
+                            <div class="shipping-pos-product-grid" id="shippingProductGrid">
+                                <?php if (empty($availableProductsForShipping)): ?>
+                                    <div class="text-center py-5 text-muted w-100" style="grid-column: 1 / -1;">
+                                        <i class="bi bi-box-seam fs-1 d-block mb-3 opacity-25"></i>
+                                        <div>لا توجد منتجات متاحة للشحن حالياً.</div>
+                                    </div>
+                                <?php else: ?>
+                                    <?php foreach ($availableProductsForShipping as $product): ?>
+                                        <div class="shipping-pos-product-card" 
+                                             data-product-id="<?php echo (int)($product['id'] ?? 0); ?>"
+                                             data-batch-id="<?php echo !empty($product['batch_id']) ? (int)$product['batch_id'] : ''; ?>"
+                                             data-name="<?php echo htmlspecialchars($product['name'] ?? '', ENT_QUOTES); ?>"
+                                             data-available="<?php echo (float)($product['quantity'] ?? 0); ?>"
+                                             data-unit-price="<?php echo (float)($product['unit_price'] ?? 0); ?>"
+                                             data-unit="<?php echo htmlspecialchars($product['unit'] ?? 'قطعة', ENT_QUOTES); ?>">
+                                            <div class="shipping-pos-product-name"><?php echo htmlspecialchars($product['name'] ?? 'منتج'); ?></div>
+                                            <?php if (!empty($product['batch_number'])): ?>
+                                                <div class="shipping-pos-product-meta">
+                                                    <span>رقم التشغيلة</span>
+                                                    <span class="badge bg-info text-dark"><?php echo htmlspecialchars($product['batch_number']); ?></span>
+                                                </div>
+                                            <?php endif; ?>
+                                            <div class="shipping-pos-product-meta">
+                                                <span>سعر الوحدة</span>
+                                                <strong><?php echo formatCurrency((float)($product['unit_price'] ?? 0)); ?></strong>
+                                            </div>
+                                            <div class="shipping-pos-product-meta">
+                                                <span>المتاح</span>
+                                                <span class="shipping-pos-product-qty"><?php echo number_format((float)($product['quantity'] ?? 0), 2); ?></span>
+                                            </div>
+                                            <button type="button" class="btn btn-primary btn-sm w-100 mt-2 add-to-shipping-cart-btn">
+                                                <i class="bi bi-plus-circle me-1"></i>إضافة للسلة
+                                            </button>
+                                        </div>
+                                    <?php endforeach; ?>
+                                <?php endif; ?>
+                            </div>
                         </div>
 
-                        <div class="d-flex justify-content-between align-items-center flex-wrap gap-2 mb-3">
-                            <button type="button" class="btn btn-outline-primary btn-sm" id="addShippingItemBtn">
-                                <i class="bi bi-plus-circle me-1"></i>إضافة منتج
-                            </button>
-                            <div class="shipping-order-summary card bg-light border-0 px-3 py-2">
-                                <div class="d-flex align-items-center gap-3">
-                                    <div>
-                                        <div class="small text-muted">إجمالي عدد المنتجات</div>
-                                        <div class="fw-semibold" id="shippingItemsCount">0</div>
+                        <!-- السلة -->
+                        <div class="shipping-pos-cart-panel">
+                            <div class="shipping-pos-panel-header">
+                                <h4>سلة طلب الشحن</h4>
+                                <button type="button" class="btn btn-outline-danger btn-sm" id="clearShippingCartBtn">
+                                    <i class="bi bi-trash me-1"></i>تفريغ
+                                </button>
+                            </div>
+                            
+                            <div class="shipping-pos-cart-empty" id="shippingCartEmpty">
+                                <i class="bi bi-basket3 fs-1 text-muted opacity-50"></i>
+                                <p class="mt-3 mb-0 text-muted">لم يتم إضافة أي منتجات. اضغط على بطاقة المنتج لإضافتها.</p>
+                            </div>
+                            
+                            <div class="shipping-pos-cart-content d-none" id="shippingCartContent">
+                                <div class="table-responsive mb-3">
+                                    <table class="table table-sm align-middle" id="shippingItemsTable">
+                                        <thead class="table-light">
+                                            <tr>
+                                                <th>المنتج</th>
+                                                <th style="width: 100px;">الكمية</th>
+                                                <th style="width: 120px;">السعر</th>
+                                                <th style="width: 120px;">الإجمالي</th>
+                                                <th style="width: 60px;"></th>
+                                            </tr>
+                                        </thead>
+                                        <tbody id="shippingItemsBody"></tbody>
+                                    </table>
+                                </div>
+                                
+                                <div class="shipping-pos-summary-card">
+                                    <div class="d-flex justify-content-between align-items-center mb-2">
+                                        <span class="text-muted">عدد المنتجات</span>
+                                        <strong id="shippingItemsCount">0</strong>
                                     </div>
-                                    <div>
-                                        <div class="small text-muted">إجمالي الطلب</div>
-                                        <div class="fw-bold text-success" id="shippingOrderTotal"><?php echo formatCurrency(0); ?></div>
+                                    <div class="d-flex justify-content-between align-items-center pt-2 border-top">
+                                        <span class="fw-bold">إجمالي الطلب</span>
+                                        <strong class="text-success fs-5" id="shippingOrderTotal"><?php echo formatCurrency(0); ?></strong>
                                     </div>
                                 </div>
                             </div>
-                        </div>
 
-                        <div class="mb-3">
-                            <label class="form-label">ملاحظات إضافية</label>
-                            <textarea class="form-control" name="order_notes" rows="2" placeholder="أي تفاصيل إضافية لشركة الشحن أو فريق المبيعات (اختياري)"></textarea>
-                        </div>
-
-                        <div class="alert alert-info d-flex align-items-center gap-2">
-                            <i class="bi bi-info-circle-fill fs-5"></i>
-                            <div>
-                                سيتم تسجيل هذا الطلب على شركة الشحن كدين لحين تأكيد التسليم للعميل، ثم يتحول الدين إلى العميل ليتم تحصيله لاحقاً.
+                            <div class="shipping-pos-cart-footer mt-3">
+                                <div class="mb-3">
+                                    <label class="form-label">ملاحظات إضافية</label>
+                                    <textarea class="form-control" name="order_notes" rows="2" placeholder="أي تفاصيل إضافية لشركة الشحن (اختياري)"></textarea>
+                                </div>
+                                
+                                <div class="alert alert-info mb-3">
+                                    <i class="bi bi-info-circle-fill me-2"></i>
+                                    سيتم تسجيل هذا الطلب على شركة الشحن كدين لحين تأكيد التسليم للعميل.
+                                </div>
+                                
+                                <button type="submit" class="btn btn-success btn-lg w-100" id="submitShippingOrderBtn">
+                                    <i class="bi bi-send-check me-1"></i>تسجيل الطلب وتسليم المنتجات
+                                </button>
                             </div>
                         </div>
-
-                        <div class="text-end">
-                            <button type="submit" class="btn btn-success btn-lg" id="submitShippingOrderBtn">
-                                <i class="bi bi-send-check me-1"></i>تسجيل الطلب وتسليم المنتجات
-                            </button>
-                        </div>
-                    </form>
-                <?php endif; ?>
+                    </div>
+                </form>
             </div>
-        </div>
+        <?php endif; ?>
 
         <div class="card shadow-sm mb-4">
             <div class="card-header d-flex justify-content-between align-items-center">
@@ -2814,6 +2875,7 @@ try {
             const products = <?php echo json_encode(array_map(function ($product) {
                 return [
                     'id' => (int)($product['id'] ?? 0),
+                    'batch_id' => !empty($product['batch_id']) ? (int)$product['batch_id'] : null,
                     'name' => $product['name'] ?? '',
                     'quantity' => (float)($product['quantity'] ?? 0),
                     'unit_price' => (float)($product['unit_price'] ?? 0),
@@ -2822,22 +2884,19 @@ try {
             }, $availableProductsForShipping), JSON_UNESCAPED_UNICODE); ?>;
 
             const itemsBody = document.getElementById('shippingItemsBody');
-            const addItemBtn = document.getElementById('addShippingItemBtn');
             const itemsCountEl = document.getElementById('shippingItemsCount');
             const orderTotalEl = document.getElementById('shippingOrderTotal');
             const submitBtn = document.getElementById('submitShippingOrderBtn');
+            const cartEmpty = document.getElementById('shippingCartEmpty');
+            const cartContent = document.getElementById('shippingCartContent');
+            const clearCartBtn = document.getElementById('clearShippingCartBtn');
+            const productsSearch = document.getElementById('shippingProductsSearch');
 
-            if (!itemsBody || !addItemBtn) {
+            if (!itemsBody) {
                 return;
             }
 
-            if (!Array.isArray(products) || !products.length) {
-                if (submitBtn) {
-                    submitBtn.disabled = true;
-                }
-                return;
-            }
-
+            const cart = [];
             let rowIndex = 0;
 
             const formatCurrency = (value) => {
@@ -2860,42 +2919,94 @@ try {
                 });
             };
 
-            const buildProductOptions = () => {
-                return products.map(product => {
-                    const available = Number(product.quantity || 0).toFixed(2);
-                    const unitPrice = Number(product.unit_price || 0).toFixed(2);
-                    const unit = escapeHtml(product.unit || 'وحدة');
-                    const name = escapeHtml(product.name || '');
-                    return `
-                        <option value="${product.id}" data-available="${available}" data-unit-price="${unitPrice}">
-                            ${name} (المتاح: ${available} ${unit})
-                        </option>
-                    `;
-                }).join('');
+            const findProductById = (productId) => {
+                return products.find(p => p.id === productId);
             };
 
-            const recalculateTotals = () => {
-                const rows = itemsBody.querySelectorAll('tr');
+            const renderCart = () => {
+                if (cart.length === 0) {
+                    if (cartEmpty) cartEmpty.classList.remove('d-none');
+                    if (cartContent) cartContent.classList.add('d-none');
+                    if (submitBtn) submitBtn.disabled = true;
+                    return;
+                }
+
+                if (cartEmpty) cartEmpty.classList.add('d-none');
+                if (cartContent) cartContent.classList.remove('d-none');
+                if (submitBtn) submitBtn.disabled = false;
+
+                itemsBody.innerHTML = '';
                 let totalItems = 0;
                 let totalAmount = 0;
 
-                rows.forEach(row => {
-                    const quantityInput = row.querySelector('input[name$="[quantity]"]');
-                    const unitPriceInput = row.querySelector('input[name$="[unit_price]"]');
-                    const lineTotalEl = row.querySelector('.line-total');
+                cart.forEach((item, index) => {
+                    const product = findProductById(item.product_id);
+                    if (!product) return;
 
-                    const quantity = parseFloat(quantityInput?.value || '0');
-                    const unitPrice = parseFloat(unitPriceInput?.value || '0');
-                    const lineTotal = quantity * unitPrice;
-
-                    if (quantity > 0) {
-                        totalItems += quantity;
-                    }
+                    const lineTotal = item.quantity * item.unit_price;
+                    totalItems += item.quantity;
                     totalAmount += lineTotal;
 
-                    if (lineTotalEl) {
-                        lineTotalEl.textContent = formatCurrency(lineTotal);
-                    }
+                    const row = document.createElement('tr');
+                    row.innerHTML = `
+                        <td>
+                            <div class="fw-semibold">${escapeHtml(product.name)}</div>
+                        </td>
+                        <td>
+                            <input type="number" class="form-control form-control-sm" 
+                                   name="items[${index}][quantity]" 
+                                   value="${item.quantity.toFixed(2)}" 
+                                   step="0.01" min="0.01" max="${product.quantity}" 
+                                   required
+                                   data-cart-index="${index}">
+                            <input type="hidden" name="items[${index}][product_id]" value="${item.product_id}">
+                            ${item.batch_id ? `<input type="hidden" name="items[${index}][batch_id]" value="${item.batch_id}">` : ''}
+                        </td>
+                        <td>
+                            <input type="number" class="form-control form-control-sm" 
+                                   name="items[${index}][unit_price]" 
+                                   value="${item.unit_price.toFixed(2)}" 
+                                   step="0.01" min="0" required
+                                   data-cart-index="${index}">
+                        </td>
+                        <td class="fw-semibold line-total">${formatCurrency(lineTotal)}</td>
+                        <td>
+                            <button type="button" class="btn btn-outline-danger btn-sm remove-cart-item" data-cart-index="${index}" title="حذف">
+                                <i class="bi bi-trash"></i>
+                            </button>
+                        </td>
+                    `;
+
+                    // إضافة أحداث الصف
+                    const quantityInput = row.querySelector('input[name$="[quantity]"]');
+                    const unitPriceInput = row.querySelector('input[name$="[unit_price]"]');
+                    const removeBtn = row.querySelector('.remove-cart-item');
+
+                    quantityInput?.addEventListener('input', function() {
+                        const idx = parseInt(this.dataset.cartIndex);
+                        if (cart[idx]) {
+                            cart[idx].quantity = Math.max(0.01, Math.min(parseFloat(this.value) || 0, product.quantity));
+                            this.value = cart[idx].quantity.toFixed(2);
+                            renderCart();
+                        }
+                    });
+
+                    unitPriceInput?.addEventListener('input', function() {
+                        const idx = parseInt(this.dataset.cartIndex);
+                        if (cart[idx]) {
+                            cart[idx].unit_price = Math.max(0, parseFloat(this.value) || 0);
+                            this.value = cart[idx].unit_price.toFixed(2);
+                            renderCart();
+                        }
+                    });
+
+                    removeBtn?.addEventListener('click', function() {
+                        const idx = parseInt(this.dataset.cartIndex);
+                        cart.splice(idx, 1);
+                        renderCart();
+                    });
+
+                    itemsBody.appendChild(row);
                 });
 
                 if (itemsCountEl) {
@@ -2906,93 +3017,70 @@ try {
                 }
             };
 
-            const attachRowEvents = (row) => {
-                const productSelect = row.querySelector('select[name$="[product_id]"]');
-                const quantityInput = row.querySelector('input[name$="[quantity]"]');
-                const unitPriceInput = row.querySelector('input[name$="[unit_price]"]');
-                const availableBadges = row.querySelectorAll('.available-qty');
-                const removeBtn = row.querySelector('.remove-item');
+            // إضافة منتج من البطاقة
+            const productCards = document.querySelectorAll('.shipping-pos-product-card');
+            productCards.forEach(card => {
+                const addBtn = card.querySelector('.add-to-shipping-cart-btn');
+                if (addBtn) {
+                    addBtn.addEventListener('click', function(e) {
+                        e.stopPropagation();
+                        const productId = parseInt(card.dataset.productId);
+                        const batchId = card.dataset.batchId ? parseInt(card.dataset.batchId) : null;
+                        const product = findProductById(productId);
+                        
+                        if (!product) return;
 
-                const updateAvailability = () => {
-                    const selectedOption = productSelect?.selectedOptions?.[0];
-                    const available = parseFloat(selectedOption?.dataset?.available || '0');
-                    const unitPrice = parseFloat(selectedOption?.dataset?.unitPrice || '0');
-
-                    if (quantityInput) {
-                        quantityInput.max = available > 0 ? String(available) : '';
-                        if (available > 0 && parseFloat(quantityInput.value || '0') > available) {
-                            quantityInput.value = available;
+                        // التحقق من وجود المنتج في السلة
+                        const existingIndex = cart.findIndex(item => item.product_id === productId && item.batch_id === batchId);
+                        
+                        if (existingIndex >= 0) {
+                            // زيادة الكمية
+                            const maxQty = parseFloat(card.dataset.available || 0);
+                            const currentQty = cart[existingIndex].quantity;
+                            if (currentQty < maxQty) {
+                                cart[existingIndex].quantity = Math.min(currentQty + 1, maxQty);
+                            }
+                        } else {
+                            // إضافة منتج جديد
+                            cart.push({
+                                product_id: productId,
+                                batch_id: batchId,
+                                quantity: 1,
+                                unit_price: parseFloat(card.dataset.unitPrice || 0)
+                            });
                         }
-                    }
-
-                    if (unitPriceInput && (!unitPriceInput.value || parseFloat(unitPriceInput.value) <= 0)) {
-                        unitPriceInput.value = unitPrice.toFixed(2);
-                    }
-
-                    if (availableBadges.length) {
-                        const message = selectedOption && available > 0
-                            ? `المتاح: ${available.toLocaleString('ar-EG')} وحدة`
-                            : 'لا توجد كمية متاحة';
-                        availableBadges.forEach((badge) => {
-                            badge.textContent = message;
-                            badge.classList.toggle('text-danger', !(selectedOption && available > 0));
-                        });
-                    }
-
-                    recalculateTotals();
-                };
-
-                productSelect?.addEventListener('change', updateAvailability);
-                quantityInput?.addEventListener('input', recalculateTotals);
-                unitPriceInput?.addEventListener('input', recalculateTotals);
-
-                removeBtn?.addEventListener('click', () => {
-                    if (itemsBody.children.length > 1) {
-                        row.remove();
-                        recalculateTotals();
-                    }
-                });
-
-                updateAvailability();
-            };
-
-            const addNewRow = () => {
-                const row = document.createElement('tr');
-                row.innerHTML = `
-                    <td>
-                        <select class="form-select" name="items[${rowIndex}][product_id]" required>
-                            <option value="">اختر المنتج</option>
-                            ${buildProductOptions()}
-                        </select>
-                    </td>
-                    <td class="text-muted fw-semibold">
-                        <span class="available-qty d-inline-block">-</span>
-                    </td>
-                    <td>
-                        <input type="number" class="form-control" name="items[${rowIndex}][quantity]" step="0.01" min="0.01" value="1" required>
-                    </td>
-                    <td>
-                        <input type="number" class="form-control" name="items[${rowIndex}][unit_price]" step="0.01" min="0" required>
-                    </td>
-                    <td class="fw-semibold line-total">${formatCurrency(0)}</td>
-                    <td>
-                        <button type="button" class="btn btn-outline-danger btn-sm remove-item" title="حذف المنتج">
-                            <i class="bi bi-trash"></i>
-                        </button>
-                    </td>
-                `;
-
-                itemsBody.appendChild(row);
-                attachRowEvents(row);
-                rowIndex += 1;
-                recalculateTotals();
-            };
-
-            addItemBtn.addEventListener('click', () => {
-                addNewRow();
+                        
+                        renderCart();
+                    });
+                }
             });
 
-            addNewRow();
+            // تفريغ السلة
+            if (clearCartBtn) {
+                clearCartBtn.addEventListener('click', () => {
+                    if (confirm('هل أنت متأكد من تفريغ السلة؟')) {
+                        cart.length = 0;
+                        renderCart();
+                    }
+                });
+            }
+
+            // البحث في المنتجات
+            if (productsSearch) {
+                productsSearch.addEventListener('input', function() {
+                    const searchTerm = this.value.toLowerCase().trim();
+                    productCards.forEach(card => {
+                        const name = (card.dataset.name || '').toLowerCase();
+                        if (name.includes(searchTerm)) {
+                            card.style.display = '';
+                        } else {
+                            card.style.display = 'none';
+                        }
+                    });
+                });
+            }
+
+            renderCart();
         })();
         </script>
     </div>
@@ -3665,6 +3753,181 @@ try {
     
     .shipping-company-name {
         font-size: 1rem;
+    }
+}
+
+/* أنماط نموذج POS لطلبات الشحن */
+.shipping-pos-wrapper {
+    display: flex;
+    flex-direction: column;
+    gap: 1.5rem;
+}
+
+.shipping-pos-header-card {
+    background: #ffffff;
+    border-radius: 16px;
+    padding: 1.5rem;
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.08);
+    border: 1px solid #e5e7eb;
+}
+
+.shipping-pos-content {
+    display: grid;
+    grid-template-columns: 1fr 400px;
+    gap: 1.5rem;
+}
+
+.shipping-pos-products-panel,
+.shipping-pos-cart-panel {
+    background: #ffffff;
+    border-radius: 16px;
+    padding: 1.5rem;
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.08);
+    border: 1px solid #e5e7eb;
+}
+
+.shipping-pos-panel-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 1.5rem;
+    flex-wrap: wrap;
+    gap: 1rem;
+}
+
+.shipping-pos-panel-header h4 {
+    margin: 0;
+    font-weight: 700;
+    color: #1f2937;
+    font-size: 1.25rem;
+}
+
+.shipping-pos-panel-header p {
+    margin: 0.25rem 0 0 0;
+    color: #6b7280;
+    font-size: 0.9rem;
+}
+
+.shipping-pos-search {
+    position: relative;
+    flex: 1;
+    min-width: 250px;
+}
+
+.shipping-pos-search input {
+    border-radius: 10px;
+    padding-right: 2.5rem;
+    height: 2.75rem;
+}
+
+.shipping-pos-search i {
+    position: absolute;
+    right: 1rem;
+    top: 50%;
+    transform: translateY(-50%);
+    color: #9ca3af;
+}
+
+.shipping-pos-product-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+    gap: 1rem;
+    max-height: 600px;
+    overflow-y: auto;
+    padding: 0.5rem;
+}
+
+.shipping-pos-product-card {
+    background: #f8f9fa;
+    border: 2px solid #e5e7eb;
+    border-radius: 12px;
+    padding: 1rem;
+    transition: all 0.2s ease;
+    cursor: pointer;
+}
+
+.shipping-pos-product-card:hover {
+    transform: translateY(-2px);
+    border-color: #0d6efd;
+    box-shadow: 0 4px 12px rgba(13, 110, 253, 0.15);
+    background: #ffffff;
+}
+
+.shipping-pos-product-name {
+    font-size: 1rem;
+    font-weight: 600;
+    color: #1f2937;
+    margin-bottom: 0.75rem;
+}
+
+.shipping-pos-product-meta {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 0.5rem;
+    font-size: 0.85rem;
+    color: #4b5563;
+}
+
+.shipping-pos-product-meta strong {
+    color: #0d6efd;
+    font-weight: 600;
+}
+
+.shipping-pos-product-qty {
+    color: #059669;
+    font-weight: 600;
+}
+
+.shipping-pos-cart-empty {
+    text-align: center;
+    padding: 3rem 1rem;
+    color: #9ca3af;
+}
+
+.shipping-pos-cart-empty i {
+    display: block;
+    margin-bottom: 1rem;
+}
+
+.shipping-pos-cart-content {
+    max-height: 450px;
+    overflow-y: auto;
+}
+
+.shipping-pos-summary-card {
+    background: linear-gradient(135deg, #f0f7ff 0%, #e0f2fe 100%);
+    border-radius: 12px;
+    padding: 1rem;
+    border: 1px solid #bae6fd;
+}
+
+.shipping-pos-cart-footer {
+    margin-top: auto;
+    padding-top: 1rem;
+    border-top: 1px solid #e5e7eb;
+}
+
+@media (max-width: 992px) {
+    .shipping-pos-content {
+        grid-template-columns: 1fr;
+    }
+    
+    .shipping-pos-cart-panel {
+        order: -1;
+    }
+}
+
+@media (max-width: 768px) {
+    .shipping-pos-product-grid {
+        grid-template-columns: repeat(auto-fill, minmax(180px, 1fr));
+        gap: 0.75rem;
+    }
+    
+    .shipping-pos-header-card,
+    .shipping-pos-products-panel,
+    .shipping-pos-cart-panel {
+        padding: 1rem;
     }
 }
 </style>

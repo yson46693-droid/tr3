@@ -1297,8 +1297,10 @@ if ($nutsSummary || $mixedNutsSummary) {
     $rawWarehouseReport['zero_items'] += (int)($nutsSummary['zero_items'] ?? 0);
 }
 
-// Sesame summary
+// Sesame summary (includes Tahini)
 $sesameSummary = null;
+$tahiniSummary = null;
+
 if ($sesameStockTableReady) {
     $sesameSummary = $rawReportQueryOne($db, "
         SELECT 
@@ -1309,36 +1311,163 @@ if ($sesameStockTableReady) {
         FROM sesame_stock
     ");
 }
-if ($sesameSummary) {
+
+// Tahini summary
+if (!isset($tahiniStockTableReady)) {
+    $tahiniStockTableReady = function_exists('ensureTahiniStockTable') ? ensureTahiniStockTable() : false;
+}
+if ($tahiniStockTableReady) {
+    $tahiniSummary = $rawReportQueryOne($db, "
+        SELECT 
+            COALESCE(SUM(quantity), 0) AS total_quantity,
+            COUNT(*) AS records,
+            COUNT(DISTINCT supplier_id) AS suppliers,
+            SUM(CASE WHEN COALESCE(quantity,0) <= 0 THEN 1 ELSE 0 END) AS zero_items
+        FROM tahini_stock
+    ");
+}
+
+// Combine Sesame and Tahini in one section
+if ($sesameSummary || $tahiniSummary) {
     $sectionKey = 'sesame';
     $rawWarehouseReport['sections_order'][] = $sectionKey;
+    
+    $totalSesameQuantity = (float)($sesameSummary['total_quantity'] ?? 0);
+    $totalTahiniQuantity = (float)($tahiniSummary['total_quantity'] ?? 0);
+    $totalQuantity = $totalSesameQuantity + $totalTahiniQuantity;
+    
+    $sesameRecords = (int)($sesameSummary['records'] ?? 0);
+    $tahiniRecords = (int)($tahiniSummary['records'] ?? 0);
+    $totalRecords = $sesameRecords + $tahiniRecords;
+    
+    $sesameSuppliers = (int)($sesameSummary['suppliers'] ?? 0);
+    $tahiniSuppliers = (int)($tahiniSummary['suppliers'] ?? 0);
+    // Get unique suppliers count
+    $uniqueSuppliers = 0;
+    if ($sesameStockTableReady && $tahiniStockTableReady) {
+        $uniqueSuppliersResult = $rawReportQueryOne($db, "
+            SELECT COUNT(DISTINCT supplier_id) AS total
+            FROM (
+                SELECT supplier_id FROM sesame_stock
+                UNION
+                SELECT supplier_id FROM tahini_stock
+            ) AS combined_suppliers
+        ");
+        $uniqueSuppliers = (int)($uniqueSuppliersResult['total'] ?? max($sesameSuppliers, $tahiniSuppliers));
+    } else {
+        $uniqueSuppliers = max($sesameSuppliers, $tahiniSuppliers);
+    }
+    
+    $zeroItems = (int)($sesameSummary['zero_items'] ?? 0) + (int)($tahiniSummary['zero_items'] ?? 0);
+    
+    // Get top items for sesame
+    $topSesameItems = [];
+    if ($sesameStockTableReady && $totalSesameQuantity > 0) {
+        $topSesameQuery = $rawReportQuery($db, "
+            SELECT 
+                s.name AS supplier_name,
+                ss.quantity,
+                ss.notes
+            FROM sesame_stock ss
+            LEFT JOIN suppliers s ON ss.supplier_id = s.id
+            WHERE ss.quantity > 0
+            ORDER BY ss.quantity DESC
+            LIMIT 10
+        ");
+        foreach ($topSesameQuery as $item) {
+            $topSesameItems[] = [
+                'label' => 'سمسم - ' . ($item['supplier_name'] ?? 'مورد غير محدد'),
+                'value' => (float)($item['quantity'] ?? 0),
+                'unit' => 'كجم',
+                'decimals' => 3
+            ];
+        }
+    }
+    
+    // Get top items for tahini
+    $topTahiniItems = [];
+    if ($tahiniStockTableReady && $totalTahiniQuantity > 0) {
+        $topTahiniQuery = $rawReportQuery($db, "
+            SELECT 
+                s.name AS supplier_name,
+                ts.quantity,
+                ts.notes
+            FROM tahini_stock ts
+            LEFT JOIN suppliers s ON ts.supplier_id = s.id
+            WHERE ts.quantity > 0
+            ORDER BY ts.quantity DESC
+            LIMIT 10
+        ");
+        foreach ($topTahiniQuery as $item) {
+            $topTahiniItems[] = [
+                'label' => 'طحينة - ' . ($item['supplier_name'] ?? 'مورد غير محدد'),
+                'value' => (float)($item['quantity'] ?? 0),
+                'unit' => 'كجم',
+                'decimals' => 3
+            ];
+        }
+    }
+    
+    // Combine top items
+    $topItems = array_merge($topSesameItems, $topTahiniItems);
+    // Sort by value descending
+    usort($topItems, function($a, $b) {
+        return ($b['value'] ?? 0) <=> ($a['value'] ?? 0);
+    });
+    // Limit to top 10
+    $topItems = array_slice($topItems, 0, 10);
+    
     $rawWarehouseReport['sections'][$sectionKey] = [
-        'title' => 'السمسم',
-        'records' => (int)($sesameSummary['records'] ?? 0),
+        'title' => 'السمسم والطحينة',
+        'records' => $totalRecords,
         'metrics' => [
             [
-                'label' => 'إجمالي المخزون',
-                'value' => (float)($sesameSummary['total_quantity'] ?? 0),
+                'label' => 'إجمالي مخزون السمسم',
+                'value' => $totalSesameQuantity,
                 'unit' => 'كجم',
                 'decimals' => 3
             ],
             [
-                'label' => 'عدد السجلات',
-                'value' => (int)($sesameSummary['records'] ?? 0),
+                'label' => 'إجمالي مخزون الطحينة',
+                'value' => $totalTahiniQuantity,
+                'unit' => 'كجم',
+                'decimals' => 3
+            ],
+            [
+                'label' => 'إجمالي المخزون',
+                'value' => $totalQuantity,
+                'unit' => 'كجم',
+                'decimals' => 3
+            ],
+            [
+                'label' => 'عدد سجلات السمسم',
+                'value' => $sesameRecords,
+                'unit' => null,
+                'decimals' => 0
+            ],
+            [
+                'label' => 'عدد سجلات الطحينة',
+                'value' => $tahiniRecords,
+                'unit' => null,
+                'decimals' => 0
+            ],
+            [
+                'label' => 'إجمالي السجلات',
+                'value' => $totalRecords,
                 'unit' => null,
                 'decimals' => 0
             ],
             [
                 'label' => 'عدد الموردين',
-                'value' => (int)($sesameSummary['suppliers'] ?? 0),
+                'value' => $uniqueSuppliers,
                 'unit' => null,
                 'decimals' => 0
             ]
         ],
-        'top_items' => []
+        'top_items' => $topItems
     ];
-    $rawWarehouseReport['total_records'] += (int)($sesameSummary['records'] ?? 0);
-    $rawWarehouseReport['zero_items'] += (int)($sesameSummary['zero_items'] ?? 0);
+    $rawWarehouseReport['total_records'] += $totalRecords;
+    $rawWarehouseReport['zero_items'] += $zeroItems;
 }
 
 $rawWarehouseReport['sections_count'] = count($rawWarehouseReport['sections']);
@@ -3847,6 +3976,113 @@ $rawMaterialsReportGeneratedAt = $rawWarehouseReport['generated_at'] ?? date('Y-
 @media (max-width: 576px) {
     .scrollable-modal-body {
         max-height: calc(100vh - 160px);
+    }
+    
+    /* تحسينات الجداول على الهاتف */
+    .table-responsive {
+        /* السماح بالسكرول الأفقي فقط للجداول ذات الحقول الكثيرة */
+        overflow-x: auto;
+        -webkit-overflow-scrolling: touch;
+    }
+    
+    /* تقليل المسافات بين حقول الجداول */
+    .table th,
+    .table td {
+        padding: 0.5rem 0.4rem !important;
+        font-size: 0.85rem !important;
+        white-space: nowrap;
+    }
+    
+    /* تقليل المسافات في رؤوس الجداول */
+    .table thead th {
+        padding: 0.6rem 0.4rem !important;
+        font-size: 0.8rem !important;
+        font-weight: 600;
+    }
+    
+    /* تحسين الأزرار في الجداول */
+    .table .btn {
+        padding: 0.25rem 0.5rem !important;
+        font-size: 0.75rem !important;
+    }
+    
+    .table .btn-group-vertical .btn {
+        padding: 0.3rem 0.4rem !important;
+        font-size: 0.7rem !important;
+        margin-bottom: 0.2rem !important;
+    }
+    
+    /* تحسين الشارات (badges) في الجداول */
+    .table .badge {
+        padding: 0.25rem 0.5rem !important;
+        font-size: 0.7rem !important;
+    }
+    
+    /* تقليل المسافات في صفوف الجداول */
+    .table tbody tr {
+        border-bottom: 1px solid #dee2e6;
+    }
+    
+    /* تحسين عرض النصوص الطويلة */
+    .table td strong {
+        font-size: 0.85rem;
+        display: block;
+    }
+    
+    .table td small {
+        font-size: 0.7rem;
+        display: block;
+        margin-top: 0.2rem;
+    }
+}
+
+/* تحسينات إضافية للشاشات الصغيرة جداً */
+@media (max-width: 480px) {
+    .table th,
+    .table td {
+        padding: 0.4rem 0.3rem !important;
+        font-size: 0.8rem !important;
+    }
+    
+    .table thead th {
+        padding: 0.5rem 0.3rem !important;
+        font-size: 0.75rem !important;
+    }
+    
+    .table .btn {
+        padding: 0.2rem 0.4rem !important;
+        font-size: 0.7rem !important;
+    }
+    
+    .table .btn i {
+        font-size: 0.75rem;
+    }
+}
+
+/* للجداول ذات الحقول القليلة - منع السكرول الأفقي على الشاشات المتوسطة */
+@media (max-width: 768px) {
+    .table-responsive {
+        /* السماح بالسكرول فقط عند الحاجة */
+        overflow-x: auto;
+    }
+    
+    /* الجداول الصغيرة (3-4 أعمدة) يمكن أن تعرض بدون سكرول على الشاشات المتوسطة */
+    .table-responsive table {
+        min-width: auto;
+    }
+}
+
+/* تحسينات إضافية للشاشات الصغيرة جداً */
+@media (max-width: 400px) {
+    .table th,
+    .table td {
+        padding: 0.35rem 0.25rem !important;
+        font-size: 0.75rem !important;
+    }
+    
+    .table thead th {
+        padding: 0.45rem 0.25rem !important;
+        font-size: 0.7rem !important;
     }
 }
 </style>
@@ -6611,6 +6847,87 @@ observer.observe(document.body, {
             window.location.href = currentUrl.toString();
         }, 3000);
     }
+})();
+</script>
+
+<!-- تحسين استجابة الجداول على الهاتف -->
+<script>
+(function() {
+    /**
+     * تحسين عرض الجداول على الهاتف
+     * - تقليل السكرول الأفقي للجداول ذات الحقول القليلة
+     * - السماح بالسكرول فقط للجداول ذات الحقول الكثيرة
+     */
+    function optimizeTablesForMobile() {
+        const tableResponsiveContainers = document.querySelectorAll('.table-responsive');
+        
+        tableResponsiveContainers.forEach(function(container) {
+            const table = container.querySelector('table');
+            if (!table) return;
+            
+            const headerRow = table.querySelector('thead tr');
+            if (!headerRow) return;
+            
+            // حساب عدد الأعمدة
+            const columnCount = headerRow.querySelectorAll('th').length;
+            
+            // على الشاشات الصغيرة (أقل من 768px)
+            if (window.innerWidth <= 768) {
+                // الجداول التي تحتوي على 4 أعمدة أو أقل - لا تحتاج سكرول أفقي
+                if (columnCount <= 4) {
+                    // محاولة جعل الجدول يتناسب مع العرض
+                    container.style.overflowX = 'visible';
+                    table.style.minWidth = 'auto';
+                    table.style.width = '100%';
+                } else {
+                    // الجداول التي تحتوي على أكثر من 4 أعمدة - تحتاج سكرول أفقي
+                    container.style.overflowX = 'auto';
+                }
+            } else {
+                // على الشاشات الكبيرة - السماح بالسكرول عند الحاجة
+                container.style.overflowX = 'auto';
+            }
+        });
+    }
+    
+    // تشغيل الدالة عند تحميل الصفحة
+    if (document.readyState === 'loading') {
+        document.addEventListener('DOMContentLoaded', optimizeTablesForMobile);
+    } else {
+        optimizeTablesForMobile();
+    }
+    
+    // إعادة تشغيل الدالة عند تغيير حجم النافذة
+    let resizeTimeout;
+    window.addEventListener('resize', function() {
+        clearTimeout(resizeTimeout);
+        resizeTimeout = setTimeout(optimizeTablesForMobile, 250);
+    });
+    
+    // إعادة تشغيل الدالة عند إضافة محتوى ديناميكي (مثل الجداول في modals)
+    const observer = new MutationObserver(function(mutations) {
+        let shouldOptimize = false;
+        mutations.forEach(function(mutation) {
+            if (mutation.addedNodes.length > 0) {
+                mutation.addedNodes.forEach(function(node) {
+                    if (node.nodeType === 1 && (
+                        node.classList.contains('table-responsive') ||
+                        node.querySelector('.table-responsive')
+                    )) {
+                        shouldOptimize = true;
+                    }
+                });
+            }
+        });
+        if (shouldOptimize) {
+            setTimeout(optimizeTablesForMobile, 100);
+        }
+    });
+    
+    observer.observe(document.body, {
+        childList: true,
+        subtree: true
+    });
 })();
 </script>
 

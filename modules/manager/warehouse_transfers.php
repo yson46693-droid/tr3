@@ -71,10 +71,7 @@ $offset = ($pageNum - 1) * $perPage;
 
 // البحث والفلترة
 $filters = [
-    'from_warehouse_id' => $_GET['from_warehouse_id'] ?? '',
-    'to_warehouse_id' => $_GET['to_warehouse_id'] ?? '',
     'status' => $_GET['status'] ?? '',
-    'transfer_type' => $_GET['transfer_type'] ?? '',
     'date_from' => $_GET['date_from'] ?? '',
     'date_to' => $_GET['date_to'] ?? ''
 ];
@@ -725,24 +722,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 $countSql = "SELECT COUNT(*) as total FROM warehouse_transfers wt WHERE 1=1";
 $countParams = [];
 
-if (!empty($filters['from_warehouse_id'])) {
-    $countSql .= " AND wt.from_warehouse_id = ?";
-    $countParams[] = $filters['from_warehouse_id'];
-}
-
-if (!empty($filters['to_warehouse_id'])) {
-    $countSql .= " AND wt.to_warehouse_id = ?";
-    $countParams[] = $filters['to_warehouse_id'];
-}
-
 if (!empty($filters['status'])) {
     $countSql .= " AND wt.status = ?";
     $countParams[] = $filters['status'];
-}
-
-if (!empty($filters['transfer_type'])) {
-    $countSql .= " AND wt.transfer_type = ?";
-    $countParams[] = $filters['transfer_type'];
 }
 
 if (!empty($filters['date_from'])) {
@@ -1465,22 +1447,6 @@ if (isset($_GET['id'])) {
                 <input type="hidden" name="section" value="<?php echo htmlspecialchars($warehouseTransfersSectionParam); ?>">
             <?php endif; ?>
             <div class="col-md-3">
-                <label class="form-label">من المخزن</label>
-                <select class="form-select" name="from_warehouse_id">
-                    <option value="">جميع المخازن</option>
-                    <?php 
-                    require_once __DIR__ . '/../../includes/path_helper.php';
-                    $selectedFromWarehouse = isset($filters['from_warehouse_id']) ? intval($filters['from_warehouse_id']) : 0;
-                    $fromWarehouseValid = isValidSelectValue($selectedFromWarehouse, $warehouses, 'id');
-                    foreach ($warehouses as $warehouse): ?>
-                        <option value="<?php echo $warehouse['id']; ?>" 
-                                <?php echo $fromWarehouseValid && $selectedFromWarehouse == $warehouse['id'] ? 'selected' : ''; ?>>
-                            <?php echo htmlspecialchars($warehouse['name']); ?>
-                        </option>
-                    <?php endforeach; ?>
-                </select>
-            </div>
-            <div class="col-md-2">
                 <label class="form-label">الحالة</label>
                 <select class="form-select" name="status">
                     <option value="">جميع الحالات</option>
@@ -1490,30 +1456,23 @@ if (isset($_GET['id'])) {
                     <option value="rejected" <?php echo ($filters['status'] ?? '') === 'rejected' ? 'selected' : ''; ?>>مرفوض</option>
                 </select>
             </div>
-            <div class="col-md-2">
-                <label class="form-label">نوع النقل</label>
-                <select class="form-select" name="transfer_type">
-                    <option value="">جميع الأنواع</option>
-                    <option value="to_vehicle" <?php echo ($filters['transfer_type'] ?? '') === 'to_vehicle' ? 'selected' : ''; ?>>إلى سيارة</option>
-                    <option value="from_vehicle" <?php echo ($filters['transfer_type'] ?? '') === 'from_vehicle' ? 'selected' : ''; ?>>من سيارة</option>
-                    <option value="between_warehouses" <?php echo ($filters['transfer_type'] ?? '') === 'between_warehouses' ? 'selected' : ''; ?>>بين مخازن</option>
-                </select>
-            </div>
-            <div class="col-md-2">
+            <div class="col-md-3">
                 <label class="form-label">من تاريخ</label>
                 <input type="date" class="form-control" name="date_from" 
                        value="<?php echo htmlspecialchars($filters['date_from'] ?? ''); ?>">
             </div>
-            <div class="col-md-2">
+            <div class="col-md-3">
                 <label class="form-label">إلى تاريخ</label>
                 <input type="date" class="form-control" name="date_to" 
                        value="<?php echo htmlspecialchars($filters['date_to'] ?? ''); ?>">
             </div>
-            <div class="col-md-1">
-                <label class="form-label">&nbsp;</label>
-                <button type="submit" class="btn btn-primary w-100">
-                    <i class="bi bi-search"></i>
+            <div class="col-md-3 d-flex align-items-end">
+                <button type="submit" class="btn btn-primary me-2">
+                    <i class="bi bi-search"></i> بحث
                 </button>
+                <a href="?page=<?php echo htmlspecialchars($warehouseTransfersParentPage); ?><?php echo !empty($warehouseTransfersSectionParam) ? '&section=' . htmlspecialchars($warehouseTransfersSectionParam) : ''; ?>" class="btn btn-secondary">
+                    <i class="bi bi-x-circle"></i> إعادة تعيين
+                </a>
             </div>
         </form>
     </div>

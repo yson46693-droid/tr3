@@ -590,9 +590,7 @@ if (isset($_GET['edit'])) {
                         <th>كود المورد</th>
                         <th><?php echo isset($lang['supplier_name']) ? $lang['supplier_name'] : 'اسم المورد'; ?></th>
                         <th>نوع المورد</th>
-                        <th><?php echo isset($lang['contact_person']) ? $lang['contact_person'] : 'جهة الاتصال'; ?></th>
                         <th><?php echo isset($lang['phone']) ? $lang['phone'] : 'الهاتف'; ?></th>
-                        <th><?php echo isset($lang['email']) ? $lang['email'] : 'البريد'; ?></th>
                         <th><?php echo isset($lang['balance']) ? $lang['balance'] : 'الرصيد'; ?></th>
                         <th><?php echo isset($lang['status']) ? $lang['status'] : 'الحالة'; ?></th>
                         <th><?php echo isset($lang['actions']) ? $lang['actions'] : 'الإجراءات'; ?></th>
@@ -601,7 +599,7 @@ if (isset($_GET['edit'])) {
                 <tbody>
                     <?php if (empty($suppliers)): ?>
                         <tr>
-                            <td colspan="10" class="text-center text-muted py-4">
+                            <td colspan="8" class="text-center text-muted py-4">
                                 <i class="bi bi-inbox me-2"></i><?php echo isset($lang['no_data']) ? $lang['no_data'] : 'لا توجد بيانات'; ?>
                             </td>
                         </tr>
@@ -631,9 +629,7 @@ if (isset($_GET['edit'])) {
                                 <td data-label="نوع المورد">
                                     <span class="badge bg-info"><?php echo htmlspecialchars($typeLabels[$supplier['type'] ?? ''] ?? '-'); ?></span>
                                 </td>
-                                <td data-label="جهة الاتصال"><?php echo htmlspecialchars($supplier['contact_person'] ?? '-'); ?></td>
                                 <td data-label="الهاتف"><?php echo htmlspecialchars($supplier['phone'] ?? '-'); ?></td>
-                                <td data-label="البريد"><?php echo htmlspecialchars($supplier['email'] ?? '-'); ?></td>
                                 <td data-label="الرصيد">
                                     <?php 
                                     // تنظيف شامل للرصيد قبل العرض باستخدام دالة cleanFinancialValue
@@ -1086,7 +1082,7 @@ $historyTypeLabels = [
                     <h5 class="modal-title"><i class="bi bi-pencil me-2"></i><?php echo isset($lang['edit']) ? $lang['edit'] : 'تعديل'; ?> <?php echo (isset($lang) && isset($lang['suppliers'])) ? $lang['suppliers'] : 'مورد'; ?></h5>
                     <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
                 </div>
-                <div class="modal-body">
+                <div class="modal-body" style="max-height: calc(100vh - 200px); overflow-y: auto;">
                     <div class="mb-3">
                         <label class="form-label">كود المورد</label>
                         <input type="text" class="form-control" value="<?php echo htmlspecialchars($editSupplier['supplier_code'] ?? '-'); ?>" readonly>
@@ -1111,18 +1107,8 @@ $historyTypeLabels = [
                         <small class="text-muted">سيتم توليد كود جديد إذا تم تغيير النوع</small>
                     </div>
                     <div class="mb-3">
-                        <label class="form-label"><?php echo isset($lang['contact_person']) ? $lang['contact_person'] : 'جهة الاتصال'; ?></label>
-                        <input type="text" class="form-control" name="contact_person" value="<?php echo htmlspecialchars($editSupplier['contact_person'] ?? ''); ?>">
-                    </div>
-                    <div class="row">
-                        <div class="col-md-6 mb-3">
-                            <label class="form-label"><?php echo isset($lang['phone']) ? $lang['phone'] : 'الهاتف'; ?></label>
-                            <input type="text" class="form-control" name="phone" value="<?php echo htmlspecialchars($editSupplier['phone'] ?? ''); ?>">
-                        </div>
-                        <div class="col-md-6 mb-3">
-                            <label class="form-label"><?php echo isset($lang['email']) ? $lang['email'] : 'البريد الإلكتروني'; ?></label>
-                            <input type="email" class="form-control" name="email" value="<?php echo htmlspecialchars($editSupplier['email'] ?? ''); ?>">
-                        </div>
+                        <label class="form-label"><?php echo isset($lang['phone']) ? $lang['phone'] : 'الهاتف'; ?></label>
+                        <input type="text" class="form-control" name="phone" value="<?php echo htmlspecialchars($editSupplier['phone'] ?? ''); ?>">
                     </div>
                     <div class="mb-3">
                         <label class="form-label"><?php echo isset($lang['address']) ? $lang['address'] : 'العنوان'; ?></label>
@@ -1144,6 +1130,59 @@ $historyTypeLabels = [
         </div>
     </div>
 </div>
+<style>
+/* تحسين السكرول الداخلي لنموذج تعديل المورد على الهاتف */
+@media (max-width: 768px) {
+    #editSupplierModal .modal-body {
+        max-height: calc(100vh - 180px) !important;
+        overflow-y: auto !important;
+        -webkit-overflow-scrolling: touch;
+        padding: 1rem;
+    }
+    
+    #editSupplierModal .modal-dialog {
+        margin: 0.5rem;
+        max-height: calc(100vh - 1rem);
+    }
+    
+    #editSupplierModal .modal-content {
+        max-height: calc(100vh - 1rem);
+        display: flex;
+        flex-direction: column;
+    }
+    
+    #editSupplierModal .modal-header {
+        flex-shrink: 0;
+    }
+    
+    #editSupplierModal .modal-footer {
+        flex-shrink: 0;
+        border-top: 1px solid #dee2e6;
+        padding: 0.75rem;
+    }
+    
+    #editSupplierModal .modal-body {
+        flex: 1;
+        overflow-y: auto;
+    }
+}
+
+@media (max-width: 480px) {
+    #editSupplierModal .modal-body {
+        max-height: calc(100vh - 160px) !important;
+        padding: 0.75rem;
+    }
+    
+    #editSupplierModal .modal-footer {
+        padding: 0.5rem;
+    }
+    
+    #editSupplierModal .modal-footer .btn {
+        padding: 0.5rem 1rem;
+        font-size: 0.875rem;
+    }
+}
+</style>
 <?php endif; ?>
 
 <!-- Add Balance Modal -->
