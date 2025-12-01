@@ -496,8 +496,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                                     deductions = ?,
                                     collections_bonus = ?,
                                     total_amount = ?,
-                                    notes = ?,
-                                    updated_at = NOW()
+                                    notes = ?
                                  WHERE id = ?",
                                 [$bonus, $deductions, $collectionsBonus, $newTotalAmount, $notes ?: null, $salaryId]
                             );
@@ -507,8 +506,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                                     bonus = ?,
                                     deductions = ?,
                                     total_amount = ?,
-                                    notes = ?,
-                                    updated_at = NOW()
+                                    notes = ?
                                  WHERE id = ?",
                                 [$bonus, $deductions, $newTotalAmount, $notes ?: null, $salaryId]
                             );
@@ -518,8 +516,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                             "UPDATE salaries SET 
                                 deductions = ?,
                                 total_amount = ?,
-                                notes = ?,
-                                updated_at = NOW()
+                                notes = ?
                              WHERE id = ?",
                             [$deductions, $newTotalAmount, $notes ?: null, $salaryId]
                         );
@@ -1238,7 +1235,7 @@ foreach ($salariesFromDb as &$salary) {
         if (abs($actualHours - $savedTotalHours) > 0.01) {
             try {
                 $db->execute(
-                    "UPDATE salaries SET total_hours = ?, updated_at = NOW() WHERE id = ?",
+                    "UPDATE salaries SET total_hours = ? WHERE id = ?",
                     [$actualHours, $salary['id']]
                 );
                 // تحديث القيمة في المتغير
@@ -1738,7 +1735,7 @@ if (isset($_GET['ajax']) && $_GET['ajax'] == '1' && $salaryId > 0) {
             // تحديث total_hours في قاعدة البيانات
             try {
                 $db->execute(
-                    "UPDATE salaries SET total_hours = ?, updated_at = NOW() WHERE id = ?",
+                    "UPDATE salaries SET total_hours = ? WHERE id = ?",
                     [$actualHours, $salary['id']]
                 );
                 // إعادة جلب البيانات من قاعدة البيانات للتأكد من الحصول على القيمة المحدثة
@@ -2854,7 +2851,7 @@ $pageTitle = ($view === 'advances') ? 'السلف' : (($view === 'pending') ? '�
                         // تحديث total_hours في قاعدة البيانات
                         try {
                             $db->execute(
-                                "UPDATE salaries SET total_hours = ?, updated_at = NOW() WHERE id = ?",
+                                "UPDATE salaries SET total_hours = ? WHERE id = ?",
                                 [$actualHours, $salary['id']]
                             );
                             // إعادة جلب البيانات من قاعدة البيانات للتأكد من الحصول على القيمة المحدثة
@@ -3197,7 +3194,7 @@ $pageTitle = ($view === 'advances') ? 'السلف' : (($view === 'pending') ? '�
                                     // تحديث total_hours في قاعدة البيانات
                                     try {
                                         $db->execute(
-                                            "UPDATE salaries SET total_hours = ?, updated_at = NOW() WHERE id = ?",
+                                            "UPDATE salaries SET total_hours = ? WHERE id = ?",
                                             [$actualHoursForModal, $salary['id']]
                                         );
                                         // إعادة جلب البيانات من قاعدة البيانات للتأكد من الحصول على القيمة المحدثة
