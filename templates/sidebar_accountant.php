@@ -74,6 +74,14 @@ $baseUrl = getDashboardUrl();
                         <span><?php echo $lang['menu_salaries']; ?></span>
                     </a>
                 </li>
+                
+                <li class="nav-item">
+                    <a class="nav-link <?php echo (isset($_GET['page']) && $_GET['page'] === 'local_customers') ? 'active' : ''; ?>" 
+                       href="<?php echo $baseUrl; ?>accountant.php?page=local_customers">
+                        <i class="bi bi-people"></i>
+                        <span>العملاء المحليين</span>
+                    </a>
+                </li>
             </div>
             <li class="nav-item">
                 <a class="nav-link" href="<?php echo $baseUrl; ?>accountant.php?page=invoices">

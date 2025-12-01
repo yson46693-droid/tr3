@@ -86,16 +86,21 @@ try {
     $formattedSalaries = [];
     foreach ($salaries as $salary) {
         $month = intval($salary['month'] ?? 0);
-        $year = intval($salary['year'] ?? date('Y'));
         
+        // تحديد السنة بناءً على وجود عمود year
         if ($hasYearColumn) {
-            $monthLabel = $monthNames[$month] . ' ' . $year;
+            $year = intval($salary['year'] ?? date('Y'));
+            $monthLabel = ($month > 0 && $month <= 12) ? ($monthNames[$month] . ' ' . $year) : ('شهر ' . $month . ' ' . $year);
         } else {
-            $date = date_create_from_format('Y-m', $salary['month_label']);
+            // إذا لم يكن هناك عمود year، استخدم month_label
+            $date = date_create_from_format('Y-m', $salary['month_label'] ?? '');
             if ($date) {
-                $monthLabel = $monthNames[$date->format('n')] . ' ' . $date->format('Y');
+                $year = intval($date->format('Y'));
+                $month = intval($date->format('n'));
+                $monthLabel = $monthNames[$month] . ' ' . $year;
             } else {
-                $monthLabel = $salary['month_label'];
+                $year = date('Y');
+                $monthLabel = $salary['month_label'] ?? ('شهر ' . $month);
             }
         }
         

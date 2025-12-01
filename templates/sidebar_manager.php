@@ -98,64 +98,64 @@ $baseUrl = getDashboardUrl();
                 </a>
             </li>
 
-            <div class="sidebar-section">
+            <li class="nav-item sidebar-section-divider">
                 <div class="sidebar-section-title">Listing</div>
+            </li>
                 
-                <li class="nav-item">
-                    <a class="nav-link" href="<?php echo $baseUrl; ?>manager.php?page=users">
-                        <i class="bi bi-people"></i>
-                        <span>المستخدمين</span>
-                    </a>
-                </li>
+            <li class="nav-item">
+                <a class="nav-link" href="<?php echo $baseUrl; ?>manager.php?page=users">
+                    <i class="bi bi-people"></i>
+                    <span>المستخدمين</span>
+                </a>
+            </li>
                 
-                <li class="nav-item">
-                    <a class="nav-link <?php echo (isset($_GET['page']) && $_GET['page'] === 'vehicles') ? 'active' : ''; ?>" 
-                       href="<?php echo $baseUrl; ?>manager.php?page=vehicles">
-                        <i class="bi bi-truck"></i>
-                        <span>السيارات</span>
-                    </a>
-                </li>
+            <li class="nav-item">
+                <a class="nav-link <?php echo (isset($_GET['page']) && $_GET['page'] === 'vehicles') ? 'active' : ''; ?>" 
+                   href="<?php echo $baseUrl; ?>manager.php?page=vehicles">
+                    <i class="bi bi-truck"></i>
+                    <span>السيارات</span>
+                </a>
+            </li>
                 
-                <li class="nav-item">
-                    <a class="nav-link <?php echo (isset($_GET['page']) && $_GET['page'] === 'local_customers') ? 'active' : ''; ?>" 
-                       href="<?php echo $baseUrl; ?>manager.php?page=local_customers">
-                        <i class="bi bi-people"></i>
-                        <span>العملاء المحليين</span>
-                    </a>
-                </li>
-            </div>
+            <li class="nav-item">
+                <a class="nav-link <?php echo (isset($_GET['page']) && $_GET['page'] === 'local_customers') ? 'active' : ''; ?>" 
+                   href="<?php echo $baseUrl; ?>manager.php?page=local_customers">
+                    <i class="bi bi-people"></i>
+                    <span>العملاء المحليين</span>
+                </a>
+            </li>
             
-            <div class="sidebar-section">
+            <li class="nav-item sidebar-section-divider">
                 <div class="sidebar-section-title">Management</div>
+            </li>
                 
-                <li class="nav-item">
-                    <a class="nav-link" href="<?php echo $baseUrl; ?>manager.php?page=backups">
-                        <i class="bi bi-database"></i>
-                        <span>النسخ الاحتياطية</span>
-                    </a>
-                </li>
+            <li class="nav-item">
+                <a class="nav-link" href="<?php echo $baseUrl; ?>manager.php?page=backups">
+                    <i class="bi bi-database"></i>
+                    <span>النسخ الاحتياطية</span>
+                </a>
+            </li>
                 
-                <li class="nav-item">
-                    <a class="nav-link" href="<?php echo $baseUrl; ?>manager.php?page=permissions">
-                        <i class="bi bi-shield-check"></i>
-                        <span>الصلاحيات</span>
-                    </a>
-                </li>
+            <li class="nav-item">
+                <a class="nav-link" href="<?php echo $baseUrl; ?>manager.php?page=permissions">
+                    <i class="bi bi-shield-check"></i>
+                    <span>الصلاحيات</span>
+                </a>
+            </li>
                 
-                <li class="nav-item">
-                    <a class="nav-link" href="<?php echo $baseUrl; ?>manager.php?page=security">
-                        <i class="bi bi-shield-lock"></i>
-                        <span>الأمان</span>
-                    </a>
-                </li>
+            <li class="nav-item">
+                <a class="nav-link" href="<?php echo $baseUrl; ?>manager.php?page=security">
+                    <i class="bi bi-shield-lock"></i>
+                    <span>الأمان</span>
+                </a>
+            </li>
                 
-                <li class="nav-item">
-                    <a class="nav-link <?php echo (isset($_GET['page']) && $_GET['page'] === 'returns') ? 'active' : ''; ?>" href="<?php echo $baseUrl; ?>manager.php?page=returns">
-                        <i class="bi bi-arrow-left-right"></i>
-                        <span><?php echo isset($lang['menu_returns_exchanges']) ? $lang['menu_returns_exchanges'] : 'المرتجعات'; ?></span>
-                    </a>
-                </li>
-            </div>
+            <li class="nav-item">
+                <a class="nav-link <?php echo (isset($_GET['page']) && $_GET['page'] === 'returns') ? 'active' : ''; ?>" href="<?php echo $baseUrl; ?>manager.php?page=returns">
+                    <i class="bi bi-arrow-left-right"></i>
+                    <span><?php echo isset($lang['menu_returns_exchanges']) ? $lang['menu_returns_exchanges'] : 'المرتجعات'; ?></span>
+                </a>
+            </li>
             
             <li class="nav-item">
                 <a class="nav-link <?php echo (isset($_GET['page']) && $_GET['page'] === 'batch_reader') ? 'active' : ''; ?>" 

@@ -4040,8 +4040,18 @@ function viewAdvanceDetails(advanceId) {
 
 function openSettleModal(salaryId, salaryData, remainingAmount, calculatedAccumulated) {
     const userId = salaryData.user_id || salaryData.userId;
-    document.getElementById('settleUserId').value = userId;
-    document.getElementById('settleUserName').textContent = salaryData.full_name || salaryData.username;
+    
+    // التحقق من وجود العناصر قبل الوصول إليها
+    const userIdInput = document.getElementById('settleUserId');
+    const userNameSpan = document.getElementById('settleUserName');
+    
+    if (userIdInput) {
+        userIdInput.value = userId;
+    }
+    
+    if (userNameSpan) {
+        userNameSpan.textContent = salaryData.full_name || salaryData.username || 'غير محدد';
+    }
     
     // تحميل جميع الرواتب للموظف
     loadUserSalariesForSettlement(userId, salaryId);
@@ -4049,30 +4059,54 @@ function openSettleModal(salaryId, salaryData, remainingAmount, calculatedAccumu
     // تعيين الراتب الحالي كافتراضي
     if (salaryId > 0) {
         setTimeout(() => {
-            document.getElementById('settleSalarySelect').value = salaryId;
-            loadSelectedSalaryData();
+            const select = document.getElementById('settleSalarySelect');
+            if (select) {
+                select.value = salaryId;
+                loadSelectedSalaryData();
+            }
         }, 100);
     }
 }
 
 function loadUserSalariesForSettlement(userId, currentSalaryId) {
     const select = document.getElementById('settleSalarySelect');
-    if (!select) return;
+    if (!select) {
+        console.error('settleSalarySelect element not found');
+        return;
+    }
     
     // مسح الخيارات السابقة
     select.innerHTML = '<option value="">-- جاري التحميل --</option>';
     
     // جلب الرواتب من API
     fetch('<?php echo getBasePath(); ?>/api/get_user_salaries.php?user_id=' + userId)
-        .then(response => response.json())
+        .then(response => {
+            // التحقق من نوع الاستجابة
+            const contentType = response.headers.get('content-type');
+            if (!contentType || !contentType.includes('application/json')) {
+                return response.text().then(text => {
+                    console.error('Invalid response type. Expected JSON but got:', contentType);
+                    console.error('Response text:', text.substring(0, 500));
+                    throw new Error('Invalid response type. Expected JSON but got: ' + contentType);
+                });
+            }
+            return response.json();
+        })
         .then(data => {
+            console.log('Salaries data received:', data);
+            
+            if (!data) {
+                throw new Error('Empty response from server');
+            }
+            
             select.innerHTML = '<option value="">-- اختر راتب للتسوية --</option>';
             
-            if (data.success && data.salaries && data.salaries.length > 0) {
+            if (data.success && data.salaries && Array.isArray(data.salaries) && data.salaries.length > 0) {
                 data.salaries.forEach(salary => {
                     const option = document.createElement('option');
                     option.value = salary.id;
-                    option.textContent = salary.month_label + ' - المتبقي: ' + formatCurrency(salary.remaining || 0);
+                    const remaining = parseFloat(salary.remaining || 0);
+                    option.textContent = salary.month_label + ' - المتبقي: ' + formatCurrency(remaining);
                     if (salary.id == currentSalaryId) {
                         option.selected = true;
                     }
@@ -4081,15 +4115,20 @@ function loadUserSalariesForSettlement(userId, currentSalaryId) {
                 
                 // تحميل بيانات الراتب المحدد
                 if (currentSalaryId > 0) {
-                    loadSelectedSalaryData();
+                    setTimeout(() => {
+                        loadSelectedSalaryData();
+                    }, 200);
                 }
             } else {
+                console.warn('No salaries found or invalid data structure:', data);
                 select.innerHTML = '<option value="">لا توجد رواتب متاحة</option>';
             }
         })
         .catch(error => {
             console.error('Error loading salaries:', error);
             select.innerHTML = '<option value="">خطأ في تحميل الرواتب</option>';
+            // عرض رسالة خطأ للمستخدم
+            alert('حدث خطأ أثناء تحميل الرواتب. يرجى التحقق من وحدة التحكم للمزيد من التفاصيل.');
         });
 }
 
