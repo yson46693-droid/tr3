@@ -305,7 +305,7 @@ $currentFilters = $filters;
             <?php else: ?>
                 <input type="hidden" name="tab" value="<?php echo htmlspecialchars($activeTab); ?>">
             <?php endif; ?>
-            <div class="col-md-3">
+            <div class="col-md-6">
                 <label class="form-label <?php echo $isSalesRecords ? 'text-white fw-semibold' : ''; ?>">العميل</label>
                 <select class="form-select <?php echo $isSalesRecords ? 'border-0 shadow-sm' : ''; ?>" name="customer_id">
                     <option value="">جميع العملاء</option>
@@ -320,7 +320,7 @@ $currentFilters = $filters;
                     <?php endforeach; ?>
                 </select>
             </div>
-            <div class="col-md-2">
+            <div class="col-md-6">
                 <label class="form-label <?php echo $isSalesRecords ? 'text-white fw-semibold' : ''; ?>">الحالة</label>
                 <select class="form-select <?php echo $isSalesRecords ? 'border-0 shadow-sm' : ''; ?>" name="status">
                     <option value="">جميع الحالات</option>
@@ -330,15 +330,15 @@ $currentFilters = $filters;
                     <option value="completed" <?php echo ($currentFilters['status'] ?? '') === 'completed' ? 'selected' : ''; ?>>مكتمل</option>
                 </select>
             </div>
-            <div class="col-md-2">
+            <div class="col-md-6">
                 <label class="form-label <?php echo $isSalesRecords ? 'text-white fw-semibold' : ''; ?>">من تاريخ</label>
                 <input type="date" class="form-control <?php echo $isSalesRecords ? 'border-0 shadow-sm' : ''; ?>" name="date_from" value="<?php echo htmlspecialchars($currentFilters['date_from'] ?? ''); ?>">
             </div>
-            <div class="col-md-2">
+            <div class="col-md-6">
                 <label class="form-label <?php echo $isSalesRecords ? 'text-white fw-semibold' : ''; ?>">إلى تاريخ</label>
                 <input type="date" class="form-control <?php echo $isSalesRecords ? 'border-0 shadow-sm' : ''; ?>" name="date_to" value="<?php echo htmlspecialchars($currentFilters['date_to'] ?? ''); ?>">
             </div>
-            <div class="col-md-2">
+            <div class="col-md-12">
                 <label class="form-label <?php echo $isSalesRecords ? 'text-white fw-semibold' : ''; ?>">&nbsp;</label>
                 <button type="submit" class="btn <?php echo $isSalesRecords ? 'btn-light fw-semibold' : 'btn-primary'; ?> w-100 shadow-sm">
                     <i class="bi bi-search me-2"></i>بحث
