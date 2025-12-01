@@ -94,10 +94,16 @@ function customerHistoryPruneOlderThan(string $cutoffDate): void
  */
 function customerHistorySyncForCustomer(int $customerId): array
 {
-    customerHistoryEnsureSetup();
+    // تعطيل عرض الأخطاء مؤقتاً لتجنب output غير متوقع
+    $oldErrorReporting = error_reporting(E_ALL & ~E_WARNING & ~E_NOTICE);
+    $oldDisplayErrors = ini_get('display_errors');
+    ini_set('display_errors', '0');
+    
+    try {
+        customerHistoryEnsureSetup();
 
-    $db = db();
-    $cutoffDate = date('Y-m-d', strtotime('-6 months'));
+        $db = db();
+        $cutoffDate = date('Y-m-d', strtotime('-6 months'));
 
     // حذف السجلات الأقدم من ستة أشهر
     customerHistoryPruneOlderThan($cutoffDate);
@@ -295,6 +301,11 @@ function customerHistorySyncForCustomer(int $customerId): array
                 [$invoiceId]
             );
             
+            // التأكد من أن $invoiceItems مصفوفة
+            if (!is_array($invoiceItems)) {
+                $invoiceItems = [];
+            }
+            
             // حساب الكميات المرتجعة لكل invoice_item_id
             $returnedQuantities = [];
             $hasInvoiceItemId = false;
@@ -328,8 +339,11 @@ function customerHistorySyncForCustomer(int $customerId): array
                             $queryParams
                         );
                         
-                        if (is_array($returnedRows)) {
+                        if (is_array($returnedRows) && !empty($returnedRows)) {
                             foreach ($returnedRows as $row) {
+                                if (!is_array($row)) {
+                                    continue;
+                                }
                                 $itemId = (int)($row['invoice_item_id'] ?? 0);
                                 if ($itemId > 0) {
                                     $returnedQuantities[$itemId] = (float)($row['returned_quantity'] ?? 0.0);
@@ -403,21 +417,49 @@ function customerHistorySyncForCustomer(int $customerId): array
     }
 
     // الحصول على تفاصيل المرتجعات للعرض المفصل
-    $recentReturns = $db->query(
-        "SELECT r.id, r.invoice_id, r.return_number, r.return_date, r.refund_amount, r.return_type, r.status
-         FROM returns r
-         WHERE r.customer_id = ?
-           AND r.return_date >= ?
-         ORDER BY r.return_date DESC",
-        [$customerId, $cutoffDate]
-    );
+        $recentReturns = $db->query(
+            "SELECT r.id, r.invoice_id, r.return_number, r.return_date, r.refund_amount, r.return_type, r.status
+             FROM returns r
+             WHERE r.customer_id = ?
+               AND r.return_date >= ?
+             ORDER BY r.return_date DESC",
+            [$customerId, $cutoffDate]
+        );
+        
+        // التأكد من أن $recentReturns مصفوفة
+        if (!is_array($recentReturns)) {
+            $recentReturns = [];
+        }
 
-    return [
-        'window_start' => $cutoffDate,
-        'invoices'     => $invoicesPayload,
-        'totals'       => $summaryTotals,
-        'returns'      => $recentReturns,
-    ];
+        return [
+            'window_start' => $cutoffDate,
+            'invoices'     => $invoicesPayload,
+            'totals'       => $summaryTotals,
+            'returns'      => $recentReturns,
+        ];
+    } catch (Throwable $e) {
+        error_log('customerHistorySyncForCustomer error: ' . $e->getMessage());
+        error_log('customerHistorySyncForCustomer trace: ' . $e->getTraceAsString());
+        // إرجاع بيانات فارغة في حالة الخطأ
+        return [
+            'window_start' => date('Y-m-d', strtotime('-6 months')),
+            'invoices'     => [],
+            'totals'       => [
+                'invoice_count'   => 0,
+                'total_invoiced'  => 0.0,
+                'total_paid'      => 0.0,
+                'total_returns'   => 0.0,
+                'net_total'       => 0.0,
+            ],
+            'returns'      => [],
+        ];
+    } finally {
+        // استعادة إعدادات الأخطاء
+        error_reporting($oldErrorReporting);
+        if ($oldDisplayErrors !== false) {
+            ini_set('display_errors', $oldDisplayErrors);
+        }
+    }
 }
 
 /**
