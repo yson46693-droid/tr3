@@ -1640,31 +1640,30 @@ try {
             // الكمية المتاحة = الكمية المنتجة - المباعة - المحجوزة في النقل - المحجوزة في الشحن
             $availableQty = max(0, $quantityProduced - $soldQty - $pendingQty - $pendingShippingQty);
             
-            if ($availableQty > 0) {
-                $batchNumber = $fp['batch_number'] ?? '';
-                $productName = $fp['name'] ?? 'غير محدد';
-                $displayName = $batchNumber ? $productName . ' - تشغيلة ' . $batchNumber : $productName;
-                
-                $factoryProductsForShipping[] = [
-                    'id' => $batchId + 1000000, // استخدام رقم فريد لمنتجات المصنع
-                    'batch_id' => $batchId,
-                    'batch_number' => $batchNumber,
-                    'name' => $productName, // اسم المنتج بدون رقم التشغيلة
-                    'quantity' => $availableQty,
-                    'unit' => $fp['unit'] ?? 'قطعة',
-                    'unit_price' => (float)($fp['unit_price'] ?? 0),
-                    'is_factory_product' => true
-                ];
-            }
+            // عرض جميع المنتجات حتى لو كانت الكمية المتاحة صفر (مثل صفحة company_products)
+            $batchNumber = $fp['batch_number'] ?? '';
+            $productName = $fp['name'] ?? 'غير محدد';
+            $displayName = $batchNumber ? $productName . ' - تشغيلة ' . $batchNumber : $productName;
+            
+            $factoryProductsForShipping[] = [
+                'id' => $batchId + 1000000, // استخدام رقم فريد لمنتجات المصنع
+                'batch_id' => $batchId,
+                'batch_number' => $batchNumber,
+                'name' => $productName, // اسم المنتج بدون رقم التشغيلة
+                'quantity' => $availableQty,
+                'total_quantity' => $quantityProduced, // الكمية الإجمالية قبل طرح المبيعات
+                'unit' => $fp['unit'] ?? 'قطعة',
+                'unit_price' => (float)($fp['unit_price'] ?? 0),
+                'is_factory_product' => true
+            ];
         }
     }
     
-    // جلب المنتجات الخارجية من products
+    // جلب المنتجات الخارجية من products (مثل صفحة company_products - بدون شرط quantity > 0)
     $externalProductsForShipping = $db->query(
         "SELECT id, name, quantity, COALESCE(unit, 'قطعة') as unit, unit_price 
          FROM products 
          WHERE status = 'active' 
-           AND quantity > 0 
            AND (product_type = 'external' OR product_type IS NULL)
          ORDER BY name ASC"
     );
