@@ -410,11 +410,20 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 $salaryYear = intval($salary['year'] ?? $selectedYear);
                 $userId = intval($salary['user_id'] ?? 0);
                 
-                // حساب الراتب الأساسي من الساعات المكتملة
-                require_once __DIR__ . '/../../includes/salary_calculator.php';
-                $hourlyRate = cleanFinancialValue($salary['hourly_rate'] ?? 0);
-                $completedHours = calculateCompletedMonthlyHours($userId, $salaryMonth, $salaryYear);
-                $newBaseAmount = round($completedHours * $hourlyRate, 2);
+                // استخدام base_amount الحالي من الراتب (بدلاً من إعادة الحساب)
+                // لأن المستخدم يريد إضافة مكافأة إلى الراتب الحالي، وليس إعادة حساب الراتب من الصفر
+                $currentBaseAmount = cleanFinancialValue($salary['base_amount'] ?? 0);
+                
+                // إذا لم يكن base_amount موجوداً، احسبه من الساعات
+                if ($currentBaseAmount <= 0) {
+                    require_once __DIR__ . '/../../includes/salary_calculator.php';
+                    $hourlyRate = cleanFinancialValue($salary['hourly_rate'] ?? 0);
+                    $completedHours = calculateCompletedMonthlyHours($userId, $salaryMonth, $salaryYear);
+                    $currentBaseAmount = round($completedHours * $hourlyRate, 2);
+                }
+                
+                // استخدام base_amount الحالي
+                $newBaseAmount = $currentBaseAmount;
                 
                 // حساب نسبة التحصيلات إذا كان مندوب مبيعات
                 $collectionsBonus = 0;
@@ -425,8 +434,19 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     $collectionsBonus = cleanFinancialValue($salary['collections_bonus'] ?? 0);
                 }
                 
-                // حساب الراتب الجديد: الراتب الأساسي + المكافآت + نسبة التحصيلات - الخصومات
-                $newTotalAmount = $newBaseAmount + $bonus + $collectionsBonus - $deductions;
+                // الحصول على المكافآت الحالية من الراتب
+                $currentBonus = cleanFinancialValue($salary['bonus'] ?? 0);
+                // المكافآت الجديدة = المكافآت الحالية + المكافآت الجديدة المضافة
+                // (إذا كان المستخدم يريد إضافة مكافأة جديدة، يجب أن تُضاف إلى المكافآت الحالية)
+                $finalBonus = $currentBonus + $bonus;
+                
+                // الحصول على الخصومات الحالية من الراتب
+                $currentDeductions = cleanFinancialValue($salary['deductions'] ?? 0);
+                // الخصومات الجديدة = الخصومات الحالية + الخصومات الجديدة المضافة
+                $finalDeductions = $currentDeductions + $deductions;
+                
+                // حساب الراتب الجديد: الراتب الأساسي + المكافآت (الحالية + الجديدة) + نسبة التحصيلات - الخصومات (الحالية + الجديدة)
+                $newTotalAmount = $newBaseAmount + $finalBonus + $collectionsBonus - $finalDeductions;
                 $newTotalAmount = max(0, $newTotalAmount);
                 
                 // التحقق من وجود عمود bonus
@@ -484,6 +504,18 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     }
                 } else {
                     // المدير - يمكنه الموافقة مباشرة
+                    // الحصول على المكافآت والخصومات الحالية
+                    $currentBonus = cleanFinancialValue($salary['bonus'] ?? 0);
+                    $currentDeductions = cleanFinancialValue($salary['deductions'] ?? 0);
+                    
+                    // المكافآت النهائية = المكافآت الحالية + المكافآت الجديدة المضافة
+                    $finalBonus = $currentBonus + $bonus;
+                    // الخصومات النهائية = الخصومات الحالية + الخصومات الجديدة المضافة
+                    $finalDeductions = $currentDeductions + $deductions;
+                    
+                    // تسجيل القيم للتأكد من صحتها
+                    error_log("Modify salary - salaryId: {$salaryId}, currentBonus: {$currentBonus}, bonus: {$bonus}, finalBonus: {$finalBonus}, currentDeductions: {$currentDeductions}, deductions: {$deductions}, finalDeductions: {$finalDeductions}, newTotalAmount: {$newTotalAmount}, collectionsBonus: {$collectionsBonus}");
+                    
                     if ($hasBonusColumn) {
                         // التحقق من وجود عمود collections_bonus
                         $collectionsBonusColumnCheck = $db->queryOne("SHOW COLUMNS FROM salaries LIKE 'collections_bonus'");
@@ -492,26 +524,30 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                         if ($hasCollectionsBonusColumn) {
                             $db->execute(
                                 "UPDATE salaries SET 
+                                    base_amount = ?,
                                     bonus = ?,
                                     deductions = ?,
                                     collections_bonus = ?,
                                     total_amount = ?,
                                     notes = ?
                                  WHERE id = ?",
-                                [$bonus, $deductions, $collectionsBonus, $newTotalAmount, $notes ?: null, $salaryId]
+                                [$newBaseAmount, $finalBonus, $finalDeductions, $collectionsBonus, $newTotalAmount, $notes ?: null, $salaryId]
                             );
                         } else {
                             $db->execute(
                                 "UPDATE salaries SET 
+                                    base_amount = ?,
                                     bonus = ?,
                                     deductions = ?,
                                     total_amount = ?,
                                     notes = ?
                                  WHERE id = ?",
-                                [$bonus, $deductions, $newTotalAmount, $notes ?: null, $salaryId]
+                                [$newBaseAmount, $finalBonus, $finalDeductions, $newTotalAmount, $notes ?: null, $salaryId]
                             );
                         }
                     } else {
+                        // إذا لم يكن هناك عمود bonus، لا يمكن حفظ المكافآت
+                        // لكن يجب تحديث total_amount مع المكافآت
                         $db->execute(
                             "UPDATE salaries SET 
                                 deductions = ?,
