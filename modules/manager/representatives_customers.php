@@ -68,7 +68,6 @@ try {
         'u.full_name',
         'u.username',
         'u.phone',
-        'u.email',
         'u.status'
     ];
     
@@ -103,7 +102,6 @@ try {
             'full_name',
             'username',
             'phone',
-            'email',
             'status'
         ];
         
@@ -265,7 +263,6 @@ try {
                     'full_name' => $rep['full_name'] ?? $rep['username'] ?? '',
                     'username' => $rep['username'] ?? '',
                     'phone' => '',
-                    'email' => '',
                     'status' => 'active',
                     'last_login_at' => null,
                     'profile_image' => null,
@@ -435,7 +432,6 @@ try {
                             <tr>
                                 <th>اسم العميل</th>
                                 <th>رقم الهاتف</th>
-                                <th>البريد الإلكتروني</th>
                                 <th>العنوان</th>
                                 <th>الرصيد الدائن</th>
                                 <th>المندوب</th>
@@ -453,7 +449,6 @@ try {
                                         <strong><?php echo htmlspecialchars($customer['name'] ?? '-'); ?></strong>
                                     </td>
                                     <td><?php echo htmlspecialchars($customer['phone'] ?? '-'); ?></td>
-                                    <td><?php echo htmlspecialchars($customer['email'] ?? '-'); ?></td>
                                     <td><?php echo htmlspecialchars($customer['address'] ?? '-'); ?></td>
                                     <td>
                                         <span class="badge bg-primary-subtle text-primary fs-6">

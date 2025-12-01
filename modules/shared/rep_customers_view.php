@@ -40,7 +40,7 @@ if ($repId <= 0) {
 }
 
 $rep = $db->queryOne(
-    "SELECT id, full_name, username, phone, email, status, last_login_at, profile_image 
+    "SELECT id, full_name, username, phone, status, last_login_at, profile_image 
      FROM users 
      WHERE id = ? AND role = 'sales' LIMIT 1",
     [$repId]
@@ -171,9 +171,6 @@ renderCustomersSectionHeader([
                     <h5 class="mb-1"><?php echo htmlspecialchars($rep['full_name'] ?: $rep['username']); ?></h5>
                     <?php if (!empty($rep['phone'])): ?>
                         <div class="text-muted small mb-1"><i class="bi bi-telephone me-1"></i><?php echo htmlspecialchars($rep['phone']); ?></div>
-                    <?php endif; ?>
-                    <?php if (!empty($rep['email'])): ?>
-                        <div class="text-muted small mb-1"><i class="bi bi-envelope me-1"></i><?php echo htmlspecialchars($rep['email']); ?></div>
                     <?php endif; ?>
                     <span class="badge <?php echo strtolower((string)($rep['status'] ?? 'inactive')) === 'active' ? 'bg-success-subtle text-success' : 'bg-secondary-subtle text-secondary'; ?>">
                         <?php echo strtolower((string)($rep['status'] ?? 'inactive')) === 'active' ? 'نشط' : 'غير نشط'; ?>
