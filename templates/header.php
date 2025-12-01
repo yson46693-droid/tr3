@@ -177,9 +177,7 @@ if (ob_get_level() > 0) {
     
     <?php
     // كشف الموبايل لتحسين الأداء (يجب أن يكون قبل استخدامه)
-    if (!isset($isMobile)) {
-        $isMobile = preg_match('/(android|iphone|ipad|ipod|blackberry|iemobile|opera mini)/i', $_SERVER['HTTP_USER_AGENT'] ?? '');
-    }
+    $isMobile = isset($isMobile) ? $isMobile : (bool) preg_match('/(android|iphone|ipad|ipod|blackberry|iemobile|opera mini)/i', $_SERVER['HTTP_USER_AGENT'] ?? '');
     ?>
     
     <!-- Performance: Preconnect to CDNs - محسّن للموبايل -->

@@ -96,7 +96,9 @@ if (!defined('ACCESS_ALLOWED')) {
     ?>
     <?php
     // كشف الموبايل لتحسين الأداء (نفس المستخدم في header.php)
-    $isMobile = preg_match('/(android|iphone|ipad|ipod|blackberry|iemobile|opera mini)/i', $_SERVER['HTTP_USER_AGENT'] ?? '');
+    if (!isset($isMobile)) {
+        $isMobile = (bool) preg_match('/(android|iphone|ipad|ipod|blackberry|iemobile|opera mini)/i', $_SERVER['HTTP_USER_AGENT'] ?? '');
+    }
     ?>
     
     <!-- Critical JS - تحميل مباشر -->
