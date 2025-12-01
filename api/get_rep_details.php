@@ -100,7 +100,6 @@ try {
             id,
             name,
             phone,
-            email,
             balance,
             status,
             latitude,
