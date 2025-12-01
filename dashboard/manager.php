@@ -102,6 +102,44 @@ if ($page === 'company_cash' && isset($_GET['ajax']) && $_GET['ajax'] === 'get_s
     }
 }
 
+// معالجة AJAX لجلب عملاء المندوب من صفحة orders
+if ($page === 'orders' && isset($_GET['ajax']) && $_GET['ajax'] === 'get_customers' && isset($_GET['sales_rep_id'])) {
+    // تحميل الملفات الأساسية فقط
+    require_once __DIR__ . '/../includes/config.php';
+    require_once __DIR__ . '/../includes/db.php';
+    require_once __DIR__ . '/../includes/auth.php';
+    require_once __DIR__ . '/../includes/path_helper.php';
+    
+    requireRole(['manager', 'accountant', 'sales']);
+    
+    // تنظيف أي output buffer
+    while (ob_get_level() > 0) {
+        ob_end_clean();
+    }
+    
+    header('Content-Type: application/json; charset=utf-8');
+    
+    $salesRepId = intval($_GET['sales_rep_id']);
+    
+    if ($salesRepId > 0) {
+        $customers = $db->query(
+            "SELECT id, name FROM customers WHERE (created_by = ? OR rep_id = ?) AND status = 'active' ORDER BY name ASC",
+            [$salesRepId, $salesRepId]
+        );
+        
+        echo json_encode([
+            'success' => true,
+            'customers' => $customers
+        ], JSON_UNESCAPED_UNICODE);
+    } else {
+        echo json_encode([
+            'success' => false,
+            'message' => 'معرف المندوب غير صحيح'
+        ], JSON_UNESCAPED_UNICODE);
+    }
+    exit;
+}
+
 // تحميل باقي الملفات المطلوبة للصفحة العادية
 require_once __DIR__ . '/../includes/config.php';
 require_once __DIR__ . '/../includes/db.php';

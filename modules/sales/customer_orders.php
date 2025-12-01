@@ -1963,12 +1963,17 @@ function updateNewCustomerState() {
     } else {
         // إخفاء حقول العميل الجديد
         newCustomerFields.classList.add('d-none');
+        newCustomerFields.style.display = 'none';
         
         // تفعيل حقل اختيار العميل الموجود (فقط إذا تم اختيار مندوب)
         const salesRepSelect = document.getElementById('salesRepSelect');
         if (!salesRepSelect || salesRepSelect.value) {
             existingCustomerSelect.removeAttribute('disabled');
             existingCustomerSelect.setAttribute('required', 'required');
+        } else {
+            // إذا لم يتم اختيار مندوب، تعطيل حقل العميل
+            existingCustomerSelect.setAttribute('disabled', 'disabled');
+            existingCustomerSelect.removeAttribute('required');
         }
         
         // إلغاء تفعيل الحقول المطلوبة للعميل الجديد
@@ -2220,86 +2225,96 @@ function showStatusModal(orderId, currentStatus) {
     modal.show();
 }
 
-// تحميل عملاء المندوب عند اختياره (فقط إذا لم يكن المستخدم مندوب مبيعات)
-const salesRepSelect = document.getElementById('salesRepSelect');
-const existingCustomerSelect = document.getElementById('existingCustomerSelect');
-
-if (salesRepSelect && existingCustomerSelect) {
-    salesRepSelect.addEventListener('change', function() {
-        const salesRepId = this.value;
-        const newCustomerToggle = document.getElementById('toggleNewCustomer');
-        
-        // إعادة تعيين حقل العميل
-        existingCustomerSelect.innerHTML = '<option value="">جاري التحميل...</option>';
-        existingCustomerSelect.disabled = true;
-        
-        if (!salesRepId) {
-            existingCustomerSelect.innerHTML = '<option value="">اختر المندوب أولاً</option>';
-            existingCustomerSelect.disabled = true;
-            if (newCustomerToggle) {
-                newCustomerToggle.checked = false;
-                updateNewCustomerState();
-            }
-            return;
-        }
-        
-        // جلب عملاء المندوب عبر AJAX
-        const currentUrl = new URL(window.location.href);
-        // استخدام المسار الصحيح بناءً على الصفحة الحالية
-        let baseUrl = currentUrl.pathname;
-        // إزالة أي معاملات موجودة وإضافة المعاملات الجديدة
-        const separator = baseUrl.includes('?') ? '&' : '?';
-        baseUrl = baseUrl + separator + 'page=orders&ajax=get_customers&sales_rep_id=' + encodeURIComponent(salesRepId);
-        
-        fetch(baseUrl)
-            .then(response => {
-                if (!response.ok) {
-                    throw new Error('Network response was not ok');
-                }
-                return response.json();
-            })
-            .then(data => {
-                existingCustomerSelect.innerHTML = '<option value="">اختر العميل</option>';
-                
-                if (data.success && data.customers && data.customers.length > 0) {
-                    data.customers.forEach(function(customer) {
-                        const option = document.createElement('option');
-                        option.value = customer.id;
-                        option.textContent = customer.name;
-                        existingCustomerSelect.appendChild(option);
-                    });
-                    
-                    existingCustomerSelect.disabled = false;
-                    existingCustomerSelect.removeAttribute('required');
-                    existingCustomerSelect.setAttribute('required', 'required');
-                } else {
-                    existingCustomerSelect.innerHTML = '<option value="">لا يوجد عملاء لهذا المندوب</option>';
-                    existingCustomerSelect.disabled = false;
-                }
-            })
-            .catch(error => {
-                console.error('Error loading customers:', error);
-                existingCustomerSelect.innerHTML = '<option value="">خطأ في تحميل العملاء</option>';
-                existingCustomerSelect.disabled = false;
-            });
-    });
+// دالة تحميل عملاء المندوب
+function loadSalesRepCustomers(salesRepId) {
+    const existingCustomerSelect = document.getElementById('existingCustomerSelect');
+    const newCustomerToggle = document.getElementById('toggleNewCustomer');
     
-    // إذا كان هناك مندوب محدد مسبقاً، تحميل عملاءه
-    if (salesRepSelect.value) {
-        salesRepSelect.dispatchEvent(new Event('change'));
+    if (!existingCustomerSelect) return;
+    
+    // إعادة تعيين حقل العميل
+    existingCustomerSelect.innerHTML = '<option value="">جاري التحميل...</option>';
+    existingCustomerSelect.disabled = true;
+    
+    if (!salesRepId) {
+        existingCustomerSelect.innerHTML = '<option value="">اختر المندوب أولاً</option>';
+        existingCustomerSelect.disabled = true;
+        if (newCustomerToggle) {
+            newCustomerToggle.checked = false;
+            updateNewCustomerState();
+        }
+        return;
     }
+    
+    // جلب عملاء المندوب عبر AJAX
+    const currentUrl = new URL(window.location.href);
+    let baseUrl = currentUrl.pathname;
+    const separator = baseUrl.includes('?') ? '&' : '?';
+    baseUrl = baseUrl + separator + 'page=orders&ajax=get_customers&sales_rep_id=' + encodeURIComponent(salesRepId);
+    
+    fetch(baseUrl)
+        .then(response => {
+            if (!response.ok) {
+                throw new Error('Network response was not ok');
+            }
+            return response.json();
+        })
+        .then(data => {
+            existingCustomerSelect.innerHTML = '<option value="">اختر العميل</option>';
+            
+            if (data.success && data.customers && data.customers.length > 0) {
+                data.customers.forEach(function(customer) {
+                    const option = document.createElement('option');
+                    option.value = customer.id;
+                    option.textContent = customer.name;
+                    existingCustomerSelect.appendChild(option);
+                });
+                
+                existingCustomerSelect.disabled = false;
+                existingCustomerSelect.removeAttribute('required');
+                existingCustomerSelect.setAttribute('required', 'required');
+            } else {
+                existingCustomerSelect.innerHTML = '<option value="">لا يوجد عملاء لهذا المندوب</option>';
+                existingCustomerSelect.disabled = false;
+            }
+        })
+        .catch(error => {
+            console.error('Error loading customers:', error);
+            existingCustomerSelect.innerHTML = '<option value="">خطأ في تحميل العملاء</option>';
+            existingCustomerSelect.disabled = false;
+        });
 }
 
-// تحديث حالة تعطيل العميل عند تغيير toggleNewCustomer (فقط إذا لم يكن المستخدم مندوب مبيعات)
+// تحميل عملاء المندوب عند اختياره (فقط إذا لم يكن المستخدم مندوب مبيعات)
+// ربط الأحداث عند فتح Modal لضمان وجود العناصر
+let salesRepListenerAttached = false;
+
 if (addOrderModalElement && typeof bootstrap !== 'undefined') {
     addOrderModalElement.addEventListener('shown.bs.modal', function() {
-        const newCustomerToggle = document.getElementById('toggleNewCustomer');
         const salesRepSelect = document.getElementById('salesRepSelect');
         const existingCustomerSelect = document.getElementById('existingCustomerSelect');
+        const newCustomerToggle = document.getElementById('toggleNewCustomer');
         
-        // إذا كان هناك مندوب محدد، تحميل عملاءه
-        if (salesRepSelect && salesRepSelect.value) {
-            salesRepSelect.dispatchEvent(new Event('change'));
+        // ربط حدث تغيير المندوب (مرة واحدة فقط)
+        if (salesRepSelect && existingCustomerSelect && !salesRepListenerAttached) {
+            salesRepSelect.addEventListener('change', function() {
+                loadSalesRepCustomers(this.value);
+            });
+            salesRepListenerAttached = true;
+            
+            // إذا كان هناك مندوب محدد مسبقاً، تحميل عملاءه
+            if (salesRepSelect.value) {
+                loadSalesRepCustomers(salesRepSelect.value);
+            }
+        } else if (salesRepSelect && salesRepSelect.value) {
+            // إذا كان المندوب محدد بالفعل، تحميل عملاءه
+            loadSalesRepCustomers(salesRepSelect.value);
+        }
+        
+        // تحديث حالة toggle عند فتح Modal
+        if (newCustomerToggle) {
+            // تحديث الحالة الأولية
+            updateNewCustomerState();
         }
         
         // التأكد من أن حقل العميل معطل إذا لم يتم اختيار مندوب (فقط للمدير)
@@ -2307,6 +2322,27 @@ if (addOrderModalElement && typeof bootstrap !== 'undefined') {
             if (!salesRepSelect.value && !newCustomerToggle.checked) {
                 existingCustomerSelect.disabled = true;
                 existingCustomerSelect.innerHTML = '<option value="">اختر المندوب أولاً</option>';
+            }
+        }
+    });
+    
+    // إعادة تعيين عند إغلاق Modal
+    addOrderModalElement.addEventListener('hidden.bs.modal', function() {
+        salesRepListenerAttached = false;
+    });
+} else {
+    // Fallback: ربط الأحداث مباشرة إذا لم يكن Bootstrap متاحاً
+    document.addEventListener('DOMContentLoaded', function() {
+        const salesRepSelect = document.getElementById('salesRepSelect');
+        const existingCustomerSelect = document.getElementById('existingCustomerSelect');
+        
+        if (salesRepSelect && existingCustomerSelect) {
+            salesRepSelect.addEventListener('change', function() {
+                loadSalesRepCustomers(this.value);
+            });
+            
+            if (salesRepSelect.value) {
+                loadSalesRepCustomers(salesRepSelect.value);
             }
         }
     });
