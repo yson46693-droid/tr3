@@ -1472,7 +1472,7 @@ foreach ($users as $user) {
         }
         
         // في حالة فشل الحفظ، استخدم السجل الافتراضي مع status = 'calculated'
-        $salaries[] = [
+        $defaultSalary = [
             'id' => null,
             'user_id' => $userId,
             'full_name' => $user['full_name'] ?? $user['username'],
@@ -1482,7 +1482,6 @@ foreach ($users as $user) {
             'current_hourly_rate' => $hourlyRate,
             'total_hours' => $monthHours,
             'base_amount' => $baseAmount,
-            'bonus' => 0,
             'collections_bonus' => round($collectionsBonus, 2),
             'collections_amount' => $collectionsAmount,
             'deductions' => 0,
@@ -1493,6 +1492,12 @@ foreach ($users as $user) {
             'created_at' => null,
             'updated_at' => null
         ];
+        // إضافة bonus_standardized وbonus/bonuses حسب اسم العمود
+        $defaultSalary['bonus_standardized'] = 0;
+        if ($bonusColumnName) {
+            $defaultSalary[$bonusColumnName] = 0;
+        }
+        $salaries[] = $defaultSalary;
     }
 }
 

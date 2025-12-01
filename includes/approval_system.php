@@ -719,19 +719,15 @@ function updateEntityStatus($type, $entityId, $status, $approvedBy) {
                     $modificationNote .= ' - ' . $notes;
                 }
                 
-                // التحقق من وجود عمود bonus
-                $columns = $db->query("SHOW COLUMNS FROM salaries") ?? [];
-                $hasBonusColumn = false;
-                foreach ($columns as $column) {
-                    if (($column['Field'] ?? '') === 'bonus') {
-                        $hasBonusColumn = true;
-                        break;
-                    }
-                }
+                // التحقق من وجود عمود bonus أو bonuses
+                $bonusColumnCheck = $db->queryOne("SHOW COLUMNS FROM salaries WHERE Field IN ('bonus', 'bonuses')");
+                $hasBonusColumn = !empty($bonusColumnCheck);
+                $bonusColumnName = $hasBonusColumn ? $bonusColumnCheck['Field'] : null;
                 
                 // تحديث الراتب مع تحديث base_amount و total_hours لضمان التطابق مع الساعات الفعلية
-                if ($hasBonusColumn) {
+                if ($hasBonusColumn && $bonusColumnName) {
                     // التحقق من وجود عمود total_hours
+                    $columns = $db->query("SHOW COLUMNS FROM salaries") ?? [];
                     $hasTotalHoursColumn = false;
                     foreach ($columns as $column) {
                         if (($column['Field'] ?? '') === 'total_hours') {
@@ -745,7 +741,7 @@ function updateEntityStatus($type, $entityId, $status, $approvedBy) {
                             "UPDATE salaries SET 
                                 base_amount = ?,
                                 total_hours = ?,
-                                bonus = ?,
+                                {$bonusColumnName} = ?,
                                 deductions = ?,
                                 total_amount = ?,
                                 notes = ?,
@@ -757,7 +753,7 @@ function updateEntityStatus($type, $entityId, $status, $approvedBy) {
                         $db->execute(
                             "UPDATE salaries SET 
                                 base_amount = ?,
-                                bonus = ?,
+                                {$bonusColumnName} = ?,
                                 deductions = ?,
                                 total_amount = ?,
                                 notes = ?,
