@@ -1170,7 +1170,7 @@ $collectionsLabel = $isSalesUser ? 'تحصيلاتي' : 'إجمالي التحص
                         <div class="card-body p-0">
                             <div class="table-responsive">
                                 <table class="table table-striped table-hover mb-0 customer-history-products-table">
-                                    <thead class="table-light">
+                                    <thead>
                                         <tr>
                                             <th style="width: 15%;">رقم الفاتورة</th>
                                             <th style="width: 25%;">اسم المنتج</th>
@@ -1652,26 +1652,71 @@ document.addEventListener('DOMContentLoaded', function () {
 /* تحسينات على جدول المنتجات */
 .customer-history-products-table {
     font-size: 0.9rem;
+    border-collapse: separate;
+    border-spacing: 0;
+}
+
+.customer-history-products-table thead {
+    background: linear-gradient(135deg, #0d6efd 0%, #0dcaf0 50%, #0d6efd 100%);
+    border-radius: 8px 8px 0 0;
+    overflow: hidden;
 }
 
 .customer-history-products-table thead th {
-    background-color: #d1ecf1;
-    font-weight: 600;
-    border-bottom: 2px solid #0dcaf0;
+    background: transparent;
+    color: #ffffff !important;
+    font-weight: 700;
+    font-size: 0.95rem;
+    padding: 1rem 0.75rem;
+    text-align: right;
+    border: none;
+    text-shadow: 0 1px 2px rgba(0, 0, 0, 0.1);
+    white-space: nowrap;
+}
+
+.customer-history-products-table thead th:first-child {
+    border-top-right-radius: 8px;
+}
+
+.customer-history-products-table thead th:last-child {
+    border-top-left-radius: 8px;
 }
 
 .customer-history-products-table tbody td {
     vertical-align: middle;
+    padding: 0.75rem;
+    border-bottom: 1px solid #e9ecef;
+}
+
+.customer-history-products-table tbody tr {
+    transition: all 0.2s ease;
+}
+
+.customer-history-products-table tbody tr:nth-child(even) {
+    background-color: #f8f9fa;
 }
 
 .customer-history-products-table tbody tr:hover {
-    background-color: #f8f9fa;
+    background-color: #e7f3ff !important;
+    transform: scale(1.01);
+    box-shadow: 0 2px 8px rgba(13, 110, 253, 0.1);
+}
+
+.customer-history-products-table tbody tr:last-child td {
+    border-bottom: none;
 }
 
 .customer-history-products-table .badge {
     font-size: 0.75rem;
-    padding: 0.25rem 0.5rem;
-    font-weight: 500;
+    padding: 0.35rem 0.65rem;
+    font-weight: 600;
+    border-radius: 6px;
+    box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+}
+
+.customer-history-products-table tbody td.fw-bold,
+.customer-history-products-table tbody td.fw-semibold {
+    color: #0d6efd;
 }
 
 @media (max-width: 768px) {
@@ -1679,9 +1724,13 @@ document.addEventListener('DOMContentLoaded', function () {
         font-size: 0.8rem;
     }
     
-    .customer-history-products-table thead th,
+    .customer-history-products-table thead th {
+        padding: 0.75rem 0.5rem;
+        font-size: 0.85rem;
+    }
+    
     .customer-history-products-table tbody td {
-        padding: 0.5rem 0.3rem;
+        padding: 0.5rem 0.4rem;
     }
 }
 </style>
