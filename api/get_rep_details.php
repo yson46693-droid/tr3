@@ -68,7 +68,7 @@ if ($repId <= 0) {
 try {
     // جلب معلومات المندوب
     $rep = $db->queryOne(
-        "SELECT id, full_name, username, phone, email, status 
+        "SELECT id, full_name, username, phone, status 
          FROM users 
          WHERE id = ? AND role = 'sales' 
          LIMIT 1",
