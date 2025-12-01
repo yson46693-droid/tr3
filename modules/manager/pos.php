@@ -2592,42 +2592,71 @@ try {
         </div>
 
         <div class="card shadow-sm mb-4">
-            <div class="card-header">
-                <h5 class="mb-0">شركات الشحن</h5>
+            <div class="card-header d-flex justify-content-between align-items-center">
+                <h5 class="mb-0"><i class="bi bi-truck me-2"></i>شركات الشحن</h5>
+                <button type="button" class="btn btn-outline-primary btn-sm" data-bs-toggle="modal" data-bs-target="#addShippingCompanyModal">
+                    <i class="bi bi-plus-circle me-1"></i>إضافة شركة جديدة
+                </button>
             </div>
-            <div class="card-body p-0">
+            <div class="card-body">
                 <?php if (empty($shippingCompanies)): ?>
-                    <div class="p-4 text-center text-muted">لم يتم إضافة شركات شحن بعد.</div>
+                    <div class="text-center py-5 text-muted">
+                        <i class="bi bi-truck fs-1 d-block mb-3 opacity-25"></i>
+                        <div>لم يتم إضافة شركات شحن بعد. يرجى إضافة شركة شحن للبدء.</div>
+                    </div>
                 <?php else: ?>
-                    <div class="table-responsive">
-                        <table class="table table-striped table-hover mb-0 align-middle">
-                            <thead class="table-light">
-                                <tr>
-                                    <th>الاسم</th>
-                                    <th>الهاتف</th>
-                                    <th>الحالة</th>
-                                    <th>ديون الشركة</th>
-                                </tr>
-                            </thead>
-                            <tbody>
-                                <?php foreach ($shippingCompanies as $company): ?>
-                                    <tr>
-                                        <td><?php echo htmlspecialchars($company['name']); ?></td>
-                                        <td><?php echo $company['phone'] ? htmlspecialchars($company['phone']) : '<span class="text-muted">غير متوفر</span>'; ?></td>
-                                        <td>
-                                            <?php if (($company['status'] ?? '') === 'active'): ?>
+                    <div class="row g-3">
+                        <?php foreach ($shippingCompanies as $company): ?>
+                            <?php 
+                                $isActive = ($company['status'] ?? '') === 'active';
+                                $balance = (float)($company['balance'] ?? 0);
+                                $hasDebt = $balance > 0;
+                            ?>
+                            <div class="col-lg-4 col-md-6">
+                                <div class="shipping-company-card h-100 <?php echo $isActive ? 'active' : 'inactive'; ?>" 
+                                     data-company-id="<?php echo (int)$company['id']; ?>"
+                                     data-company-name="<?php echo htmlspecialchars($company['name'], ENT_QUOTES); ?>">
+                                    <div class="shipping-company-card-header">
+                                        <div class="d-flex justify-content-between align-items-start mb-2">
+                                            <div class="shipping-company-icon">
+                                                <i class="bi bi-truck"></i>
+                                            </div>
+                                            <?php if ($isActive): ?>
                                                 <span class="badge bg-success">نشطة</span>
                                             <?php else: ?>
                                                 <span class="badge bg-secondary">غير نشطة</span>
                                             <?php endif; ?>
-                                        </td>
-                                        <td class="fw-semibold text-<?php echo ($company['balance'] ?? 0) > 0 ? 'danger' : 'muted'; ?>">
-                                            <?php echo formatCurrency((float)($company['balance'] ?? 0)); ?>
-                                        </td>
-                                    </tr>
-                                <?php endforeach; ?>
-                            </tbody>
-                        </table>
+                                        </div>
+                                        <h6 class="shipping-company-name mb-0"><?php echo htmlspecialchars($company['name']); ?></h6>
+                                    </div>
+                                    <div class="shipping-company-card-body">
+                                        <?php if (!empty($company['phone'])): ?>
+                                            <div class="shipping-company-info-item">
+                                                <i class="bi bi-telephone"></i>
+                                                <span><?php echo htmlspecialchars($company['phone']); ?></span>
+                                            </div>
+                                        <?php endif; ?>
+                                        <div class="shipping-company-info-item <?php echo $hasDebt ? 'text-danger' : 'text-muted'; ?>">
+                                            <i class="bi bi-<?php echo $hasDebt ? 'exclamation-triangle' : 'check-circle'; ?>"></i>
+                                            <span>
+                                                <?php if ($hasDebt): ?>
+                                                    دين: <?php echo formatCurrency($balance); ?>
+                                                <?php else: ?>
+                                                    لا توجد ديون
+                                                <?php endif; ?>
+                                            </span>
+                                        </div>
+                                    </div>
+                                    <?php if ($isActive): ?>
+                                        <div class="shipping-company-card-footer">
+                                            <button type="button" class="btn btn-primary btn-sm w-100 select-shipping-company-btn">
+                                                <i class="bi bi-check-circle me-1"></i>اختر للشحن
+                                            </button>
+                                        </div>
+                                    <?php endif; ?>
+                                </div>
+                            </div>
+                        <?php endforeach; ?>
                     </div>
                 <?php endif; ?>
             </div>
@@ -3475,3 +3504,167 @@ try {
 })();
 </script>
 <?php endif; ?>
+
+<!-- JavaScript لاختيار شركة الشحن من البطاقات -->
+<script>
+(function() {
+    // اختيار شركة الشحن من البطاقات
+    const selectCompanyButtons = document.querySelectorAll('.select-shipping-company-btn');
+    const shippingCompanySelect = document.querySelector('select[name="shipping_company_id"]');
+    
+    if (selectCompanyButtons && shippingCompanySelect) {
+        selectCompanyButtons.forEach(button => {
+            button.addEventListener('click', function() {
+                const card = this.closest('.shipping-company-card');
+                if (card) {
+                    const companyId = card.dataset.companyId;
+                    const companyName = card.dataset.companyName;
+                    
+                    // تحديث select
+                    if (shippingCompanySelect) {
+                        shippingCompanySelect.value = companyId;
+                        
+                        // إضافة class للبطاقة المختارة
+                        document.querySelectorAll('.shipping-company-card').forEach(c => {
+                            c.classList.remove('border-primary', 'border-3');
+                        });
+                        card.classList.add('border-primary', 'border-3');
+                        
+                        // التمرير إلى نموذج تسجيل الطلب
+                        const orderForm = document.getElementById('shippingOrderForm');
+                        if (orderForm) {
+                            orderForm.scrollIntoView({ behavior: 'smooth', block: 'start' });
+                        }
+                    }
+                }
+            });
+        });
+    }
+})();
+</script>
+
+<!-- أنماط بطاقات شركات الشحن -->
+<style>
+.shipping-company-card {
+    background: #ffffff;
+    border: 2px solid #e5e7eb;
+    border-radius: 16px;
+    padding: 1.5rem;
+    transition: all 0.3s ease;
+    display: flex;
+    flex-direction: column;
+    height: 100%;
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.05);
+}
+
+.shipping-company-card:hover {
+    transform: translateY(-4px);
+    box-shadow: 0 8px 24px rgba(13, 110, 253, 0.15);
+    border-color: rgba(13, 110, 253, 0.3);
+}
+
+.shipping-company-card.active {
+    border-color: #0d6efd;
+    background: linear-gradient(135deg, #ffffff 0%, #f0f7ff 100%);
+}
+
+.shipping-company-card.inactive {
+    opacity: 0.7;
+    background: #f8f9fa;
+}
+
+.shipping-company-card-header {
+    margin-bottom: 1rem;
+}
+
+.shipping-company-icon {
+    width: 56px;
+    height: 56px;
+    background: linear-gradient(135deg, #0d6efd 0%, #0dcaf0 100%);
+    border-radius: 12px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    color: #ffffff;
+    font-size: 1.5rem;
+    margin-bottom: 0.75rem;
+    box-shadow: 0 4px 12px rgba(13, 110, 253, 0.25);
+}
+
+.shipping-company-card.inactive .shipping-company-icon {
+    background: linear-gradient(135deg, #6c757d 0%, #adb5bd 100%);
+}
+
+.shipping-company-name {
+    font-size: 1.1rem;
+    font-weight: 700;
+    color: #1f2937;
+    margin: 0;
+}
+
+.shipping-company-card-body {
+    flex: 1;
+    margin-bottom: 1rem;
+}
+
+.shipping-company-info-item {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    margin-bottom: 0.5rem;
+    font-size: 0.9rem;
+    color: #4b5563;
+}
+
+.shipping-company-info-item i {
+    width: 20px;
+    text-align: center;
+    color: #6b7280;
+}
+
+.shipping-company-info-item.text-danger {
+    color: #dc2626;
+}
+
+.shipping-company-info-item.text-danger i {
+    color: #dc2626;
+}
+
+.shipping-company-card-footer {
+    margin-top: auto;
+    padding-top: 1rem;
+    border-top: 1px solid #e5e7eb;
+}
+
+.shipping-company-card.inactive .shipping-company-card-footer {
+    display: none;
+}
+
+.select-shipping-company-btn {
+    font-weight: 600;
+    border-radius: 8px;
+    padding: 0.5rem 1rem;
+    transition: all 0.2s ease;
+}
+
+.select-shipping-company-btn:hover {
+    transform: scale(1.02);
+    box-shadow: 0 4px 12px rgba(13, 110, 253, 0.3);
+}
+
+@media (max-width: 768px) {
+    .shipping-company-card {
+        padding: 1.25rem;
+    }
+    
+    .shipping-company-icon {
+        width: 48px;
+        height: 48px;
+        font-size: 1.25rem;
+    }
+    
+    .shipping-company-name {
+        font-size: 1rem;
+    }
+}
+</style>

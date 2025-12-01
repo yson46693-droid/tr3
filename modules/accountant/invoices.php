@@ -29,10 +29,6 @@ $offset = ($page - 1) * $perPage;
 
 // البحث والفلترة
 $filters = [
-    'customer_id' => $_GET['customer_id'] ?? '',
-    'status' => $_GET['status'] ?? '',
-    'date_from' => $_GET['date_from'] ?? '',
-    'date_to' => $_GET['date_to'] ?? '',
     'invoice_number' => $_GET['invoice_number'] ?? ''
 ];
 
@@ -202,59 +198,21 @@ if (isset($_GET['id'])) {
     </div>
 <?php endif; ?>
 
-<!-- البحث والفلترة -->
+<!-- البحث -->
 <div class="card shadow-sm mb-4">
     <div class="card-body">
         <form method="GET" class="row g-3">
             <input type="hidden" name="page" value="invoices">
-            <div class="col-md-3">
-                <label class="form-label">رقم الفاتورة</label>
-                <input type="text" class="form-control" name="invoice_number" 
-                       value="<?php echo htmlspecialchars($filters['invoice_number'] ?? ''); ?>" 
-                       placeholder="INV-...">
-            </div>
-            <div class="col-md-2">
-                <label class="form-label">العميل</label>
-                <select class="form-select" name="customer_id">
-                    <option value="">جميع العملاء</option>
-                    <?php 
-                    require_once __DIR__ . '/../../includes/path_helper.php';
-                    $selectedCustomerId = isset($filters['customer_id']) ? intval($filters['customer_id']) : 0;
-                    $customerValid = isValidSelectValue($selectedCustomerId, $customers, 'id');
-                    foreach ($customers as $customer): ?>
-                        <option value="<?php echo $customer['id']; ?>" 
-                                <?php echo $customerValid && $selectedCustomerId == $customer['id'] ? 'selected' : ''; ?>>
-                            <?php echo htmlspecialchars($customer['name']); ?>
-                        </option>
-                    <?php endforeach; ?>
-                </select>
-            </div>
-            <div class="col-md-2">
-                <label class="form-label">الحالة</label>
-                <select class="form-select" name="status">
-                    <option value="">جميع الحالات</option>
-                    <option value="draft" <?php echo ($filters['status'] ?? '') === 'draft' ? 'selected' : ''; ?>>مسودة</option>
-                    <option value="sent" <?php echo ($filters['status'] ?? '') === 'sent' ? 'selected' : ''; ?>>مرسلة</option>
-                    <option value="paid" <?php echo ($filters['status'] ?? '') === 'paid' ? 'selected' : ''; ?>>مدفوعة</option>
-                    <option value="cancelled" <?php echo ($filters['status'] ?? '') === 'cancelled' ? 'selected' : ''; ?>>ملغاة</option>
-                    <option value="overdue" <?php echo ($filters['status'] ?? '') === 'overdue' ? 'selected' : ''; ?>>متأخرة</option>
-                </select>
-            </div>
-            <div class="col-md-2">
-                <label class="form-label">من تاريخ</label>
-                <input type="date" class="form-control" name="date_from" 
-                       value="<?php echo htmlspecialchars($filters['date_from'] ?? ''); ?>">
-            </div>
-            <div class="col-md-2">
-                <label class="form-label">إلى تاريخ</label>
-                <input type="date" class="form-control" name="date_to" 
-                       value="<?php echo htmlspecialchars($filters['date_to'] ?? ''); ?>">
-            </div>
-            <div class="col-md-1">
-                <label class="form-label">&nbsp;</label>
-                <button type="submit" class="btn btn-primary w-100">
-                    <i class="bi bi-search"></i>
-                </button>
+            <div class="col-md-4">
+                <label class="form-label">البحث برقم الفاتورة</label>
+                <div class="input-group">
+                    <input type="text" class="form-control" name="invoice_number" 
+                           value="<?php echo htmlspecialchars($filters['invoice_number'] ?? ''); ?>" 
+                           placeholder="INV-...">
+                    <button type="submit" class="btn btn-primary">
+                        <i class="bi bi-search"></i> بحث
+                    </button>
+                </div>
             </div>
         </form>
     </div>
@@ -327,35 +285,10 @@ if (isset($_GET['id'])) {
                                     </span>
                                 </td>
                                 <td>
-                                    <div class="btn-group btn-group-sm" role="group">
-                                        <a href="?page=invoices&id=<?php echo $invoice['id']; ?>" 
-                                           class="btn btn-info" title="عرض">
-                                            <i class="bi bi-eye"></i>
-                                        </a>
-                                        <a href="<?php echo getRelativeUrl('print_invoice.php?id=' . $invoice['id'] . '&print=1'); ?>" 
-                                           class="btn btn-secondary" target="_blank" title="طباعة">
-                                            <i class="bi bi-printer"></i>
-                                        </a>
-                                        <?php if ($invoice['status'] !== 'paid' && $invoice['status'] !== 'cancelled'): ?>
-                                        <button class="btn btn-warning" 
-                                                onclick="showStatusModal(<?php echo $invoice['id']; ?>, '<?php echo $invoice['status']; ?>')"
-                                                title="تغيير الحالة">
-                                            <i class="bi bi-pencil"></i>
-                                        </button>
-                                        <button class="btn btn-success" 
-                                                onclick="showPaymentModal(<?php echo $invoice['id']; ?>, <?php echo $remaining; ?>)"
-                                                title="تسجيل دفعة">
-                                            <i class="bi bi-cash"></i>
-                                        </button>
-                                        <?php endif; ?>
-                                        <?php if ($invoice['status'] === 'draft' && hasRole('manager')): ?>
-                                        <button class="btn btn-danger" 
-                                                onclick="deleteInvoiceConfirm(<?php echo $invoice['id']; ?>)"
-                                                title="حذف">
-                                            <i class="bi bi-trash"></i>
-                                        </button>
-                                        <?php endif; ?>
-                                    </div>
+                                    <a href="<?php echo getRelativeUrl('print_invoice.php?id=' . $invoice['id'] . '&print=1'); ?>" 
+                                       class="btn btn-secondary btn-sm" target="_blank" title="طباعة">
+                                        <i class="bi bi-printer"></i> طباعة
+                                    </a>
                                 </td>
                             </tr>
                         <?php endforeach; ?>
