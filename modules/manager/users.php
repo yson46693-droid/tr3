@@ -67,14 +67,13 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     
     if ($action === 'add_user') {
         $username = trim($_POST['username'] ?? '');
-        $email = trim($_POST['email'] ?? '');
         $password = $_POST['password'] ?? '';
         $role = $_POST['role'] ?? '';
         $fullName = trim($_POST['full_name'] ?? '');
         $phone = trim($_POST['phone'] ?? '');
         $hourlyRate = cleanFinancialValue($_POST['hourly_rate'] ?? 0);
         
-        if (empty($username) || empty($email) || empty($password) || empty($role)) {
+        if (empty($username) || empty($password) || empty($role)) {
             $error = 'يجب إدخال جميع الحقول المطلوبة';
         } elseif (strlen($password) < $passwordMinLength) {
             $error = 'كلمة المرور يجب أن تكون على الأقل ' . $passwordMinLength . ' أحرف';
@@ -88,8 +87,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 
                 $result = $db->execute(
                     "INSERT INTO users (username, email, password_hash, role, full_name, phone, hourly_rate, status) 
-                     VALUES (?, ?, ?, ?, ?, ?, ?, 'active')",
-                    [$username, $email, $passwordHash, $role, $fullName, $phone, $hourlyRate]
+                     VALUES (?, '', ?, ?, ?, ?, ?, 'active')",
+                    [$username, $passwordHash, $role, $fullName, $phone, $hourlyRate]
                 );
                 
                 logAudit($currentUser['id'], 'create_user', 'user', $result['insert_id'], null, [
@@ -108,7 +107,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         }
     } elseif ($action === 'update_user') {
         $userId = intval($_POST['user_id'] ?? 0);
-        $email = trim($_POST['email'] ?? '');
         $role = $_POST['role'] ?? '';
         $fullName = trim($_POST['full_name'] ?? '');
         $phone = trim($_POST['phone'] ?? '');
@@ -122,27 +120,19 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             if (!$user) {
                 $error = 'المستخدم غير موجود';
             } else {
-                // التحقق من البريد الإلكتروني
-                if ($email !== $user['email']) {
-                    $existing = getUserByUsername($email);
-                    if ($existing && $existing['id'] != $userId) {
-                        $error = 'البريد الإلكتروني مستخدم بالفعل';
-                    }
-                }
-                
                 if (empty($error)) {
                     // التحقق من تغيير الدور
                     $oldRole = $user['role'];
                     $roleChanged = ($oldRole !== $role);
                     
                     $db->execute(
-                        "UPDATE users SET email = ?, role = ?, full_name = ?, phone = ?, hourly_rate = ?, status = ?, updated_at = NOW() 
+                        "UPDATE users SET role = ?, full_name = ?, phone = ?, hourly_rate = ?, status = ?, updated_at = NOW() 
                          WHERE id = ?",
-                        [$email, $role, $fullName, $phone, $hourlyRate, $status, $userId]
+                        [$role, $fullName, $phone, $hourlyRate, $status, $userId]
                     );
                     
                     logAudit($currentUser['id'], 'update_user', 'user', $userId, 
-                             json_encode($user), ['email' => $email, 'role' => $role]);
+                             json_encode($user), ['role' => $role]);
                     
                     // إرسال إشعار للمستخدم إذا تغير دوره
                     if ($roleChanged) {
@@ -261,8 +251,7 @@ $where = [];
 $params = [];
 
 if (!empty($search)) {
-    $where[] = "(u.username LIKE ? OR u.email LIKE ? OR u.full_name LIKE ?)";
-    $params[] = "%$search%";
+    $where[] = "(u.username LIKE ? OR u.full_name LIKE ?)";
     $params[] = "%$search%";
     $params[] = "%$search%";
 }
@@ -398,10 +387,6 @@ $users = $db->query($sql, $params);
                             </div>
                             <div class="row g-2 mb-2">
                                 <div class="col-6">
-                                    <small class="text-muted d-block">البريد</small>
-                                    <small><?php echo htmlspecialchars($user['email']); ?></small>
-                                </div>
-                                <div class="col-6">
                                     <small class="text-muted d-block">سعر الساعة</small>
                                     <small><?php echo formatCurrency($hourlyRate); ?></small>
                                 </div>
@@ -456,7 +441,6 @@ $users = $db->query($sql, $params);
                     <tr>
                         <th>اسم المستخدم</th>
                         <th>الاسم الكامل</th>
-                        <th>البريد</th>
                         <th>الدور</th>
                         <th>سعر الساعة</th>
                         <th>WebAuthn</th>
@@ -468,14 +452,13 @@ $users = $db->query($sql, $params);
                 <tbody>
                     <?php if (empty($users)): ?>
                         <tr>
-                            <td colspan="9" class="text-center text-muted">لا توجد نتائج</td>
+                            <td colspan="8" class="text-center text-muted">لا توجد نتائج</td>
                         </tr>
                     <?php else: ?>
                         <?php foreach ($users as $user): ?>
                             <tr>
                                 <td><?php echo htmlspecialchars($user['username']); ?></td>
                                 <td><?php echo htmlspecialchars($user['full_name'] ?? '-'); ?></td>
-                                <td><?php echo htmlspecialchars($user['email']); ?></td>
                                 <td>
                                     <span class="badge bg-<?php 
                                         echo $user['role'] === 'manager' ? 'danger' : 
@@ -627,18 +610,6 @@ $users = $db->query($sql, $params);
                             <input type="text" class="form-control" name="username" required>
                         </div>
                         <div class="col-md-6 mb-3">
-                            <label class="form-label">البريد الإلكتروني <span class="text-danger">*</span></label>
-                            <input type="email" class="form-control" name="email" required>
-                        </div>
-                    </div>
-                    <div class="row">
-                        <div class="col-md-6 mb-3">
-                            <label class="form-label">كلمة المرور <span class="text-danger">*</span></label>
-                            <input type="password" class="form-control" name="password" 
-                                   minlength="<?php echo $passwordMinLength; ?>" required>
-                            <small class="text-muted">على الأقل <?php echo $passwordMinLength; ?> أحرف</small>
-                        </div>
-                        <div class="col-md-6 mb-3">
                             <label class="form-label">الدور <span class="text-danger">*</span></label>
                             <select class="form-select" name="role" required>
                                 <option value="">اختر الدور</option>
@@ -651,9 +622,17 @@ $users = $db->query($sql, $params);
                     </div>
                     <div class="row">
                         <div class="col-md-6 mb-3">
+                            <label class="form-label">كلمة المرور <span class="text-danger">*</span></label>
+                            <input type="password" class="form-control" name="password" 
+                                   minlength="<?php echo $passwordMinLength; ?>" required>
+                            <small class="text-muted">على الأقل <?php echo $passwordMinLength; ?> أحرف</small>
+                        </div>
+                        <div class="col-md-6 mb-3">
                             <label class="form-label">الاسم الكامل</label>
                             <input type="text" class="form-control" name="full_name">
                         </div>
+                    </div>
+                    <div class="row">
                         <div class="col-md-6 mb-3">
                             <label class="form-label">رقم الهاتف</label>
                             <input type="tel" class="form-control" name="phone">
@@ -691,8 +670,14 @@ $users = $db->query($sql, $params);
                             <input type="text" class="form-control" id="editUsername" readonly>
                         </div>
                         <div class="col-md-6 mb-3">
-                            <label class="form-label">البريد الإلكتروني <span class="text-danger">*</span></label>
-                            <input type="email" class="form-control" name="email" id="editEmail" required>
+                            <label class="form-label">الدور <span class="text-danger">*</span></label>
+                            <select class="form-select" name="role" id="editRole" required>
+                                <option value="">اختر الدور</option>
+                                <option value="manager">مدير</option>
+                                <option value="accountant">محاسب</option>
+                                <option value="sales">مندوب مبيعات</option>
+                                <option value="production">عامل إنتاج</option>
+                            </select>
                         </div>
                     </div>
                     <div class="row">
@@ -773,7 +758,6 @@ $users = $db->query($sql, $params);
 function editUser(user) {
     document.getElementById('editUserId').value = user.id;
     document.getElementById('editUsername').value = user.username;
-    document.getElementById('editEmail').value = user.email || '';
     document.getElementById('editRole').value = user.role;
     document.getElementById('editStatus').value = user.status;
     document.getElementById('editFullName').value = user.full_name || '';

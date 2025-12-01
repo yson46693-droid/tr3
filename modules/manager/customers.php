@@ -158,7 +158,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         if ($action === 'add_company_customer') {
             $name = trim($_POST['name'] ?? '');
             $phone = trim($_POST['phone'] ?? '');
-            $email = trim($_POST['email'] ?? '');
             $address = trim($_POST['address'] ?? '');
             $balance = isset($_POST['balance']) ? cleanFinancialValue($_POST['balance'], true) : 0.0;
 
@@ -176,12 +175,11 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                         $error = 'يوجد عميل مسجل مسبقاً بنفس الاسم.';
                     } else {
                         $db->execute(
-                            "INSERT INTO customers (name, phone, email, address, balance, status, created_by, rep_id, created_from_pos, created_by_admin)
-                             VALUES (?, ?, ?, ?, ?, 'active', ?, NULL, 0, 1)",
+                            "INSERT INTO customers (name, phone, address, balance, status, created_by, rep_id, created_from_pos, created_by_admin)
+                             VALUES (?, ?, ?, ?, 'active', ?, NULL, 0, 1)",
                             [
                                 $name,
                                 $phone !== '' ? $phone : null,
-                                $email !== '' ? $email : null,
                                 $address !== '' ? $address : null,
                                 $balance,
                                 $currentUser['id'],
@@ -213,7 +211,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             $customerId = isset($_POST['customer_id']) ? (int)$_POST['customer_id'] : 0;
             $name = trim($_POST['name'] ?? '');
             $phone = trim($_POST['phone'] ?? '');
-            $email = trim($_POST['email'] ?? '');
             $address = trim($_POST['address'] ?? '');
             $balance = isset($_POST['balance']) ? cleanFinancialValue($_POST['balance'], true) : 0.0;
 
@@ -233,12 +230,11 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
                     $db->execute(
                         "UPDATE customers
-                         SET name = ?, phone = ?, email = ?, address = ?, balance = ?
+                         SET name = ?, phone = ?, address = ?, balance = ?
                          WHERE id = ?",
                         [
                             $name,
                             $phone !== '' ? $phone : null,
-                            $email !== '' ? $email : null,
                             $address !== '' ? $address : null,
                             $balance,
                             $customerId,
@@ -386,7 +382,8 @@ if (!in_array($debtStatus, $allowedDebtStatuses, true)) {
 }
 
 // معاملات البحث المتقدم
-$searchEmail = trim($_GET['search_email'] ?? '');
+// تم حذف البحث بالبريد الإلكتروني
+$searchEmail = '';
 $searchAddress = trim($_GET['search_address'] ?? '');
 $hasLocation = isset($_GET['has_location']) ? $_GET['has_location'] : '';
 $balanceMin = isset($_GET['balance_min']) && $_GET['balance_min'] !== '' ? cleanFinancialValue($_GET['balance_min'], true) : null;
@@ -433,13 +430,7 @@ if ($section === 'company') {
     }
     
     // البحث المتقدم
-    if ($searchEmail !== '') {
-        $whereParts[] = 'c.email LIKE ?';
-        $emailWildcard = '%' . $searchEmail . '%';
-        $listParams[] = $emailWildcard;
-        $countParams[] = $emailWildcard;
-        $statsParams[] = $emailWildcard;
-    }
+    // تم حذف البحث بالبريد الإلكتروني
     
     if ($searchAddress !== '') {
         $whereParts[] = 'c.address LIKE ?';

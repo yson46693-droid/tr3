@@ -6,12 +6,21 @@
 /* ===== Card Grid ===== */
 .cards-grid {
     display: grid;
-    grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+    grid-template-columns: repeat(2, 1fr);
     gap: var(--spacing-lg);
     margin-bottom: var(--spacing-xl);
 }
 
-@media (max-width: 768px) {
+/* للشاشات المتوسطة (Tablet) */
+@media (min-width: 577px) and (max-width: 992px) {
+    .cards-grid {
+        grid-template-columns: repeat(2, 1fr);
+        gap: var(--spacing-md);
+    }
+}
+
+/* للشاشات الصغيرة (Mobile) */
+@media (max-width: 576px) {
     .cards-grid {
         grid-template-columns: 1fr;
         gap: var(--spacing-md);

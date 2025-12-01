@@ -31,10 +31,6 @@ $formAction = getRelativeUrl($dashboardScript);
                         <input type="text" name="phone" class="form-control" maxlength="20">
                     </div>
                     <div class="mb-3">
-                        <label class="form-label">البريد الإلكتروني</label>
-                        <input type="email" name="email" class="form-control">
-                    </div>
-                    <div class="mb-3">
                         <label class="form-label">العنوان</label>
                         <textarea name="address" class="form-control" rows="2"></textarea>
                     </div>
@@ -74,10 +70,6 @@ $formAction = getRelativeUrl($dashboardScript);
                     <div class="mb-3">
                         <label class="form-label">رقم الهاتف</label>
                         <input type="text" name="phone" class="form-control" maxlength="20">
-                    </div>
-                    <div class="mb-3">
-                        <label class="form-label">البريد الإلكتروني</label>
-                        <input type="email" name="email" class="form-control">
                     </div>
                     <div class="mb-3">
                         <label class="form-label">العنوان</label>
@@ -168,14 +160,12 @@ document.addEventListener('DOMContentLoaded', function () {
         var customerName = button.getAttribute('data-customer-name') || '';
         var customerPhone = button.getAttribute('data-customer-phone') || '';
         var customerAddress = button.getAttribute('data-customer-address') || '';
-        var customerEmail = button.getAttribute('data-customer-email') || '';
         var customerBalance = button.getAttribute('data-customer-balance') || '';
 
         var modal = this;
         modal.querySelector('input[name="customer_id"]').value = customerId;
         modal.querySelector('input[name="name"]').value = customerName;
         modal.querySelector('input[name="phone"]').value = customerPhone;
-        modal.querySelector('input[name="email"]').value = customerEmail;
         modal.querySelector('textarea[name="address"]').value = customerAddress;
         modal.querySelector('input[name="balance"]').value = customerBalance;
     });
