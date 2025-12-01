@@ -1984,109 +1984,108 @@ function updateNewCustomerState() {
     }
 }
 
-// تعريف addOrderModalElement خارج الدالة للوصول إليه من أي مكان
-const addOrderModalElement = document.getElementById('addOrderModal');
-
-// ربط الأحداث - استخدام عدة طرق لضمان العمل
-(function() {
-    // ربط مباشر على document للـ event delegation الشامل
-    document.addEventListener('change', function(e) {
+// تهيئة جميع الأحداث بعد تحميل DOM
+document.addEventListener('DOMContentLoaded', function() {
+    const addOrderModalElement = document.getElementById('addOrderModal');
+    
+    if (!addOrderModalElement) {
+        console.error('addOrderModal not found');
+        return;
+    }
+    
+    // ربط أحداث toggle للعميل الجديد - استخدام event delegation
+    addOrderModalElement.addEventListener('change', function(e) {
         if (e.target && e.target.id === 'toggleNewCustomer') {
-            updateNewCustomerState();
+            setTimeout(function() {
+                updateNewCustomerState();
+            }, 10);
         }
     });
     
-    document.addEventListener('click', function(e) {
-        if (e.target && (e.target.id === 'toggleNewCustomer' || e.target.closest('#toggleNewCustomer'))) {
+    // معالجة النقر على label أيضاً (لـ Bootstrap form-switch)
+    addOrderModalElement.addEventListener('click', function(e) {
+        let toggle = null;
+        
+        // إذا تم النقر مباشرة على checkbox
+        if (e.target.id === 'toggleNewCustomer') {
+            toggle = e.target;
+        }
+        // إذا تم النقر على label
+        else if (e.target.tagName === 'LABEL' && e.target.getAttribute('for') === 'toggleNewCustomer') {
+            toggle = document.getElementById('toggleNewCustomer');
+        }
+        // إذا تم النقر على عنصر داخل label
+        else if (e.target.closest('label[for="toggleNewCustomer"]')) {
+            toggle = document.getElementById('toggleNewCustomer');
+        }
+        
+        if (toggle) {
             setTimeout(function() {
                 updateNewCustomerState();
             }, 50);
         }
     });
     
-    // ربط الأحداث عند فتح Modal
-    if (addOrderModalElement) {
-        // استخدام event delegation على Modal
-        addOrderModalElement.addEventListener('change', function(e) {
-            if (e.target && e.target.id === 'toggleNewCustomer') {
-                updateNewCustomerState();
-            }
-        });
-        
-        addOrderModalElement.addEventListener('click', function(e) {
-            if (e.target && (e.target.id === 'toggleNewCustomer' || e.target.closest('#toggleNewCustomer'))) {
-                setTimeout(function() {
-                    updateNewCustomerState();
-                }, 50);
-            }
-        });
-        
-        // تحديث الحالة عند فتح Modal
-        if (typeof bootstrap !== 'undefined') {
-            addOrderModalElement.addEventListener('shown.bs.modal', function() {
-                // تحديث الحالة عند فتح الـ modal
-                updateNewCustomerState();
-                
-                // التأكد من أن toggle يعمل بشكل صحيح
-                const toggle = document.getElementById('toggleNewCustomer');
-                if (toggle) {
-                    // إضافة event listener مباشر
-                    toggle.addEventListener('change', function() {
-                        updateNewCustomerState();
-                    });
-                }
-            });
-        }
-    }
-    
-    // أيضاً ربط عند تحميل الصفحة
-    function initToggle() {
-        const toggle = document.getElementById('toggleNewCustomer');
-        if (toggle) {
-            toggle.addEventListener('change', updateNewCustomerState);
-            toggle.addEventListener('click', function() {
-                setTimeout(updateNewCustomerState, 50);
-            });
-        }
-    }
-    
-    if (document.readyState === 'loading') {
-        document.addEventListener('DOMContentLoaded', initToggle);
-    } else {
-        initToggle();
-    }
-})();
-
-// إعادة تعيين النموذج عند إغلاق Modal
-if (addOrderModalElement && typeof bootstrap !== 'undefined') {
-    addOrderModalElement.addEventListener('hidden.bs.modal', function() {
-        const newCustomerToggle = document.getElementById('toggleNewCustomer');
-        if (newCustomerToggle) {
-            newCustomerToggle.checked = false;
+    // عند فتح Modal
+    if (typeof bootstrap !== 'undefined') {
+        addOrderModalElement.addEventListener('shown.bs.modal', function() {
+            // تحديث الحالة الأولية
             updateNewCustomerState();
-        }
-        const newCustomerRequiredInputs = Array.from(document.querySelectorAll('#addOrderModal .new-customer-required'));
-        newCustomerRequiredInputs.forEach(function(input) {
-            input.value = '';
+            
+            // ربط حدث المندوب
+            const salesRepSelect = document.getElementById('salesRepSelect');
+            const existingCustomerSelect = document.getElementById('existingCustomerSelect');
+            
+            if (salesRepSelect && existingCustomerSelect) {
+                // إزالة أي listeners سابقة لتجنب التكرار
+                const newSelect = salesRepSelect.cloneNode(true);
+                salesRepSelect.parentNode.replaceChild(newSelect, salesRepSelect);
+                
+                const freshSelect = document.getElementById('salesRepSelect');
+                if (freshSelect) {
+                    freshSelect.addEventListener('change', function() {
+                        loadSalesRepCustomers(this.value);
+                    });
+                    
+                    // إذا كان هناك مندوب محدد، تحميل عملاءه
+                    if (freshSelect.value) {
+                        loadSalesRepCustomers(freshSelect.value);
+                    }
+                }
+            }
         });
-        const newCustomerPhoneInput = document.querySelector('#addOrderModal input[name="new_customer_phone"]');
-        const newCustomerAddressInput = document.querySelector('#addOrderModal textarea[name="new_customer_address"]');
-        const newCustomerLatitudeInput = document.querySelector('#addOrderModal input[name="new_customer_latitude"]');
-        const newCustomerLongitudeInput = document.querySelector('#addOrderModal input[name="new_customer_longitude"]');
-        if (newCustomerPhoneInput) {
-            newCustomerPhoneInput.value = '';
-        }
-        if (newCustomerAddressInput) {
-            newCustomerAddressInput.value = '';
-        }
-        if (newCustomerLatitudeInput) {
-            newCustomerLatitudeInput.value = '';
-        }
-        if (newCustomerLongitudeInput) {
-            newCustomerLongitudeInput.value = '';
-        }
-    });
-}
+        
+        // إعادة تعيين النموذج عند إغلاق Modal
+        addOrderModalElement.addEventListener('hidden.bs.modal', function() {
+            const newCustomerToggle = document.getElementById('toggleNewCustomer');
+            if (newCustomerToggle) {
+                newCustomerToggle.checked = false;
+                updateNewCustomerState();
+            }
+            const newCustomerRequiredInputs = Array.from(document.querySelectorAll('#addOrderModal .new-customer-required'));
+            newCustomerRequiredInputs.forEach(function(input) {
+                input.value = '';
+            });
+            const newCustomerPhoneInput = document.querySelector('#addOrderModal input[name="new_customer_phone"]');
+            const newCustomerAddressInput = document.querySelector('#addOrderModal textarea[name="new_customer_address"]');
+            const newCustomerLatitudeInput = document.querySelector('#addOrderModal input[name="new_customer_latitude"]');
+            const newCustomerLongitudeInput = document.querySelector('#addOrderModal input[name="new_customer_longitude"]');
+            if (newCustomerPhoneInput) {
+                newCustomerPhoneInput.value = '';
+            }
+            if (newCustomerAddressInput) {
+                newCustomerAddressInput.value = '';
+            }
+            if (newCustomerLatitudeInput) {
+                newCustomerLatitudeInput.value = '';
+            }
+            if (newCustomerLongitudeInput) {
+                newCustomerLongitudeInput.value = '';
+            }
+        });
+    }
+});
+
 
 // دالة الحصول على موقع المستخدم للعميل الجديد
 // ربط الأحداث عند فتح Modal لضمان وجود العناصر
@@ -2134,12 +2133,15 @@ function setupLocationButton() {
     }
 }
 
-// ربط الأحداث عند فتح Modal
-if (addOrderModalElement && typeof bootstrap !== 'undefined') {
-    addOrderModalElement.addEventListener('shown.bs.modal', function() {
-        setupLocationButton();
-    });
-}
+// ربط الأحداث عند فتح Modal لزر الموقع
+document.addEventListener('DOMContentLoaded', function() {
+    const addOrderModalElement = document.getElementById('addOrderModal');
+    if (addOrderModalElement && typeof bootstrap !== 'undefined') {
+        addOrderModalElement.addEventListener('shown.bs.modal', function() {
+            setupLocationButton();
+        });
+    }
+});
 
 // أيضاً محاولة الربط مباشرة عند تحميل الصفحة
 if (document.readyState === 'loading') {
@@ -2230,13 +2232,16 @@ function loadSalesRepCustomers(salesRepId) {
     const existingCustomerSelect = document.getElementById('existingCustomerSelect');
     const newCustomerToggle = document.getElementById('toggleNewCustomer');
     
-    if (!existingCustomerSelect) return;
+    if (!existingCustomerSelect) {
+        console.error('existingCustomerSelect not found');
+        return;
+    }
     
     // إعادة تعيين حقل العميل
     existingCustomerSelect.innerHTML = '<option value="">جاري التحميل...</option>';
     existingCustomerSelect.disabled = true;
     
-    if (!salesRepId) {
+    if (!salesRepId || salesRepId === '') {
         existingCustomerSelect.innerHTML = '<option value="">اختر المندوب أولاً</option>';
         existingCustomerSelect.disabled = true;
         if (newCustomerToggle) {
@@ -2246,107 +2251,57 @@ function loadSalesRepCustomers(salesRepId) {
         return;
     }
     
-    // جلب عملاء المندوب عبر AJAX
-    const currentUrl = new URL(window.location.href);
-    let baseUrl = currentUrl.pathname;
-    const separator = baseUrl.includes('?') ? '&' : '?';
-    baseUrl = baseUrl + separator + 'page=orders&ajax=get_customers&sales_rep_id=' + encodeURIComponent(salesRepId);
+    // بناء URL بشكل صحيح
+    const currentUrl = window.location.href;
+    const url = new URL(currentUrl);
+    url.searchParams.set('page', 'orders');
+    url.searchParams.set('ajax', 'get_customers');
+    url.searchParams.set('sales_rep_id', salesRepId);
     
-    fetch(baseUrl)
-        .then(response => {
-            if (!response.ok) {
-                throw new Error('Network response was not ok');
-            }
-            return response.json();
-        })
-        .then(data => {
-            existingCustomerSelect.innerHTML = '<option value="">اختر العميل</option>';
+    fetch(url.toString(), {
+        method: 'GET',
+        headers: {
+            'Accept': 'application/json',
+            'X-Requested-With': 'XMLHttpRequest'
+        },
+        cache: 'no-cache'
+    })
+    .then(response => {
+        if (!response.ok) {
+            throw new Error('Network response was not ok: ' + response.status);
+        }
+        const contentType = response.headers.get('content-type');
+        if (!contentType || !contentType.includes('application/json')) {
+            throw new Error('Expected JSON but got ' + contentType);
+        }
+        return response.json();
+    })
+    .then(data => {
+        existingCustomerSelect.innerHTML = '<option value="">اختر العميل</option>';
+        
+        if (data.success && data.customers && data.customers.length > 0) {
+            data.customers.forEach(function(customer) {
+                const option = document.createElement('option');
+                option.value = customer.id;
+                option.textContent = customer.name;
+                existingCustomerSelect.appendChild(option);
+            });
             
-            if (data.success && data.customers && data.customers.length > 0) {
-                data.customers.forEach(function(customer) {
-                    const option = document.createElement('option');
-                    option.value = customer.id;
-                    option.textContent = customer.name;
-                    existingCustomerSelect.appendChild(option);
-                });
-                
-                existingCustomerSelect.disabled = false;
-                existingCustomerSelect.removeAttribute('required');
-                existingCustomerSelect.setAttribute('required', 'required');
-            } else {
-                existingCustomerSelect.innerHTML = '<option value="">لا يوجد عملاء لهذا المندوب</option>';
-                existingCustomerSelect.disabled = false;
-            }
-        })
-        .catch(error => {
-            console.error('Error loading customers:', error);
-            existingCustomerSelect.innerHTML = '<option value="">خطأ في تحميل العملاء</option>';
             existingCustomerSelect.disabled = false;
-        });
-}
-
-// تحميل عملاء المندوب عند اختياره (فقط إذا لم يكن المستخدم مندوب مبيعات)
-// ربط الأحداث عند فتح Modal لضمان وجود العناصر
-let salesRepListenerAttached = false;
-
-if (addOrderModalElement && typeof bootstrap !== 'undefined') {
-    addOrderModalElement.addEventListener('shown.bs.modal', function() {
-        const salesRepSelect = document.getElementById('salesRepSelect');
-        const existingCustomerSelect = document.getElementById('existingCustomerSelect');
-        const newCustomerToggle = document.getElementById('toggleNewCustomer');
-        
-        // ربط حدث تغيير المندوب (مرة واحدة فقط)
-        if (salesRepSelect && existingCustomerSelect && !salesRepListenerAttached) {
-            salesRepSelect.addEventListener('change', function() {
-                loadSalesRepCustomers(this.value);
-            });
-            salesRepListenerAttached = true;
-            
-            // إذا كان هناك مندوب محدد مسبقاً، تحميل عملاءه
-            if (salesRepSelect.value) {
-                loadSalesRepCustomers(salesRepSelect.value);
-            }
-        } else if (salesRepSelect && salesRepSelect.value) {
-            // إذا كان المندوب محدد بالفعل، تحميل عملاءه
-            loadSalesRepCustomers(salesRepSelect.value);
+            existingCustomerSelect.setAttribute('required', 'required');
+        } else {
+            existingCustomerSelect.innerHTML = '<option value="">لا يوجد عملاء لهذا المندوب</option>';
+            existingCustomerSelect.disabled = false;
         }
-        
-        // تحديث حالة toggle عند فتح Modal
-        if (newCustomerToggle) {
-            // تحديث الحالة الأولية
-            updateNewCustomerState();
-        }
-        
-        // التأكد من أن حقل العميل معطل إذا لم يتم اختيار مندوب (فقط للمدير)
-        if (newCustomerToggle && salesRepSelect && existingCustomerSelect) {
-            if (!salesRepSelect.value && !newCustomerToggle.checked) {
-                existingCustomerSelect.disabled = true;
-                existingCustomerSelect.innerHTML = '<option value="">اختر المندوب أولاً</option>';
-            }
-        }
-    });
-    
-    // إعادة تعيين عند إغلاق Modal
-    addOrderModalElement.addEventListener('hidden.bs.modal', function() {
-        salesRepListenerAttached = false;
-    });
-} else {
-    // Fallback: ربط الأحداث مباشرة إذا لم يكن Bootstrap متاحاً
-    document.addEventListener('DOMContentLoaded', function() {
-        const salesRepSelect = document.getElementById('salesRepSelect');
-        const existingCustomerSelect = document.getElementById('existingCustomerSelect');
-        
-        if (salesRepSelect && existingCustomerSelect) {
-            salesRepSelect.addEventListener('change', function() {
-                loadSalesRepCustomers(this.value);
-            });
-            
-            if (salesRepSelect.value) {
-                loadSalesRepCustomers(salesRepSelect.value);
-            }
-        }
+    })
+    .catch(error => {
+        console.error('Error loading customers:', error);
+        existingCustomerSelect.innerHTML = '<option value="">خطأ في تحميل العملاء</option>';
+        existingCustomerSelect.disabled = false;
+        alert('حدث خطأ في تحميل العملاء: ' + error.message);
     });
 }
+
 
 // JavaScript لمعالجة Modal طلب الشركة
 <?php if ($isManagerOrAccountant): ?>

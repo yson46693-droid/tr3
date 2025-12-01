@@ -708,13 +708,46 @@ document.addEventListener('DOMContentLoaded', function() {
     const originalFetch = window.fetch;
     if (typeof originalFetch === 'function') {
         window.fetch = async function() {
-            const response = await originalFetch.apply(this, arguments);
             try {
-                handleSessionStatus(response && response.status);
-            } catch (statusError) {
-                console.warn('Session overlay handler (fetch) error:', statusError);
+                const response = await originalFetch.apply(this, arguments);
+                
+                // التحقق من أن الاستجابة ليست من errors.infinityfree.net
+                if (response && response.url && response.url.includes('errors.infinityfree.net')) {
+                    // إنشاء استجابة خطأ بديلة بدلاً من إرجاع استجابة من errors.infinityfree.net
+                    return new Response(JSON.stringify({
+                        success: false,
+                        message: 'حدث خطأ في الاتصال بالخادم'
+                    }), {
+                        status: 500,
+                        statusText: 'Internal Server Error',
+                        headers: {
+                            'Content-Type': 'application/json'
+                        }
+                    });
+                }
+                
+                try {
+                    handleSessionStatus(response && response.status);
+                } catch (statusError) {
+                    console.warn('Session overlay handler (fetch) error:', statusError);
+                }
+                return response;
+            } catch (fetchError) {
+                // التعامل مع أخطاء الشبكة والأخطاء الأخرى
+                console.error('Fetch error:', fetchError);
+                
+                // إرجاع استجابة خطأ بديلة
+                return new Response(JSON.stringify({
+                    success: false,
+                    message: 'حدث خطأ في الاتصال بالخادم. يرجى المحاولة مرة أخرى.'
+                }), {
+                    status: 500,
+                    statusText: 'Network Error',
+                    headers: {
+                        'Content-Type': 'application/json'
+                    }
+                });
             }
-            return response;
         };
     }
 

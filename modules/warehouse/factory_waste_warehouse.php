@@ -1081,7 +1081,16 @@ document.getElementById('editProductForm')?.addEventListener('submit', function(
         method: 'POST',
         body: formData
     })
-    .then(response => response.json())
+    .then(response => {
+        // التحقق من نوع المحتوى قبل محاولة تحويله إلى JSON
+        const contentType = response.headers.get('content-type');
+        if (contentType && contentType.includes('application/json')) {
+            return response.json();
+        } else {
+            // إذا لم يكن JSON، إرجاع رسالة خطأ
+            throw new Error('استجابة غير صالحة من الخادم');
+        }
+    })
     .then(data => {
         if (data.success) {
             alert('تم التعديل بنجاح');
@@ -1092,7 +1101,7 @@ document.getElementById('editProductForm')?.addEventListener('submit', function(
     })
     .catch(error => {
         console.error('Error:', error);
-        alert('حدث خطأ أثناء التعديل');
+        alert('حدث خطأ أثناء التعديل: ' + (error.message || 'يرجى المحاولة مرة أخرى'));
     });
 });
 
@@ -1106,7 +1115,16 @@ document.getElementById('editPackagingForm')?.addEventListener('submit', functio
         method: 'POST',
         body: formData
     })
-    .then(response => response.json())
+    .then(response => {
+        // التحقق من نوع المحتوى قبل محاولة تحويله إلى JSON
+        const contentType = response.headers.get('content-type');
+        if (contentType && contentType.includes('application/json')) {
+            return response.json();
+        } else {
+            // إذا لم يكن JSON، إرجاع رسالة خطأ
+            throw new Error('استجابة غير صالحة من الخادم');
+        }
+    })
     .then(data => {
         if (data.success) {
             alert('تم التعديل بنجاح');
@@ -1117,7 +1135,7 @@ document.getElementById('editPackagingForm')?.addEventListener('submit', functio
     })
     .catch(error => {
         console.error('Error:', error);
-        alert('حدث خطأ أثناء التعديل');
+        alert('حدث خطأ أثناء التعديل: ' + (error.message || 'يرجى المحاولة مرة أخرى'));
     });
 });
 
@@ -1131,7 +1149,16 @@ document.getElementById('editRawMaterialForm')?.addEventListener('submit', funct
         method: 'POST',
         body: formData
     })
-    .then(response => response.json())
+    .then(response => {
+        // التحقق من نوع المحتوى قبل محاولة تحويله إلى JSON
+        const contentType = response.headers.get('content-type');
+        if (contentType && contentType.includes('application/json')) {
+            return response.json();
+        } else {
+            // إذا لم يكن JSON، إرجاع رسالة خطأ
+            throw new Error('استجابة غير صالحة من الخادم');
+        }
+    })
     .then(data => {
         if (data.success) {
             alert('تم التعديل بنجاح');
@@ -1142,7 +1169,7 @@ document.getElementById('editRawMaterialForm')?.addEventListener('submit', funct
     })
     .catch(error => {
         console.error('Error:', error);
-        alert('حدث خطأ أثناء التعديل');
+        alert('حدث خطأ أثناء التعديل: ' + (error.message || 'يرجى المحاولة مرة أخرى'));
     });
 });
 
@@ -1175,7 +1202,16 @@ function deleteItem(id, type) {
         method: 'POST',
         body: formData
     })
-    .then(response => response.json())
+    .then(response => {
+        // التحقق من نوع المحتوى قبل محاولة تحويله إلى JSON
+        const contentType = response.headers.get('content-type');
+        if (contentType && contentType.includes('application/json')) {
+            return response.json();
+        } else {
+            // إذا لم يكن JSON، إرجاع رسالة خطأ
+            throw new Error('استجابة غير صالحة من الخادم');
+        }
+    })
     .then(data => {
         if (data.success) {
             alert('تم الحذف بنجاح');
@@ -1186,7 +1222,7 @@ function deleteItem(id, type) {
     })
     .catch(error => {
         console.error('Error:', error);
-        alert('حدث خطأ أثناء الحذف');
+        alert('حدث خطأ أثناء الحذف: ' + (error.message || 'يرجى المحاولة مرة أخرى'));
     });
 }
 </script>

@@ -327,18 +327,31 @@ try {
         
     } else {
         ob_end_clean();
+        http_response_code(400);
         echo json_encode(['success' => false, 'message' => 'عملية غير معروفة'], JSON_UNESCAPED_UNICODE);
+        exit;
     }
     
 } catch (Throwable $e) {
     ob_end_clean();
     error_log('Error in factory_waste.php: ' . $e->getMessage());
     error_log('Stack trace: ' . $e->getTraceAsString());
-    http_response_code(500);
+    
+    // التأكد من أن الـ header يتم إرساله بشكل صحيح
+    if (!headers_sent()) {
+        header('Content-Type: application/json; charset=utf-8');
+        http_response_code(500);
+    }
+    
     echo json_encode([
         'success' => false,
         'message' => 'حدث خطأ داخلي في الخادم'
     ], JSON_UNESCAPED_UNICODE);
     exit;
+}
+
+// التأكد من أنه لا يوجد أي output إضافي
+if (ob_get_level() > 0) {
+    ob_end_clean();
 }
 
