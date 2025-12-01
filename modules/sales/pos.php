@@ -534,6 +534,7 @@ if (!$error && $_SERVER['REQUEST_METHOD'] === 'POST') {
                         $invoiceCount = ((int)($previousInvoiceCount['count'] ?? 0));
                         
                         // التحقق من وجود إرجاعات سابقة للعميل
+                        // هذا مهم جداً: يجب التحقق من وجود سجل مرتجعات للعميل
                         $hasReturns = false;
                         try {
                             $returnsTableCheck = $db->queryOne("SHOW TABLES LIKE 'invoice_returns'");
@@ -544,9 +545,22 @@ if (!$error && $_SERVER['REQUEST_METHOD'] === 'POST') {
                                 );
                                 $returnsCount = ((int)($previousReturnsCount['count'] ?? 0));
                                 $hasReturns = ($returnsCount > 0);
+                                
+                                // تسجيل معلومات التشخيص
+                                error_log(sprintf(
+                                    'Returns check for customer %d: returnsCount=%d, hasReturns=%s',
+                                    $customerId,
+                                    $returnsCount,
+                                    $hasReturns ? 'true' : 'false'
+                                ));
+                            } else {
+                                error_log('invoice_returns table does not exist');
                             }
                         } catch (Throwable $returnsError) {
                             error_log('Error checking previous returns for customer ' . $customerId . ': ' . $returnsError->getMessage());
+                            error_log('Returns check error trace: ' . $returnsError->getTraceAsString());
+                            // في حالة الخطأ، نفترض عدم وجود سجل مرتجعات
+                            $hasReturns = false;
                         }
                         
                         // العميل لديه سجل مشتريات إذا كان لديه فواتير أو إرجاعات سابقة
@@ -565,6 +579,7 @@ if (!$error && $_SERVER['REQUEST_METHOD'] === 'POST') {
                         error_log('Previous purchases check error trace: ' . $e->getTraceAsString());
                         // في حالة الخطأ، نفترض عدم وجود سجل مشتريات سابق (لضمان عدم منح عمولة غير مستحقة)
                         $hasPreviousPurchases = false;
+                        $hasReturns = false; // التأكد من أن القيمة محددة
                     }
                     
                     // المنطق الجديد: خصم مبلغ البيع بالكامل من الرصيد الدائن أولاً
@@ -1104,12 +1119,45 @@ if (!$error && $_SERVER['REQUEST_METHOD'] === 'POST') {
                         // بدون إضافة إلى رصيد الخزنة الإجمالي
                         
                         // التحقق من أن العميل لديه رصيد دائن (قبل البيع)
+                        // يجب أن يكون الرصيد سالباً قبل البيع
                         $hasCreditBalance = ($currentBalance < 0);
                         
                         // التحقق من أن العميل لديه سجل مرتجعات
-                        $hasReturnsRecord = ($hasReturns ?? false);
+                        // التأكد من أن $hasReturns تم تحديده بشكل صحيح
+                        // إذا لم يكن محدداً، نحاول التحقق مرة أخرى
+                        if (!isset($hasReturns)) {
+                            $hasReturns = false;
+                            try {
+                                $returnsTableCheck = $db->queryOne("SHOW TABLES LIKE 'invoice_returns'");
+                                if (!empty($returnsTableCheck)) {
+                                    $previousReturnsCount = $db->queryOne(
+                                        "SELECT COUNT(*) as count FROM invoice_returns WHERE customer_id = ?",
+                                        [$customerId]
+                                    );
+                                    $returnsCount = ((int)($previousReturnsCount['count'] ?? 0));
+                                    $hasReturns = ($returnsCount > 0);
+                                }
+                            } catch (Throwable $returnsError) {
+                                error_log('Error re-checking returns for customer ' . $customerId . ': ' . $returnsError->getMessage());
+                                $hasReturns = false;
+                            }
+                        }
+                        $hasReturnsRecord = ($hasReturns === true);
+                        
+                        // تسجيل معلومات التشخيص قبل التحقق
+                        error_log(sprintf(
+                            'Credit balance collections commission check: creditUsed=%.2f, currentBalance=%.2f, hasCreditBalance=%s, hasReturns=%s, hasReturnsRecord=%s, invoiceId=%d, customerId=%d',
+                            $creditUsed,
+                            $currentBalance,
+                            $hasCreditBalance ? 'true' : 'false',
+                            ($hasReturns === true) ? 'true' : 'false',
+                            $hasReturnsRecord ? 'true' : 'false',
+                            $invoiceId,
+                            $customerId
+                        ));
                         
                         // تطبيق القاعدة الجديدة: رصيد دائن + سجل مرتجعات
+                        // يجب أن يكون هناك استخدام للرصيد الدائن، وأن يكون للعميل رصيد دائن قبل البيع، وأن يكون لديه سجل مرتجعات
                         if ($creditUsed > 0.0001 && $hasCreditBalance && $hasReturnsRecord) {
                             // حساب نسبة 2% من المبلغ المخصوم من الرصيد الدائن
                             $creditCommissionAmount = round($creditUsed * 0.02, 2);
@@ -1306,17 +1354,18 @@ if (!$error && $_SERVER['REQUEST_METHOD'] === 'POST') {
                                     $reason[] = 'no credit used';
                                 }
                                 if (!$hasCreditBalance) {
-                                    $reason[] = 'no credit balance';
+                                    $reason[] = 'no credit balance (currentBalance=' . $currentBalance . ')';
                                 }
                                 if (!$hasReturnsRecord) {
-                                    $reason[] = 'no returns record';
+                                    $reason[] = 'no returns record (hasReturns=' . ($hasReturns === true ? 'true' : 'false') . ')';
                                 }
                                 if (!($hasPreviousPurchases ?? false)) {
                                     $reason[] = 'no previous purchases';
                                 }
                                 error_log(sprintf(
-                                    'Credit balance commission NOT applied: creditUsed=%.2f, hasCreditBalance=%s, hasReturnsRecord=%s, hasPreviousPurchases=%s, reason=%s, invoiceId=%d, customerId=%d',
+                                    'Credit balance commission NOT applied: creditUsed=%.2f, currentBalance=%.2f, hasCreditBalance=%s, hasReturnsRecord=%s, hasPreviousPurchases=%s, reason=%s, invoiceId=%d, customerId=%d',
                                     $creditUsed,
+                                    $currentBalance,
                                     $hasCreditBalance ? 'true' : 'false',
                                     $hasReturnsRecord ? 'true' : 'false',
                                     ($hasPreviousPurchases ?? false) ? 'true' : 'false',

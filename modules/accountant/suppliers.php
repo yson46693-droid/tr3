@@ -1334,7 +1334,12 @@ document.addEventListener('DOMContentLoaded', function() {
 <div class="modal fade" id="printSupplierReportModal" tabindex="-1">
     <div class="modal-dialog modal-dialog-scrollable">
         <div class="modal-content">
-            <form method="GET" action="<?php echo getRelativeUrl('print_supplier_report.php'); ?>" target="_blank">
+            <?php 
+            // حساب المسار الصحيح - print_supplier_report.php موجود في الجذر
+            $basePath = getBasePath();
+            $printReportUrl = !empty($basePath) ? rtrim($basePath, '/') . '/print_supplier_report.php' : '/print_supplier_report.php';
+            ?>
+            <form method="GET" action="<?php echo htmlspecialchars($printReportUrl); ?>" target="_blank">
                 <div class="modal-header">
                     <h5 class="modal-title"><i class="bi bi-printer me-2"></i>طباعة تقرير التوريدات</h5>
                     <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
