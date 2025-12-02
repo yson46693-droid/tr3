@@ -35,14 +35,20 @@ $db = db();
 $error = '';
 $success = '';
 
+// تحديد اسم عمود المكافآت الصحيح (bonus أو bonuses)
+$bonusColumnCheck = $db->queryOne("SHOW COLUMNS FROM salaries WHERE Field IN ('bonus', 'bonuses')");
+$bonusColumnName = $bonusColumnCheck ? $bonusColumnCheck['Field'] : 'bonus'; // افتراضي: bonus
+
 // التأكد من وجود دالة calculateTotalSalaryWithCollections
 if (!function_exists('calculateTotalSalaryWithCollections')) {
     /**
      * حساب الراتب الإجمالي بشكل صحيح مع نسبة التحصيلات (دالة بديلة)
      */
     function calculateTotalSalaryWithCollections($salaryRecord, $userId, $month, $year, $role) {
+        global $bonusColumnName;
         $baseAmount = cleanFinancialValue($salaryRecord['base_amount'] ?? 0);
-        $bonus = cleanFinancialValue($salaryRecord['bonus'] ?? 0);
+        // استخدام اسم العمود الصحيح (bonus أو bonuses)
+        $bonus = cleanFinancialValue($salaryRecord[$bonusColumnName] ?? $salaryRecord['bonus'] ?? $salaryRecord['bonuses'] ?? 0);
         $deductions = cleanFinancialValue($salaryRecord['deductions'] ?? 0);
         $totalSalaryBase = cleanFinancialValue($salaryRecord['total_amount'] ?? 0);
         
@@ -353,7 +359,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['
     // حساب عدد الساعات الفعلية من الحضور
     $actualHours = calculateMonthlyHours($currentUser['id'], $month, $year);
     $hourlyRate = cleanFinancialValue($salaryRecord['hourly_rate'] ?? $currentUser['hourly_rate'] ?? 0);
-    $bonus = cleanFinancialValue($salaryRecord['bonus'] ?? 0);
+    // استخدام اسم العمود الصحيح (bonus أو bonuses)
+    $bonus = cleanFinancialValue($salaryRecord[$bonusColumnName] ?? $salaryRecord['bonus'] ?? $salaryRecord['bonuses'] ?? 0);
     $deductions = cleanFinancialValue($salaryRecord['deductions'] ?? 0);
     
     // حساب الراتب الإجمالي بناءً على عدد الساعات الفعلية
@@ -863,8 +870,13 @@ if ($salaryData['exists']) {
     if (isset($currentSalary['total_amount'])) {
         $currentSalary['total_amount'] = cleanFinancialValue($currentSalary['total_amount'] ?? 0);
     }
-    if (isset($currentSalary['bonus'])) {
+    // استخدام اسم العمود الصحيح (bonus أو bonuses)
+    if (isset($currentSalary[$bonusColumnName])) {
+        $currentSalary[$bonusColumnName] = cleanFinancialValue($currentSalary[$bonusColumnName]);
+    } elseif (isset($currentSalary['bonus'])) {
         $currentSalary['bonus'] = cleanFinancialValue($currentSalary['bonus']);
+    } elseif (isset($currentSalary['bonuses'])) {
+        $currentSalary['bonuses'] = cleanFinancialValue($currentSalary['bonuses']);
     }
     if (isset($currentSalary['deductions'])) {
         $currentSalary['deductions'] = cleanFinancialValue($currentSalary['deductions']);
@@ -987,7 +999,8 @@ $delaySummary = calculateMonthlyDelaySummary($currentUser['id'], $selectedMonth,
 
 // حساب القيم المطلوبة للعرض
 $hourlyRate = cleanFinancialValue($currentSalary['hourly_rate'] ?? $currentUser['hourly_rate'] ?? 0);
-$bonus = cleanFinancialValue($currentSalary['bonus'] ?? 0);
+// استخدام اسم العمود الصحيح (bonus أو bonuses)
+$bonus = cleanFinancialValue($currentSalary[$bonusColumnName] ?? $currentSalary['bonus'] ?? $currentSalary['bonuses'] ?? 0);
 $deductions = cleanFinancialValue($currentSalary['deductions'] ?? 0);
 
 // حساب الراتب الأساسي بناءً على الساعات المكتملة فقط (التي تم تسجيل الانصراف لها)
