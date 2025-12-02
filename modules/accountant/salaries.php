@@ -3503,21 +3503,6 @@ $pageTitle = ($view === 'advances') ? 'السلف' : (($view === 'pending') ? '�
                         <?php endif; ?>
                         
                         <div class="detail-actions">
-                            <?php if ($hasSalaryId): ?>
-                            <button class="btn btn-info btn-sm" 
-                                    onclick="viewSalaryDetails(<?php echo $salary['id']; ?>)" 
-                                    data-bs-toggle="modal" 
-                                    data-bs-target="#salaryDetailsModal"
-                                    data-salary-id="<?php echo $salary['id']; ?>"
-                                    title="تفاصيل">
-                                <i class="bi bi-eye me-1"></i>عرض
-                            </button>
-                            <?php else: ?>
-                            <button class="btn btn-info btn-sm" disabled title="يجب حساب الراتب أولاً">
-                                <i class="bi bi-eye me-1"></i>عرض
-                            </button>
-                            <?php endif; ?>
-                            
                             <button class="btn btn-warning btn-sm" 
                                     onclick="openModifyModal(<?php echo $hasSalaryId ? $salary['id'] : 0; ?>, <?php echo htmlspecialchars(json_encode($salary), ENT_QUOTES); ?>)" 
                                     data-bs-toggle="modal" 
