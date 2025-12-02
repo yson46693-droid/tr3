@@ -946,6 +946,24 @@ if (!$error && $_SERVER['REQUEST_METHOD'] === 'POST') {
                             'amount' => $effectivePaidAmount,
                             'collection_number' => $collectionNumber
                         ]);
+                        
+                        // إضافة المكافأة الفورية بنسبة 2% للمندوب الذي قام بالتحصيل مباشرة
+                        if (($currentUser['role'] ?? '') === 'sales' && $collectionId) {
+                            try {
+                                require_once __DIR__ . '/../../includes/salary_calculator.php';
+                                if (function_exists('applyCollectionInstantReward')) {
+                                    applyCollectionInstantReward(
+                                        $currentUser['id'],
+                                        $effectivePaidAmount,
+                                        $saleDate,
+                                        $collectionId,
+                                        $currentUser['id']
+                                    );
+                                }
+                            } catch (Throwable $instantRewardError) {
+                                error_log('Instant collection reward error (pos partial): ' . $instantRewardError->getMessage());
+                            }
+                        }
                     } catch (Throwable $collectionError) {
                         error_log('Error recording partial collection: ' . $collectionError->getMessage());
                         // لا نوقف العملية إذا فشل تسجيل التحصيل، لكن نسجل الخطأ
@@ -1784,14 +1802,16 @@ if (!$error && $_SERVER['REQUEST_METHOD'] === 'POST') {
                         // البيع بالتحصيل الجزئي: حساب عمولة فقط على المبلغ المحصل (وليس على الرصيد الدائن)
                         // ملاحظة: حتى لو كان هناك استخدام للرصيد الدائن، نحسب عمولة على المبلغ المحصل فقط
                         // لأن المبلغ المحصل هو مبلغ نقدي فعلي تم تحصيله من العميل
+                        // ملاحظة: لا نستدعي refreshSalesCommissionForUser هنا لأننا نستخدم applyCollectionInstantReward
+                        // مباشرة بعد تسجيل التحصيل في جدول collections لتجنب الحساب المزدوج
                         if ($paymentType === 'partial' && $effectivePaidAmount > 0.0001) {
-                            // نحسب العمولة على المبلغ المحصل فقط ($effectivePaidAmount)
-                            // وليس على المبلغ المخصوم من الرصيد الدائن ($creditUsed)
-                            refreshSalesCommissionForUser(
-                                $currentUser['id'],
-                                $saleDate,
-                                'تحديث تلقائي بعد بيع جزئي من نقطة البيع'
-                            );
+                            // تم حساب العمولة مباشرة عند تسجيل التحصيل في جدول collections
+                            // لا حاجة لإعادة الحساب هنا لتجنب الحساب المزدوج
+                            error_log(sprintf(
+                                'Partial payment: commission already applied via applyCollectionInstantReward. effectivePaidAmount=%.2f, invoiceId=%d',
+                                $effectivePaidAmount,
+                                $invoiceId
+                            ));
                         }
                         
                         // ملاحظة: البيع بالآجل فقط (credit) بدون كاش أو جزئي:
