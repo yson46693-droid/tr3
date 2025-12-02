@@ -522,6 +522,7 @@ if (!$error && $_SERVER['REQUEST_METHOD'] === 'POST') {
                     }
 
                     $currentBalance = (float) ($customer['balance'] ?? 0);
+                    $originalBalance = $currentBalance; // حفظ الرصيد الأصلي قبل أي تحديثات
                     $creditUsed = 0.0;
                     $amountAddedToSales = 0.0; // المبلغ الذي يُضاف إلى إجمالي المبيعات في خزنة المندوب
                     
@@ -1179,23 +1180,16 @@ if (!$error && $_SERVER['REQUEST_METHOD'] === 'POST') {
                         
                         // التحقق من أن العميل لديه رصيد دائن (قبل البيع)
                         // يجب أن يكون الرصيد سالباً قبل البيع
-                        $hasCreditBalance = ($currentBalance < 0);
+                        // استخدام الرصيد الأصلي المحفوظ قبل التحديث
+                        $hasCreditBalance = (isset($originalBalance) && $originalBalance < 0);
                         
-                        // في حالة البيع بالآجل، تأكد من أن creditUsed محسوب بشكل صحيح
-                        // إذا كان للعميل رصيد دائن وتم البيع بالآجل، يجب أن يكون creditUsed > 0
-                        if ($paymentType === 'credit' && $hasCreditBalance && $creditUsed <= 0.0001) {
-                            // إعادة حساب creditUsed بناءً على الرصيد الدائن المتاح
-                            $creditAvailable = abs($currentBalance);
-                            if ($netTotal <= $creditAvailable) {
-                                $creditUsed = $netTotal;
-                            } else {
-                                $creditUsed = $creditAvailable;
-                            }
-                            error_log(sprintf(
-                                'Recalculated creditUsed for credit payment: creditUsed=%.2f, creditAvailable=%.2f, netTotal=%.2f, invoiceId=%d',
-                                $creditUsed, $creditAvailable, $netTotal, $invoiceId
-                            ));
-                        }
+                        // استخدام قيمة creditUsed التي تم حسابها مسبقاً في السطور 589-622
+                        // هذه القيمة صحيحة لأنها تم حسابها بناءً على الرصيد الأصلي قبل التحديث
+                        // لا حاجة لإعادة حساب creditUsed هنا لأن القيمة المحسوبة مسبقاً صحيحة
+                        error_log(sprintf(
+                            'Using pre-calculated creditUsed: creditUsed=%.2f, originalBalance=%.2f, paymentType=%s, invoiceId=%d',
+                            $creditUsed, $originalBalance ?? $currentBalance, $paymentType ?? 'NULL', $invoiceId
+                        ));
                         
                         // تسجيل معلومات التشخيص قبل التحقق من النظام الجديد
                         error_log(sprintf(
@@ -1219,38 +1213,19 @@ if (!$error && $_SERVER['REQUEST_METHOD'] === 'POST') {
                         $commissionApplied = false;
                         
                         if ($hasCreditBalance && ($paymentType === 'credit' || $paymentType === 'partial') && !$commissionApplied) {
+                            // استخدام قيمة creditUsed التي تم حسابها مسبقاً في السطور 589-622
+                            // هذه القيمة صحيحة لأنها تم حسابها بناءً على الرصيد الأصلي قبل التحديث
+                            
                             // تحديد المبلغ الأساسي للعمولة
                             if ($paymentType === 'credit') {
                                 // بالآجل: حساب 2% من المبلغ المدفوع من الرصيد الدائن فقط
-                                // يجب أن نحسب فقط على creditUsed (المبلغ المدفوع فعلياً من الرصيد الدائن)
-                                // وليس على netTotal (إجمالي الفاتورة)
-                                
-                                // إعادة حساب creditUsed بشكل صحيح عند البيع بالآجل لعميل له رصيد دائن
-                                // عند البيع بالآجل لعميل له رصيد دائن، يجب أن يكون creditUsed = min(netTotal, creditAvailable)
-                                // هذا يضمن حساب نسبة التحصيلات بشكل صحيح على المبلغ المدفوع من الرصيد الدائن
-                                if ($hasCreditBalance) {
-                                    $creditAvailable = abs($currentBalance);
-                                    // إعادة حساب creditUsed بشكل صحيح
-                                    // creditUsed = المبلغ المدفوع فعلياً من الرصيد الدائن
-                                    if ($netTotal <= $creditAvailable) {
-                                        $creditUsed = $netTotal;
-                                    } else {
-                                        $creditUsed = $creditAvailable;
-                                    }
-                                    
-                                    // تسجيل معلومات التشخيص
-                                    error_log(sprintf(
-                                        'Credit payment - Recalculated creditUsed: creditUsed=%.2f, creditAvailable=%.2f, netTotal=%.2f, currentBalance=%.2f, invoiceId=%d',
-                                        $creditUsed, $creditAvailable, $netTotal, $currentBalance, $invoiceId
-                                    ));
-                                }
-                                
+                                // استخدام creditUsed المحسوب مسبقاً (القيمة الصحيحة)
                                 if ($creditUsed > 0.0001) {
                                     // تم استخدام الرصيد الدائن، نحسب على creditUsed فقط
                                     $commissionBase = $creditUsed;
                                     
                                     error_log(sprintf(
-                                        'Credit payment commission calculation: creditUsed=%.2f, netTotal=%.2f, commissionBase=%.2f (using creditUsed only, NOT netTotal)',
+                                        'Credit payment commission calculation: creditUsed=%.2f, netTotal=%.2f, commissionBase=%.2f (using pre-calculated creditUsed)',
                                         $creditUsed, $netTotal, $commissionBase
                                     ));
                                 } else {
@@ -1266,25 +1241,7 @@ if (!$error && $_SERVER['REQUEST_METHOD'] === 'POST') {
                                 }
                             } else {
                                 // جزئي: حساب 2% من (المبلغ المدفوع من الرصيد الدائن + مبلغ التحصيل الجزئي)
-                                // إعادة حساب creditUsed بشكل صحيح عند الدفع الجزئي لعميل له رصيد دائن
-                                // يجب أن نحسب creditUsed بناءً على المبلغ المتبقي (baseDueAmount) وليس netTotal
-                                if ($hasCreditBalance) {
-                                    $creditAvailable = abs($currentBalance);
-                                    $baseDueAmount = round(max(0, $netTotal - $effectivePaidAmount), 2);
-                                    // إعادة حساب creditUsed بشكل صحيح
-                                    // creditUsed = المبلغ المدفوع فعلياً من الرصيد الدائن (المبلغ المتبقي بعد الدفع الجزئي)
-                                    if ($baseDueAmount <= $creditAvailable) {
-                                        $creditUsed = $baseDueAmount;
-                                    } else {
-                                        $creditUsed = $creditAvailable;
-                                    }
-                                    
-                                    // تسجيل معلومات التشخيص
-                                    error_log(sprintf(
-                                        'Partial payment - Recalculated creditUsed: creditUsed=%.2f, creditAvailable=%.2f, baseDueAmount=%.2f, netTotal=%.2f, effectivePaidAmount=%.2f, currentBalance=%.2f, invoiceId=%d',
-                                        $creditUsed, $creditAvailable, $baseDueAmount, $netTotal, $effectivePaidAmount, $currentBalance, $invoiceId
-                                    ));
-                                }
+                                // استخدام creditUsed المحسوب مسبقاً (القيمة الصحيحة)
                                 
                                 // حساب المبلغ الأساسي للعمولة
                                 if ($effectivePaidAmount > 0.0001) {
@@ -1294,6 +1251,11 @@ if (!$error && $_SERVER['REQUEST_METHOD'] === 'POST') {
                                     // لا يوجد دفع نقدي جزئي، نستخدم creditUsed فقط
                                     $commissionBase = $creditUsed > 0.0001 ? $creditUsed : 0.0;
                                 }
+                                
+                                error_log(sprintf(
+                                    'Partial payment commission calculation: creditUsed=%.2f, effectivePaidAmount=%.2f, commissionBase=%.2f (using pre-calculated creditUsed)',
+                                    $creditUsed, $effectivePaidAmount, $commissionBase
+                                ));
                             }
                             
                             // حساب نسبة 2%
