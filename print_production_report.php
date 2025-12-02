@@ -170,6 +170,17 @@ if (!function_exists('productionPageFormatTimePart')) {
     }
 }
 
+if (!function_exists('productionPageFormatDateTimeLabel')) {
+    function productionPageFormatDateTimeLabel(?string $timestamp): string {
+        if (empty($timestamp)) {
+            return '';
+        }
+        $date = productionPageFormatDatePart($timestamp);
+        $time = productionPageFormatTimePart($timestamp);
+        return trim($date . ' ' . $time);
+    }
+}
+
 if (!function_exists('productionPageBuildDamagePayload')) {
     function productionPageBuildDamagePayload(array $packagingDamage, array $rawDamage): array {
         $summaryRows = [];
@@ -213,10 +224,26 @@ if (!function_exists('productionPageBuildDamagePayload')) {
             ];
         }
         
+        usort(
+            $summaryRows,
+            static function ($a, $b): int {
+                $totalComparison = ($b['total'] ?? 0) <=> ($a['total'] ?? 0);
+                if ($totalComparison !== 0) {
+                    return $totalComparison;
+                }
+                return strcmp($a['label'] ?? '', $b['label'] ?? '');
+            }
+        );
+        
         $entries = [];
+        $latestTimestamp = null;
         
         foreach (($packagingDamage['logs'] ?? []) as $log) {
             $createdAt = $log['created_at'] ?? null;
+            if ($createdAt && ($latestTimestamp === null || strtotime((string)$createdAt) > strtotime((string)$latestTimestamp))) {
+                $latestTimestamp = $createdAt;
+            }
+            
             $materialName = trim((string)($log['material_label'] ?? $log['material_name'] ?? ''));
             if ($materialName === '') {
                 $materialId = isset($log['material_id']) ? (int)$log['material_id'] : 0;
@@ -224,18 +251,30 @@ if (!function_exists('productionPageBuildDamagePayload')) {
             }
             
             $entries[] = [
-                'recorded_at' => $createdAt,
+                'recorded_at_raw' => $createdAt,
+                'recorded_date' => productionPageFormatDatePart($createdAt),
+                'recorded_time' => productionPageFormatTimePart($createdAt),
                 'category_label' => 'أدوات التعبئة',
+                'item_label' => $materialName,
                 'material_label' => $materialName,
+                'quantity_formatted' => number_format((float)($log['damaged_quantity'] ?? 0), 3),
+                'quantity_raw' => (float)($log['damaged_quantity'] ?? 0),
                 'quantity' => (float)($log['damaged_quantity'] ?? 0),
                 'unit' => trim((string)($log['unit'] ?? 'وحدة')),
                 'reason' => trim((string)($log['reason'] ?? '')),
+                'recorded_by' => trim((string)($log['recorded_by_name'] ?? '')),
                 'recorded_by_name' => trim((string)($log['recorded_by_name'] ?? '')),
+                'supplier' => '',
+                'source' => ($log['source_table'] ?? '') === 'products' ? 'مخزن المنتجات' : 'مخزن التعبئة',
             ];
         }
         
         foreach (($rawDamage['logs'] ?? []) as $log) {
             $createdAt = $log['created_at'] ?? null;
+            if ($createdAt && ($latestTimestamp === null || strtotime((string)$createdAt) > strtotime((string)$latestTimestamp))) {
+                $latestTimestamp = $createdAt;
+            }
+            
             $categoryKey = $log['material_category'] ?? '';
             $categoryLabel = $rawCategoryLabels[$categoryKey] ?? 'مواد خام';
             $itemName = trim((string)($log['item_label'] ?? 'مادة خام'));
@@ -245,19 +284,42 @@ if (!function_exists('productionPageBuildDamagePayload')) {
             }
             
             $entries[] = [
-                'recorded_at' => $createdAt,
-                'category_label' => $categoryLabel,
-                'material_label' => $itemName,
-                'quantity' => (float)($log['damaged_quantity'] ?? 0),
+                'recorded_at_raw' => $createdAt,
+                'recorded_date' => productionPageFormatDatePart($createdAt),
+                'recorded_time' => productionPageFormatTimePart($createdAt),
+                'category_label' => 'قسم ' . $categoryLabel,
+                'item_label' => $itemName,
+                'quantity_formatted' => number_format((float)($log['quantity'] ?? 0), 3),
+                'quantity_raw' => (float)($log['quantity'] ?? 0),
                 'unit' => trim((string)($log['unit'] ?? 'كجم')),
                 'reason' => trim((string)($log['reason'] ?? '')),
-                'recorded_by_name' => trim((string)($log['recorded_by_name'] ?? '')),
+                'recorded_by' => trim((string)($log['recorded_by_name'] ?? '')),
+                'supplier' => trim((string)($log['supplier_name'] ?? '')),
+                'source' => 'مخزن المواد الخام',
             ];
         }
         
+        usort(
+            $entries,
+            static function ($a, $b): int {
+                return strcmp($b['recorded_at_raw'] ?? '', $a['recorded_at_raw'] ?? '');
+            }
+        );
+        
+        $latestLabel = productionPageFormatDateTimeLabel($latestTimestamp);
+        
+        $total = round(
+            (float)($packagingDamage['total'] ?? 0) + (float)($rawDamage['total'] ?? 0),
+            3
+        );
+        
         return [
             'summary' => $summaryRows,
-            'logs' => $entries
+            'logs' => $entries,
+            'total' => $total,
+            'entries' => count($entries),
+            'latest_at' => $latestTimestamp,
+            'latest_label' => $latestLabel,
         ];
     }
 }
