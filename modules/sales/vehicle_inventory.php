@@ -1112,7 +1112,7 @@ if ($hasNoVehicle && $currentUser['role'] === 'sales'): ?>
             </div>
             <form method="POST" id="transferForm">
                 <input type="hidden" name="action" value="create_transfer">
-                <div class="modal-body">
+                <div class="modal-body" style="max-height: 70vh; overflow-y: auto;">
                     <div class="row g-3 mb-3">
                         <div class="col-12 col-md-6">
                             <label class="form-label">من المخزن <span class="text-danger">*</span></label>

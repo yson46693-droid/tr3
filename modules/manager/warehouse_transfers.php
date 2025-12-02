@@ -1615,7 +1615,7 @@ if (isset($_GET['id'])) {
 
 <!-- Modal نقل من منتجات الشركة -->
 <div class="modal fade" id="transferFromCompanyModal" tabindex="-1">
-    <div class="modal-dialog modal-lg">
+    <div class="modal-dialog modal-lg modal-dialog-scrollable">
         <div class="modal-content">
             <div class="modal-header bg-primary text-white">
                 <h5 class="modal-title"><i class="bi bi-box-arrow-right me-2"></i>نقل منتجات من مخزن الشركة إلى مخزن السيارة</h5>
@@ -1623,7 +1623,7 @@ if (isset($_GET['id'])) {
             </div>
             <form method="POST" id="transferFromCompanyForm">
                 <input type="hidden" name="action" value="create_transfer_from_company">
-                <div class="modal-body">
+                <div class="modal-body" style="max-height: 70vh; overflow-y: auto;">
                     <div class="mb-3">
                         <label class="form-label">إلى مخزن السيارة <span class="text-danger">*</span></label>
                         <select class="form-select" name="to_warehouse_id" id="to_warehouse_id" required>
@@ -1843,7 +1843,7 @@ if (isset($_GET['id'])) {
 
 <!-- Modal طلب نقل عام بين المخازن -->
 <div class="modal fade" id="generalTransferModal" tabindex="-1">
-    <div class="modal-dialog modal-lg">
+    <div class="modal-dialog modal-lg modal-dialog-scrollable">
         <div class="modal-content">
             <div class="modal-header bg-info text-white">
                 <h5 class="modal-title"><i class="bi bi-arrow-left-right me-2"></i>طلب نقل منتجات بين المخازن</h5>
@@ -1851,7 +1851,7 @@ if (isset($_GET['id'])) {
             </div>
             <form method="POST" id="generalTransferForm">
                 <input type="hidden" name="action" value="create_general_transfer">
-                <div class="modal-body">
+                <div class="modal-body" style="max-height: 70vh; overflow-y: auto;">
                     <div class="mb-3">
                         <label class="form-label">من المخزن <span class="text-danger">*</span></label>
                         <?php if ($isSalesRep && $salesRepVehicleWarehouse): ?>

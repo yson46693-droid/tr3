@@ -3205,7 +3205,7 @@ $filterProduct = isset($_GET['filter_product']) ? trim($_GET['filter_product']) 
 
 <?php if ($primaryWarehouse): ?>
 <div class="modal fade" id="requestTransferModal" tabindex="-1" aria-labelledby="requestTransferModalLabel" aria-hidden="true">
-    <div class="modal-dialog modal-lg modal-dialog-centered">
+    <div class="modal-dialog modal-lg modal-dialog-centered modal-dialog-scrollable">
         <div class="modal-content">
             <div class="modal-header">
                 <h5 class="modal-title">
@@ -3218,7 +3218,7 @@ $filterProduct = isset($_GET['filter_product']) ? trim($_GET['filter_product']) 
                 <input type="hidden" name="action" value="create_transfer">
                 <input type="hidden" name="from_warehouse_id" value="<?php echo intval($primaryWarehouse['id']); ?>">
                 <input type="hidden" name="transfer_token" id="transferToken" value="">
-                <div class="modal-body">
+                <div class="modal-body" style="max-height: 70vh; overflow-y: auto;">
                     <?php if (!$canCreateTransfers): ?>
                         <div class="alert alert-warning d-flex align-items-center gap-2 mb-0">
                             <i class="bi bi-exclamation-triangle-fill fs-5"></i>
