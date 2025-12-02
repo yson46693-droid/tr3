@@ -388,10 +388,16 @@ $returnTypeLabel = $isReturnDocument ? ($returnTypeLabels[$returnMetadata['retur
                         <span>الإجمالي النهائي</span>
                         <strong><?php echo formatCurrency($total); ?></strong>
                     </div>
-                    <div class="summary-row">
-                        <span>المدفوع</span>
-                        <strong class="text-success"><?php echo formatCurrency($paidAmount); ?></strong>
-                    </div>
+                    <?php 
+                    // إخفاء حقل "المدفوع" إذا كان البيع بالآجل (credit) في نقطة بيع المندوب
+                    $paymentType = isset($invoiceMeta) && is_array($invoiceMeta) ? ($invoiceMeta['payment_type'] ?? null) : null;
+                    $isCreditSale = ($paymentType === 'credit');
+                    if (!$isCreditSale): ?>
+                        <div class="summary-row">
+                            <span>المدفوع</span>
+                            <strong class="text-success"><?php echo formatCurrency($paidAmount); ?></strong>
+                        </div>
+                    <?php endif; ?>
                     <?php if ($creditUsed > 0): ?>
                         <div class="summary-row">
                             <span>المدفوع من رصيد العميل</span>

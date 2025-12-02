@@ -1705,6 +1705,7 @@ if (!$error && $_SERVER['REQUEST_METHOD'] === 'POST') {
 
                 $invoiceData = getInvoice($invoiceId);
                 $invoiceMeta = [
+                    'payment_type' => $paymentType,
                     'summary' => [
                         'subtotal' => $subtotal,
                         'prepaid' => $prepaidAmount,

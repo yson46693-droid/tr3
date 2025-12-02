@@ -1826,8 +1826,13 @@ if (isset($_GET['ajax']) && $_GET['ajax'] == '1' && $salaryId > 0) {
     );
     
     if ($salary) {
+        $userId = intval($salary['user_id'] ?? 0);
+        $userRole = $salary['role'] ?? 'production';
+        $salaryMonth = intval($salary['month'] ?? $selectedMonth);
+        $salaryYear = intval($salary['year'] ?? $selectedYear);
+        
         // حساب الساعات من الحضور مباشرة لضمان الدقة (مطابقة مع صفحة الحضور)
-        $actualHours = calculateMonthlyHours($salary['user_id'], $selectedMonth, $selectedYear);
+        $actualHours = calculateMonthlyHours($userId, $salaryMonth, $salaryYear);
         
         // تحديث total_hours تلقائياً إذا كان مختلفاً عن القيمة الفعلية
         $savedTotalHours = floatval($salary['total_hours'] ?? 0);
@@ -1854,6 +1859,90 @@ if (isset($_GET['ajax']) && $_GET['ajax'] == '1' && $salaryId > 0) {
                 error_log("Error updating total_hours for salary ID {$salary['id']}: " . $e->getMessage());
             }
         }
+        
+        // حساب القيم المالية بنفس طريقة بطاقة الموظف
+        $hourlyRate = cleanFinancialValue($salary['hourly_rate'] ?? $salary['current_hourly_rate'] ?? 0);
+        $bonus = cleanFinancialValue($salary['bonus_standardized'] ?? ($salary['bonus'] ?? $salary['bonuses'] ?? 0));
+        $deductions = cleanFinancialValue($salary['deductions'] ?? 0);
+        
+        // حساب الراتب الأساسي بناءً على الساعات المكتملة فقط (مطابق لبطاقة الموظف)
+        require_once __DIR__ . '/../../includes/salary_calculator.php';
+        $completedHours = calculateCompletedMonthlyHours($userId, $salaryMonth, $salaryYear);
+        $baseAmount = round($completedHours * $hourlyRate, 2);
+        
+        // حساب نسبة التحصيلات للمندوبين (مطابق لبطاقة الموظف)
+        $collectionsBonus = cleanFinancialValue($salary['collections_bonus'] ?? 0);
+        $collectionsAmount = cleanFinancialValue($salary['collections_amount'] ?? 0);
+        
+        if ($userRole === 'sales') {
+            $recalculatedCollectionsAmount = calculateSalesCollections($userId, $salaryMonth, $salaryYear);
+            $recalculatedCollectionsBonus = round($recalculatedCollectionsAmount * 0.02, 2);
+            
+            // استخدم القيمة المحسوبة حديثاً إذا كانت أكبر من القيمة المحفوظة
+            if ($recalculatedCollectionsBonus > $collectionsBonus || $collectionsBonus == 0) {
+                $collectionsBonus = $recalculatedCollectionsBonus;
+                $collectionsAmount = $recalculatedCollectionsAmount;
+            }
+        }
+        
+        // حساب الراتب الإجمالي الصحيح دائماً من المكونات (مطابق لبطاقة الموظف)
+        // الراتب الإجمالي = الراتب الأساسي + المكافآت + نسبة التحصيلات - الخصومات
+        $totalAmount = $baseAmount + $bonus + $collectionsBonus - $deductions;
+        
+        // التأكد من أن الراتب الإجمالي لا يكون سالباً
+        $totalAmount = max(0, $totalAmount);
+        
+        // حساب بيانات التأخير (مطابق لبطاقة الموظف)
+        $delaySummary = calculateMonthlyDelaySummary($userId, $salaryMonth, $salaryYear);
+        
+        // حساب المبلغ التراكمي والمتبقي (مطابق لبطاقة الموظف)
+        $accumulated = $totalAmount; // ابدأ بالراتب الحالي
+        $salaryId = intval($salary['id'] ?? 0);
+        
+        // البحث عن الرواتب السابقة
+        $yearColumnCheck = $db->queryOne("SHOW COLUMNS FROM salaries LIKE 'year'");
+        $hasYearColumn = !empty($yearColumnCheck);
+        
+        if ($hasYearColumn) {
+            $previousSalaries = $db->query(
+                "SELECT s.total_amount, s.paid_amount, s.accumulated_amount,
+                        COALESCE(s.accumulated_amount, s.total_amount) as prev_accumulated
+                 FROM salaries s
+                 WHERE s.user_id = ? AND s.id != ? 
+                 AND (s.year < ? OR (s.year = ? AND s.month < ?))
+                 ORDER BY s.year ASC, s.month ASC",
+                [$userId, $salaryId, $salaryYear, $salaryYear, $salaryMonth]
+            );
+        } else {
+            $previousSalaries = $db->query(
+                "SELECT s.total_amount, s.paid_amount, s.accumulated_amount,
+                        COALESCE(s.accumulated_amount, s.total_amount) as prev_accumulated
+                 FROM salaries s
+                 WHERE s.user_id = ? AND s.id != ? 
+                 AND s.month < ?
+                 ORDER BY s.month ASC",
+                [$userId, $salaryId, $salaryMonth]
+            );
+        }
+        
+        // جمع المتبقي من الرواتب السابقة
+        foreach ($previousSalaries as $prevSalary) {
+            $prevTotal = cleanFinancialValue($prevSalary['total_amount'] ?? 0);
+            $prevPaid = cleanFinancialValue($prevSalary['paid_amount'] ?? 0);
+            $prevAccumulated = cleanFinancialValue($prevSalary['prev_accumulated'] ?? $prevTotal);
+            
+            // حساب المتبقي من الراتب السابق
+            $prevRemaining = max(0, $prevAccumulated - $prevPaid);
+            
+            // إضافة المتبقي إلى المبلغ التراكمي فقط إذا كان هناك متبقي
+            if ($prevRemaining > 0.01) {
+                $accumulated += $prevRemaining;
+            }
+        }
+        
+        $paid = floatval($salary['paid_amount'] ?? 0);
+        $remaining = max(0, $accumulated - $paid);
+        
         ?>
         <div class="row g-3">
             <div class="col-md-6">
@@ -1863,17 +1952,40 @@ if (isset($_GET['ajax']) && $_GET['ajax'] == '1' && $salaryId > 0) {
                     </div>
                     <div class="card-body">
                         <p><strong>المستخدم:</strong> <?php echo htmlspecialchars($salary['full_name'] ?? $salary['username']); ?></p>
-                        <p><strong>الشهر:</strong> <?php echo date('F', mktime(0, 0, 0, $selectedMonth, 1)); ?> <?php echo $selectedYear; ?></p>
-                        <p><strong>سعر الساعة:</strong> <?php echo formatCurrency($salary['hourly_rate']); ?></p>
+                        <p><strong>الشهر:</strong> <?php echo date('F', mktime(0, 0, 0, $salaryMonth, 1)); ?> <?php echo $salaryYear; ?></p>
+                        <p><strong><?php echo ($userRole === 'sales') ? 'الراتب الشهري' : 'سعر الساعة'; ?>:</strong> <?php echo formatCurrency($hourlyRate); ?></p>
+                        <?php if ($userRole !== 'sales'): ?>
                         <p><strong>عدد الساعات:</strong> <?php echo formatHours($actualHours); ?> 
                             <?php if ($wasUpdated): ?>
                                 <span class="badge bg-success text-white ms-2" title="تم تحديث القيمة من <?php echo formatHours($savedTotalHours); ?> إلى <?php echo formatHours($actualHours); ?>">تم التحديث</span>
                             <?php endif; ?>
                         </p>
-                        <p><strong>الراتب الأساسي:</strong> <?php echo formatCurrency($salary['base_amount']); ?></p>
-                        <p><strong>مكافأة:</strong> <?php echo formatCurrency($salary['bonus_standardized'] ?? ($salary['bonus'] ?? $salary['bonuses'] ?? 0)); ?></p>
-                        <p><strong>خصومات:</strong> <?php echo formatCurrency($salary['deductions'] ?? 0); ?></p>
-                        <p><strong>الإجمالي:</strong> <strong class="text-success"><?php echo formatCurrency($salary['total_amount']); ?></strong></p>
+                        <?php endif; ?>
+                        <p><strong>إجمالي التأخير:</strong> <?php echo number_format($delaySummary['total_minutes'] ?? 0, 2); ?> دقيقة</p>
+                        <p><strong>متوسط التأخير:</strong> <?php echo number_format($delaySummary['average_minutes'] ?? 0, 2); ?> دقيقة</p>
+                        <p><strong>الراتب الأساسي:</strong> <?php echo formatCurrency($baseAmount); ?></p>
+                        <?php if ($userRole === 'sales'): ?>
+                        <p><strong>نسبة التحصيلات:</strong> <?php echo formatCurrency($collectionsBonus); ?>
+                            <?php if ($collectionsAmount > 0): ?>
+                                <small class="text-muted d-block" style="font-size: 11px; margin-top: 2px;">
+                                    (من <?php echo formatCurrency($collectionsAmount); ?>)
+                                </small>
+                            <?php else: ?>
+                                <small class="text-muted d-block" style="font-size: 11px; margin-top: 2px;">
+                                    (لا توجد تحصيلات)
+                                </small>
+                            <?php endif; ?>
+                        </p>
+                        <?php endif; ?>
+                        <p><strong>المكافآت:</strong> <?php echo formatCurrency($bonus); ?></p>
+                        <p><strong>الخصومات:</strong> <?php echo formatCurrency($deductions); ?></p>
+                        <p><strong>الراتب الإجمالي:</strong> <strong class="text-success"><?php echo formatCurrency($totalAmount); ?></strong></p>
+                        <?php if ($userRole === 'sales' && $collectionsBonus > 0): ?>
+                        <p class="text-muted small mt-2">
+                            <i class="bi bi-info-circle me-1"></i>
+                            ملاحظة: الراتب الإجمالي يتضمن نسبة التحصيلات (<?php echo formatCurrency($collectionsBonus); ?>)
+                        </p>
+                        <?php endif; ?>
                     </div>
                 </div>
             </div>
@@ -1887,19 +1999,24 @@ if (isset($_GET['ajax']) && $_GET['ajax'] == '1' && $salaryId > 0) {
                             <span class="badge bg-<?php 
                                 echo $salary['status'] === 'approved' ? 'success' : 
                                     ($salary['status'] === 'rejected' ? 'danger' : 
-                                    ($salary['status'] === 'paid' ? 'info' : 'warning')); 
+                                    ($salary['status'] === 'paid' ? 'info' : 
+                                    ($salary['status'] === 'calculated' ? 'primary' : 'warning'))); 
                             ?>">
                                 <?php 
                                 $statusLabels = [
                                     'pending' => 'معلق',
                                     'approved' => 'موافق عليه',
                                     'rejected' => 'مرفوض',
-                                    'paid' => 'مدفوع'
+                                    'paid' => 'مدفوع',
+                                    'calculated' => 'محسوب'
                                 ];
                                 echo $statusLabels[$salary['status']] ?? $salary['status'];
                                 ?>
                             </span>
                         </p>
+                        <p><strong>المبلغ التراكمي:</strong> <span class="text-primary"><?php echo formatCurrency($accumulated); ?></span></p>
+                        <p><strong>المبلغ المدفوع:</strong> <span class="text-success"><?php echo formatCurrency($paid); ?></span></p>
+                        <p><strong>المتبقي:</strong> <span class="<?php echo $remaining > 0 ? 'text-warning' : 'text-success'; ?>"><?php echo formatCurrency($remaining); ?></span></p>
                         <?php if (!empty($salary['notes'])): ?>
                             <p><strong>ملاحظات:</strong><br><?php echo nl2br(htmlspecialchars($salary['notes'])); ?></p>
                         <?php endif; ?>
