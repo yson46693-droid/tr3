@@ -586,36 +586,38 @@ if (!$error && $_SERVER['REQUEST_METHOD'] === 'POST') {
                         $hasReturns = false; // التأكد من أن القيمة محددة
                     }
                     
-                    // المنطق الجديد: خصم مبلغ البيع بالكامل من الرصيد الدائن أولاً
+                    // المنطق الجديد: خصم المبلغ المتبقي (بعد الدفع الجزئي) من الرصيد الدائن أولاً
                     // ثم إضافة المبلغ الزائد فقط إلى خزنة المندوب
                     if ($currentBalance < 0) {
                         // العميل لديه رصيد دائن
                         $creditAvailable = abs($currentBalance);
-                        $invoiceTotal = $netTotal; // إجمالي مبلغ الفاتورة
+                        $remainingAmount = $baseDueAmount; // المبلغ المتبقي بعد الدفع الجزئي (إن وجد)
                         
-                        // خصم مبلغ البيع من الرصيد الدائن
-                        if ($invoiceTotal <= $creditAvailable) {
-                            // مبلغ البيع أقل من أو يساوي الرصيد الدائن
-                            // يتم خصم كامل مبلغ البيع من الرصيد الدائن
-                            $creditUsed = $invoiceTotal;
-                            $amountAddedToSales = 0.0; // لا يُضاف شيء إلى خزنة المندوب
+                        // خصم المبلغ المتبقي من الرصيد الدائن
+                        if ($remainingAmount <= $creditAvailable) {
+                            // المبلغ المتبقي أقل من أو يساوي الرصيد الدائن
+                            // يتم خصم كامل المبلغ المتبقي من الرصيد الدائن
+                            $creditUsed = $remainingAmount;
+                            $amountAddedToSales = $effectivePaidAmount; // فقط المبلغ المحصل نقداً يُضاف إلى خزنة المندوب
                             $dueAmount = 0.0; // لا يوجد دين متبقي
                             
-                            // الرصيد الجديد = الرصيد الدائن الحالي + مبلغ البيع (لأن الرصيد سالب)
-                            // مثال: رصيد دائن -100، بيع 80
-                            // الرصيد الجديد = -100 + 80 = -20 (رصيد دائن متبقي)
+                            // الرصيد الجديد = الرصيد الدائن الحالي + المبلغ المخصوم من الرصيد الدائن (لأن الرصيد سالب)
+                            // مثال: رصيد دائن -100، بيع 220، دفع جزئي 0، المتبقي 220
+                            // creditUsed = min(220, 100) = 100
+                            // الرصيد الجديد = -100 + 100 = 0
                             $newBalance = round($currentBalance + $creditUsed, 2);
                         } else {
-                            // مبلغ البيع أكبر من الرصيد الدائن
+                            // المبلغ المتبقي أكبر من الرصيد الدائن
                             // يتم خصم الرصيد الدائن بالكامل، والمبلغ الزائد يُضاف كدين
                             $creditUsed = $creditAvailable;
-                            $excessAmount = round($invoiceTotal - $creditUsed, 2); // المبلغ الزائد
-                            $amountAddedToSales = $excessAmount; // فقط المبلغ الزائد يُضاف إلى خزنة المندوب
+                            $excessAmount = round($remainingAmount - $creditUsed, 2); // المبلغ الزائد
+                            $amountAddedToSales = $effectivePaidAmount + $excessAmount; // المبلغ المحصل نقداً + المبلغ الزائد يُضاف إلى خزنة المندوب
                             $dueAmount = $excessAmount; // المبلغ الزائد هو الدين الجديد
                             
                             // الرصيد الجديد = 0 (لا رصيد دائن) + المبلغ الزائد (دين)
-                            // مثال: رصيد دائن -100، بيع 150
-                            // الرصيد الجديد = 0 + 50 = 50 (رصيد مدين)
+                            // مثال: رصيد دائن -100، بيع 220، دفع جزئي 0، المتبقي 220
+                            // creditUsed = 100، excessAmount = 120
+                            // الرصيد الجديد = 0 + 120 = 120 (رصيد مدين)
                             $newBalance = $dueAmount;
                         }
                     } else {
@@ -1261,12 +1263,33 @@ if (!$error && $_SERVER['REQUEST_METHOD'] === 'POST') {
                                 }
                             } else {
                                 // جزئي: حساب 2% من (المبلغ المدفوع من الرصيد الدائن + مبلغ التحصيل الجزئي)
-                                // يجب أن يكون هناك مبلغ تحصيل جزئي على الأقل
+                                // إعادة حساب creditUsed بشكل صحيح عند الدفع الجزئي لعميل له رصيد دائن
+                                // يجب أن نحسب creditUsed بناءً على المبلغ المتبقي (baseDueAmount) وليس netTotal
+                                if ($hasCreditBalance) {
+                                    $creditAvailable = abs($currentBalance);
+                                    $baseDueAmount = round(max(0, $netTotal - $effectivePaidAmount), 2);
+                                    // إعادة حساب creditUsed بشكل صحيح
+                                    // creditUsed = المبلغ المدفوع فعلياً من الرصيد الدائن (المبلغ المتبقي بعد الدفع الجزئي)
+                                    if ($baseDueAmount <= $creditAvailable) {
+                                        $creditUsed = $baseDueAmount;
+                                    } else {
+                                        $creditUsed = $creditAvailable;
+                                    }
+                                    
+                                    // تسجيل معلومات التشخيص
+                                    error_log(sprintf(
+                                        'Partial payment - Recalculated creditUsed: creditUsed=%.2f, creditAvailable=%.2f, baseDueAmount=%.2f, netTotal=%.2f, effectivePaidAmount=%.2f, currentBalance=%.2f, invoiceId=%d',
+                                        $creditUsed, $creditAvailable, $baseDueAmount, $netTotal, $effectivePaidAmount, $currentBalance, $invoiceId
+                                    ));
+                                }
+                                
+                                // حساب المبلغ الأساسي للعمولة
                                 if ($effectivePaidAmount > 0.0001) {
+                                    // يوجد دفع نقدي جزئي
                                     $commissionBase = $creditUsed + $effectivePaidAmount;
                                 } else {
-                                    // لا يوجد مبلغ تحصيل جزئي، نستخدم creditUsed فقط
-                                    $commissionBase = $creditUsed > 0.0001 ? $creditUsed : $netTotal;
+                                    // لا يوجد دفع نقدي جزئي، نستخدم creditUsed فقط
+                                    $commissionBase = $creditUsed > 0.0001 ? $creditUsed : 0.0;
                                 }
                             }
                             
