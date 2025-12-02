@@ -1242,19 +1242,26 @@ if (!$error && $_SERVER['REQUEST_METHOD'] === 'POST') {
                                     $creditUsed, $netTotal, $originalBalance ?? 0, $currentBalance, $baseDueAmount ?? 0, $hasCreditBalance ? 'true' : 'false'
                                 ));
                                 
-                                // التحقق: إذا كان creditUsed = 0 ولكن هناك رصيد دائن و netTotal > 0
-                                // يجب إعادة حساب creditUsed لأن هناك مشكلة في الحساب السابق
-                                if ($creditUsed <= 0.0001 && $hasCreditBalance && $netTotal > 0.0001) {
-                                    // إعادة حساب creditUsed: يجب أن يكون = min(netTotal, abs(originalBalance))
+                                // التصحيح الهام: عند البيع بالآجل لعميل لديه رصيد دائن
+                                // يجب دائماً إعادة حساب creditUsed بشكل صحيح (طبق النظام بشكل صارم)
+                                // creditUsed = min(netTotal, abs(originalBalance))
+                                if ($hasCreditBalance && $netTotal > 0.0001) {
+                                    // إعادة حساب creditUsed بشكل صحيح: يجب أن يكون = min(netTotal, abs(originalBalance))
                                     $recalculatedCreditUsed = min($netTotal, abs($originalBalance ?? 0));
                                     
-                                    error_log(sprintf(
-                                        'WARNING: creditUsed was 0 but should be recalculated. Original creditUsed=%.2f, Recalculated creditUsed=%.2f, netTotal=%.2f, originalBalance=%.2f',
-                                        $creditUsed, $recalculatedCreditUsed, $netTotal, $originalBalance ?? 0
-                                    ));
-                                    
-                                    // استخدام القيمة المعاد حسابها
+                                    // استخدام القيمة المعاد حسابها دائماً (لضمان الدقة)
+                                    if (abs($recalculatedCreditUsed - $creditUsed) > 0.01) {
+                                        error_log(sprintf(
+                                            'RECALCULATING creditUsed for credit payment: Original creditUsed=%.2f, Recalculated creditUsed=%.2f, netTotal=%.2f, originalBalance=%.2f',
+                                            $creditUsed, $recalculatedCreditUsed, $netTotal, $originalBalance ?? 0
+                                        ));
+                                    }
                                     $creditUsed = $recalculatedCreditUsed;
+                                    
+                                    error_log(sprintf(
+                                        'Final creditUsed for credit payment commission: creditUsed=%.2f, netTotal=%.2f, originalBalance=%.2f',
+                                        $creditUsed, $netTotal, $originalBalance ?? 0
+                                    ));
                                 }
                                 
                                 if ($creditUsed > 0.0001) {
@@ -1262,17 +1269,16 @@ if (!$error && $_SERVER['REQUEST_METHOD'] === 'POST') {
                                     $commissionBase = $creditUsed;
                                     
                                     error_log(sprintf(
-                                        'Credit payment commission calculation: creditUsed=%.2f, netTotal=%.2f, commissionBase=%.2f (using pre-calculated creditUsed)',
+                                        'Credit payment commission calculation: creditUsed=%.2f, netTotal=%.2f, commissionBase=%.2f (using calculated creditUsed)',
                                         $creditUsed, $netTotal, $commissionBase
                                     ));
                                 } else {
                                     // لم يتم استخدام الرصيد الدائن (رغم وجود رصيد دائن)
                                     // في هذه الحالة، لا يتم احتساب عمولة لأن المبلغ لم يُدفع من الرصيد الدائن
-                                    // المبلغ سيُضاف كدين للعميل، وليس كرصيد دائن
                                     $commissionBase = 0.0;
                                     
                                     error_log(sprintf(
-                                        'Credit payment commission calculation: creditUsed=%.2f, netTotal=%.2f, commissionBase=0.0 (no credit used, no commission) - WARNING: This may be incorrect if customer has credit balance!',
+                                        'Credit payment commission calculation: creditUsed=%.2f, netTotal=%.2f, commissionBase=0.0 (no credit used, no commission)',
                                         $creditUsed, $netTotal
                                     ));
                                 }
