@@ -1161,6 +1161,22 @@ if (!$error && $_SERVER['REQUEST_METHOD'] === 'POST') {
                         // يجب أن يكون الرصيد سالباً قبل البيع
                         $hasCreditBalance = ($currentBalance < 0);
                         
+                        // في حالة البيع بالآجل، تأكد من أن creditUsed محسوب بشكل صحيح
+                        // إذا كان للعميل رصيد دائن وتم البيع بالآجل، يجب أن يكون creditUsed > 0
+                        if ($paymentType === 'credit' && $hasCreditBalance && $creditUsed <= 0.0001) {
+                            // إعادة حساب creditUsed بناءً على الرصيد الدائن المتاح
+                            $creditAvailable = abs($currentBalance);
+                            if ($netTotal <= $creditAvailable) {
+                                $creditUsed = $netTotal;
+                            } else {
+                                $creditUsed = $creditAvailable;
+                            }
+                            error_log(sprintf(
+                                'Recalculated creditUsed for credit payment: creditUsed=%.2f, creditAvailable=%.2f, netTotal=%.2f, invoiceId=%d',
+                                $creditUsed, $creditAvailable, $netTotal, $invoiceId
+                            ));
+                        }
+                        
                         // تسجيل معلومات التشخيص قبل التحقق من النظام الجديد
                         error_log(sprintf(
                             'DEBUG: New commission check - hasCreditBalance=%s, currentBalance=%.2f, creditUsed=%.2f, paymentType=%s, netTotal=%.2f, effectivePaidAmount=%.2f, invoiceId=%d, customerId=%d',
@@ -1262,6 +1278,27 @@ if (!$error && $_SERVER['REQUEST_METHOD'] === 'POST') {
                                             if ($hasCollectionsBonusColumn) {
                                                 // إضافة المبلغ الأساسي إلى collections_amount والنسبة إلى collections_bonus
                                                 // إضافة النسبة إلى total_amount (لأنها جزء من الراتب الإجمالي)
+                                                // تأكد من أن commissionBase = creditUsed وليس netTotal
+                                                error_log(sprintf(
+                                                    'Applying commission to salary: commissionBase=%.2f, creditUsed=%.2f, netTotal=%.2f, creditCommissionAmount=%.2f, salaryId=%d',
+                                                    $commissionBase, $creditUsed, $netTotal, $creditCommissionAmount, $salaryId
+                                                ));
+                                                
+                                                // التأكد من أن commissionBase = creditUsed (وليس netTotal)
+                                                // في حالة البيع بالآجل، يجب أن يكون commissionBase = creditUsed فقط
+                                                if ($paymentType === 'credit' && $creditUsed > 0.0001) {
+                                                    // تأكد من أن commissionBase = creditUsed
+                                                    if (abs($commissionBase - $creditUsed) > 0.01) {
+                                                        error_log(sprintf(
+                                                            'WARNING: commissionBase (%.2f) != creditUsed (%.2f) for credit payment! Using creditUsed instead.',
+                                                            $commissionBase, $creditUsed
+                                                        ));
+                                                        $commissionBase = $creditUsed;
+                                                        // إعادة حساب العمولة بناءً على creditUsed الصحيح
+                                                        $creditCommissionAmount = round($commissionBase * 0.02, 2);
+                                                    }
+                                                }
+                                                
                                                 $db->execute(
                                                     "UPDATE salaries SET 
                                                         collections_amount = COALESCE(collections_amount, 0) + ?,
