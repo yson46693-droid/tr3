@@ -944,22 +944,61 @@ function applyReturnSalaryDeduction(int $returnId, ?int $salesRepId = null, ?int
         }
         // القاعدة 4: رصيد = 0 أو رصيد دائن <= مبلغ المرتجع (العميل غير مدين بعد المرتجع)
         else {
-            // حساب الجزء الذي تم إرجاعه من المبلغ المدفوع فعلياً
-            // إذا كان العميل كان مدين قبل المرتجع، فالجزء المدفوع = returnAmount - debtBeforeReturn
-            // إذا لم يكن مدين، فكامل المبلغ المدفوع = returnAmount
-            $paidPortion = $customerDebitBeforeReturn > 0 
-                ? max(0, $returnAmount - $customerDebitBeforeReturn) 
-                : $returnAmount;
+            // حساب الجزء الذي تم إضافته كرصيد دائن للعميل
+            // هذا هو الجزء الذي يجب خصم 2% منه فقط (وليس من كامل مبلغ المرتجع)
+            $creditAdded = 0.0;
             
-            $amountToDeduct = round($paidPortion * 0.02, 2);
+            // محاولة الحصول على creditAdded من audit_log لـ process_return_financials
+            $financialAuditLog = $db->queryOne(
+                "SELECT new_value FROM audit_logs
+                 WHERE action = 'process_return_financials'
+                 AND entity_type = 'returns'
+                 AND entity_id = ?
+                 ORDER BY created_at DESC
+                 LIMIT 1",
+                [$returnId]
+            );
+            
+            if ($financialAuditLog && !empty($financialAuditLog['new_value'])) {
+                $newValue = json_decode($financialAuditLog['new_value'], true);
+                if (json_last_error() === JSON_ERROR_NONE) {
+                    $creditAdded = (float)($newValue['credit_added'] ?? 0);
+                }
+            }
+            
+            // إذا لم نتمكن من الحصول على creditAdded من audit_log، نحسبه يدوياً
+            if ($creditAdded <= 0.0001) {
+                if ($customerDebitBeforeReturn > 0) {
+                    // العميل كان مدين قبل المرتجع
+                    // الجزء المضاف كرصيد دائن = returnAmount - debtBeforeReturn (إذا كان returnAmount > debtBeforeReturn)
+                    if ($returnAmount > $customerDebitBeforeReturn) {
+                        $creditAdded = $returnAmount - $customerDebitBeforeReturn;
+                    } else {
+                        // returnAmount <= debtBeforeReturn، لا يتم إضافة رصيد دائن
+                        $creditAdded = 0.0;
+                    }
+                } else {
+                    // العميل غير مدين قبل المرتجع، كامل المبلغ يُضاف كرصيد دائن
+                    $creditAdded = $returnAmount;
+                }
+            }
+            
+            // حساب الخصم على الجزء المضاف كرصيد دائن فقط (وليس على كامل مبلغ المرتجع)
+            $amountToDeduct = round($creditAdded * 0.02, 2);
+            
+            error_log(sprintf(
+                'Return salary deduction - Rule 4: returnId=%d, returnAmount=%.2f, creditAdded=%.2f, customerDebitBeforeReturn=%.2f, customerCreditBeforeReturn=%.2f, amountToDeduct=%.2f',
+                $returnId, $returnAmount, $creditAdded, $customerDebitBeforeReturn, $customerCreditBeforeReturn, $amountToDeduct
+            ));
+            
             $calculationDetails = [
                 'rule' => 4,
                 'customer_balance_before' => $customerBalanceBeforeReturn,
                 'customer_balance_after' => $customerBalanceAfterReturn,
                 'return_amount' => $returnAmount,
-                'paid_portion' => $paidPortion,
+                'credit_added' => $creditAdded,
                 'deduction_percentage' => 2,
-                'reason' => 'العميل غير مدين بعد المرتجع - خصم من الجزء المدفوع فعلياً'
+                'reason' => 'العميل غير مدين بعد المرتجع - خصم من الجزء المضاف كرصيد دائن فقط'
             ];
         }
         
