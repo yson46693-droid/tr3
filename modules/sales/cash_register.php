@@ -319,14 +319,96 @@ if (!empty($collectionsTableExists)) {
 // حساب المبيعات المدفوعة بالكامل (من الفواتير)
 // استخدام amount_added_to_sales إذا كان موجوداً (للفواتير المدفوعة من الرصيد الدائن)
 // أو total_amount للفواتير العادية
+// ملاحظة مهمة: نستبعد الفواتير التي تم تسجيلها بالفعل في جدول collections
+// لأنها موجودة في إجمالي التحصيلات ($totalCollections) ولا يجب حسابها مرتين
 $fullyPaidSales = 0.0;
-if (!empty($invoicesTableExists)) {
+if (!empty($invoicesTableExists) && !empty($collectionsTableExists)) {
     // التحقق من وجود عمود amount_added_to_sales
     $hasAmountAddedToSalesColumn = !empty($db->queryOne("SHOW COLUMNS FROM invoices LIKE 'amount_added_to_sales'"));
+    
+    // التحقق من وجود عمود invoice_id في collections
+    $hasInvoiceIdColumn = !empty($db->queryOne("SHOW COLUMNS FROM collections LIKE 'invoice_id'"));
     
     if ($hasAmountAddedToSalesColumn) {
         // استخدام amount_added_to_sales إذا كان محدداً، وإلا استخدام total_amount
         // هذا يضمن أن المبالغ المدفوعة من الرصيد الدائن لا تُضاف إلى خزنة المندوب
+        // استبعاد الفواتير التي تم تسجيلها في collections (من خلال invoice_id أو notes)
+        if ($hasInvoiceIdColumn) {
+            // إذا كان هناك عمود invoice_id، نستخدمه للربط
+            $fullyPaidSql = "SELECT COALESCE(SUM(
+                CASE 
+                    WHEN amount_added_to_sales IS NOT NULL AND amount_added_to_sales > 0 
+                    THEN amount_added_to_sales 
+                    ELSE total_amount 
+                END
+            ), 0) as fully_paid
+             FROM invoices i
+             WHERE i.sales_rep_id = ? 
+             AND i.status = 'paid' 
+             AND i.paid_amount >= i.total_amount
+             AND i.status != 'cancelled'
+             AND NOT EXISTS (
+                 SELECT 1 FROM collections c 
+                 WHERE c.invoice_id = i.id 
+                 AND c.collected_by = ?
+             )";
+        } else {
+            // إذا لم يكن هناك عمود invoice_id، نستخدم notes للبحث عن رقم الفاتورة
+            // نمط البحث: "فاتورة [invoice_number]" أو "فاتورة [invoice_number]%" أو "%فاتورة [invoice_number]"
+            $fullyPaidSql = "SELECT COALESCE(SUM(
+                CASE 
+                    WHEN amount_added_to_sales IS NOT NULL AND amount_added_to_sales > 0 
+                    THEN amount_added_to_sales 
+                    ELSE total_amount 
+                END
+            ), 0) as fully_paid
+             FROM invoices i
+             WHERE i.sales_rep_id = ? 
+             AND i.status = 'paid' 
+             AND i.paid_amount >= i.total_amount
+             AND i.status != 'cancelled'
+             AND NOT EXISTS (
+                 SELECT 1 FROM collections c 
+                 WHERE c.notes LIKE CONCAT('%فاتورة ', i.invoice_number, '%')
+                 AND c.collected_by = ?
+             )";
+        }
+    } else {
+        // إذا لم يكن العمود موجوداً، نستخدم total_amount (للتوافق مع الإصدارات القديمة)
+        if ($hasInvoiceIdColumn) {
+            $fullyPaidSql = "SELECT COALESCE(SUM(total_amount), 0) as fully_paid
+             FROM invoices i
+             WHERE i.sales_rep_id = ? 
+             AND i.status = 'paid' 
+             AND i.paid_amount >= i.total_amount
+             AND i.status != 'cancelled'
+             AND NOT EXISTS (
+                 SELECT 1 FROM collections c 
+                 WHERE c.invoice_id = i.id 
+                 AND c.collected_by = ?
+             )";
+        } else {
+            $fullyPaidSql = "SELECT COALESCE(SUM(total_amount), 0) as fully_paid
+             FROM invoices i
+             WHERE i.sales_rep_id = ? 
+             AND i.status = 'paid' 
+             AND i.paid_amount >= i.total_amount
+             AND i.status != 'cancelled'
+             AND NOT EXISTS (
+                 SELECT 1 FROM collections c 
+                 WHERE c.notes LIKE CONCAT('%فاتورة ', i.invoice_number, '%')
+                 AND c.collected_by = ?
+             )";
+        }
+    }
+    
+    $fullyPaidResult = $db->queryOne($fullyPaidSql, [$salesRepId, $salesRepId]);
+    $fullyPaidSales = (float)($fullyPaidResult['fully_paid'] ?? 0);
+} elseif (!empty($invoicesTableExists)) {
+    // إذا لم يكن جدول collections موجوداً، نستخدم الطريقة القديمة
+    $hasAmountAddedToSalesColumn = !empty($db->queryOne("SHOW COLUMNS FROM invoices LIKE 'amount_added_to_sales'"));
+    
+    if ($hasAmountAddedToSalesColumn) {
         $fullyPaidSql = "SELECT COALESCE(SUM(
             CASE 
                 WHEN amount_added_to_sales IS NOT NULL AND amount_added_to_sales > 0 
@@ -340,7 +422,6 @@ if (!empty($invoicesTableExists)) {
          AND paid_amount >= total_amount
          AND status != 'cancelled'";
     } else {
-        // إذا لم يكن العمود موجوداً، نستخدم total_amount (للتوافق مع الإصدارات القديمة)
         $fullyPaidSql = "SELECT COALESCE(SUM(total_amount), 0) as fully_paid
          FROM invoices
          WHERE sales_rep_id = ? 
