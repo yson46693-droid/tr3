@@ -114,6 +114,45 @@ if (!function_exists('dailyBackupEnsureJobTable')) {
     }
 }
 
+if (!function_exists('dailyBackupEnsureSentTable')) {
+    /**
+     * التأكد من وجود جدول تتبع إرسال النسخ الاحتياطية اليومية.
+     */
+    function dailyBackupEnsureSentTable(): void
+    {
+        static $tableReady = false;
+
+        if ($tableReady) {
+            return;
+        }
+
+        try {
+            require_once __DIR__ . '/db.php';
+            $db = db();
+            $db->execute("
+                CREATE TABLE IF NOT EXISTS `daily_backup_sent_log` (
+                  `id` int(11) NOT NULL AUTO_INCREMENT,
+                  `sent_date` date NOT NULL,
+                  `sent_at` datetime NOT NULL,
+                  `backup_file_path` varchar(512) DEFAULT NULL,
+                  `backup_id` int(11) DEFAULT NULL,
+                  `status` enum('sent','failed') DEFAULT 'sent',
+                  `error_message` text DEFAULT NULL,
+                  `created_at` timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                  PRIMARY KEY (`id`),
+                  UNIQUE KEY `unique_sent_date` (`sent_date`),
+                  KEY `sent_at` (`sent_at`)
+                ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
+            ");
+        } catch (Throwable $error) {
+            error_log('Daily Backup: unable to ensure sent log table - ' . $error->getMessage());
+            return;
+        }
+
+        $tableReady = true;
+    }
+}
+
 if (!function_exists('dailyBackupResetNotificationState')) {
     function dailyBackupResetNotificationState(): void
     {
@@ -331,6 +370,38 @@ if (!function_exists('triggerDailyBackupDelivery')) {
 
         $db = db();
         dailyBackupEnsureJobTable();
+        dailyBackupEnsureSentTable();
+
+        // ===== الفحص الأساسي: التحقق من إرسال النسخة الاحتياطية اليوم =====
+        try {
+            $db->beginTransaction();
+            
+            // فحص إذا تم إرسال نسخة احتياطية اليوم باستخدام LOCK FOR UPDATE لمنع race condition
+            $existingLog = $db->queryOne(
+                "SELECT id, sent_date, status FROM daily_backup_sent_log 
+                 WHERE sent_date = ? 
+                 FOR UPDATE",
+                [$todayDate]
+            );
+
+            // إذا وجد سجل لإرسال اليوم وكانت الحالة 'sent'، لا ترسل مرة أخرى
+            if (!empty($existingLog) && ($existingLog['status'] ?? null) === 'sent') {
+                $db->commit();
+                $statusData['status'] = 'already_sent';
+                $statusData['note'] = 'Backup already sent today according to sent log';
+                dailyBackupSaveStatus($statusData);
+                return; // تم الإرسال مسبقاً اليوم، لا حاجة لإعادة الإرسال
+            }
+            
+            $db->commit();
+        } catch (Throwable $checkError) {
+            try {
+                $db->rollback();
+            } catch (Throwable $ignore) {
+            }
+            error_log('Daily Backup: failed checking sent log - ' . $checkError->getMessage());
+            // نتابع التنفيذ في حالة خطأ في الفحص
+        }
 
         $backupsBaseDir = rtrim(
             defined('BACKUPS_PATH') ? BACKUPS_PATH : (dirname(__DIR__) . '/backups'),
@@ -584,8 +655,66 @@ if (!function_exists('triggerDailyBackupDelivery')) {
                 'error' => $errorMessage,
                 'file_path' => $backupRelativePath ?? $backupFilePath,
             ]));
+            
+            // تسجيل الفشل في السجل
+            try {
+                $db->beginTransaction();
+                $db->execute(
+                    "INSERT INTO daily_backup_sent_log (sent_date, sent_at, backup_file_path, backup_id, status, error_message)
+                     VALUES (?, NOW(), ?, ?, 'failed', ?)
+                     ON DUPLICATE KEY UPDATE 
+                         sent_at = NOW(),
+                         backup_file_path = VALUES(backup_file_path),
+                         backup_id = VALUES(backup_id),
+                         status = 'failed',
+                         error_message = VALUES(error_message)",
+                    [
+                        $todayDate,
+                        $backupRelativePath ?? $backupFilePath,
+                        $backupId,
+                        $errorMessage
+                    ]
+                );
+                $db->commit();
+            } catch (Throwable $logError) {
+                try {
+                    $db->rollback();
+                } catch (Throwable $ignore) {
+                }
+                error_log('Daily Backup: failed logging failed backup - ' . $logError->getMessage());
+            }
+            
             dailyBackupNotifyManagerThrottled($errorMessage, 'danger', $jobState);
             return;
+        }
+
+        // ===== تسجيل نجاح إرسال النسخة الاحتياطية في قاعدة البيانات =====
+        try {
+            $db->beginTransaction();
+            
+            $db->execute(
+                "INSERT INTO daily_backup_sent_log (sent_date, sent_at, backup_file_path, backup_id, status)
+                 VALUES (?, NOW(), ?, ?, 'sent')
+                 ON DUPLICATE KEY UPDATE 
+                     sent_at = NOW(),
+                     backup_file_path = VALUES(backup_file_path),
+                     backup_id = VALUES(backup_id),
+                     status = 'sent',
+                     error_message = NULL",
+                [
+                    $todayDate,
+                    $backupRelativePath ?? $backupFilePath,
+                    $backupId
+                ]
+            );
+            
+            $db->commit();
+        } catch (Throwable $logError) {
+            try {
+                $db->rollback();
+            } catch (Throwable $ignore) {
+            }
+            error_log('Daily Backup: failed logging sent backup - ' . $logError->getMessage());
         }
 
         $fileLogValue = $backupRelativePath ?? $backupFilePath;

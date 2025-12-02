@@ -507,6 +507,10 @@ if (!$error && $_SERVER['REQUEST_METHOD'] === 'POST') {
                         'balance' => $dueAmount,
                         'created_by' => $currentUser['id'],
                     ];
+                    // تهيئة الرصيد الحالي للعميل الجديد (يكون 0 لأن العميل جديد)
+                    $currentBalance = 0.0;
+                    $creditUsed = 0.0;
+                    $amountAddedToSales = 0.0; // المبلغ الذي يُضاف إلى إجمالي المبيعات في خزنة المندوب
                 } else {
                     $customer = $db->queryOne(
                         "SELECT id, balance FROM customers WHERE id = ? FOR UPDATE",
