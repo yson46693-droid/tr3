@@ -3058,71 +3058,22 @@ $pageTitle = ($view === 'advances') ? 'السلف' : (($view === 'pending') ? '�
                 $firstName = mb_substr($employeeName, 0, 1, 'UTF-8');
                 $status = $salary['status'] ?? 'calculated';
                 
-                // حساب الإجمالي الصحيح مع تضمين نسبة التحصيلات للمندوبين
+                // استخدام القيم مباشرة من جدول salaries دون إعادة حساب
                 $userId = intval($salary['user_id'] ?? 0);
                 $hourlyRate = cleanFinancialValue($salary['hourly_rate'] ?? $salary['current_hourly_rate'] ?? 0);
                 $bonus = cleanFinancialValue($salary['bonus_standardized'] ?? ($salary['bonus'] ?? $salary['bonuses'] ?? 0));
                 $deductions = cleanFinancialValue($salary['deductions'] ?? 0);
+                
+                // استخدام القيم مباشرة من قاعدة البيانات
+                $baseAmount = cleanFinancialValue($salary['base_amount'] ?? 0);
                 $collectionsBonus = cleanFinancialValue($salary['collections_bonus'] ?? 0);
+                $collectionsAmount = cleanFinancialValue($salary['collections_amount'] ?? 0);
+                $totalAmount = cleanFinancialValue($salary['total_amount'] ?? 0);
                 
-                // حساب الراتب الأساسي بناءً على الساعات المكتملة فقط (لجميع الأدوار)
-                // لا يوجد راتب أساسي حتى يتم تسجيل الانصراف
-                $actualHours = calculateMonthlyHours($userId, $selectedMonth, $selectedYear);
-                
-                // تحديث total_hours تلقائياً إذا كان مختلفاً عن القيمة الفعلية
-                if ($hasSalaryId) {
-                    $savedTotalHours = floatval($salary['total_hours'] ?? 0);
-                    if (abs($actualHours - $savedTotalHours) > 0.01) {
-                        // تحديث total_hours في قاعدة البيانات
-                        try {
-                            $db->execute(
-                                "UPDATE salaries SET total_hours = ? WHERE id = ?",
-                                [$actualHours, $salary['id']]
-                            );
-                            // إعادة جلب البيانات من قاعدة البيانات للتأكد من الحصول على القيمة المحدثة
-                            $updatedSalary = $db->queryOne(
-                                "SELECT total_hours FROM salaries WHERE id = ?",
-                                [$salary['id']]
-                            );
-                            if ($updatedSalary) {
-                                $salary['total_hours'] = floatval($updatedSalary['total_hours'] ?? $actualHours);
-                            } else {
-                                $salary['total_hours'] = $actualHours;
-                            }
-                        } catch (Exception $e) {
-                            error_log("Error updating total_hours for salary ID {$salary['id']}: " . $e->getMessage());
-                        }
-                    }
-                }
-                
-                // حساب الراتب الأساسي من الساعات المكتملة فقط (التي تم تسجيل الانصراف لها)
-                require_once __DIR__ . '/../../includes/salary_calculator.php';
-                $completedHours = calculateCompletedMonthlyHours($userId, $selectedMonth, $selectedYear);
-                $baseAmount = round($completedHours * $hourlyRate, 2);
-                
-                // إذا كان مندوب مبيعات، أعد حساب نسبة التحصيلات
-                if ($roleClass === 'sales') {
-                    $recalculatedCollectionsAmount = calculateSalesCollections($userId, $selectedMonth, $selectedYear);
-                    $recalculatedCollectionsBonus = round($recalculatedCollectionsAmount * 0.02, 2);
-                    
-                    // استخدم القيمة المحسوبة حديثاً إذا كانت أكبر من القيمة المحفوظة
-                    if ($recalculatedCollectionsBonus > $collectionsBonus || $collectionsBonus == 0) {
-                        $collectionsBonus = $recalculatedCollectionsBonus;
-                    }
-                }
-                
-                // حساب الراتب الإجمالي الصحيح دائماً من المكونات
-                // الراتب الإجمالي = الراتب الأساسي + المكافآت + نسبة التحصيلات - الخصومات
-                $totalAmount = $baseAmount + $bonus + $collectionsBonus - $deductions;
-                
-                // التأكد من أن الراتب الإجمالي لا يكون سالباً
-                $totalAmount = max(0, $totalAmount);
-                
-                // إضافة الراتب الأساسي المحسوب حديثاً إلى البيانات المرسلة للنموذج
-                // لضمان أن النموذج يعرض نفس القيمة المعروضة في البطاقة
+                // إضافة القيم إلى البيانات المرسلة للنموذج
                 $salary['calculated_base_amount'] = $baseAmount;
                 $salary['calculated_collections_bonus'] = $collectionsBonus;
-                $salary['calculated_total_amount'] = $totalAmount; // الراتب الإجمالي الحالي
+                $salary['calculated_total_amount'] = $totalAmount;
                 
                 // إعادة حساب المبلغ التراكمي بدقة من جميع الرواتب السابقة
                 $salaryId = intval($salary['id'] ?? 0);
@@ -3270,48 +3221,13 @@ $pageTitle = ($view === 'advances') ? 'السلف' : (($view === 'pending') ? '�
                         $hourlyRate = cleanFinancialValue($salary['hourly_rate'] ?? $salary['current_hourly_rate'] ?? 0);
                         $userRole = $salary['role'] ?? 'production';
                         
-                        // حساب نسبة التحصيلات - إعادة الحساب دائماً للمندوبين للتأكد من الدقة
-                        $collectionsBonus = cleanFinancialValue($salary['collections_bonus'] ?? 0);
-                        $collectionsAmount = cleanFinancialValue($salary['collections_amount'] ?? 0);
-                        
-                        // إذا كان مندوب مبيعات، أعد حساب مكافأة التحصيلات من التحصيلات الفعلية
-                        if ($userRole === 'sales') {
-                            $recalculatedCollectionsAmount = calculateSalesCollections($userId, $selectedMonth, $selectedYear);
-                            $recalculatedCollectionsBonus = round($recalculatedCollectionsAmount * 0.02, 2);
-                            
-                            // استخدم القيمة المحسوبة حديثاً إذا كانت أكبر من القيمة المحفوظة
-                            if ($recalculatedCollectionsBonus > $collectionsBonus || $collectionsBonus == 0) {
-                                $collectionsBonus = $recalculatedCollectionsBonus;
-                                $collectionsAmount = $recalculatedCollectionsAmount;
-                            }
-                        }
-                        
-                        // الحصول على القيم المالية
+                        // استخدام القيم مباشرة من جدول salaries دون إعادة حساب
+                        $baseAmount = cleanFinancialValue($salary['base_amount'] ?? 0);
                         $bonus = cleanFinancialValue($salary['bonus_standardized'] ?? ($salary['bonus'] ?? $salary['bonuses'] ?? 0));
                         $deductions = cleanFinancialValue($salary['deductions'] ?? 0);
-                        
-                        // حساب الراتب الأساسي بناءً على عدد الساعات المعروض
-                        // لجميع الأدوار: الراتب الأساسي = الساعات المكتملة فقط × سعر الساعة
-                        // لا يوجد راتب أساسي حتى يتم تسجيل الانصراف
-                        require_once __DIR__ . '/../../includes/salary_calculator.php';
-                        $completedHoursForBase = calculateCompletedMonthlyHours($userId, $selectedMonth, $selectedYear);
-                        // استخدام الراتب الأساسي المحسوب من بطاقة الموظف الرئيسية إذا كان متوفراً، وإلا احسبه من جديد
-                        // هذا يضمن أن القيمة المعروضة في قسم التفاصيل هي نفسها المستخدمة في نافذة تعديل الراتب
-                        if (isset($salary['calculated_base_amount'])) {
-                            $baseAmount = $salary['calculated_base_amount'];
-                        } else {
-                            // إعادة حساب الراتب الأساسي بناءً على الساعات المكتملة فقط
-                            $baseAmount = round($completedHoursForBase * $hourlyRate, 2);
-                            // تحديث القيمة في $salary لاستخدامها في نافذة تعديل الراتب
-                            $salary['calculated_base_amount'] = $baseAmount;
-                        }
-                        
-                        // حساب الراتب الإجمالي دائماً من المكونات لضمان الدقة
-                        // الراتب الإجمالي = الراتب الأساسي + المكافآت + نسبة التحصيلات - الخصومات
-                        $totalSalary = $baseAmount + $bonus + $collectionsBonus - $deductions;
-                        
-                        // التأكد من أن الراتب الإجمالي لا يكون سالباً
-                        $totalSalary = max(0, $totalSalary);
+                        $collectionsBonus = cleanFinancialValue($salary['collections_bonus'] ?? 0);
+                        $collectionsAmount = cleanFinancialValue($salary['collections_amount'] ?? 0);
+                        $totalSalary = cleanFinancialValue($salary['total_amount'] ?? 0);
                         
                         // إعادة حساب المبلغ التراكمي بدقة من جميع الرواتب السابقة
                         $salaryId = intval($salary['id'] ?? 0);

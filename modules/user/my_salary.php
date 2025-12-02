@@ -948,28 +948,17 @@ $monthStats = [
 ];
 
 if ($currentSalary) {
-    // حساب الساعات مباشرة من الحضور لضمان الدقة (مطابقة مع صفحة الحضور)
-    $monthStats['total_hours'] = calculateMonthlyHours($currentUser['id'], $selectedMonth, $selectedYear);
+    // استخدام القيم مباشرة من جدول salaries
+    $monthStats['total_hours'] = cleanFinancialValue($currentSalary['total_hours'] ?? 0);
     $monthStats['recorded_hours'] = $monthStats['total_hours']; // نفس إجمالي الساعات
+    $monthStats['total_salary'] = cleanFinancialValue($currentSalary['total_amount'] ?? 0);
     
-    // حساب الراتب الإجمالي بشكل صحيح مع نسبة التحصيلات
-    $salaryCalculation = calculateTotalSalaryWithCollections($currentSalary, $currentUser['id'], $selectedMonth, $selectedYear, $currentUser['role']);
-    $monthStats['total_salary'] = $salaryCalculation['total_salary'];
-    $monthStats['collections_bonus'] = $salaryCalculation['collections_bonus'];
-    
-    // استخدام الراتب الإجمالي من جدول تفاصيل الراتب إذا كان محفوظاً
-    if (isset($currentSalary['total_amount'])) {
-        $totalSalaryFromTable = cleanFinancialValue($currentSalary['total_amount'] ?? 0);
-        if ($totalSalaryFromTable > 0) {
-            $monthStats['total_salary'] = $totalSalaryFromTable;
-        }
-    }
-    
-    // حساب مبلغ التحصيلات
+    // استخدام نسبة التحصيلات من قاعدة البيانات
     if ($currentUser['role'] === 'sales') {
-        $collectionsAmount = calculateSalesCollections($currentUser['id'], $selectedMonth, $selectedYear);
-        $monthStats['collections_amount'] = $collectionsAmount;
+        $monthStats['collections_bonus'] = cleanFinancialValue($currentSalary['collections_bonus'] ?? 0);
+        $monthStats['collections_amount'] = cleanFinancialValue($currentSalary['collections_amount'] ?? 0);
     } else {
+        $monthStats['collections_bonus'] = 0;
         $monthStats['collections_amount'] = 0;
     }
     
@@ -1003,77 +992,29 @@ $hourlyRate = cleanFinancialValue($currentSalary['hourly_rate'] ?? $currentUser[
 $bonus = cleanFinancialValue($currentSalary[$bonusColumnName] ?? $currentSalary['bonus'] ?? $currentSalary['bonuses'] ?? 0);
 $deductions = cleanFinancialValue($currentSalary['deductions'] ?? 0);
 
-// حساب الراتب الأساسي بناءً على الساعات المكتملة فقط (التي تم تسجيل الانصراف لها)
-// لجميع الأدوار: الراتب الأساسي = الساعات المكتملة فقط × سعر الساعة
-// لا نحسب الراتب من الساعات غير المكتملة (حضور بدون انصراف)
-// لا يوجد راتب أساسي حتى يتم تسجيل الانصراف
-$monthKey = sprintf('%04d-%02d', $selectedYear, $selectedMonth);
-
-// حساب الساعات المكتملة فقط (التي لديها check_out_time)
-$completedHoursResult = $db->queryOne(
-    "SELECT COALESCE(SUM(work_hours), 0) as total_hours 
-     FROM attendance_records 
-     WHERE user_id = ? AND DATE_FORMAT(date, '%Y-%m') = ?
-     AND check_out_time IS NOT NULL
-     AND work_hours IS NOT NULL
-     AND work_hours > 0",
-    [$currentUser['id'], $monthKey]
-);
-
-$completedHours = round($completedHoursResult['total_hours'] ?? 0, 2);
-
-// الراتب الأساسي = الساعات المكتملة فقط × سعر الساعة (لجميع الأدوار)
-$baseAmount = round($completedHours * $hourlyRate, 2);
-
-// حساب الراتب الإجمالي بناءً على عدد الساعات المعروض في الصفحة
-if ($currentSalary) {
+// استخدام القيم مباشرة من جدول salaries دون إعادة حساب
+if ($currentSalary && isset($currentSalary['base_amount'])) {
+    // استخدام القيم من قاعدة البيانات مباشرة
+    $baseAmount = cleanFinancialValue($currentSalary['base_amount'] ?? 0);
+    $collectionsBonus = cleanFinancialValue($currentSalary['collections_bonus'] ?? 0);
+    $collectionsAmount = cleanFinancialValue($currentSalary['collections_amount'] ?? 0);
+    $totalSalary = cleanFinancialValue($currentSalary['total_amount'] ?? 0);
+    
+    // تحديث $monthStats بالقيم من قاعدة البيانات
+    $monthStats['total_salary'] = $totalSalary;
     if ($currentUser['role'] === 'sales') {
-        // للمندوبين: احسب الراتب الإجمالي من المكونات بناءً على عدد الساعات المعروض
-        // الراتب الإجمالي = (عدد الساعات المعروض × سعر الساعة) + المكافآت + نسبة التحصيلات - الخصومات
-        // دائماً استخدم الحساب من عدد الساعات المعروض وليس القيمة المحفوظة
-        
-        // حساب نسبة التحصيلات
-        $collectionsBonus = 0;
-        if (function_exists('calculateSalesCollections')) {
-            $collectionsAmount = calculateSalesCollections($currentUser['id'], $selectedMonth, $selectedYear);
-            $recalculatedCollectionsBonus = round($collectionsAmount * 0.02, 2);
-            
-            // إذا كان الراتب محفوظاً، تحقق من وجود نسبة التحصيلات المحفوظة
-            if (isset($currentSalary['collections_bonus'])) {
-                $savedCollectionsBonus = cleanFinancialValue($currentSalary['collections_bonus'] ?? 0);
-                // استخدم القيمة المحسوبة حديثاً إذا كانت أكبر من القيمة المحفوظة أو إذا كانت القيمة المحفوظة صفر
-                if ($recalculatedCollectionsBonus > $savedCollectionsBonus || $savedCollectionsBonus == 0) {
-                    $collectionsBonus = $recalculatedCollectionsBonus;
-                } else {
-                    $collectionsBonus = $savedCollectionsBonus;
-                }
-            } else {
-                // إذا لم يكن هناك قيمة محفوظة، استخدم القيمة المحسوبة
-                $collectionsBonus = $recalculatedCollectionsBonus;
-            }
-        }
-        
-        // حساب الراتب الإجمالي: الراتب الأساسي + المكافآت + نسبة التحصيلات - الخصومات
-        $totalSalary = round($baseAmount + $bonus + $collectionsBonus - $deductions, 2);
-        $totalSalary = max(0, $totalSalary); // التأكد من أن الراتب لا يكون سالباً
-        
-        // تحديث $monthStats['total_salary'] بالقيمة المحسوبة من عدد الساعات المعروض
-        $monthStats['total_salary'] = $totalSalary;
+        $monthStats['collections_bonus'] = $collectionsBonus;
+        $monthStats['collections_amount'] = $collectionsAmount;
     } else {
-        // لعمال الإنتاج والمحاسبين: احسب الراتب الإجمالي من المكونات بناءً على عدد الساعات المعروض
-        // الراتب الإجمالي = (عدد الساعات المعروض × سعر الساعة) + المكافآت - الخصومات
-        // دائماً استخدم الحساب من عدد الساعات المعروض وليس القيمة المحفوظة
-        $totalSalary = round($baseAmount + $bonus - $deductions, 2);
-        $totalSalary = max(0, $totalSalary); // التأكد من أن الراتب لا يكون سالباً
-        
-        // تحديث $monthStats['total_salary'] بالقيمة المحسوبة من عدد الساعات المعروض
-        $monthStats['total_salary'] = $totalSalary;
-        $collectionsBonus = 0; // لا توجد نسبة تحصيلات لعمال الإنتاج والمحاسبين
+        $collectionsBonus = 0;
+        $collectionsAmount = 0;
     }
 } else {
-    // إذا لم يكن هناك راتب، استخدم القيمة من $monthStats
+    // إذا لم يكن هناك راتب محفوظ، استخدم القيم من $monthStats
+    $baseAmount = 0;
     $totalSalary = $monthStats['total_salary'] ?? 0;
     $collectionsBonus = $monthStats['collections_bonus'] ?? 0;
+    $collectionsAmount = $monthStats['collections_amount'] ?? 0;
 }
 
 // إعادة حساب الحد الأقصى للسلفة بناءً على الراتب الإجمالي النهائي المعروض في الجدول
