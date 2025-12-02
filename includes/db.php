@@ -644,28 +644,3 @@ function getDB() {
 function db() {
     return Database::getInstance();
 }
-
-// ============================================================
-// تشغيل الإصلاح التلقائي لمشكلة 262145 (مرة واحدة فقط)
-// Auto-fix for 262145 issue (runs only once)
-// ============================================================
-if (file_exists(__DIR__ . '/auto_fix_262145.php')) {
-    define('AUTO_FIX_ALLOWED', true);
-    define('RUN_AUTO_FIX', true);
-    
-    try {
-        $autoFixResult = include __DIR__ . '/auto_fix_262145.php';
-        
-        // تسجيل النتيجة في session للإشعار (اختياري)
-        if (is_array($autoFixResult) && isset($autoFixResult['status'])) {
-            // يمكن تسجيل النتيجة في log أو session حسب الحاجة
-            if ($autoFixResult['status'] === 'completed') {
-                error_log("Auto-fix 262145: Successfully completed");
-            }
-        }
-    } catch (Exception $e) {
-        // في حالة حدوث خطأ، نسجله فقط ولا نوقف النظام
-        error_log("Auto-fix 262145 error: " . $e->getMessage());
-    }
-}
-
