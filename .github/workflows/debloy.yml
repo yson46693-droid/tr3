@@ -24,7 +24,7 @@ jobs:
           password: ${{ secrets.FTP_PASSWORD }}
 
           local-dir: ./
-          server-dir: /almostafa.free.nf/htdocs/v1
+          server-dir: /almostafa.free.nf/htdocs/v1/
 
           protocol: ftp
           port: 21
