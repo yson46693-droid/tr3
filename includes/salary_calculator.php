@@ -129,12 +129,6 @@ function calculateMonthlyHours($userId, $month, $year) {
         
         $totalHours = round($totalHours, 2);
         
-        // تسجيل للتأكد من أن الساعات تُحسب بشكل صحيح
-        $completedHours = isset($completedResult['total_hours']) ? $completedResult['total_hours'] : 0;
-        $incompleteCount = count($incompleteRecords);
-        $incompleteHours = $incompleteCount * 5;
-        error_log("calculateMonthlyHours: user_id={$userId}, month={$month}, year={$year}, month_key={$monthKey}, completed_hours={$completedHours}, incomplete_count={$incompleteCount}, incomplete_hours={$incompleteHours}, total_hours={$totalHours}");
-        
         return $totalHours;
     } else {
         // Fallback للجدول القديم
