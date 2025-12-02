@@ -1215,7 +1215,10 @@ if (!$error && $_SERVER['REQUEST_METHOD'] === 'POST') {
                         // القاعدة: 
                         // - بالآجل: حساب 2% من المبلغ المدفوع من الرصيد الدائن (أو netTotal إذا لم يتم استخدام الرصيد الدائن)
                         // - جزئي: حساب 2% من (المبلغ المدفوع من الرصيد الدائن + مبلغ التحصيل الجزئي)
-                        if ($hasCreditBalance && ($paymentType === 'credit' || $paymentType === 'partial')) {
+                        // متغير لتتبع ما إذا تم تطبيق نسبة التحصيلات بالفعل (لمنع الحساب المزدوج)
+                        $commissionApplied = false;
+                        
+                        if ($hasCreditBalance && ($paymentType === 'credit' || $paymentType === 'partial') && !$commissionApplied) {
                             // تحديد المبلغ الأساسي للعمولة
                             if ($paymentType === 'credit') {
                                 // بالآجل: حساب 2% من المبلغ المدفوع من الرصيد الدائن فقط
@@ -1401,6 +1404,9 @@ if (!$error && $_SERVER['REQUEST_METHOD'] === 'POST') {
                                                     $commissionBase,
                                                     $creditCommissionAmount
                                                 ));
+                                                
+                                                // تم تطبيق نسبة التحصيلات - منع الحساب المزدوج
+                                                $commissionApplied = true;
                                             } else {
                                                 // إذا لم تكن الأعمدة موجودة، نستخدم bonus كحل بديل
                                                 error_log('Collections bonus columns not available, using bonus as fallback');
@@ -1512,7 +1518,7 @@ if (!$error && $_SERVER['REQUEST_METHOD'] === 'POST') {
                         // تطبيق القاعدة الجديدة: رصيد دائن + سجل مرتجعات
                         // يجب أن يكون هناك استخدام للرصيد الدائن، وأن يكون للعميل رصيد دائن قبل البيع، وأن يكون لديه سجل مرتجعات
                         // هذا يعمل بغض النظر عن نوع الدفع (كاش، جزئي، أو آجل)
-                        if ($creditUsed > 0.0001 && $hasCreditBalance && $hasReturnsRecord) {
+                        if ($creditUsed > 0.0001 && $hasCreditBalance && $hasReturnsRecord && !$commissionApplied) {
                             // حساب نسبة 2% من المبلغ المخصوم من الرصيد الدائن
                             $creditCommissionAmount = round($creditUsed * 0.02, 2);
                             
@@ -1594,6 +1600,9 @@ if (!$error && $_SERVER['REQUEST_METHOD'] === 'POST') {
                                                     $creditUsed,
                                                     $creditCommissionAmount
                                                 ));
+                                                
+                                                // تم تطبيق نسبة التحصيلات - منع الحساب المزدوج
+                                                $commissionApplied = true;
                                             } else {
                                                 // إذا لم تكن الأعمدة موجودة، نستخدم bonus كحل بديل
                                                 error_log('Collections bonus columns not available, using bonus as fallback');
@@ -1621,7 +1630,7 @@ if (!$error && $_SERVER['REQUEST_METHOD'] === 'POST') {
                         // إذا كان العميل موجوداً في returns وكان هناك استخدام للرصيد الدائن:
                         // يتم احتساب نسبة 2% من المبلغ المدفوع من الرصيد الدائن وإضافتها إلى نسبة التحصيلات
                         // هذا يجب أن يعمل بغض النظر عن الشروط الأخرى (مستقل عن الشرط السابق)
-                        if ($creditUsed > 0.0001 && $customerInReturns) {
+                        if ($creditUsed > 0.0001 && $customerInReturns && !$commissionApplied) {
                             // حساب نسبة 2% من المبلغ المدفوع من الرصيد الدائن
                             $creditCommissionAmount = round($creditUsed * 0.02, 2);
                             
@@ -1700,6 +1709,9 @@ if (!$error && $_SERVER['REQUEST_METHOD'] === 'POST') {
                                                     $creditUsed,
                                                     $creditCommissionAmount
                                                 ));
+                                                
+                                                // تم تطبيق نسبة التحصيلات - منع الحساب المزدوج
+                                                $commissionApplied = true;
                                             } else {
                                                 // إذا لم تكن الأعمدة موجودة، نستخدم bonus كحل بديل
                                                 error_log('Collections bonus columns not available, using bonus as fallback');
