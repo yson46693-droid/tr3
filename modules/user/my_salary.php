@@ -1660,6 +1660,70 @@ try {
         $salesRepId = isset($newValueData['sales_rep_id']) ? (int)$newValueData['sales_rep_id'] : 0;
         if ($salesRepId !== (int)$currentUser['id']) continue;
         
+        // التحقق من أن الخصم متعلق بالشهر والسنة المحددين
+        $salaryId = isset($newValueData['salary_id']) ? (int)$newValueData['salary_id'] : 0;
+        if ($salaryId > 0) {
+            // جلب معلومات الراتب للتحقق من الشهر والسنة
+            $yearColumnCheck = $db->queryOne("SHOW COLUMNS FROM salaries LIKE 'year'");
+            $hasYearColumn = !empty($yearColumnCheck);
+            
+            if ($hasYearColumn) {
+                $salaryInfo = $db->queryOne(
+                    "SELECT month, year FROM salaries WHERE id = ? AND user_id = ?",
+                    [$salaryId, $currentUser['id']]
+                );
+            } else {
+                $salaryInfo = $db->queryOne(
+                    "SELECT month FROM salaries WHERE id = ? AND user_id = ?",
+                    [$salaryId, $currentUser['id']]
+                );
+            }
+            
+            if ($salaryInfo) {
+                $logMonth = isset($salaryInfo['month']) ? (int)$salaryInfo['month'] : null;
+                $logYear = isset($salaryInfo['year']) ? (int)$salaryInfo['year'] : null;
+                
+                // إذا كان هناك عمود year، تحقق من الشهر والسنة
+                if ($hasYearColumn) {
+                    if ($logMonth !== $selectedMonth || $logYear !== $selectedYear) {
+                        continue; // تخطي هذا السجل لأنه ليس للشهر والسنة المحددين
+                    }
+                } else {
+                    // إذا لم يكن هناك عمود year، تحقق من الشهر فقط
+                    // قد نحتاج للتحقق من التاريخ من created_at
+                    $logDate = strtotime($log['created_at'] ?? '');
+                    $logYearFromDate = (int)date('Y', $logDate);
+                    $logMonthFromDate = (int)date('m', $logDate);
+                    
+                    // تحقق من الشهر
+                    if ($logMonth !== $selectedMonth) {
+                        continue;
+                    }
+                    
+                    // تحقق من السنة من تاريخ السجل
+                    if ($logYearFromDate !== $selectedYear) {
+                        continue;
+                    }
+                }
+            } else {
+                // إذا لم يتم العثور على سجل الراتب، تخطي هذا السجل
+                continue;
+            }
+        } else {
+            // إذا لم يكن هناك salary_id، حاول استخراج الشهر والسنة من notes أو new_value
+            $logMonth = isset($newValueData['month']) ? (int)$newValueData['month'] : null;
+            $logYear = isset($newValueData['year']) ? (int)$newValueData['year'] : null;
+            
+            if ($logMonth !== null && $logYear !== null) {
+                if ($logMonth !== $selectedMonth || $logYear !== $selectedYear) {
+                    continue;
+                }
+            } else {
+                // إذا لم يتم العثور على الشهر والسنة، تخطي هذا السجل
+                continue;
+            }
+        }
+        
         $deductionAmount = abs(floatval($newValueData['deduction_amount'] ?? 0));
         if ($deductionAmount > 0) {
             $returnId = $newValueData['return_id'] ?? $log['entity_id'] ?? null;
