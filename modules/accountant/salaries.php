@@ -426,10 +426,11 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 $newBaseAmount = $currentBaseAmount;
                 
                 // حساب نسبة التحصيلات إذا كان مندوب مبيعات
+                // عند تعديل الراتب بإضافة مكافأة، نحافظ على نسبة التحصيلات الحالية ولا نعيد حسابها
                 $collectionsBonus = 0;
                 if ($salary['role'] === 'sales') {
-                    $collectionsAmount = calculateSalesCollections($userId, $salaryMonth, $salaryYear);
-                    $collectionsBonus = round($collectionsAmount * 0.02, 2);
+                    // الحفاظ على نسبة التحصيلات الحالية من قاعدة البيانات (عدم إعادة الحساب)
+                    $collectionsBonus = cleanFinancialValue($salary['collections_bonus'] ?? 0);
                 } else {
                     $collectionsBonus = cleanFinancialValue($salary['collections_bonus'] ?? 0);
                 }
@@ -522,7 +523,12 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                         $collectionsBonusColumnCheck = $db->queryOne("SHOW COLUMNS FROM salaries LIKE 'collections_bonus'");
                         $hasCollectionsBonusColumn = !empty($collectionsBonusColumnCheck);
                         
-                        if ($hasCollectionsBonusColumn) {
+                        // عند تعديل راتب مندوب مبيعات بإضافة مكافأة، لا نقوم بتحديث نسبة التحصيلات
+                        // نحافظ على القيمة الحالية ولا نعدلها
+                        $isSalesRep = ($salary['role'] === 'sales');
+                        $shouldUpdateCollectionsBonus = $hasCollectionsBonusColumn && !$isSalesRep;
+                        
+                        if ($shouldUpdateCollectionsBonus) {
                             $db->execute(
                                 "UPDATE salaries SET 
                                     base_amount = ?,
@@ -535,6 +541,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                                 [$newBaseAmount, $finalBonus, $finalDeductions, $collectionsBonus, $newTotalAmount, $notes ?: null, $salaryId]
                             );
                         } else {
+                            // لا نقوم بتحديث collections_bonus لمندوب المبيعات عند إضافة مكافأة
                             $db->execute(
                                 "UPDATE salaries SET 
                                     base_amount = ?,
