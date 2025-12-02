@@ -705,15 +705,6 @@ $users = $db->query($sql, $params);
                     </div>
                     <div class="row">
                         <div class="col-md-6 mb-3">
-                            <label class="form-label">الدور <span class="text-danger">*</span></label>
-                            <select class="form-select" name="role" id="editRole" required>
-                                <option value="manager">مدير</option>
-                                <option value="accountant">محاسب</option>
-                                <option value="sales">مندوب مبيعات</option>
-                                <option value="production">عامل إنتاج</option>
-                            </select>
-                        </div>
-                        <div class="col-md-6 mb-3">
                             <label class="form-label">الحالة</label>
                             <select class="form-select" name="status" id="editStatus">
                                 <option value="active">نشط</option>
