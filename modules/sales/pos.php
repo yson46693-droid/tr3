@@ -1161,15 +1161,31 @@ if (!$error && $_SERVER['REQUEST_METHOD'] === 'POST') {
                         // يجب أن يكون الرصيد سالباً قبل البيع
                         $hasCreditBalance = ($currentBalance < 0);
                         
+                        // تسجيل معلومات التشخيص قبل التحقق من النظام الجديد
+                        error_log(sprintf(
+                            'DEBUG: New commission check - hasCreditBalance=%s, currentBalance=%.2f, creditUsed=%.2f, paymentType=%s, netTotal=%.2f, effectivePaidAmount=%.2f, invoiceId=%d, customerId=%d',
+                            $hasCreditBalance ? 'true' : 'false',
+                            $currentBalance,
+                            $creditUsed,
+                            $paymentType ?? 'NULL',
+                            $netTotal,
+                            $effectivePaidAmount,
+                            $invoiceId,
+                            $customerId
+                        ));
+                        
                         // النظام الجديد: إذا كان العميل لديه رصيد دائن والبيع بالآجل أو جزئي
                         // يتم احتساب نسبة 2% بدون أي شروط
-                        // ملاحظة: في حالة البيع بالآجل، قد لا يتم استخدام الرصيد الدائن تلقائياً
-                        // لكن يجب احتساب النسبة على المبلغ المستحق (netTotal) إذا لم يتم استخدام الرصيد الدائن
+                        // القاعدة: 
+                        // - بالآجل: حساب 2% من المبلغ المدفوع من الرصيد الدائن (أو netTotal إذا لم يتم استخدام الرصيد الدائن)
+                        // - جزئي: حساب 2% من (المبلغ المدفوع من الرصيد الدائن + مبلغ التحصيل الجزئي)
                         if ($hasCreditBalance && ($paymentType === 'credit' || $paymentType === 'partial')) {
                             // تحديد المبلغ الأساسي للعمولة
                             if ($paymentType === 'credit') {
                                 // بالآجل: حساب 2% من المبلغ المدفوع من الرصيد الدائن
-                                // إذا لم يتم استخدام الرصيد الدائن، نحسب على المبلغ المستحق (netTotal)
+                                // إذا تم استخدام الرصيد الدائن، نحسب على creditUsed
+                                // إذا لم يتم استخدام الرصيد الدائن (لكن العميل لديه رصيد دائن)، نحسب على netTotal
+                                // لأن المبلغ سيُخصم من الرصيد الدائن في المستقبل
                                 if ($creditUsed > 0.0001) {
                                     $commissionBase = $creditUsed;
                                 } else {
@@ -1179,7 +1195,13 @@ if (!$error && $_SERVER['REQUEST_METHOD'] === 'POST') {
                                 }
                             } else {
                                 // جزئي: حساب 2% من (المبلغ المدفوع من الرصيد الدائن + مبلغ التحصيل الجزئي)
-                                $commissionBase = $creditUsed + $effectivePaidAmount;
+                                // يجب أن يكون هناك مبلغ تحصيل جزئي على الأقل
+                                if ($effectivePaidAmount > 0.0001) {
+                                    $commissionBase = $creditUsed + $effectivePaidAmount;
+                                } else {
+                                    // لا يوجد مبلغ تحصيل جزئي، نستخدم creditUsed فقط
+                                    $commissionBase = $creditUsed > 0.0001 ? $creditUsed : $netTotal;
+                                }
                             }
                             
                             // حساب نسبة 2%
@@ -1187,7 +1209,7 @@ if (!$error && $_SERVER['REQUEST_METHOD'] === 'POST') {
                             
                             // تسجيل معلومات التشخيص
                             error_log(sprintf(
-                                'New credit balance commission (no conditions): paymentType=%s, creditUsed=%.2f, effectivePaidAmount=%.2f, netTotal=%.2f, commissionBase=%.2f, commissionAmount=%.2f, invoiceId=%d, customerId=%d',
+                                'New credit balance commission (no conditions): paymentType=%s, creditUsed=%.2f, effectivePaidAmount=%.2f, netTotal=%.2f, commissionBase=%.2f, commissionAmount=%.2f, invoiceId=%d, customerId=%d, hasCreditBalance=%s',
                                 $paymentType,
                                 $creditUsed,
                                 $effectivePaidAmount,
@@ -1195,8 +1217,12 @@ if (!$error && $_SERVER['REQUEST_METHOD'] === 'POST') {
                                 $commissionBase,
                                 $creditCommissionAmount,
                                 $invoiceId,
-                                $customerId
+                                $customerId,
+                                $hasCreditBalance ? 'true' : 'false'
                             ));
+                            
+                            // تسجيل إضافي للتأكد من أن النظام يعمل
+                            error_log('SUCCESS: New credit balance commission condition met - proceeding with commission calculation');
                             
                             if ($creditCommissionAmount > 0) {
                                 // إضافة النسبة إلى collections_bonus والمبلغ الأساسي إلى collections_amount
@@ -1285,8 +1311,31 @@ if (!$error && $_SERVER['REQUEST_METHOD'] === 'POST') {
                                     error_log('New credit balance commission error trace: ' . $creditCommissionError->getTraceAsString());
                                 }
                             } else {
-                                error_log('New credit balance commission: commission amount is zero or negative');
+                                error_log(sprintf(
+                                    'WARNING: New credit balance commission amount is zero or negative: commissionAmount=%.2f, commissionBase=%.2f, invoiceId=%d',
+                                    $creditCommissionAmount,
+                                    $commissionBase,
+                                    $invoiceId
+                                ));
                             }
+                        } else {
+                            // تسجيل لماذا لم يتم تطبيق النظام الجديد
+                            $reason = [];
+                            if (!$hasCreditBalance) {
+                                $reason[] = 'no credit balance (currentBalance=' . $currentBalance . ')';
+                            }
+                            if ($paymentType !== 'credit' && $paymentType !== 'partial') {
+                                $reason[] = 'payment type is not credit or partial (paymentType=' . ($paymentType ?? 'NULL') . ')';
+                            }
+                            error_log(sprintf(
+                                'DEBUG: New credit balance commission NOT applied: hasCreditBalance=%s, paymentType=%s, currentBalance=%.2f, invoiceId=%d, customerId=%d, reason=%s',
+                                $hasCreditBalance ? 'true' : 'false',
+                                $paymentType ?? 'NULL',
+                                $currentBalance,
+                                $invoiceId,
+                                $customerId,
+                                implode(', ', $reason)
+                            ));
                         }
                         
                         // التحقق من أن العميل لديه سجل مرتجعات

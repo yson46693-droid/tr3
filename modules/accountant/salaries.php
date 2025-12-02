@@ -1953,7 +1953,7 @@ if (isset($_GET['ajax']) && $_GET['ajax'] == '1' && $salaryId > 0) {
                     <div class="card-body">
                         <p><strong>المستخدم:</strong> <?php echo htmlspecialchars($salary['full_name'] ?? $salary['username']); ?></p>
                         <p><strong>الشهر:</strong> <?php echo date('F', mktime(0, 0, 0, $salaryMonth, 1)); ?> <?php echo $salaryYear; ?></p>
-                        <p><strong><?php echo ($userRole === 'sales') ? 'الراتب الشهري' : 'سعر الساعة'; ?>:</strong> <?php echo formatCurrency($hourlyRate); ?></p>
+                        <p><strong><?php echo ($userRole === 'sales') ? 'سعر الساعة' : 'سعر الساعة'; ?>:</strong> <?php echo formatCurrency($hourlyRate); ?></p>
                         <?php if ($userRole !== 'sales'): ?>
                         <p><strong>عدد الساعات:</strong> <?php echo formatHours($actualHours); ?> 
                             <?php if ($wasUpdated): ?>
