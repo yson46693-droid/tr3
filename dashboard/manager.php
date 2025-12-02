@@ -343,10 +343,33 @@ $pageDescription = 'لوحة تحكم المدير - إدارة شاملة لل�
                         "SELECT created_at FROM backups WHERE status IN ('completed', 'success') ORDER BY created_at DESC LIMIT 1"
                     );
                     $totalUsers = $db->queryOne("SELECT COUNT(*) as count FROM users WHERE status = 'active'");
-                    $balance = $db->queryOne(
-                        "SELECT COALESCE(SUM(CASE WHEN type = 'income' THEN amount ELSE -amount END), 0) as balance
-                         FROM financial_transactions WHERE status = 'approved'"
-                    );
+                    
+                    // حساب رصيد الخزنة من financial_transactions و accountant_transactions
+                    $cashBalanceResult = $db->queryOne("
+                        SELECT
+                            (SELECT COALESCE(SUM(CASE WHEN type = 'income' AND status = 'approved' THEN amount ELSE 0 END), 0) FROM financial_transactions) +
+                            (SELECT COALESCE(SUM(CASE WHEN transaction_type IN ('collection_from_sales_rep', 'income') AND status = 'approved' THEN amount ELSE 0 END), 0) FROM accountant_transactions) AS total_income,
+                            (SELECT COALESCE(SUM(CASE WHEN type IN ('expense', 'payment') AND status = 'approved' THEN amount ELSE 0 END), 0) FROM financial_transactions) +
+                            (SELECT COALESCE(SUM(CASE WHEN transaction_type IN ('expense', 'payment') AND status = 'approved' THEN amount ELSE 0 END), 0) FROM accountant_transactions) AS total_expenses
+                    ");
+                    
+                    $totalIncome = (float)($cashBalanceResult['total_income'] ?? 0);
+                    $totalExpenses = (float)($cashBalanceResult['total_expenses'] ?? 0);
+                    
+                    // حساب إجمالي المرتبات (المعتمدة والمدفوعة) لخصمها من الرصيد
+                    $totalSalaries = 0.0;
+                    $salariesTableExists = $db->queryOne("SHOW TABLES LIKE 'salaries'");
+                    if (!empty($salariesTableExists)) {
+                        $salariesResult = $db->queryOne(
+                            "SELECT COALESCE(SUM(total_amount), 0) as total_salaries
+                             FROM salaries
+                             WHERE status IN ('approved', 'paid')"
+                        );
+                        $totalSalaries = (float)($salariesResult['total_salaries'] ?? 0);
+                    }
+                    
+                    $balance = $totalIncome - $totalExpenses - $totalSalaries;
+                    
                     $monthlySales = $db->queryOne(
                         "SELECT COALESCE(SUM(total), 0) as total
                          FROM sales WHERE status = 'approved' AND MONTH(date) = MONTH(NOW())"
@@ -388,7 +411,7 @@ $pageDescription = 'لوحة تحكم المدير - إدارة شاملة لل�
                             </div>
                         </div>
                         <div class="stat-card-title">رصيد الخزنة</div>
-                        <div class="stat-card-value"><?php echo formatCurrency($balance['balance'] ?? 0); ?></div>
+                        <div class="stat-card-value"><?php echo formatCurrency($balance); ?></div>
                     </div>
                     
                     <div class="stat-card">
