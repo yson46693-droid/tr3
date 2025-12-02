@@ -972,10 +972,38 @@ if ($currentSalary) {
     $monthStats['total_salary'] = 0;
     
     // حساب مكافأة التحصيلات حتى لو لم يكن هناك راتب محفوظ
+    // استخدام نفس منطق cash_register.php: حساب من جدول collections فقط
     if ($currentUser['role'] === 'sales') {
-        $collectionsAmount = calculateSalesCollections($currentUser['id'], $selectedMonth, $selectedYear);
-        $monthStats['collections_bonus'] = round($collectionsAmount * 0.02, 2);
-        $monthStats['collections_amount'] = $collectionsAmount;
+        $collectionsTableExists = $db->queryOne("SHOW TABLES LIKE 'collections'");
+        $totalCollectionsForMonth = 0.0;
+        if (!empty($collectionsTableExists)) {
+            $statusColumnCheck = $db->queryOne("SHOW COLUMNS FROM collections LIKE 'status'");
+            $hasStatusColumn = !empty($statusColumnCheck);
+            
+            if ($hasStatusColumn) {
+                $collectionsResult = $db->queryOne(
+                    "SELECT COALESCE(SUM(amount), 0) as total_collections
+                     FROM collections
+                     WHERE collected_by = ? 
+                     AND MONTH(date) = ? 
+                     AND YEAR(date) = ?
+                     AND status IN ('pending', 'approved')",
+                    [$currentUser['id'], $selectedMonth, $selectedYear]
+                );
+            } else {
+                $collectionsResult = $db->queryOne(
+                    "SELECT COALESCE(SUM(amount), 0) as total_collections
+                     FROM collections
+                     WHERE collected_by = ? 
+                     AND MONTH(date) = ? 
+                     AND YEAR(date) = ?",
+                    [$currentUser['id'], $selectedMonth, $selectedYear]
+                );
+            }
+            $totalCollectionsForMonth = (float)($collectionsResult['total_collections'] ?? 0);
+        }
+        $monthStats['collections_amount'] = $totalCollectionsForMonth;
+        $monthStats['collections_bonus'] = round($totalCollectionsForMonth * 0.02, 2);
     } else {
         $monthStats['collections_bonus'] = 0;
         $monthStats['collections_amount'] = 0;
@@ -992,18 +1020,61 @@ $hourlyRate = cleanFinancialValue($currentSalary['hourly_rate'] ?? $currentUser[
 $bonus = cleanFinancialValue($currentSalary[$bonusColumnName] ?? $currentSalary['bonus'] ?? $currentSalary['bonuses'] ?? 0);
 $deductions = cleanFinancialValue($currentSalary['deductions'] ?? 0);
 
+// حساب إجمالي التحصيلات من جدول collections فقط (مثل cash_register.php)
+// لضمان أن نسبة التحصيلات = 2% من إجمالي التحصيلات من العملاء
+$totalCollectionsFromTable = 0.0;
+if ($currentUser['role'] === 'sales') {
+    $collectionsTableExists = $db->queryOne("SHOW TABLES LIKE 'collections'");
+    if (!empty($collectionsTableExists)) {
+        // التحقق من وجود عمود status
+        $statusColumnCheck = $db->queryOne("SHOW COLUMNS FROM collections LIKE 'status'");
+        $hasStatusColumn = !empty($statusColumnCheck);
+        
+        if ($hasStatusColumn) {
+            // حساب جميع التحصيلات (pending و approved) للشهر والسنة المحددين
+            $collectionsResult = $db->queryOne(
+                "SELECT COALESCE(SUM(amount), 0) as total_collections
+                 FROM collections
+                 WHERE collected_by = ? 
+                 AND MONTH(date) = ? 
+                 AND YEAR(date) = ?
+                 AND status IN ('pending', 'approved')",
+                [$currentUser['id'], $selectedMonth, $selectedYear]
+            );
+        } else {
+            $collectionsResult = $db->queryOne(
+                "SELECT COALESCE(SUM(amount), 0) as total_collections
+                 FROM collections
+                 WHERE collected_by = ? 
+                 AND MONTH(date) = ? 
+                 AND YEAR(date) = ?",
+                [$currentUser['id'], $selectedMonth, $selectedYear]
+            );
+        }
+        $totalCollectionsFromTable = (float)($collectionsResult['total_collections'] ?? 0);
+    }
+}
+
 // استخدام القيم من جدول salaries وإعادة حساب الراتب الإجمالي من المكونات لضمان الدقة
 if ($currentSalary && isset($currentSalary['base_amount'])) {
     // استخدام القيم من قاعدة البيانات
     $baseAmount = cleanFinancialValue($currentSalary['base_amount'] ?? 0);
-    $collectionsBonus = cleanFinancialValue($currentSalary['collections_bonus'] ?? 0);
-    $collectionsAmount = cleanFinancialValue($currentSalary['collections_amount'] ?? 0);
+    
+    // حساب نسبة التحصيلات بناءً على إجمالي التحصيلات من جدول collections فقط (مثل cash_register.php)
+    // نسبة التحصيلات = 2% من إجمالي التحصيلات من العملاء
+    if ($currentUser['role'] === 'sales') {
+        $collectionsAmount = $totalCollectionsFromTable;
+        $collectionsBonus = round($collectionsAmount * 0.02, 2);
+    } else {
+        $collectionsBonus = 0;
+        $collectionsAmount = 0;
+    }
     
     // إعادة حساب الراتب الإجمالي من المكونات لضمان الدقة
     // الراتب الإجمالي = الراتب الأساسي + المكافآت + نسبة التحصيلات - الخصومات
     $totalSalary = round($baseAmount + $bonus + $collectionsBonus - $deductions, 2);
     
-    // تحديث $monthStats بالقيم من قاعدة البيانات
+    // تحديث $monthStats بالقيم المحسوبة
     $monthStats['total_salary'] = $totalSalary;
     if ($currentUser['role'] === 'sales') {
         $monthStats['collections_bonus'] = $collectionsBonus;
@@ -1016,8 +1087,15 @@ if ($currentSalary && isset($currentSalary['base_amount'])) {
     // إذا لم يكن هناك راتب محفوظ، استخدم القيم من $monthStats
     $baseAmount = 0;
     $totalSalary = $monthStats['total_salary'] ?? 0;
-    $collectionsBonus = $monthStats['collections_bonus'] ?? 0;
-    $collectionsAmount = $monthStats['collections_amount'] ?? 0;
+    
+    // حساب نسبة التحصيلات بناءً على إجمالي التحصيلات من جدول collections فقط
+    if ($currentUser['role'] === 'sales') {
+        $collectionsAmount = $totalCollectionsFromTable;
+        $collectionsBonus = round($collectionsAmount * 0.02, 2);
+    } else {
+        $collectionsBonus = 0;
+        $collectionsAmount = 0;
+    }
     
     // إعادة حساب الراتب الإجمالي من المكونات
     if ($currentUser['role'] === 'sales') {
