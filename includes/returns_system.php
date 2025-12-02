@@ -1032,20 +1032,12 @@ function applyReturnSalaryDeduction(int $returnId, ?int $salesRepId = null, ?int
         $month = (int)date('n', $timestamp);
         $year = (int)date('Y', $timestamp);
         
-        // الحصول على أو إنشاء سجل الراتب
-        $salaryResult = createOrUpdateSalary($salesRepId, $month, $year);
-        
+        // البحث عن سجل الراتب الموجود أو إنشاؤه بدون إعادة حساب نسبة التحصيلات
+        // (نسبة التحصيلات هي رقم تراكمي ولا يجب تعديلها عند المرتجع)
         $salaryId = null;
         
-        // إذا نجح createOrUpdateSalary، استخدم salary_id
-        if (($salaryResult['success'] ?? false) && !empty($salaryResult['salary_id'])) {
-            $salaryId = (int)$salaryResult['salary_id'];
-        }
-        
-        // إذا لم يتم إنشاء سجل الراتب، أنشئه يدوياً
-        if (!$salaryId) {
-            error_log("Warning: createOrUpdateSalary did not return salary_id. Creating salary record manually for user {$salesRepId}, month {$month}, year {$year}");
-            
+        // البحث عن سجل الراتب الموجود أو إنشاؤه يدوياً
+        {
             // التحقق من وجود عمود year
             $yearColumnCheck = $db->queryOne("SHOW COLUMNS FROM salaries LIKE 'year'");
             $hasYearColumn = !empty($yearColumnCheck);
