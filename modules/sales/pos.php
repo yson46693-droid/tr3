@@ -1219,6 +1219,27 @@ if (!$error && $_SERVER['REQUEST_METHOD'] === 'POST') {
                                 // بالآجل: حساب 2% من المبلغ المدفوع من الرصيد الدائن فقط
                                 // يجب أن نحسب فقط على creditUsed (المبلغ المدفوع فعلياً من الرصيد الدائن)
                                 // وليس على netTotal (إجمالي الفاتورة)
+                                
+                                // إعادة حساب creditUsed بشكل صحيح عند البيع بالآجل لعميل له رصيد دائن
+                                // عند البيع بالآجل لعميل له رصيد دائن، يجب أن يكون creditUsed = min(netTotal, creditAvailable)
+                                // هذا يضمن حساب نسبة التحصيلات بشكل صحيح على المبلغ المدفوع من الرصيد الدائن
+                                if ($hasCreditBalance) {
+                                    $creditAvailable = abs($currentBalance);
+                                    // إعادة حساب creditUsed بشكل صحيح
+                                    // creditUsed = المبلغ المدفوع فعلياً من الرصيد الدائن
+                                    if ($netTotal <= $creditAvailable) {
+                                        $creditUsed = $netTotal;
+                                    } else {
+                                        $creditUsed = $creditAvailable;
+                                    }
+                                    
+                                    // تسجيل معلومات التشخيص
+                                    error_log(sprintf(
+                                        'Credit payment - Recalculated creditUsed: creditUsed=%.2f, creditAvailable=%.2f, netTotal=%.2f, currentBalance=%.2f, invoiceId=%d',
+                                        $creditUsed, $creditAvailable, $netTotal, $currentBalance, $invoiceId
+                                    ));
+                                }
+                                
                                 if ($creditUsed > 0.0001) {
                                     // تم استخدام الرصيد الدائن، نحسب على creditUsed فقط
                                     $commissionBase = $creditUsed;
@@ -1294,14 +1315,6 @@ if (!$error && $_SERVER['REQUEST_METHOD'] === 'POST') {
                                             $hasCollectionsBonusColumn = ensureCollectionsBonusColumn();
                                             
                                             if ($hasCollectionsBonusColumn) {
-                                                // إضافة المبلغ الأساسي إلى collections_amount والنسبة إلى collections_bonus
-                                                // إضافة النسبة إلى total_amount (لأنها جزء من الراتب الإجمالي)
-                                                // تأكد من أن commissionBase = creditUsed وليس netTotal
-                                                error_log(sprintf(
-                                                    'Applying commission to salary: commissionBase=%.2f, creditUsed=%.2f, netTotal=%.2f, creditCommissionAmount=%.2f, salaryId=%d',
-                                                    $commissionBase, $creditUsed, $netTotal, $creditCommissionAmount, $salaryId
-                                                ));
-                                                
                                                 // التأكد من أن commissionBase = creditUsed (وليس netTotal)
                                                 // في حالة البيع بالآجل، يجب أن يكون commissionBase = creditUsed فقط
                                                 if ($paymentType === 'credit' && $creditUsed > 0.0001) {
@@ -1316,6 +1329,14 @@ if (!$error && $_SERVER['REQUEST_METHOD'] === 'POST') {
                                                         $creditCommissionAmount = round($commissionBase * 0.02, 2);
                                                     }
                                                 }
+                                                
+                                                // إضافة المبلغ الأساسي إلى collections_amount والنسبة إلى collections_bonus
+                                                // إضافة النسبة إلى total_amount (لأنها جزء من الراتب الإجمالي)
+                                                // تأكد من أن commissionBase = creditUsed وليس netTotal
+                                                error_log(sprintf(
+                                                    'Applying commission to salary: commissionBase=%.2f, creditUsed=%.2f, netTotal=%.2f, creditCommissionAmount=%.2f, salaryId=%d, paymentType=%s',
+                                                    $commissionBase, $creditUsed, $netTotal, $creditCommissionAmount, $salaryId, $paymentType
+                                                ));
                                                 
                                                 $db->execute(
                                                     "UPDATE salaries SET 
