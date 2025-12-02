@@ -443,25 +443,30 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                         );
                         $historyId = $db->getLastInsertId();
                         
-                        $db->execute(
-                            "INSERT INTO financial_transactions (type, amount, supplier_id, description, reference_number, status, approved_by, created_by, approved_at)
-                             VALUES (?, ?, ?, ?, ?, 'approved', ?, ?, NOW())",
-                            [
-                                $transactionType,
-                                abs($changeAmount),
-                                $supplierId,
-                                $description . ($notes ? ' - ملاحظات: ' . $notes : ''),
-                                'SUP-' . $supplierId . '-' . date('YmdHis'),
-                                $currentUser['id'],
-                                $currentUser['id']
-                            ]
-                        );
-                        $transactionId = $db->getLastInsertId();
-                        
-                        $db->execute(
-                            "UPDATE supplier_balance_history SET reference_id = ? WHERE id = ?",
-                            [$transactionId, $historyId]
-                        );
+                        // إنشاء معاملة مالية فقط عند تسجيل السداد وليس عند إضافة الرصيد
+                        // لأن إضافة الرصيد للمورد لا يجب أن تؤثر على خزنة الشركة
+                        $transactionId = null;
+                        if ($action === 'record_payment') {
+                            $db->execute(
+                                "INSERT INTO financial_transactions (type, amount, supplier_id, description, reference_number, status, approved_by, created_by, approved_at)
+                                 VALUES (?, ?, ?, ?, ?, 'approved', ?, ?, NOW())",
+                                [
+                                    $transactionType,
+                                    abs($changeAmount),
+                                    $supplierId,
+                                    $description . ($notes ? ' - ملاحظات: ' . $notes : ''),
+                                    'SUP-' . $supplierId . '-' . date('YmdHis'),
+                                    $currentUser['id'],
+                                    $currentUser['id']
+                                ]
+                            );
+                            $transactionId = $db->getLastInsertId();
+                            
+                            $db->execute(
+                                "UPDATE supplier_balance_history SET reference_id = ? WHERE id = ?",
+                                [$transactionId, $historyId]
+                            );
+                        }
                         
                         logAudit(
                             $currentUser['id'],
