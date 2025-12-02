@@ -74,9 +74,10 @@ $supplyCategoryLabels = [
     'tahini' => 'الطحينة'
 ];
 
-// تحديد الفترة
-$startDate = $period === 'day' ? $selectedReportDay : $productionReportsMonthStart;
-$endDate = $period === 'day' ? $selectedReportDay : $productionReportsMonthEnd;
+// دائماً نطبع التقرير الشهري الكامل (مثل الصفحة الرئيسية)
+// استخدام نفس المنطق المستخدم في الصفحة الرئيسية
+$startDate = $productionReportsMonthStart;
+$endDate = $productionReportsMonthEnd;
 
 // تعريف الدوال المساعدة (إذا لم تكن موجودة)
 if (!function_exists('productionPageNormalizeText')) {
@@ -290,10 +291,17 @@ if ($showRawReports) {
     );
 }
 
-// حساب الإجماليات
+// حساب الإجماليات - استخدام نفس المنطق المستخدم في الصفحة الرئيسية
+// الإجماليات من البيانات الأصلية (غير المفلترة) مثل الصفحة الرئيسية
+$packagingTotalOut = (float)($consumptionData['packaging']['total_out'] ?? 0);
+$rawTotalOut = (float)($consumptionData['raw']['total_out'] ?? 0);
+$packagingNet = (float)($consumptionData['packaging']['net'] ?? 0);
+$rawNet = (float)($consumptionData['raw']['net'] ?? 0);
+$totalNet = round($packagingNet + $rawNet, 3);
+
+// حساب الحركات من البيانات المفلترة (لأن الصفحة تعرض فقط المفلترة)
 $packagingTotals = productionPageAggregateTotals($filteredPackagingItems);
 $rawTotals = productionPageAggregateTotals($filteredRawItems);
-$totalNet = round($packagingTotals['net'] + $rawTotals['net'], 3);
 $totalMovements = $packagingTotals['movements'] + $rawTotals['movements'];
 
 // بيانات التلفيات
@@ -323,10 +331,10 @@ foreach ($supplyLogs as $logItem) {
 }
 $supplySuppliersCount = count($supplySuppliersSet);
 
-// تنسيق التواريخ
+// تنسيق التواريخ (شهري دائماً)
 $startDateLabel = function_exists('formatDate') ? formatDate($startDate) : $startDate;
 $endDateLabel = function_exists('formatDate') ? formatDate($endDate) : $endDate;
-$periodLabel = $period === 'day' ? 'يوم ' . $startDateLabel : 'من ' . $startDateLabel . ' إلى ' . $endDateLabel;
+$periodLabel = 'من ' . $startDateLabel . ' إلى ' . $endDateLabel;
 
 $companyName = COMPANY_NAME;
 ?>
@@ -532,13 +540,13 @@ $companyName = COMPANY_NAME;
             <?php if ($showPackagingReports): ?>
             <div class="summary-card">
                 <span class="summary-label">إجمالي استهلاك التعبئة</span>
-                <span class="summary-value"><?php echo number_format((float)($packagingTotals['total_out'] ?? 0), 3); ?> وحدة</span>
+                <span class="summary-value"><?php echo number_format($packagingTotalOut, 3); ?> وحدة</span>
             </div>
             <?php endif; ?>
             <?php if ($showRawReports): ?>
             <div class="summary-card">
                 <span class="summary-label">إجمالي استهلاك المواد الخام</span>
-                <span class="summary-value"><?php echo number_format((float)($rawTotals['total_out'] ?? 0), 3); ?> كجم</span>
+                <span class="summary-value"><?php echo number_format($rawTotalOut, 3); ?> كجم</span>
             </div>
             <?php endif; ?>
             <div class="summary-card">
