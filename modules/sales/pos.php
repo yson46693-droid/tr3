@@ -1182,16 +1182,27 @@ if (!$error && $_SERVER['REQUEST_METHOD'] === 'POST') {
                         if ($hasCreditBalance && ($paymentType === 'credit' || $paymentType === 'partial')) {
                             // تحديد المبلغ الأساسي للعمولة
                             if ($paymentType === 'credit') {
-                                // بالآجل: حساب 2% من المبلغ المدفوع من الرصيد الدائن
-                                // إذا تم استخدام الرصيد الدائن، نحسب على creditUsed
-                                // إذا لم يتم استخدام الرصيد الدائن (لكن العميل لديه رصيد دائن)، نحسب على netTotal
-                                // لأن المبلغ سيُخصم من الرصيد الدائن في المستقبل
+                                // بالآجل: حساب 2% من المبلغ المدفوع من الرصيد الدائن فقط
+                                // يجب أن نحسب فقط على creditUsed (المبلغ المدفوع فعلياً من الرصيد الدائن)
+                                // وليس على netTotal (إجمالي الفاتورة)
                                 if ($creditUsed > 0.0001) {
+                                    // تم استخدام الرصيد الدائن، نحسب على creditUsed فقط
                                     $commissionBase = $creditUsed;
+                                    
+                                    error_log(sprintf(
+                                        'Credit payment commission calculation: creditUsed=%.2f, netTotal=%.2f, commissionBase=%.2f (using creditUsed only, NOT netTotal)',
+                                        $creditUsed, $netTotal, $commissionBase
+                                    ));
                                 } else {
-                                    // لم يتم استخدام الرصيد الدائن، لكن العميل لديه رصيد دائن
-                                    // نحسب على المبلغ المستحق (netTotal) لأنه سيُخصم من الرصيد الدائن
-                                    $commissionBase = $netTotal;
+                                    // لم يتم استخدام الرصيد الدائن (رغم وجود رصيد دائن)
+                                    // في هذه الحالة، لا يتم احتساب عمولة لأن المبلغ لم يُدفع من الرصيد الدائن
+                                    // المبلغ سيُضاف كدين للعميل، وليس كرصيد دائن
+                                    $commissionBase = 0.0;
+                                    
+                                    error_log(sprintf(
+                                        'Credit payment commission calculation: creditUsed=%.2f, netTotal=%.2f, commissionBase=0.0 (no credit used, no commission)',
+                                        $creditUsed, $netTotal
+                                    ));
                                 }
                             } else {
                                 // جزئي: حساب 2% من (المبلغ المدفوع من الرصيد الدائن + مبلغ التحصيل الجزئي)
