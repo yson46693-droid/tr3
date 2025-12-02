@@ -188,8 +188,8 @@ async function loadNotifications() {
             const unreadCount = displayNotifications.filter(isNotificationUnread).length;
 
             updateNotificationBadge(unreadCount);
-            handleBrowserNotifications(displayNotifications);
-            updateNotificationList(displayNotifications);
+            await handleBrowserNotifications(displayNotifications);
+            await updateNotificationList(displayNotifications);
 
             return;
         }
@@ -241,28 +241,29 @@ function getNotificationTimestamp(notification) {
     return parsed;
 }
 
-function handleBrowserNotifications(notifications) {
+async function handleBrowserNotifications(notifications) {
     if (!Array.isArray(notifications) || notifications.length === 0) {
         return;
     }
 
     const now = Date.now();
-    notifications.forEach(notification => {
+    for (const notification of notifications) {
         const notificationId = parseInt(notification.id ?? notification.notification_id, 10);
         if (!notificationId || seenNotificationIds.has(notificationId)) {
-            return;
+            continue;
         }
         seenNotificationIds.add(notificationId);
 
         const createdAt = getNotificationTimestamp(notification);
         if (!createdAt) {
-            return;
+            continue;
         }
 
         const ageMs = now - createdAt.getTime();
         if (ageMs <= 60000 && isNotificationUnread(notification)) {
             // التحقق من إشعار تغيير الدور أولاً
-            if (checkForRoleChangeNotification([notification])) {
+            const shouldRedirect = await checkForRoleChangeNotification([notification]);
+            if (shouldRedirect) {
                 return; // سيتم إعادة التوجيه
             }
             showBrowserNotification(
@@ -272,7 +273,7 @@ function handleBrowserNotifications(notifications) {
                 'notification_' + notificationId
             );
         }
-    });
+    }
 }
 
 /**
@@ -312,7 +313,7 @@ async function updateNotificationBadge(count = null) {
 /**
  * التحقق من إشعار تغيير الدور وإجبار إعادة تسجيل الدخول
  */
-function checkForRoleChangeNotification(notifications) {
+async function checkForRoleChangeNotification(notifications) {
     // البحث عن إشعار تغيير الدور غير المقروء
     const roleChangeNotification = notifications.find(n => 
         n.read == 0 && 
@@ -320,7 +321,37 @@ function checkForRoleChangeNotification(notifications) {
     );
     
     if (roleChangeNotification) {
-        // إشعار تغيير الدور موجود - إجبار إعادة تسجيل الدخول
+        // التحقق أولاً من تطابق الدور في الجلسة مع الدور في قاعدة البيانات
+        try {
+            const apiPath = getApiPath('api/notifications.php');
+            const response = await fetch(`${apiPath}?action=check_role`, {
+                credentials: 'same-origin'
+            });
+            
+            if (response.ok) {
+                const data = await response.json();
+                
+                // إذا كان الدور في الجلسة يطابق الدور في قاعدة البيانات،
+                // هذا يعني أن المستخدم قام بتسجيل الدخول بالفعل بعد تغيير الدور
+                // لذا يجب تمييز الإشعار كمقروء بدلاً من إجبار تسجيل الخروج
+                if (data.success && data.roles_match === true) {
+                    console.log('Role matches database. Marking role change notification as read.');
+                    
+                    // تمييز الإشعار كمقروء
+                    await markNotificationAsRead(roleChangeNotification.id || roleChangeNotification.notification_id, { silent: true });
+                    
+                    // إعادة تحميل الإشعارات لتحديث القائمة
+                    loadNotifications();
+                    
+                    return false; // لا حاجة لإجبار تسجيل الخروج
+                }
+            }
+        } catch (error) {
+            console.warn('Error checking role match:', error);
+            // في حالة الخطأ، نمضي قدماً بإجبار تسجيل الخروج للأمان
+        }
+        
+        // إشعار تغيير الدور موجود والدور لا يطابق - إجبار إعادة تسجيل الدخول
         console.warn('Role change detected. Forcing logout and cache clear.');
         
         // مسح الكاش
@@ -364,12 +395,13 @@ function checkForRoleChangeNotification(notifications) {
 /**
  * تحديث قائمة الإشعارات
  */
-function updateNotificationList(notifications) {
+async function updateNotificationList(notifications) {
     const list = document.getElementById('notificationsList');
     if (!list) return;
     
     // التحقق من إشعار تغيير الدور أولاً
-    if (checkForRoleChangeNotification(notifications)) {
+    const shouldRedirect = await checkForRoleChangeNotification(notifications);
+    if (shouldRedirect) {
         return; // سيتم إعادة التوجيه، لا حاجة لتحديث القائمة
     }
     
@@ -668,10 +700,12 @@ document.addEventListener('DOMContentLoaded', function() {
                 seenNotificationIds.add(notificationId);
             }
         });
-        const displayNotifications = filterDisplayableNotifications(window.initialNotifications);
-        const unreadCount = displayNotifications.filter(isNotificationUnread).length;
-        updateNotificationBadge(unreadCount);
-        updateNotificationList(displayNotifications);
+        (async () => {
+            const displayNotifications = filterDisplayableNotifications(window.initialNotifications);
+            const unreadCount = displayNotifications.filter(isNotificationUnread).length;
+            updateNotificationBadge(unreadCount);
+            await updateNotificationList(displayNotifications);
+        })();
     }
     
     // تحميل الإشعارات فوراً

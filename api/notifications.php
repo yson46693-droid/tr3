@@ -80,6 +80,24 @@ try {
                 'count' => intval($count)
             ]);
             
+        } elseif ($action === 'check_role') {
+            // التحقق من تطابق الدور في الجلسة مع الدور في قاعدة البيانات
+            $sessionRole = $_SESSION['role'] ?? null;
+            $dbRole = $currentUser['role'] ?? null;
+            
+            $rolesMatch = (
+                $sessionRole !== null && 
+                $dbRole !== null && 
+                strtolower($sessionRole) === strtolower($dbRole)
+            );
+            
+            echo json_encode([
+                'success' => true,
+                'roles_match' => $rolesMatch,
+                'session_role' => $sessionRole,
+                'db_role' => $dbRole
+            ]);
+            
         } else {
             http_response_code(400);
             echo json_encode(['success' => false, 'error' => 'Invalid action']);
