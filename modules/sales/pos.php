@@ -1255,8 +1255,7 @@ if (!$error && $_SERVER['REQUEST_METHOD'] === 'POST') {
                                                     "UPDATE salaries SET 
                                                         collections_amount = COALESCE(collections_amount, 0) + ?,
                                                         collections_bonus = COALESCE(collections_bonus, 0) + ?,
-                                                        total_amount = COALESCE(total_amount, 0) + ?,
-                                                        updated_at = NOW() 
+                                                        total_amount = COALESCE(total_amount, 0) + ?
                                                      WHERE id = ?",
                                                     [$commissionBase, $creditCommissionAmount, $creditCommissionAmount, $salaryId]
                                                 );
@@ -1296,7 +1295,7 @@ if (!$error && $_SERVER['REQUEST_METHOD'] === 'POST') {
                                                 // إذا لم تكن الأعمدة موجودة، نستخدم bonus كحل بديل
                                                 error_log('Collections bonus columns not available, using bonus as fallback');
                                                 $db->execute(
-                                                    "UPDATE salaries SET bonus = COALESCE(bonus, 0) + ?, total_amount = COALESCE(total_amount, 0) + ?, updated_at = NOW() WHERE id = ?",
+                                                    "UPDATE salaries SET bonus = COALESCE(bonus, 0) + ?, total_amount = COALESCE(total_amount, 0) + ? WHERE id = ?",
                                                     [$creditCommissionAmount, $creditCommissionAmount, $salaryId]
                                                 );
                                             }
@@ -1450,8 +1449,7 @@ if (!$error && $_SERVER['REQUEST_METHOD'] === 'POST') {
                                                     "UPDATE salaries SET 
                                                         collections_amount = COALESCE(collections_amount, 0) + ?,
                                                         collections_bonus = COALESCE(collections_bonus, 0) + ?,
-                                                        total_amount = COALESCE(total_amount, 0) + ?,
-                                                        updated_at = NOW() 
+                                                        total_amount = COALESCE(total_amount, 0) + ?
                                                      WHERE id = ?",
                                                     [$creditUsed, $creditCommissionAmount, $creditCommissionAmount, $salaryId]
                                                 );
@@ -1490,7 +1488,7 @@ if (!$error && $_SERVER['REQUEST_METHOD'] === 'POST') {
                                                 // إذا لم تكن الأعمدة موجودة، نستخدم bonus كحل بديل
                                                 error_log('Collections bonus columns not available, using bonus as fallback');
                                                 $db->execute(
-                                                    "UPDATE salaries SET bonus = COALESCE(bonus, 0) + ?, total_amount = COALESCE(total_amount, 0) + ?, updated_at = NOW() WHERE id = ?",
+                                                    "UPDATE salaries SET bonus = COALESCE(bonus, 0) + ?, total_amount = COALESCE(total_amount, 0) + ? WHERE id = ?",
                                                     [$creditCommissionAmount, $creditCommissionAmount, $salaryId]
                                                 );
                                             }
@@ -1558,8 +1556,7 @@ if (!$error && $_SERVER['REQUEST_METHOD'] === 'POST') {
                                                     "UPDATE salaries SET 
                                                         collections_amount = COALESCE(collections_amount, 0) + ?,
                                                         collections_bonus = COALESCE(collections_bonus, 0) + ?,
-                                                        total_amount = COALESCE(total_amount, 0) + ?,
-                                                        updated_at = NOW() 
+                                                        total_amount = COALESCE(total_amount, 0) + ?
                                                      WHERE id = ?",
                                                     [$creditUsed, $creditCommissionAmount, $creditCommissionAmount, $salaryId]
                                                 );
@@ -1597,7 +1594,7 @@ if (!$error && $_SERVER['REQUEST_METHOD'] === 'POST') {
                                                 // إذا لم تكن الأعمدة موجودة، نستخدم bonus كحل بديل
                                                 error_log('Collections bonus columns not available, using bonus as fallback');
                                                 $db->execute(
-                                                    "UPDATE salaries SET bonus = COALESCE(bonus, 0) + ?, total_amount = COALESCE(total_amount, 0) + ?, updated_at = NOW() WHERE id = ?",
+                                                    "UPDATE salaries SET bonus = COALESCE(bonus, 0) + ?, total_amount = COALESCE(total_amount, 0) + ? WHERE id = ?",
                                                     [$creditCommissionAmount, $creditCommissionAmount, $salaryId]
                                                 );
                                             }
@@ -1654,7 +1651,7 @@ if (!$error && $_SERVER['REQUEST_METHOD'] === 'POST') {
                                         if ($salaryId > 0) {
                                             // إضافة النسبة إلى bonus فقط (بدون إضافة إلى collections_amount)
                                             $db->execute(
-                                                "UPDATE salaries SET bonus = COALESCE(bonus, 0) + ?, total_amount = COALESCE(total_amount, 0) + ?, updated_at = NOW() WHERE id = ?",
+                                                "UPDATE salaries SET bonus = COALESCE(bonus, 0) + ?, total_amount = COALESCE(total_amount, 0) + ? WHERE id = ?",
                                                 [$creditCommissionAmount, $creditCommissionAmount, $salaryId]
                                             );
                                             

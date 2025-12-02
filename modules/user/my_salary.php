@@ -1681,8 +1681,13 @@ try {
     }
     
     // جلب سجلات الخصومات من تعديلات الراتب
+    // التحقق من وجود عمود year في جدول salaries
+    $yearColumnCheck = $db->queryOne("SHOW COLUMNS FROM salaries LIKE 'year'");
+    $hasYearColumn = !empty($yearColumnCheck);
+    
+    $yearSelect = $hasYearColumn ? "s.year" : "NULL as year";
     $salaryModificationQuery = "
-        SELECT al.*, u.username, u.full_name, s.month, s.year, s.deductions as current_deductions
+        SELECT al.*, u.username, u.full_name, s.month, {$yearSelect}, s.deductions as current_deductions
         FROM audit_logs al
         LEFT JOIN users u ON al.user_id = u.id
         LEFT JOIN salaries s ON al.entity_id = s.id AND s.user_id = ?
