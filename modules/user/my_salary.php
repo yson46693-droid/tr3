@@ -1036,15 +1036,20 @@ if ($currentSalary) {
         $collectionsBonus = 0;
         if (function_exists('calculateSalesCollections')) {
             $collectionsAmount = calculateSalesCollections($currentUser['id'], $selectedMonth, $selectedYear);
-            $collectionsBonus = round($collectionsAmount * 0.02, 2);
+            $recalculatedCollectionsBonus = round($collectionsAmount * 0.02, 2);
             
-            // إذا كان الراتب محفوظاً، استخدم القيمة المحفوظة إذا كانت موجودة
-            if (isset($currentSalary['collections_bonus']) && $currentSalary['collections_bonus'] > 0) {
+            // إذا كان الراتب محفوظاً، تحقق من وجود نسبة التحصيلات المحفوظة
+            if (isset($currentSalary['collections_bonus'])) {
                 $savedCollectionsBonus = cleanFinancialValue($currentSalary['collections_bonus'] ?? 0);
-                // استخدم القيمة المحفوظة إذا كانت أكبر من المحسوبة
-                if ($savedCollectionsBonus > $collectionsBonus) {
+                // استخدم القيمة المحسوبة حديثاً إذا كانت أكبر من القيمة المحفوظة أو إذا كانت القيمة المحفوظة صفر
+                if ($recalculatedCollectionsBonus > $savedCollectionsBonus || $savedCollectionsBonus == 0) {
+                    $collectionsBonus = $recalculatedCollectionsBonus;
+                } else {
                     $collectionsBonus = $savedCollectionsBonus;
                 }
+            } else {
+                // إذا لم يكن هناك قيمة محفوظة، استخدم القيمة المحسوبة
+                $collectionsBonus = $recalculatedCollectionsBonus;
             }
         }
         
