@@ -885,9 +885,10 @@ if (!$error && $_SERVER['REQUEST_METHOD'] === 'POST') {
                     // لا نوقف العملية إذا فشل تسجيل التاريخ، لكن نسجل الخطأ
                 }
                 
-                // تسجيل التحصيل الجزئي في جدول التحصيلات إذا كان هناك مبلغ محصل فعلياً
+                // تسجيل التحصيل في جدول التحصيلات إذا كان هناك مبلغ محصل فعلياً
+                // يتم تسجيل التحصيلات للدفع الكامل والدفع الجزئي
                 // لا نسجل في خزنة المندوب إذا كانت المعاملة من رصيد دائن
-                $shouldRecordCollection = ($effectivePaidAmount > 0.0001 && $paymentType === 'partial' && !$isCreditSale);
+                $shouldRecordCollection = ($effectivePaidAmount > 0.0001 && in_array($paymentType, ['full', 'partial']) && !$isCreditSale);
                 
                 if ($shouldRecordCollection) {
                     // التحقق من وجود الأعمدة في جدول collections
@@ -928,7 +929,10 @@ if (!$error && $_SERVER['REQUEST_METHOD'] === 'POST') {
                     
                     if ($hasNotesColumn) {
                         $collectionColumns[] = 'notes';
-                        $collectionValues[] = 'تحصيل جزئي من نقطة بيع المندوب - فاتورة ' . $invoiceNumber;
+                        $collectionNote = ($paymentType === 'full') 
+                            ? 'دفع كامل من نقطة بيع المندوب - فاتورة ' . $invoiceNumber
+                            : 'تحصيل جزئي من نقطة بيع المندوب - فاتورة ' . $invoiceNumber;
+                        $collectionValues[] = $collectionNote;
                         $collectionPlaceholders[] = '?';
                     }
                     
@@ -943,11 +947,13 @@ if (!$error && $_SERVER['REQUEST_METHOD'] === 'POST') {
                         $db->execute($collectionSql, $collectionValues);
                         $collectionId = $db->getLastInsertId();
                         
-                        logAudit($currentUser['id'], 'pos_partial_collection', 'collection', $collectionId, null, [
+                        $auditAction = ($paymentType === 'full') ? 'pos_full_collection' : 'pos_partial_collection';
+                        logAudit($currentUser['id'], $auditAction, 'collection', $collectionId, null, [
                             'invoice_id' => $invoiceId,
                             'invoice_number' => $invoiceNumber,
                             'amount' => $effectivePaidAmount,
-                            'collection_number' => $collectionNumber
+                            'collection_number' => $collectionNumber,
+                            'payment_type' => $paymentType
                         ]);
                         
                         // إضافة المكافأة الفورية بنسبة 2% للمندوب الذي قام بالتحصيل مباشرة
