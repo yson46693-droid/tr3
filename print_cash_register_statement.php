@@ -44,8 +44,12 @@ $accountantTransactionsExists = $db->queryOne("SHOW TABLES LIKE 'accountant_tran
 // جلب جميع الفواتير
 $invoices = [];
 if (!empty($invoicesTableExists)) {
+    // التحقق من وجود عمود credit_used
+    $hasCreditUsedColumn = !empty($db->queryOne("SHOW COLUMNS FROM invoices LIKE 'credit_used'"));
+    $creditUsedSelect = $hasCreditUsedColumn ? ", COALESCE(credit_used, 0) as credit_used" : ", 0 as credit_used";
+    
     $invoices = $db->query(
-        "SELECT id, invoice_number, date, total_amount, paid_amount, status, paid_from_credit,
+        "SELECT id, invoice_number, date, total_amount, paid_amount, status, paid_from_credit{$creditUsedSelect},
                 customer_id, (SELECT name FROM customers WHERE id = invoices.customer_id) as customer_name
          FROM invoices
          WHERE sales_rep_id = ? AND status != 'cancelled'
@@ -506,6 +510,7 @@ $statementTime = date('H:i:s');
                     <th>التاريخ</th>
                     <th>الإجمالي</th>
                     <th>المدفوع</th>
+                    <th>المدفوع من رصيد العميل</th>
                     <th>المتبقي</th>
                     <th>الحالة</th>
                 </tr>
@@ -513,17 +518,24 @@ $statementTime = date('H:i:s');
             <tbody>
                 <?php if (empty($invoices)): ?>
                     <tr>
-                        <td colspan="7" class="text-center text-muted">لا توجد فواتير</td>
+                        <td colspan="8" class="text-center text-muted">لا توجد فواتير</td>
                     </tr>
                 <?php else: ?>
                     <?php foreach ($invoices as $invoice): ?>
+                        <?php
+                        $totalAmount = (float)($invoice['total_amount'] ?? 0);
+                        $paidAmount = (float)($invoice['paid_amount'] ?? 0);
+                        $creditUsed = (float)($invoice['credit_used'] ?? 0);
+                        $remaining = $totalAmount - $paidAmount - $creditUsed;
+                        ?>
                         <tr>
                             <td><?php echo htmlspecialchars($invoice['invoice_number']); ?></td>
                             <td><?php echo htmlspecialchars($invoice['customer_name'] ?? '-'); ?></td>
                             <td><?php echo formatDate($invoice['date']); ?></td>
-                            <td class="amount-positive"><?php echo formatCurrency($invoice['total_amount']); ?></td>
-                            <td><?php echo formatCurrency($invoice['paid_amount']); ?></td>
-                            <td class="amount-negative"><?php echo formatCurrency($invoice['total_amount'] - $invoice['paid_amount']); ?></td>
+                            <td class="amount-positive"><?php echo formatCurrency($totalAmount); ?></td>
+                            <td><?php echo formatCurrency($paidAmount); ?></td>
+                            <td><?php echo formatCurrency($creditUsed); ?></td>
+                            <td class="amount-negative"><?php echo formatCurrency($remaining); ?></td>
                             <td>
                                 <span class="status-badge status-<?php echo $invoice['status']; ?>">
                                     <?php 
