@@ -1262,7 +1262,7 @@ $salariesFromDb = $db->query(
      LEFT JOIN users u ON s.user_id = u.id
      LEFT JOIN users approver ON s.approved_by = approver.id
      $whereClause
-     ORDER BY u.full_name ASC",
+     ORDER BY s.total_amount ASC",
     $params
 );
 
