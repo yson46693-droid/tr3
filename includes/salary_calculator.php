@@ -525,7 +525,7 @@ function applyCollectionInstantReward($salesUserId, $collectionAmount, $collecti
                     continue;
                 }
                 
-                if ($salaryRewardColumns['bonus'] === null && in_array($field, ['bonus', 'total_bonus'], true)) {
+                if ($salaryRewardColumns['bonus'] === null && in_array($field, ['bonus', 'bonuses', 'total_bonus'], true)) {
                     $salaryRewardColumns['bonus'] = $field;
                 } elseif ($salaryRewardColumns['collections_bonus'] === null && $field === 'collections_bonus') {
                     $salaryRewardColumns['collections_bonus'] = $field;

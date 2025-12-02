@@ -2310,7 +2310,10 @@ function processAutoCheckoutForMissingEmployees(): void
                             }
                             
                             // حساب الراتب الإجمالي الجديد
-                            $currentBonus = $hasBonus ? floatval($existingSalary['bonus'] ?? 0) : 0;
+                            // استخدام اسم العمود الصحيح (bonus أو bonuses)
+                            $bonusColumnCheck = $db->queryOne("SHOW COLUMNS FROM salaries WHERE Field IN ('bonus', 'bonuses')");
+                            $bonusColumnName = $bonusColumnCheck ? $bonusColumnCheck['Field'] : 'bonus';
+                            $currentBonus = $hasBonus ? floatval($existingSalary[$bonusColumnName] ?? $existingSalary['bonus'] ?? $existingSalary['bonuses'] ?? 0) : 0;
                             $currentDeductions = $hasDeductions ? floatval($existingSalary['deductions'] ?? 0) : 0;
                             $newTotalAmount = round($newBaseAmount + $currentBonus + $collectionsBonus - $currentDeductions, 2);
                             $newTotalAmount = max(0, $newTotalAmount);
