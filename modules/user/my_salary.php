@@ -992,13 +992,16 @@ $hourlyRate = cleanFinancialValue($currentSalary['hourly_rate'] ?? $currentUser[
 $bonus = cleanFinancialValue($currentSalary[$bonusColumnName] ?? $currentSalary['bonus'] ?? $currentSalary['bonuses'] ?? 0);
 $deductions = cleanFinancialValue($currentSalary['deductions'] ?? 0);
 
-// استخدام القيم مباشرة من جدول salaries دون إعادة حساب
+// استخدام القيم من جدول salaries وإعادة حساب الراتب الإجمالي من المكونات لضمان الدقة
 if ($currentSalary && isset($currentSalary['base_amount'])) {
-    // استخدام القيم من قاعدة البيانات مباشرة
+    // استخدام القيم من قاعدة البيانات
     $baseAmount = cleanFinancialValue($currentSalary['base_amount'] ?? 0);
     $collectionsBonus = cleanFinancialValue($currentSalary['collections_bonus'] ?? 0);
     $collectionsAmount = cleanFinancialValue($currentSalary['collections_amount'] ?? 0);
-    $totalSalary = cleanFinancialValue($currentSalary['total_amount'] ?? 0);
+    
+    // إعادة حساب الراتب الإجمالي من المكونات لضمان الدقة
+    // الراتب الإجمالي = الراتب الأساسي + المكافآت + نسبة التحصيلات - الخصومات
+    $totalSalary = round($baseAmount + $bonus + $collectionsBonus - $deductions, 2);
     
     // تحديث $monthStats بالقيم من قاعدة البيانات
     $monthStats['total_salary'] = $totalSalary;
@@ -1015,6 +1018,13 @@ if ($currentSalary && isset($currentSalary['base_amount'])) {
     $totalSalary = $monthStats['total_salary'] ?? 0;
     $collectionsBonus = $monthStats['collections_bonus'] ?? 0;
     $collectionsAmount = $monthStats['collections_amount'] ?? 0;
+    
+    // إعادة حساب الراتب الإجمالي من المكونات
+    if ($currentUser['role'] === 'sales') {
+        $totalSalary = round($baseAmount + $bonus + $collectionsBonus - $deductions, 2);
+    } else {
+        $totalSalary = round($baseAmount + $bonus - $deductions, 2);
+    }
 }
 
 // إعادة حساب الحد الأقصى للسلفة بناءً على الراتب الإجمالي النهائي المعروض في الجدول
