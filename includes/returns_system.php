@@ -890,8 +890,17 @@ function applyReturnSalaryDeduction(int $returnId, ?int $salesRepId = null, ?int
             $oldValue = json_decode($auditLog['old_value'], true);
             $customerBalanceBeforeReturn = (float)($oldValue['old_balance'] ?? 0);
         } else {
-            // استخدام الرصيد الحالي كتقدير
-            $customerBalanceBeforeReturn = (float)($return['current_customer_balance'] ?? 0);
+            // إذا لم نجد audit_log، نحسب الرصيد قبل المرتجع من الرصيد الحالي ومبلغ المرتجع
+            // الرصيد الحالي = الرصيد بعد المرتجع
+            // الرصيد قبل المرتجع = الرصيد الحالي + مبلغ المرتجع
+            $currentBalance = (float)($return['current_customer_balance'] ?? 0);
+            $returnAmount = (float)$return['refund_amount'];
+            $customerBalanceBeforeReturn = round($currentBalance + $returnAmount, 2);
+            
+            error_log(sprintf(
+                'Warning: Could not find audit_log for return %d. Calculated balance before return: %.2f (current: %.2f, return amount: %.2f)',
+                $returnId, $customerBalanceBeforeReturn, $currentBalance, $returnAmount
+            ));
         }
         
         $returnAmount = (float)$return['refund_amount'];
