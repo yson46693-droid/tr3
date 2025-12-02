@@ -1037,77 +1037,76 @@ function applyReturnSalaryDeduction(int $returnId, ?int $salesRepId = null, ?int
         $salaryId = null;
         
         // البحث عن سجل الراتب الموجود أو إنشاؤه يدوياً
-        {
-            // التحقق من وجود عمود year
-            $yearColumnCheck = $db->queryOne("SHOW COLUMNS FROM salaries LIKE 'year'");
-            $hasYearColumn = !empty($yearColumnCheck);
-            
-            // التحقق من وجود عمود bonus
+        // التحقق من وجود عمود year
+        $yearColumnCheck = $db->queryOne("SHOW COLUMNS FROM salaries LIKE 'year'");
+        $hasYearColumn = !empty($yearColumnCheck);
+        
+        // التحقق من وجود عمود bonus
+        $hasBonusColumn = false;
+        try {
+            $columnExists = $db->queryOne(
+                "SELECT COUNT(*) as cnt FROM INFORMATION_SCHEMA.COLUMNS 
+                 WHERE TABLE_SCHEMA = DATABASE() 
+                 AND TABLE_NAME = 'salaries' 
+                 AND COLUMN_NAME = 'bonus'"
+            );
+            if (!empty($columnExists) && isset($columnExists['cnt'])) {
+                $hasBonusColumn = (int)$columnExists['cnt'] > 0;
+            }
+        } catch (Exception $e) {
             $hasBonusColumn = false;
-            try {
-                $columnExists = $db->queryOne(
-                    "SELECT COUNT(*) as cnt FROM INFORMATION_SCHEMA.COLUMNS 
-                     WHERE TABLE_SCHEMA = DATABASE() 
-                     AND TABLE_NAME = 'salaries' 
-                     AND COLUMN_NAME = 'bonus'"
-                );
-                if (!empty($columnExists) && isset($columnExists['cnt'])) {
-                    $hasBonusColumn = (int)$columnExists['cnt'] > 0;
-                }
-            } catch (Exception $e) {
-                $hasBonusColumn = false;
-            }
-            
-            // التحقق من وجود عمود created_by
-            $createdByColumnCheck = $db->queryOne("SHOW COLUMNS FROM salaries LIKE 'created_by'");
-            $hasCreatedByColumn = !empty($createdByColumnCheck);
-            $createdBy = $processedBy ?? null;
-            if ($hasCreatedByColumn && $createdBy === null) {
-                $currentUser = getCurrentUser();
-                $createdBy = $currentUser ? (int)$currentUser['id'] : $salesRepId;
-            }
-            
-            // جلب hourly_rate للمندوب
-            $user = $db->queryOne("SELECT hourly_rate FROM users WHERE id = ?", [$salesRepId]);
-            $hourlyRate = 0;
-            if ($user && !empty($user['hourly_rate'])) {
-                $hourlyRateRaw = $user['hourly_rate'];
-                $hourlyRateStr = (string)$hourlyRateRaw;
-                $hourlyRateStr = str_replace('262145', '', $hourlyRateStr);
-                $hourlyRateStr = preg_replace('/262145\s*/', '', $hourlyRateStr);
-                $hourlyRateStr = preg_replace('/\s*262145/', '', $hourlyRateStr);
-                $hourlyRateStr = preg_replace('/\s+/', '', trim($hourlyRateStr));
-                $hourlyRateStr = preg_replace('/[^0-9.]/', '', $hourlyRateStr);
-                $hourlyRate = (float)($hourlyRateStr ?: 0);
-            }
-            
-            // التحقق من وجود سجل راتب موجود
-            if ($hasYearColumn) {
+        }
+        
+        // التحقق من وجود عمود created_by
+        $createdByColumnCheck = $db->queryOne("SHOW COLUMNS FROM salaries LIKE 'created_by'");
+        $hasCreatedByColumn = !empty($createdByColumnCheck);
+        $createdBy = $processedBy ?? null;
+        if ($hasCreatedByColumn && $createdBy === null) {
+            $currentUser = getCurrentUser();
+            $createdBy = $currentUser ? (int)$currentUser['id'] : $salesRepId;
+        }
+        
+        // جلب hourly_rate للمندوب
+        $user = $db->queryOne("SELECT hourly_rate FROM users WHERE id = ?", [$salesRepId]);
+        $hourlyRate = 0;
+        if ($user && !empty($user['hourly_rate'])) {
+            $hourlyRateRaw = $user['hourly_rate'];
+            $hourlyRateStr = (string)$hourlyRateRaw;
+            $hourlyRateStr = str_replace('262145', '', $hourlyRateStr);
+            $hourlyRateStr = preg_replace('/262145\s*/', '', $hourlyRateStr);
+            $hourlyRateStr = preg_replace('/\s*262145/', '', $hourlyRateStr);
+            $hourlyRateStr = preg_replace('/\s+/', '', trim($hourlyRateStr));
+            $hourlyRateStr = preg_replace('/[^0-9.]/', '', $hourlyRateStr);
+            $hourlyRate = (float)($hourlyRateStr ?: 0);
+        }
+        
+        // التحقق من وجود سجل راتب موجود
+        if ($hasYearColumn) {
+            $existingSalary = $db->queryOne(
+                "SELECT id FROM salaries WHERE user_id = ? AND month = ? AND year = ?",
+                [$salesRepId, $month, $year]
+            );
+        } else {
+            $monthColumnCheck = $db->queryOne("SHOW COLUMNS FROM salaries LIKE 'month'");
+            $monthType = $monthColumnCheck['Type'] ?? '';
+            if (stripos($monthType, 'date') !== false) {
+                $targetDate = sprintf('%04d-%02d-01', $year, $month);
                 $existingSalary = $db->queryOne(
-                    "SELECT id FROM salaries WHERE user_id = ? AND month = ? AND year = ?",
-                    [$salesRepId, $month, $year]
+                    "SELECT id FROM salaries WHERE user_id = ? AND DATE_FORMAT(month, '%Y-%m') = ?",
+                    [$salesRepId, sprintf('%04d-%02d', $year, $month)]
                 );
             } else {
-                $monthColumnCheck = $db->queryOne("SHOW COLUMNS FROM salaries LIKE 'month'");
-                $monthType = $monthColumnCheck['Type'] ?? '';
-                if (stripos($monthType, 'date') !== false) {
-                    $targetDate = sprintf('%04d-%02d-01', $year, $month);
-                    $existingSalary = $db->queryOne(
-                        "SELECT id FROM salaries WHERE user_id = ? AND DATE_FORMAT(month, '%Y-%m') = ?",
-                        [$salesRepId, sprintf('%04d-%02d', $year, $month)]
-                    );
-                } else {
-                    $existingSalary = $db->queryOne(
-                        "SELECT id FROM salaries WHERE user_id = ? AND month = ?",
-                        [$salesRepId, $month]
-                    );
-                }
+                $existingSalary = $db->queryOne(
+                    "SELECT id FROM salaries WHERE user_id = ? AND month = ?",
+                    [$salesRepId, $month]
+                );
             }
-            
-            if ($existingSalary) {
-                $salaryId = (int)$existingSalary['id'];
-                error_log("Found existing salary record with ID: {$salaryId}");
-            } else {
+        }
+        
+        if ($existingSalary) {
+            $salaryId = (int)$existingSalary['id'];
+            error_log("Found existing salary record with ID: {$salaryId}");
+        } else {
                 // إنشاء سجل راتب جديد مع قيم افتراضية
                 $totalHours = 0;
                 $baseAmount = 0;
@@ -1189,7 +1188,6 @@ function applyReturnSalaryDeduction(int $returnId, ?int $salesRepId = null, ?int
                 $salaryId = (int)$db->getLastInsertId();
                 error_log("Created new salary record with ID: {$salaryId} for user {$salesRepId}, month {$month}, year {$year}");
             }
-        }
         
         if ($salaryId <= 0) {
             return [
