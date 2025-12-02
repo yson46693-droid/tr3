@@ -612,7 +612,7 @@ if (!$error && $_SERVER['REQUEST_METHOD'] === 'POST') {
                             // يتم خصم الرصيد الدائن بالكامل، والمبلغ الزائد يُضاف كدين
                             $creditUsed = $creditAvailable;
                             $excessAmount = round($remainingAmount - $creditUsed, 2); // المبلغ الزائد
-                            $amountAddedToSales = $effectivePaidAmount + $excessAmount; // المبلغ المحصل نقداً + المبلغ الزائد يُضاف إلى خزنة المندوب
+                            $amountAddedToSales = $effectivePaidAmount; // فقط المبلغ المحصل نقداً يُضاف إلى خزنة المندوب (المبلغ الزائد دين جديد وليس محصلاً نقداً)
                             $dueAmount = $excessAmount; // المبلغ الزائد هو الدين الجديد
                             
                             // الرصيد الجديد = 0 (لا رصيد دائن) + المبلغ الزائد (دين)
