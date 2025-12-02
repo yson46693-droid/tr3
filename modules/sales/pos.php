@@ -1163,11 +1163,20 @@ if (!$error && $_SERVER['REQUEST_METHOD'] === 'POST') {
                         
                         // النظام الجديد: إذا كان العميل لديه رصيد دائن والبيع بالآجل أو جزئي
                         // يتم احتساب نسبة 2% بدون أي شروط
-                        if ($hasCreditBalance && $creditUsed > 0.0001 && ($paymentType === 'credit' || $paymentType === 'partial')) {
+                        // ملاحظة: في حالة البيع بالآجل، قد لا يتم استخدام الرصيد الدائن تلقائياً
+                        // لكن يجب احتساب النسبة على المبلغ المستحق (netTotal) إذا لم يتم استخدام الرصيد الدائن
+                        if ($hasCreditBalance && ($paymentType === 'credit' || $paymentType === 'partial')) {
                             // تحديد المبلغ الأساسي للعمولة
                             if ($paymentType === 'credit') {
-                                // بالآجل: حساب 2% من المبلغ المدفوع من الرصيد الدائن فقط
-                                $commissionBase = $creditUsed;
+                                // بالآجل: حساب 2% من المبلغ المدفوع من الرصيد الدائن
+                                // إذا لم يتم استخدام الرصيد الدائن، نحسب على المبلغ المستحق (netTotal)
+                                if ($creditUsed > 0.0001) {
+                                    $commissionBase = $creditUsed;
+                                } else {
+                                    // لم يتم استخدام الرصيد الدائن، لكن العميل لديه رصيد دائن
+                                    // نحسب على المبلغ المستحق (netTotal) لأنه سيُخصم من الرصيد الدائن
+                                    $commissionBase = $netTotal;
+                                }
                             } else {
                                 // جزئي: حساب 2% من (المبلغ المدفوع من الرصيد الدائن + مبلغ التحصيل الجزئي)
                                 $commissionBase = $creditUsed + $effectivePaidAmount;
@@ -1178,10 +1187,11 @@ if (!$error && $_SERVER['REQUEST_METHOD'] === 'POST') {
                             
                             // تسجيل معلومات التشخيص
                             error_log(sprintf(
-                                'New credit balance commission (no conditions): paymentType=%s, creditUsed=%.2f, effectivePaidAmount=%.2f, commissionBase=%.2f, commissionAmount=%.2f, invoiceId=%d, customerId=%d',
+                                'New credit balance commission (no conditions): paymentType=%s, creditUsed=%.2f, effectivePaidAmount=%.2f, netTotal=%.2f, commissionBase=%.2f, commissionAmount=%.2f, invoiceId=%d, customerId=%d',
                                 $paymentType,
                                 $creditUsed,
                                 $effectivePaidAmount,
+                                $netTotal,
                                 $commissionBase,
                                 $creditCommissionAmount,
                                 $invoiceId,
