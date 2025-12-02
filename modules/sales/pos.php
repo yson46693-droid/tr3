@@ -1255,20 +1255,16 @@ if (!$error && $_SERVER['REQUEST_METHOD'] === 'POST') {
                                     ));
                                 }
                             } else {
-                                // جزئي: حساب 2% من (المبلغ المدفوع من الرصيد الدائن + مبلغ التحصيل الجزئي)
+                                // جزئي: حساب 2% من المبلغ المدفوع من الرصيد الدائن فقط
+                                // (طبق النظام بشكل صارم: فقط المبلغ المدفوع من رصيد العميل)
                                 // استخدام creditUsed المحسوب مسبقاً (القيمة الصحيحة)
                                 
-                                // حساب المبلغ الأساسي للعمولة
-                                if ($effectivePaidAmount > 0.0001) {
-                                    // يوجد دفع نقدي جزئي
-                                    $commissionBase = $creditUsed + $effectivePaidAmount;
-                                } else {
-                                    // لا يوجد دفع نقدي جزئي، نستخدم creditUsed فقط
-                                    $commissionBase = $creditUsed > 0.0001 ? $creditUsed : 0.0;
-                                }
+                                // حساب المبلغ الأساسي للعمولة: فقط creditUsed
+                                // بغض النظر عن وجود دفع نقدي جزئي أم لا
+                                $commissionBase = $creditUsed > 0.0001 ? $creditUsed : 0.0;
                                 
                                 error_log(sprintf(
-                                    'Partial payment commission calculation: creditUsed=%.2f, effectivePaidAmount=%.2f, commissionBase=%.2f (using pre-calculated creditUsed)',
+                                    'Partial payment commission calculation: creditUsed=%.2f, effectivePaidAmount=%.2f, commissionBase=%.2f (only creditUsed, as per strict requirement)',
                                     $creditUsed, $effectivePaidAmount, $commissionBase
                                 ));
                             }
