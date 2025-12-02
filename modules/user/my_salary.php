@@ -1028,15 +1028,38 @@ $baseAmount = round($completedHours * $hourlyRate, 2);
 // حساب الراتب الإجمالي بناءً على عدد الساعات المعروض في الصفحة
 if ($currentSalary) {
     if ($currentUser['role'] === 'sales') {
-        // للمندوبين: استخدم الحساب الأصلي مع نسبة التحصيلات
-        $salaryCalculation = calculateTotalSalaryWithCollections($currentSalary, $currentUser['id'], $selectedMonth, $selectedYear, $currentUser['role']);
-        $totalSalary = $salaryCalculation['total_salary'];
-        $collectionsBonus = $salaryCalculation['collections_bonus'];
+        // للمندوبين: احسب الراتب الإجمالي من المكونات بناءً على عدد الساعات المعروض
+        // الراتب الإجمالي = (عدد الساعات المعروض × سعر الساعة) + المكافآت + نسبة التحصيلات - الخصومات
+        // دائماً استخدم الحساب من عدد الساعات المعروض وليس القيمة المحفوظة
+        
+        // حساب نسبة التحصيلات
+        $collectionsBonus = 0;
+        if (function_exists('calculateSalesCollections')) {
+            $collectionsAmount = calculateSalesCollections($currentUser['id'], $selectedMonth, $selectedYear);
+            $collectionsBonus = round($collectionsAmount * 0.02, 2);
+            
+            // إذا كان الراتب محفوظاً، استخدم القيمة المحفوظة إذا كانت موجودة
+            if (isset($currentSalary['collections_bonus']) && $currentSalary['collections_bonus'] > 0) {
+                $savedCollectionsBonus = cleanFinancialValue($currentSalary['collections_bonus'] ?? 0);
+                // استخدم القيمة المحفوظة إذا كانت أكبر من المحسوبة
+                if ($savedCollectionsBonus > $collectionsBonus) {
+                    $collectionsBonus = $savedCollectionsBonus;
+                }
+            }
+        }
+        
+        // حساب الراتب الإجمالي: الراتب الأساسي + المكافآت + نسبة التحصيلات - الخصومات
+        $totalSalary = round($baseAmount + $bonus + $collectionsBonus - $deductions, 2);
+        $totalSalary = max(0, $totalSalary); // التأكد من أن الراتب لا يكون سالباً
+        
+        // تحديث $monthStats['total_salary'] بالقيمة المحسوبة من عدد الساعات المعروض
+        $monthStats['total_salary'] = $totalSalary;
     } else {
         // لعمال الإنتاج والمحاسبين: احسب الراتب الإجمالي من المكونات بناءً على عدد الساعات المعروض
         // الراتب الإجمالي = (عدد الساعات المعروض × سعر الساعة) + المكافآت - الخصومات
         // دائماً استخدم الحساب من عدد الساعات المعروض وليس القيمة المحفوظة
         $totalSalary = round($baseAmount + $bonus - $deductions, 2);
+        $totalSalary = max(0, $totalSalary); // التأكد من أن الراتب لا يكون سالباً
         
         // تحديث $monthStats['total_salary'] بالقيمة المحسوبة من عدد الساعات المعروض
         $monthStats['total_salary'] = $totalSalary;
