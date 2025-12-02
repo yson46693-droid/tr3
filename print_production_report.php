@@ -765,7 +765,7 @@ $companyName = COMPANY_NAME;
                     <td><?php echo htmlspecialchars($damageLog['category_label'] ?? '-'); ?></td>
                     <td><?php echo htmlspecialchars($damageLog['item_label'] ?? $damageLog['material_label'] ?? '-'); ?></td>
                     <td class="text-center text-danger">
-                        <strong><?php echo number_format((float)($damageLog['quantity_raw'] ?? $damageLog['quantity'] ?? 0), 3); ?></strong>
+                        <strong><?php echo htmlspecialchars($damageLog['quantity_formatted'] ?? number_format((float)($damageLog['quantity_raw'] ?? $damageLog['quantity'] ?? 0), 3)); ?></strong>
                         <small class="text-muted"><?php echo htmlspecialchars($damageLog['unit'] ?? 'كجم'); ?></small>
                     </td>
                     <td><?php echo htmlspecialchars($damageLog['reason'] ?? '-'); ?></td>
