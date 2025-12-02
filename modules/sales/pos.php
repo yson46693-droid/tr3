@@ -1235,6 +1235,28 @@ if (!$error && $_SERVER['REQUEST_METHOD'] === 'POST') {
                             if ($paymentType === 'credit') {
                                 // بالآجل: حساب 2% من المبلغ المدفوع من الرصيد الدائن فقط
                                 // استخدام creditUsed المحسوب مسبقاً (القيمة الصحيحة)
+                                
+                                // إضافة تسجيل تشخيصي مفصل
+                                error_log(sprintf(
+                                    'Credit payment commission check: creditUsed=%.2f, netTotal=%.2f, originalBalance=%.2f, currentBalance=%.2f, baseDueAmount=%.2f, hasCreditBalance=%s',
+                                    $creditUsed, $netTotal, $originalBalance ?? 0, $currentBalance, $baseDueAmount ?? 0, $hasCreditBalance ? 'true' : 'false'
+                                ));
+                                
+                                // التحقق: إذا كان creditUsed = 0 ولكن هناك رصيد دائن و netTotal > 0
+                                // يجب إعادة حساب creditUsed لأن هناك مشكلة في الحساب السابق
+                                if ($creditUsed <= 0.0001 && $hasCreditBalance && $netTotal > 0.0001) {
+                                    // إعادة حساب creditUsed: يجب أن يكون = min(netTotal, abs(originalBalance))
+                                    $recalculatedCreditUsed = min($netTotal, abs($originalBalance ?? 0));
+                                    
+                                    error_log(sprintf(
+                                        'WARNING: creditUsed was 0 but should be recalculated. Original creditUsed=%.2f, Recalculated creditUsed=%.2f, netTotal=%.2f, originalBalance=%.2f',
+                                        $creditUsed, $recalculatedCreditUsed, $netTotal, $originalBalance ?? 0
+                                    ));
+                                    
+                                    // استخدام القيمة المعاد حسابها
+                                    $creditUsed = $recalculatedCreditUsed;
+                                }
+                                
                                 if ($creditUsed > 0.0001) {
                                     // تم استخدام الرصيد الدائن، نحسب على creditUsed فقط
                                     $commissionBase = $creditUsed;
@@ -1250,7 +1272,7 @@ if (!$error && $_SERVER['REQUEST_METHOD'] === 'POST') {
                                     $commissionBase = 0.0;
                                     
                                     error_log(sprintf(
-                                        'Credit payment commission calculation: creditUsed=%.2f, netTotal=%.2f, commissionBase=0.0 (no credit used, no commission)',
+                                        'Credit payment commission calculation: creditUsed=%.2f, netTotal=%.2f, commissionBase=0.0 (no credit used, no commission) - WARNING: This may be incorrect if customer has credit balance!',
                                         $creditUsed, $netTotal
                                     ));
                                 }
@@ -1316,34 +1338,44 @@ if (!$error && $_SERVER['REQUEST_METHOD'] === 'POST') {
                                             if ($hasCollectionsBonusColumn) {
                                                 // التأكد من أن commissionBase = creditUsed (وليس netTotal)
                                                 // في حالة البيع بالآجل، يجب أن يكون commissionBase = creditUsed فقط
-                                                if ($paymentType === 'credit' && $creditUsed > 0.0001) {
-                                                    // تأكد من أن commissionBase = creditUsed
-                                                    if (abs($commissionBase - $creditUsed) > 0.01) {
+                                                
+                                                // استخدام creditUsed مباشرة كقيمة نهائية (طبق النظام بشكل صارم)
+                                                $finalCreditUsed = $creditUsed > 0.0001 ? $creditUsed : 0.0;
+                                                
+                                                if ($paymentType === 'credit') {
+                                                    // في حالة البيع بالآجل، يجب استخدام creditUsed فقط
+                                                    if (abs($commissionBase - $finalCreditUsed) > 0.01) {
                                                         error_log(sprintf(
-                                                            'WARNING: commissionBase (%.2f) != creditUsed (%.2f) for credit payment! Using creditUsed instead.',
-                                                            $commissionBase, $creditUsed
+                                                            'CORRECTION for credit payment: commissionBase (%.2f) != creditUsed (%.2f)! Using creditUsed (%.2f) instead.',
+                                                            $commissionBase, $finalCreditUsed, $finalCreditUsed
                                                         ));
-                                                        $commissionBase = $creditUsed;
+                                                        $commissionBase = $finalCreditUsed;
                                                         // إعادة حساب العمولة بناءً على creditUsed الصحيح
-                                                        $creditCommissionAmount = round($commissionBase * 0.02, 2);
+                                                        $creditCommissionAmount = round($finalCreditUsed * 0.02, 2);
                                                     }
+                                                    // التأكد من استخدام creditUsed فقط
+                                                    $finalCommissionBase = $finalCreditUsed;
+                                                } else {
+                                                    // في حالة البيع الجزئي، نستخدم creditUsed فقط أيضاً
+                                                    $finalCommissionBase = $finalCreditUsed;
                                                 }
+                                                
+                                                // تسجيل معلومات التشخيص قبل التطبيق
+                                                error_log(sprintf(
+                                                    'FINAL commission application: paymentType=%s, creditUsed=%.2f, commissionBase=%.2f, finalCommissionBase=%.2f, creditCommissionAmount=%.2f, salaryId=%d',
+                                                    $paymentType, $creditUsed, $commissionBase, $finalCommissionBase, $creditCommissionAmount, $salaryId
+                                                ));
                                                 
                                                 // إضافة المبلغ الأساسي إلى collections_amount والنسبة إلى collections_bonus
                                                 // إضافة النسبة إلى total_amount (لأنها جزء من الراتب الإجمالي)
-                                                // تأكد من أن commissionBase = creditUsed وليس netTotal
-                                                error_log(sprintf(
-                                                    'Applying commission to salary: commissionBase=%.2f, creditUsed=%.2f, netTotal=%.2f, creditCommissionAmount=%.2f, salaryId=%d, paymentType=%s',
-                                                    $commissionBase, $creditUsed, $netTotal, $creditCommissionAmount, $salaryId, $paymentType
-                                                ));
-                                                
+                                                // استخدام creditUsed مباشرة (طبق النظام بشكل صارم)
                                                 $db->execute(
                                                     "UPDATE salaries SET 
                                                         collections_amount = COALESCE(collections_amount, 0) + ?,
                                                         collections_bonus = COALESCE(collections_bonus, 0) + ?,
                                                         total_amount = COALESCE(total_amount, 0) + ?
                                                      WHERE id = ?",
-                                                    [$commissionBase, $creditCommissionAmount, $creditCommissionAmount, $salaryId]
+                                                    [$finalCommissionBase, $creditCommissionAmount, $creditCommissionAmount, $salaryId]
                                                 );
                                                 
                                                 // تسجيل العملية في السجل
@@ -1361,8 +1393,8 @@ if (!$error && $_SERVER['REQUEST_METHOD'] === 'POST') {
                                                             'payment_type' => $paymentType,
                                                             'credit_used' => $creditUsed,
                                                             'effective_paid_amount' => $effectivePaidAmount,
-                                                            'commission_base' => $commissionBase,
-                                                            'collections_amount' => $commissionBase,
+                                                            'commission_base' => $finalCommissionBase,
+                                                            'collections_amount' => $finalCommissionBase,
                                                             'commission_amount' => $creditCommissionAmount,
                                                             'month' => $targetMonth,
                                                             'year' => $targetYear,
@@ -1374,7 +1406,7 @@ if (!$error && $_SERVER['REQUEST_METHOD'] === 'POST') {
                                                 error_log(sprintf(
                                                     'New credit balance commission applied successfully: salaryId=%d, collectionsAmount=%.2f, commissionAmount=%.2f',
                                                     $salaryId,
-                                                    $commissionBase,
+                                                    $finalCommissionBase,
                                                     $creditCommissionAmount
                                                 ));
                                                 
