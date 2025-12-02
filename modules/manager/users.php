@@ -120,7 +120,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         }
     } elseif ($action === 'update_user') {
         $userId = intval($_POST['user_id'] ?? 0);
-        $role = $_POST['role'] ?? '';
+        // منع تغيير الدور - استخدام الدور الحالي من قاعدة البيانات
         $fullName = trim($_POST['full_name'] ?? '');
         $phone = trim($_POST['phone'] ?? '');
         $hourlyRate = cleanFinancialValue($_POST['hourly_rate'] ?? 0);
@@ -134,9 +134,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 $error = 'المستخدم غير موجود';
             } else {
                 if (empty($error)) {
-                    // التحقق من تغيير الدور
-                    $oldRole = $user['role'];
-                    $roleChanged = ($oldRole !== $role);
+                    // الاحتفاظ بالدور الحالي - منع تغيير الدور
+                    $role = $user['role'];
                     
                     $db->execute(
                         "UPDATE users SET role = ?, full_name = ?, phone = ?, hourly_rate = ?, status = ?, updated_at = NOW() 
@@ -151,28 +150,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     
                     logAudit($currentUser['id'], 'update_user', 'user', $userId, 
                              json_encode($user), ['role' => $role]);
-                    
-                    // إرسال إشعار للمستخدم إذا تغير دوره
-                    if ($roleChanged) {
-                        $roleNames = [
-                            'manager' => 'مدير',
-                            'accountant' => 'محاسب',
-                            'sales' => 'مندوب مبيعات',
-                            'production' => 'عامل إنتاج'
-                        ];
-                        
-                        $notificationTitle = 'تغيير دور الحساب';
-                        $notificationMessage = 'تم تغيير دور حسابك من "' . ($roleNames[$oldRole] ?? $oldRole) . '" إلى "' . ($roleNames[$role] ?? $role) . '". يرجى تسجيل الخروج وإعادة تسجيل الدخول لتفعيل التغييرات.';
-                        
-                        createNotification(
-                            $userId,
-                            $notificationTitle,
-                            $notificationMessage,
-                            'warning',
-                            getRelativeUrl('logout.php'),
-                            false
-                        );
-                    }
                     
                     $_SESSION['success_message'] = 'تم تحديث المستخدم بنجاح';
                     $redirectUrl = $buildUsersUrl($getFilterParams());
@@ -641,6 +618,7 @@ $users = $db->query($sql, $params);
                                 <option value="sales">مندوب مبيعات</option>
                                 <option value="production">عامل إنتاج</option>
                             </select>
+                            <small class="text-muted">لا يمكن تغيير الدور بعد إنشاء المستخدم</small>
                         </div>
                     </div>
                     <div class="row">
@@ -693,14 +671,10 @@ $users = $db->query($sql, $params);
                             <input type="text" class="form-control" id="editUsername" readonly>
                         </div>
                         <div class="col-md-6 mb-3">
-                            <label class="form-label">الدور <span class="text-danger">*</span></label>
-                            <select class="form-select" name="role" id="editRole" required>
-                                <option value="">اختر الدور</option>
-                                <option value="manager">مدير</option>
-                                <option value="accountant">محاسب</option>
-                                <option value="sales">مندوب مبيعات</option>
-                                <option value="production">عامل إنتاج</option>
-                            </select>
+                            <label class="form-label">الدور</label>
+                            <input type="text" class="form-control" id="editRoleDisplay" readonly style="background-color: #e9ecef;">
+                            <input type="hidden" name="role" id="editRole">
+                            <small class="text-muted">لا يمكن تغيير الدور بعد إنشاء المستخدم</small>
                         </div>
                     </div>
                     <div class="row">
@@ -772,7 +746,19 @@ $users = $db->query($sql, $params);
 function editUser(user) {
     document.getElementById('editUserId').value = user.id;
     document.getElementById('editUsername').value = user.username;
+    
+    // تعيين الدور في الحقل المخفي
     document.getElementById('editRole').value = user.role;
+    
+    // عرض الدور في حقل العرض فقط
+    const roleNames = {
+        'manager': 'مدير',
+        'accountant': 'محاسب',
+        'sales': 'مندوب مبيعات',
+        'production': 'عامل إنتاج'
+    };
+    document.getElementById('editRoleDisplay').value = roleNames[user.role] || user.role;
+    
     document.getElementById('editStatus').value = user.status;
     document.getElementById('editFullName').value = user.full_name || '';
     document.getElementById('editPhone').value = user.phone || '';
