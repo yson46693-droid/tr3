@@ -1002,18 +1002,7 @@ $salesRepInfo = $db->queryOne(
             </div>
         </div>
         
-        <!-- مبيعات مدفوعة بالكامل -->
-        <div class="col-12 col-md-6 col-lg-4">
-            <div class="glass-card">
-                <div class="glass-card-header">
-                    <i class="bi bi-cash-coin glass-card-blue"></i>
-                    <h6 class="mb-0 fw-semibold">مبيعات مدفوعة بالكامل (بدون ديون)</h6>
-                </div>
-                <div class="glass-card-body">
-                    <p class="glass-card-value glass-card-blue mb-0">+ <?php echo formatCurrency($fullyPaidSales); ?></p>
-                </div>
-            </div>
-        </div>
+        
         
         <!-- المبيعات المعلقة -->
         <div class="col-12 col-md-6 col-lg-4">
