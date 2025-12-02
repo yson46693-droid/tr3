@@ -957,20 +957,29 @@ if (!$error && $_SERVER['REQUEST_METHOD'] === 'POST') {
                         ]);
                         
                         // إضافة المكافأة الفورية بنسبة 2% للمندوب الذي قام بالتحصيل مباشرة
+                        // ملاحظة: للبيع الكاش، لا نستخدم applyCollectionInstantReward هنا
+                        // لأن refreshSalesCommissionForUser سيقوم بحساب نسبة التحصيلات لجميع الفواتير
+                        // فقط للبيع الجزئي نستخدم applyCollectionInstantReward
                         if (($currentUser['role'] ?? '') === 'sales' && $collectionId) {
                             try {
                                 require_once __DIR__ . '/../../includes/salary_calculator.php';
                                 if (function_exists('applyCollectionInstantReward')) {
-                                    applyCollectionInstantReward(
-                                        $currentUser['id'],
-                                        $effectivePaidAmount,
-                                        $saleDate,
-                                        $collectionId,
-                                        $currentUser['id']
-                                    );
+                                    // للبيع الكاش، لا نستخدم applyCollectionInstantReward
+                                    // لأن refreshSalesCommissionForUser سيقوم بحساب نسبة التحصيلات
+                                    // فقط للبيع الجزئي نستخدم applyCollectionInstantReward
+                                    if ($paymentType === 'partial') {
+                                        applyCollectionInstantReward(
+                                            $currentUser['id'],
+                                            $effectivePaidAmount,
+                                            $saleDate,
+                                            $collectionId,
+                                            $currentUser['id']
+                                        );
+                                    }
+                                    // للبيع الكاش، سيتم حساب نسبة التحصيلات عبر refreshSalesCommissionForUser لاحقاً
                                 }
                             } catch (Throwable $instantRewardError) {
-                                error_log('Instant collection reward error (pos partial): ' . $instantRewardError->getMessage());
+                                error_log('Instant collection reward error (pos): ' . $instantRewardError->getMessage());
                             }
                         }
                     } catch (Throwable $collectionError) {

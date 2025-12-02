@@ -552,10 +552,13 @@ function applyCollectionInstantReward($salesUserId, $collectionAmount, $collecti
     $updateParts = [];
     $params = [];
     
-    if (!empty($salaryRewardColumns['bonus'])) {
-        $updateParts[] = "{$salaryRewardColumns['bonus']} = COALESCE({$salaryRewardColumns['bonus']}, 0) + ?";
-        $params[] = $rewardAmount;
-    }
+    // لا نضيف إلى bonus إذا كان collections_bonus موجوداً
+    // لأن نسبة التحصيلات يجب أن تُضاف فقط إلى collections_bonus وليس إلى bonus
+    // bonus يُستخدم للمكافآت الأخرى (غير نسبة التحصيلات)
+    // if (!empty($salaryRewardColumns['bonus'])) {
+    //     $updateParts[] = "{$salaryRewardColumns['bonus']} = COALESCE({$salaryRewardColumns['bonus']}, 0) + ?";
+    //     $params[] = $rewardAmount;
+    // }
     
     if (!empty($salaryRewardColumns['collections_bonus'])) {
         $updateParts[] = "{$salaryRewardColumns['collections_bonus']} = COALESCE({$salaryRewardColumns['collections_bonus']}, 0) + ?";
