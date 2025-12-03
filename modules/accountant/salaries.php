@@ -1883,6 +1883,9 @@ if (isset($_GET['ajax']) && $_GET['ajax'] == '1' && $salaryId > 0) {
         $collectionsBonus = cleanFinancialValue($salary['collections_bonus'] ?? 0);
         $collectionsAmount = cleanFinancialValue($salary['collections_amount'] ?? 0);
         
+        // متغير لعرض رصيد الخزنة الإجمالي الحالي في بطاقة الموظف (مطابق لصفحة خزنة المندوب)
+        $displayCashBalance = 0.0;
+        
         if ($userRole === 'sales') {
             // استخدام رصيد الخزنة الإجمالي الفعلي للمندوب (مطابق لصفحة خزنة المندوب)
             // رصيد الخزنة الإجمالي = التحصيلات + المبيعات المدفوعة بالكامل + الإضافات المباشرة - المبالغ المحصلة من المندوب
@@ -1893,6 +1896,9 @@ if (isset($_GET['ajax']) && $_GET['ajax'] == '1' && $salaryId > 0) {
                 $recalculatedCollectionsBonus = round($cashRegisterBalance * 0.02, 2);
                 $recalculatedCollectionsAmount = $cashRegisterBalance;
                 
+                // حفظ رصيد الخزنة الإجمالي الحالي للعرض في بطاقة الموظف
+                $displayCashBalance = $cashRegisterBalance;
+                
                 // استخدم القيمة المحسوبة حديثاً إذا كانت أكبر من القيمة المحفوظة
                 if ($recalculatedCollectionsBonus > $collectionsBonus || $collectionsBonus == 0) {
                     $collectionsBonus = $recalculatedCollectionsBonus;
@@ -1902,6 +1908,9 @@ if (isset($_GET['ajax']) && $_GET['ajax'] == '1' && $salaryId > 0) {
                 // إذا لم تكن الدالة موجودة، نستخدم الطريقة القديمة
                 $recalculatedCollectionsAmount = calculateSalesCollections($userId, $salaryMonth, $salaryYear);
                 $recalculatedCollectionsBonus = round($recalculatedCollectionsAmount * 0.02, 2);
+                
+                // حفظ القيمة للعرض
+                $displayCashBalance = $recalculatedCollectionsAmount;
                 
                 // استخدم القيمة المحسوبة حديثاً إذا كانت أكبر من القيمة المحفوظة
                 if ($recalculatedCollectionsBonus > $collectionsBonus || $collectionsBonus == 0) {
@@ -2000,9 +2009,9 @@ if (isset($_GET['ajax']) && $_GET['ajax'] == '1' && $salaryId > 0) {
                         <p><strong>الراتب الأساسي:</strong> <?php echo formatCurrency($baseAmount); ?></p>
                         <?php if ($userRole === 'sales'): ?>
                         <p><strong>نسبة التحصيلات:</strong> <?php echo formatCurrency($collectionsBonus); ?>
-                            <?php if ($collectionsAmount > 0): ?>
+                            <?php if ($displayCashBalance > 0): ?>
                                 <small class="text-muted d-block" style="font-size: 11px; margin-top: 2px;">
-                                    (من <?php echo formatCurrency($collectionsAmount); ?>)
+                                    (من <?php echo formatCurrency($displayCashBalance); ?>)
                                 </small>
                             <?php else: ?>
                                 <small class="text-muted d-block" style="font-size: 11px; margin-top: 2px;">
@@ -3454,9 +3463,9 @@ $pageTitle = ($view === 'advances') ? 'السلف' : (($view === 'pending') ? '�
                             <span class="detail-label">نسبة التحصيلات:</span>
                             <span class="detail-value text-info">
                                 <?php echo formatCurrency($collectionsBonus); ?>
-                                <?php if ($collectionsAmount > 0): ?>
+                                <?php if ($displayCashBalance > 0): ?>
                                     <small class="text-muted d-block" style="font-size: 11px; margin-top: 2px;">
-                                        (من <?php echo formatCurrency($collectionsAmount); ?>)
+                                        (من <?php echo formatCurrency($displayCashBalance); ?>)
                                     </small>
                                 <?php else: ?>
                                     <small class="text-muted d-block" style="font-size: 11px; margin-top: 2px;">
