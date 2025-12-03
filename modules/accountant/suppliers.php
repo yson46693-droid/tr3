@@ -1040,18 +1040,10 @@ $historyTypeLabels = [
                         </select>
                         <small class="text-muted">سيتم توليد كود المورد تلقائياً بناءً على النوع المختار</small>
                     </div>
-                    <div class="mb-3">
-                        <label class="form-label"><?php echo isset($lang['contact_person']) ? $lang['contact_person'] : 'جهة الاتصال'; ?></label>
-                        <input type="text" class="form-control" name="contact_person">
-                    </div>
                     <div class="row">
                         <div class="col-md-6 mb-3">
                             <label class="form-label"><?php echo isset($lang['phone']) ? $lang['phone'] : 'الهاتف'; ?></label>
                             <input type="text" class="form-control" name="phone">
-                        </div>
-                        <div class="col-md-6 mb-3">
-                            <label class="form-label"><?php echo isset($lang['email']) ? $lang['email'] : 'البريد الإلكتروني'; ?></label>
-                            <input type="email" class="form-control" name="email">
                         </div>
                     </div>
                     <div class="mb-3">
