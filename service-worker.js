@@ -149,13 +149,29 @@ self.addEventListener('install', function(event) {
                 );
             })
             .then(function() {
+                // التأكد من تخزين offline.html حتى لو فشل التثبيت السابق
+                return caches.open(CACHE_NAME).then(function(cache) {
+                    return cache.match('/offline.html').then(function(cached) {
+                        if (!cached) {
+                            console.log('Ensuring offline.html is cached...');
+                            return cache.put('/offline.html', createOfflineResponse());
+                        }
+                        return Promise.resolve();
+                    });
+                });
+            })
+            .then(function() {
                 // إجبار التفعيل الفوري للـ service worker
                 return self.skipWaiting();
             })
             .catch(function(error) {
                 console.log('Service Worker install failed:', error);
-                // حتى لو فشل، نحاول التفعيل
-                return self.skipWaiting();
+                // حتى لو فشل، نحاول تخزين offline.html والتفعيل
+                return caches.open(CACHE_NAME).then(function(cache) {
+                    return cache.put('/offline.html', createOfflineResponse());
+                }).then(function() {
+                    return self.skipWaiting();
+                });
             })
     );
 });
@@ -169,6 +185,7 @@ self.addEventListener('fetch', function(event) {
     
     // تجاهل API requests (عادة ما تكون dynamic)
     const url = new URL(event.request.url);
+    const requestUrl = url.origin + url.pathname;
     
     // تجاهل أي URLs تحتوي على errors.infinityfree.net أو 403
     if (url.hostname.includes('errors.infinityfree.net') || 
@@ -179,27 +196,47 @@ self.addEventListener('fetch', function(event) {
         return;
     }
     
-    // للصفحات الرئيسية وملفات PHP: عند فشل الاتصال، عرض offline.html
+    // تحديد ما إذا كان طلب navigational (صفحة HTML/PHP)
+    const acceptHeader = event.request.headers.get('accept') || '';
     const isNavigationRequest = event.request.mode === 'navigate' || 
+                                acceptHeader.includes('text/html') ||
                                 url.pathname === '/' || 
                                 url.pathname === '/index.php' ||
-                                (url.pathname.endsWith('.php') && !url.pathname.includes('/api/') && !url.pathname.includes('/ajax/'));
+                                (url.pathname.endsWith('.php') && 
+                                 !url.pathname.includes('/api/') && 
+                                 !url.pathname.includes('/ajax/') &&
+                                 !url.pathname.includes('/print_'));
     
-    // إذا كان طلب navigational (صفحة رئيسية)، معالجة خاصة
+    // للصفحات الرئيسية وملفات PHP: عند فشل الاتصال، عرض offline.html
     if (isNavigationRequest) {
         event.respondWith(
-            fetch(event.request)
+            fetch(event.request, {
+                cache: 'no-store',
+                credentials: 'same-origin',
+                redirect: 'follow'
+            })
                 .then(function(response) {
-                    // إذا نجح الطلب، أرجع الاستجابة
-                    return response;
+                    // التحقق من أن الاستجابة صحيحة ومكتملة
+                    if (response && response.ok && response.status === 200) {
+                        // التحقق من أن الاستجابة ليست redirect إلى صفحة خطأ
+                        if (response.redirected && response.url.includes('errors.infinityfree.net')) {
+                            throw new Error('Redirected to error page');
+                        }
+                        return response;
+                    }
+                    // إذا كانت الاستجابة غير صحيحة، عرض offline
+                    throw new Error('Invalid response status: ' + (response ? response.status : 'no response'));
                 })
                 .catch(function(error) {
-                    // عند فشل الاتصال، أرجع offline.html
+                    // عند فشل الاتصال أو استجابة غير صحيحة، أرجع offline.html
+                    console.log('Navigation request failed, showing offline page. URL:', event.request.url, 'Error:', error.message);
                     return caches.match('/offline.html').then(function(cached) {
                         if (cached) {
+                            console.log('Using cached offline.html');
                             return cached;
                         }
                         // إذا لم يكن موجوداً في cache، قم بإنشائه مباشرة
+                        console.log('Creating inline offline.html');
                         return createOfflineResponse();
                     });
                 })
@@ -207,13 +244,10 @@ self.addEventListener('fetch', function(event) {
         return;
     }
     
-    // تجاهل جميع API requests وملفات PHP الأخرى
+    // تجاهل API requests و AJAX requests
     if (url.pathname.includes('/api/') || 
-        url.pathname.includes('/ajax/') ||
-        url.pathname.includes('/dashboard/') ||
-        url.pathname.includes('/modules/') ||
-        (url.pathname.endsWith('.php') && !isNavigationRequest)) {
-        return; // لا تفعل أي شيء مع API requests أو PHP files
+        url.pathname.includes('/ajax/')) {
+        return; // لا تفعل أي شيء مع API requests
     }
     
     // فقط معالجة GET requests للـ static assets

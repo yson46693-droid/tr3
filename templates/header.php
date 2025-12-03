@@ -888,8 +888,8 @@ if (ob_get_level() > 0) {
     
     <!-- Service Worker Registration with Auto-Update -->
     <script>
-        // تعطيل Service Worker مؤقتاً لحل مشكلة ERR_FAILED
-        if (false && 'serviceWorker' in navigator) {
+        // تفعيل Service Worker لعرض صفحة offline عند عدم الاتصال
+        if ('serviceWorker' in navigator) {
             let registration;
             let updateCheckInterval;
             
