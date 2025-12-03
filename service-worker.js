@@ -64,6 +64,24 @@ self.addEventListener('fetch', event => {
     return;
   }
 
+  // Skip service worker interception for external domains (CDN, APIs) to avoid CSP issues
+  // Allow external requests to pass through without service worker handling
+  const externalDomains = [
+    'code.jquery.com',
+    'api.qrserver.com',
+    'cdn.jsdelivr.net',
+    'fonts.googleapis.com',
+    'fonts.gstatic.com'
+  ];
+  
+  const isExternalDomain = externalDomains.some(domain => url.hostname.includes(domain));
+  
+  if (isExternalDomain) {
+    // For external domains, don't intercept - let browser handle directly
+    // This prevents CSP violations from service worker fetch attempts
+    return;
+  }
+
   event.respondWith(
     caches.match(event.request).then(cachedResponse => {
       if (cachedResponse) return cachedResponse;
@@ -72,7 +90,7 @@ self.addEventListener('fetch', event => {
         .then(async response => {
           if (!response || response.status !== 200 || response.type !== 'basic') return response;
 
-          // Cache static assets only
+          // Cache static assets only from same origin
           if (/\.(css|js|png|jpg|jpeg|svg|gif|woff2?)$/i.test(url.pathname)) {
             const responseClone = response.clone();
             const cache = await caches.open(CACHE_NAME);
