@@ -148,9 +148,9 @@ self.addEventListener('fetch', function(event) {
                         });
                     }
                     
-                    // Return cached version if available, otherwise return error
-                    return caches.match(event.request).then(function(cachedResponse) {
-                        return cachedResponse || new Response('', { status: 200 });
+                    // Return cached version if available, otherwise return offline page
+                    return caches.match('/offline.html').then(function(cached) {
+                        return cached || new Response('Offline', { status: 503 });
                     });
                 });
             })
