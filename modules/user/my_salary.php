@@ -357,43 +357,47 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['
     $salaryRecord = $salaryData['exists'] ? $salaryData['salary'] : $salaryData['calculation'];
     
     // حساب الراتب الإجمالي (قبل الخصومات) لاستخدامه في حساب الحد الأقصى للسلفة
-    // استخدام نفس المنطق المستخدم في قسم العرض لضمان الاتساق
+    // يجب أن يكون نفس الراتب الإجمالي المعروض في جدول التفاصيل
     require_once __DIR__ . '/../../includes/salary_calculator.php';
     
-    // حساب الراتب الإجمالي بشكل صحيح مع نسبة التحصيلات
-    $salaryCalculation = calculateTotalSalaryWithCollections($salaryRecord, $currentUser['id'], $month, $year, $currentUser['role']);
-    $totalSalaryForAdvance = $salaryCalculation['total_salary'];
+    // استخدام نفس المنطق المستخدم في قسم العرض لحساب الراتب الإجمالي
+    $hourlyRate = cleanFinancialValue($salaryRecord['hourly_rate'] ?? $currentUser['hourly_rate'] ?? 0);
+    // استخدام اسم العمود الصحيح (bonus أو bonuses)
+    $bonus = cleanFinancialValue($salaryRecord[$bonusColumnName] ?? $salaryRecord['bonus'] ?? $salaryRecord['bonuses'] ?? 0);
+    $deductions = cleanFinancialValue($salaryRecord['deductions'] ?? 0);
     
-    // استخدام الراتب الإجمالي من جدول تفاصيل الراتب إذا كان محفوظاً (total_amount)
-    // هذا هو الراتب الإجمالي المعروض في جدول التفاصيل
-    if (isset($salaryRecord['total_amount'])) {
-        $totalSalaryFromTable = cleanFinancialValue($salaryRecord['total_amount'] ?? 0);
-        if ($totalSalaryFromTable > 0) {
-            $totalSalaryForAdvance = $totalSalaryFromTable;
-        }
-    } else {
-        // إذا لم يكن هناك total_amount، احسب الراتب الإجمالي بدون طرح الخصومات
-        $hourlyRate = cleanFinancialValue($salaryRecord['hourly_rate'] ?? $currentUser['hourly_rate'] ?? 0);
-        // استخدام اسم العمود الصحيح (bonus أو bonuses)
-        $bonus = cleanFinancialValue($salaryRecord[$bonusColumnName] ?? $salaryRecord['bonus'] ?? $salaryRecord['bonuses'] ?? 0);
-        
+    // استخدام base_amount من قاعدة البيانات إذا كان موجوداً
+    $baseAmount = cleanFinancialValue($salaryRecord['base_amount'] ?? 0);
+    if ($baseAmount <= 0) {
+        // إذا لم يكن base_amount موجوداً، احسبه من الساعات
         $completedHours = calculateCompletedMonthlyHours($currentUser['id'], $month, $year);
         $baseAmount = round($completedHours * $hourlyRate, 2);
-        
-        if ($currentUser['role'] === 'sales') {
-            // للمندوبين: احسب نسبة التحصيلات وأضفها
+    }
+    
+    // حساب نسبة التحصيلات للمندوبين (نفس المنطق المستخدم في العرض)
+    $collectionsBonus = 0;
+    if ($currentUser['role'] === 'sales') {
+        // استخدام collections_bonus المحفوظ في قاعدة البيانات (يتضمن مكافآت من pos.php)
+        $savedCollectionsBonus = cleanFinancialValue($salaryRecord['collections_bonus'] ?? 0);
+        if ($savedCollectionsBonus > 0) {
+            $collectionsBonus = $savedCollectionsBonus;
+        } else {
+            // إذا لم تكن هناك قيمة محفوظة، احسبها من جدول collections
             $collectionsAmount = calculateSalesCollections($currentUser['id'], $month, $year);
             $collectionsBonus = round($collectionsAmount * 0.02, 2);
-            // الراتب الإجمالي = الراتب الأساسي + المكافآت + نسبة التحصيلات (بدون طرح الخصومات)
-            $totalSalaryForAdvance = round($baseAmount + $bonus + $collectionsBonus, 2);
-        } else {
-            // لعمال الإنتاج والمحاسبين: الراتب الإجمالي = الراتب الأساسي + المكافآت (بدون طرح الخصومات)
-            $totalSalaryForAdvance = round($baseAmount + $bonus, 2);
         }
     }
     
+    // حساب الراتب الإجمالي (قبل الخصومات) = الراتب الأساسي + المكافآت + نسبة التحصيلات
+    // هذا هو نفس الراتب الإجمالي المعروض في جدول التفاصيل (162.10)
+    if ($currentUser['role'] === 'sales') {
+        $totalSalaryForAdvance = round($baseAmount + $bonus + $collectionsBonus, 2);
+    } else {
+        $totalSalaryForAdvance = round($baseAmount + $bonus, 2);
+    }
+    
     // حساب الحد الأقصى للسلفة بناءً على الراتب الإجمالي (قبل الخصومات)
-    $maxAdvance = cleanFinancialValue($totalSalaryForAdvance * 0.5); // نصف الراتب الإجمالي
+    $maxAdvance = cleanFinancialValue($totalSalaryForAdvance * 0.5);
     
     if ($amount > $maxAdvance) {
         $error = 'فشل إرسال طلب السلفة: قيمة السلفة (' . formatCurrency($amount) . ') لا يمكن أن تتجاوز نصف الراتب الحالي (' . formatCurrency($maxAdvance) . '). يرجى إدخال مبلغ أقل أو يساوي ' . formatCurrency($maxAdvance);
