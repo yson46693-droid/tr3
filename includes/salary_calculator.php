@@ -243,30 +243,71 @@ function calculateSalesCollections($userId, $month, $year) {
         // التحقق من وجود عمود paid_from_credit
         $hasPaidFromCreditColumn = !empty($db->queryOne("SHOW COLUMNS FROM invoices LIKE 'paid_from_credit'"));
         
-        $fullPaymentSalesSql = "SELECT COALESCE(SUM(total_amount), 0) as total 
-             FROM invoices 
-             WHERE sales_rep_id = ? 
-             AND MONTH(date) = ? 
-             AND YEAR(date) = ?
-             AND status = 'paid'
-             AND ABS(paid_amount - total_amount) < 0.01";
+        // التحقق من وجود جدول collections لاستبعاد الفواتير التي أصبحت paid بعد تحصيلات
+        $collectionsTableCheck = $db->queryOne("SHOW TABLES LIKE 'collections'");
+        $hasCollectionsTable = !empty($collectionsTableCheck);
+        
+        $fullPaymentSalesSql = "SELECT COALESCE(SUM(inv.total_amount), 0) as total 
+             FROM invoices inv
+             WHERE inv.sales_rep_id = ? 
+             AND MONTH(inv.date) = ? 
+             AND YEAR(inv.date) = ?
+             AND inv.status = 'paid'
+             AND ABS(inv.paid_amount - inv.total_amount) < 0.01";
         
         // استبعاد الفواتير المدفوعة من رصيد دائن
         // هذه الفواتير لها معاملة خاصة: تُحسب النسبة مباشرة كـ bonus في pos.php
         // (لعميل لديه سجل مشتريات) أو لا تُحسب (لعميل ليس لديه سجل مشتريات)
         // المبالغ المدفوعة من الرصيد الدائن لا تُحسب في التحصيلات لأن المندوب لم يقم بتحصيلها نقدياً
         if ($hasPaidFromCreditColumn) {
-            $fullPaymentSalesSql .= " AND (paid_from_credit IS NULL OR paid_from_credit = 0)";
+            $fullPaymentSalesSql .= " AND (inv.paid_from_credit IS NULL OR inv.paid_from_credit = 0)";
         } else {
             // إذا لم يكن العمود موجوداً، استبعد الفواتير التي لديها credit_used > 0
             // كحل بديل لضمان عدم حساب الفواتير المدفوعة من الرصيد الدائن
             $hasCreditUsedColumn = !empty($db->queryOne("SHOW COLUMNS FROM invoices LIKE 'credit_used'"));
             if ($hasCreditUsedColumn) {
-                $fullPaymentSalesSql .= " AND (credit_used IS NULL OR credit_used = 0 OR credit_used <= 0.01)";
+                $fullPaymentSalesSql .= " AND (inv.credit_used IS NULL OR inv.credit_used = 0 OR inv.credit_used <= 0.01)";
             }
         }
         
-        $fullPaymentSales = $db->queryOne($fullPaymentSalesSql, [$userId, $month, $year]);
+        // استبعاد الفواتير التي أصبحت paid بعد تحصيلات جزئية في نفس الشهر
+        // هذه الفواتير تُحسب فقط في الحالة 2 (partial collections) على المبلغ المحصل
+        // لتجنب العد المزدوج: حسابها في الحالة 1 على total_amount + حسابها في الحالة 2 على المبلغ المحصل
+        if ($hasCollectionsTable) {
+            // التحقق من وجود عمود invoice_id في collections
+            $hasInvoiceIdColumn = !empty($db->queryOne("SHOW COLUMNS FROM collections LIKE 'invoice_id'"));
+            $statusColumnCheck = $db->queryOne("SHOW COLUMNS FROM collections LIKE 'status'");
+            $hasStatusColumn = !empty($statusColumnCheck);
+            
+            if ($hasInvoiceIdColumn) {
+                // إذا كان هناك عمود invoice_id، نستخدمه للربط المباشر
+                $fullPaymentSalesSql .= " AND NOT EXISTS (
+                    SELECT 1 FROM collections c
+                    WHERE c.invoice_id = inv.id
+                    AND MONTH(c.date) = ?
+                    AND YEAR(c.date) = ?";
+                if ($hasStatusColumn) {
+                    $fullPaymentSalesSql .= " AND c.status IN ('pending', 'approved')";
+                }
+                $fullPaymentSalesSql .= ")";
+                $fullPaymentSales = $db->queryOne($fullPaymentSalesSql, [$userId, $month, $year, $month, $year]);
+            } else {
+                // إذا لم يكن هناك عمود invoice_id، نستخدم notes للبحث عن رقم الفاتورة
+                $fullPaymentSalesSql .= " AND NOT EXISTS (
+                    SELECT 1 FROM collections c
+                    WHERE c.notes LIKE CONCAT('%فاتورة ', inv.invoice_number, '%')
+                    AND MONTH(c.date) = ?
+                    AND YEAR(c.date) = ?";
+                if ($hasStatusColumn) {
+                    $fullPaymentSalesSql .= " AND c.status IN ('pending', 'approved')";
+                }
+                $fullPaymentSalesSql .= ")";
+                $fullPaymentSales = $db->queryOne($fullPaymentSalesSql, [$userId, $month, $year, $month, $year]);
+            }
+        } else {
+            $fullPaymentSales = $db->queryOne($fullPaymentSalesSql, [$userId, $month, $year]);
+        }
+        
         $totalCommissionBase += floatval($fullPaymentSales['total'] ?? 0);
     }
     
