@@ -1060,11 +1060,26 @@ if ($currentSalary && isset($currentSalary['base_amount'])) {
     // استخدام القيم من قاعدة البيانات
     $baseAmount = cleanFinancialValue($currentSalary['base_amount'] ?? 0);
     
-    // حساب نسبة التحصيلات بناءً على إجمالي التحصيلات من جدول collections فقط (مثل cash_register.php)
-    // نسبة التحصيلات = 2% من إجمالي التحصيلات من العملاء
+    // حساب نسبة التحصيلات: يجب أن تشمل:
+    // 1. 2% من المبالغ المحصلة فعلياً من جدول collections
+    // 2. المكافآت المضافة مباشرة في pos.php (2% من creditUsed)
+    // استخدام القيمة المحفوظة في collections_bonus (تتضمن جميع المكافآت)
+    // وإذا لم تكن موجودة، نحسبها من جدول collections
     if ($currentUser['role'] === 'sales') {
         $collectionsAmount = $totalCollectionsFromTable;
-        $collectionsBonus = round($collectionsAmount * 0.02, 2);
+        
+        // استخدام نسبة التحصيلات المحفوظة في قاعدة البيانات
+        // (تتضمن 2% من collections + 2% من creditUsed المضافة في pos.php)
+        $savedCollectionsBonus = cleanFinancialValue($currentSalary['collections_bonus'] ?? 0);
+        
+        if ($savedCollectionsBonus > 0) {
+            // استخدام القيمة المحفوظة (تتضمن جميع المكافآت من pos.php)
+            $collectionsBonus = $savedCollectionsBonus;
+        } else {
+            // إذا لم تكن هناك قيمة محفوظة، احسبها من جدول collections فقط
+            // (لن تتضمن المكافآت من pos.php حتى يتم حساب الراتب)
+            $collectionsBonus = round($collectionsAmount * 0.02, 2);
+        }
     } else {
         $collectionsBonus = 0;
         $collectionsAmount = 0;

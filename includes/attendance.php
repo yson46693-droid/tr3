@@ -1148,17 +1148,28 @@ function recordAttendanceCheckOut($userId, $photoBase64 = null) {
                     $collectionsAmount = 0;
                     if ($userRole === 'sales') {
                         $collectionsAmount = calculateSalesCollections($userId, $attendanceMonthNumber, $attendanceYearNumber);
-                        $collectionsBonus = round($collectionsAmount * 0.02, 2);
-                        error_log("Sales collections: amount={$collectionsAmount}, bonus={$collectionsBonus}");
+                        $calculatedBonusFromCollections = round($collectionsAmount * 0.02, 2);
+                        
+                        // قراءة القيمة الحالية من collections_bonus (قد تتضمن مكافآت من pos.php)
+                        $existingCollectionsBonus = floatval($existingSalary['collections_bonus'] ?? 0);
+                        
+                        // استخدام القيمة الأكبر بين:
+                        // 1. القيمة الحالية المحفوظة (تتضمن المكافآت من pos.php)
+                        // 2. القيمة المحسوبة من collections (2%)
+                        // هذا يضمن عدم محو المكافآت المضافة من pos.php
+                        $collectionsBonus = max($existingCollectionsBonus, $calculatedBonusFromCollections);
+                        
+                        error_log("Sales collections: amount={$collectionsAmount}, calculatedBonus={$calculatedBonusFromCollections}, existingBonus={$existingCollectionsBonus}, finalBonus={$collectionsBonus}");
                         
                         // تحديث collections_bonus إذا كان موجوداً
+                        // نستخدم القيمة الأكبر لضمان عدم محو المكافآت من pos.php
                         $collectionsBonusColumnCheck = $db->queryOne("SHOW COLUMNS FROM salaries LIKE 'collections_bonus'");
                         if (!empty($collectionsBonusColumnCheck)) {
                             $db->execute(
                                 "UPDATE salaries SET collections_bonus = ?, collections_amount = ? WHERE id = ?",
                                 [$collectionsBonus, $collectionsAmount, $existingSalary['id']]
                             );
-                            error_log("Updated collections_bonus: {$collectionsBonus}");
+                            error_log("Updated collections_bonus: {$collectionsBonus} (preserves bonuses from pos.php)");
                         }
                     }
                     
@@ -2298,7 +2309,16 @@ function processAutoCheckoutForMissingEmployees(): void
                             $collectionsBonus = 0;
                             if ($userRole === 'sales') {
                                 $collectionsAmount = calculateSalesCollections($userId, $attendanceMonthNumber, $attendanceYearNumber);
-                                $collectionsBonus = round($collectionsAmount * 0.02, 2);
+                                $calculatedBonusFromCollections = round($collectionsAmount * 0.02, 2);
+                                
+                                // قراءة القيمة الحالية من collections_bonus (قد تتضمن مكافآت من pos.php)
+                                $existingCollectionsBonus = floatval($existingSalary['collections_bonus'] ?? 0);
+                                
+                                // استخدام القيمة الأكبر بين:
+                                // 1. القيمة الحالية المحفوظة (تتضمن المكافآت من pos.php)
+                                // 2. القيمة المحسوبة من collections (2%)
+                                // هذا يضمن عدم محو المكافآت المضافة من pos.php
+                                $collectionsBonus = max($existingCollectionsBonus, $calculatedBonusFromCollections);
                                 
                                 $collectionsBonusColumnCheck = $db->queryOne("SHOW COLUMNS FROM salaries LIKE 'collections_bonus'");
                                 if (!empty($collectionsBonusColumnCheck)) {
