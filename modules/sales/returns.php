@@ -177,6 +177,7 @@ $basePath = getBasePath();
                                             <th>سعر الوحدة</th>
                                             <th>الإجمالي</th>
                                             <th>رقم التشغيلة</th>
+                                            <th>الحالة</th>
                                             <th>إجراءات</th>
                                         </tr>
                                     </thead>
@@ -187,7 +188,7 @@ $basePath = getBasePath();
                                         <tr class="table-primary">
                                             <th colspan="5" class="text-end">الإجمالي:</th>
                                             <th id="totalReturnAmount">0.00</th>
-                                            <th colspan="2"></th>
+                                            <th colspan="3"></th>
                                         </tr>
                                     </tfoot>
                                 </table>
@@ -569,6 +570,19 @@ function addToReturnItems(invoiceItemId, productId, productName, maxQuantity, un
         return;
     }
     
+    // السؤال عن حالة المنتج: هل هو تالف؟
+    const isDamaged = confirm('هل المنتج المراد إرجاعه تالف أو معيب؟\n\nاضغط "موافق" إذا كان المنتج تالف\nاضغط "إلغاء" إذا كان المنتج سليم');
+    
+    let damageReason = null;
+    if (isDamaged) {
+        damageReason = prompt('يرجى إدخال سبب التلف (اختياري):');
+        if (damageReason === null) {
+            damageReason = 'تالف';
+        } else if (damageReason.trim() === '') {
+            damageReason = 'تالف';
+        }
+    }
+    
     const total = qty * unitPrice;
     
     // استخدام جميع invoice_item_ids إذا كانت متوفرة
@@ -585,7 +599,9 @@ function addToReturnItems(invoiceItemId, productId, productName, maxQuantity, un
         quantity: qty,
         unit_price: unitPrice,
         total_price: total,
-        batch_numbers: batchNumbers
+        batch_numbers: batchNumbers,
+        is_damaged: isDamaged ? 1 : 0,
+        damage_reason: damageReason
     };
     
     selectedReturnItems.push(item);
@@ -599,7 +615,7 @@ function updateReturnItemsTable() {
     const submitBtn = document.getElementById('submitReturnRequest');
     
     if (selectedReturnItems.length === 0) {
-        tbody.innerHTML = '<tr><td colspan="8" class="text-center text-muted">لم يتم اختيار أي منتجات</td></tr>';
+        tbody.innerHTML = '<tr><td colspan="9" class="text-center text-muted">لم يتم اختيار أي منتجات</td></tr>';
         returnSection.style.display = 'none';
         submitBtn.disabled = true;
         totalDiv.textContent = '0.00';
@@ -614,6 +630,10 @@ function updateReturnItemsTable() {
     
     selectedReturnItems.forEach((item, index) => {
         total += item.total_price;
+        const isDamaged = item.is_damaged === 1 || item.is_damaged === true || item.is_damaged === '1';
+        const conditionText = isDamaged ? '<span class="badge bg-danger">تالف</span>' : '<span class="badge bg-success">سليم</span>';
+        const damageReasonText = isDamaged && item.damage_reason ? `<br><small class="text-muted">سبب التلف: ${item.damage_reason}</small>` : '';
+        
         html += `
             <tr>
                 <td>${item.product_name}</td>
@@ -623,6 +643,7 @@ function updateReturnItemsTable() {
                 <td>${item.unit_price.toFixed(2)} ج.م</td>
                 <td>${item.total_price.toFixed(2)} ج.م</td>
                 <td>${item.batch_numbers || '-'}</td>
+                <td>${conditionText}${damageReasonText}</td>
                 <td>
                     <button class="btn btn-sm btn-danger" onclick="removeReturnItem(${index})">
                         <i class="bi bi-trash"></i>

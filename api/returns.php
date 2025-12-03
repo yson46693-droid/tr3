@@ -699,8 +699,14 @@ function handleCreateReturn(): void
                 // تجاهل
             }
             
+            // تحديد حالة المنتج بناءً على is_damaged
+            // إذا كان المنتج تالف (is_damaged = 1)، تكون الحالة 'damaged' (تالف)
+            // إذا كان المنتج سليم (is_damaged = 0 أو غير محدد)، تكون الحالة 'new' (سليم)
+            $isDamaged = isset($item['is_damaged']) && ($item['is_damaged'] === true || $item['is_damaged'] === 1 || $item['is_damaged'] === '1');
+            $productCondition = $isDamaged ? 'damaged' : 'new';
+            
             $columns = ['return_id', 'product_id', 'quantity', 'unit_price', 'total_price', '`condition`'];
-            $values = [$returnId, $item['product_id'], $item['quantity'], $item['unit_price'], $item['total_price'], 'new'];
+            $values = [$returnId, $item['product_id'], $item['quantity'], $item['unit_price'], $item['total_price'], $productCondition];
             
             if ($hasInvoiceItemId) {
                 $columns[] = 'invoice_item_id';
@@ -719,7 +725,7 @@ function handleCreateReturn(): void
             
             if ($hasIsDamaged) {
                 $columns[] = 'is_damaged';
-                $values[] = $item['is_damaged'] ? 1 : 0;
+                $values[] = $isDamaged ? 1 : 0;
             }
             
             $columns[] = 'notes';
