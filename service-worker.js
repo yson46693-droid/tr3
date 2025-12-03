@@ -92,15 +92,24 @@ self.addEventListener('fetch', function(event) {
                     return response;
                 }
                 
+                // التحقق من أن URL لا يحتوي على errors.infinityfree.net قبل محاولة fetch
+                if (event.request.url.includes('errors.infinityfree.net')) {
+                    // إرجاع استجابة من cache مباشرة بدون محاولة fetch
+                    return caches.match(event.request).then(function(cachedResponse) {
+                        return cachedResponse || new Response('', { status: 200 });
+                    });
+                }
+                
                 // Fetch من الشبكة مع معالجة أفضل للأخطاء
                 return fetch(event.request, {
                     mode: 'cors',
                     credentials: 'same-origin',
-                    redirect: 'follow'
+                    redirect: 'manual' // استخدام 'manual' لتجنب redirects التلقائية
                 }).then(
                     function(response) {
                         // التحقق من أن الاستجابة ليست redirect إلى صفحة خطأ
-                        if (response.redirected && response.url.includes('errors.infinityfree.net')) {
+                        if (response.type === 'opaqueredirect' || 
+                            (response.redirected && response.url.includes('errors.infinityfree.net'))) {
                             // إذا كان redirect إلى صفحة خطأ، استخدم cache إن وجد
                             return caches.match(event.request).then(function(cachedResponse) {
                                 return cachedResponse || new Response('', { status: 200 });
