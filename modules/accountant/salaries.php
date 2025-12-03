@@ -1893,17 +1893,41 @@ if (isset($_GET['ajax']) && $_GET['ajax'] == '1' && $salaryId > 0) {
             
             // حساب رصيد الخزنة الإجمالي الحالي للعرض دائماً (مطابق لصفحة خزنة المندوب)
             if (function_exists('calculateSalesRepCashBalance')) {
-                $cashRegisterBalance = calculateSalesRepCashBalance($userId);
-                $displayCashBalance = cleanFinancialValue($cashRegisterBalance ?? 0.0);
-                
-                // حساب نسبة 2% من رصيد الخزنة الإجمالي
-                $recalculatedCollectionsBonus = round($displayCashBalance * 0.02, 2);
-                $recalculatedCollectionsAmount = $displayCashBalance;
-                
-                // استخدم القيمة المحسوبة حديثاً إذا كانت أكبر من القيمة المحفوظة
-                if ($recalculatedCollectionsBonus > $collectionsBonus || $collectionsBonus == 0) {
-                    $collectionsBonus = $recalculatedCollectionsBonus;
-                    $collectionsAmount = $recalculatedCollectionsAmount;
+                try {
+                    // التأكد من أن userId محدد بشكل صحيح
+                    if (empty($userId) || $userId <= 0) {
+                        error_log('Warning: Invalid userId in salary card: ' . $userId);
+                        $displayCashBalance = 0.0;
+                    } else {
+                        $cashRegisterBalance = calculateSalesRepCashBalance($userId);
+                        // تحويل القيمة إلى float بشكل مباشر
+                        if ($cashRegisterBalance === null || $cashRegisterBalance === false) {
+                            $displayCashBalance = 0.0;
+                        } else {
+                            $displayCashBalance = (float)$cashRegisterBalance;
+                        }
+                    }
+                    
+                    // حساب نسبة 2% من رصيد الخزنة الإجمالي
+                    $recalculatedCollectionsBonus = round($displayCashBalance * 0.02, 2);
+                    $recalculatedCollectionsAmount = $displayCashBalance;
+                    
+                    // استخدم القيمة المحسوبة حديثاً إذا كانت أكبر من القيمة المحفوظة
+                    if ($recalculatedCollectionsBonus > $collectionsBonus || $collectionsBonus == 0) {
+                        $collectionsBonus = $recalculatedCollectionsBonus;
+                        $collectionsAmount = $recalculatedCollectionsAmount;
+                    }
+                } catch (Throwable $e) {
+                    // في حالة الخطأ، سجل الخطأ واستخدم الطريقة البديلة
+                    error_log('Error calculating cash balance for user ' . $userId . ': ' . $e->getMessage());
+                    $recalculatedCollectionsAmount = calculateSalesCollections($userId, $salaryMonth, $salaryYear);
+                    $recalculatedCollectionsBonus = round($recalculatedCollectionsAmount * 0.02, 2);
+                    $displayCashBalance = cleanFinancialValue($recalculatedCollectionsAmount);
+                    
+                    if ($recalculatedCollectionsBonus > $collectionsBonus || $collectionsBonus == 0) {
+                        $collectionsBonus = $recalculatedCollectionsBonus;
+                        $collectionsAmount = $recalculatedCollectionsAmount;
+                    }
                 }
             } else {
                 // إذا لم تكن الدالة موجودة، نستخدم الطريقة القديمة
