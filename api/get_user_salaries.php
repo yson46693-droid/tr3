@@ -84,13 +84,31 @@ try {
     $db = db();
     
     // جلب جميع الرواتب للموظف مع حساب المتبقي
-    $yearColumnCheck = $db->queryOne("SHOW COLUMNS FROM salaries LIKE 'year'");
-    $hasYearColumn = !empty($yearColumnCheck);
+    // التحقق من وجود الأعمدة بشكل آمن
+    $hasYearColumn = false;
+    $isMonthDate = false;
     
-    // التحقق من نوع عمود month
-    $monthColumnCheck = $db->queryOne("SHOW COLUMNS FROM salaries WHERE Field = 'month'");
-    $monthType = $monthColumnCheck['Type'] ?? '';
-    $isMonthDate = stripos($monthType, 'date') !== false;
+    try {
+        $yearColumnCheck = $db->queryOne("SHOW COLUMNS FROM salaries LIKE 'year'");
+        $hasYearColumn = !empty($yearColumnCheck);
+    } catch (Exception $e) {
+        error_log('Error checking year column: ' . $e->getMessage());
+        // افتراض أن year غير موجود في حالة الخطأ
+        $hasYearColumn = false;
+    }
+    
+    // التحقق من نوع عمود month بشكل آمن
+    try {
+        $monthColumnCheck = $db->queryOne("SHOW COLUMNS FROM salaries WHERE Field = 'month'");
+        if (!empty($monthColumnCheck) && isset($monthColumnCheck['Type'])) {
+            $monthType = $monthColumnCheck['Type'];
+            $isMonthDate = stripos($monthType, 'date') !== false;
+        }
+    } catch (Exception $e) {
+        error_log('Error checking month column: ' . $e->getMessage());
+        // افتراض أن month من نوع INT في حالة الخطأ
+        $isMonthDate = false;
+    }
     
     // بناء الاستعلام - تبسيط الشروط لتشمل جميع الرواتب
     $query = "SELECT s.*, 
@@ -133,8 +151,21 @@ try {
     // تسجيل الاستعلام للتdebugging
     error_log("get_user_salaries.php query: " . $query);
     error_log("get_user_salaries.php params: " . json_encode([$userId]));
+    error_log("get_user_salaries.php hasYearColumn: " . ($hasYearColumn ? 'true' : 'false'));
+    error_log("get_user_salaries.php isMonthDate: " . ($isMonthDate ? 'true' : 'false'));
     
-    $salaries = $db->query($query, [$userId]);
+    // تنفيذ الاستعلام مع معالجة الأخطاء
+    try {
+        $salaries = $db->query($query, [$userId]);
+        if (!is_array($salaries)) {
+            error_log("get_user_salaries.php: query returned non-array result");
+            $salaries = [];
+        }
+    } catch (Exception $e) {
+        error_log("get_user_salaries.php: Database query error: " . $e->getMessage());
+        error_log("get_user_salaries.php: Query was: " . $query);
+        throw new Exception("خطأ في جلب الرواتب من قاعدة البيانات: " . $e->getMessage(), 0, $e);
+    }
     
     // تسجيل عدد الرواتب المسترجعة
     error_log("get_user_salaries.php found " . count($salaries) . " salaries for user_id: " . $userId);
@@ -149,6 +180,7 @@ try {
     $monthYearMap = []; // لتجميع الرواتب حسب الشهر والسنة
     
     foreach ($salaries as $salary) {
+        try {
         $month = 0;
         $year = date('Y');
         $monthLabel = 'غير محدد';
@@ -222,20 +254,33 @@ try {
         $salaryId = intval($salary['id'] ?? 0);
         
         // جلب الرواتب السابقة وحساب المتبقي منها
-        if ($hasYearColumn) {
-            $previousSalaries = $db->query(
-                "SELECT s.total_amount, s.paid_amount, s.accumulated_amount,
-                        COALESCE(s.accumulated_amount, s.total_amount) as prev_accumulated
-                 FROM salaries s
-                 WHERE s.user_id = ? AND s.id != ? 
-                 AND (s.year < ? OR (s.year = ? AND s.month < ?))
-                 ORDER BY s.year ASC, s.month ASC",
-                [$userId, $salaryId, $year, $year, $month]
-            );
-        } else {
-            if ($isMonthDate) {
-                $salaryMonthDate = $salary['month'] ?? null;
-                if ($salaryMonthDate && $salaryMonthDate !== '0000-00-00' && $salaryMonthDate !== '1970-01-01') {
+        $previousSalaries = [];
+        try {
+            if ($hasYearColumn) {
+                $previousSalaries = $db->query(
+                    "SELECT s.total_amount, s.paid_amount, s.accumulated_amount,
+                            COALESCE(s.accumulated_amount, s.total_amount) as prev_accumulated
+                     FROM salaries s
+                     WHERE s.user_id = ? AND s.id != ? 
+                     AND (s.year < ? OR (s.year = ? AND s.month < ?))
+                     ORDER BY s.year ASC, s.month ASC",
+                    [$userId, $salaryId, $year, $year, $month]
+                );
+            } else {
+                if ($isMonthDate) {
+                    $salaryMonthDate = $salary['month'] ?? null;
+                    if ($salaryMonthDate && $salaryMonthDate !== '0000-00-00' && $salaryMonthDate !== '1970-01-01') {
+                        $previousSalaries = $db->query(
+                            "SELECT s.total_amount, s.paid_amount, s.accumulated_amount,
+                                    COALESCE(s.accumulated_amount, s.total_amount) as prev_accumulated
+                             FROM salaries s
+                             WHERE s.user_id = ? AND s.id != ? 
+                             AND s.month < ?
+                             ORDER BY s.month ASC",
+                            [$userId, $salaryId, $salaryMonthDate]
+                        );
+                    }
+                } else {
                     $previousSalaries = $db->query(
                         "SELECT s.total_amount, s.paid_amount, s.accumulated_amount,
                                 COALESCE(s.accumulated_amount, s.total_amount) as prev_accumulated
@@ -243,22 +288,16 @@ try {
                          WHERE s.user_id = ? AND s.id != ? 
                          AND s.month < ?
                          ORDER BY s.month ASC",
-                        [$userId, $salaryId, $salaryMonthDate]
+                        [$userId, $salaryId, $month]
                     );
-                } else {
-                    $previousSalaries = [];
                 }
-            } else {
-                $previousSalaries = $db->query(
-                    "SELECT s.total_amount, s.paid_amount, s.accumulated_amount,
-                            COALESCE(s.accumulated_amount, s.total_amount) as prev_accumulated
-                     FROM salaries s
-                     WHERE s.user_id = ? AND s.id != ? 
-                     AND s.month < ?
-                     ORDER BY s.month ASC",
-                    [$userId, $salaryId, $month]
-                );
             }
+            if (!is_array($previousSalaries)) {
+                $previousSalaries = [];
+            }
+        } catch (Exception $e) {
+            error_log("Error fetching previous salaries for salary ID $salaryId: " . $e->getMessage());
+            $previousSalaries = []; // الاستمرار بدون الرواتب السابقة
         }
         
         foreach ($previousSalaries as $prevSalary) {
@@ -276,10 +315,11 @@ try {
         $paid = floatval($salary['paid_amount'] ?? 0);
         $remaining = max(0, $accumulated - $paid);
         
-        // تصفية الرواتب التي بقيمة المتبقي = 0.00 أو أقل من 0.01
-        if ($remaining < 0.01) {
-            continue; // تخطي هذا الراتب
-        }
+        // عرض جميع الرواتب حتى لو كان المتبقي صفر (لإتاحة التسوية الكاملة)
+        // يمكن تغيير هذا الشرط إذا أردت تصفية الرواتب المدفوعة بالكامل
+        // if ($remaining < 0.01) {
+        //     continue; // تخطي هذا الراتب
+        // }
         
         // إنشاء مفتاح فريد للشهر والسنة
         $monthYearKey = $year . '-' . str_pad($month, 2, '0', STR_PAD_LEFT);
@@ -317,6 +357,11 @@ try {
                 'status' => $salary['status'] ?? 'calculated'
             ];
         }
+        } catch (Exception $e) {
+            // تسجيل الخطأ ولكن الاستمرار في معالجة الرواتب الأخرى
+            error_log("Error processing salary ID " . ($salary['id'] ?? 'unknown') . ": " . $e->getMessage());
+            continue; // تخطي هذا الراتب والمتابعة مع البقية
+        }
     }
     
     // تحويل الخريطة إلى مصفوفة وترتيبها حسب السنة والشهر (الأحدث أولاً)
@@ -342,12 +387,33 @@ try {
     
 } catch (Throwable $e) {
     ob_end_clean();
-    error_log('Error in get_user_salaries.php: ' . $e->getMessage());
-    error_log('Stack trace: ' . $e->getTraceAsString());
+    $errorMessage = $e->getMessage();
+    $errorTrace = $e->getTraceAsString();
+    
+    error_log('Error in get_user_salaries.php: ' . $errorMessage);
+    error_log('Stack trace: ' . $errorTrace);
+    error_log('File: ' . $e->getFile() . ' Line: ' . $e->getLine());
+    
+    // في بيئة التطوير، عرض رسالة الخطأ الفعلية للمساعدة في التشخيص
+    // في بيئة الإنتاج، استخدم رسالة عامة
+    $isDevelopment = (defined('DEBUG_MODE') && DEBUG_MODE) || 
+                     (isset($_SERVER['SERVER_NAME']) && 
+                      (strpos($_SERVER['SERVER_NAME'], 'localhost') !== false || 
+                       strpos($_SERVER['SERVER_NAME'], '127.0.0.1') !== false));
+    
+    $displayMessage = $isDevelopment 
+        ? 'حدث خطأ داخلي في الخادم: ' . $errorMessage 
+        : 'حدث خطأ داخلي في الخادم. يرجى المحاولة مرة أخرى أو الاتصال بالدعم الفني.';
+    
     http_response_code(500);
     echo json_encode([
         'success' => false,
-        'message' => 'حدث خطأ داخلي في الخادم'
+        'message' => $displayMessage,
+        'debug' => $isDevelopment ? [
+            'error' => $errorMessage,
+            'file' => $e->getFile(),
+            'line' => $e->getLine()
+        ] : null
     ], JSON_UNESCAPED_UNICODE);
     exit;
 }
