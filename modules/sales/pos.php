@@ -1287,16 +1287,24 @@ if (!$error && $_SERVER['REQUEST_METHOD'] === 'POST') {
                                     ));
                                 }
                             } else {
-                                // جزئي: حساب 2% من المبلغ المدفوع من الرصيد الدائن فقط
-                                // (طبق النظام بشكل صارم: فقط المبلغ المدفوع من رصيد العميل)
+                                // جزئي: حساب 2% من المبلغ المحصل فعلياً (effectivePaidAmount) + المبلغ المدفوع من الرصيد الدائن (creditUsed)
+                                // القاعدة: عند البيع بالتحصيل الجزئي، تُحسب النسبة على المبلغ المحصل فعلياً فقط
+                                // إذا كان هناك استخدام للرصيد الدائن، يُضاف creditUsed أيضاً
                                 // استخدام creditUsed المحسوب مسبقاً (القيمة الصحيحة)
                                 
-                                // حساب المبلغ الأساسي للعمولة: فقط creditUsed
-                                // بغض النظر عن وجود دفع نقدي جزئي أم لا
-                                $commissionBase = $creditUsed > 0.0001 ? $creditUsed : 0.0;
+                                // حساب المبلغ الأساسي للعمولة: المبلغ المحصل فعلياً + المبلغ المدفوع من الرصيد الدائن (إن وجد)
+                                // لعميل جديد بدون رصيد دائن: commissionBase = effectivePaidAmount فقط
+                                // لعميل لديه رصيد دائن: commissionBase = effectivePaidAmount + creditUsed
+                                if ($creditUsed > 0.0001) {
+                                    // هناك استخدام للرصيد الدائن: نضيف المبلغ المحصل + المبلغ المدفوع من الرصيد الدائن
+                                    $commissionBase = $effectivePaidAmount + $creditUsed;
+                                } else {
+                                    // لا يوجد استخدام للرصيد الدائن: نحسب فقط على المبلغ المحصل فعلياً
+                                    $commissionBase = $effectivePaidAmount;
+                                }
                                 
                                 error_log(sprintf(
-                                    'Partial payment commission calculation: creditUsed=%.2f, effectivePaidAmount=%.2f, commissionBase=%.2f (only creditUsed, as per strict requirement)',
+                                    'Partial payment commission calculation: creditUsed=%.2f, effectivePaidAmount=%.2f, commissionBase=%.2f (effectivePaidAmount + creditUsed if any)',
                                     $creditUsed, $effectivePaidAmount, $commissionBase
                                 ));
                             }
