@@ -599,9 +599,19 @@ if (!$error && $_SERVER['REQUEST_METHOD'] === 'POST') {
                             // المبلغ المتبقي أقل من أو يساوي الرصيد الدائن
                             // يتم خصم كامل المبلغ المتبقي من الرصيد الدائن
                             $creditUsed = $remainingAmount;
-                            // عند استخدام الرصيد الدائن: لا يُضاف المبلغ المستخدم من الرصيد الدائن إلى خزنة المندوب
-                            // فقط المبلغ المحصل نقداً يُضاف (إن وجد)
-                            $amountAddedToSales = $effectivePaidAmount; // فقط المبلغ المحصل نقداً يُضاف إلى خزنة المندوب
+                            
+                            // عند استخدام الرصيد الدائن لعميل ليس له سجل مشتريات:
+                            // - creditUsed يُضاف إلى amountAddedToSales لإجمالي المبيعات (صافي)
+                            // - لكن creditUsed لا يُضاف إلى رصيد الخزنة الإجمالي أو التحصيلات
+                            // - سيتم احتساب نسبة 2% من creditUsed تُضاف إلى نسبة تحصيلات المندوب
+                            if (!($hasPreviousPurchases ?? false)) {
+                                // العميل ليس له سجل مشتريات: نضيف creditUsed إلى amountAddedToSales لإجمالي المبيعات (صافي)
+                                $amountAddedToSales = $effectivePaidAmount + $creditUsed;
+                            } else {
+                                // العميل له سجل مشتريات: فقط المبلغ المحصل نقداً يُضاف
+                                $amountAddedToSales = $effectivePaidAmount;
+                            }
+                            
                             $dueAmount = 0.0; // لا يوجد دين متبقي
                             
                             // الرصيد الجديد = الرصيد الدائن الحالي + المبلغ المخصوم من الرصيد الدائن (لأن الرصيد سالب)
@@ -614,9 +624,19 @@ if (!$error && $_SERVER['REQUEST_METHOD'] === 'POST') {
                             // يتم خصم الرصيد الدائن بالكامل، والمبلغ الزائد يُضاف كدين
                             $creditUsed = $creditAvailable;
                             $excessAmount = round($remainingAmount - $creditUsed, 2); // المبلغ الزائد
-                            // عند استخدام الرصيد الدائن: لا يُضاف المبلغ المستخدم من الرصيد الدائن إلى خزنة المندوب
-                            // فقط المبلغ المحصل نقداً يُضاف (إن وجد)
-                            $amountAddedToSales = $effectivePaidAmount; // فقط المبلغ المحصل نقداً يُضاف إلى خزنة المندوب (المبلغ الزائد دين جديد وليس محصلاً نقداً)
+                            
+                            // عند استخدام الرصيد الدائن لعميل ليس له سجل مشتريات:
+                            // - creditUsed يُضاف إلى amountAddedToSales لإجمالي المبيعات (صافي)
+                            // - لكن creditUsed لا يُضاف إلى رصيد الخزنة الإجمالي أو التحصيلات
+                            // - سيتم احتساب نسبة 2% من creditUsed تُضاف إلى نسبة تحصيلات المندوب
+                            if (!($hasPreviousPurchases ?? false)) {
+                                // العميل ليس له سجل مشتريات: نضيف creditUsed إلى amountAddedToSales لإجمالي المبيعات (صافي)
+                                $amountAddedToSales = $effectivePaidAmount + $creditUsed;
+                            } else {
+                                // العميل له سجل مشتريات: فقط المبلغ المحصل نقداً يُضاف
+                                $amountAddedToSales = $effectivePaidAmount;
+                            }
+                            
                             $dueAmount = $excessAmount; // المبلغ الزائد هو الدين الجديد
                             
                             // الرصيد الجديد = 0 (لا رصيد دائن) + المبلغ الزائد (دين)
@@ -1223,15 +1243,20 @@ if (!$error && $_SERVER['REQUEST_METHOD'] === 'POST') {
                             $customerId
                         ));
                         
-                        // النظام الجديد: إذا كان العميل لديه رصيد دائن والبيع بالآجل أو جزئي
-                        // يتم احتساب نسبة 2% بدون أي شروط
+                        // النظام الجديد: إذا كان العميل لديه رصيد دائن وليس له سجل مشتريات والبيع بالآجل أو جزئي
+                        // يتم احتساب نسبة 2% من المبلغ المدفوع من الرصيد الدائن
                         // القاعدة: 
-                        // - بالآجل: حساب 2% من المبلغ المدفوع من الرصيد الدائن (أو netTotal إذا لم يتم استخدام الرصيد الدائن)
-                        // - جزئي: حساب 2% من (المبلغ المدفوع من الرصيد الدائن + مبلغ التحصيل الجزئي)
+                        // - المبلغ المدفوع من رصيد العميل (creditUsed) يُضاف إلى amount_added_to_sales لإجمالي المبيعات (صافي)
+                        // - لكن creditUsed لا يُضاف إلى رصيد الخزنة الإجمالي أو التحصيلات
+                        // - سيتم احتساب نسبة 2% من creditUsed تُضاف إلى collections_bonus فقط
+                        // - بالآجل: حساب 2% من المبلغ المدفوع من الرصيد الدائن فقط
+                        // - جزئي: حساب 2% من المبلغ المدفوع من الرصيد الدائن فقط (لعميل ليس له سجل مشتريات)
                         // متغير لتتبع ما إذا تم تطبيق نسبة التحصيلات بالفعل (لمنع الحساب المزدوج)
                         $commissionApplied = false;
                         
-                        if ($hasCreditBalance && ($paymentType === 'credit' || $paymentType === 'partial') && !$commissionApplied) {
+                        // التحقق من أن العميل ليس له سجل مشتريات قبل حساب النسبة
+                        // لعميل له سجل مشتريات: يتم التعامل معه في الكود السابق (السطر 1543)
+                        if ($hasCreditBalance && !($hasPreviousPurchases ?? false) && ($paymentType === 'credit' || $paymentType === 'partial') && !$commissionApplied) {
                             // استخدام قيمة creditUsed التي تم حسابها مسبقاً في السطور 589-622
                             // هذه القيمة صحيحة لأنها تم حسابها بناءً على الرصيد الأصلي قبل التحديث
                             
@@ -1287,24 +1312,19 @@ if (!$error && $_SERVER['REQUEST_METHOD'] === 'POST') {
                                     ));
                                 }
                             } else {
-                                // جزئي: حساب 2% من المبلغ المحصل فعلياً (effectivePaidAmount) + المبلغ المدفوع من الرصيد الدائن (creditUsed)
-                                // القاعدة: عند البيع بالتحصيل الجزئي، تُحسب النسبة على المبلغ المحصل فعلياً فقط
-                                // إذا كان هناك استخدام للرصيد الدائن، يُضاف creditUsed أيضاً
+                                // جزئي لعميل ليس له سجل مشتريات: حساب 2% من المبلغ المدفوع من الرصيد الدائن فقط
+                                // القاعدة: عند البيع بالتحصيل الجزئي لعميل ليس له سجل مشتريات
+                                // - creditUsed يُضاف إلى amount_added_to_sales لإجمالي المبيعات (صافي)
+                                // - لكن creditUsed لا يُضاف إلى رصيد الخزنة الإجمالي أو التحصيلات
+                                // - سيتم احتساب نسبة 2% من creditUsed فقط (وليس من effectivePaidAmount)
                                 // استخدام creditUsed المحسوب مسبقاً (القيمة الصحيحة)
                                 
-                                // حساب المبلغ الأساسي للعمولة: المبلغ المحصل فعلياً + المبلغ المدفوع من الرصيد الدائن (إن وجد)
-                                // لعميل جديد بدون رصيد دائن: commissionBase = effectivePaidAmount فقط
-                                // لعميل لديه رصيد دائن: commissionBase = effectivePaidAmount + creditUsed
-                                if ($creditUsed > 0.0001) {
-                                    // هناك استخدام للرصيد الدائن: نضيف المبلغ المحصل + المبلغ المدفوع من الرصيد الدائن
-                                    $commissionBase = $effectivePaidAmount + $creditUsed;
-                                } else {
-                                    // لا يوجد استخدام للرصيد الدائن: نحسب فقط على المبلغ المحصل فعلياً
-                                    $commissionBase = $effectivePaidAmount;
-                                }
+                                // حساب المبلغ الأساسي للعمولة: فقط creditUsed (لعميل ليس له سجل مشتريات)
+                                // لعميل ليس له سجل مشتريات: commissionBase = creditUsed فقط
+                                $commissionBase = $creditUsed > 0.0001 ? $creditUsed : 0.0;
                                 
                                 error_log(sprintf(
-                                    'Partial payment commission calculation: creditUsed=%.2f, effectivePaidAmount=%.2f, commissionBase=%.2f (effectivePaidAmount + creditUsed if any)',
+                                    'Partial payment commission calculation (no purchase history): creditUsed=%.2f, effectivePaidAmount=%.2f, commissionBase=%.2f (creditUsed only, as customer has no purchase history)',
                                     $creditUsed, $effectivePaidAmount, $commissionBase
                                 ));
                             }
@@ -1384,8 +1404,9 @@ if (!$error && $_SERVER['REQUEST_METHOD'] === 'POST') {
                                                     $paymentType, $creditUsed, $commissionBase, $finalCommissionBase, $creditCommissionAmount, $salaryId
                                                 ));
                                                 
-                                                // ملاحظة هامة: creditUsed لا يُضاف إلى collections_amount أو خزنة المندوب
+                                                // ملاحظة هامة: creditUsed لا يُضاف إلى collections_amount أو رصيد الخزنة الإجمالي
                                                 // لأنه لم يُحصل فعلياً من العميل (تم خصمه من رصيد دائن)
+                                                // لكن creditUsed يُضاف إلى amount_added_to_sales لإجمالي المبيعات (صافي)
                                                 // يتم إضافة 2% فقط من creditUsed إلى collections_bonus كعمولة/مكافأة
                                                 // ولا يتم إضافة creditUsed نفسه إلى collections_amount أو أي إجمالي خزنة
                                                 $db->execute(
@@ -1400,7 +1421,7 @@ if (!$error && $_SERVER['REQUEST_METHOD'] === 'POST') {
                                                 if (function_exists('logAudit')) {
                                                     logAudit(
                                                         $currentUser['id'],
-                                                        'credit_balance_commission_no_conditions',
+                                                        'credit_balance_commission_no_purchase_history',
                                                         'salary',
                                                         $salaryId,
                                                         null,
@@ -1415,7 +1436,8 @@ if (!$error && $_SERVER['REQUEST_METHOD'] === 'POST') {
                                                             'commission_amount' => $creditCommissionAmount,
                                                             'month' => $targetMonth,
                                                             'year' => $targetYear,
-                                                            'note' => 'نسبة تحصيل 2% من المبلغ المدفوع من الرصيد الدائن (لعميل لديه رصيد دائن) - تُضاف إلى collections_bonus فقط (لا تُضاف إلى collections_amount أو خزنة المندوب لأن المبلغ لم يُحصل فعلياً)'
+                                                            'has_previous_purchases' => ($hasPreviousPurchases ?? false) ? 'true' : 'false',
+                                                            'note' => 'نسبة تحصيل 2% من المبلغ المدفوع من الرصيد الدائن (لعميل لديه رصيد دائن وليس له سجل مشتريات) - creditUsed يُضاف إلى amount_added_to_sales لإجمالي المبيعات (صافي) لكن لا يُضاف إلى رصيد الخزنة الإجمالي أو التحصيلات - تُضاف إلى collections_bonus فقط'
                                                         ]
                                                     );
                                                 }
