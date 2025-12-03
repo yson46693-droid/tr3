@@ -369,7 +369,7 @@ $pageTitle = isset($lang['menu_financial']) ? $lang['menu_financial'] : 'خزن�
             <i class="bi bi-check-circle-fill me-2"></i>
             <?php echo htmlspecialchars($financialSuccess, ENT_QUOTES, 'UTF-8'); ?>
         </div>
-        <div class="d-flex align-items-center gap-2" style="background: #def6e8; padding: 6px 12px; border-radius: 7px;">
+        <div class="d-flex align-items-center gap-2" style="background:rgb(8, 47, 163); padding: 6px 12px; border-radius: 7px;">
             <?php if (!empty($_SESSION['last_collection_print_link'])): ?>
                 <a href="<?php echo htmlspecialchars($_SESSION['last_collection_print_link'], ENT_QUOTES, 'UTF-8'); ?>" target="_blank" class="btn btn-sm btn-outline-light">
                     <i class="bi bi-printer me-1"></i>طباعة فاتورة التحصيل
