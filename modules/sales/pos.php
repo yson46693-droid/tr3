@@ -1372,16 +1372,16 @@ if (!$error && $_SERVER['REQUEST_METHOD'] === 'POST') {
                                                     $paymentType, $creditUsed, $commissionBase, $finalCommissionBase, $creditCommissionAmount, $salaryId
                                                 ));
                                                 
-                                                // إضافة المبلغ الأساسي إلى collections_amount والنسبة إلى collections_bonus
-                                                // إضافة النسبة إلى total_amount (لأنها جزء من الراتب الإجمالي)
-                                                // استخدام creditUsed مباشرة (طبق النظام بشكل صارم)
+                                                // ملاحظة هامة: creditUsed لا يُضاف إلى collections_amount أو خزنة المندوب
+                                                // لأنه لم يُحصل فعلياً من العميل (تم خصمه من رصيد دائن)
+                                                // يتم إضافة 2% فقط من creditUsed إلى collections_bonus كعمولة/مكافأة
+                                                // ولا يتم إضافة creditUsed نفسه إلى collections_amount أو أي إجمالي خزنة
                                                 $db->execute(
                                                     "UPDATE salaries SET 
-                                                        collections_amount = COALESCE(collections_amount, 0) + ?,
                                                         collections_bonus = COALESCE(collections_bonus, 0) + ?,
                                                         total_amount = COALESCE(total_amount, 0) + ?
                                                      WHERE id = ?",
-                                                    [$finalCommissionBase, $creditCommissionAmount, $creditCommissionAmount, $salaryId]
+                                                    [$creditCommissionAmount, $creditCommissionAmount, $salaryId]
                                                 );
                                                 
                                                 // تسجيل العملية في السجل
@@ -1400,17 +1400,16 @@ if (!$error && $_SERVER['REQUEST_METHOD'] === 'POST') {
                                                             'credit_used' => $creditUsed,
                                                             'effective_paid_amount' => $effectivePaidAmount,
                                                             'commission_base' => $finalCommissionBase,
-                                                            'collections_amount' => $finalCommissionBase,
                                                             'commission_amount' => $creditCommissionAmount,
                                                             'month' => $targetMonth,
                                                             'year' => $targetYear,
-                                                            'note' => 'نسبة تحصيل 2% من المبلغ المدفوع من الرصيد الدائن (لعميل لديه رصيد دائن - بدون شروط) - تُضاف إلى نسبة التحصيلات'
+                                                            'note' => 'نسبة تحصيل 2% من المبلغ المدفوع من الرصيد الدائن (لعميل لديه رصيد دائن) - تُضاف إلى collections_bonus فقط (لا تُضاف إلى collections_amount أو خزنة المندوب لأن المبلغ لم يُحصل فعلياً)'
                                                         ]
                                                     );
                                                 }
                                                 
                                                 error_log(sprintf(
-                                                    'New credit balance commission applied successfully: salaryId=%d, collectionsAmount=%.2f, commissionAmount=%.2f',
+                                                    'New credit balance commission applied successfully: salaryId=%d, creditUsed=%.2f, commissionAmount=%.2f (NOTE: creditUsed NOT added to collections_amount or cash register)',
                                                     $salaryId,
                                                     $finalCommissionBase,
                                                     $creditCommissionAmount
@@ -1569,16 +1568,16 @@ if (!$error && $_SERVER['REQUEST_METHOD'] === 'POST') {
                                             $hasCollectionsBonusColumn = ensureCollectionsBonusColumn();
                                             
                                             if ($hasCollectionsBonusColumn) {
-                                                // إضافة المبلغ الأساسي إلى collections_amount والنسبة إلى collections_bonus
-                                                // إضافة النسبة إلى total_amount (لأنها جزء من الراتب الإجمالي)
-                                                // لا تُضاف إلى amount_added_to_sales (لأنها لا تُضاف إلى رصيد الخزنة الإجمالي)
+                                                // ملاحظة هامة: creditUsed لا يُضاف إلى collections_amount أو خزنة المندوب
+                                                // لأنه لم يُحصل فعلياً من العميل (تم خصمه من رصيد دائن)
+                                                // يتم إضافة 2% فقط من creditUsed إلى collections_bonus كعمولة/مكافأة
+                                                // ولا يتم إضافة creditUsed نفسه إلى collections_amount أو أي إجمالي خزنة
                                                 $db->execute(
                                                     "UPDATE salaries SET 
-                                                        collections_amount = COALESCE(collections_amount, 0) + ?,
                                                         collections_bonus = COALESCE(collections_bonus, 0) + ?,
                                                         total_amount = COALESCE(total_amount, 0) + ?
                                                      WHERE id = ?",
-                                                    [$creditUsed, $creditCommissionAmount, $creditCommissionAmount, $salaryId]
+                                                    [$creditCommissionAmount, $creditCommissionAmount, $salaryId]
                                                 );
                                                 
                                                 // تسجيل العملية في السجل
@@ -1594,19 +1593,18 @@ if (!$error && $_SERVER['REQUEST_METHOD'] === 'POST') {
                                                             'invoice_number' => $invoiceNumber ?? '',
                                                             'customer_id' => $customerId,
                                                             'credit_used' => $creditUsed,
-                                                            'collections_amount' => $creditUsed,
                                                             'commission_amount' => $creditCommissionAmount,
                                                             'month' => $targetMonth,
                                                             'year' => $targetYear,
                                                             'has_credit_balance' => $hasCreditBalance,
                                                             'has_returns_record' => $hasReturnsRecord,
-                                                            'note' => 'نسبة تحصيل 2% من خصم الرصيد الدائن (لعميل لديه رصيد دائن وسجل مرتجعات) - تُضاف إلى نسبة التحصيلات فقط'
+                                                            'note' => 'نسبة تحصيل 2% من خصم الرصيد الدائن (لعميل لديه رصيد دائن وسجل مرتجعات) - تُضاف إلى collections_bonus فقط (لا تُضاف إلى collections_amount أو خزنة المندوب لأن المبلغ لم يُحصل فعلياً)'
                                                         ]
                                                     );
                                                 }
                                                 
                                                 error_log(sprintf(
-                                                    'Credit balance collections commission applied successfully: salaryId=%d, collectionsAmount=%.2f, commissionAmount=%.2f',
+                                                    'Credit balance collections commission applied successfully: salaryId=%d, creditUsed=%.2f, commissionAmount=%.2f (NOTE: creditUsed NOT added to collections_amount or cash register)',
                                                     $salaryId,
                                                     $creditUsed,
                                                     $creditCommissionAmount
@@ -1680,15 +1678,16 @@ if (!$error && $_SERVER['REQUEST_METHOD'] === 'POST') {
                                             $hasCollectionsBonusColumn = ensureCollectionsBonusColumn();
                                             
                                             if ($hasCollectionsBonusColumn) {
-                                                // إضافة المبلغ الأساسي إلى collections_amount والنسبة إلى collections_bonus
-                                                // إضافة النسبة إلى total_amount (لأنها جزء من الراتب الإجمالي)
+                                                // ملاحظة هامة: creditUsed لا يُضاف إلى collections_amount أو خزنة المندوب
+                                                // لأنه لم يُحصل فعلياً من العميل (تم خصمه من رصيد دائن)
+                                                // يتم إضافة 2% فقط من creditUsed إلى collections_bonus كعمولة/مكافأة
+                                                // ولا يتم إضافة creditUsed نفسه إلى collections_amount أو أي إجمالي خزنة
                                                 $db->execute(
                                                     "UPDATE salaries SET 
-                                                        collections_amount = COALESCE(collections_amount, 0) + ?,
                                                         collections_bonus = COALESCE(collections_bonus, 0) + ?,
                                                         total_amount = COALESCE(total_amount, 0) + ?
                                                      WHERE id = ?",
-                                                    [$creditUsed, $creditCommissionAmount, $creditCommissionAmount, $salaryId]
+                                                    [$creditCommissionAmount, $creditCommissionAmount, $salaryId]
                                                 );
                                                 
                                                 // تسجيل العملية في السجل
@@ -1704,18 +1703,17 @@ if (!$error && $_SERVER['REQUEST_METHOD'] === 'POST') {
                                                             'invoice_number' => $invoiceNumber ?? '',
                                                             'customer_id' => $customerId,
                                                             'credit_used' => $creditUsed,
-                                                            'collections_amount' => $creditUsed,
                                                             'commission_amount' => $creditCommissionAmount,
                                                             'month' => $targetMonth,
                                                             'year' => $targetYear,
                                                             'customer_in_returns' => $customerInReturns,
-                                                            'note' => 'نسبة تحصيل 2% من المبلغ المدفوع من الرصيد الدائن (لعميل موجود في جدول returns) - تُضاف إلى نسبة التحصيلات'
+                                                            'note' => 'نسبة تحصيل 2% من المبلغ المدفوع من الرصيد الدائن (لعميل موجود في جدول returns) - تُضاف إلى collections_bonus فقط (لا تُضاف إلى collections_amount أو خزنة المندوب لأن المبلغ لم يُحصل فعلياً)'
                                                         ]
                                                     );
                                                 }
                                                 
                                                 error_log(sprintf(
-                                                    'Returns table collections commission applied successfully: salaryId=%d, collectionsAmount=%.2f, commissionAmount=%.2f',
+                                                    'Returns table collections commission applied successfully: salaryId=%d, creditUsed=%.2f, commissionAmount=%.2f (NOTE: creditUsed NOT added to collections_amount or cash register)',
                                                     $salaryId,
                                                     $creditUsed,
                                                     $creditCommissionAmount
