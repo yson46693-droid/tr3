@@ -124,7 +124,12 @@ if (isset($_GET['ajax']) && $_GET['ajax'] === 'get_sales_rep_balance') {
         $errorTrace = $e->getTraceAsString();
         error_log('Error getting sales rep balance [ID: ' . $salesRepId . ']: ' . $errorMessage . ' | File: ' . $e->getFile() . ' | Line: ' . $e->getLine() . ' | Trace: ' . $errorTrace);
         $response['message'] = 'حدث خطأ أثناء جلب رصيد المندوب. يرجى المحاولة مرة أخرى.';
-        $response['debug_error'] = $errorMessage; // للإصلاح فقط - احذف هذا لاحقاً
+        // إضافة تفاصيل الخطأ للتصحيح (احذف هذا بعد الإصلاح)
+        if (defined('DEBUG_MODE') && DEBUG_MODE) {
+            $response['debug_error'] = $errorMessage;
+            $response['debug_file'] = $e->getFile();
+            $response['debug_line'] = $e->getLine();
+        }
     }
     
     // تنظيف output buffer وإرسال JSON
