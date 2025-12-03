@@ -944,13 +944,32 @@ function createOrUpdateSalary($userId, $month, $year, $bonus = 0, $deductions = 
         $hasDeductedAdvances = false;
         $currentTotalAmount = 0.00;
         $currentDeductions = 0.00;
+        $existingCollectionsBonus = 0;
+        $existingCollectionsAmount = 0;
+        $existingCollectionsAmount = 0;
         
         if ($hasAccumulatedColumn) {
-            $currentSalary = $db->queryOne("SELECT accumulated_amount, total_amount, advances_deduction, deductions FROM salaries WHERE id = ?", [$existingSalary['id']]);
+            // قراءة جميع البيانات الحالية بما في ذلك collections_bonus للمحافظة على المكافآت الفورية
+            $currentSalaryQuery = "SELECT accumulated_amount, total_amount, advances_deduction, deductions";
+            if ($hasCollectionsBonusColumn) {
+                $currentSalaryQuery .= ", collections_bonus, collections_amount";
+            }
+            $currentSalaryQuery .= " FROM salaries WHERE id = ?";
+            $currentSalary = $db->queryOne($currentSalaryQuery, [$existingSalary['id']]);
             $currentAccumulated = floatval($currentSalary['accumulated_amount'] ?? 0);
             $currentTotalAmount = floatval($currentSalary['total_amount'] ?? 0);
             $currentAdvancesDeduction = floatval($currentSalary['advances_deduction'] ?? 0);
             $currentDeductions = floatval($currentSalary['deductions'] ?? 0);
+            
+            // قراءة collections_bonus الحالي للمحافظة على المكافآت الفورية
+            $existingCollectionsBonus = 0;
+            if ($hasCollectionsBonusColumn) {
+                $existingCollectionsBonus = floatval($currentSalary['collections_bonus'] ?? 0);
+                // استخدام القيمة الأكبر بين الحالية والمحسوبة عند حساب total_bonus
+                $collectionsBonusCalc = max($existingCollectionsBonus, round($collectionsBonusCalc, 2));
+                $calculation['collections_bonus'] = $collectionsBonusCalc;
+                $calculation['total_bonus'] = $calculation['bonus'] + $collectionsBonusCalc;
+            }
             
             // التحقق من وجود سلفات مخصومة بالفعل
             if ($currentAdvancesDeduction > 0) {
@@ -978,10 +997,25 @@ function createOrUpdateSalary($userId, $month, $year, $bonus = 0, $deductions = 
             }
         } else {
             // إذا لم يكن هناك عمود accumulated_amount، احصل على total_amount الحالي والخصومات
-            $currentSalary = $db->queryOne("SELECT total_amount, advances_deduction, deductions FROM salaries WHERE id = ?", [$existingSalary['id']]);
+            // قراءة جميع البيانات الحالية بما في ذلك collections_bonus للمحافظة على المكافآت الفورية
+            $currentSalaryQuery = "SELECT total_amount, advances_deduction, deductions";
+            if ($hasCollectionsBonusColumn) {
+                $currentSalaryQuery .= ", collections_bonus, collections_amount";
+            }
+            $currentSalaryQuery .= " FROM salaries WHERE id = ?";
+            $currentSalary = $db->queryOne($currentSalaryQuery, [$existingSalary['id']]);
             $currentTotalAmount = floatval($currentSalary['total_amount'] ?? 0);
             $currentAdvancesDeduction = floatval($currentSalary['advances_deduction'] ?? 0);
             $currentDeductions = floatval($currentSalary['deductions'] ?? 0);
+            
+            // قراءة collections_bonus الحالي للمحافظة على المكافآت الفورية
+            if ($hasCollectionsBonusColumn) {
+                $existingCollectionsBonus = floatval($currentSalary['collections_bonus'] ?? 0);
+                // استخدام القيمة الأكبر بين الحالية والمحسوبة عند حساب total_bonus
+                $collectionsBonusCalc = max($existingCollectionsBonus, round($collectionsBonusCalc, 2));
+                $calculation['collections_bonus'] = $collectionsBonusCalc;
+                $calculation['total_bonus'] = $calculation['bonus'] + $collectionsBonusCalc;
+            }
             
             // التحقق من وجود سلفات مخصومة بالفعل
             if ($currentAdvancesDeduction > 0) {
@@ -1189,10 +1223,43 @@ function createOrUpdateSalary($userId, $month, $year, $bonus = 0, $deductions = 
         
         if ($hasCollectionsBonusColumn) {
             try {
-                $db->execute(
-                    "UPDATE salaries SET collections_bonus = ?, collections_amount = ? WHERE id = ?",
-                    [round($collectionsBonusCalc, 2), round($collectionsAmountCalc, 2), $existingSalary['id']]
-                );
+                // قراءة collections_bonus الحالي (إذا لم يكن قد تم قراءته بالفعل)
+                if (!isset($existingCollectionsBonus)) {
+                    $currentSalaryBonus = $db->queryOne(
+                        "SELECT collections_bonus, collections_amount FROM salaries WHERE id = ?", 
+                        [$existingSalary['id']]
+                    );
+                    $existingCollectionsBonus = floatval($currentSalaryBonus['collections_bonus'] ?? 0);
+                    $existingCollectionsAmount = floatval($currentSalaryBonus['collections_amount'] ?? 0);
+                }
+                
+                // استخدام القيمة الأكبر بين:
+                // 1. القيمة الحالية المحفوظة (تتضمن المكافآت الفورية من applyCollectionInstantReward)
+                // 2. القيمة المحسوبة من collections (2%)
+                // هذا يضمن عدم محو المكافآت الفورية المضافة
+                $finalCollectionsBonus = max($existingCollectionsBonus, round($collectionsBonusCalc, 2));
+                $finalCollectionsAmount = max($existingCollectionsAmount, round($collectionsAmountCalc, 2));
+                
+                // تحديث فقط إذا كانت القيمة مختلفة
+                if (abs($finalCollectionsBonus - $existingCollectionsBonus) > 0.01 || 
+                    abs($finalCollectionsAmount - $existingCollectionsAmount) > 0.01) {
+                    // حساب الفرق في collections_bonus لتحديث total_amount
+                    $collectionsBonusDiff = $finalCollectionsBonus - $existingCollectionsBonus;
+                    
+                    // تحديث collections_bonus و collections_amount
+                    $db->execute(
+                        "UPDATE salaries SET collections_bonus = ?, collections_amount = ? WHERE id = ?",
+                        [$finalCollectionsBonus, $finalCollectionsAmount, $existingSalary['id']]
+                    );
+                    
+                    // تحديث total_amount ليعكس الفرق في collections_bonus
+                    if (abs($collectionsBonusDiff) > 0.01) {
+                        $db->execute(
+                            "UPDATE salaries SET total_amount = COALESCE(total_amount, 0) + ? WHERE id = ?",
+                            [$collectionsBonusDiff, $existingSalary['id']]
+                        );
+                    }
+                }
             } catch (Throwable $collectionsBonusError) {
                 error_log('Failed to update collections bonus columns (existing salary): ' . $collectionsBonusError->getMessage());
             }
