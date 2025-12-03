@@ -129,6 +129,9 @@ $dueAmount       = isset($invoiceData['remaining_amount']) && $invoiceData['rema
     ? (float)$invoiceData['remaining_amount'] 
     : max(0, $total - $paidAmount);
 $creditUsed      = (float)($invoiceData['credit_used'] ?? 0);
+$paidFromCredit  = isset($invoiceData['paid_from_credit']) ? (int)$invoiceData['paid_from_credit'] : 0;
+// التحقق من كون الفاتورة مدفوعة من رصيد العميل
+$isPaidFromCredit = ($paidFromCredit == 1) || ($creditUsed > 0.01);
 $notes           = trim((string)($invoiceData['notes'] ?? ''));
 
 $currencyLabel   = CURRENCY . ' ' . CURRENCY_SYMBOL;
@@ -390,9 +393,11 @@ $returnTypeLabel = $isReturnDocument ? ($returnTypeLabels[$returnMetadata['retur
                     </div>
                     <?php 
                     // إخفاء حقل "المدفوع" إذا كان البيع بالآجل (credit) في نقطة بيع المندوب
+                    // أو إذا كانت الفاتورة مدفوعة من رصيد العميل
                     $paymentType = isset($invoiceMeta) && is_array($invoiceMeta) ? ($invoiceMeta['payment_type'] ?? null) : null;
                     $isCreditSale = ($paymentType === 'credit');
-                    if (!$isCreditSale): ?>
+                    // إخفاء "المدفوع" إذا كان البيع بالآجل أو إذا كانت الفاتورة مدفوعة من رصيد العميل
+                    if (!$isCreditSale && !$isPaidFromCredit): ?>
                         <div class="summary-row">
                             <span>المدفوع</span>
                             <strong class="text-success"><?php echo formatCurrency($paidAmount); ?></strong>
