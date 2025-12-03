@@ -369,7 +369,7 @@ $pageTitle = isset($lang['menu_financial']) ? $lang['menu_financial'] : 'خزن�
             <i class="bi bi-check-circle-fill me-2"></i>
             <?php echo htmlspecialchars($financialSuccess, ENT_QUOTES, 'UTF-8'); ?>
         </div>
-        <div class="d-flex align-items-center gap-2">
+        <div class="d-flex align-items-center gap-2" style="background: #def6e8; padding: 6px 12px; border-radius: 7px;">
             <?php if (!empty($_SESSION['last_collection_print_link'])): ?>
                 <a href="<?php echo htmlspecialchars($_SESSION['last_collection_print_link'], ENT_QUOTES, 'UTF-8'); ?>" target="_blank" class="btn btn-sm btn-outline-light">
                     <i class="bi bi-printer me-1"></i>طباعة فاتورة التحصيل
@@ -610,6 +610,7 @@ $typeColorMap = [
                     created_by, 
                     approved_by,
                     created_at,
+                    NULL as transaction_type,
                     'financial_transactions' as source_table
                 FROM financial_transactions
                 UNION ALL
@@ -630,6 +631,7 @@ $typeColorMap = [
                     created_by, 
                     approved_by,
                     created_at,
+                    transaction_type,
                     'accountant_transactions' as source_table
                 FROM accountant_transactions
             ) as combined
@@ -672,12 +674,13 @@ $typeColorMap = [
                         <th>الحالة</th>
                         <th>أنشأه</th>
                         <th>اعتمده</th>
+                        <th>إجراءات</th>
                     </tr>
                 </thead>
                 <tbody>
                     <?php if (empty($financialTransactions)): ?>
                         <tr>
-                            <td colspan="8" class="text-center text-muted py-4">
+                            <td colspan="9" class="text-center text-muted py-4">
                                 <i class="bi bi-inbox me-2"></i>لا توجد حركات مالية حالياً
                             </td>
                         </tr>
@@ -711,6 +714,29 @@ $typeColorMap = [
                                     </span>
                                 </td>
                                 <td><?php echo htmlspecialchars($trans['created_by_name'] ?? '-', ENT_QUOTES, 'UTF-8'); ?></td>
+                                <td>
+                                    <?php 
+                                    // عرض زر الطباعة فقط للحركات من نوع إيراد (income) من accountant_transactions
+                                    // مع transaction_type = 'collection_from_sales_rep'
+                                    $isCollectionFromSalesRep = (
+                                        ($trans['source_table'] ?? '') === 'accountant_transactions' && 
+                                        ($trans['type'] ?? '') === 'income' &&
+                                        ($trans['transaction_type'] ?? '') === 'collection_from_sales_rep'
+                                    );
+                                    
+                                    if ($isCollectionFromSalesRep):
+                                        $printUrl = getRelativeUrl('print_collection_receipt.php?id=' . $trans['id']);
+                                    ?>
+                                        <a href="<?php echo htmlspecialchars($printUrl, ENT_QUOTES, 'UTF-8'); ?>" 
+                                           target="_blank" 
+                                           class="btn btn-sm btn-outline-primary" 
+                                           title="طباعة فاتورة التحصيل">
+                                            <i class="bi bi-printer"></i>
+                                        </a>
+                                    <?php else: ?>
+                                        <span class="text-muted small">-</span>
+                                    <?php endif; ?>
+                                </td>
                                 <td><?php echo htmlspecialchars($trans['approved_by_name'] ?? '-', ENT_QUOTES, 'UTF-8'); ?></td>
                             </tr>
                         <?php endforeach; ?>
