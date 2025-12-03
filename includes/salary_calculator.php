@@ -292,17 +292,42 @@ function calculateSalesCollections($userId, $month, $year) {
                 $fullPaymentSalesSql .= ")";
                 $fullPaymentSales = $db->queryOne($fullPaymentSalesSql, [$userId, $month, $year, $month, $year]);
             } else {
-                // إذا لم يكن هناك عمود invoice_id، نستخدم notes للبحث عن رقم الفاتورة
-                $fullPaymentSalesSql .= " AND NOT EXISTS (
-                    SELECT 1 FROM collections c
-                    WHERE c.notes LIKE CONCAT('%فاتورة ', inv.invoice_number, '%')
-                    AND MONTH(c.date) = ?
-                    AND YEAR(c.date) = ?";
-                if ($hasStatusColumn) {
-                    $fullPaymentSalesSql .= " AND c.status IN ('pending', 'approved')";
+                // إذا لم يكن هناك عمود invoice_id، استبعاد الفواتير التي أصبحت paid في نفس الشهر
+                // إذا كان للعميل تحصيلات في نفس الشهر (لتجنب العد المزدوج)
+                // هذه الفواتير تُحسب فقط في الحالة 2 أو 3 على المبلغ المحصل
+                // التحقق من وجود عمود updated_at في invoices
+                $hasUpdatedAtColumn = !empty($db->queryOne("SHOW COLUMNS FROM invoices LIKE 'updated_at'"));
+                
+                if ($hasUpdatedAtColumn) {
+                    // استبعاد الفواتير التي أصبحت paid في نفس الشهر إذا كان للعميل تحصيلات في نفس الشهر
+                    $fullPaymentSalesSql .= " AND NOT (
+                        EXISTS (
+                            SELECT 1 FROM collections c
+                            WHERE c.customer_id = inv.customer_id
+                            AND MONTH(c.date) = ?
+                            AND YEAR(c.date) = ?";
+                    if ($hasStatusColumn) {
+                        $fullPaymentSalesSql .= " AND c.status IN ('pending', 'approved')";
+                    }
+                    $fullPaymentSalesSql .= "
+                        )
+                        AND MONTH(inv.updated_at) = ?
+                        AND YEAR(inv.updated_at) = ?
+                    )";
+                    $fullPaymentSales = $db->queryOne($fullPaymentSalesSql, [$userId, $month, $year, $month, $year, $month, $year]);
+                } else {
+                    // إذا لم يكن هناك عمود updated_at، نستخدم notes للبحث عن رقم الفاتورة
+                    $fullPaymentSalesSql .= " AND NOT EXISTS (
+                        SELECT 1 FROM collections c
+                        WHERE c.notes LIKE CONCAT('%فاتورة ', inv.invoice_number, '%')
+                        AND MONTH(c.date) = ?
+                        AND YEAR(c.date) = ?";
+                    if ($hasStatusColumn) {
+                        $fullPaymentSalesSql .= " AND c.status IN ('pending', 'approved')";
+                    }
+                    $fullPaymentSalesSql .= ")";
+                    $fullPaymentSales = $db->queryOne($fullPaymentSalesSql, [$userId, $month, $year, $month, $year]);
                 }
-                $fullPaymentSalesSql .= ")";
-                $fullPaymentSales = $db->queryOne($fullPaymentSalesSql, [$userId, $month, $year, $month, $year]);
             }
         } else {
             $fullPaymentSales = $db->queryOne($fullPaymentSalesSql, [$userId, $month, $year]);

@@ -1450,8 +1450,9 @@ function getApproval($approvalId) {
  * حساب رصيد خزنة المندوب
  */
 function calculateSalesRepCashBalance($salesRepId) {
-    $db = db();
-    $cashBalance = 0.0;
+    try {
+        $db = db();
+        $cashBalance = 0.0;
 
     $invoicesExists = $db->queryOne("SHOW TABLES LIKE 'invoices'");
     $collectionsExists = $db->queryOne("SHOW TABLES LIKE 'collections'");
@@ -1607,6 +1608,14 @@ function calculateSalesRepCashBalance($salesRepId) {
                              SELECT 1 FROM collections c 
                              WHERE c.notes LIKE CONCAT('%فاتورة ', i.invoice_number, '%')
                              AND c.collected_by = ?
+                         )
+                         AND NOT EXISTS (
+                             SELECT 1 FROM collections c
+                             WHERE c.customer_id = i.customer_id
+                             AND c.collected_by = ?
+                             AND c.date >= i.date" . 
+                             ($hasInvoiceIdColumn ? " AND (c.invoice_id IS NULL OR c.invoice_id != i.id)" : "") . "
+                             AND (c.notes IS NULL OR c.notes NOT LIKE CONCAT('%فاتورة ', i.invoice_number, '%'))
                          )";
                     } elseif ($hasPaidFromCreditColumn) {
                         // عند استخدام الرصيد الدائن: استخدام amount_added_to_sales فقط
@@ -1807,6 +1816,11 @@ function calculateSalesRepCashBalance($salesRepId) {
     }
 
     return $totalCollections + $fullyPaidSales + $totalCashAdditions - $collectedFromRep;
+    } catch (Throwable $e) {
+        error_log('Error in calculateSalesRepCashBalance [ID: ' . $salesRepId . ']: ' . $e->getMessage() . ' | File: ' . $e->getFile() . ' | Line: ' . $e->getLine());
+        // في حالة الخطأ، نعيد 0 بدلاً من رمي استثناء
+        return 0.0;
+    }
 }
 
 /**

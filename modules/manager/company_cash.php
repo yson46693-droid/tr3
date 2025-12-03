@@ -97,6 +97,11 @@ if (isset($_GET['ajax']) && $_GET['ajax'] === 'get_sales_rep_balance') {
         if ($salesRepId <= 0) {
             $response['message'] = 'معرف المندوب غير صحيح';
         } else {
+            // التأكد من تحميل الدالة
+            if (!function_exists('calculateSalesRepCashBalance')) {
+                require_once __DIR__ . '/../../includes/approval_system.php';
+            }
+            
             $balance = calculateSalesRepCashBalance($salesRepId);
             
             $salesRep = $db->queryOne(
@@ -115,8 +120,11 @@ if (isset($_GET['ajax']) && $_GET['ajax'] === 'get_sales_rep_balance') {
             }
         }
     } catch (Throwable $e) {
-        error_log('Error getting sales rep balance [ID: ' . $salesRepId . ']: ' . $e->getMessage() . ' | Trace: ' . $e->getTraceAsString());
+        $errorMessage = $e->getMessage();
+        $errorTrace = $e->getTraceAsString();
+        error_log('Error getting sales rep balance [ID: ' . $salesRepId . ']: ' . $errorMessage . ' | File: ' . $e->getFile() . ' | Line: ' . $e->getLine() . ' | Trace: ' . $errorTrace);
         $response['message'] = 'حدث خطأ أثناء جلب رصيد المندوب. يرجى المحاولة مرة أخرى.';
+        $response['debug'] = 'Error: ' . $errorMessage; // للإصلاح فقط - احذف هذا لاحقاً
     }
     
     // تنظيف output buffer وإرسال JSON
