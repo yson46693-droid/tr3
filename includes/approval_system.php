@@ -1585,7 +1585,7 @@ function calculateSalesRepCashBalance($salesRepId) {
                              AND (c.notes IS NULL OR c.notes NOT LIKE CONCAT('%فاتورة ', i.invoice_number, '%'))
                          )";
                     }
-                    $fullyPaidResult = $db->queryOne($fullyPaidSql, [$salesRepId, $salesRepId, $salesRepId, $salesRepId]);
+                    $fullyPaidResult = $db->queryOne($fullyPaidSql, [$salesRepId, $salesRepId, $salesRepId]);
                 } else {
                     // إذا لم يكن هناك عمود invoice_id، نستخدم notes للبحث عن رقم الفاتورة
                     if ($hasPaidFromCreditColumn && $hasCreditUsedColumn) {
@@ -1674,7 +1674,7 @@ function calculateSalesRepCashBalance($salesRepId) {
                              AND (c.notes IS NULL OR c.notes NOT LIKE CONCAT('%فاتورة ', i.invoice_number, '%'))
                          )";
                     }
-                    $fullyPaidResult = $db->queryOne($fullyPaidSql, [$salesRepId, $salesRepId, $salesRepId, $salesRepId]);
+                    $fullyPaidResult = $db->queryOne($fullyPaidSql, [$salesRepId, $salesRepId, $salesRepId]);
                 }
             } else {
                 // إذا لم يكن العمود موجوداً، نستخدم total_amount (للتوافق مع الإصدارات القديمة)
@@ -1698,7 +1698,7 @@ function calculateSalesRepCashBalance($salesRepId) {
                          ($hasInvoiceIdColumn ? " AND (c.invoice_id IS NULL OR c.invoice_id != i.id)" : "") . "
                          AND (c.notes IS NULL OR c.notes NOT LIKE CONCAT('%فاتورة ', i.invoice_number, '%'))
                      )";
-                    $fullyPaidResult = $db->queryOne($fullyPaidSql, [$salesRepId, $salesRepId, $salesRepId, $salesRepId]);
+                    $fullyPaidResult = $db->queryOne($fullyPaidSql, [$salesRepId, $salesRepId, $salesRepId]);
                 } else {
                     $fullyPaidSql = "SELECT COALESCE(SUM(total_amount), 0) as fully_paid
                      FROM invoices i
@@ -1719,7 +1719,7 @@ function calculateSalesRepCashBalance($salesRepId) {
                          ($hasInvoiceIdColumn ? " AND (c.invoice_id IS NULL OR c.invoice_id != i.id)" : "") . "
                          AND (c.notes IS NULL OR c.notes NOT LIKE CONCAT('%فاتورة ', i.invoice_number, '%'))
                      )";
-                    $fullyPaidResult = $db->queryOne($fullyPaidSql, [$salesRepId, $salesRepId, $salesRepId, $salesRepId]);
+                    $fullyPaidResult = $db->queryOne($fullyPaidSql, [$salesRepId, $salesRepId, $salesRepId]);
                 }
             }
         } else {
@@ -1817,9 +1817,10 @@ function calculateSalesRepCashBalance($salesRepId) {
 
     return $totalCollections + $fullyPaidSales + $totalCashAdditions - $collectedFromRep;
     } catch (Throwable $e) {
-        error_log('Error in calculateSalesRepCashBalance [ID: ' . $salesRepId . ']: ' . $e->getMessage() . ' | File: ' . $e->getFile() . ' | Line: ' . $e->getLine());
+        error_log('Error in calculateSalesRepCashBalance [ID: ' . $salesRepId . ']: ' . $e->getMessage() . ' | File: ' . $e->getFile() . ' | Line: ' . $e->getLine() . ' | Trace: ' . $e->getTraceAsString());
         // في حالة الخطأ، نعيد 0 بدلاً من رمي استثناء
-        return 0.0;
+        // لكن دعنا نرمي الاستثناء مرة أخرى حتى نرى الخطأ الفعلي
+        throw $e;
     }
 }
 

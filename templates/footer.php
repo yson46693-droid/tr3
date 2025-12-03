@@ -323,8 +323,17 @@ if (!defined('ACCESS_ALLOWED')) {
                         let displayVersion = storedDisplay || serverVersion || 'جديد';
 
                         if (storedHash && storedHash !== currentHash) {
-                            displayVersion = serverVersion || 'جديد';
-                            showUpdateAvailableNotification(displayVersion);
+                            // التحقق من عدم إظهار نفس الإشعار مؤخراً (خلال آخر ساعتين)
+                            const lastNotificationKey = 'last_update_notification_' + currentHash;
+                            const lastNotification = localStorage.getItem(lastNotificationKey);
+                            const now = Date.now();
+                            const twoHours = 2 * 60 * 60 * 1000; // ساعتين
+                            
+                            if (!lastNotification || (now - parseInt(lastNotification)) > twoHours) {
+                                displayVersion = serverVersion || 'جديد';
+                                showUpdateAvailableNotification(displayVersion);
+                                localStorage.setItem(lastNotificationKey, now.toString());
+                            }
                         }
 
                         localStorage.setItem(STORAGE_KEY, currentHash);

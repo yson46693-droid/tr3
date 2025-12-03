@@ -922,38 +922,48 @@ if (ob_get_level() > 0) {
                         //     });
                         // }, 5 * 60 * 1000); // 5 دقائق
                         
-                        // الاستماع للتحديثات
+                        // الاستماع للتحديثات - مع آلية لمنع التكرار
+                        const lastSWUpdateKey = 'last_sw_update_notification';
+                        let updateNotificationShown = false;
+                        
                         reg.addEventListener('updatefound', function() {
                             const newWorker = reg.installing;
                             
                             newWorker.addEventListener('statechange', function() {
                                 if (newWorker.state === 'installed') {
                                     if (navigator.serviceWorker.controller) {
-                                        // هناك إصدار جديد متاح
-                                        showUpdateNotification();
+                                        // التحقق من عدم إظهار نفس الإشعار مؤخراً (خلال آخر ساعتين)
+                                        const lastNotification = localStorage.getItem(lastSWUpdateKey);
+                                        const now = Date.now();
+                                        const twoHours = 2 * 60 * 60 * 1000; // ساعتين
+                                        
+                                        if (!lastNotification || (now - parseInt(lastNotification)) > twoHours) {
+                                            showUpdateNotification();
+                                            localStorage.setItem(lastSWUpdateKey, now.toString());
+                                            updateNotificationShown = true;
+                                        }
                                     } else {
                                         // أول تثبيت
                                         console.log('Service Worker installed for the first time');
                                     }
                                 }
                                 
+                                // لا نعرض إشعار عند activated لتجنب التكرار
                                 if (newWorker.state === 'activated') {
-                                    // تحديث تم تفعيله - لا نعيد التحميل تلقائياً
                                     console.log('Service Worker activated');
-                                    // إظهار إشعار للمستخدم بدلاً من إعادة التحميل التلقائية
-                                    showUpdateNotification();
+                                    // تم تفعيل التحديث - لا حاجة لإشعار إضافي
                                 }
                             });
                         });
                         
-                        // الاستماع للرسائل من Service Worker
-                        navigator.serviceWorker.addEventListener('message', function(event) {
-                            if (event.data && event.data.type === 'SW_ACTIVATED') {
-                                console.log('New Service Worker activated, cache:', event.data.cacheName);
-                                // إظهار إشعار بدلاً من إعادة التحميل التلقائية
-                                showUpdateNotification();
-                            }
-                        });
+                        // الاستماع للرسائل من Service Worker (معطل لتجنب التكرار)
+                        // تم تعطيله لأن الإشعارات يتم التعامل معها في updatefound event فقط
+                        // navigator.serviceWorker.addEventListener('message', function(event) {
+                        //     if (event.data && event.data.type === 'SW_ACTIVATED') {
+                        //         console.log('New Service Worker activated, cache:', event.data.cacheName);
+                        //         // لا نعرض إشعار هنا لتجنب التكرار
+                        //     }
+                        // });
                     })
                     .catch(function(error) {
                         if (error.message && error.message.includes('CORS')) {
@@ -966,8 +976,14 @@ if (ob_get_level() > 0) {
             
             // دالة لإظهار إشعار التحديث
             function showUpdateNotification() {
+                // التحقق من عدم وجود إشعار موجود بالفعل
+                if (document.querySelector('.alert-info[data-sw-update="true"]')) {
+                    return;
+                }
+                
                 // إنشاء عنصر إشعار
                 const notification = document.createElement('div');
+                notification.setAttribute('data-sw-update', 'true');
                 notification.className = 'alert alert-info alert-dismissible fade show position-fixed top-0 start-50 translate-middle-x mt-3';
                 notification.style.zIndex = '9999';
                 notification.style.maxWidth = '500px';
@@ -979,7 +995,7 @@ if (ob_get_level() > 0) {
                         <button type="button" class="btn btn-sm btn-primary ms-auto me-2" onclick="updateNow()">
                             تحديث الآن
                         </button>
-                        <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
+                        <button type="button" class="btn-close" data-bs-dismiss="alert" onclick="dismissSWUpdate()"></button>
                     </div>
                 `;
                 document.body.appendChild(notification);
@@ -990,6 +1006,15 @@ if (ob_get_level() > 0) {
                         registration.waiting.postMessage({ type: 'SKIP_WAITING' });
                     }
                     notification.remove();
+                };
+                
+                // دالة لإغلاق الإشعار
+                window.dismissSWUpdate = function() {
+                    const notif = document.querySelector('.alert-info[data-sw-update="true"]');
+                    if (notif) {
+                        notif.classList.remove('show');
+                        setTimeout(() => notif.remove(), 300);
+                    }
                 };
                 
                 // إزالة الإشعار بعد 30 ثانية

@@ -299,7 +299,10 @@ function calculateSalesCollections($userId, $month, $year) {
                 $hasUpdatedAtColumn = !empty($db->queryOne("SHOW COLUMNS FROM invoices LIKE 'updated_at'"));
                 
                 if ($hasUpdatedAtColumn) {
-                    // استبعاد الفواتير التي أصبحت paid في نفس الشهر إذا كان للعميل تحصيلات في نفس الشهر
+                    // استبعاد الفواتير التي أصبحت paid بعد التحديث (ليست عند الإنشاء)
+                    // إذا كان للعميل تحصيلات في نفس الشهر (لتجنب العد المزدوج)
+                    // هذه الفواتير تُحسب فقط في الحالة 2 أو 3 على المبلغ المحصل
+                    // استبعاد فقط الفواتير التي تم تحديثها بعد الإنشاء لتكون paid
                     $fullPaymentSalesSql .= " AND NOT (
                         EXISTS (
                             SELECT 1 FROM collections c
@@ -313,6 +316,10 @@ function calculateSalesCollections($userId, $month, $year) {
                         )
                         AND MONTH(inv.updated_at) = ?
                         AND YEAR(inv.updated_at) = ?
+                        AND (
+                            DATE(inv.updated_at) > DATE(inv.date)
+                            OR TIMESTAMPDIFF(HOUR, inv.date, inv.updated_at) > 1
+                        )
                     )";
                     $fullPaymentSales = $db->queryOne($fullPaymentSalesSql, [$userId, $month, $year, $month, $year, $month, $year]);
                 } else {
