@@ -1894,10 +1894,18 @@ if (isset($_GET['ajax']) && $_GET['ajax'] == '1' && $salaryId > 0) {
         
         // حساب الراتب الإجمالي الصحيح دائماً من المكونات (مطابق لبطاقة الموظف)
         // الراتب الإجمالي = الراتب الأساسي + المكافآت + نسبة التحصيلات - الخصومات
+        // ملاحظة: يجب دائماً إعادة حساب الراتب الإجمالي من المكونات لضمان الدقة
+        // وعدم الاعتماد على القيمة المحفوظة في قاعدة البيانات (قد تكون خاطئة)
         $totalAmount = $baseAmount + $bonus + $collectionsBonus - $deductions;
         
         // التأكد من أن الراتب الإجمالي لا يكون سالباً
         $totalAmount = max(0, $totalAmount);
+        
+        // تسجيل معلومات التشخيص للتأكد من الحساب الصحيح
+        error_log(sprintf(
+            'Salary card calculation: userId=%d, baseAmount=%.2f, bonus=%.2f, collectionsBonus=%.2f, deductions=%.2f, totalAmount=%.2f',
+            $userId, $baseAmount, $bonus, $collectionsBonus, $deductions, $totalAmount
+        ));
         
         // حساب بيانات التأخير (مطابق لبطاقة الموظف)
         $delaySummary = calculateMonthlyDelaySummary($userId, $salaryMonth, $salaryYear);
