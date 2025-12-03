@@ -45,6 +45,34 @@ $filters = array_filter($filters, function($value) {
     return $value !== '';
 });
 
+// معالجة طلبات AJAX لجلب عدد أيام التنبيه
+if ($_SERVER['REQUEST_METHOD'] === 'GET' && isset($_GET['action']) && $_GET['action'] === 'get_reminder_days') {
+    $scheduleId = intval($_GET['schedule_id'] ?? 0);
+    
+    if ($scheduleId > 0) {
+        $reminder = $db->queryOne(
+            "SELECT days_before_due FROM payment_reminders 
+             WHERE payment_schedule_id = ? AND reminder_type = 'before_due' 
+             ORDER BY created_at DESC LIMIT 1",
+            [$scheduleId]
+        );
+        
+        header('Content-Type: application/json');
+        if ($reminder && isset($reminder['days_before_due'])) {
+            echo json_encode([
+                'success' => true,
+                'days_before_due' => (int)$reminder['days_before_due']
+            ]);
+        } else {
+            echo json_encode([
+                'success' => false,
+                'days_before_due' => 3
+            ]);
+        }
+        exit;
+    }
+}
+
 // معالجة العمليات
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     $action = $_POST['action'] ?? '';
@@ -842,7 +870,7 @@ if (isset($_GET['id'])) {
                 <div class="modal-body">
                     <div class="mb-3">
                         <label class="form-label">عدد الأيام قبل موعد الاستحقاق <span class="text-danger">*</span></label>
-                        <input type="number" class="form-control" name="days_before_due" value="3" min="1" max="30" required>
+                        <input type="number" class="form-control" name="days_before_due" id="daysBeforeDueInput" value="3" min="1" max="30" required>
                         <small class="text-muted">سيتم إرسال التذكير قبل موعد الاستحقاق بهذا العدد من الأيام</small>
                     </div>
                 </div>
@@ -860,6 +888,22 @@ if (isset($_GET['id'])) {
 <script>
 function showReminderModal(scheduleId) {
     document.getElementById('reminderScheduleId').value = scheduleId;
+    
+    // جلب القيمة المحفوظة للتذكير (إن وجدت)
+    fetch('?page=payment_schedules&action=get_reminder_days&schedule_id=' + scheduleId)
+        .then(response => response.json())
+        .then(data => {
+            if (data.success && data.days_before_due) {
+                document.getElementById('daysBeforeDueInput').value = data.days_before_due;
+            } else {
+                document.getElementById('daysBeforeDueInput').value = 3;
+            }
+        })
+        .catch(error => {
+            console.error('Error fetching reminder days:', error);
+            document.getElementById('daysBeforeDueInput').value = 3;
+        });
+    
     const modal = new bootstrap.Modal(document.getElementById('reminderModal'));
     modal.show();
 }

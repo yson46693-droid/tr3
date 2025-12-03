@@ -256,15 +256,24 @@ function createAutoReminder($scheduleId, $daysBeforeDue = 3, $createdBy = null) 
         
         $reminderDate = date('Y-m-d', strtotime($schedule['due_date'] . " - {$daysBeforeDue} days"));
         
-        // التحقق من عدم وجود تذكير مسبق
+        // التحقق من وجود تذكير مسبق (بأي عدد أيام)
         $existing = $db->queryOne(
-            "SELECT id FROM payment_reminders 
-             WHERE payment_schedule_id = ? AND reminder_type = 'before_due' AND days_before_due = ?",
-            [$scheduleId, $daysBeforeDue]
+            "SELECT id, days_before_due FROM payment_reminders 
+             WHERE payment_schedule_id = ? AND reminder_type = 'before_due'",
+            [$scheduleId]
         );
         
         if ($existing) {
-            return false;
+            // إذا كان التذكير الموجود بنفس عدد الأيام، لا حاجة للتحديث
+            if ($existing['days_before_due'] == $daysBeforeDue) {
+                return true;
+            }
+            
+            // حذف التذكير القديم وإنشاء واحد جديد بالعدد الجديد
+            $db->execute(
+                "DELETE FROM payment_reminders WHERE id = ?",
+                [$existing['id']]
+            );
         }
         
         $db->execute(
