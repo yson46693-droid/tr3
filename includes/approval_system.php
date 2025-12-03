@@ -1547,6 +1547,14 @@ function calculateSalesRepCashBalance($salesRepId) {
                              SELECT 1 FROM collections c 
                              WHERE c.invoice_id = i.id 
                              AND c.collected_by = ?
+                         )
+                         AND NOT EXISTS (
+                             SELECT 1 FROM collections c
+                             WHERE c.customer_id = i.customer_id
+                             AND c.collected_by = ?
+                             AND c.date >= i.date" . 
+                             ($hasInvoiceIdColumn ? " AND (c.invoice_id IS NULL OR c.invoice_id != i.id)" : "") . "
+                             AND (c.notes IS NULL OR c.notes NOT LIKE CONCAT('%فاتورة ', i.invoice_number, '%'))
                          )";
                     } else {
                         // إذا لم يكن عمود paid_from_credit موجوداً، نستخدم amount_added_to_sales أو total_amount
@@ -1566,9 +1574,17 @@ function calculateSalesRepCashBalance($salesRepId) {
                              SELECT 1 FROM collections c 
                              WHERE c.invoice_id = i.id 
                              AND c.collected_by = ?
+                         )
+                         AND NOT EXISTS (
+                             SELECT 1 FROM collections c
+                             WHERE c.customer_id = i.customer_id
+                             AND c.collected_by = ?
+                             AND c.date >= i.date" . 
+                             ($hasInvoiceIdColumn ? " AND (c.invoice_id IS NULL OR c.invoice_id != i.id)" : "") . "
+                             AND (c.notes IS NULL OR c.notes NOT LIKE CONCAT('%فاتورة ', i.invoice_number, '%'))
                          )";
                     }
-                    $fullyPaidResult = $db->queryOne($fullyPaidSql, [$salesRepId, $salesRepId, $salesRepId]);
+                    $fullyPaidResult = $db->queryOne($fullyPaidSql, [$salesRepId, $salesRepId, $salesRepId, $salesRepId]);
                 } else {
                     // إذا لم يكن هناك عمود invoice_id، نستخدم notes للبحث عن رقم الفاتورة
                     if ($hasPaidFromCreditColumn && $hasCreditUsedColumn) {
@@ -1619,7 +1635,7 @@ function calculateSalesRepCashBalance($salesRepId) {
                              AND c.collected_by = ?
                              AND c.date >= i.date
                              AND (c.notes IS NULL OR c.notes NOT LIKE CONCAT('%فاتورة ', i.invoice_number, '%'))
-                             AND (c.invoice_id IS NULL OR c.invoice_id != i.id)
+                             " . ($hasInvoiceIdColumn ? "AND (c.invoice_id IS NULL OR c.invoice_id != i.id) " : "") . "
                          )";
                     } else {
                         // إذا لم يكن عمود paid_from_credit موجوداً، نستخدم amount_added_to_sales أو total_amount
@@ -1639,9 +1655,17 @@ function calculateSalesRepCashBalance($salesRepId) {
                              SELECT 1 FROM collections c 
                              WHERE c.notes LIKE CONCAT('%فاتورة ', i.invoice_number, '%')
                              AND c.collected_by = ?
+                         )
+                         AND NOT EXISTS (
+                             SELECT 1 FROM collections c
+                             WHERE c.customer_id = i.customer_id
+                             AND c.collected_by = ?
+                             AND c.date >= i.date" . 
+                             ($hasInvoiceIdColumn ? " AND (c.invoice_id IS NULL OR c.invoice_id != i.id)" : "") . "
+                             AND (c.notes IS NULL OR c.notes NOT LIKE CONCAT('%فاتورة ', i.invoice_number, '%'))
                          )";
                     }
-                    $fullyPaidResult = $db->queryOne($fullyPaidSql, [$salesRepId, $salesRepId, $salesRepId]);
+                    $fullyPaidResult = $db->queryOne($fullyPaidSql, [$salesRepId, $salesRepId, $salesRepId, $salesRepId]);
                 }
             } else {
                 // إذا لم يكن العمود موجوداً، نستخدم total_amount (للتوافق مع الإصدارات القديمة)
@@ -1656,8 +1680,16 @@ function calculateSalesRepCashBalance($salesRepId) {
                          SELECT 1 FROM collections c 
                          WHERE c.invoice_id = i.id 
                          AND c.collected_by = ?
+                     )
+                     AND NOT EXISTS (
+                         SELECT 1 FROM collections c
+                         WHERE c.customer_id = i.customer_id
+                         AND c.collected_by = ?
+                         AND c.date >= i.date" . 
+                         ($hasInvoiceIdColumn ? " AND (c.invoice_id IS NULL OR c.invoice_id != i.id)" : "") . "
+                         AND (c.notes IS NULL OR c.notes NOT LIKE CONCAT('%فاتورة ', i.invoice_number, '%'))
                      )";
-                    $fullyPaidResult = $db->queryOne($fullyPaidSql, [$salesRepId, $salesRepId, $salesRepId]);
+                    $fullyPaidResult = $db->queryOne($fullyPaidSql, [$salesRepId, $salesRepId, $salesRepId, $salesRepId]);
                 } else {
                     $fullyPaidSql = "SELECT COALESCE(SUM(total_amount), 0) as fully_paid
                      FROM invoices i
@@ -1669,8 +1701,16 @@ function calculateSalesRepCashBalance($salesRepId) {
                          SELECT 1 FROM collections c 
                          WHERE c.notes LIKE CONCAT('%فاتورة ', i.invoice_number, '%')
                          AND c.collected_by = ?
+                     )
+                     AND NOT EXISTS (
+                         SELECT 1 FROM collections c
+                         WHERE c.customer_id = i.customer_id
+                         AND c.collected_by = ?
+                         AND c.date >= i.date" . 
+                         ($hasInvoiceIdColumn ? " AND (c.invoice_id IS NULL OR c.invoice_id != i.id)" : "") . "
+                         AND (c.notes IS NULL OR c.notes NOT LIKE CONCAT('%فاتورة ', i.invoice_number, '%'))
                      )";
-                    $fullyPaidResult = $db->queryOne($fullyPaidSql, [$salesRepId, $salesRepId, $salesRepId]);
+                    $fullyPaidResult = $db->queryOne($fullyPaidSql, [$salesRepId, $salesRepId, $salesRepId, $salesRepId]);
                 }
             }
         } else {
