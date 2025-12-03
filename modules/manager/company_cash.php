@@ -15,6 +15,7 @@ require_once __DIR__ . '/../../includes/notifications.php';
 require_once __DIR__ . '/../../includes/approval_system.php';
 require_once __DIR__ . '/../../includes/table_styles.php';
 require_once __DIR__ . '/../../includes/path_helper.php';
+require_once __DIR__ . '/../../includes/formatters.php';
 
 requireRole(['manager', 'accountant']);
 
@@ -209,9 +210,32 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                         ]
                     );
                     
+                    // إرسال إشعار للمندوب
+                    try {
+                        $collectorName = $currentUser['full_name'] ?? $currentUser['username'];
+                        $notificationTitle = 'تحصيل من خزنتك';
+                        $notificationMessage = 'تم تحصيل مبلغ ' . formatCurrency($amount) . ' من رصيد خزنتك من قبل ' . htmlspecialchars($collectorName) . ' - رقم المرجع: ' . $referenceNumber;
+                        $notificationLink = getRelativeUrl('dashboard/sales.php?page=cash_register');
+                        
+                        createNotification(
+                            $salesRepId,
+                            $notificationTitle,
+                            $notificationMessage,
+                            'warning',
+                            $notificationLink,
+                            true // إرسال Telegram
+                        );
+                    } catch (Throwable $notifError) {
+                        // لا نوقف العملية إذا فشل الإشعار
+                        error_log('Failed to send notification to sales rep: ' . $notifError->getMessage());
+                    }
+                    
                     $db->commit();
                     
+                    // حفظ معرف المعاملة في الجلسة للطباعة
+                    $_SESSION['last_collection_transaction_id'] = $accountantTransactionId;
                     $_SESSION['financial_success'] = 'تم تحصيل ' . formatCurrency($amount) . ' من مندوب: ' . htmlspecialchars($salesRepName) . ' بنجاح.';
+                    $_SESSION['last_collection_print_link'] = getRelativeUrl('print_collection_receipt.php?id=' . $accountantTransactionId);
                 }
             } catch (Throwable $e) {
                 if ($db->inTransaction()) {
@@ -341,10 +365,20 @@ $pageTitle = isset($lang['menu_financial']) ? $lang['menu_financial'] : 'خزن�
 <?php endif; ?>
 
 <?php if ($financialSuccess): ?>
-    <div class="alert alert-success alert-dismissible fade show">
-        <i class="bi bi-check-circle-fill me-2"></i>
-        <?php echo htmlspecialchars($financialSuccess, ENT_QUOTES, 'UTF-8'); ?>
-        <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
+    <div class="alert alert-success alert-dismissible fade show d-flex justify-content-between align-items-center">
+        <div>
+            <i class="bi bi-check-circle-fill me-2"></i>
+            <?php echo htmlspecialchars($financialSuccess, ENT_QUOTES, 'UTF-8'); ?>
+        </div>
+        <div class="d-flex align-items-center gap-2">
+            <?php if (!empty($_SESSION['last_collection_print_link'])): ?>
+                <a href="<?php echo htmlspecialchars($_SESSION['last_collection_print_link'], ENT_QUOTES, 'UTF-8'); ?>" target="_blank" class="btn btn-sm btn-outline-light">
+                    <i class="bi bi-printer me-1"></i>طباعة فاتورة التحصيل
+                </a>
+                <?php unset($_SESSION['last_collection_print_link']); ?>
+            <?php endif; ?>
+            <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
+        </div>
     </div>
 <?php endif; ?>
 
