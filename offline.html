@@ -1,0 +1,84 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>لا يوجد اتصال بالإنترنت</title>
+
+<style>
+    body {
+        margin: 0;
+        padding: 0;
+        font-family: "Cairo", sans-serif;
+        background: linear-gradient(135deg, #1d3557, #457b9d);
+        color: #fff;
+        display: flex;
+        justify-content: center;
+        align-items: center;
+        height: 100vh;
+        text-align: center;
+    }
+
+    .container {
+        background: rgba(255,255,255,0.08);
+        padding: 40px 30px;
+        border-radius: 18px;
+        backdrop-filter: blur(8px);
+        width: 90%;
+        max-width: 380px;
+        box-shadow: 0 10px 30px rgba(0,0,0,0.25);
+    }
+
+    .icon {
+        font-size: 70px;
+        margin-bottom: 20px;
+    }
+
+    @keyframes pulse {
+        0% { transform: scale(1); opacity: .8; }
+        50% { transform: scale(1.1); opacity: 1; }
+        100% { transform: scale(1); opacity: .8; }
+    }
+
+    h2 {
+        font-size: 26px;
+        margin-bottom: 12px;
+    }
+
+    p {
+        font-size: 16px;
+        line-height: 1.6;
+        opacity: .9;
+    }
+
+    button {
+        margin-top: 25px;
+        padding: 12px 25px;
+        font-size: 18px;
+        background: #e63946;
+        border: none;
+        border-radius: 10px;
+        color: #fff;
+        cursor: pointer;
+        transition: 0.3s ease;
+    }
+
+    button:hover {
+        background: #ff4757;
+        transform: translateY(-2px);
+    }
+</style>
+</head>
+
+<body>
+
+    <div class="container">
+        <div class="icon">📡</div>
+        <h2>لا يوجد اتصال بالإنترنت</h2>
+        <p>يبدو أنك غير متصل. تأكد من الشبكة ثم أعد المحاولة.</p>
+
+        <button onclick="location.reload()">إعادة المحاولة 🔄</button>
+    </div>
+
+</body>
+</html>

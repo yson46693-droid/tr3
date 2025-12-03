@@ -9,10 +9,97 @@ const UPDATE_CHECK_INTERVAL = 5 * 60 * 1000; // التحقق من التحديث
 const urlsToCache = [
     '/',
     '/index.php',
+    '/offline.html', // إضافة صفحة offline.html
     'https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css',
     'https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js',
     'https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.0/font/bootstrap-icons.css'
 ];
+
+// دالة لإنشاء محتوى offline.html
+function getOfflinePageContent() {
+    return `<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>لا يوجد اتصال بالإنترنت</title>
+<style>
+    body {
+        margin: 0;
+        padding: 0;
+        font-family: "Cairo", sans-serif;
+        background: linear-gradient(135deg, #1d3557, #457b9d);
+        color: #fff;
+        display: flex;
+        justify-content: center;
+        align-items: center;
+        height: 100vh;
+        text-align: center;
+    }
+    .container {
+        background: rgba(255,255,255,0.08);
+        padding: 40px 30px;
+        border-radius: 18px;
+        backdrop-filter: blur(8px);
+        width: 90%;
+        max-width: 380px;
+        box-shadow: 0 10px 30px rgba(0,0,0,0.25);
+    }
+    .icon {
+        font-size: 70px;
+        margin-bottom: 20px;
+    }
+    @keyframes pulse {
+        0% { transform: scale(1); opacity: .8; }
+        50% { transform: scale(1.1); opacity: 1; }
+        100% { transform: scale(1); opacity: .8; }
+    }
+    h2 {
+        font-size: 26px;
+        margin-bottom: 12px;
+    }
+    p {
+        font-size: 16px;
+        line-height: 1.6;
+        opacity: .9;
+    }
+    button {
+        margin-top: 25px;
+        padding: 12px 25px;
+        font-size: 18px;
+        background: #e63946;
+        border: none;
+        border-radius: 10px;
+        color: #fff;
+        cursor: pointer;
+        transition: 0.3s ease;
+    }
+    button:hover {
+        background: #ff4757;
+        transform: translateY(-2px);
+    }
+</style>
+</head>
+<body>
+    <div class="container">
+        <div class="icon">📡</div>
+        <h2>لا يوجد اتصال بالإنترنت</h2>
+        <p>يبدو أنك غير متصل. تأكد من الشبكة ثم أعد المحاولة.</p>
+        <button onclick="location.reload()">إعادة المحاولة 🔄</button>
+    </div>
+</body>
+</html>`;
+}
+
+// دالة لإنشاء Response من محتوى offline.html
+function createOfflineResponse() {
+    const offlineContent = getOfflinePageContent();
+    return new Response(offlineContent, {
+        status: 200,
+        statusText: 'OK',
+        headers: { 'Content-Type': 'text/html; charset=utf-8' }
+    });
+}
 
 // Install Event
 self.addEventListener('install', function(event) {
@@ -27,8 +114,26 @@ self.addEventListener('install', function(event) {
                             return Promise.resolve();
                         }
                         
+                        // معالجة خاصة لـ offline.html
+                        if (url === '/offline.html') {
+                            return fetch(url, {
+                                mode: 'same-origin',
+                                credentials: 'omit'
+                            }).then(function(response) {
+                                if (response && response.ok) {
+                                    return cache.put(url, response);
+                                }
+                                // إذا فشل fetch، قم بإنشاء المحتوى مباشرة
+                                return cache.put(url, createOfflineResponse());
+                            }).catch(function(error) {
+                                // إذا فشل fetch، قم بإنشاء المحتوى مباشرة
+                                console.log('Cache fetch error for offline.html, creating inline:', error.message);
+                                return cache.put(url, createOfflineResponse());
+                            });
+                        }
+                        
                         return fetch(url, {
-                            mode: 'no-cors', // للطلبات الخارجية
+                            mode: url.startsWith('http') ? 'no-cors' : 'same-origin',
                             credentials: 'omit'
                         }).then(function(response) {
                             if (response && (response.ok || response.type === 'opaque')) {
@@ -74,12 +179,40 @@ self.addEventListener('fetch', function(event) {
         return;
     }
     
-    // تجاهل جميع API requests وملفات PHP
+    // للصفحات الرئيسية وملفات PHP: عند فشل الاتصال، عرض offline.html
+    const isNavigationRequest = event.request.mode === 'navigate' || 
+                                url.pathname === '/' || 
+                                url.pathname === '/index.php' ||
+                                (url.pathname.endsWith('.php') && !url.pathname.includes('/api/') && !url.pathname.includes('/ajax/'));
+    
+    // إذا كان طلب navigational (صفحة رئيسية)، معالجة خاصة
+    if (isNavigationRequest) {
+        event.respondWith(
+            fetch(event.request)
+                .then(function(response) {
+                    // إذا نجح الطلب، أرجع الاستجابة
+                    return response;
+                })
+                .catch(function(error) {
+                    // عند فشل الاتصال، أرجع offline.html
+                    return caches.match('/offline.html').then(function(cached) {
+                        if (cached) {
+                            return cached;
+                        }
+                        // إذا لم يكن موجوداً في cache، قم بإنشائه مباشرة
+                        return createOfflineResponse();
+                    });
+                })
+        );
+        return;
+    }
+    
+    // تجاهل جميع API requests وملفات PHP الأخرى
     if (url.pathname.includes('/api/') || 
         url.pathname.includes('/ajax/') ||
         url.pathname.includes('/dashboard/') ||
         url.pathname.includes('/modules/') ||
-        url.pathname.endsWith('.php')) {
+        (url.pathname.endsWith('.php') && !isNavigationRequest)) {
         return; // لا تفعل أي شيء مع API requests أو PHP files
     }
     
@@ -118,7 +251,7 @@ self.addEventListener('fetch', function(event) {
                              event.request.url.includes('/css/') || 
                              event.request.url.includes('/js/') ||
                              event.request.url.includes('/images/') ||
-                             event.request.url.match(/\.(css|js|png|jpg|jpeg|svg|gif|ico|woff|woff2|ttf|eot)$/i))) {
+                             event.request.url.match(/\.(css|js|png|jpg|jpeg|svg|gif|ico|woff|woff2|ttf|eot|html)$/i))) {
                             // Clone the response
                             var responseToCache = response.clone();
                             
@@ -150,7 +283,11 @@ self.addEventListener('fetch', function(event) {
                     
                     // Return cached version if available, otherwise return offline page
                     return caches.match('/offline.html').then(function(cached) {
-                        return cached || new Response('Offline', { status: 503 });
+                        if (cached) {
+                            return cached;
+                        }
+                        // إذا لم يكن موجوداً في cache، قم بإنشائه مباشرة
+                        return createOfflineResponse();
                     });
                 });
             })
