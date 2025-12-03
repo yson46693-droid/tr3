@@ -8,10 +8,7 @@ const CACHE_NAME = 'company-management-v' + CACHE_VERSION;
 const UPDATE_CHECK_INTERVAL = 5 * 60 * 1000; // التحقق من التحديثات كل 5 دقائق
 const urlsToCache = [
     '/',
-    '/index.php',
-    'https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css',
-    'https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js',
-    'https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.0/font/bootstrap-icons.css'
+    '/index.php'
 ];
 
 // Install Event
