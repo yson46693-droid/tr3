@@ -644,7 +644,7 @@ $pageDescription = 'لوحة تحكم المحاسب - إدارة المعامل
                             <i class="bi bi-check-circle-fill me-2"></i>
                             <?php echo htmlspecialchars($financialSuccess, ENT_QUOTES, 'UTF-8'); ?>
                         </div>
-                        <div class="d-flex align-items-center gap-2">
+                        <div class="d-flex align-items-center gap-2" style="background:rgb(30, 124, 30); padding: 6px 12px; border-radius: 7px;">
                             <?php if (!empty($_SESSION['last_collection_print_link'])): ?>
                                 <a href="<?php echo htmlspecialchars($_SESSION['last_collection_print_link'], ENT_QUOTES, 'UTF-8'); ?>" target="_blank" class="btn btn-sm btn-outline-light">
                                     <i class="bi bi-printer me-1"></i>طباعة فاتورة التحصيل
@@ -868,7 +868,24 @@ $pageDescription = 'لوحة تحكم المحاسب - إدارة المعامل
                 </div>
                 <div class="card-body">
                     <?php
-                    // جلب جميع الحركات المالية من financial_transactions و accountant_transactions
+                    // Pagination
+                    $pageNum = isset($_GET['p']) ? max(1, intval($_GET['p'])) : 1;
+                    $perPage = 6;
+                    $offset = ($pageNum - 1) * $perPage;
+                    
+                    // حساب العدد الإجمالي للحركات
+                    $totalCountResult = $db->queryOne("
+                        SELECT COUNT(*) as total
+                        FROM (
+                            SELECT id FROM financial_transactions
+                            UNION ALL
+                            SELECT id FROM accountant_transactions
+                        ) as combined
+                    ");
+                    $totalCount = (int)($totalCountResult['total'] ?? 0);
+                    $totalPages = ceil($totalCount / $perPage);
+                    
+                    // جلب الحركات المالية من financial_transactions و accountant_transactions مع pagination
                     $financialTransactions = $db->query("
                         SELECT 
                             combined.*,
@@ -885,6 +902,7 @@ $pageDescription = 'لوحة تحكم المحاسب - إدارة المعامل
                                 created_by, 
                                 approved_by,
                                 created_at,
+                                NULL as transaction_type,
                                 'financial_transactions' as source_table
                             FROM financial_transactions
                             UNION ALL
@@ -905,14 +923,15 @@ $pageDescription = 'لوحة تحكم المحاسب - إدارة المعامل
                                 created_by, 
                                 approved_by,
                                 created_at,
+                                transaction_type,
                                 'accountant_transactions' as source_table
                             FROM accountant_transactions
                         ) as combined
                         LEFT JOIN users u1 ON combined.created_by = u1.id
                         LEFT JOIN users u2 ON combined.approved_by = u2.id
                         ORDER BY combined.created_at DESC
-                        LIMIT 100
-                    ") ?: [];
+                        LIMIT ? OFFSET ?
+                    ", [$perPage, $offset]) ?: [];
                     
                     $typeLabels = [
                         'income' => 'إيراد',
@@ -946,13 +965,14 @@ $pageDescription = 'لوحة تحكم المحاسب - إدارة المعامل
                                     <th>الرقم المرجعي</th>
                                     <th>الحالة</th>
                                     <th>أنشأه</th>
+                                    <th>إجراءات</th>
                                     <th>اعتمده</th>
                                 </tr>
                             </thead>
                             <tbody>
                                 <?php if (empty($financialTransactions)): ?>
                                     <tr>
-                                        <td colspan="8" class="text-center text-muted py-4">
+                                        <td colspan="9" class="text-center text-muted py-4">
                                             <i class="bi bi-inbox me-2"></i>لا توجد حركات مالية حالياً
                                         </td>
                                     </tr>
@@ -986,6 +1006,29 @@ $pageDescription = 'لوحة تحكم المحاسب - إدارة المعامل
                                                 </span>
                                             </td>
                                             <td><?php echo htmlspecialchars($trans['created_by_name'] ?? '-', ENT_QUOTES, 'UTF-8'); ?></td>
+                                            <td>
+                                                <?php 
+                                                // عرض زر الطباعة فقط للحركات من نوع إيراد (income) من accountant_transactions
+                                                // مع transaction_type = 'collection_from_sales_rep'
+                                                $isCollectionFromSalesRep = (
+                                                    ($trans['source_table'] ?? '') === 'accountant_transactions' && 
+                                                    ($trans['type'] ?? '') === 'income' &&
+                                                    ($trans['transaction_type'] ?? '') === 'collection_from_sales_rep'
+                                                );
+                                                
+                                                if ($isCollectionFromSalesRep):
+                                                    $printUrl = getRelativeUrl('print_collection_receipt.php?id=' . $trans['id']);
+                                                ?>
+                                                    <a href="<?php echo htmlspecialchars($printUrl, ENT_QUOTES, 'UTF-8'); ?>" 
+                                                       target="_blank" 
+                                                       class="btn btn-sm btn-outline-primary" 
+                                                       title="طباعة فاتورة التحصيل">
+                                                        <i class="bi bi-printer"></i>
+                                                    </a>
+                                                <?php else: ?>
+                                                    <span class="text-muted small">-</span>
+                                                <?php endif; ?>
+                                            </td>
                                             <td><?php echo htmlspecialchars($trans['approved_by_name'] ?? '-', ENT_QUOTES, 'UTF-8'); ?></td>
                                         </tr>
                                     <?php endforeach; ?>
@@ -993,6 +1036,54 @@ $pageDescription = 'لوحة تحكم المحاسب - إدارة المعامل
                             </tbody>
                         </table>
                     </div>
+                    
+                    <!-- Pagination -->
+                    <?php if ($totalPages > 1): ?>
+                    <nav aria-label="Page navigation" class="mt-3">
+                        <ul class="pagination justify-content-center flex-wrap">
+                            <li class="page-item <?php echo $pageNum <= 1 ? 'disabled' : ''; ?>">
+                                <a class="page-link" href="?page=financial&p=<?php echo $pageNum - 1; ?>">
+                                    <i class="bi bi-chevron-right"></i>
+                                </a>
+                            </li>
+                            
+                            <?php
+                            $startPage = max(1, $pageNum - 2);
+                            $endPage = min($totalPages, $pageNum + 2);
+                            
+                            if ($startPage > 1): ?>
+                                <li class="page-item"><a class="page-link" href="?page=financial&p=1">1</a></li>
+                                <?php if ($startPage > 2): ?>
+                                    <li class="page-item disabled"><span class="page-link">...</span></li>
+                                <?php endif; ?>
+                            <?php endif; ?>
+                            
+                            <?php for ($i = $startPage; $i <= $endPage; $i++): ?>
+                                <li class="page-item <?php echo $i == $pageNum ? 'active' : ''; ?>">
+                                    <a class="page-link" href="?page=financial&p=<?php echo $i; ?>">
+                                        <?php echo $i; ?>
+                                    </a>
+                                </li>
+                            <?php endfor; ?>
+                            
+                            <?php if ($endPage < $totalPages): ?>
+                                <?php if ($endPage < $totalPages - 1): ?>
+                                    <li class="page-item disabled"><span class="page-link">...</span></li>
+                                <?php endif; ?>
+                                <li class="page-item"><a class="page-link" href="?page=financial&p=<?php echo $totalPages; ?>"><?php echo $totalPages; ?></a></li>
+                            <?php endif; ?>
+                            
+                            <li class="page-item <?php echo $pageNum >= $totalPages ? 'disabled' : ''; ?>">
+                                <a class="page-link" href="?page=financial&p=<?php echo $pageNum + 1; ?>">
+                                    <i class="bi bi-chevron-left"></i>
+                                </a>
+                            </li>
+                        </ul>
+                        <div class="text-center text-muted small mt-2">
+                            عرض <?php echo number_format(($pageNum - 1) * $perPage + 1); ?> - <?php echo number_format(min($pageNum * $perPage, $totalCount)); ?> من أصل <?php echo number_format($totalCount); ?> حركة
+                        </div>
+                    </nav>
+                    <?php endif; ?>
                 </div>
             </div>
             
@@ -1264,7 +1355,12 @@ document.addEventListener('DOMContentLoaded', function() {
                 }
                 
                 // جلب رصيد المندوب
-                fetch('?page=financial&ajax=get_sales_rep_balance&sales_rep_id=' + encodeURIComponent(salesRepId), {
+                // بناء URL بشكل صحيح
+                const url = new URL(window.location.href);
+                url.searchParams.set('ajax', 'get_sales_rep_balance');
+                url.searchParams.set('sales_rep_id', salesRepId);
+                
+                fetch(url.toString(), {
                     method: 'GET',
                     headers: {
                         'Accept': 'application/json',
@@ -1273,19 +1369,20 @@ document.addEventListener('DOMContentLoaded', function() {
                     cache: 'no-cache'
                 })
                 .then(response => {
-                    // التحقق من content type
-                    const contentType = response.headers.get('content-type');
-                    if (!contentType || !contentType.includes('application/json')) {
-                        throw new Error('Invalid response type. Expected JSON but got: ' + contentType);
-                    }
+                    // التحقق من content-type أولاً
+                    const contentType = response.headers.get('content-type') || '';
                     
-                    // التحقق من حالة الاستجابة
-                    if (!response.ok) {
-                        throw new Error('HTTP error! status: ' + response.status);
-                    }
-                    
-                    // محاولة parsing JSON
                     return response.text().then(text => {
+                        // إذا لم يكن JSON، عرض الخطأ
+                        if (!contentType.includes('application/json')) {
+                            console.error('Server response (first 500 chars):', text.substring(0, 500));
+                            throw new Error('Invalid response type. Expected JSON but got: ' + contentType);
+                        }
+                        
+                        if (!response.ok) {
+                            throw new Error('HTTP error! status: ' + response.status);
+                        }
+                        
                         if (!text || text.trim() === '') {
                             throw new Error('Empty response from server');
                         }
@@ -1294,7 +1391,7 @@ document.addEventListener('DOMContentLoaded', function() {
                             return JSON.parse(text);
                         } catch (parseError) {
                             console.error('JSON Parse Error:', parseError);
-                            console.error('Response text:', text.substring(0, 200));
+                            console.error('Response text:', text.substring(0, 500));
                             throw new Error('Invalid JSON response: ' + parseError.message);
                         }
                     });
@@ -1316,7 +1413,6 @@ document.addEventListener('DOMContentLoaded', function() {
                             repBalanceAmount.style.color = balance > 0 ? '#198754' : '#6c757d';
                         }
                         
-                        // تعيين الحد الأقصى للمبلغ
                         if (collectAmount) {
                             collectAmount.max = balance;
                             collectAmount.setAttribute('data-max-balance', balance);
