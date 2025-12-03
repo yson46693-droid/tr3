@@ -677,25 +677,18 @@ $totalPages = ceil($totalCount / $perPage);
                                                 <?php endif; ?>
                                                 <?php if ($isManager): ?>
                                                     <td>
-                                                        <?php 
-                                                        // السماح بالتعديل والحذف فقط للسجلات من factory_waste_products (وليس damaged_returns)
-                                                        if (($item['data_source'] ?? '') === 'factory_waste'): 
-                                                        ?>
-                                                            <div class="btn-group btn-group-sm" role="group">
-                                                                <button type="button" class="btn btn-warning btn-sm" 
-                                                                        onclick="editProduct(<?php echo htmlspecialchars(json_encode($item), ENT_QUOTES); ?>)" 
-                                                                        title="تعديل">
-                                                                    <i class="bi bi-pencil"></i>
-                                                                </button>
-                                                                <button type="button" class="btn btn-danger btn-sm" 
-                                                                        onclick="deleteProduct(<?php echo $item['id']; ?>, '<?php echo htmlspecialchars(addslashes($productName), ENT_QUOTES); ?>')" 
-                                                                        title="حذف">
-                                                                    <i class="bi bi-trash"></i>
-                                                                </button>
-                                                            </div>
-                                                        <?php else: ?>
-                                                            <span class="text-muted small">-</span>
-                                                        <?php endif; ?>
+                                                        <div class="btn-group btn-group-sm" role="group">
+                                                            <button type="button" class="btn btn-warning btn-sm" 
+                                                                    onclick="editProduct(<?php echo htmlspecialchars(json_encode($item), ENT_QUOTES); ?>)" 
+                                                                    title="تعديل">
+                                                                <i class="bi bi-pencil"></i>
+                                                            </button>
+                                                            <button type="button" class="btn btn-danger btn-sm" 
+                                                                    onclick="deleteProduct(<?php echo $item['id']; ?>, '<?php echo htmlspecialchars(addslashes($productName), ENT_QUOTES); ?>', '<?php echo htmlspecialchars($item['data_source'] ?? 'factory_waste', ENT_QUOTES); ?>')" 
+                                                                    title="حذف">
+                                                                <i class="bi bi-trash"></i>
+                                                            </button>
+                                                        </div>
                                                     </td>
                                                 <?php endif; ?>
                                             </tr>
@@ -865,6 +858,7 @@ $totalPages = ceil($totalCount / $perPage);
             <form id="editProductForm">
                 <div class="modal-body">
                     <input type="hidden" id="edit_product_id" name="id">
+                    <input type="hidden" id="edit_product_data_source" name="data_source">
                     <div class="mb-3">
                         <label class="form-label">الكمية التالفة</label>
                         <input type="number" step="0.01" min="0" class="form-control" id="edit_product_quantity" name="damaged_quantity" required>
@@ -1019,6 +1013,7 @@ $totalPages = ceil($totalCount / $perPage);
 <script>
 let currentDeleteId = null;
 let currentDeleteType = null;
+let currentDeleteDataSource = 'factory_waste';
 
 // دالة مساعدة للحصول على مسار API بشكل صحيح
 function getApiPath(endpoint) {
@@ -1049,6 +1044,7 @@ console.log('Window location:', window.location.pathname);
 // وظائف تعديل المنتجات التالفة
 function editProduct(item) {
     document.getElementById('edit_product_id').value = item.id;
+    document.getElementById('edit_product_data_source').value = item.data_source || 'factory_waste';
     document.getElementById('edit_product_quantity').value = item.damaged_quantity || '';
     document.getElementById('edit_product_date').value = item.added_date || '';
     <?php if ($canViewFinancials): ?>
@@ -1057,9 +1053,10 @@ function editProduct(item) {
     new bootstrap.Modal(document.getElementById('editProductModal')).show();
 }
 
-function deleteProduct(id, name) {
+function deleteProduct(id, name, dataSource) {
     currentDeleteId = id;
     currentDeleteType = 'product';
+    currentDeleteDataSource = dataSource || 'factory_waste';
     document.getElementById('delete_product_name').textContent = name;
     new bootstrap.Modal(document.getElementById('deleteProductModal')).show();
 }
@@ -1261,7 +1258,7 @@ document.getElementById('editRawMaterialForm')?.addEventListener('submit', funct
 // معالجة الحذف
 document.getElementById('confirmDeleteProduct')?.addEventListener('click', function() {
     if (currentDeleteId && currentDeleteType === 'product') {
-        deleteItem(currentDeleteId, 'product');
+        deleteItem(currentDeleteId, 'product', currentDeleteDataSource);
     }
 });
 
@@ -1277,11 +1274,14 @@ document.getElementById('confirmDeleteRawMaterial')?.addEventListener('click', f
     }
 });
 
-function deleteItem(id, type) {
+function deleteItem(id, type, dataSource) {
     const formData = new FormData();
     formData.append('action', 'delete_' + type);
     formData.append('id', id);
     formData.append('tab', '<?php echo $activeTab; ?>');
+    if (dataSource) {
+        formData.append('data_source', dataSource);
+    }
     
     fetch('<?php echo $apiPath; ?>', {
         method: 'POST',

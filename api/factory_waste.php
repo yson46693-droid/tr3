@@ -78,6 +78,7 @@ try {
     
     if ($action === 'edit_product') {
         $id = intval($_POST['id'] ?? 0);
+        $dataSource = trim($_POST['data_source'] ?? 'factory_waste');
         $damagedQuantity = floatval($_POST['damaged_quantity'] ?? 0);
         $addedDate = trim($_POST['added_date'] ?? '');
         $wasteValue = isset($_POST['waste_value']) ? floatval($_POST['waste_value']) : null;
@@ -100,41 +101,74 @@ try {
             exit;
         }
         
-        // التحقق من وجود السجل
-        $product = $db->queryOne("SELECT * FROM factory_waste_products WHERE id = ?", [$id]);
-        if (empty($product)) {
-            ob_end_clean();
-            echo json_encode(['success' => false, 'message' => 'السجل غير موجود'], JSON_UNESCAPED_UNICODE);
-            exit;
+        // التعامل مع السجلات من damaged_returns
+        if ($dataSource === 'damaged_returns') {
+            // التحقق من وجود السجل في damaged_returns
+            $product = $db->queryOne("SELECT * FROM damaged_returns WHERE id = ?", [$id]);
+            if (empty($product)) {
+                ob_end_clean();
+                echo json_encode(['success' => false, 'message' => 'السجل غير موجود'], JSON_UNESCAPED_UNICODE);
+                exit;
+            }
+            
+            // تحديث السجل في damaged_returns
+            $db->execute(
+                "UPDATE damaged_returns SET quantity = ? WHERE id = ?",
+                [$damagedQuantity, $id]
+            );
+            
+            // تحديث return_date في returns إذا لزم الأمر
+            if (!empty($product['return_id'])) {
+                $db->execute(
+                    "UPDATE returns SET return_date = ? WHERE id = ?",
+                    [$addedDate, $product['return_id']]
+                );
+            }
+            
+            // تسجيل العملية
+            logAudit($currentUser['id'], 'edit_damaged_return_product', 'damaged_returns', $id, null, [
+                'old_quantity' => $product['quantity'],
+                'new_quantity' => $damagedQuantity,
+                'return_id' => $product['return_id']
+            ]);
+        } else {
+            // التعامل مع السجلات من factory_waste_products
+            $product = $db->queryOne("SELECT * FROM factory_waste_products WHERE id = ?", [$id]);
+            if (empty($product)) {
+                ob_end_clean();
+                echo json_encode(['success' => false, 'message' => 'السجل غير موجود'], JSON_UNESCAPED_UNICODE);
+                exit;
+            }
+            
+            // تحديث السجل
+            $updateSql = "UPDATE factory_waste_products SET damaged_quantity = ?, added_date = ?";
+            $updateParams = [$damagedQuantity, $addedDate];
+            
+            if ($wasteValue !== null) {
+                $updateSql .= ", waste_value = ?";
+                $updateParams[] = $wasteValue;
+            }
+            
+            $updateSql .= " WHERE id = ?";
+            $updateParams[] = $id;
+            
+            $db->execute($updateSql, $updateParams);
+            
+            // تسجيل العملية
+            logAudit($currentUser['id'], 'edit_factory_waste_product', 'factory_waste_products', $id, null, [
+                'old_quantity' => $product['damaged_quantity'],
+                'new_quantity' => $damagedQuantity,
+                'old_date' => $product['added_date'],
+                'new_date' => $addedDate
+            ]);
         }
-        
-        // تحديث السجل
-        $updateSql = "UPDATE factory_waste_products SET damaged_quantity = ?, added_date = ?";
-        $updateParams = [$damagedQuantity, $addedDate];
-        
-        if ($wasteValue !== null) {
-            $updateSql .= ", waste_value = ?";
-            $updateParams[] = $wasteValue;
-        }
-        
-        $updateSql .= " WHERE id = ?";
-        $updateParams[] = $id;
-        
-        $db->execute($updateSql, $updateParams);
-        
-        // تسجيل العملية
-        logAudit($currentUser['id'], 'edit_factory_waste_product', 'factory_waste_products', $id, null, [
-            'old_quantity' => $product['damaged_quantity'],
-            'new_quantity' => $damagedQuantity,
-            'old_date' => $product['added_date'],
-            'new_date' => $addedDate
-        ]);
         
         ob_end_clean();
         echo json_encode(['success' => true, 'message' => 'تم التعديل بنجاح'], JSON_UNESCAPED_UNICODE);
         
     } elseif ($action === 'delete_product') {
         $id = intval($_POST['id'] ?? 0);
+        $dataSource = trim($_POST['data_source'] ?? 'factory_waste');
         
         if ($id <= 0) {
             ob_end_clean();
@@ -142,22 +176,42 @@ try {
             exit;
         }
         
-        // التحقق من وجود السجل
-        $product = $db->queryOne("SELECT * FROM factory_waste_products WHERE id = ?", [$id]);
-        if (empty($product)) {
-            ob_end_clean();
-            echo json_encode(['success' => false, 'message' => 'السجل غير موجود'], JSON_UNESCAPED_UNICODE);
-            exit;
+        // التعامل مع السجلات من damaged_returns
+        if ($dataSource === 'damaged_returns') {
+            // التحقق من وجود السجل في damaged_returns
+            $product = $db->queryOne("SELECT * FROM damaged_returns WHERE id = ?", [$id]);
+            if (empty($product)) {
+                ob_end_clean();
+                echo json_encode(['success' => false, 'message' => 'السجل غير موجود'], JSON_UNESCAPED_UNICODE);
+                exit;
+            }
+            
+            // حذف السجل من damaged_returns
+            $db->execute("DELETE FROM damaged_returns WHERE id = ?", [$id]);
+            
+            // تسجيل العملية
+            logAudit($currentUser['id'], 'delete_damaged_return_product', 'damaged_returns', $id, null, [
+                'return_id' => $product['return_id'],
+                'quantity' => $product['quantity']
+            ]);
+        } else {
+            // التعامل مع السجلات من factory_waste_products
+            $product = $db->queryOne("SELECT * FROM factory_waste_products WHERE id = ?", [$id]);
+            if (empty($product)) {
+                ob_end_clean();
+                echo json_encode(['success' => false, 'message' => 'السجل غير موجود'], JSON_UNESCAPED_UNICODE);
+                exit;
+            }
+            
+            // حذف السجل
+            $db->execute("DELETE FROM factory_waste_products WHERE id = ?", [$id]);
+            
+            // تسجيل العملية
+            logAudit($currentUser['id'], 'delete_factory_waste_product', 'factory_waste_products', $id, null, [
+                'product_name' => $product['product_name'],
+                'damaged_quantity' => $product['damaged_quantity']
+            ]);
         }
-        
-        // حذف السجل
-        $db->execute("DELETE FROM factory_waste_products WHERE id = ?", [$id]);
-        
-        // تسجيل العملية
-        logAudit($currentUser['id'], 'delete_factory_waste_product', 'factory_waste_products', $id, null, [
-            'product_name' => $product['product_name'],
-            'damaged_quantity' => $product['damaged_quantity']
-        ]);
         
         ob_end_clean();
         echo json_encode(['success' => true, 'message' => 'تم الحذف بنجاح'], JSON_UNESCAPED_UNICODE);

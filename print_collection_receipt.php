@@ -10,7 +10,7 @@ require_once __DIR__ . '/includes/db.php';
 require_once __DIR__ . '/includes/auth.php';
 require_once __DIR__ . '/includes/path_helper.php';
 
-requireRole(['manager', 'accountant', 'sales']);
+requireRole(['manager', 'accountant']);
 
 $transactionId = isset($_GET['id']) ? intval($_GET['id']) : 0;
 
@@ -170,7 +170,7 @@ $notes = $transaction['notes'] ?? '';
         .amount-section {
             text-align: center;
             padding: 30px;
-            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            background: linear-gradient(135deg,rgb(65, 203, 90) 0%,rgb(44, 140, 74) 100%);
             color: white;
             border-radius: 8px;
             margin: 30px 0;
