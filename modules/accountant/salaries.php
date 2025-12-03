@@ -1878,17 +1878,36 @@ if (isset($_GET['ajax']) && $_GET['ajax'] == '1' && $salaryId > 0) {
         $baseAmount = round($completedHours * $hourlyRate, 2);
         
         // حساب نسبة التحصيلات للمندوبين (مطابق لبطاقة الموظف)
+        // يجب أن تُحسب نسبة التحصيلات على رصيد الخزنة الإجمالي (مطابق لصفحة خزنة المندوب)
+        // وليس على calculateSalesCollections التي تحسب فقط المبالغ التي تُحسب فيها نسبة 2%
         $collectionsBonus = cleanFinancialValue($salary['collections_bonus'] ?? 0);
         $collectionsAmount = cleanFinancialValue($salary['collections_amount'] ?? 0);
         
         if ($userRole === 'sales') {
-            $recalculatedCollectionsAmount = calculateSalesCollections($userId, $salaryMonth, $salaryYear);
-            $recalculatedCollectionsBonus = round($recalculatedCollectionsAmount * 0.02, 2);
-            
-            // استخدم القيمة المحسوبة حديثاً إذا كانت أكبر من القيمة المحفوظة
-            if ($recalculatedCollectionsBonus > $collectionsBonus || $collectionsBonus == 0) {
-                $collectionsBonus = $recalculatedCollectionsBonus;
-                $collectionsAmount = $recalculatedCollectionsAmount;
+            // استخدام رصيد الخزنة الإجمالي الفعلي للمندوب (مطابق لصفحة خزنة المندوب)
+            // رصيد الخزنة الإجمالي = التحصيلات + المبيعات المدفوعة بالكامل + الإضافات المباشرة - المبالغ المحصلة من المندوب
+            require_once __DIR__ . '/../../includes/approval_system.php';
+            if (function_exists('calculateSalesRepCashBalance')) {
+                $cashRegisterBalance = calculateSalesRepCashBalance($userId);
+                // حساب نسبة 2% من رصيد الخزنة الإجمالي
+                $recalculatedCollectionsBonus = round($cashRegisterBalance * 0.02, 2);
+                $recalculatedCollectionsAmount = $cashRegisterBalance;
+                
+                // استخدم القيمة المحسوبة حديثاً إذا كانت أكبر من القيمة المحفوظة
+                if ($recalculatedCollectionsBonus > $collectionsBonus || $collectionsBonus == 0) {
+                    $collectionsBonus = $recalculatedCollectionsBonus;
+                    $collectionsAmount = $recalculatedCollectionsAmount;
+                }
+            } else {
+                // إذا لم تكن الدالة موجودة، نستخدم الطريقة القديمة
+                $recalculatedCollectionsAmount = calculateSalesCollections($userId, $salaryMonth, $salaryYear);
+                $recalculatedCollectionsBonus = round($recalculatedCollectionsAmount * 0.02, 2);
+                
+                // استخدم القيمة المحسوبة حديثاً إذا كانت أكبر من القيمة المحفوظة
+                if ($recalculatedCollectionsBonus > $collectionsBonus || $collectionsBonus == 0) {
+                    $collectionsBonus = $recalculatedCollectionsBonus;
+                    $collectionsAmount = $recalculatedCollectionsAmount;
+                }
             }
         }
         
