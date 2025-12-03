@@ -646,7 +646,7 @@ function calculateSalesRepCashBalance(int $salesRepId): float
                      WHERE c.customer_id = i.customer_id
                      AND c.collected_by = ?
                      AND c.date >= i.date
-                     AND (c.invoice_id IS NULL OR c.invoice_id != i.id)
+                     " . ($hasInvoiceIdColumn ? "AND (c.invoice_id IS NULL OR c.invoice_id != i.id) " : "") . "
                      AND (c.notes IS NULL OR c.notes NOT LIKE CONCAT('%فاتورة ', i.invoice_number, '%'))
                  )";
                     } elseif ($hasPaidFromCreditColumn) {
@@ -675,7 +675,7 @@ function calculateSalesRepCashBalance(int $salesRepId): float
                      WHERE c.customer_id = i.customer_id
                      AND c.collected_by = ?
                      AND c.date >= i.date
-                     AND (c.invoice_id IS NULL OR c.invoice_id != i.id)
+                     " . ($hasInvoiceIdColumn ? "AND (c.invoice_id IS NULL OR c.invoice_id != i.id) " : "") . "
                      AND (c.notes IS NULL OR c.notes NOT LIKE CONCAT('%فاتورة ', i.invoice_number, '%'))
                  )";
                     } else {
@@ -702,7 +702,7 @@ function calculateSalesRepCashBalance(int $salesRepId): float
                      WHERE c.customer_id = i.customer_id
                      AND c.collected_by = ?
                      AND c.date >= i.date
-                     AND (c.invoice_id IS NULL OR c.invoice_id != i.id)
+                     " . ($hasInvoiceIdColumn ? "AND (c.invoice_id IS NULL OR c.invoice_id != i.id) " : "") . "
                      AND (c.notes IS NULL OR c.notes NOT LIKE CONCAT('%فاتورة ', i.invoice_number, '%'))
                  )";
                     }
@@ -816,7 +816,7 @@ function calculateSalesRepCashBalance(int $salesRepId): float
                      WHERE c.customer_id = i.customer_id
                      AND c.collected_by = ?
                      AND c.date >= i.date
-                     AND (c.invoice_id IS NULL OR c.invoice_id != i.id)
+                     " . ($hasInvoiceIdColumn ? "AND (c.invoice_id IS NULL OR c.invoice_id != i.id) " : "") . "
                      AND (c.notes IS NULL OR c.notes NOT LIKE CONCAT('%فاتورة ', i.invoice_number, '%'))
                  )";
                     $fullyPaidResult = $db->queryOne($fullyPaidSql, [$salesRepId, $salesRepId, $salesRepId]);

@@ -364,8 +364,8 @@ if (!empty($invoicesTableExists) && !empty($collectionsTableExists)) {
                      SELECT 1 FROM collections c
                      WHERE c.customer_id = i.customer_id
                      AND c.collected_by = ?
-                     AND c.date >= i.date
-                     AND (c.invoice_id IS NULL OR c.invoice_id != i.id)
+                     AND c.date >= i.date" . 
+                     ($hasInvoiceIdColumn ? " AND (c.invoice_id IS NULL OR c.invoice_id != i.id)" : "") . "
                      AND (c.notes IS NULL OR c.notes NOT LIKE CONCAT('%فاتورة ', i.invoice_number, '%'))
                  )";
             } elseif ($hasPaidFromCreditColumn) {
@@ -393,8 +393,8 @@ if (!empty($invoicesTableExists) && !empty($collectionsTableExists)) {
                      SELECT 1 FROM collections c
                      WHERE c.customer_id = i.customer_id
                      AND c.collected_by = ?
-                     AND c.date >= i.date
-                     AND (c.invoice_id IS NULL OR c.invoice_id != i.id)
+                     AND c.date >= i.date" . 
+                     ($hasInvoiceIdColumn ? " AND (c.invoice_id IS NULL OR c.invoice_id != i.id)" : "") . "
                      AND (c.notes IS NULL OR c.notes NOT LIKE CONCAT('%فاتورة ', i.invoice_number, '%'))
                  )";
             } else {
@@ -420,8 +420,8 @@ if (!empty($invoicesTableExists) && !empty($collectionsTableExists)) {
                      SELECT 1 FROM collections c
                      WHERE c.customer_id = i.customer_id
                      AND c.collected_by = ?
-                     AND c.date >= i.date
-                     AND (c.invoice_id IS NULL OR c.invoice_id != i.id)
+                     AND c.date >= i.date" . 
+                     ($hasInvoiceIdColumn ? " AND (c.invoice_id IS NULL OR c.invoice_id != i.id)" : "") . "
                      AND (c.notes IS NULL OR c.notes NOT LIKE CONCAT('%فاتورة ', i.invoice_number, '%'))
                  )";
             }
@@ -453,9 +453,9 @@ if (!empty($invoicesTableExists) && !empty($collectionsTableExists)) {
                      SELECT 1 FROM collections c
                      WHERE c.customer_id = i.customer_id
                      AND c.collected_by = ?
-                     AND c.date >= i.date
+                     AND c.date >= i.date" . 
+                     ($hasInvoiceIdColumn ? " AND (c.invoice_id IS NULL OR c.invoice_id != i.id)" : "") . "
                      AND (c.notes IS NULL OR c.notes NOT LIKE CONCAT('%فاتورة ', i.invoice_number, '%'))
-                     AND (c.invoice_id IS NULL OR c.invoice_id != i.id)
                  )";
             } elseif ($hasPaidFromCreditColumn) {
                 // عند استخدام الرصيد الدائن: استخدام amount_added_to_sales فقط
@@ -482,9 +482,9 @@ if (!empty($invoicesTableExists) && !empty($collectionsTableExists)) {
                      SELECT 1 FROM collections c
                      WHERE c.customer_id = i.customer_id
                      AND c.collected_by = ?
-                     AND c.date >= i.date
+                     AND c.date >= i.date" . 
+                     ($hasInvoiceIdColumn ? " AND (c.invoice_id IS NULL OR c.invoice_id != i.id)" : "") . "
                      AND (c.notes IS NULL OR c.notes NOT LIKE CONCAT('%فاتورة ', i.invoice_number, '%'))
-                     AND (c.invoice_id IS NULL OR c.invoice_id != i.id)
                  )";
             } else {
                 // إذا لم يكن عمود paid_from_credit موجوداً، نستخدم amount_added_to_sales أو total_amount
@@ -509,9 +509,9 @@ if (!empty($invoicesTableExists) && !empty($collectionsTableExists)) {
                      SELECT 1 FROM collections c
                      WHERE c.customer_id = i.customer_id
                      AND c.collected_by = ?
-                     AND c.date >= i.date
+                     AND c.date >= i.date" . 
+                     ($hasInvoiceIdColumn ? " AND (c.invoice_id IS NULL OR c.invoice_id != i.id)" : "") . "
                      AND (c.notes IS NULL OR c.notes NOT LIKE CONCAT('%فاتورة ', i.invoice_number, '%'))
-                     AND (c.invoice_id IS NULL OR c.invoice_id != i.id)
                  )";
             }
         }
@@ -545,9 +545,9 @@ if (!empty($invoicesTableExists) && !empty($collectionsTableExists)) {
                  SELECT 1 FROM collections c
                  WHERE c.customer_id = i.customer_id
                  AND c.collected_by = ?
-                 AND c.date >= i.date
+                 AND c.date >= i.date" . 
+                 ($hasInvoiceIdColumn ? " AND (c.invoice_id IS NULL OR c.invoice_id != i.id)" : "") . "
                  AND (c.notes IS NULL OR c.notes NOT LIKE CONCAT('%فاتورة ', i.invoice_number, '%'))
-                 AND (c.invoice_id IS NULL OR c.invoice_id != i.id)
              )";
         }
     }
