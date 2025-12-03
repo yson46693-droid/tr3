@@ -593,7 +593,24 @@ $typeColorMap = [
     </div>
     <div class="card-body">
         <?php
-        // جلب جميع الحركات المالية من financial_transactions و accountant_transactions
+        // Pagination
+        $pageNum = isset($_GET['p']) ? max(1, intval($_GET['p'])) : 1;
+        $perPage = 20;
+        $offset = ($pageNum - 1) * $perPage;
+        
+        // حساب العدد الإجمالي للحركات
+        $totalCountResult = $db->queryOne("
+            SELECT COUNT(*) as total
+            FROM (
+                SELECT id FROM financial_transactions
+                UNION ALL
+                SELECT id FROM accountant_transactions
+            ) as combined
+        ");
+        $totalCount = (int)($totalCountResult['total'] ?? 0);
+        $totalPages = ceil($totalCount / $perPage);
+        
+        // جلب الحركات المالية من financial_transactions و accountant_transactions مع pagination
         $financialTransactions = $db->query("
             SELECT 
                 combined.*,
@@ -638,8 +655,8 @@ $typeColorMap = [
             LEFT JOIN users u1 ON combined.created_by = u1.id
             LEFT JOIN users u2 ON combined.approved_by = u2.id
             ORDER BY combined.created_at DESC
-            LIMIT 100
-        ") ?: [];
+            LIMIT ? OFFSET ?
+        ", [$perPage, $offset]) ?: [];
         
         $typeLabels = [
             'income' => 'إيراد',
@@ -744,6 +761,54 @@ $typeColorMap = [
                 </tbody>
             </table>
         </div>
+        
+        <!-- Pagination -->
+        <?php if ($totalPages > 1): ?>
+        <nav aria-label="Page navigation" class="mt-3">
+            <ul class="pagination justify-content-center flex-wrap">
+                <li class="page-item <?php echo $pageNum <= 1 ? 'disabled' : ''; ?>">
+                    <a class="page-link" href="?page=company_cash&p=<?php echo $pageNum - 1; ?>">
+                        <i class="bi bi-chevron-right"></i>
+                    </a>
+                </li>
+                
+                <?php
+                $startPage = max(1, $pageNum - 2);
+                $endPage = min($totalPages, $pageNum + 2);
+                
+                if ($startPage > 1): ?>
+                    <li class="page-item"><a class="page-link" href="?page=company_cash&p=1">1</a></li>
+                    <?php if ($startPage > 2): ?>
+                        <li class="page-item disabled"><span class="page-link">...</span></li>
+                    <?php endif; ?>
+                <?php endif; ?>
+                
+                <?php for ($i = $startPage; $i <= $endPage; $i++): ?>
+                    <li class="page-item <?php echo $i == $pageNum ? 'active' : ''; ?>">
+                        <a class="page-link" href="?page=company_cash&p=<?php echo $i; ?>">
+                            <?php echo $i; ?>
+                        </a>
+                    </li>
+                <?php endfor; ?>
+                
+                <?php if ($endPage < $totalPages): ?>
+                    <?php if ($endPage < $totalPages - 1): ?>
+                        <li class="page-item disabled"><span class="page-link">...</span></li>
+                    <?php endif; ?>
+                    <li class="page-item"><a class="page-link" href="?page=company_cash&p=<?php echo $totalPages; ?>"><?php echo $totalPages; ?></a></li>
+                <?php endif; ?>
+                
+                <li class="page-item <?php echo $pageNum >= $totalPages ? 'disabled' : ''; ?>">
+                    <a class="page-link" href="?page=company_cash&p=<?php echo $pageNum + 1; ?>">
+                        <i class="bi bi-chevron-left"></i>
+                    </a>
+                </li>
+            </ul>
+            <div class="text-center text-muted small mt-2">
+                عرض <?php echo number_format(($pageNum - 1) * $perPage + 1); ?> - <?php echo number_format(min($pageNum * $perPage, $totalCount)); ?> من أصل <?php echo number_format($totalCount); ?> حركة
+            </div>
+        </nav>
+        <?php endif; ?>
     </div>
 </div>
 
