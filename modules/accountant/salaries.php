@@ -3229,13 +3229,38 @@ $pageTitle = ($view === 'advances') ? 'السلف' : (($view === 'pending') ? '�
                         $hourlyRate = cleanFinancialValue($salary['hourly_rate'] ?? $salary['current_hourly_rate'] ?? 0);
                         $userRole = $salary['role'] ?? 'production';
                         
-                        // استخدام القيم مباشرة من جدول salaries دون إعادة حساب
+                        // استخدام القيم من جدول salaries وإعادة حساب الراتب الإجمالي من المكونات لضمان الدقة
+                        // (مطابق لصفحة "مرتبي" الخاصة بالموظف)
                         $baseAmount = cleanFinancialValue($salary['base_amount'] ?? 0);
                         $bonus = cleanFinancialValue($salary['bonus_standardized'] ?? ($salary['bonus'] ?? $salary['bonuses'] ?? 0));
                         $deductions = cleanFinancialValue($salary['deductions'] ?? 0);
                         $collectionsBonus = cleanFinancialValue($salary['collections_bonus'] ?? 0);
                         $collectionsAmount = cleanFinancialValue($salary['collections_amount'] ?? 0);
-                        $totalSalary = cleanFinancialValue($salary['total_amount'] ?? 0);
+                        
+                        // إعادة حساب نسبة التحصيلات للمندوبين (مطابق لصفحة "مرتبي")
+                        if ($userRole === 'sales') {
+                            require_once __DIR__ . '/../../includes/salary_calculator.php';
+                            $recalculatedCollectionsAmount = calculateSalesCollections($userId, $selectedMonth, $selectedYear);
+                            $recalculatedCollectionsBonus = round($recalculatedCollectionsAmount * 0.02, 2);
+                            
+                            // استخدام القيمة المحفوظة في collections_bonus (تتضمن جميع المكافآت من pos.php)
+                            // وإذا لم تكن موجودة أو كانت القيمة المحسوبة أكبر، استخدم القيمة المحسوبة
+                            if ($collectionsBonus > 0) {
+                                // استخدام القيمة المحفوظة (تتضمن جميع المكافآت من pos.php)
+                                // لا نحتاج لتغييرها
+                            } else {
+                                // إذا لم تكن هناك قيمة محفوظة، استخدم القيمة المحسوبة
+                                $collectionsBonus = $recalculatedCollectionsBonus;
+                                $collectionsAmount = $recalculatedCollectionsAmount;
+                            }
+                        }
+                        
+                        // إعادة حساب الراتب الإجمالي من المكونات لضمان الدقة (مطابق لصفحة "مرتبي")
+                        // الراتب الإجمالي = الراتب الأساسي + المكافآت + نسبة التحصيلات - الخصومات
+                        $totalSalary = round($baseAmount + $bonus + $collectionsBonus - $deductions, 2);
+                        
+                        // التأكد من أن الراتب الإجمالي لا يكون سالباً
+                        $totalSalary = max(0, $totalSalary);
                         
                         // إعادة حساب المبلغ التراكمي بدقة من جميع الرواتب السابقة
                         $salaryId = intval($salary['id'] ?? 0);
