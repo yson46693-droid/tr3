@@ -3284,6 +3284,9 @@ $pageTitle = ($view === 'advances') ? 'السلف' : (($view === 'pending') ? '�
                         $collectionsBonus = cleanFinancialValue($salary['collections_bonus'] ?? 0);
                         $collectionsAmount = cleanFinancialValue($salary['collections_amount'] ?? 0);
                         
+                        // متغير لعرض رصيد الخزنة الإجمالي الحالي في بطاقة الموظف (مطابق لصفحة خزنة المندوب)
+                        $displayCashBalance = 0.0;
+                        
                         // إعادة حساب نسبة التحصيلات للمندوبين (مطابق لصفحة "مرتبي")
                         // يجب أن تُحسب نسبة التحصيلات على رصيد الخزنة الإجمالي (مطابق لصفحة خزنة المندوب)
                         // وليس على calculateSalesCollections التي تحسب فقط المبالغ التي تُحسب فيها نسبة 2%
@@ -3292,30 +3295,63 @@ $pageTitle = ($view === 'advances') ? 'السلف' : (($view === 'pending') ? '�
                             // رصيد الخزنة الإجمالي = التحصيلات + المبيعات المدفوعة بالكامل + الإضافات المباشرة - المبالغ المحصلة من المندوب
                             require_once __DIR__ . '/../../includes/approval_system.php';
                             if (function_exists('calculateSalesRepCashBalance')) {
-                                $cashRegisterBalance = calculateSalesRepCashBalance($userId);
-                                // حساب نسبة 2% من رصيد الخزنة الإجمالي
-                                $recalculatedCollectionsBonus = round($cashRegisterBalance * 0.02, 2);
-                                $recalculatedCollectionsAmount = $cashRegisterBalance;
-                                
-                                // استخدام القيمة المحفوظة في collections_bonus (تتضمن جميع المكافآت من pos.php)
-                                // وإذا لم تكن موجودة أو كانت القيمة المحسوبة أكبر، استخدم القيمة المحسوبة
-                                if ($collectionsBonus > 0) {
-                                    // استخدام القيمة المحسوبة من رصيد الخزنة الإجمالي (مطابق لصفحة خزنة المندوب)
-                                    // إذا كانت القيمة المحسوبة أكبر من المحفوظة، استخدم المحسوبة
-                                    if ($recalculatedCollectionsBonus > $collectionsBonus) {
+                                try {
+                                    if (empty($userId) || $userId <= 0) {
+                                        $displayCashBalance = 0.0;
+                                    } else {
+                                        $cashRegisterBalance = calculateSalesRepCashBalance($userId);
+                                        // تحويل القيمة إلى float بشكل مباشر
+                                        if ($cashRegisterBalance === null || $cashRegisterBalance === false) {
+                                            $displayCashBalance = 0.0;
+                                            error_log('DEBUG: cashRegisterBalance is null/false for user ' . $userId);
+                                        } else {
+                                            $displayCashBalance = (float)$cashRegisterBalance;
+                                            // تسجيل للتشخيص (يمكن حذفه لاحقاً)
+                                            error_log('DEBUG: displayCashBalance calculated for user ' . $userId . ' = ' . $displayCashBalance);
+                                        }
+                                    }
+                                    
+                                    // حساب نسبة 2% من رصيد الخزنة الإجمالي
+                                    $recalculatedCollectionsBonus = round($displayCashBalance * 0.02, 2);
+                                    $recalculatedCollectionsAmount = $displayCashBalance;
+                                    
+                                    // استخدام القيمة المحفوظة في collections_bonus (تتضمن جميع المكافآت من pos.php)
+                                    // وإذا لم تكن موجودة أو كانت القيمة المحسوبة أكبر، استخدم القيمة المحسوبة
+                                    if ($collectionsBonus > 0) {
+                                        // استخدام القيمة المحسوبة من رصيد الخزنة الإجمالي (مطابق لصفحة خزنة المندوب)
+                                        // إذا كانت القيمة المحسوبة أكبر من المحفوظة، استخدم المحسوبة
+                                        if ($recalculatedCollectionsBonus > $collectionsBonus) {
+                                            $collectionsBonus = $recalculatedCollectionsBonus;
+                                            $collectionsAmount = $recalculatedCollectionsAmount;
+                                        }
+                                    } else {
+                                        // إذا لم تكن هناك قيمة محفوظة، استخدم القيمة المحسوبة
                                         $collectionsBonus = $recalculatedCollectionsBonus;
                                         $collectionsAmount = $recalculatedCollectionsAmount;
                                     }
-                                } else {
-                                    // إذا لم تكن هناك قيمة محفوظة، استخدم القيمة المحسوبة
-                                    $collectionsBonus = $recalculatedCollectionsBonus;
-                                    $collectionsAmount = $recalculatedCollectionsAmount;
+                                } catch (Throwable $e) {
+                                    // في حالة الخطأ، سجل الخطأ واستخدم الطريقة البديلة
+                                    error_log('Error calculating cash balance for user ' . $userId . ' in salary card: ' . $e->getMessage());
+                                    require_once __DIR__ . '/../../includes/salary_calculator.php';
+                                    $recalculatedCollectionsAmount = calculateSalesCollections($userId, $selectedMonth, $selectedYear);
+                                    $recalculatedCollectionsBonus = round($recalculatedCollectionsAmount * 0.02, 2);
+                                    $displayCashBalance = (float)$recalculatedCollectionsAmount;
+                                    
+                                    if ($collectionsBonus > 0) {
+                                        // استخدام القيمة المحفوظة (تتضمن جميع المكافآت من pos.php)
+                                        // لا نحتاج لتغييرها
+                                    } else {
+                                        // إذا لم تكن هناك قيمة محفوظة، استخدم القيمة المحسوبة
+                                        $collectionsBonus = $recalculatedCollectionsBonus;
+                                        $collectionsAmount = $recalculatedCollectionsAmount;
+                                    }
                                 }
                             } else {
                                 // إذا لم تكن الدالة موجودة، نستخدم الطريقة القديمة
                                 require_once __DIR__ . '/../../includes/salary_calculator.php';
                                 $recalculatedCollectionsAmount = calculateSalesCollections($userId, $selectedMonth, $selectedYear);
                                 $recalculatedCollectionsBonus = round($recalculatedCollectionsAmount * 0.02, 2);
+                                $displayCashBalance = (float)$recalculatedCollectionsAmount;
                                 
                                 // استخدام القيمة المحفوظة في collections_bonus (تتضمن جميع المكافآت من pos.php)
                                 // وإذا لم تكن موجودة أو كانت القيمة المحسوبة أكبر، استخدم القيمة المحسوبة
