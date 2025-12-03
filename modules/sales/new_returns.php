@@ -413,6 +413,7 @@ function viewReturnDetails(returnId) {
                             <th>سعر الوحدة</th>
                             <th>الإجمالي</th>
                             <th>رقم التشغيلة</th>
+                            <th>الحالة</th>
                         </tr>
                     </thead>
                     <tbody>
@@ -420,6 +421,14 @@ function viewReturnDetails(returnId) {
             
             if (ret.items && ret.items.length > 0) {
                 ret.items.forEach(item => {
+                    const conditionText = item.condition_text || (item.condition === 'damaged' || item.is_damaged == 1 ? 'تالف' : 'سليم');
+                    const conditionBadge = item.condition === 'damaged' || item.is_damaged == 1 
+                        ? '<span class="badge bg-danger">تالف</span>' 
+                        : '<span class="badge bg-success">سليم</span>';
+                    const damageNotes = (item.condition === 'damaged' || item.is_damaged == 1) && item.notes 
+                        ? `<br><small class="text-muted">${item.notes}</small>` 
+                        : '';
+                    
                     html += `
                         <tr>
                             <td>${item.product_name || '-'}</td>
@@ -427,11 +436,12 @@ function viewReturnDetails(returnId) {
                             <td>${parseFloat(item.unit_price || 0).toFixed(2)} ج.م</td>
                             <td>${parseFloat(item.total_price || 0).toFixed(2)} ج.م</td>
                             <td>${item.batch_number || '-'}</td>
+                            <td>${conditionBadge}${damageNotes}</td>
                         </tr>
                     `;
                 });
             } else {
-                html += '<tr><td colspan="5" class="text-center">لا توجد منتجات</td></tr>';
+                html += '<tr><td colspan="6" class="text-center">لا توجد منتجات</td></tr>';
             }
             
             html += `

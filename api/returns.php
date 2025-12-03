@@ -850,6 +850,19 @@ function handleGetReturnDetails(): void
     ];
     
     foreach ($items as $item) {
+        // تحديد نص الحالة بناءً على condition أو is_damaged
+        $condition = $item['condition'] ?? 'new';
+        $isDamaged = isset($item['is_damaged']) && ($item['is_damaged'] == 1 || $item['is_damaged'] === '1');
+        
+        // إذا كان condition = 'damaged' أو is_damaged = 1، تكون الحالة 'تالف'
+        if ($condition === 'damaged' || $isDamaged) {
+            $conditionText = 'تالف';
+            $conditionValue = 'damaged';
+        } else {
+            $conditionText = 'سليم';
+            $conditionValue = 'new';
+        }
+        
         $result['items'][] = [
             'product_name' => $item['product_name'] ?? 'غير معروف',
             'quantity' => (float)($item['quantity'] ?? 0),
@@ -857,6 +870,10 @@ function handleGetReturnDetails(): void
             'total_price' => (float)($item['total_price'] ?? 0),
             'batch_number' => $item['batch_number'] ?? '',
             'unit' => $item['unit'] ?? '',
+            'condition' => $conditionValue,
+            'condition_text' => $conditionText,
+            'is_damaged' => $isDamaged ? 1 : 0,
+            'notes' => $item['notes'] ?? ''
         ];
     }
     
