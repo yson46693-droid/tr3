@@ -66,6 +66,9 @@ if (empty($salesTableCheck)) {
     // التحقق من كون هذه صفحة my_records (sales_records)
     $isSalesRecords = isset($_GET['page']) && $_GET['page'] === 'sales_records';
     
+    // التحقق من وجود عمود paid_from_credit
+    $hasPaidFromCreditColumn = !empty($db->queryOne("SHOW COLUMNS FROM invoices LIKE 'paid_from_credit'"));
+    
     // بناء استعلام SQL - إذا كانت صفحة my_records، تجميع الفواتير، وإلا عرض كل عنصر منفصل
     if ($isSalesRecords) {
         // تجميع الفواتير - عرض فاتورة واحدة لكل invoice_id
@@ -79,6 +82,7 @@ if (empty($salesTableCheck)) {
                        c.name as customer_name,
                        u.full_name as salesperson_name,
                        COALESCE(i.credit_used, 0) as credit_used,
+                       " . ($hasPaidFromCreditColumn ? "COALESCE(i.paid_from_credit, 0) as paid_from_credit," : "0 as paid_from_credit,") . "
                        COUNT(ii.id) as items_count,
                        GROUP_CONCAT(
                            CONCAT(
@@ -132,7 +136,8 @@ if (empty($salesTableCheck)) {
                            CONCAT('منتج رقم ', ii.product_id)
                        ) as product_name,
                        u.full_name as salesperson_name,
-                       COALESCE(i.credit_used, 0) as credit_used
+                       COALESCE(i.credit_used, 0) as credit_used,
+                       " . ($hasPaidFromCreditColumn ? "COALESCE(i.paid_from_credit, 0) as paid_from_credit" : "0 as paid_from_credit") . "
                 FROM invoice_items ii
                 INNER JOIN invoices i ON ii.invoice_id = i.id
                 LEFT JOIN customers c ON i.customer_id = c.id
@@ -408,9 +413,31 @@ $tableHeaderStyle = $isSalesRecords ? 'background: linear-gradient(135deg,rgb(37
                                 <?php endif; ?>>
                                 <td style="<?php echo $isSalesRecords ? 'padding: 1rem; font-weight: 500;' : ''; ?>"><?php echo formatDate($sale['date']); ?></td>
                                 <td style="<?php echo $isSalesRecords ? 'padding: 1rem;' : ''; ?>">
-                                    <span class="badge <?php echo $isSalesRecords ? 'bg-gradient shadow-sm' : 'bg-info'; ?>" style="<?php echo $isSalesRecords ? 'background: linear-gradient(135deg,rgb(13, 56, 250) 0%,rgb(40, 15, 139) 100%); padding: 0.5rem 0.75rem; font-weight: 600; color: #000;' : ''; ?>">
-                                        <?php echo htmlspecialchars($sale['invoice_number'] ?? 'INV-' . ($sale['invoice_id'] ?? $sale['sale_id'] ?? '')); ?>
-                                    </span>
+                                    <div class="d-flex align-items-center gap-2">
+                                        <span class="badge <?php echo $isSalesRecords ? 'bg-gradient shadow-sm' : 'bg-info'; ?>" style="<?php echo $isSalesRecords ? 'background: linear-gradient(135deg,rgb(13, 56, 250) 0%,rgb(40, 15, 139) 100%); padding: 0.5rem 0.75rem; font-weight: 600; color: #000;' : ''; ?>">
+                                            <?php echo htmlspecialchars($sale['invoice_number'] ?? 'INV-' . ($sale['invoice_id'] ?? $sale['sale_id'] ?? '')); ?>
+                                        </span>
+                                        <?php 
+                                        // إظهار علامة مميزة للفواتير المدفوعة من رصيد العميل
+                                        $hasCreditPayment = false;
+                                        if (isset($sale['credit_used']) && floatval($sale['credit_used']) > 0.01) {
+                                            $hasCreditPayment = true;
+                                        } elseif (isset($sale['paid_from_credit']) && intval($sale['paid_from_credit']) == 1) {
+                                            $hasCreditPayment = true;
+                                        }
+                                        if ($hasCreditPayment): ?>
+                                            <span class="badge bg-warning text-dark shadow-sm" 
+                                                  style="padding: 0.4rem 0.6rem; font-weight: 600; font-size: 0.85rem;"
+                                                  title="المدفوع من رصيد العميل"
+                                                  data-bs-toggle="tooltip"
+                                                  data-bs-placement="top">
+                                                <i class="bi bi-wallet2 me-1"></i>
+                                                <?php if ($isSalesRecords): ?>
+                                                    <span>من الرصيد</span>
+                                                <?php endif; ?>
+                                            </span>
+                                        <?php endif; ?>
+                                    </div>
                                 </td>
                                 <td style="<?php echo $isSalesRecords ? 'padding: 1rem; font-weight: 500;' : ''; ?>"><?php echo htmlspecialchars($sale['customer_name'] ?? '-'); ?></td>
                                 <td style="<?php echo $isSalesRecords ? 'padding: 1rem;' : ''; ?>">

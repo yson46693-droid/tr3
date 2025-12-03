@@ -1890,14 +1890,15 @@ if (isset($_GET['ajax']) && $_GET['ajax'] == '1' && $salaryId > 0) {
             // استخدام رصيد الخزنة الإجمالي الفعلي للمندوب (مطابق لصفحة خزنة المندوب)
             // رصيد الخزنة الإجمالي = التحصيلات + المبيعات المدفوعة بالكامل + الإضافات المباشرة - المبالغ المحصلة من المندوب
             require_once __DIR__ . '/../../includes/approval_system.php';
+            
+            // حساب رصيد الخزنة الإجمالي الحالي للعرض دائماً (مطابق لصفحة خزنة المندوب)
             if (function_exists('calculateSalesRepCashBalance')) {
                 $cashRegisterBalance = calculateSalesRepCashBalance($userId);
-                // حساب نسبة 2% من رصيد الخزنة الإجمالي
-                $recalculatedCollectionsBonus = round($cashRegisterBalance * 0.02, 2);
-                $recalculatedCollectionsAmount = $cashRegisterBalance;
+                $displayCashBalance = cleanFinancialValue($cashRegisterBalance ?? 0.0);
                 
-                // حفظ رصيد الخزنة الإجمالي الحالي للعرض في بطاقة الموظف
-                $displayCashBalance = $cashRegisterBalance;
+                // حساب نسبة 2% من رصيد الخزنة الإجمالي
+                $recalculatedCollectionsBonus = round($displayCashBalance * 0.02, 2);
+                $recalculatedCollectionsAmount = $displayCashBalance;
                 
                 // استخدم القيمة المحسوبة حديثاً إذا كانت أكبر من القيمة المحفوظة
                 if ($recalculatedCollectionsBonus > $collectionsBonus || $collectionsBonus == 0) {
@@ -1909,8 +1910,8 @@ if (isset($_GET['ajax']) && $_GET['ajax'] == '1' && $salaryId > 0) {
                 $recalculatedCollectionsAmount = calculateSalesCollections($userId, $salaryMonth, $salaryYear);
                 $recalculatedCollectionsBonus = round($recalculatedCollectionsAmount * 0.02, 2);
                 
-                // حفظ القيمة للعرض
-                $displayCashBalance = $recalculatedCollectionsAmount;
+                // استخدام قيمة التحصيلات كبديل لرصيد الخزنة الإجمالي
+                $displayCashBalance = cleanFinancialValue($recalculatedCollectionsAmount);
                 
                 // استخدم القيمة المحسوبة حديثاً إذا كانت أكبر من القيمة المحفوظة
                 if ($recalculatedCollectionsBonus > $collectionsBonus || $collectionsBonus == 0) {
@@ -2009,15 +2010,9 @@ if (isset($_GET['ajax']) && $_GET['ajax'] == '1' && $salaryId > 0) {
                         <p><strong>الراتب الأساسي:</strong> <?php echo formatCurrency($baseAmount); ?></p>
                         <?php if ($userRole === 'sales'): ?>
                         <p><strong>نسبة التحصيلات:</strong> <?php echo formatCurrency($collectionsBonus); ?>
-                            <?php if ($displayCashBalance > 0): ?>
-                                <small class="text-muted d-block" style="font-size: 11px; margin-top: 2px;">
-                                    (من <?php echo formatCurrency($displayCashBalance); ?>)
-                                </small>
-                            <?php else: ?>
-                                <small class="text-muted d-block" style="font-size: 11px; margin-top: 2px;">
-                                    (لا توجد تحصيلات)
-                                </small>
-                            <?php endif; ?>
+                            <small class="text-muted d-block" style="font-size: 11px; margin-top: 2px;">
+                                (من <?php echo formatCurrency($displayCashBalance); ?>)
+                            </small>
                         </p>
                         <?php endif; ?>
                         <p><strong>المكافآت:</strong> <?php echo formatCurrency($bonus); ?></p>
@@ -3463,15 +3458,9 @@ $pageTitle = ($view === 'advances') ? 'السلف' : (($view === 'pending') ? '�
                             <span class="detail-label">نسبة التحصيلات:</span>
                             <span class="detail-value text-info">
                                 <?php echo formatCurrency($collectionsBonus); ?>
-                                <?php if ($displayCashBalance > 0): ?>
-                                    <small class="text-muted d-block" style="font-size: 11px; margin-top: 2px;">
-                                        (من <?php echo formatCurrency($displayCashBalance); ?>)
-                                    </small>
-                                <?php else: ?>
-                                    <small class="text-muted d-block" style="font-size: 11px; margin-top: 2px;">
-                                        (لا توجد تحصيلات)
-                                    </small>
-                                <?php endif; ?>
+                                <small class="text-muted d-block" style="font-size: 11px; margin-top: 2px;">
+                                    (من <?php echo formatCurrency($displayCashBalance); ?>)
+                                </small>
                             </span>
                         </div>
                         <?php endif; ?>
