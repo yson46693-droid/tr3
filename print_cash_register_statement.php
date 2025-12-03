@@ -303,7 +303,6 @@ if (!empty($invoicesTableExists) && !empty($collectionsTableExists)) {
                      AND c.collected_by = ?
                      AND c.date >= i.date
                      AND (c.notes IS NULL OR c.notes NOT LIKE CONCAT('%فاتورة ', i.invoice_number, '%'))
-                     AND (c.invoice_id IS NULL OR c.invoice_id != i.id)
                  )";
             } elseif ($hasPaidFromCreditColumn) {
                 // عند استخدام الرصيد الدائن: استخدام amount_added_to_sales فقط
@@ -332,7 +331,6 @@ if (!empty($invoicesTableExists) && !empty($collectionsTableExists)) {
                      AND c.collected_by = ?
                      AND c.date >= i.date
                      AND (c.notes IS NULL OR c.notes NOT LIKE CONCAT('%فاتورة ', i.invoice_number, '%'))
-                     AND (c.invoice_id IS NULL OR c.invoice_id != i.id)
                  )";
             } else {
                 // إذا لم يكن عمود paid_from_credit موجوداً، نستخدم amount_added_to_sales أو total_amount
@@ -359,7 +357,6 @@ if (!empty($invoicesTableExists) && !empty($collectionsTableExists)) {
                      AND c.collected_by = ?
                      AND c.date >= i.date
                      AND (c.notes IS NULL OR c.notes NOT LIKE CONCAT('%فاتورة ', i.invoice_number, '%'))
-                     AND (c.invoice_id IS NULL OR c.invoice_id != i.id)
                  )";
             }
             $fullyPaidResult = $db->queryOne($fullyPaidSql, [$salesRepId, $salesRepId, $salesRepId]);
@@ -406,7 +403,6 @@ if (!empty($invoicesTableExists) && !empty($collectionsTableExists)) {
                  AND c.collected_by = ?
                  AND c.date >= i.date
                  AND (c.notes IS NULL OR c.notes NOT LIKE CONCAT('%فاتورة ', i.invoice_number, '%'))
-                 AND (c.invoice_id IS NULL OR c.invoice_id != i.id)
              )";
             $fullyPaidResult = $db->queryOne($fullyPaidSql, [$salesRepId, $salesRepId, $salesRepId, $salesRepId]);
         }
