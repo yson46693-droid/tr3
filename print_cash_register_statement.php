@@ -276,12 +276,14 @@ if (!empty($invoicesTableExists) && !empty($collectionsTableExists)) {
             $fullyPaidResult = $db->queryOne($fullyPaidSql, [$salesRepId, $salesRepId, $salesRepId]);
         } else {
             // إذا لم يكن هناك عمود invoice_id، نستخدم notes للبحث عن رقم الفاتورة
+            // نمط البحث: "فاتورة [invoice_number]" أو "فاتورة [invoice_number]%" أو "%فاتورة [invoice_number]"
             if ($hasPaidFromCreditColumn && $hasCreditUsedColumn) {
-                // عند استخدام الرصيد الدائن: استخدام amount_added_to_sales فقط (لا يشمل المبلغ المستخدم من الرصيد الدائن)
+                // عند استخدام الرصيد الدائن: استخدام amount_added_to_sales - credit_used (لا يشمل المبلغ المستخدم من الرصيد الدائن)
+                // لأن creditUsed يُضاف إلى amount_added_to_sales لإجمالي المبيعات (صافي) لكن لا يُضاف إلى رصيد الخزنة الإجمالي
                 $fullyPaidSql = "SELECT COALESCE(SUM(
                     CASE 
                         WHEN paid_from_credit = 1 AND credit_used > 0
-                        THEN COALESCE(amount_added_to_sales, 0)
+                        THEN GREATEST(0, COALESCE(amount_added_to_sales, 0) - credit_used)
                         WHEN amount_added_to_sales IS NOT NULL AND amount_added_to_sales > 0 
                         THEN amount_added_to_sales 
                         ELSE total_amount 
@@ -301,15 +303,17 @@ if (!empty($invoicesTableExists) && !empty($collectionsTableExists)) {
                      SELECT 1 FROM collections c
                      WHERE c.customer_id = i.customer_id
                      AND c.collected_by = ?
-                     AND c.date >= i.date
+                     AND c.date >= i.date" . 
+                     ($hasInvoiceIdColumn ? " AND (c.invoice_id IS NULL OR c.invoice_id != i.id)" : "") . "
                      AND (c.notes IS NULL OR c.notes NOT LIKE CONCAT('%فاتورة ', i.invoice_number, '%'))
                  )";
             } elseif ($hasPaidFromCreditColumn) {
-                // عند استخدام الرصيد الدائن: استخدام amount_added_to_sales فقط
+                // عند استخدام الرصيد الدائن: استخدام amount_added_to_sales - COALESCE(credit_used, 0)
+                // لأن creditUsed يُضاف إلى amount_added_to_sales لإجمالي المبيعات (صافي) لكن لا يُضاف إلى رصيد الخزنة الإجمالي
                 $fullyPaidSql = "SELECT COALESCE(SUM(
                     CASE 
                         WHEN paid_from_credit = 1
-                        THEN COALESCE(amount_added_to_sales, 0)
+                        THEN GREATEST(0, COALESCE(amount_added_to_sales, 0) - COALESCE(credit_used, 0))
                         WHEN amount_added_to_sales IS NOT NULL AND amount_added_to_sales > 0 
                         THEN amount_added_to_sales 
                         ELSE total_amount 
@@ -329,7 +333,8 @@ if (!empty($invoicesTableExists) && !empty($collectionsTableExists)) {
                      SELECT 1 FROM collections c
                      WHERE c.customer_id = i.customer_id
                      AND c.collected_by = ?
-                     AND c.date >= i.date
+                     AND c.date >= i.date" . 
+                     ($hasInvoiceIdColumn ? " AND (c.invoice_id IS NULL OR c.invoice_id != i.id)" : "") . "
                      AND (c.notes IS NULL OR c.notes NOT LIKE CONCAT('%فاتورة ', i.invoice_number, '%'))
                  )";
             } else {
@@ -355,7 +360,8 @@ if (!empty($invoicesTableExists) && !empty($collectionsTableExists)) {
                      SELECT 1 FROM collections c
                      WHERE c.customer_id = i.customer_id
                      AND c.collected_by = ?
-                     AND c.date >= i.date
+                     AND c.date >= i.date" . 
+                     ($hasInvoiceIdColumn ? " AND (c.invoice_id IS NULL OR c.invoice_id != i.id)" : "") . "
                      AND (c.notes IS NULL OR c.notes NOT LIKE CONCAT('%فاتورة ', i.invoice_number, '%'))
                  )";
             }
@@ -415,10 +421,12 @@ if (!empty($invoicesTableExists) && !empty($collectionsTableExists)) {
     
     if ($hasAmountAddedToSalesColumn) {
         if ($hasPaidFromCreditColumn && $hasCreditUsedColumn) {
+            // عند استخدام الرصيد الدائن: استخدام amount_added_to_sales - credit_used (لا يشمل المبلغ المستخدم من الرصيد الدائن)
+            // لأن creditUsed يُضاف إلى amount_added_to_sales لإجمالي المبيعات (صافي) لكن لا يُضاف إلى رصيد الخزنة الإجمالي
             $fullyPaidSql = "SELECT COALESCE(SUM(
                 CASE 
                     WHEN paid_from_credit = 1 AND credit_used > 0
-                    THEN COALESCE(amount_added_to_sales, 0)
+                    THEN GREATEST(0, COALESCE(amount_added_to_sales, 0) - credit_used)
                     WHEN amount_added_to_sales IS NOT NULL AND amount_added_to_sales > 0 
                     THEN amount_added_to_sales 
                     ELSE total_amount 
@@ -430,10 +438,12 @@ if (!empty($invoicesTableExists) && !empty($collectionsTableExists)) {
              AND paid_amount >= total_amount
              AND status != 'cancelled'";
         } elseif ($hasPaidFromCreditColumn) {
+            // عند استخدام الرصيد الدائن: استخدام amount_added_to_sales - COALESCE(credit_used, 0)
+            // لأن creditUsed يُضاف إلى amount_added_to_sales لإجمالي المبيعات (صافي) لكن لا يُضاف إلى رصيد الخزنة الإجمالي
             $fullyPaidSql = "SELECT COALESCE(SUM(
                 CASE 
                     WHEN paid_from_credit = 1
-                    THEN COALESCE(amount_added_to_sales, 0)
+                    THEN GREATEST(0, COALESCE(amount_added_to_sales, 0) - COALESCE(credit_used, 0))
                     WHEN amount_added_to_sales IS NOT NULL AND amount_added_to_sales > 0 
                     THEN amount_added_to_sales 
                     ELSE total_amount 
@@ -445,6 +455,7 @@ if (!empty($invoicesTableExists) && !empty($collectionsTableExists)) {
              AND paid_amount >= total_amount
              AND status != 'cancelled'";
         } else {
+            // إذا لم يكن عمود paid_from_credit موجوداً، نستخدم amount_added_to_sales أو total_amount
             $fullyPaidSql = "SELECT COALESCE(SUM(
                 CASE 
                     WHEN amount_added_to_sales IS NOT NULL AND amount_added_to_sales > 0 
