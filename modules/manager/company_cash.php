@@ -15,7 +15,6 @@ require_once __DIR__ . '/../../includes/notifications.php';
 require_once __DIR__ . '/../../includes/approval_system.php';
 require_once __DIR__ . '/../../includes/table_styles.php';
 require_once __DIR__ . '/../../includes/path_helper.php';
-require_once __DIR__ . '/../../includes/formatters.php';
 
 requireRole(['manager', 'accountant']);
 
