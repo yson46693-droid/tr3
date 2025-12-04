@@ -293,9 +293,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['
         $error = 'يجب إدخال اسم العميل.';
     } else {
         try {
-            // التحقق من عدم وجود عميل بنفس الاسم للشركة
+            // التحقق من عدم وجود عميل بنفس الاسم (جميع العملاء بغض النظر عن الشروط)
             $existingCustomer = $db->queryOne(
-                "SELECT id FROM customers WHERE name = ? AND created_by_admin = 1 AND (rep_id IS NULL OR rep_id = 0)",
+                "SELECT id, name FROM customers WHERE name = ? AND status = 'active' LIMIT 1",
                 [$name]
             );
             
@@ -339,7 +339,13 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['
             $error = $invalidError->getMessage();
         } catch (Throwable $addError) {
             error_log('Manager add customer from shipping error: ' . $addError->getMessage());
-            $error = 'تعذر إضافة العميل: ' . htmlspecialchars($addError->getMessage());
+            // التحقق من نوع الخطأ - إذا كان duplicate key error، عرض رسالة مناسبة
+            $errorMessage = $addError->getMessage();
+            if (stripos($errorMessage, 'duplicate') !== false || stripos($errorMessage, '1062') !== false) {
+                $error = 'يوجد عميل مسجل مسبقاً بنفس الاسم.';
+            } else {
+                $error = 'تعذر إضافة العميل: ' . htmlspecialchars($errorMessage);
+            }
         }
     }
 }
@@ -478,67 +484,6 @@ foreach ($companyInventory as $item) {
         $inventoryByProduct[$key]['unit_price'] = (float)($item['unit_price'] ?? 0);
     }
     $inventoryByProduct[$key]['items'][] = $item;
-}
-
-// معالجة إضافة عميل جديد من صفحة طلبات الشحن
-if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['action'] === 'add_customer_from_shipping') {
-    $name = trim($_POST['name'] ?? '');
-    $phone = trim($_POST['phone'] ?? '');
-    $address = trim($_POST['address'] ?? '');
-    $balance = isset($_POST['balance']) ? cleanFinancialValue($_POST['balance'], true) : 0.0;
-
-    if (empty($name)) {
-        $error = 'يجب إدخال اسم العميل.';
-    } else {
-        try {
-            // التحقق من عدم وجود عميل بنفس الاسم للشركة
-            $existingCustomer = $db->queryOne(
-                "SELECT id FROM customers WHERE name = ? AND created_by_admin = 1 AND (rep_id IS NULL OR rep_id = 0)",
-                [$name]
-            );
-            
-            if ($existingCustomer) {
-                $error = 'يوجد عميل مسجل مسبقاً بنفس الاسم.';
-            } else {
-                $result = $db->execute(
-                    "INSERT INTO customers (name, phone, address, balance, status, created_by, rep_id, created_from_pos, created_by_admin)
-                     VALUES (?, ?, ?, ?, 'active', ?, NULL, 0, 1)",
-                    [
-                        $name,
-                        $phone !== '' ? $phone : null,
-                        $address !== '' ? $address : null,
-                        $balance,
-                        $currentUser['id'],
-                    ]
-                );
-
-                $customerId = (int)($result['insert_id'] ?? 0);
-                if ($customerId <= 0) {
-                    throw new RuntimeException('فشل إضافة العميل: لم يتم الحصول على معرف العميل.');
-                }
-                
-                logAudit($currentUser['id'], 'manager_add_company_customer', 'customer', $customerId, null, [
-                    'name' => $name,
-                    'created_by_admin' => 1,
-                    'from_shipping_page' => true,
-                ]);
-
-                $success = 'تمت إضافة العميل بنجاح. يمكنك الآن اختياره من القائمة.';
-                
-                // إعادة تحميل قائمة العملاء
-                try {
-                    $customers = $db->query("SELECT id, name FROM customers WHERE status = 'active' ORDER BY name ASC");
-                } catch (Throwable $e) {
-                    error_log('Error fetching customers after add: ' . $e->getMessage());
-                }
-            }
-        } catch (InvalidArgumentException $invalidError) {
-            $error = $invalidError->getMessage();
-        } catch (Throwable $addError) {
-            error_log('Manager add customer from shipping error: ' . $addError->getMessage());
-            $error = 'تعذر إضافة العميل: ' . htmlspecialchars($addError->getMessage());
-        }
-    }
 }
 
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
