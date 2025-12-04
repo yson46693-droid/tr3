@@ -14,6 +14,7 @@ require_once __DIR__ . '/includes/customer_history.php';
 requireRole(['accountant', 'sales', 'manager']);
 
 $customerId = isset($_GET['customer_id']) ? intval($_GET['customer_id']) : 0;
+$customerType = isset($_GET['type']) ? trim($_GET['type']) : 'normal'; // 'normal' or 'local'
 
 if ($customerId <= 0) {
     die('معرف العميل غير صحيح');
@@ -22,29 +23,48 @@ if ($customerId <= 0) {
 $db = db();
 $currentUser = getCurrentUser();
 
-// التحقق من ملكية العميل للمندوب (إذا كان المستخدم مندوب)
-if ($currentUser['role'] === 'sales') {
-    $customer = $db->queryOne("SELECT id, created_by FROM customers WHERE id = ?", [$customerId]);
-    if (!$customer || (int)($customer['created_by'] ?? 0) !== (int)$currentUser['id']) {
-        die('غير مصرح لك بعرض كشف حساب هذا العميل');
-    }
-}
+// جلب بيانات العميل حسب النوع
+$customer = null;
+$isLocalCustomer = ($customerType === 'local');
 
-// جلب بيانات العميل
-$customer = $db->queryOne(
-    "SELECT c.*, u.full_name as sales_rep_name, u.username as sales_rep_username
-     FROM customers c
-     LEFT JOIN users u ON c.created_by = u.id
-     WHERE c.id = ?",
-    [$customerId]
-);
+if ($isLocalCustomer) {
+    // عميل محلي
+    $customer = $db->queryOne(
+        "SELECT c.*, NULL as sales_rep_name, NULL as sales_rep_username
+         FROM local_customers c
+         WHERE c.id = ?",
+        [$customerId]
+    );
+} else {
+    // عميل عادي (مندوب)
+    // التحقق من ملكية العميل للمندوب (إذا كان المستخدم مندوب)
+    if ($currentUser['role'] === 'sales') {
+        $customer = $db->queryOne("SELECT id, created_by FROM customers WHERE id = ?", [$customerId]);
+        if (!$customer || (int)($customer['created_by'] ?? 0) !== (int)$currentUser['id']) {
+            die('غير مصرح لك بعرض كشف حساب هذا العميل');
+        }
+    }
+    
+    // جلب بيانات العميل
+    $customer = $db->queryOne(
+        "SELECT c.*, u.full_name as sales_rep_name, u.username as sales_rep_username
+         FROM customers c
+         LEFT JOIN users u ON c.created_by = u.id
+         WHERE c.id = ?",
+        [$customerId]
+    );
+}
 
 if (!$customer) {
     die('العميل غير موجود');
 }
 
 // جلب كل الحركات للعميل
-$statementData = getCustomerStatementData($customerId);
+if ($isLocalCustomer) {
+    $statementData = getLocalCustomerStatementData($customerId);
+} else {
+    $statementData = getCustomerStatementData($customerId);
+}
 
 $companyName = COMPANY_NAME;
 $companySubtitle = 'نظام إدارة المبيعات';
@@ -122,6 +142,81 @@ function getCustomerStatementData($customerId) {
                 NULL as invoice_id,
                 NULL as invoice_number
              FROM collections
+             WHERE customer_id = ?
+             ORDER BY date DESC, id DESC",
+            [$customerId]
+        ) ?: [];
+    }
+    
+    // حساب الإجماليات
+    $totalInvoiced = 0;
+    $totalPaid = 0;
+    $totalReturns = 0;
+    $totalCollections = 0;
+    
+    foreach ($invoices as $inv) {
+        $totalInvoiced += (float)($inv['total_amount'] ?? 0);
+        $totalPaid += (float)($inv['paid_amount'] ?? 0);
+    }
+    
+    foreach ($returns as $ret) {
+        $totalReturns += (float)($ret['refund_amount'] ?? 0);
+    }
+    
+    foreach ($collections as $col) {
+        $totalCollections += (float)($col['amount'] ?? 0);
+    }
+    
+    return [
+        'invoices' => $invoices,
+        'returns' => $returns,
+        'collections' => $collections,
+        'totals' => [
+            'total_invoiced' => $totalInvoiced,
+            'total_paid' => $totalPaid,
+            'total_returns' => $totalReturns,
+            'total_collections' => $totalCollections,
+            'net_balance' => $totalInvoiced - $totalPaid - $totalReturns
+        ]
+    ];
+}
+
+/**
+ * جلب بيانات statement للعميل المحلي
+ */
+function getLocalCustomerStatementData($customerId) {
+    $db = db();
+    
+    // جلب الفواتير المحلية
+    $localInvoicesTableExists = $db->queryOne("SHOW TABLES LIKE 'local_invoices'");
+    $invoices = [];
+    
+    if (!empty($localInvoicesTableExists)) {
+        $invoices = $db->query(
+            "SELECT 
+                id, invoice_number, date, total_amount, paid_amount, status,
+                (total_amount - paid_amount) as remaining_amount
+             FROM local_invoices
+             WHERE customer_id = ?
+             ORDER BY date DESC, id DESC",
+            [$customerId]
+        ) ?: [];
+    }
+    
+    // جلب المرتجعات (يمكن إضافة دعم للعملاء المحليين لاحقاً)
+    $returns = [];
+    
+    // جلب التحصيلات المحلية
+    $localCollectionsTableExists = $db->queryOne("SHOW TABLES LIKE 'local_collections'");
+    $collections = [];
+    
+    if (!empty($localCollectionsTableExists)) {
+        $collections = $db->query(
+            "SELECT 
+                id, amount, date, payment_method, notes,
+                NULL as invoice_id,
+                NULL as invoice_number
+             FROM local_collections
              WHERE customer_id = ?
              ORDER BY date DESC, id DESC",
             [$customerId]
@@ -478,10 +573,17 @@ function getCustomerStatementData($customerId) {
                     <div class="customer-info-label">تاريخ الإضافة</div>
                     <div class="customer-info-value"><?php echo $customerJoinDate; ?></div>
                 </div>
+                <?php if (!$isLocalCustomer): ?>
                 <div class="customer-info-item">
                     <div class="customer-info-label">مندوب المبيعات</div>
                     <div class="customer-info-value"><?php echo htmlspecialchars($salesRepName ?: '-'); ?></div>
                 </div>
+                <?php else: ?>
+                <div class="customer-info-item">
+                    <div class="customer-info-label">نوع العميل</div>
+                    <div class="customer-info-value">عميل محلي</div>
+                </div>
+                <?php endif; ?>
                 <div class="customer-info-item">
                     <div class="customer-info-label">الرصيد الحالي</div>
                     <div class="customer-info-value <?php echo $customerBalance >= 0 ? 'amount-positive' : 'amount-negative'; ?>">

@@ -324,6 +324,91 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     }
                 }
 
+                // إضافة إيراد معتمد في خزنة الشركة (accountant_transactions)
+                try {
+                    // التأكد من وجود جدول accountant_transactions
+                    $accountantTableExists = $db->queryOne("SHOW TABLES LIKE 'accountant_transactions'");
+                    if (!empty($accountantTableExists)) {
+                        // التحقق من وجود عمود local_customer_id وإضافته إذا لم يكن موجوداً
+                        $hasLocalCustomerIdColumn = !empty($db->queryOne("SHOW COLUMNS FROM accountant_transactions LIKE 'local_customer_id'"));
+                        
+                        // التحقق من وجود عمود local_collection_id وإضافته إذا لم يكن موجوداً
+                        $hasLocalCollectionIdColumn = !empty($db->queryOne("SHOW COLUMNS FROM accountant_transactions LIKE 'local_collection_id'"));
+                        
+                        // إعداد الوصف
+                        $customerName = $customer['name'] ?? 'عميل محلي';
+                        $description = 'تحصيل من عميل محلي: ' . $customerName;
+                        
+                        // إعداد رقم مرجعي
+                        $referenceNumber = $collectionNumber ?? ('LOC-CUST-' . $customerId . '-' . date('YmdHis'));
+                        
+                        // إعداد الأعمدة والقيم
+                        $transactionColumns = [
+                            'transaction_type',
+                            'amount',
+                            'description',
+                            'reference_number',
+                            'payment_method',
+                            'status',
+                            'created_by',
+                            'approved_by',
+                            'approved_at'
+                        ];
+                        
+                        $transactionValues = [
+                            'income',
+                            $amount,
+                            $description,
+                            $referenceNumber,
+                            'cash',
+                            'approved',
+                            $currentUser['id'],
+                            $currentUser['id'],
+                            date('Y-m-d H:i:s')
+                        ];
+                        
+                        // إضافة local_customer_id إذا كان العمود موجوداً
+                        if ($hasLocalCustomerIdColumn) {
+                            $transactionColumns[] = 'local_customer_id';
+                            $transactionValues[] = $customerId;
+                        }
+                        
+                        // إضافة local_collection_id إذا كان العمود موجوداً وكان هناك collection_id
+                        if ($hasLocalCollectionIdColumn && $collectionId !== null) {
+                            $transactionColumns[] = 'local_collection_id';
+                            $transactionValues[] = $collectionId;
+                        }
+                        
+                        $transactionPlaceholders = array_fill(0, count($transactionColumns), '?');
+                        
+                        // إدراج السجل في accountant_transactions
+                        $db->execute(
+                            "INSERT INTO accountant_transactions (" . implode(', ', $transactionColumns) . ") 
+                             VALUES (" . implode(', ', $transactionPlaceholders) . ")",
+                            $transactionValues
+                        );
+                        
+                        $transactionId = $db->getLastInsertId();
+                        
+                        logAudit(
+                            $currentUser['id'],
+                            'add_income_from_local_customer_collection',
+                            'accountant_transaction',
+                            $transactionId,
+                            null,
+                            [
+                                'local_customer_id' => $customerId,
+                                'amount' => $amount,
+                                'collection_id' => $collectionId,
+                                'reference_number' => $referenceNumber,
+                            ]
+                        );
+                    }
+                } catch (Throwable $incomeError) {
+                    error_log('Error adding income from local customer collection: ' . $incomeError->getMessage());
+                    // لا نوقف العملية في حالة فشل إضافة الإيراد، فقط نسجل الخطأ
+                }
+
                 $db->commit();
                 $transactionStarted = false;
 
@@ -787,6 +872,16 @@ $summaryTotalCustomers = $customerStats['total_count'] ?? $totalCustomers;
                                         >
                                             <i class="bi bi-cash-coin me-1"></i>تحصيل
                                         </button>
+                                        <button
+                                            type="button"
+                                            class="btn btn-sm btn-info js-local-customer-purchase-history"
+                                            data-customer-id="<?php echo (int)$customer['id']; ?>"
+                                            data-customer-name="<?php echo htmlspecialchars($customer['name']); ?>"
+                                            data-customer-phone="<?php echo htmlspecialchars($customer['phone'] ?? ''); ?>"
+                                            data-customer-address="<?php echo htmlspecialchars($customer['address'] ?? ''); ?>"
+                                        >
+                                            <i class="bi bi-receipt me-1"></i>سجل مشتريات
+                                        </button>
                                     </div>
                                 </td>
                             </tr>
@@ -938,6 +1033,70 @@ $summaryTotalCustomers = $customerStats['total_count'] ?? $totalCustomers;
                     <button type="submit" class="btn btn-primary">إضافة</button>
                 </div>
             </form>
+        </div>
+    </div>
+</div>
+
+<!-- Modal سجل مشتريات العميل المحلي -->
+<div class="modal fade" id="localCustomerPurchaseHistoryModal" tabindex="-1" aria-hidden="true">
+    <div class="modal-dialog modal-xl modal-dialog-scrollable">
+        <div class="modal-content">
+            <div class="modal-header bg-primary text-white">
+                <h5 class="modal-title">
+                    <i class="bi bi-receipt me-2"></i>
+                    سجل مشتريات العميل المحلي
+                </h5>
+                <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal" aria-label="إغلاق"></button>
+            </div>
+            <div class="modal-body">
+                <!-- Customer Info -->
+                <div class="card mb-3">
+                    <div class="card-body">
+                        <div class="row">
+                            <div class="col-md-4">
+                                <div class="text-muted small">العميل</div>
+                                <div class="fs-5 fw-bold" id="localPurchaseHistoryCustomerName">-</div>
+                            </div>
+                            <div class="col-md-4">
+                                <div class="text-muted small">الهاتف</div>
+                                <div id="localPurchaseHistoryCustomerPhone">-</div>
+                            </div>
+                            <div class="col-md-4">
+                                <div class="text-muted small">العنوان</div>
+                                <div id="localPurchaseHistoryCustomerAddress">-</div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Loading -->
+                <div class="text-center py-4" id="localPurchaseHistoryLoading">
+                    <div class="spinner-border text-primary" role="status">
+                        <span class="visually-hidden">جاري التحميل...</span>
+                    </div>
+                </div>
+
+                <!-- Error -->
+                <div class="alert alert-danger d-none" id="localPurchaseHistoryError"></div>
+
+                <!-- Purchase History Content -->
+                <div id="localPurchaseHistoryContent" class="d-none">
+                    <!-- يمكن إضافة جدول أو محتوى آخر هنا -->
+                    <div class="alert alert-info">
+                        <i class="bi bi-info-circle me-2"></i>
+                        سيتم عرض سجل المشتريات هنا قريباً
+                    </div>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-primary" id="printLocalCustomerStatementBtn" onclick="printLocalCustomerStatement()" style="display: none;">
+                    <i class="bi bi-printer me-1"></i>طباعة كشف الحساب
+                </button>
+                <button type="button" class="btn btn-success" id="localCustomerReturnBtn" onclick="openLocalCustomerReturnModal()" style="display: none;">
+                    <i class="bi bi-arrow-return-left me-1"></i>إرجاع منتجات
+                </button>
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">إغلاق</button>
+            </div>
         </div>
     </div>
 </div>
@@ -1267,4 +1426,113 @@ document.addEventListener('DOMContentLoaded', function () {
         }, 3000);
     }
 })();
+
+// معالجة سجل مشتريات العملاء المحليين
+var currentLocalCustomerId = null;
+var currentLocalCustomerName = null;
+
+// دالة طباعة كشف حساب العميل المحلي
+function printLocalCustomerStatement() {
+    if (!currentLocalCustomerId) {
+        alert('يرجى فتح سجل مشتريات عميل أولاً');
+        return;
+    }
+    
+    const basePath = '<?php echo getBasePath(); ?>';
+    // استخدام صفحة طباعة كشف الحساب مع تحديد نوع العميل
+    const printUrl = basePath + '/print_customer_statement.php?customer_id=' + encodeURIComponent(currentLocalCustomerId) + '&type=local';
+    window.open(printUrl, '_blank');
+}
+
+// دالة فتح modal إرجاع المنتجات للعميل المحلي
+function openLocalCustomerReturnModal() {
+    if (!currentLocalCustomerId) {
+        alert('يرجى فتح سجل مشتريات عميل أولاً');
+        return;
+    }
+    // سيتم تنفيذ هذه الوظيفة لاحقاً
+    alert('وظيفة إرجاع المنتجات للعملاء المحليين قيد التطوير');
+}
+
+// معالج فتح modal سجل المشتريات
+document.addEventListener('DOMContentLoaded', function() {
+    const purchaseHistoryModal = document.getElementById('localCustomerPurchaseHistoryModal');
+    
+    // استخدام event delegation للتعامل مع الأزرار الديناميكية
+    document.addEventListener('click', function(e) {
+        const button = e.target.closest('.js-local-customer-purchase-history');
+        if (!button) return;
+        
+        const customerId = button.getAttribute('data-customer-id');
+        const customerName = button.getAttribute('data-customer-name');
+        const customerPhone = button.getAttribute('data-customer-phone') || '-';
+        const customerAddress = button.getAttribute('data-customer-address') || '-';
+        
+        if (!customerId) return;
+        
+        currentLocalCustomerId = customerId;
+        currentLocalCustomerName = customerName;
+        
+        // تعيين معلومات العميل في الـ modal
+        const nameElement = document.getElementById('localPurchaseHistoryCustomerName');
+        const phoneElement = document.getElementById('localPurchaseHistoryCustomerPhone');
+        const addressElement = document.getElementById('localPurchaseHistoryCustomerAddress');
+        
+        if (nameElement) nameElement.textContent = customerName || '-';
+        if (phoneElement) phoneElement.textContent = customerPhone || '-';
+        if (addressElement) addressElement.textContent = customerAddress || '-';
+        
+        // إظهار loading وإخفاء المحتوى
+        const loadingElement = document.getElementById('localPurchaseHistoryLoading');
+        const contentElement = document.getElementById('localPurchaseHistoryContent');
+        const errorElement = document.getElementById('localPurchaseHistoryError');
+        
+        if (loadingElement) loadingElement.classList.remove('d-none');
+        if (contentElement) contentElement.classList.add('d-none');
+        if (errorElement) {
+            errorElement.classList.add('d-none');
+            errorElement.textContent = '';
+        }
+        
+        // إخفاء الأزرار مؤقتاً
+        const printBtn = document.getElementById('printLocalCustomerStatementBtn');
+        const returnBtn = document.getElementById('localCustomerReturnBtn');
+        if (printBtn) printBtn.style.display = 'none';
+        if (returnBtn) returnBtn.style.display = 'none';
+        
+        // إظهار الـ modal
+        if (purchaseHistoryModal) {
+            const modal = new bootstrap.Modal(purchaseHistoryModal);
+            modal.show();
+            
+            // تحميل البيانات بعد إظهار الـ modal
+            purchaseHistoryModal.addEventListener('shown.bs.modal', function loadData() {
+                purchaseHistoryModal.removeEventListener('shown.bs.modal', loadData);
+                
+                // هنا يمكن إضافة API call لجلب سجل المشتريات
+                // حالياً سنعرض رسالة أن البيانات قيد التطوير
+                setTimeout(function() {
+                    if (loadingElement) loadingElement.classList.add('d-none');
+                    if (contentElement) {
+                        contentElement.classList.remove('d-none');
+                        contentElement.innerHTML = '<div class="alert alert-info"><i class="bi bi-info-circle me-2"></i>سيتم إضافة سجل المشتريات قريباً. يمكنك طباعة كشف الحساب من الزر أدناه.</div>';
+                    }
+                    
+                    // إظهار زر الطباعة
+                    if (printBtn) printBtn.style.display = 'inline-block';
+                    // يمكن إظهار زر الإرجاع لاحقاً عند إضافة الوظيفة
+                    // if (returnBtn) returnBtn.style.display = 'inline-block';
+                }, 500);
+            }, { once: true });
+        }
+    });
+    
+    // إعادة تعيين المتغيرات عند إغلاق الـ modal
+    if (purchaseHistoryModal) {
+        purchaseHistoryModal.addEventListener('hidden.bs.modal', function() {
+            currentLocalCustomerId = null;
+            currentLocalCustomerName = null;
+        });
+    }
+});
 </script>
