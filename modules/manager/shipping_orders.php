@@ -554,7 +554,20 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 $movementNote = 'تسليم طلب شحن #' . $orderNumber . ' لشركة الشحن';
                 
                 if ($productType === 'factory' && $batchId) {
-                    // للمنتجات من المصنع، recordInventoryMovement ستقوم بخصم الكمية من finished_products.quantity_produced
+                    // للمنتجات من المصنع، نحتاج الحصول على finished_products.id من batch_id
+                    // لأن recordInventoryMovement تبحث باستخدام id وليس batch_id
+                    $fpForMovement = $db->queryOne(
+                        "SELECT id FROM finished_products WHERE batch_id = ? LIMIT 1",
+                        [$batchId]
+                    );
+                    
+                    $finishedProductId = $fpForMovement ? (int)$fpForMovement['id'] : null;
+                    
+                    if (!$finishedProductId) {
+                        throw new InvalidArgumentException('تعذر العثور على المنتج المصنع المحدد.');
+                    }
+                    
+                    // recordInventoryMovement ستقوم بخصم الكمية من finished_products.quantity_produced
                     $movementResult = recordInventoryMovement(
                         $productId,
                         $mainWarehouse['id'] ?? null,
@@ -564,7 +577,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                         $orderId,
                         $movementNote,
                         $currentUser['id'] ?? null,
-                        $batchId // تمرير batch_id لربط الحركة بالتشغيلة
+                        $finishedProductId // تمرير finished_products.id (وليس batch_id)
                     );
                 } else {
                     // للمنتجات الخارجية، recordInventoryMovement ستقوم بخصم الكمية من products.quantity
