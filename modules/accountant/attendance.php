@@ -1,3 +1,4 @@
 <?php
-header('Location: ../../attendance.php');
+header('Location: ../../v1/attendance.php');
 exit;
+?>
