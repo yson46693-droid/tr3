@@ -822,7 +822,7 @@ $pageDescription = 'لوحة تحكم المدير - إدارة شاملة لل�
                             <i class="bi bi-gear-wide-connected me-2"></i>تقارير الإنتاج
                         </button>
                         <button type="button" class="btn btn-outline-primary reports-tab" data-target="reportsFinancialSection">
-                            <i class="bi bi-cash-stack me-2"></i>تقارير مالية
+                            <i class="bi bi-graph-up-arrow me-2"></i>تقارير المبيعات
                         </button>
                     </div>
                 </div>
@@ -847,11 +847,336 @@ $pageDescription = 'لوحة تحكم المدير - إدارة شاملة لل�
                 </section>
 
                 <section id="reportsFinancialSection" class="report-section d-none">
+                    <?php
+                    // جلب بيانات المبيعات
+                    $searchQuery = $_GET['search'] ?? '';
+                    $searchFilter = '';
+                    $searchParams = [];
+                    
+                    if (!empty($searchQuery)) {
+                        $searchFilter = " AND (p.name LIKE ? OR p.description LIKE ?)";
+                        $searchParams = ["%{$searchQuery}%", "%{$searchQuery}%"];
+                    }
+                    
+                    // جلب جميع المبيعات من جميع المصادر
+                    $salesQuery = "
+                        SELECT 
+                            p.id AS product_id,
+                            p.name AS product_name,
+                            p.unit AS product_unit,
+                            COALESCE(SUM(CASE 
+                                WHEN EXISTS (
+                                    SELECT 1 FROM shipping_company_orders sco 
+                                    WHERE sco.invoice_id = i.id
+                                ) THEN ii.quantity
+                                ELSE 0
+                            END), 0) AS shipping_qty,
+                            COALESCE(SUM(CASE 
+                                WHEN EXISTS (
+                                    SELECT 1 FROM shipping_company_orders sco 
+                                    WHERE sco.invoice_id = i.id
+                                ) THEN ii.total_price
+                                ELSE 0
+                            END), 0) AS shipping_total,
+                            COALESCE(SUM(CASE 
+                                WHEN NOT EXISTS (
+                                    SELECT 1 FROM shipping_company_orders sco 
+                                    WHERE sco.invoice_id = i.id
+                                ) AND i.sales_rep_id IS NOT NULL AND u.role = 'sales' THEN ii.quantity
+                                ELSE 0
+                            END), 0) AS rep_sales_qty,
+                            COALESCE(SUM(CASE 
+                                WHEN NOT EXISTS (
+                                    SELECT 1 FROM shipping_company_orders sco 
+                                    WHERE sco.invoice_id = i.id
+                                ) AND i.sales_rep_id IS NOT NULL AND u.role = 'sales' THEN ii.total_price
+                                ELSE 0
+                            END), 0) AS rep_sales_total,
+                            COALESCE(SUM(CASE 
+                                WHEN NOT EXISTS (
+                                    SELECT 1 FROM shipping_company_orders sco 
+                                    WHERE sco.invoice_id = i.id
+                                ) AND (i.sales_rep_id IS NULL OR u.role != 'sales' OR u.role IS NULL) THEN ii.quantity
+                                ELSE 0
+                            END), 0) AS manager_pos_qty,
+                            COALESCE(SUM(CASE 
+                                WHEN NOT EXISTS (
+                                    SELECT 1 FROM shipping_company_orders sco 
+                                    WHERE sco.invoice_id = i.id
+                                ) AND (i.sales_rep_id IS NULL OR u.role != 'sales' OR u.role IS NULL) THEN ii.total_price
+                                ELSE 0
+                            END), 0) AS manager_pos_total
+                        FROM invoice_items ii
+                        INNER JOIN invoices i ON ii.invoice_id = i.id
+                        INNER JOIN products p ON ii.product_id = p.id
+                        LEFT JOIN users u ON i.sales_rep_id = u.id
+                        WHERE i.status != 'cancelled'
+                        {$searchFilter}
+                        GROUP BY p.id, p.name, p.unit
+                    ";
+                    
+                    $salesData = $db->query($salesQuery, $searchParams);
+                    
+                    // جلب المرتجعات لكل منتج
+                    $returnsQuery = "
+                        SELECT 
+                            ri.product_id,
+                            COALESCE(SUM(ri.quantity), 0) AS returned_qty,
+                            COALESCE(SUM(ri.total_price), 0) AS returned_total
+                        FROM return_items ri
+                        INNER JOIN sales_returns sr ON ri.return_id = sr.id
+                        WHERE sr.status IN ('approved', 'processed')
+                        GROUP BY ri.product_id
+                    ";
+                    
+                    $returnsData = $db->query($returnsQuery);
+                    $returnsByProduct = [];
+                    foreach ($returnsData as $return) {
+                        $returnsByProduct[$return['product_id']] = [
+                            'qty' => (float)$return['returned_qty'],
+                            'total' => (float)$return['returned_total']
+                        ];
+                    }
+                    
+                    // حساب الإجماليات
+                    $totalRepSales = 0;
+                    $totalManagerPosSales = 0;
+                    $totalShippingSales = 0;
+                    $totalNetSales = 0;
+                    
+                    foreach ($salesData as &$sale) {
+                        $productId = $sale['product_id'];
+                        $returnedQty = isset($returnsByProduct[$productId]) ? $returnsByProduct[$productId]['qty'] : 0;
+                        $returnedTotal = isset($returnsByProduct[$productId]) ? $returnsByProduct[$productId]['total'] : 0;
+                        
+                        // خصم المرتجعات
+                        $sale['net_rep_qty'] = max(0, (float)$sale['rep_sales_qty'] - $returnedQty);
+                        $sale['net_manager_pos_qty'] = max(0, (float)$sale['manager_pos_qty'] - $returnedQty);
+                        $sale['net_shipping_qty'] = max(0, (float)$sale['shipping_qty'] - $returnedQty);
+                        $sale['total_net_qty'] = $sale['net_rep_qty'] + $sale['net_manager_pos_qty'] + $sale['net_shipping_qty'];
+                        
+                        $sale['net_rep_total'] = max(0, (float)$sale['rep_sales_total'] - $returnedTotal);
+                        $sale['net_manager_pos_total'] = max(0, (float)$sale['manager_pos_total'] - $returnedTotal);
+                        $sale['net_shipping_total'] = max(0, (float)$sale['shipping_total'] - $returnedTotal);
+                        $sale['total_net_total'] = $sale['net_rep_total'] + $sale['net_manager_pos_total'] + $sale['net_shipping_total'];
+                        
+                        $totalRepSales += $sale['net_rep_total'];
+                        $totalManagerPosSales += $sale['net_manager_pos_total'];
+                        $totalShippingSales += $sale['net_shipping_total'];
+                        $totalNetSales += $sale['total_net_total'];
+                    }
+                    unset($sale);
+                    
+                    // ترتيب حسب إجمالي الكمية
+                    usort($salesData, function($a, $b) {
+                        return $b['total_net_qty'] <=> $a['total_net_qty'];
+                    });
+                    ?>
+                    
+                    <!-- بطاقات الإحصائيات -->
+                    <div class="row mb-4">
+                        <div class="col-md-4 mb-3">
+                            <div class="card shadow-sm border-0" style="background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);">
+                                <div class="card-body text-white">
+                                    <div class="d-flex justify-content-between align-items-center">
+                                        <div>
+                                            <h6 class="mb-1 text-white-50" style="font-size: 0.85rem;">إجمالي مبيعات المناديب</h6>
+                                            <h3 class="mb-0 fw-bold"><?php echo number_format($totalRepSales, 2); ?> <small style="font-size: 0.6em;">ر.س</small></h3>
+                                        </div>
+                                        <div class="bg-white bg-opacity-25 rounded-circle p-3">
+                                            <i class="bi bi-people-fill fs-3"></i>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                        <div class="col-md-4 mb-3">
+                            <div class="card shadow-sm border-0" style="background: linear-gradient(135deg, #f093fb 0%, #f5576c 100%);">
+                                <div class="card-body text-white">
+                                    <div class="d-flex justify-content-between align-items-center">
+                                        <div>
+                                            <h6 class="mb-1 text-white-50" style="font-size: 0.85rem;">إجمالي مبيعات نقطة بيع المدير</h6>
+                                            <h3 class="mb-0 fw-bold"><?php echo number_format($totalManagerPosSales, 2); ?> <small style="font-size: 0.6em;">ر.س</small></h3>
+                                        </div>
+                                        <div class="bg-white bg-opacity-25 rounded-circle p-3">
+                                            <i class="bi bi-cash-stack fs-3"></i>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                        <div class="col-md-4 mb-3">
+                            <div class="card shadow-sm border-0" style="background: linear-gradient(135deg, #4facfe 0%, #00f2fe 100%);">
+                                <div class="card-body text-white">
+                                    <div class="d-flex justify-content-between align-items-center">
+                                        <div>
+                                            <h6 class="mb-1 text-white-50" style="font-size: 0.85rem;">إجمالي مبيعات طلبات الشحن</h6>
+                                            <h3 class="mb-0 fw-bold"><?php echo number_format($totalShippingSales, 2); ?> <small style="font-size: 0.6em;">ر.س</small></h3>
+                                        </div>
+                                        <div class="bg-white bg-opacity-25 rounded-circle p-3">
+                                            <i class="bi bi-truck fs-3"></i>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                    
+                    <!-- بطاقة الإجمالي العام -->
+                    <div class="card shadow-sm mb-4 border-0" style="background: linear-gradient(135deg, #43e97b 0%, #38f9d7 100%);">
+                        <div class="card-body text-white">
+                            <div class="d-flex justify-content-between align-items-center">
+                                <div>
+                                    <h6 class="mb-1 text-white-50" style="font-size: 0.9rem;">إجمالي المبيعات الصافية (بعد خصم المرتجعات)</h6>
+                                    <h2 class="mb-0 fw-bold"><?php echo number_format($totalNetSales, 2); ?> <small style="font-size: 0.5em;">ر.س</small></h2>
+                                </div>
+                                <div class="bg-white bg-opacity-25 rounded-circle p-4">
+                                    <i class="bi bi-graph-up-arrow fs-1"></i>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                    
+                    <!-- البحث والجدول -->
                     <div class="card shadow-sm">
-                        <div class="card-body text-center py-5">
-                            <i class="bi bi-tools text-muted display-5 mb-3"></i>
-                            <h4 class="mb-2">تقارير مالية</h4>
-                            <p class="text-muted mb-0">هذا القسم قيد التطوير وسيتم توفيره قريباً.</p>
+                        <div class="card-header bg-primary text-white d-flex justify-content-between align-items-center flex-wrap gap-2">
+                            <h5 class="mb-0">
+                                <i class="bi bi-list-ul me-2"></i>تفاصيل المبيعات حسب المنتج
+                            </h5>
+                            <form method="GET" action="" class="d-flex gap-2" style="min-width: 250px;">
+                                <input type="hidden" name="page" value="<?php echo htmlspecialchars($_GET['page'] ?? 'reports'); ?>">
+                                <div class="input-group" style="max-width: 300px;">
+                                    <input type="text" 
+                                           name="search" 
+                                           class="form-control" 
+                                           placeholder="بحث عن منتج..." 
+                                           value="<?php echo htmlspecialchars($searchQuery); ?>"
+                                           style="border-top-right-radius: 0.375rem; border-bottom-right-radius: 0.375rem;">
+                                    <button class="btn btn-light" type="submit" style="border-top-left-radius: 0; border-bottom-left-radius: 0;">
+                                        <i class="bi bi-search"></i>
+                                    </button>
+                                    <?php if (!empty($searchQuery)): ?>
+                                    <a href="?page=<?php echo htmlspecialchars($_GET['page'] ?? 'reports'); ?>" class="btn btn-outline-light">
+                                        <i class="bi bi-x"></i>
+                                    </a>
+                                    <?php endif; ?>
+                                </div>
+                            </form>
+                        </div>
+                        <div class="card-body p-0">
+                            <div class="table-responsive">
+                                <table class="table table-hover mb-0" style="font-size: 0.9rem;">
+                                    <thead class="table-light" style="position: sticky; top: 0; z-index: 10;">
+                                        <tr>
+                                            <th class="border-end" style="background-color: #f8f9fa; padding: 1rem;">المنتج</th>
+                                            <th class="text-center border-end" style="background-color: #e3f2fd; padding: 1rem;">
+                                                <i class="bi bi-people-fill text-primary me-1"></i>
+                                                مبيعات المناديب
+                                            </th>
+                                            <th class="text-center border-end" style="background-color: #fce4ec; padding: 1rem;">
+                                                <i class="bi bi-cash-stack text-danger me-1"></i>
+                                                نقطة بيع المدير
+                                            </th>
+                                            <th class="text-center border-end" style="background-color: #e0f7fa; padding: 1rem;">
+                                                <i class="bi bi-truck text-info me-1"></i>
+                                                طلبات الشحن
+                                            </th>
+                                            <th class="text-center fw-bold" style="background-color: #f1f8e9; padding: 1rem;">
+                                                <i class="bi bi-calculator text-success me-1"></i>
+                                                الإجمالي
+                                            </th>
+                                        </tr>
+                                    </thead>
+                                    <tbody>
+                                        <?php if (empty($salesData)): ?>
+                                        <tr>
+                                            <td colspan="5" class="text-center text-muted py-5">
+                                                <i class="bi bi-inbox fs-1 d-block mb-2"></i>
+                                                لا توجد بيانات مبيعات
+                                            </td>
+                                        </tr>
+                                        <?php else: ?>
+                                        <?php 
+                                        $currentGroup = '';
+                                        $firstItem = true;
+                                        foreach ($salesData as $sale): 
+                                            // عرض المنتجات التي لديها مبيعات فقط
+                                            if ($sale['total_net_qty'] <= 0) continue;
+                                            
+                                            $productName = htmlspecialchars($sale['product_name']);
+                                            $firstLetter = mb_substr($productName, 0, 1, 'UTF-8');
+                                            
+                                            // تقسيم حسب الحرف الأول
+                                            if ($currentGroup !== $firstLetter):
+                                                if (!$firstItem):
+                                                    echo '</tbody>';
+                                                endif;
+                                                $currentGroup = $firstLetter;
+                                                $firstItem = false;
+                                                echo '<tbody class="table-group-divider">';
+                                        ?>
+                                            <tr class="table-secondary">
+                                                <td colspan="5" class="fw-bold py-2" style="background-color: #e9ecef;">
+                                                    <i class="bi bi-tag-fill me-2"></i>المنتجات التي تبدأ بحرف "<?php echo htmlspecialchars($firstLetter); ?>"
+                                                </td>
+                                            </tr>
+                                        <?php endif; ?>
+                                            <tr class="align-middle">
+                                                <td class="border-end fw-semibold" style="padding: 0.75rem 1rem;">
+                                                    <?php echo $productName; ?>
+                                                    <?php if (!empty($sale['product_unit'])): ?>
+                                                        <small class="text-muted">(<?php echo htmlspecialchars($sale['product_unit']); ?>)</small>
+                                                    <?php endif; ?>
+                                                </td>
+                                                <td class="text-center border-end" style="padding: 0.75rem 1rem;">
+                                                    <div class="d-flex flex-column">
+                                                        <span class="fw-semibold text-primary"><?php echo number_format($sale['net_rep_qty'], 2); ?></span>
+                                                        <small class="text-muted"><?php echo number_format($sale['net_rep_total'], 2); ?> ر.س</small>
+                                                    </div>
+                                                </td>
+                                                <td class="text-center border-end" style="padding: 0.75rem 1rem;">
+                                                    <div class="d-flex flex-column">
+                                                        <span class="fw-semibold text-danger"><?php echo number_format($sale['net_manager_pos_qty'], 2); ?></span>
+                                                        <small class="text-muted"><?php echo number_format($sale['net_manager_pos_total'], 2); ?> ر.س</small>
+                                                    </div>
+                                                </td>
+                                                <td class="text-center border-end" style="padding: 0.75rem 1rem;">
+                                                    <div class="d-flex flex-column">
+                                                        <span class="fw-semibold text-info"><?php echo number_format($sale['net_shipping_qty'], 2); ?></span>
+                                                        <small class="text-muted"><?php echo number_format($sale['net_shipping_total'], 2); ?> ر.س</small>
+                                                    </div>
+                                                </td>
+                                                <td class="text-center fw-bold" style="padding: 0.75rem 1rem; background-color: #f8f9fa;">
+                                                    <div class="d-flex flex-column">
+                                                        <span class="text-success"><?php echo number_format($sale['total_net_qty'], 2); ?></span>
+                                                        <small class="text-muted"><?php echo number_format($sale['total_net_total'], 2); ?> ر.س</small>
+                                                    </div>
+                                                </td>
+                                            </tr>
+                                        <?php endforeach; ?>
+                                        <?php endif; ?>
+                                    </tbody>
+                                    <?php if (!empty($salesData) && array_sum(array_column($salesData, 'total_net_qty')) > 0): ?>
+                                    <tfoot class="table-light fw-bold">
+                                        <tr>
+                                            <td class="border-end" style="padding: 1rem;">الإجمالي</td>
+                                            <td class="text-center border-end text-primary" style="padding: 1rem;">
+                                                <?php echo number_format($totalRepSales, 2); ?> ر.س
+                                            </td>
+                                            <td class="text-center border-end text-danger" style="padding: 1rem;">
+                                                <?php echo number_format($totalManagerPosSales, 2); ?> ر.س
+                                            </td>
+                                            <td class="text-center border-end text-info" style="padding: 1rem;">
+                                                <?php echo number_format($totalShippingSales, 2); ?> ر.س
+                                            </td>
+                                            <td class="text-center text-success" style="padding: 1rem; background-color: #f8f9fa;">
+                                                <?php echo number_format($totalNetSales, 2); ?> ر.س
+                                            </td>
+                                        </tr>
+                                    </tfoot>
+                                    <?php endif; ?>
+                                </table>
+                            </div>
                         </div>
                     </div>
                 </section>

@@ -2645,7 +2645,6 @@ try {
                                         <i class="bi bi-plus-lg"></i>
                                     </button>
                                 </div>
-                                <small class="text-muted">أو اختر من البطاقات أعلاه</small>
                             </div>
                             <div class="col-lg-4 col-md-6">
                                 <label class="form-label fw-semibold">العميل <span class="text-danger">*</span></label>
