@@ -355,20 +355,19 @@ function handleCreateLocalReturn(): void
                 continue;
             }
             
-            // تحديث كمية المنتج في جدول products
-            $currentQuantity = (float)($product['quantity'] ?? 0);
-            $newQuantity = round($currentQuantity + $quantity, 3);
-            
-            // تحديث warehouse_id إذا لم يكن محدداً
+            // تحديد warehouse_id - إذا لم يكن محدداً، نستخدم المخزن الرئيسي
             $warehouseId = (int)($product['warehouse_id'] ?? 0);
             if ($warehouseId <= 0) {
                 $warehouseId = $mainWarehouseId;
+                // تحديث warehouse_id في products إذا لم يكن محدداً
+                $db->execute(
+                    "UPDATE products SET warehouse_id = ? WHERE id = ? AND (warehouse_id IS NULL OR warehouse_id = 0)",
+                    [$warehouseId, $productId]
+                );
             }
             
-            $db->execute(
-                "UPDATE products SET quantity = ?, warehouse_id = ? WHERE id = ?",
-                [$newQuantity, $warehouseId, $productId]
-            );
+            // ملاحظة: لا نقوم بتحديث products.quantity هنا لأن recordInventoryMovement() سيقوم بذلك تلقائياً
+            // recordInventoryMovement() يقوم بتحديث products.quantity عند type='in'
             
             // البحث عن batch_number من الفاتورة المحلية
             $batchId = null;
@@ -398,7 +397,9 @@ function handleCreateLocalReturn(): void
                         }
                     }
                     
-                    // إذا كان هناك batch_id، نبحث عن finished_products
+                    // تحديث quantity_produced في finished_products
+                    // ملاحظة: recordInventoryMovement() لا يقوم بتحديث finished_products.quantity_produced 
+                    // في حالة type='in'، لذلك يجب تحديثه يدوياً هنا
                     if ($batchId) {
                         $finishedProduct = $db->queryOne(
                             "SELECT id, quantity_produced FROM finished_products WHERE batch_id = ? LIMIT 1",
@@ -406,7 +407,6 @@ function handleCreateLocalReturn(): void
                         );
                         
                         if ($finishedProduct) {
-                            // تحديث quantity_produced في finished_products
                             $currentProduced = (float)($finishedProduct['quantity_produced'] ?? 0);
                             $newProduced = round($currentProduced + $quantity, 3);
                             
