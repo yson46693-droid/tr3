@@ -344,13 +344,20 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['
     }
 }
 
-// تحميل قائمة العملاء
+// تحميل قائمة العملاء المحليين فقط
 if (empty($customers)) {
     $customers = [];
     try {
-        $customers = $db->query("SELECT id, name FROM customers WHERE status = 'active' ORDER BY name ASC");
+        // جلب العملاء المحليين فقط من جدول local_customers
+        $localCustomersTableExists = $db->queryOne("SHOW TABLES LIKE 'local_customers'");
+        if (!empty($localCustomersTableExists)) {
+            $customers = $db->query("SELECT id, name FROM local_customers WHERE status = 'active' ORDER BY name ASC");
+        } else {
+            $customers = [];
+        }
     } catch (Throwable $e) {
-        error_log('Error fetching customers: ' . $e->getMessage());
+        error_log('Error fetching local customers: ' . $e->getMessage());
+        $customers = [];
     }
 }
 
@@ -681,12 +688,19 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 $conn = $db->getConnection();
                 $conn->begin_transaction();
 
+                // التأكد من وجود جدول local_customers
+                $localCustomersTableExists = $db->queryOne("SHOW TABLES LIKE 'local_customers'");
+                if (empty($localCustomersTableExists)) {
+                    throw new RuntimeException('جدول العملاء المحليين غير موجود. يرجى التأكد من إعداد النظام.');
+                }
+
                 if ($customerMode === 'new') {
                     $dueAmount = $baseDueAmount;
                     $creditUsed = 0.0;
+                    // إنشاء العميل في جدول local_customers
                     $db->execute(
-                        "INSERT INTO customers (name, phone, address, balance, status, created_by, rep_id, created_from_pos, created_by_admin) 
-                         VALUES (?, ?, ?, ?, 'active', ?, NULL, 1, 0)",
+                        "INSERT INTO local_customers (name, phone, address, balance, status, created_by) 
+                         VALUES (?, ?, ?, ?, 'active', ?)",
                         [
                             $newCustomerName,
                             $newCustomerPhone !== '' ? $newCustomerPhone : null,
@@ -704,13 +718,14 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                         'created_by' => $currentUser['id'],
                     ];
                 } else {
+                    // جلب العميل من local_customers
                     $customer = $db->queryOne(
-                        "SELECT id, balance FROM customers WHERE id = ? FOR UPDATE",
+                        "SELECT id, name, phone, address, balance FROM local_customers WHERE id = ? FOR UPDATE",
                         [$customerId]
                     );
 
                     if (!$customer) {
-                        throw new RuntimeException('تعذر تحميل بيانات العميل أثناء المعالجة.');
+                        throw new RuntimeException('تعذر تحميل بيانات العميل المحلي أثناء المعالجة.');
                     }
 
                     $currentBalance = (float) ($customer['balance'] ?? 0);
@@ -724,9 +739,41 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
                     $newBalance = round($currentBalance + $creditUsed + $dueAmount, 2);
                     if (abs($newBalance - $currentBalance) > 0.0001) {
-                        $db->execute("UPDATE customers SET balance = ? WHERE id = ?", [$newBalance, $customerId]);
+                        $db->execute("UPDATE local_customers SET balance = ? WHERE id = ?", [$newBalance, $customerId]);
                         $customer['balance'] = $newBalance;
                     }
+                }
+
+                // إنشاء عميل مؤقت في جدول customers للربط مع invoices (إذا لم يكن موجوداً)
+                // لأن invoices table له foreign key على customers
+                $tempCustomerId = null;
+                $localCustomerId = $customerId; // حفظ معرف العميل المحلي
+                $customerName = $customer['name'] ?? ($customerMode === 'new' ? $newCustomerName : '');
+                
+                // البحث عن عميل في customers بنفس الاسم أو إنشاء واحد جديد
+                $existingCustomerInCustomers = $db->queryOne(
+                    "SELECT id FROM customers WHERE name = ? AND created_by_admin = 1 LIMIT 1",
+                    [$customerName]
+                );
+                
+                if ($existingCustomerInCustomers) {
+                    $tempCustomerId = (int)$existingCustomerInCustomers['id'];
+                } else {
+                    // إنشاء عميل مؤقت في customers للربط
+                    $customerPhone = $customer['phone'] ?? ($customerMode === 'new' ? ($newCustomerPhone !== '' ? $newCustomerPhone : null) : null);
+                    $customerAddress = $customer['address'] ?? ($customerMode === 'new' ? ($newCustomerAddress !== '' ? $newCustomerAddress : null) : null);
+                    
+                    $db->execute(
+                        "INSERT INTO customers (name, phone, address, balance, status, created_by, rep_id, created_from_pos, created_by_admin) 
+                         VALUES (?, ?, ?, 0, 'active', ?, NULL, 1, 1)",
+                        [
+                            $customerName,
+                            $customerPhone,
+                            $customerAddress,
+                            $currentUser['id'],
+                        ]
+                    );
+                    $tempCustomerId = (int) $db->getLastInsertId();
                 }
 
                 $invoiceItems = [];
@@ -739,8 +786,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     ];
                 }
 
+                // استخدام tempCustomerId لإنشاء الفاتورة (لأن invoices table مرتبط بـ customers)
                 $invoiceResult = createInvoice(
-                    $customerId,
+                    $tempCustomerId,
                     $currentUser['id'],
                     $saleDate,
                     $invoiceItems,
@@ -791,6 +839,57 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 
                 $invoiceUpdateParams[] = $invoiceId;
                 $db->execute($invoiceUpdateSql . " WHERE id = ?", $invoiceUpdateParams);
+
+                // تسجيل الإيراد في خزنة الشركة (accountant_transactions)
+                try {
+                    // التأكد من وجود جدول accountant_transactions
+                    $accountantTableExists = $db->queryOne("SHOW TABLES LIKE 'accountant_transactions'");
+                    if (!empty($accountantTableExists)) {
+                        $customerName = $customer['name'] ?? 'عميل محلي';
+                        
+                        // الحالة 1: البيع الكامل - تسجيل كامل المبلغ كإيراد معتمد
+                        if ($invoiceStatus === 'paid' && $effectivePaidAmount > 0) {
+                            $description = 'بيع كامل من نقطة بيع المدير - فاتورة ' . $invoiceNumber . ' - عميل: ' . $customerName;
+                            $referenceNumber = 'POS-FULL-' . $invoiceId . '-' . date('YmdHis');
+                            
+                            $db->execute(
+                                "INSERT INTO accountant_transactions 
+                                (transaction_type, amount, description, reference_number, payment_method, status, approved_by, created_by, approved_at)
+                                VALUES (?, ?, ?, ?, 'cash', 'approved', ?, ?, NOW())",
+                                [
+                                    'income',
+                                    $effectivePaidAmount,
+                                    $description,
+                                    $referenceNumber,
+                                    $currentUser['id'],
+                                    $currentUser['id']
+                                ]
+                            );
+                        }
+                        // الحالة 2: البيع الجزئي - تسجيل المبلغ المحصل فقط كإيراد معتمد
+                        elseif ($invoiceStatus === 'partial' && $effectivePaidAmount > 0) {
+                            $description = 'تحصيل جزئي من نقطة بيع المدير - فاتورة ' . $invoiceNumber . ' - عميل: ' . $customerName;
+                            $referenceNumber = 'POS-PARTIAL-' . $invoiceId . '-' . date('YmdHis');
+                            
+                            $db->execute(
+                                "INSERT INTO accountant_transactions 
+                                (transaction_type, amount, description, reference_number, payment_method, status, approved_by, created_by, approved_at)
+                                VALUES (?, ?, ?, ?, 'cash', 'approved', ?, ?, NOW())",
+                                [
+                                    'income',
+                                    $effectivePaidAmount,
+                                    $description,
+                                    $referenceNumber,
+                                    $currentUser['id'],
+                                    $currentUser['id']
+                                ]
+                            );
+                        }
+                    }
+                } catch (Throwable $incomeError) {
+                    // لا نوقف العملية إذا فشل تسجيل الإيراد، فقط نسجل الخطأ
+                    error_log('Error recording income in accountant_transactions: ' . $incomeError->getMessage());
+                }
 
                 foreach ($normalizedCart as $item) {
                     $productId = $item['product_id'];
