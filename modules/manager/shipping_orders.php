@@ -1507,10 +1507,10 @@ $hasShippingCompanies = !empty($shippingCompanies);
                 <span class="available-qty d-inline-block">-</span>
             </td>
             <td>
-                <input type="number" class="form-control" name="items[${rowIndex}][quantity]" step="0.01" min="0.01" value="1" required>
+                <input type="number" class="form-control" name="items[${rowIndex}][quantity]" step="1" min="0" value="1" required>
             </td>
             <td>
-                <input type="number" class="form-control" name="items[${rowIndex}][unit_price]" step="0.01" min="0" required>
+                <input type="number" class="form-control" name="items[${rowIndex}][unit_price]" step="0.1" min="0" required>
             </td>
             <td class="fw-semibold line-total">${formatCurrency(0)}</td>
             <td>
