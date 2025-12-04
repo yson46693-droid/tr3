@@ -601,30 +601,228 @@ $typeColorMap = [
 
 <!-- جدول الحركات المالية -->
 <div class="card shadow-sm mt-4">
-    <div class="card-header bg-light fw-bold">
-        <i class="bi bi-list-ul me-2 text-primary"></i>الحركات المالية
+    <div class="card-header bg-light fw-bold d-flex justify-content-between align-items-center">
+        <span><i class="bi bi-list-ul me-2 text-primary"></i>الحركات المالية</span>
+        <button class="btn btn-sm btn-outline-primary" type="button" data-bs-toggle="collapse" data-bs-target="#advancedSearchCollapse" aria-expanded="false" aria-controls="advancedSearchCollapse">
+            <i class="bi bi-funnel me-1"></i>بحث متقدم
+        </button>
     </div>
     <div class="card-body">
+        <!-- نموذج البحث المتقدم -->
+        <div class="collapse mb-4" id="advancedSearchCollapse">
+            <div class="card card-body bg-light">
+                <form method="GET" action="" id="advancedSearchForm">
+                    <input type="hidden" name="page" value="company_cash">
+                    <div class="row g-3">
+                        <div class="col-12 col-md-6 col-lg-3">
+                            <label for="searchType" class="form-label">نوع الحركة</label>
+                            <select class="form-select" id="searchType" name="search_type">
+                                <option value="">جميع الأنواع</option>
+                                <option value="income" <?php echo (isset($_GET['search_type']) && $_GET['search_type'] === 'income') ? 'selected' : ''; ?>>إيراد</option>
+                                <option value="expense" <?php echo (isset($_GET['search_type']) && $_GET['search_type'] === 'expense') ? 'selected' : ''; ?>>مصروف</option>
+                                <option value="transfer" <?php echo (isset($_GET['search_type']) && $_GET['search_type'] === 'transfer') ? 'selected' : ''; ?>>تحويل</option>
+                                <option value="payment" <?php echo (isset($_GET['search_type']) && $_GET['search_type'] === 'payment') ? 'selected' : ''; ?>>دفعة</option>
+                                <option value="other" <?php echo (isset($_GET['search_type']) && $_GET['search_type'] === 'other') ? 'selected' : ''; ?>>أخرى</option>
+                            </select>
+                        </div>
+                        <div class="col-12 col-md-6 col-lg-3">
+                            <label for="searchStatus" class="form-label">الحالة</label>
+                            <select class="form-select" id="searchStatus" name="search_status">
+                                <option value="">جميع الحالات</option>
+                                <option value="pending" <?php echo (isset($_GET['search_status']) && $_GET['search_status'] === 'pending') ? 'selected' : ''; ?>>معلق</option>
+                                <option value="approved" <?php echo (isset($_GET['search_status']) && $_GET['search_status'] === 'approved') ? 'selected' : ''; ?>>معتمد</option>
+                                <option value="rejected" <?php echo (isset($_GET['search_status']) && $_GET['search_status'] === 'rejected') ? 'selected' : ''; ?>>مرفوض</option>
+                            </select>
+                        </div>
+                        <div class="col-12 col-md-6 col-lg-3">
+                            <label for="searchDateFrom" class="form-label">من تاريخ</label>
+                            <input type="date" class="form-control" id="searchDateFrom" name="search_date_from" value="<?php echo htmlspecialchars($_GET['search_date_from'] ?? '', ENT_QUOTES, 'UTF-8'); ?>">
+                        </div>
+                        <div class="col-12 col-md-6 col-lg-3">
+                            <label for="searchDateTo" class="form-label">إلى تاريخ</label>
+                            <input type="date" class="form-control" id="searchDateTo" name="search_date_to" value="<?php echo htmlspecialchars($_GET['search_date_to'] ?? '', ENT_QUOTES, 'UTF-8'); ?>">
+                        </div>
+                        <div class="col-12 col-md-6 col-lg-3">
+                            <label for="searchAmountFrom" class="form-label">من مبلغ</label>
+                            <input type="number" step="0.01" min="0" class="form-control" id="searchAmountFrom" name="search_amount_from" placeholder="0.00" value="<?php echo htmlspecialchars($_GET['search_amount_from'] ?? '', ENT_QUOTES, 'UTF-8'); ?>">
+                        </div>
+                        <div class="col-12 col-md-6 col-lg-3">
+                            <label for="searchAmountTo" class="form-label">إلى مبلغ</label>
+                            <input type="number" step="0.01" min="0" class="form-control" id="searchAmountTo" name="search_amount_to" placeholder="0.00" value="<?php echo htmlspecialchars($_GET['search_amount_to'] ?? '', ENT_QUOTES, 'UTF-8'); ?>">
+                        </div>
+                        <div class="col-12 col-md-6 col-lg-3">
+                            <label for="searchDescription" class="form-label">الوصف</label>
+                            <input type="text" class="form-control" id="searchDescription" name="search_description" placeholder="ابحث في الوصف..." value="<?php echo htmlspecialchars($_GET['search_description'] ?? '', ENT_QUOTES, 'UTF-8'); ?>">
+                        </div>
+                        <div class="col-12 col-md-6 col-lg-3">
+                            <label for="searchReference" class="form-label">الرقم المرجعي</label>
+                            <input type="text" class="form-control" id="searchReference" name="search_reference" placeholder="ابحث في الرقم المرجعي..." value="<?php echo htmlspecialchars($_GET['search_reference'] ?? '', ENT_QUOTES, 'UTF-8'); ?>">
+                        </div>
+                        <div class="col-12 col-md-6 col-lg-3">
+                            <label for="searchCreatedBy" class="form-label">أنشأه</label>
+                            <select class="form-select" id="searchCreatedBy" name="search_created_by">
+                                <option value="">الجميع</option>
+                                <?php
+                                $allUsers = $db->query("SELECT id, full_name, username FROM users WHERE status = 'active' ORDER BY full_name ASC, username ASC") ?: [];
+                                foreach ($allUsers as $user):
+                                    $selected = (isset($_GET['search_created_by']) && $_GET['search_created_by'] == $user['id']) ? 'selected' : '';
+                                    $displayName = htmlspecialchars($user['full_name'] ?? $user['username'], ENT_QUOTES, 'UTF-8');
+                                ?>
+                                    <option value="<?php echo $user['id']; ?>" <?php echo $selected; ?>><?php echo $displayName; ?></option>
+                                <?php endforeach; ?>
+                            </select>
+                        </div>
+                        <div class="col-12 col-md-6 col-lg-3">
+                            <label for="searchApprovedBy" class="form-label">اعتمده</label>
+                            <select class="form-select" id="searchApprovedBy" name="search_approved_by">
+                                <option value="">الجميع</option>
+                                <option value="null" <?php echo (isset($_GET['search_approved_by']) && $_GET['search_approved_by'] === 'null') ? 'selected' : ''; ?>>غير معتمد</option>
+                                <?php
+                                foreach ($allUsers as $user):
+                                    $selected = (isset($_GET['search_approved_by']) && $_GET['search_approved_by'] == $user['id']) ? 'selected' : '';
+                                    $displayName = htmlspecialchars($user['full_name'] ?? $user['username'], ENT_QUOTES, 'UTF-8');
+                                ?>
+                                    <option value="<?php echo $user['id']; ?>" <?php echo $selected; ?>><?php echo $displayName; ?></option>
+                                <?php endforeach; ?>
+                            </select>
+                        </div>
+                        <div class="col-12">
+                            <div class="d-flex gap-2">
+                                <button type="submit" class="btn btn-primary">
+                                    <i class="bi bi-search me-1"></i>بحث
+                                </button>
+                                <a href="?page=company_cash" class="btn btn-outline-secondary">
+                                    <i class="bi bi-x-circle me-1"></i>إعادة تعيين
+                                </a>
+                            </div>
+                        </div>
+                    </div>
+                </form>
+            </div>
+        </div>
+        
         <?php
+        // معالجة معاملات البحث
+        $searchType = isset($_GET['search_type']) && $_GET['search_type'] !== '' ? $_GET['search_type'] : null;
+        $searchStatus = isset($_GET['search_status']) && $_GET['search_status'] !== '' ? $_GET['search_status'] : null;
+        $searchDateFrom = isset($_GET['search_date_from']) && $_GET['search_date_from'] !== '' ? $_GET['search_date_from'] : null;
+        $searchDateTo = isset($_GET['search_date_to']) && $_GET['search_date_to'] !== '' ? $_GET['search_date_to'] : null;
+        $searchAmountFrom = isset($_GET['search_amount_from']) && $_GET['search_amount_from'] !== '' ? floatval($_GET['search_amount_from']) : null;
+        $searchAmountTo = isset($_GET['search_amount_to']) && $_GET['search_amount_to'] !== '' ? floatval($_GET['search_amount_to']) : null;
+        $searchDescription = isset($_GET['search_description']) && $_GET['search_description'] !== '' ? trim($_GET['search_description']) : null;
+        $searchReference = isset($_GET['search_reference']) && $_GET['search_reference'] !== '' ? trim($_GET['search_reference']) : null;
+        $searchCreatedBy = isset($_GET['search_created_by']) && $_GET['search_created_by'] !== '' ? intval($_GET['search_created_by']) : null;
+        $searchApprovedBy = isset($_GET['search_approved_by']) && $_GET['search_approved_by'] !== '' ? $_GET['search_approved_by'] : null;
+        
+        // بناء شروط البحث
+        $whereConditions = [];
+        $queryParams = [];
+        
+        if ($searchType !== null) {
+            $whereConditions[] = "combined.type = ?";
+            $queryParams[] = $searchType;
+        }
+        
+        if ($searchStatus !== null) {
+            $whereConditions[] = "combined.status = ?";
+            $queryParams[] = $searchStatus;
+        }
+        
+        if ($searchDateFrom !== null) {
+            $whereConditions[] = "DATE(combined.created_at) >= ?";
+            $queryParams[] = $searchDateFrom;
+        }
+        
+        if ($searchDateTo !== null) {
+            $whereConditions[] = "DATE(combined.created_at) <= ?";
+            $queryParams[] = $searchDateTo;
+        }
+        
+        if ($searchAmountFrom !== null) {
+            $whereConditions[] = "combined.amount >= ?";
+            $queryParams[] = $searchAmountFrom;
+        }
+        
+        if ($searchAmountTo !== null) {
+            $whereConditions[] = "combined.amount <= ?";
+            $queryParams[] = $searchAmountTo;
+        }
+        
+        if ($searchDescription !== null) {
+            $whereConditions[] = "combined.description LIKE ?";
+            $queryParams[] = '%' . $searchDescription . '%';
+        }
+        
+        if ($searchReference !== null) {
+            $whereConditions[] = "combined.reference_number LIKE ?";
+            $queryParams[] = '%' . $searchReference . '%';
+        }
+        
+        if ($searchCreatedBy !== null) {
+            $whereConditions[] = "combined.created_by = ?";
+            $queryParams[] = $searchCreatedBy;
+        }
+        
+        if ($searchApprovedBy !== null) {
+            if ($searchApprovedBy === 'null') {
+                $whereConditions[] = "combined.approved_by IS NULL";
+            } else {
+                $whereConditions[] = "combined.approved_by = ?";
+                $queryParams[] = intval($searchApprovedBy);
+            }
+        }
+        
+        $whereClause = !empty($whereConditions) ? 'WHERE ' . implode(' AND ', $whereConditions) : '';
+        
         // Pagination
         $pageNum = isset($_GET['p']) ? max(1, intval($_GET['p'])) : 1;
         $perPage = 6;
         $offset = ($pageNum - 1) * $perPage;
         
-        // حساب العدد الإجمالي للحركات
-        $totalCountResult = $db->queryOne("
+        // حساب العدد الإجمالي للحركات مع الفلاتر
+        $countQuery = "
             SELECT COUNT(*) as total
             FROM (
-                SELECT id FROM financial_transactions
+                SELECT 
+                    id, 
+                    type, 
+                    amount, 
+                    description, 
+                    reference_number, 
+                    status, 
+                    created_by, 
+                    approved_by,
+                    created_at
+                FROM financial_transactions
                 UNION ALL
-                SELECT id FROM accountant_transactions
+                SELECT 
+                    id, 
+                    CASE 
+                        WHEN transaction_type = 'collection_from_sales_rep' THEN 'income'
+                        WHEN transaction_type = 'expense' THEN 'expense'
+                        WHEN transaction_type = 'income' THEN 'income'
+                        WHEN transaction_type = 'transfer' THEN 'transfer'
+                        WHEN transaction_type = 'payment' THEN 'payment'
+                        ELSE 'other'
+                    END as type,
+                    amount, 
+                    description, 
+                    reference_number, 
+                    status, 
+                    created_by, 
+                    approved_by,
+                    created_at
+                FROM accountant_transactions
             ) as combined
-        ");
+            $whereClause
+        ";
+        
+        $totalCountResult = $db->queryOne($countQuery, $queryParams);
         $totalCount = (int)($totalCountResult['total'] ?? 0);
         $totalPages = ceil($totalCount / $perPage);
         
-        // جلب الحركات المالية من financial_transactions و accountant_transactions مع pagination
-        $financialTransactions = $db->query("
+        // جلب الحركات المالية مع الفلاتر
+        $dataQuery = "
             SELECT 
                 combined.*,
                 u1.full_name as created_by_name,
@@ -667,9 +865,15 @@ $typeColorMap = [
             ) as combined
             LEFT JOIN users u1 ON combined.created_by = u1.id
             LEFT JOIN users u2 ON combined.approved_by = u2.id
+            $whereClause
             ORDER BY combined.created_at DESC
             LIMIT ? OFFSET ?
-        ", [$perPage, $offset]) ?: [];
+        ";
+        
+        $queryParams[] = $perPage;
+        $queryParams[] = $offset;
+        
+        $financialTransactions = $db->query($dataQuery, $queryParams) ?: [];
         
         $typeLabels = [
             'income' => 'إيراد',
@@ -777,10 +981,27 @@ $typeColorMap = [
         
         <!-- Pagination -->
         <?php if ($totalPages > 1): ?>
+        <?php
+        // بناء معاملات البحث للروابط
+        $searchParams = [];
+        if ($searchType !== null) $searchParams['search_type'] = $searchType;
+        if ($searchStatus !== null) $searchParams['search_status'] = $searchStatus;
+        if ($searchDateFrom !== null) $searchParams['search_date_from'] = $searchDateFrom;
+        if ($searchDateTo !== null) $searchParams['search_date_to'] = $searchDateTo;
+        if ($searchAmountFrom !== null) $searchParams['search_amount_from'] = $searchAmountFrom;
+        if ($searchAmountTo !== null) $searchParams['search_amount_to'] = $searchAmountTo;
+        if ($searchDescription !== null) $searchParams['search_description'] = $searchDescription;
+        if ($searchReference !== null) $searchParams['search_reference'] = $searchReference;
+        if ($searchCreatedBy !== null) $searchParams['search_created_by'] = $searchCreatedBy;
+        if ($searchApprovedBy !== null) $searchParams['search_approved_by'] = $searchApprovedBy;
+        
+        $baseUrl = '?page=company_cash';
+        $searchQueryString = !empty($searchParams) ? '&' . http_build_query($searchParams) : '';
+        ?>
         <nav aria-label="Page navigation" class="mt-3">
             <ul class="pagination justify-content-center flex-wrap">
                 <li class="page-item <?php echo $pageNum <= 1 ? 'disabled' : ''; ?>">
-                    <a class="page-link" href="?page=company_cash&p=<?php echo $pageNum - 1; ?>">
+                    <a class="page-link" href="<?php echo $baseUrl . ($pageNum > 1 ? '&p=' . ($pageNum - 1) : '') . $searchQueryString; ?>">
                         <i class="bi bi-chevron-right"></i>
                     </a>
                 </li>
@@ -790,7 +1011,7 @@ $typeColorMap = [
                 $endPage = min($totalPages, $pageNum + 2);
                 
                 if ($startPage > 1): ?>
-                    <li class="page-item"><a class="page-link" href="?page=company_cash&p=1">1</a></li>
+                    <li class="page-item"><a class="page-link" href="<?php echo $baseUrl . '&p=1' . $searchQueryString; ?>">1</a></li>
                     <?php if ($startPage > 2): ?>
                         <li class="page-item disabled"><span class="page-link">...</span></li>
                     <?php endif; ?>
@@ -798,7 +1019,7 @@ $typeColorMap = [
                 
                 <?php for ($i = $startPage; $i <= $endPage; $i++): ?>
                     <li class="page-item <?php echo $i == $pageNum ? 'active' : ''; ?>">
-                        <a class="page-link" href="?page=company_cash&p=<?php echo $i; ?>">
+                        <a class="page-link" href="<?php echo $baseUrl . '&p=' . $i . $searchQueryString; ?>">
                             <?php echo $i; ?>
                         </a>
                     </li>
@@ -808,17 +1029,20 @@ $typeColorMap = [
                     <?php if ($endPage < $totalPages - 1): ?>
                         <li class="page-item disabled"><span class="page-link">...</span></li>
                     <?php endif; ?>
-                    <li class="page-item"><a class="page-link" href="?page=company_cash&p=<?php echo $totalPages; ?>"><?php echo $totalPages; ?></a></li>
+                    <li class="page-item"><a class="page-link" href="<?php echo $baseUrl . '&p=' . $totalPages . $searchQueryString; ?>"><?php echo $totalPages; ?></a></li>
                 <?php endif; ?>
                 
                 <li class="page-item <?php echo $pageNum >= $totalPages ? 'disabled' : ''; ?>">
-                    <a class="page-link" href="?page=company_cash&p=<?php echo $pageNum + 1; ?>">
+                    <a class="page-link" href="<?php echo $baseUrl . '&p=' . ($pageNum + 1) . $searchQueryString; ?>">
                         <i class="bi bi-chevron-left"></i>
                     </a>
                 </li>
             </ul>
             <div class="text-center text-muted small mt-2">
                 عرض <?php echo number_format(($pageNum - 1) * $perPage + 1); ?> - <?php echo number_format(min($pageNum * $perPage, $totalCount)); ?> من أصل <?php echo number_format($totalCount); ?> حركة
+                <?php if (!empty($searchParams)): ?>
+                    <span class="badge bg-info ms-2">نتائج البحث</span>
+                <?php endif; ?>
             </div>
         </nav>
         <?php endif; ?>

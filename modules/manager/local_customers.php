@@ -286,7 +286,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
                     if ($hasStatusColumn) {
                         $collectionColumns[] = 'status';
-                        $collectionValues[] = 'pending';
+                        // التحصيلات من هذه الصفحة تُضاف كإيراد معتمد مباشرة في خزنة الشركة
+                        // لذلك يجب أن تكون معتمدة مباشرة
+                        $collectionValues[] = 'approved';
                         $collectionPlaceholders[] = '?';
                     }
 
@@ -618,41 +620,38 @@ if (!empty($statsResult)) {
 }
 
 try {
-    $collectionsStatusExists = false;
-    $statusCheck = $db->query("SHOW COLUMNS FROM local_collections LIKE 'status'");
-    if (!empty($statusCheck)) {
-        $collectionsStatusExists = true;
-    }
+    // حساب إجمالي التحصيلات من جميع العملاء المحليين (بغض النظر عن الفلتر)
+    $localCollectionsTableExists = $db->queryOne("SHOW TABLES LIKE 'local_collections'");
+    if (!empty($localCollectionsTableExists)) {
+        $collectionsStatusExists = false;
+        $statusCheck = $db->query("SHOW COLUMNS FROM local_collections LIKE 'status'");
+        if (!empty($statusCheck)) {
+            $collectionsStatusExists = true;
+        }
 
-    $collectionsSql = "SELECT COALESCE(SUM(col.amount), 0) AS total_collections
-                       FROM local_collections col
-                       INNER JOIN local_customers c ON col.customer_id = c.id
-                       WHERE 1=1";
-    $collectionsParams = [];
+        // حساب إجمالي التحصيلات من جميع العملاء المحليين بدون فلاتر
+        // التحصيلات من صفحة العملاء المحليين تُضاف كإيراد معتمد مباشرة
+        $collectionsSql = "SELECT COALESCE(SUM(col.amount), 0) AS total_collections
+                           FROM local_collections col
+                           WHERE 1=1";
+        $collectionsParams = [];
 
-    if ($collectionsStatusExists) {
-        $collectionsSql .= " AND col.status = 'approved'";
-    }
+        // حساب التحصيلات المعتمدة (التحصيلات من هذه الصفحة تُضاف معتمدة مباشرة)
+        if ($collectionsStatusExists) {
+            $collectionsSql .= " AND col.status = 'approved'";
+        }
 
-    if ($debtStatus === 'debtor') {
-        $collectionsSql .= " AND (c.balance IS NOT NULL AND c.balance > 0)";
-    } elseif ($debtStatus === 'clear') {
-        $collectionsSql .= " AND (c.balance IS NULL OR c.balance <= 0)";
-    }
-
-    if ($search) {
-        $collectionsSql .= " AND (c.name LIKE ? OR c.phone LIKE ? OR c.address LIKE ?)";
-        $collectionsParams[] = '%' . $search . '%';
-        $collectionsParams[] = '%' . $search . '%';
-        $collectionsParams[] = '%' . $search . '%';
-    }
-
-    $collectionsResult = $db->queryOne($collectionsSql, $collectionsParams);
-    if (!empty($collectionsResult)) {
-        $totalCollectionsAmount = (float)($collectionsResult['total_collections'] ?? 0);
+        $collectionsResult = $db->queryOne($collectionsSql, $collectionsParams);
+        if (!empty($collectionsResult)) {
+            $totalCollectionsAmount = (float)($collectionsResult['total_collections'] ?? 0);
+        }
+    } else {
+        // إذا لم يكن جدول local_collections موجوداً، استخدم 0
+        $totalCollectionsAmount = 0.0;
     }
 } catch (Throwable $collectionsError) {
     error_log('Local customers collections summary error: ' . $collectionsError->getMessage());
+    $totalCollectionsAmount = 0.0;
 }
 
 $summaryDebtorCount = $customerStats['debtor_count'] ?? 0;
@@ -874,13 +873,21 @@ $summaryTotalCustomers = $customerStats['total_count'] ?? $totalCustomers;
                                         </button>
                                         <button
                                             type="button"
-                                            class="btn btn-sm btn-info js-local-customer-purchase-history"
+                                            class="btn btn-sm btn-outline-info js-local-customer-purchase-history"
                                             data-customer-id="<?php echo (int)$customer['id']; ?>"
                                             data-customer-name="<?php echo htmlspecialchars($customer['name']); ?>"
                                             data-customer-phone="<?php echo htmlspecialchars($customer['phone'] ?? ''); ?>"
                                             data-customer-address="<?php echo htmlspecialchars($customer['address'] ?? ''); ?>"
                                         >
                                             <i class="bi bi-receipt me-1"></i>سجل مشتريات
+                                        </button>
+                                        <button
+                                            type="button"
+                                            class="btn btn-sm btn-outline-warning js-local-customer-return-products"
+                                            data-customer-id="<?php echo (int)$customer['id']; ?>"
+                                            data-customer-name="<?php echo htmlspecialchars($customer['name']); ?>"
+                                        >
+                                            <i class="bi bi-arrow-return-left me-1"></i>إرجاع منتجات
                                         </button>
                                     </div>
                                 </td>
@@ -1069,6 +1076,30 @@ $summaryTotalCustomers = $customerStats['total_count'] ?? $totalCustomers;
                     </div>
                 </div>
 
+                <!-- Filters -->
+                <div class="card mb-3">
+                    <div class="card-body">
+                        <div class="row g-2">
+                            <div class="col-md-4">
+                                <input type="text" class="form-control form-control-sm" 
+                                       id="localPurchaseHistorySearchProduct" 
+                                       placeholder="البحث باسم المنتج">
+                            </div>
+                            <div class="col-md-4">
+                                <input type="text" class="form-control form-control-sm" 
+                                       id="localPurchaseHistorySearchBatch" 
+                                       placeholder="البحث برقم التشغيلة">
+                            </div>
+                            <div class="col-md-4">
+                                <button type="button" class="btn btn-primary btn-sm w-100" 
+                                        onclick="loadLocalCustomerPurchaseHistory()">
+                                    <i class="bi bi-search me-1"></i>بحث
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
                 <!-- Loading -->
                 <div class="text-center py-4" id="localPurchaseHistoryLoading">
                     <div class="spinner-border text-primary" role="status">
@@ -1079,12 +1110,30 @@ $summaryTotalCustomers = $customerStats['total_count'] ?? $totalCustomers;
                 <!-- Error -->
                 <div class="alert alert-danger d-none" id="localPurchaseHistoryError"></div>
 
-                <!-- Purchase History Content -->
-                <div id="localPurchaseHistoryContent" class="d-none">
-                    <!-- يمكن إضافة جدول أو محتوى آخر هنا -->
-                    <div class="alert alert-info">
-                        <i class="bi bi-info-circle me-2"></i>
-                        سيتم عرض سجل المشتريات هنا قريباً
+                <!-- Purchase History Table -->
+                <div id="localPurchaseHistoryTable" class="d-none">
+                    <div class="table-responsive">
+                        <table class="table table-hover table-bordered">
+                            <thead class="table-light">
+                                <tr>
+                                    <th style="width: 50px;">
+                                        <input type="checkbox" id="localSelectAllItems" onchange="localToggleAllItems()">
+                                    </th>
+                                    <th>رقم الفاتورة</th>
+                                    <th>رقم التشغيلة</th>
+                                    <th>اسم المنتج</th>
+                                    <th>الكمية المشتراة</th>
+                                    <th>الكمية المرتجعة</th>
+                                    <th>المتاح للإرجاع</th>
+                                    <th>سعر الوحدة</th>
+                                    <th>السعر الإجمالي</th>
+                                    <th>تاريخ الشراء</th>
+                                    <th style="width: 100px;">إجراءات</th>
+                                </tr>
+                            </thead>
+                            <tbody id="localPurchaseHistoryTableBody">
+                            </tbody>
+                        </table>
                     </div>
                 </div>
             </div>
@@ -1430,6 +1479,8 @@ document.addEventListener('DOMContentLoaded', function () {
 // معالجة سجل مشتريات العملاء المحليين
 var currentLocalCustomerId = null;
 var currentLocalCustomerName = null;
+var localPurchaseHistoryData = [];
+var localSelectedItemsForReturn = [];
 
 // دالة طباعة كشف حساب العميل المحلي
 function printLocalCustomerStatement() {
@@ -1450,8 +1501,195 @@ function openLocalCustomerReturnModal() {
         alert('يرجى فتح سجل مشتريات عميل أولاً');
         return;
     }
+    if (localSelectedItemsForReturn.length === 0) {
+        alert('يرجى تحديد منتج واحد على الأقل للإرجاع');
+        return;
+    }
     // سيتم تنفيذ هذه الوظيفة لاحقاً
     alert('وظيفة إرجاع المنتجات للعملاء المحليين قيد التطوير');
+}
+
+// دالة تحميل سجل المشتريات للعميل المحلي
+function loadLocalCustomerPurchaseHistory() {
+    if (!currentLocalCustomerId) {
+        return;
+    }
+    
+    const basePath = '<?php echo getBasePath(); ?>';
+    const loadingElement = document.getElementById('localPurchaseHistoryLoading');
+    const contentElement = document.getElementById('localPurchaseHistoryTable');
+    const errorElement = document.getElementById('localPurchaseHistoryError');
+    const tableBody = document.getElementById('localPurchaseHistoryTableBody');
+    
+    // إظهار loading وإخفاء المحتوى
+    if (loadingElement) loadingElement.classList.remove('d-none');
+    if (contentElement) contentElement.classList.add('d-none');
+    if (errorElement) {
+        errorElement.classList.add('d-none');
+        errorElement.textContent = '';
+    }
+    
+    // جلب البيانات من API (سنستخدم نفس API مع تحديد نوع العميل)
+    fetch(basePath + '/api/customer_purchase_history.php?action=get_history&customer_id=' + currentLocalCustomerId + '&type=local', {
+        credentials: 'same-origin',
+        headers: {
+            'Accept': 'application/json'
+        }
+    })
+    .then(response => {
+        const contentType = response.headers.get('content-type') || '';
+        if (!contentType.includes('application/json')) {
+            return response.text().then(text => {
+                throw new Error('استجابة غير صحيحة من الخادم');
+            });
+        }
+        if (!response.ok) {
+            return response.json().then(errorData => {
+                throw new Error(errorData.message || 'خطأ في الطلب: ' + response.status);
+            });
+        }
+        return response.json();
+    })
+    .then(data => {
+        if (loadingElement) loadingElement.classList.add('d-none');
+        
+        if (data.success && data.purchase_history) {
+            localPurchaseHistoryData = data.purchase_history || [];
+            displayLocalPurchaseHistory(localPurchaseHistoryData);
+            if (contentElement) contentElement.classList.remove('d-none');
+            
+            // إظهار زر الطباعة
+            const printBtn = document.getElementById('printLocalCustomerStatementBtn');
+            if (printBtn) printBtn.style.display = 'inline-block';
+        } else {
+            if (errorElement) {
+                errorElement.textContent = data.message || 'حدث خطأ أثناء تحميل سجل المشتريات';
+                errorElement.classList.remove('d-none');
+            }
+        }
+    })
+    .catch(error => {
+        if (loadingElement) loadingElement.classList.add('d-none');
+        if (errorElement) {
+            errorElement.textContent = 'خطأ: ' + (error.message || 'حدث خطأ في الاتصال بالخادم');
+            errorElement.classList.remove('d-none');
+        }
+        console.error('Error loading purchase history:', error);
+    });
+}
+
+// دالة عرض سجل المشتريات
+function displayLocalPurchaseHistory(history) {
+    const tableBody = document.getElementById('localPurchaseHistoryTableBody');
+    
+    if (!tableBody) {
+        console.error('localPurchaseHistoryTableBody element not found');
+        return;
+    }
+    
+    tableBody.innerHTML = '';
+    
+    if (!history || history.length === 0) {
+        tableBody.innerHTML = '<tr><td colspan="11" class="text-center text-muted py-4"><i class="bi bi-info-circle me-2"></i>لا توجد مشتريات مسجلة لهذا العميل</td></tr>';
+        return;
+    }
+    
+    history.forEach(function(item) {
+        const row = document.createElement('tr');
+        row.innerHTML = `
+            <td>
+                ${item.can_return ? `<input type="checkbox" class="local-item-checkbox" 
+                       data-invoice-id="${item.invoice_id}"
+                       data-invoice-item-id="${item.invoice_item_id}"
+                       data-product-id="${item.product_id}"
+                       data-product-name="${item.product_name}"
+                       data-unit-price="${item.unit_price}"
+                       data-batch-number-ids='${JSON.stringify(item.batch_number_ids || [])}'
+                       data-batch-numbers='${JSON.stringify(item.batch_numbers || [])}'
+                       onchange="localUpdateSelectedItems()">` : '-'}
+            </td>
+            <td>${item.invoice_number || '-'}</td>
+            <td>${item.batch_numbers ? (Array.isArray(item.batch_numbers) ? item.batch_numbers.join(', ') : item.batch_numbers) : '-'}</td>
+            <td>${item.product_name || '-'}</td>
+            <td>${parseFloat(item.quantity || 0).toFixed(2)}</td>
+            <td>${parseFloat(item.returned_quantity || 0).toFixed(2)}</td>
+            <td><strong>${parseFloat(item.available_to_return || 0).toFixed(2)}</strong></td>
+            <td>${parseFloat(item.unit_price || 0).toFixed(2)} ج.م</td>
+            <td>${parseFloat(item.total_price || 0).toFixed(2)} ج.م</td>
+            <td>${item.invoice_date || '-'}</td>
+            <td>
+                ${item.can_return ? `<button class="btn btn-sm btn-primary" 
+                        onclick="localSelectItemForReturn(${item.invoice_item_id}, ${item.product_id})"
+                        title="إرجاع جزئي">
+                    <i class="bi bi-arrow-return-left"></i>
+                </button>` : '<span class="text-muted small">-</span>'}
+            </td>
+        `;
+        tableBody.appendChild(row);
+    });
+}
+
+// دوال مساعدة
+function localToggleAllItems() {
+    const selectAll = document.getElementById('localSelectAllItems');
+    const checkboxes = document.querySelectorAll('.local-item-checkbox');
+    
+    checkboxes.forEach(function(checkbox) {
+        checkbox.checked = selectAll.checked;
+    });
+    
+    localUpdateSelectedItems();
+}
+
+function localUpdateSelectedItems() {
+    const checkboxes = document.querySelectorAll('.local-item-checkbox:checked');
+    localSelectedItemsForReturn = [];
+    
+    checkboxes.forEach(function(checkbox) {
+        const row = checkbox.closest('tr');
+        const available = parseFloat(row.querySelector('td:nth-child(7)').textContent.trim());
+        const invoiceNumber = row.querySelector('td:nth-child(2)').textContent.trim();
+        
+        const invoiceItemId = parseInt(checkbox.dataset.invoiceItemId);
+        let latestAvailable = available;
+        
+        if (localPurchaseHistoryData && localPurchaseHistoryData.length > 0) {
+            const historyItem = localPurchaseHistoryData.find(function(h) {
+                return h.invoice_item_id === invoiceItemId;
+            });
+            if (historyItem) {
+                latestAvailable = parseFloat(historyItem.available_to_return) || 0;
+            }
+        }
+        
+        if (latestAvailable > 0) {
+            localSelectedItemsForReturn.push({
+                invoice_id: parseInt(checkbox.dataset.invoiceId),
+                invoice_number: invoiceNumber,
+                invoice_item_id: invoiceItemId,
+                product_id: parseInt(checkbox.dataset.productId),
+                product_name: checkbox.dataset.productName,
+                unit_price: parseFloat(checkbox.dataset.unitPrice),
+                batch_number_ids: JSON.parse(checkbox.dataset.batchNumberIds || '[]'),
+                batch_numbers: JSON.parse(checkbox.dataset.batchNumbers || '[]'),
+                available_to_return: latestAvailable
+            });
+        }
+    });
+    
+    const returnBtn = document.getElementById('localCustomerReturnBtn');
+    if (returnBtn) {
+        returnBtn.style.display = localSelectedItemsForReturn.length > 0 ? 'inline-block' : 'none';
+    }
+}
+
+function localSelectItemForReturn(invoiceItemId, productId) {
+    const checkbox = document.querySelector(`.local-item-checkbox[data-invoice-item-id="${invoiceItemId}"][data-product-id="${productId}"]`);
+    if (checkbox) {
+        checkbox.checked = true;
+        localUpdateSelectedItems();
+        openLocalCustomerReturnModal();
+    }
 }
 
 // معالج فتح modal سجل المشتريات
@@ -1484,7 +1722,7 @@ document.addEventListener('DOMContentLoaded', function() {
         
         // إظهار loading وإخفاء المحتوى
         const loadingElement = document.getElementById('localPurchaseHistoryLoading');
-        const contentElement = document.getElementById('localPurchaseHistoryContent');
+        const contentElement = document.getElementById('localPurchaseHistoryTable');
         const errorElement = document.getElementById('localPurchaseHistoryError');
         
         if (loadingElement) loadingElement.classList.remove('d-none');
@@ -1500,6 +1738,9 @@ document.addEventListener('DOMContentLoaded', function() {
         if (printBtn) printBtn.style.display = 'none';
         if (returnBtn) returnBtn.style.display = 'none';
         
+        // إعادة تعيين العناصر المحددة
+        localSelectedItemsForReturn = [];
+        
         // إظهار الـ modal
         if (purchaseHistoryModal) {
             const modal = new bootstrap.Modal(purchaseHistoryModal);
@@ -1509,21 +1750,26 @@ document.addEventListener('DOMContentLoaded', function() {
             purchaseHistoryModal.addEventListener('shown.bs.modal', function loadData() {
                 purchaseHistoryModal.removeEventListener('shown.bs.modal', loadData);
                 
-                // هنا يمكن إضافة API call لجلب سجل المشتريات
-                // حالياً سنعرض رسالة أن البيانات قيد التطوير
-                setTimeout(function() {
-                    if (loadingElement) loadingElement.classList.add('d-none');
-                    if (contentElement) {
-                        contentElement.classList.remove('d-none');
-                        contentElement.innerHTML = '<div class="alert alert-info"><i class="bi bi-info-circle me-2"></i>سيتم إضافة سجل المشتريات قريباً. يمكنك طباعة كشف الحساب من الزر أدناه.</div>';
-                    }
-                    
-                    // إظهار زر الطباعة
-                    if (printBtn) printBtn.style.display = 'inline-block';
-                    // يمكن إظهار زر الإرجاع لاحقاً عند إضافة الوظيفة
-                    // if (returnBtn) returnBtn.style.display = 'inline-block';
-                }, 500);
+                // تحميل سجل المشتريات
+                loadLocalCustomerPurchaseHistory();
             }, { once: true });
+        }
+    });
+    
+    // معالج زر إرجاع المنتجات - يفتح modal سجل المشتريات مباشرة
+    document.addEventListener('click', function(e) {
+        const button = e.target.closest('.js-local-customer-return-products');
+        if (!button) return;
+        
+        const customerId = button.getAttribute('data-customer-id');
+        const customerName = button.getAttribute('data-customer-name');
+        
+        if (!customerId) return;
+        
+        // استخدام نفس معالج زر سجل المشتريات
+        const purchaseHistoryButton = document.querySelector('.js-local-customer-purchase-history[data-customer-id="' + customerId + '"]');
+        if (purchaseHistoryButton) {
+            purchaseHistoryButton.click();
         }
     });
     
@@ -1532,6 +1778,8 @@ document.addEventListener('DOMContentLoaded', function() {
         purchaseHistoryModal.addEventListener('hidden.bs.modal', function() {
             currentLocalCustomerId = null;
             currentLocalCustomerName = null;
+            localSelectedItemsForReturn = [];
+            localPurchaseHistoryData = [];
         });
     }
 });
