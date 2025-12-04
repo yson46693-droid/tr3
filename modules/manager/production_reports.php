@@ -6,7 +6,7 @@ if (!defined('ACCESS_ALLOWED')) {
 require_once __DIR__ . '/../../includes/config.php';
 require_once __DIR__ . '/../../includes/auth.php';
 
-requireRole('manager');
+requireRole(['manager', 'accountant']);
 
 // تعيين متغير لإخفاء قسم القوالب في صفحة التقارير للمدير
 define('PRODUCTION_REPORTS_MODE', true);

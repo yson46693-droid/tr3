@@ -354,6 +354,49 @@ switch ($role) {
                 'active' => ($currentPage === 'accountant.php' && $currentPageParam === 'attendance_management'),
                 'badge' => null
             ],
+            ['divider' => true, 'title' => 'الإدارة والعمليات'],
+            [
+                'title' => 'طلبات الشحن',
+                'icon' => 'bi-truck',
+                'url' => $baseUrl . 'accountant.php?page=shipping_orders',
+                'active' => ($currentPage === 'accountant.php' && $currentPageParam === 'shipping_orders'),
+                'badge' => null
+            ],
+            [
+                'title' => 'تسجيل مهام الإنتاج',
+                'icon' => 'bi-gear',
+                'url' => $baseUrl . 'accountant.php?page=production_tasks',
+                'active' => ($currentPage === 'accountant.php' && $currentPageParam === 'production_tasks'),
+                'badge' => null
+            ],
+            [
+                'title' => 'المرتجعات',
+                'icon' => 'bi-arrow-return-left',
+                'url' => $baseUrl . 'accountant.php?page=returns',
+                'active' => ($currentPage === 'accountant.php' && $currentPageParam === 'returns'),
+                'badge' => null
+            ],
+            [
+                'title' => 'نقل المخازن',
+                'icon' => 'bi-arrow-left-right',
+                'url' => $baseUrl . 'accountant.php?page=warehouse_transfers',
+                'active' => ($currentPage === 'accountant.php' && $currentPageParam === 'warehouse_transfers'),
+                'badge' => null
+            ],
+            [
+                'title' => 'السيارات',
+                'icon' => 'bi-car-front',
+                'url' => $baseUrl . 'accountant.php?page=vehicles',
+                'active' => ($currentPage === 'accountant.php' && $currentPageParam === 'vehicles'),
+                'badge' => null
+            ],
+            [
+                'title' => 'التقارير',
+                'icon' => 'bi-file-earmark-text',
+                'url' => $baseUrl . 'accountant.php?page=production_reports',
+                'active' => ($currentPage === 'accountant.php' && $currentPageParam === 'production_reports'),
+                'badge' => null
+            ],
             ['divider' => true, 'title' => 'أدوات'],
             [
                 'title' => 'مخزن توالف المصنع',

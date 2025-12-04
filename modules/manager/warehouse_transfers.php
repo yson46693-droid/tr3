@@ -29,14 +29,15 @@ $buildWarehouseTransfersUrl = static function (array $params = []) use ($warehou
     return '?' . http_build_query($query);
 };
 
-// السماح للمديرين والمندوبين بالوصول
-requireRole(['manager', 'sales']);
+// السماح للمديرين والمندوبين والمحاسبين بالوصول
+requireRole(['manager', 'sales', 'accountant']);
 
 $approvalsEntityColumn = getApprovalsEntityColumn();
 
 $currentUser = getCurrentUser();
 $isManager = ($currentUser['role'] ?? '') === 'manager';
 $isSalesRep = ($currentUser['role'] ?? '') === 'sales';
+$isAccountant = ($currentUser['role'] ?? '') === 'accountant';
 $db = db();
 
 // إذا كان المستخدم مندوب، الحصول على مخزن سيارة المندوب

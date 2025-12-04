@@ -16,7 +16,7 @@ require_once __DIR__ . '/../../includes/audit_log.php';
 require_once __DIR__ . '/../../includes/path_helper.php';
 require_once __DIR__ . '/../../includes/customer_history.php';
 
-requireRole('manager');
+requireRole(['manager', 'accountant']);
 
 $currentUser = getCurrentUser();
 $db = db();

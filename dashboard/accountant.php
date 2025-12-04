@@ -1401,6 +1401,102 @@ $pageDescription = 'لوحة تحكم المحاسب - إدارة المعامل
                 }
                 ?>
                 
+            <?php elseif ($page === 'shipping_orders'): ?>
+                <!-- صفحة طلبات الشحن -->
+                <?php 
+                $modulePath = __DIR__ . '/../modules/manager/shipping_orders.php';
+                if (file_exists($modulePath)) {
+                    try {
+                        include $modulePath;
+                    } catch (Throwable $e) {
+                        error_log('Accountant shipping orders module error: ' . $e->getMessage());
+                        echo '<div class="alert alert-danger">حدث خطأ أثناء تحميل صفحة طلبات الشحن: ' . htmlspecialchars($e->getMessage()) . '</div>';
+                    }
+                } else {
+                    echo '<div class="alert alert-warning">صفحة طلبات الشحن غير متاحة حالياً</div>';
+                }
+                ?>
+                
+            <?php elseif ($page === 'production_tasks'): ?>
+                <!-- صفحة تسجيل مهام الإنتاج -->
+                <?php 
+                $modulePath = __DIR__ . '/../modules/manager/production_tasks.php';
+                if (file_exists($modulePath)) {
+                    try {
+                        include $modulePath;
+                    } catch (Throwable $e) {
+                        error_log('Accountant production tasks module error: ' . $e->getMessage());
+                        echo '<div class="alert alert-danger">حدث خطأ أثناء تحميل صفحة مهام الإنتاج: ' . htmlspecialchars($e->getMessage()) . '</div>';
+                    }
+                } else {
+                    echo '<div class="alert alert-warning">صفحة تسجيل مهام الإنتاج غير متاحة حالياً</div>';
+                }
+                ?>
+                
+            <?php elseif ($page === 'returns'): ?>
+                <!-- صفحة المرتجعات -->
+                <?php 
+                $modulePath = __DIR__ . '/../modules/manager/returns.php';
+                if (file_exists($modulePath)) {
+                    try {
+                        include $modulePath;
+                    } catch (Throwable $e) {
+                        error_log('Accountant returns module error: ' . $e->getMessage());
+                        echo '<div class="alert alert-danger">حدث خطأ أثناء تحميل صفحة المرتجعات: ' . htmlspecialchars($e->getMessage()) . '</div>';
+                    }
+                } else {
+                    echo '<div class="alert alert-warning">صفحة المرتجعات غير متاحة حالياً</div>';
+                }
+                ?>
+                
+            <?php elseif ($page === 'warehouse_transfers'): ?>
+                <!-- صفحة نقل المخازن -->
+                <?php 
+                $modulePath = __DIR__ . '/../modules/manager/warehouse_transfers.php';
+                if (file_exists($modulePath)) {
+                    try {
+                        include $modulePath;
+                    } catch (Throwable $e) {
+                        error_log('Accountant warehouse transfers module error: ' . $e->getMessage());
+                        echo '<div class="alert alert-danger">حدث خطأ أثناء تحميل صفحة نقل المخازن: ' . htmlspecialchars($e->getMessage()) . '</div>';
+                    }
+                } else {
+                    echo '<div class="alert alert-warning">صفحة نقل المخازن غير متاحة حالياً</div>';
+                }
+                ?>
+                
+            <?php elseif ($page === 'vehicles'): ?>
+                <!-- صفحة السيارات -->
+                <?php 
+                $modulePath = __DIR__ . '/../modules/manager/vehicles.php';
+                if (file_exists($modulePath)) {
+                    try {
+                        include $modulePath;
+                    } catch (Throwable $e) {
+                        error_log('Accountant vehicles module error: ' . $e->getMessage());
+                        echo '<div class="alert alert-danger">حدث خطأ أثناء تحميل صفحة السيارات: ' . htmlspecialchars($e->getMessage()) . '</div>';
+                    }
+                } else {
+                    echo '<div class="alert alert-warning">صفحة السيارات غير متاحة حالياً</div>';
+                }
+                ?>
+                
+            <?php elseif ($page === 'production_reports'): ?>
+                <!-- صفحة التقارير -->
+                <?php 
+                $modulePath = __DIR__ . '/../modules/manager/production_reports.php';
+                if (file_exists($modulePath)) {
+                    try {
+                        include $modulePath;
+                    } catch (Throwable $e) {
+                        error_log('Accountant production reports module error: ' . $e->getMessage());
+                        echo '<div class="alert alert-danger">حدث خطأ أثناء تحميل صفحة التقارير: ' . htmlspecialchars($e->getMessage()) . '</div>';
+                    }
+                } else {
+                    echo '<div class="alert alert-warning">صفحة التقارير غير متاحة حالياً</div>';
+                }
+                ?>
+                
             <?php endif; ?>
 
 <?php if ($page === 'financial'): ?>

@@ -19,7 +19,7 @@ require_once __DIR__ . '/../../includes/approval_system.php';
 require_once __DIR__ . '/../../includes/returns_system.php';
 require_once __DIR__ . '/../../includes/path_helper.php';
 
-requireRole(['manager']);
+requireRole(['manager', 'accountant']);
 
 $currentUser = getCurrentUser();
 $db = db();
