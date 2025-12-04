@@ -931,10 +931,11 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                         throw new RuntimeException($movementResult['message'] ?? 'تعذر تسجيل حركة المخزون.');
                     }
 
+                    // استخدام tempCustomerId (من جدول customers) لأن جدول sales له foreign key على customers
                     $db->execute(
                         "INSERT INTO sales (customer_id, product_id, quantity, price, total, date, salesperson_id, status) 
                          VALUES (?, ?, ?, ?, ?, ?, ?, 'completed')",
-                        [$customerId, $productId, $quantity, $unitPrice, $lineTotal, $saleDate, $currentUser['id']]
+                        [$tempCustomerId, $productId, $quantity, $unitPrice, $lineTotal, $saleDate, $currentUser['id']]
                     );
                 }
 
