@@ -533,29 +533,64 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             foreach ($normalizedItems as $normalizedItem) {
                 $batchId = $normalizedItem['batch_id'] ?? null;
                 $productType = $normalizedItem['product_type'] ?? '';
+                $productId = $normalizedItem['product_id'];
+                $quantity = $normalizedItem['quantity'];
 
                 // حفظ العنصر مع batch_id إذا كان موجوداً
                 $db->execute(
                     "INSERT INTO shipping_company_order_items (order_id, product_id, batch_id, quantity, unit_price, total_price) VALUES (?, ?, ?, ?, ?, ?)",
                     [
                         $orderId,
-                        $normalizedItem['product_id'],
+                        $productId,
                         $batchId,
-                        $normalizedItem['quantity'],
+                        $quantity,
                         $normalizedItem['unit_price'],
                         $normalizedItem['total_price'],
                     ]
                 );
 
-                // تسجيل حركة المخزون فقط للمنتجات الخارجية
-                // منتجات المصنع يتم التعامل معها من خلال finished_products
-                if ($productType !== 'factory') {
+                // خصم الكميات من المخزون
+                if ($productType === 'factory' && $batchId) {
+                    // للمنتجات من المصنع، خصم الكمية من finished_products.quantity_produced
+                    // (التحقق من الكمية تم بالفعل في بداية الكود)
+                    $db->execute(
+                        "UPDATE finished_products SET quantity_produced = GREATEST(quantity_produced - ?, 0) WHERE batch_id = ?",
+                        [$quantity, $batchId]
+                    );
+                    
+                    // تسجيل حركة المخزون لمنتجات المصنع
+                    try {
+                        $movementNote = 'تسليم طلب شحن #' . $orderNumber . ' لشركة الشحن';
+                        recordInventoryMovement(
+                            $productId,
+                            $mainWarehouse['id'] ?? null,
+                            'out',
+                            $quantity,
+                            'shipping_order',
+                            $orderId,
+                            $movementNote,
+                            $currentUser['id'] ?? null,
+                            $batchId
+                        );
+                    } catch (Throwable $movementError) {
+                        error_log('shipping_orders: Warning - failed recording inventory movement for factory product: ' . $movementError->getMessage());
+                        // لا نوقف العملية إذا فشل تسجيل الحركة
+                    }
+                } else {
+                    // للمنتجات الخارجية، خصم الكمية من products.quantity
+                    // (التحقق من الكمية تم بالفعل في بداية الكود)
+                    $db->execute(
+                        "UPDATE products SET quantity = GREATEST(quantity - ?, 0) WHERE id = ?",
+                        [$quantity, $productId]
+                    );
+                    
+                    // تسجيل حركة المخزون للمنتجات الخارجية
                     $movementNote = 'تسليم طلب شحن #' . $orderNumber . ' لشركة الشحن';
                     $movementResult = recordInventoryMovement(
-                        $normalizedItem['product_id'],
+                        $productId,
                         $mainWarehouse['id'] ?? null,
                         'out',
-                        $normalizedItem['quantity'],
+                        $quantity,
                         'shipping_order',
                         $orderId,
                         $movementNote,
@@ -563,7 +598,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     );
 
                     if (empty($movementResult['success'])) {
-                        throw new RuntimeException($movementResult['message'] ?? 'تعذر تسجيل حركة المخزون.');
+                        error_log('shipping_orders: Warning - failed recording inventory movement: ' . ($movementResult['message'] ?? 'unknown error'));
+                        // لا نوقف العملية إذا فشل تسجيل الحركة لأن الكمية تم خصمها بالفعل
                     }
                 }
             }
