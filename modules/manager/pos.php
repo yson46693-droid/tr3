@@ -1018,13 +1018,32 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                             ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
                         ");
                     } else {
-                        // التأكد من وجود عمود due_date وإضافته إذا لم يكن موجوداً
-                        $hasDueDateColumn = !empty($db->queryOne("SHOW COLUMNS FROM local_invoices LIKE 'due_date'"));
-                        if (empty($hasDueDateColumn)) {
-                            try {
-                                $db->execute("ALTER TABLE local_invoices ADD COLUMN `due_date` date DEFAULT NULL AFTER `date`");
-                            } catch (Throwable $alterError) {
-                                error_log('Error adding due_date column to local_invoices: ' . $alterError->getMessage());
+                        // التأكد من وجود جميع الأعمدة المطلوبة وإضافتها إذا لم تكن موجودة
+                        $requiredColumns = [
+                            'due_date' => "ALTER TABLE local_invoices ADD COLUMN `due_date` date DEFAULT NULL AFTER `date`",
+                            'subtotal' => "ALTER TABLE local_invoices ADD COLUMN `subtotal` decimal(15,2) NOT NULL DEFAULT 0.00 AFTER `due_date`",
+                            'tax_rate' => "ALTER TABLE local_invoices ADD COLUMN `tax_rate` decimal(5,2) DEFAULT 0.00 AFTER `subtotal`",
+                            'tax_amount' => "ALTER TABLE local_invoices ADD COLUMN `tax_amount` decimal(15,2) DEFAULT 0.00 AFTER `tax_rate`",
+                            'discount_amount' => "ALTER TABLE local_invoices ADD COLUMN `discount_amount` decimal(15,2) DEFAULT 0.00 AFTER `tax_amount`",
+                            'total_amount' => "ALTER TABLE local_invoices ADD COLUMN `total_amount` decimal(15,2) NOT NULL DEFAULT 0.00 AFTER `discount_amount`",
+                            'paid_amount' => "ALTER TABLE local_invoices ADD COLUMN `paid_amount` decimal(15,2) DEFAULT 0.00 AFTER `total_amount`",
+                            'remaining_amount' => "ALTER TABLE local_invoices ADD COLUMN `remaining_amount` decimal(15,2) DEFAULT 0.00 AFTER `paid_amount`",
+                            'status' => "ALTER TABLE local_invoices ADD COLUMN `status` enum('draft','sent','paid','partial','overdue','cancelled') DEFAULT 'draft' AFTER `remaining_amount`",
+                            'notes' => "ALTER TABLE local_invoices ADD COLUMN `notes` text DEFAULT NULL AFTER `status`",
+                            'created_by' => "ALTER TABLE local_invoices ADD COLUMN `created_by` int(11) NOT NULL AFTER `notes`",
+                            'created_at' => "ALTER TABLE local_invoices ADD COLUMN `created_at` timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP AFTER `created_by`",
+                            'updated_at' => "ALTER TABLE local_invoices ADD COLUMN `updated_at` timestamp NULL DEFAULT NULL ON UPDATE CURRENT_TIMESTAMP AFTER `created_at`"
+                        ];
+                        
+                        foreach ($requiredColumns as $columnName => $alterSql) {
+                            $columnExists = !empty($db->queryOne("SHOW COLUMNS FROM local_invoices LIKE '$columnName'"));
+                            if (!$columnExists) {
+                                try {
+                                    $db->execute($alterSql);
+                                    error_log("Added column $columnName to local_invoices table");
+                                } catch (Throwable $alterError) {
+                                    error_log("Error adding column $columnName to local_invoices: " . $alterError->getMessage());
+                                }
                             }
                         }
                     }
@@ -1061,20 +1080,22 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     
                         if (empty($existingLocalInvoice)) {
                             // إنشاء الفاتورة المحلية
-                            // التحقق من وجود عمود due_date قبل الإدراج
+                            // بعد التأكد من وجود جميع الأعمدة، نستخدم نفس استعلام INSERT
                             $hasDueDateColumn = !empty($db->queryOne("SHOW COLUMNS FROM local_invoices LIKE 'due_date'"));
                             
-                            if ($hasDueDateColumn) {
-                                $db->execute(
-                                    "INSERT INTO local_invoices 
-                                    (invoice_number, customer_id, date, due_date, subtotal, tax_rate, tax_amount, 
-                                     discount_amount, total_amount, paid_amount, remaining_amount, status, notes, created_by)
-                                    VALUES (?, ?, ?, ?, ?, 0, 0, ?, ?, ?, ?, ?, ?, ?)",
+                            $db->execute(
+                                "INSERT INTO local_invoices 
+                                (invoice_number, customer_id, date" . ($hasDueDateColumn ? ", due_date" : "") . ", subtotal, tax_rate, tax_amount, 
+                                 discount_amount, total_amount, paid_amount, remaining_amount, status, notes, created_by)
+                                VALUES (?, ?, ?" . ($hasDueDateColumn ? ", ?" : "") . ", ?, 0, 0, ?, ?, ?, ?, ?, ?, ?)",
+                                array_merge(
                                     [
                                         $localInvoiceNumber,
                                         $localCustomerId,
-                                        $saleDate,
-                                        $dueDate,
+                                        $saleDate
+                                    ],
+                                    $hasDueDateColumn ? [$dueDate] : [],
+                                    [
                                         $subtotal,
                                         $prepaidAmount,
                                         $netTotal,
@@ -1084,28 +1105,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                                         $notes,
                                         $currentUser['id']
                                     ]
-                                );
-                            } else {
-                                $db->execute(
-                                    "INSERT INTO local_invoices 
-                                    (invoice_number, customer_id, date, subtotal, tax_rate, tax_amount, 
-                                     discount_amount, total_amount, paid_amount, remaining_amount, status, notes, created_by)
-                                    VALUES (?, ?, ?, ?, 0, 0, ?, ?, ?, ?, ?, ?, ?)",
-                                    [
-                                        $localInvoiceNumber,
-                                        $localCustomerId,
-                                        $saleDate,
-                                        $subtotal,
-                                        $prepaidAmount,
-                                        $netTotal,
-                                        $effectivePaidAmount,
-                                        $dueAmount,
-                                        $invoiceStatus,
-                                        $notes,
-                                        $currentUser['id']
-                                    ]
-                                );
-                            }
+                                )
+                            );
                         
                         $localInvoiceId = (int)$db->getLastInsertId();
                         
