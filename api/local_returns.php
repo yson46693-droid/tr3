@@ -101,7 +101,6 @@ function handleCreateLocalReturn(): void
     }
     
     $db = db();
-    $conn = $db->getConnection();
     
     // التحقق من العميل المحلي
     $customer = $db->queryOne(
@@ -114,7 +113,7 @@ function handleCreateLocalReturn(): void
     }
     
     try {
-        $conn->beginTransaction();
+        $db->beginTransaction();
         
         // توليد رقم المرتجع
         $year = date('Y');
@@ -310,7 +309,7 @@ function handleCreateLocalReturn(): void
             ]
         );
         
-        $conn->commit();
+        $db->commit();
         
         $printUrl = getRelativeUrl('print_local_return.php?id=' . $returnId);
         
@@ -326,13 +325,13 @@ function handleCreateLocalReturn(): void
         ]);
         
     } catch (InvalidArgumentException $e) {
-        if ($conn->inTransaction()) {
-            $conn->rollBack();
+        if ($db->inTransaction()) {
+            $db->rollback();
         }
         returnJson(['success' => false, 'message' => $e->getMessage()], 422);
     } catch (Throwable $e) {
-        if ($conn->inTransaction()) {
-            $conn->rollBack();
+        if ($db->inTransaction()) {
+            $db->rollback();
         }
         error_log('Error creating local return: ' . $e->getMessage());
         returnJson(['success' => false, 'message' => 'حدث خطأ أثناء إنشاء المرتجع: ' . $e->getMessage()], 500);

@@ -1189,69 +1189,135 @@ $summaryTotalCustomers = $customerStats['total_count'] ?? $totalCustomers;
 <!-- Modal إرجاع منتجات العميل المحلي -->
 <div class="modal fade" id="localCustomerReturnModal" tabindex="-1" aria-hidden="true">
     <div class="modal-dialog modal-xl modal-dialog-scrollable">
-        <div class="modal-content">
-            <div class="modal-header bg-warning text-dark">
-                <h5 class="modal-title">
-                    <i class="bi bi-arrow-return-left me-2"></i>
-                    إرجاع منتجات - <span id="localReturnCustomerName">عميل محلي</span>
+        <div class="modal-content shadow-lg">
+            <div class="modal-header bg-warning text-dark border-bottom border-warning">
+                <h5 class="modal-title d-flex align-items-center">
+                    <i class="bi bi-arrow-return-left me-2 fs-4"></i>
+                    <span>إرجاع منتجات - <strong id="localReturnCustomerName">عميل محلي</strong></span>
                 </h5>
-                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="إغلاق"></button>
+                <button type="button" class="btn-close btn-close-dark" data-bs-dismiss="modal" aria-label="إغلاق"></button>
             </div>
-            <div class="modal-body">
-                <div class="mb-3">
-                    <label class="form-label fw-semibold">طريقة الاسترداد <span class="text-danger">*</span></label>
-                    <div class="form-check">
-                        <input class="form-check-input" type="radio" name="localRefundMethod" id="localRefundCredit" value="credit" checked>
-                        <label class="form-check-label" for="localRefundCredit">
-                            خصم من الرصيد (إذا كان العميل مدين: خصم من الدين، وإذا كان غير مدين: إضافة رصيد دائن)
-                        </label>
-                    </div>
-                    <div class="form-check">
-                        <input class="form-check-input" type="radio" name="localRefundMethod" id="localRefundCash" value="cash">
-                        <label class="form-check-label" for="localRefundCash">
-                            استرداد نقدي (يتم إضافة مصروف في خزنة الشركة)
-                        </label>
+            <div class="modal-body p-4">
+                <!-- معلومات العميل -->
+                <div class="card bg-light mb-4 border-0">
+                    <div class="card-body py-2">
+                        <div class="row align-items-center">
+                            <div class="col-md-6">
+                                <small class="text-muted d-block mb-1">العميل</small>
+                                <strong id="localReturnCustomerNameCard" class="text-dark">-</strong>
+                            </div>
+                            <div class="col-md-6 text-md-end">
+                                <small class="text-muted d-block mb-1">المبلغ الإجمالي</small>
+                                <strong id="localReturnTotalAmountCard" class="text-danger fs-5">0.00 ج.م</strong>
+                            </div>
+                        </div>
                     </div>
                 </div>
                 
-                <div class="mb-3">
-                    <label class="form-label fw-semibold">المنتجات المحددة للإرجاع</label>
-                    <div class="table-responsive">
-                        <table class="table table-bordered table-hover">
-                            <thead class="table-light">
-                                <tr>
-                                    <th>رقم الفاتورة</th>
-                                    <th>اسم المنتج</th>
-                                    <th>الكمية</th>
-                                    <th>سعر الوحدة</th>
-                                    <th>الإجمالي</th>
-                                    <th>إجراءات</th>
-                                </tr>
-                            </thead>
-                            <tbody id="localReturnItemsList">
-                                <tr>
-                                    <td colspan="6" class="text-center text-muted">لا توجد منتجات محددة</td>
-                                </tr>
-                            </tbody>
-                            <tfoot>
-                                <tr>
-                                    <th colspan="4" class="text-end">المبلغ الإجمالي:</th>
-                                    <th id="localReturnTotalAmount" class="text-danger">0.00 ج.م</th>
-                                    <th></th>
-                                </tr>
-                            </tfoot>
-                        </table>
+                <!-- طريقة الاسترداد -->
+                <div class="card mb-4 border-0 shadow-sm">
+                    <div class="card-header bg-white border-bottom">
+                        <label class="form-label fw-bold mb-0">
+                            <i class="bi bi-cash-coin me-2 text-primary"></i>طريقة الاسترداد <span class="text-danger">*</span>
+                        </label>
+                    </div>
+                    <div class="card-body">
+                        <div class="row g-3">
+                            <div class="col-md-6">
+                                <div class="form-check p-3 border rounded h-100" style="cursor: pointer; transition: all 0.3s;" onmouseover="this.style.backgroundColor='#f8f9fa'" onmouseout="this.style.backgroundColor=''">
+                                    <input class="form-check-input" type="radio" name="localRefundMethod" id="localRefundCredit" value="credit" checked onchange="updateRefundMethodInfo()">
+                                    <label class="form-check-label w-100" for="localRefundCredit" style="cursor: pointer;">
+                                        <div class="fw-semibold mb-1">
+                                            <i class="bi bi-wallet2 me-2 text-success"></i>خصم من الرصيد
+                                        </div>
+                                        <small class="text-muted d-block">
+                                            إذا كان العميل مدين: خصم من الدين<br>
+                                            إذا كان غير مدين: إضافة رصيد دائن
+                                        </small>
+                                    </label>
+                                </div>
+                            </div>
+                            <div class="col-md-6">
+                                <div class="form-check p-3 border rounded h-100" style="cursor: pointer; transition: all 0.3s;" onmouseover="this.style.backgroundColor='#f8f9fa'" onmouseout="this.style.backgroundColor=''">
+                                    <input class="form-check-input" type="radio" name="localRefundMethod" id="localRefundCash" value="cash" onchange="updateRefundMethodInfo()">
+                                    <label class="form-check-label w-100" for="localRefundCash" style="cursor: pointer;">
+                                        <div class="fw-semibold mb-1">
+                                            <i class="bi bi-cash-stack me-2 text-warning"></i>استرداد نقدي
+                                        </div>
+                                        <small class="text-muted d-block">
+                                            يتم إضافة مصروف في خزنة الشركة
+                                        </small>
+                                    </label>
+                                </div>
+                            </div>
+                        </div>
                     </div>
                 </div>
                 
-                <div class="mb-3">
-                    <label class="form-label" for="localReturnNotes">ملاحظات (اختياري)</label>
-                    <textarea class="form-control" id="localReturnNotes" rows="3" placeholder="أضف أي ملاحظات حول المرتجع..."></textarea>
+                <!-- المنتجات المحددة -->
+                <div class="card mb-4 border-0 shadow-sm">
+                    <div class="card-header bg-white border-bottom">
+                        <label class="form-label fw-bold mb-0">
+                            <i class="bi bi-box-seam me-2 text-primary"></i>المنتجات المحددة للإرجاع
+                        </label>
+                    </div>
+                    <div class="card-body p-0">
+                        <div class="table-responsive">
+                            <table class="table table-hover mb-0">
+                                <thead class="table-light">
+                                    <tr>
+                                        <th style="width: 120px;">رقم الفاتورة</th>
+                                        <th>اسم المنتج</th>
+                                        <th style="width: 150px;">الكمية</th>
+                                        <th style="width: 120px;">سعر الوحدة</th>
+                                        <th style="width: 120px;">الإجمالي</th>
+                                        <th style="width: 80px;" class="text-center">إجراءات</th>
+                                    </tr>
+                                </thead>
+                                <tbody id="localReturnItemsList">
+                                    <tr>
+                                        <td colspan="6" class="text-center text-muted py-4">
+                                            <i class="bi bi-inbox me-2"></i>لا توجد منتجات محددة
+                                        </td>
+                                    </tr>
+                                </tbody>
+                                <tfoot class="table-light">
+                                    <tr>
+                                        <th colspan="4" class="text-end align-middle">
+                                            <span class="fs-6">المبلغ الإجمالي:</span>
+                                        </th>
+                                        <th class="text-danger fs-5 align-middle" id="localReturnTotalAmount">0.00 ج.م</th>
+                                        <th></th>
+                                    </tr>
+                                </tfoot>
+                            </table>
+                        </div>
+                    </div>
+                </div>
+                
+                <!-- الملاحظات -->
+                <div class="card border-0 shadow-sm">
+                    <div class="card-header bg-white border-bottom">
+                        <label class="form-label fw-bold mb-0" for="localReturnNotes">
+                            <i class="bi bi-sticky me-2 text-primary"></i>ملاحظات (اختياري)
+                        </label>
+                    </div>
+                    <div class="card-body">
+                        <textarea 
+                            class="form-control" 
+                            id="localReturnNotes" 
+                            rows="3" 
+                            placeholder="أضف أي ملاحظات حول المرتجع..."
+                            style="resize: vertical;"
+                        ></textarea>
+                    </div>
                 </div>
             </div>
-            <div class="modal-footer">
-                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">إلغاء</button>
-                <button type="button" class="btn btn-success" id="localReturnSubmitBtn" onclick="submitLocalCustomerReturn()">
+            <div class="modal-footer bg-light border-top">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">
+                    <i class="bi bi-x-circle me-1"></i>إلغاء
+                </button>
+                <button type="button" class="btn btn-success btn-lg" id="localReturnSubmitBtn" onclick="submitLocalCustomerReturn()">
                     <i class="bi bi-check-circle me-1"></i>تسجيل المرتجع
                 </button>
             </div>
@@ -1648,23 +1714,33 @@ function updateLocalReturnItemsList() {
         totalRefund += itemTotal;
         
         const row = document.createElement('tr');
+        row.className = 'align-middle';
         row.innerHTML = `
-            <td>${item.invoice_number || '-'}</td>
-            <td>${item.product_name || '-'}</td>
+            <td>
+                <span class="badge bg-info">${item.invoice_number || '-'}</span>
+            </td>
+            <td>
+                <strong>${item.product_name || '-'}</strong>
+            </td>
             <td>
                 <input type="number" 
-                       class="form-control form-control-sm local-return-quantity" 
+                       class="form-control form-control-sm local-return-quantity text-center fw-bold" 
                        data-index="${index}"
                        value="${itemQuantity.toFixed(2)}"
                        min="0.01"
                        max="${item.available_to_return.toFixed(2)}"
                        step="0.01"
-                       onchange="localUpdateReturnQuantity(${index}, this.value)">
+                       onchange="localUpdateReturnQuantity(${index}, this.value)"
+                       style="max-width: 120px;">
             </td>
-            <td>${item.unit_price.toFixed(2)} ج.م</td>
-            <td class="local-return-item-total">${itemTotal.toFixed(2)} ج.م</td>
-            <td>
-                <button type="button" class="btn btn-sm btn-danger" onclick="localRemoveReturnItem(${index})">
+            <td class="text-end">
+                <span class="text-muted">${item.unit_price.toFixed(2)}</span> <small class="text-muted">ج.م</small>
+            </td>
+            <td class="text-end">
+                <strong class="text-primary local-return-item-total">${itemTotal.toFixed(2)}</strong> <small class="text-muted">ج.م</small>
+            </td>
+            <td class="text-center">
+                <button type="button" class="btn btn-sm btn-outline-danger" onclick="localRemoveReturnItem(${index})" title="إزالة">
                     <i class="bi bi-trash"></i>
                 </button>
             </td>
@@ -1678,11 +1754,29 @@ function updateLocalReturnItemsList() {
         totalElement.textContent = totalRefund.toFixed(2) + ' ج.م';
     }
     
+    // تحديث المبلغ في الكارد العلوي
+    const totalCardElement = document.getElementById('localReturnTotalAmountCard');
+    if (totalCardElement) {
+        totalCardElement.textContent = totalRefund.toFixed(2) + ' ج.م';
+    }
+    
     // تحديث اسم العميل في modal الإرجاع
     const customerNameElement = document.getElementById('localReturnCustomerName');
-    if (customerNameElement && currentLocalCustomerName) {
-        customerNameElement.textContent = currentLocalCustomerName;
+    const customerNameCardElement = document.getElementById('localReturnCustomerNameCard');
+    if (currentLocalCustomerName) {
+        if (customerNameElement) {
+            customerNameElement.textContent = currentLocalCustomerName;
+        }
+        if (customerNameCardElement) {
+            customerNameCardElement.textContent = currentLocalCustomerName;
+        }
     }
+}
+
+// دالة تحديث معلومات طريقة الاسترداد
+function updateRefundMethodInfo() {
+    const refundMethod = document.querySelector('input[name="localRefundMethod"]:checked')?.value || 'credit';
+    // يمكن إضافة معلومات إضافية هنا إذا لزم الأمر
 }
 
 // دالة تحديث كمية الإرجاع
