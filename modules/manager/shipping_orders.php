@@ -363,12 +363,16 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                             ", [$fp['batch_number']]);
                             $soldQty = (float)($sold['sold_quantity'] ?? 0);
                             
+                            // حساب الكمية المحجوزة في طلبات العملاء المعلقة
+                            // ملاحظة: customer_order_items لا يحتوي على batch_number مباشرة
+                            // لذلك نستخدم finished_products للربط مع batch_number بناءً على product_id و batch_number
+                            // هذا قد يحسب كميات من batches أخرى لنفس المنتج، لكن هذا مقبول كتقدير
                             $pending = $db->queryOne("
                                 SELECT COALESCE(SUM(oi.quantity), 0) AS pending_quantity
                                 FROM customer_order_items oi
                                 INNER JOIN customer_orders co ON oi.order_id = co.id
-                                WHERE co.status = 'pending' 
-                                  AND oi.batch_number = ?
+                                INNER JOIN finished_products fp2 ON fp2.product_id = oi.product_id AND fp2.batch_number = ?
+                                WHERE co.status = 'pending'
                             ", [$fp['batch_number']]);
                             $pendingQty = (float)($pending['pending_quantity'] ?? 0);
                             
@@ -436,6 +440,40 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     'quantity' => $normalizedItem['quantity'],
                     'unit_price' => $normalizedItem['unit_price'],
                 ];
+            }
+
+            // التحقق من وجود العميل في جدول customers قبل إنشاء الفاتورة
+            // لأن جدول invoices يحتوي على foreign key constraint يشير إلى customers
+            $customerInCustomersTable = $db->queryOne(
+                "SELECT id FROM customers WHERE id = ?",
+                [$customerId]
+            );
+            
+            if (!$customerInCustomersTable) {
+                // جلب بيانات العميل من local_customers
+                $localCustomerData = $db->queryOne(
+                    "SELECT name, phone, address, balance, rep_id, created_by FROM local_customers WHERE id = ?",
+                    [$customerId]
+                );
+                
+                if ($localCustomerData) {
+                    // إنشاء سجل في جدول customers
+                    $db->execute(
+                        "INSERT INTO customers (id, name, phone, address, balance, status, rep_id, created_by, created_at) 
+                         VALUES (?, ?, ?, ?, ?, 'active', ?, ?, NOW())",
+                        [
+                            $customerId,
+                            $localCustomerData['name'] ?? '',
+                            $localCustomerData['phone'] ?? null,
+                            $localCustomerData['address'] ?? null,
+                            $localCustomerData['balance'] ?? 0,
+                            $localCustomerData['rep_id'] ?? null,
+                            $localCustomerData['created_by'] ?? $currentUser['id'] ?? null,
+                        ]
+                    );
+                } else {
+                    throw new InvalidArgumentException('تعذر العثور على بيانات العميل.');
+                }
             }
 
             $invoiceResult = createInvoice(
@@ -858,12 +896,15 @@ try {
                         $soldQty = (float)($sold['sold_quantity'] ?? 0);
                         
                         // حساب الكمية المحجوزة في طلبات العملاء المعلقة
+                        // ملاحظة: customer_order_items لا يحتوي على batch_number مباشرة
+                        // لذلك نستخدم finished_products للربط مع batch_number بناءً على product_id و batch_number
+                        // هذا قد يحسب كميات من batches أخرى لنفس المنتج، لكن هذا مقبول كتقدير
                         $pending = $db->queryOne("
                             SELECT COALESCE(SUM(oi.quantity), 0) AS pending_quantity
                             FROM customer_order_items oi
                             INNER JOIN customer_orders co ON oi.order_id = co.id
-                            WHERE co.status = 'pending' 
-                              AND oi.batch_number = ?
+                            INNER JOIN finished_products fp2 ON fp2.product_id = oi.product_id AND fp2.batch_number = ?
+                            WHERE co.status = 'pending'
                         ", [$batchNumber]);
                         $pendingQty = (float)($pending['pending_quantity'] ?? 0);
                         
