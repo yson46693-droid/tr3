@@ -154,8 +154,6 @@ function generateShippingOrderNumber(Database $db): string
     return sprintf('%s%04d', $prefix, $serial);
 }
 
-$shippingPosUrl = getRelativeUrl('manager.php?page=shipping_orders');
-
 $mainWarehouse = $db->queryOne("SELECT id, name FROM warehouses WHERE warehouse_type = 'main' AND status = 'active' LIMIT 1");
 if (!$mainWarehouse) {
     $db->execute(
@@ -167,7 +165,6 @@ if (!$mainWarehouse) {
 
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     $action = $_POST['action'] ?? '';
-    $redirectUrl = $shippingPosUrl;
 
     if ($action === 'add_shipping_company') {
         $name = trim($_POST['company_name'] ?? '');
@@ -208,7 +205,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             }
         }
 
-        header('Location: ' . $redirectUrl);
+        redirectAfterPost('shipping_orders', [], [], 'manager');
         exit;
     }
 
@@ -220,19 +217,19 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
         if ($shippingCompanyId <= 0) {
             $_SESSION[$sessionErrorKey] = 'يرجى اختيار شركة الشحن.';
-            header('Location: ' . $redirectUrl);
+            redirectAfterPost('shipping_orders', [], [], 'manager');
             exit;
         }
 
         if ($customerId <= 0) {
             $_SESSION[$sessionErrorKey] = 'يرجى اختيار العميل.';
-            header('Location: ' . $redirectUrl);
+            redirectAfterPost('shipping_orders', [], [], 'manager');
             exit;
         }
 
         if (!is_array($itemsInput) || empty($itemsInput)) {
             $_SESSION[$sessionErrorKey] = 'يرجى إضافة منتجات إلى الطلب.';
-            header('Location: ' . $redirectUrl);
+            redirectAfterPost('shipping_orders', [], [], 'manager');
             exit;
         }
 
@@ -277,7 +274,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
         if (empty($normalizedItems)) {
             $_SESSION[$sessionErrorKey] = 'يرجى التأكد من إدخال بيانات صحيحة للمنتجات.';
-            header('Location: ' . $redirectUrl);
+            redirectAfterPost('shipping_orders', [], [], 'manager');
             exit;
         }
 
@@ -452,25 +449,42 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             if (!$customerInCustomersTable) {
                 // جلب بيانات العميل من local_customers
                 $localCustomerData = $db->queryOne(
-                    "SELECT name, phone, address, balance, rep_id, created_by FROM local_customers WHERE id = ?",
+                    "SELECT name, phone, address, balance, created_by FROM local_customers WHERE id = ?",
                     [$customerId]
                 );
                 
                 if ($localCustomerData) {
+                    // التحقق من وجود عمود rep_id في جدول customers
+                    $hasRepIdColumn = !empty($db->queryOne("SHOW COLUMNS FROM customers LIKE 'rep_id'"));
+                    
                     // إنشاء سجل في جدول customers
-                    $db->execute(
-                        "INSERT INTO customers (id, name, phone, address, balance, status, rep_id, created_by, created_at) 
-                         VALUES (?, ?, ?, ?, ?, 'active', ?, ?, NOW())",
-                        [
-                            $customerId,
-                            $localCustomerData['name'] ?? '',
-                            $localCustomerData['phone'] ?? null,
-                            $localCustomerData['address'] ?? null,
-                            $localCustomerData['balance'] ?? 0,
-                            $localCustomerData['rep_id'] ?? null,
-                            $localCustomerData['created_by'] ?? $currentUser['id'] ?? null,
-                        ]
-                    );
+                    if ($hasRepIdColumn) {
+                        $db->execute(
+                            "INSERT INTO customers (id, name, phone, address, balance, status, rep_id, created_by, created_at) 
+                             VALUES (?, ?, ?, ?, ?, 'active', NULL, ?, NOW())",
+                            [
+                                $customerId,
+                                $localCustomerData['name'] ?? '',
+                                $localCustomerData['phone'] ?? null,
+                                $localCustomerData['address'] ?? null,
+                                $localCustomerData['balance'] ?? 0,
+                                $localCustomerData['created_by'] ?? $currentUser['id'] ?? null,
+                            ]
+                        );
+                    } else {
+                        $db->execute(
+                            "INSERT INTO customers (id, name, phone, address, balance, status, created_by, created_at) 
+                             VALUES (?, ?, ?, ?, ?, 'active', ?, NOW())",
+                            [
+                                $customerId,
+                                $localCustomerData['name'] ?? '',
+                                $localCustomerData['phone'] ?? null,
+                                $localCustomerData['address'] ?? null,
+                                $localCustomerData['balance'] ?? 0,
+                                $localCustomerData['created_by'] ?? $currentUser['id'] ?? null,
+                            ]
+                        );
+                    }
                 } else {
                     throw new InvalidArgumentException('تعذر العثور على بيانات العميل.');
                 }
@@ -590,7 +604,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             $_SESSION[$sessionErrorKey] = 'تعذر إنشاء طلب الشحن. يرجى المحاولة لاحقاً.';
         }
 
-        header('Location: ' . $redirectUrl);
+        redirectAfterPost('shipping_orders', [], [], 'manager');
         exit;
     }
 
@@ -601,7 +615,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
         if ($orderId <= 0 || !in_array($newStatus, $allowedStatuses, true)) {
             $_SESSION[$sessionErrorKey] = 'طلب غير صالح لتحديث الحالة.';
-            header('Location: ' . $redirectUrl);
+            redirectAfterPost('shipping_orders', [], [], 'manager');
             exit;
         }
 
@@ -630,7 +644,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             $_SESSION[$sessionErrorKey] = 'تعذر تحديث حالة الطلب.';
         }
 
-        header('Location: ' . $redirectUrl);
+        redirectAfterPost('shipping_orders', [], [], 'manager');
         exit;
     }
 
@@ -639,7 +653,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
         if ($orderId <= 0) {
             $_SESSION[$sessionErrorKey] = 'طلب غير صالح لإتمام التسليم.';
-            header('Location: ' . $redirectUrl);
+            redirectAfterPost('shipping_orders', [], [], 'manager');
             exit;
         }
 
@@ -779,9 +793,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             $_SESSION[$sessionErrorKey] = 'تعذر إتمام إجراءات الطلب. يرجى المحاولة لاحقاً.';
         }
 
-        // التأكد من التوجيه إلى صفحة طلبات الشحن
-        $finalRedirectUrl = !empty($redirectUrl) ? $redirectUrl : $shippingPosUrl;
-        header('Location: ' . $finalRedirectUrl);
+        redirectAfterPost('shipping_orders', [], [], 'manager');
         exit;
     }
 }
@@ -1628,5 +1640,85 @@ $hasShippingCompanies = !empty($shippingCompanies);
     });
 
     addNewRow();
+
+    // إضافة validation للنموذج
+    const shippingOrderForm = document.getElementById('shippingOrderForm');
+    if (shippingOrderForm) {
+        shippingOrderForm.addEventListener('submit', function(e) {
+            e.preventDefault();
+            
+            // التحقق من شركة الشحن
+            const shippingCompanySelect = shippingOrderForm.querySelector('select[name="shipping_company_id"]');
+            if (!shippingCompanySelect || !shippingCompanySelect.value || shippingCompanySelect.value === '') {
+                alert('يرجى اختيار شركة الشحن');
+                shippingCompanySelect?.focus();
+                return false;
+            }
+
+            // التحقق من العميل
+            const customerSelect = shippingOrderForm.querySelector('select[name="customer_id"]');
+            if (!customerSelect || !customerSelect.value || customerSelect.value === '') {
+                alert('يرجى اختيار العميل');
+                customerSelect?.focus();
+                return false;
+            }
+
+            // التحقق من المنتجات
+            const rows = itemsBody.querySelectorAll('tr');
+            let hasValidItems = false;
+            const validationErrors = [];
+
+            rows.forEach((row, index) => {
+                const productSelect = row.querySelector('select[name$="[product_id]"]');
+                const quantityInput = row.querySelector('input[name$="[quantity]"]');
+                const unitPriceInput = row.querySelector('input[name$="[unit_price]"]');
+
+                const productId = productSelect?.value || '';
+                const quantity = parseFloat(quantityInput?.value || '0');
+                const unitPrice = parseFloat(unitPriceInput?.value || '0');
+
+                if (productId && productId !== '') {
+                    if (quantity <= 0) {
+                        validationErrors.push(`المنتج في الصف ${index + 1}: يرجى إدخال كمية صحيحة`);
+                        quantityInput?.classList.add('is-invalid');
+                    } else {
+                        quantityInput?.classList.remove('is-invalid');
+                    }
+
+                    if (unitPrice <= 0) {
+                        validationErrors.push(`المنتج في الصف ${index + 1}: يرجى إدخال سعر وحدة صحيح`);
+                        unitPriceInput?.classList.add('is-invalid');
+                    } else {
+                        unitPriceInput?.classList.remove('is-invalid');
+                    }
+
+                    // التحقق من الكمية المتاحة
+                    const selectedOption = productSelect?.selectedOptions?.[0];
+                    const available = parseFloat(selectedOption?.dataset?.available || '0');
+                    if (quantity > available) {
+                        validationErrors.push(`المنتج في الصف ${index + 1}: الكمية المطلوبة (${quantity}) أكبر من المتاح (${available})`);
+                        quantityInput?.classList.add('is-invalid');
+                    }
+
+                    if (productId && quantity > 0 && unitPrice > 0 && quantity <= available) {
+                        hasValidItems = true;
+                    }
+                }
+            });
+
+            if (!hasValidItems) {
+                alert('يرجى إضافة منتج واحد على الأقل مع كمية وسعر صحيحين');
+                return false;
+            }
+
+            if (validationErrors.length > 0) {
+                alert('يرجى تصحيح الأخطاء التالية:\n' + validationErrors.join('\n'));
+                return false;
+            }
+
+            // إذا تم التحقق من كل شيء، أرسل النموذج
+            this.submit();
+        });
+    }
 })();
 </script>
