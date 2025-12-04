@@ -1358,6 +1358,11 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         $notes = trim($_POST['order_notes'] ?? '');
         $itemsInput = $_POST['items'] ?? [];
 
+        // تسجيل القيم المستلمة للمساعدة في التشخيص
+        if ($customerId <= 0) {
+            error_log('Shipping order creation: Invalid customer_id received - ' . ($_POST['customer_id'] ?? 'not set') . ', user_id: ' . ($currentUser['id'] ?? 'unknown'));
+        }
+
         if ($shippingCompanyId <= 0) {
             $error = 'يرجى اختيار شركة الشحن.';
         } elseif ($customerId <= 0) {
@@ -1432,12 +1437,18 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     }
 
                     $customer = $db->queryOne(
-                        "SELECT id, balance FROM customers WHERE id = ? FOR UPDATE",
+                        "SELECT id, balance, status FROM customers WHERE id = ? FOR UPDATE",
                         [$customerId]
                     );
 
                     if (!$customer) {
-                        throw new InvalidArgumentException('تعذر العثور على العميل المحدد.');
+                        error_log('Shipping order: Customer not found - customer_id: ' . $customerId);
+                        throw new InvalidArgumentException('تعذر العثور على العميل المحدد. يرجى التحقق من اختيار العميل.');
+                    }
+
+                    if (($customer['status'] ?? '') !== 'active') {
+                        error_log('Shipping order: Customer is not active - customer_id: ' . $customerId . ', status: ' . ($customer['status'] ?? 'unknown'));
+                        throw new InvalidArgumentException('العميل المحدد غير نشط. يرجى اختيار عميل نشط.');
                     }
 
                     $productsMap = [];
@@ -1832,12 +1843,13 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 }
 
                 $customer = $db->queryOne(
-                    "SELECT id, balance FROM customers WHERE id = ? FOR UPDATE",
+                    "SELECT id, balance, status FROM customers WHERE id = ? FOR UPDATE",
                     [$order['customer_id']]
                 );
 
                 if (!$customer) {
-                    throw new InvalidArgumentException('تعذر العثور على العميل المرتبط بالطلب.');
+                    error_log('Complete shipping order: Customer not found - customer_id: ' . ($order['customer_id'] ?? 'null') . ', order_id: ' . $orderId);
+                    throw new InvalidArgumentException('تعذر العثور على العميل المرتبط بالطلب. قد يكون العميل قد تم حذفه.');
                 }
 
                 $totalAmount = (float)($order['total_amount'] ?? 0.0);
