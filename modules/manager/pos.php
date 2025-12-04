@@ -931,10 +931,12 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     $quantity = $item['quantity'];
                     $unitPrice = $item['unit_price'];
                     $lineTotal = $item['line_total'];
-                    $batchId = $item['batch_id'] ?? null;
+                    // تحويل batch_id إلى int بشكل صريح - إذا كان 0 أو null، نتركه null
+                    $batchIdRaw = $item['batch_id'] ?? null;
+                    $batchId = ($batchIdRaw !== null && $batchIdRaw !== '' && (int)$batchIdRaw > 0) ? (int)$batchIdRaw : null;
                     $productType = $item['product_type'] ?? 'external';
 
-                    error_log("Manager POS: Processing sale item - product_id: $productId, batch_id: " . ($batchId ?? 'NULL') . ", quantity: $quantity, product_type: $productType");
+                    error_log("Manager POS: Processing sale item - product_id: $productId, batch_id_raw: " . ($batchIdRaw ?? 'NULL') . ", batch_id: " . ($batchId ?? 'NULL') . ", quantity: $quantity, product_type: $productType");
 
                     // التحقق من الكمية مباشرة من finished_products قبل البيع (مثل نقطة بيع المندوب)
                     // هذا مهم جداً لضمان أن الكمية متاحة فعلياً
@@ -978,6 +980,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
                     // تسجيل حركة المخزون (سوف يقوم recordInventoryMovement بالتحقق من الكمية وتحديثها)
                     // تم توزيع الكمية على الباتشات مسبقاً في normalizedCart، لذا كل عنصر يحتوي على كمية متاحة في الباتش المحدد
+                    error_log("Manager POS: Calling recordInventoryMovement - product_id: $productId, batch_id: " . ($batchId ?? 'NULL') . ", quantity: $quantity, product_type: $productType");
                     $movementResult = recordInventoryMovement(
                         $productId,
                         $mainWarehouseId,
@@ -987,8 +990,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                         $invoiceId,
                         'بيع من نقطة بيع المدير - فاتورة ' . $invoiceNumber,
                         $currentUser['id'],
-                        null, // unitPrice
-                        $batchId // batchId
+                        $batchId // batchId - يجب أن يكون في المكان التاسع (آخر معامل)
                     );
 
                     if (empty($movementResult['success'])) {

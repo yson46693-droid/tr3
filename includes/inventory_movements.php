@@ -16,6 +16,9 @@ require_once __DIR__ . '/audit_log.php';
  */
 function recordInventoryMovement($productId, $warehouseId, $type, $quantity, $referenceType = null, $referenceId = null, $notes = null, $createdBy = null, $batchId = null) {
     try {
+        // تسجيل معلومات التشخيص في بداية الدالة
+        error_log("recordInventoryMovement: Called with product_id: $productId, warehouse_id: " . ($warehouseId ?? 'NULL') . ", type: $type, quantity: $quantity, batch_id: " . ($batchId ?? 'NULL') . ", reference_type: " . ($referenceType ?? 'NULL'));
+        
         $db = db();
         
         if ($createdBy === null) {
@@ -154,6 +157,7 @@ function recordInventoryMovement($productId, $warehouseId, $type, $quantity, $re
         
         // إذا كان هناك batch_id ونوع الحركة هو 'out' أو 'transfer'، نستخدم quantity_produced من finished_products
         // لكن فقط إذا لم نكن نستخدم vehicle_inventory (لأننا استخدمناها بالفعل)
+        error_log("recordInventoryMovement: Checking conditions - batchId: " . ($batchId ?? 'NULL') . ", type: $type, usingVehicleInventory: " . ($usingVehicleInventory ? 'true' : 'false'));
         if ($batchId && ($type === 'out' || $type === 'transfer') && !$usingVehicleInventory) {
             // استخدام FOR UPDATE لضمان قراءة الكمية الصحيحة ومنع race conditions
             // محاولة البحث باستخدام id أولاً
