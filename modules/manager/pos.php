@@ -2812,7 +2812,7 @@ try {
                                 </div>
                                 <div class="mt-3 d-none" id="posPartialWrapper">
                                     <label class="form-label">مبلغ التحصيل الجزئي</label>
-                                    <input type="number" step="0.01" min="0" value="0" class="form-control" id="posPartialAmount">
+                                    <input type="number" class="form-control text-muted" id="posPartialAmount" placeholder="0" step="1">
                                 </div>
                                 <div class="mt-3 d-none" id="posDueDateWrapper">
                                     <label class="form-label">تاريخ الاستحقاق <span class="text-muted">(اختياري)</span></label>
