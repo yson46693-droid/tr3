@@ -142,6 +142,38 @@ function handleGetHistory(): void
             // إذا لم يكن هناك جدول local_invoice_items، نعيد قائمة فارغة
             $purchaseHistory = [];
         } else {
+            // التحقق من وجود أعمدة batch_number و batch_id في local_invoice_items
+            $hasBatchNumber = !empty($db->queryOne("SHOW COLUMNS FROM local_invoice_items LIKE 'batch_number'"));
+            $hasBatchId = !empty($db->queryOne("SHOW COLUMNS FROM local_invoice_items LIKE 'batch_id'"));
+            
+            // بناء الاستعلام ديناميكياً
+            $batchSelect = '';
+            if ($hasBatchNumber && $hasBatchId) {
+                // إذا كانا موجودين، نستخدمهما مباشرة
+                $batchSelect = "COALESCE(ii.batch_number, '') as batch_numbers,
+                                CASE 
+                                    WHEN ii.batch_id IS NOT NULL AND ii.batch_id > 0 
+                                    THEN CAST(ii.batch_id AS CHAR)
+                                    ELSE ''
+                                END as batch_number_ids";
+            } elseif ($hasBatchNumber) {
+                // إذا كان batch_number موجوداً فقط
+                $batchSelect = "COALESCE(ii.batch_number, '') as batch_numbers,
+                                '' as batch_number_ids";
+            } elseif ($hasBatchId) {
+                // إذا كان batch_id موجوداً فقط
+                $batchSelect = "'' as batch_numbers,
+                                CASE 
+                                    WHEN ii.batch_id IS NOT NULL AND ii.batch_id > 0 
+                                    THEN CAST(ii.batch_id AS CHAR)
+                                    ELSE ''
+                                END as batch_number_ids";
+            } else {
+                // إذا لم يكونا موجودين
+                $batchSelect = "'' as batch_numbers,
+                                '' as batch_number_ids";
+            }
+            
             $purchaseHistory = $db->query(
                 "SELECT 
                     i.id as invoice_id,
@@ -157,8 +189,7 @@ function handleGetHistory(): void
                     ii.quantity,
                     ii.unit_price,
                     ii.total_price,
-                    '' as batch_numbers,
-                    '' as batch_number_ids
+                    $batchSelect
                 FROM local_invoices i
                 INNER JOIN local_invoice_items ii ON i.id = ii.invoice_id
                 LEFT JOIN products p ON ii.product_id = p.id
@@ -282,9 +313,24 @@ function handleGetHistory(): void
         $batchNumbers = [];
         
         if ($isLocalCustomer) {
-            // للعملاء المحليين - لا توجد batch numbers حالياً
-            $batchNumberIds = [];
-            $batchNumbers = [];
+            // للعملاء المحليين - جلب batch numbers من local_invoice_items
+            if (!empty($item['batch_number_ids']) && $item['batch_number_ids'] !== '') {
+                $batchNumberIds = array_map('intval', array_filter(explode(',', $item['batch_number_ids'])));
+            } else {
+                $batchNumberIds = [];
+            }
+            
+            if (!empty($item['batch_numbers']) && $item['batch_numbers'] !== '') {
+                // إذا كان batch_numbers سلسلة واحدة، نحولها إلى مصفوفة
+                $batchNumbersStr = trim($item['batch_numbers']);
+                if (strpos($batchNumbersStr, ',') !== false) {
+                    $batchNumbers = array_filter(array_map('trim', explode(',', $batchNumbersStr)));
+                } else {
+                    $batchNumbers = [$batchNumbersStr];
+                }
+            } else {
+                $batchNumbers = [];
+            }
         } else {
             $batchNumberIds = !empty($item['batch_number_ids']) && $item['batch_number_ids'] !== '' ? explode(',', $item['batch_number_ids']) : [];
             $batchNumbers = !empty($item['batch_numbers']) && $item['batch_numbers'] !== '' ? explode(', ', $item['batch_numbers']) : [];

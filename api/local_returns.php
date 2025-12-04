@@ -144,9 +144,21 @@ function handleCreateLocalReturn(): void
                 continue;
             }
             
-            // جلب بيانات عنصر الفاتورة
+            // جلب بيانات عنصر الفاتورة مع batch_number و batch_id
+            $hasBatchNumber = !empty($db->queryOne("SHOW COLUMNS FROM local_invoice_items LIKE 'batch_number'"));
+            $hasBatchId = !empty($db->queryOne("SHOW COLUMNS FROM local_invoice_items LIKE 'batch_id'"));
+            
+            $batchColumns = '';
+            if ($hasBatchNumber && $hasBatchId) {
+                $batchColumns = ', ii.batch_number, ii.batch_id';
+            } elseif ($hasBatchNumber) {
+                $batchColumns = ', ii.batch_number';
+            } elseif ($hasBatchId) {
+                $batchColumns = ', ii.batch_id';
+            }
+            
             $invoiceItem = $db->queryOne(
-                "SELECT ii.*, i.invoice_number, i.customer_id
+                "SELECT ii.*, i.invoice_number, i.customer_id $batchColumns
                  FROM local_invoice_items ii
                  INNER JOIN local_invoices i ON ii.invoice_id = i.id
                  WHERE ii.id = ? AND i.customer_id = ?",
@@ -373,18 +385,33 @@ function handleCreateLocalReturn(): void
             $batchId = null;
             $batchNumber = null;
             
-            // التحقق من وجود جدول local_invoice_items و batch_number
-            $localInvoiceItemsTableExists = $db->queryOne("SHOW TABLES LIKE 'local_invoice_items'");
-            if (!empty($localInvoiceItemsTableExists)) {
-                // البحث عن batch_number في local_invoice_items
-                $invoiceItem = $db->queryOne(
-                    "SELECT batch_number, batch_id FROM local_invoice_items WHERE id = ?",
+            // البحث عن batch_number و batch_id من local_invoice_items
+            // نستخدم البيانات التي تم جلبها مسبقاً في $selectedItems
+            $batchId = null;
+            $batchNumber = null;
+            
+            // التحقق من وجود أعمدة batch_number و batch_id في local_invoice_items
+            $hasBatchNumber = !empty($db->queryOne("SHOW COLUMNS FROM local_invoice_items LIKE 'batch_number'"));
+            $hasBatchId = !empty($db->queryOne("SHOW COLUMNS FROM local_invoice_items LIKE 'batch_id'"));
+            
+            if ($hasBatchNumber || $hasBatchId) {
+                $batchSelect = '';
+                if ($hasBatchNumber && $hasBatchId) {
+                    $batchSelect = 'batch_number, batch_id';
+                } elseif ($hasBatchNumber) {
+                    $batchSelect = 'batch_number, NULL as batch_id';
+                } elseif ($hasBatchId) {
+                    $batchSelect = 'NULL as batch_number, batch_id';
+                }
+                
+                $invoiceItemBatch = $db->queryOne(
+                    "SELECT $batchSelect FROM local_invoice_items WHERE id = ?",
                     [$invoiceItemId]
                 );
                 
-                if ($invoiceItem) {
-                    $batchNumber = $invoiceItem['batch_number'] ?? null;
-                    $batchId = isset($invoiceItem['batch_id']) && $invoiceItem['batch_id'] ? (int)$invoiceItem['batch_id'] : null;
+                if ($invoiceItemBatch) {
+                    $batchNumber = $invoiceItemBatch['batch_number'] ?? null;
+                    $batchId = isset($invoiceItemBatch['batch_id']) && $invoiceItemBatch['batch_id'] ? (int)$invoiceItemBatch['batch_id'] : null;
                     
                     // إذا كان هناك batch_number لكن لا يوجد batch_id، نحاول البحث عنه
                     if ($batchNumber && !$batchId) {
@@ -396,26 +423,26 @@ function handleCreateLocalReturn(): void
                             $batchId = (int)$batchInfo['id'];
                         }
                     }
+                }
+            }
+            
+            // تحديث quantity_produced في finished_products
+            // ملاحظة: recordInventoryMovement() لا يقوم بتحديث finished_products.quantity_produced 
+            // في حالة type='in'، لذلك يجب تحديثه يدوياً هنا
+            if ($batchId) {
+                $finishedProduct = $db->queryOne(
+                    "SELECT id, quantity_produced FROM finished_products WHERE batch_id = ? LIMIT 1",
+                    [$batchId]
+                );
+                
+                if ($finishedProduct) {
+                    $currentProduced = (float)($finishedProduct['quantity_produced'] ?? 0);
+                    $newProduced = round($currentProduced + $quantity, 3);
                     
-                    // تحديث quantity_produced في finished_products
-                    // ملاحظة: recordInventoryMovement() لا يقوم بتحديث finished_products.quantity_produced 
-                    // في حالة type='in'، لذلك يجب تحديثه يدوياً هنا
-                    if ($batchId) {
-                        $finishedProduct = $db->queryOne(
-                            "SELECT id, quantity_produced FROM finished_products WHERE batch_id = ? LIMIT 1",
-                            [$batchId]
-                        );
-                        
-                        if ($finishedProduct) {
-                            $currentProduced = (float)($finishedProduct['quantity_produced'] ?? 0);
-                            $newProduced = round($currentProduced + $quantity, 3);
-                            
-                            $db->execute(
-                                "UPDATE finished_products SET quantity_produced = ? WHERE id = ?",
-                                [$newProduced, (int)$finishedProduct['id']]
-                            );
-                        }
-                    }
+                    $db->execute(
+                        "UPDATE finished_products SET quantity_produced = ? WHERE id = ?",
+                        [$newProduced, (int)$finishedProduct['id']]
+                    );
                 }
             }
             
