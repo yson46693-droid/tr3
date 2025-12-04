@@ -170,6 +170,18 @@ try {
     // تسجيل عدد الرواتب المسترجعة
     error_log("get_user_salaries.php found " . count($salaries) . " salaries for user_id: " . $userId);
     
+    // التحقق من وجود رواتب
+    if (empty($salaries) || count($salaries) === 0) {
+        error_log("get_user_salaries.php: No salaries found for user_id: " . $userId);
+        ob_end_clean();
+        echo json_encode([
+            'success' => true,
+            'salaries' => [],
+            'message' => 'لا توجد رواتب مسجلة لهذا الموظف'
+        ], JSON_UNESCAPED_UNICODE);
+        exit;
+    }
+    
     $monthNames = [
         1 => 'يناير', 2 => 'فبراير', 3 => 'مارس', 4 => 'أبريل',
         5 => 'مايو', 6 => 'يونيو', 7 => 'يوليو', 8 => 'أغسطس',
@@ -181,9 +193,15 @@ try {
     
     foreach ($salaries as $salary) {
         try {
-        $month = 0;
-        $year = date('Y');
-        $monthLabel = 'غير محدد';
+            // التحقق من وجود user_id في الراتب
+            if (empty($salary['user_id']) || intval($salary['user_id']) <= 0) {
+                error_log("get_user_salaries.php: Skipping salary ID " . ($salary['id'] ?? 'unknown') . " - missing or invalid user_id");
+                continue;
+            }
+            
+            $month = 0;
+            $year = date('Y');
+            $monthLabel = 'غير محدد';
         
         // تحديد الشهر والسنة بناءً على نوع عمود month
         if ($hasYearColumn) {
@@ -360,6 +378,12 @@ try {
         } catch (Exception $e) {
             // تسجيل الخطأ ولكن الاستمرار في معالجة الرواتب الأخرى
             error_log("Error processing salary ID " . ($salary['id'] ?? 'unknown') . ": " . $e->getMessage());
+            error_log("Stack trace: " . $e->getTraceAsString());
+            continue; // تخطي هذا الراتب والمتابعة مع البقية
+        } catch (Throwable $e) {
+            // معالجة جميع أنواع الأخطاء
+            error_log("Fatal error processing salary ID " . ($salary['id'] ?? 'unknown') . ": " . $e->getMessage());
+            error_log("Stack trace: " . $e->getTraceAsString());
             continue; // تخطي هذا الراتب والمتابعة مع البقية
         }
     }

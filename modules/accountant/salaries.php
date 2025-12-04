@@ -3582,9 +3582,16 @@ $pageTitle = ($view === 'advances') ? 'السلف' : (($view === 'pending') ? '�
                             // التأكد من أن القيم المحسوبة موجودة في مصفوفة $salary لتمريرها في JSON
                             $salaryForJson = $salary;
                             
-                            // التأكد من وجود user_id
-                            if (!isset($salaryForJson['user_id']) && isset($userId)) {
-                                $salaryForJson['user_id'] = $userId;
+                            // التأكد من وجود user_id - استخدم القيمة من $salary أولاً، ثم $userId
+                            if (empty($salaryForJson['user_id']) || intval($salaryForJson['user_id']) <= 0) {
+                                if (!empty($userId) && intval($userId) > 0) {
+                                    $salaryForJson['user_id'] = intval($userId);
+                                } else {
+                                    // إذا لم يكن user_id موجوداً، استخدم user_id من $salary مباشرة
+                                    $salaryForJson['user_id'] = intval($salary['user_id'] ?? 0);
+                                }
+                            } else {
+                                $salaryForJson['user_id'] = intval($salaryForJson['user_id']);
                             }
                             
                             if (!isset($salaryForJson['calculated_remaining'])) {
@@ -4306,8 +4313,15 @@ function viewAdvanceDetails(advanceId) {
 }
 
 function openSettleModal(salaryId, salaryData, remainingAmount, calculatedAccumulated) {
-    // الحصول على user_id من البيانات
-    const userId = salaryData.user_id || salaryData.userId || (salaryData.user_id === 0 ? 0 : null);
+    // الحصول على user_id من البيانات - محاولة عدة مصادر
+    let userId = null;
+    if (salaryData.user_id !== undefined && salaryData.user_id !== null && salaryData.user_id > 0) {
+        userId = parseInt(salaryData.user_id);
+    } else if (salaryData.userId !== undefined && salaryData.userId !== null && salaryData.userId > 0) {
+        userId = parseInt(salaryData.userId);
+    } else if (salaryData.user_id === 0 || salaryData.userId === 0) {
+        userId = 0;
+    }
     
     // تسجيل للتشخيص
     console.log('openSettleModal called with:', {
@@ -4319,9 +4333,10 @@ function openSettleModal(salaryId, salaryData, remainingAmount, calculatedAccumu
     });
     
     // التحقق من وجود user_id
-    if (!userId || userId <= 0) {
-        console.error('Invalid user_id in openSettleModal:', userId);
-        alert('خطأ: لم يتم العثور على معرف الموظف. يرجى المحاولة مرة أخرى.');
+    if (!userId || userId <= 0 || isNaN(userId)) {
+        console.error('Invalid user_id in openSettleModal:', userId, 'salaryData:', salaryData);
+        alert('خطأ: لم يتم العثور على معرف الموظف. يرجى المحاولة مرة أخرى.\n\n' + 
+              'تفاصيل: salaryId=' + salaryId + ', user_id=' + (salaryData.user_id || 'undefined'));
         return;
     }
     
@@ -4409,39 +4424,51 @@ function loadUserSalariesForSettlement(userId, currentSalaryId) {
             
             select.innerHTML = '<option value="">-- اختر راتب للتسوية --</option>';
             
-            if (data.success && data.salaries && Array.isArray(data.salaries) && data.salaries.length > 0) {
-                data.salaries.forEach(salary => {
-                    const option = document.createElement('option');
-                    option.value = salary.id;
-                    const remaining = parseFloat(salary.remaining || 0);
-                    option.textContent = salary.month_label + ' - المتبقي: ' + formatCurrency(remaining);
-                    if (salary.id == currentSalaryId) {
-                        option.selected = true;
+            if (data.success !== false) {
+                if (data.salaries && Array.isArray(data.salaries) && data.salaries.length > 0) {
+                    data.salaries.forEach(salary => {
+                        const option = document.createElement('option');
+                        option.value = salary.id;
+                        const remaining = parseFloat(salary.remaining || 0);
+                        option.textContent = salary.month_label + ' - المتبقي: ' + formatCurrency(remaining);
+                        if (salary.id == currentSalaryId) {
+                            option.selected = true;
+                        }
+                        select.appendChild(option);
+                    });
+                    
+                    // تحميل بيانات الراتب المحدد
+                    if (currentSalaryId > 0) {
+                        setTimeout(() => {
+                            loadSelectedSalaryData();
+                        }, 200);
                     }
-                    select.appendChild(option);
-                });
-                
-                // تحميل بيانات الراتب المحدد
-                if (currentSalaryId > 0) {
-                    setTimeout(() => {
-                        loadSelectedSalaryData();
-                    }, 200);
+                } else {
+                    console.warn('No salaries found or empty array:', data);
+                    const message = (data && data.message) ? data.message : 'لا توجد رواتب متاحة لهذا الموظف';
+                    select.innerHTML = '<option value="">' + message + '</option>';
                 }
             } else {
-                console.warn('No salaries found or invalid data structure:', data);
-                if (data && data.message) {
-                    console.error('API Error message:', data.message);
-                    select.innerHTML = '<option value="">' + (data.message || 'لا توجد رواتب متاحة') + '</option>';
-                } else {
-                    select.innerHTML = '<option value="">لا توجد رواتب متاحة</option>';
+                // API أرجعت success: false
+                console.error('API returned success: false', data);
+                const errorMessage = (data && data.message) ? data.message : 'حدث خطأ في جلب الرواتب';
+                select.innerHTML = '<option value="">' + errorMessage + '</option>';
+                if (data && data.debug && data.debug.error) {
+                    console.error('API Debug Error:', data.debug);
                 }
             }
         })
         .catch(error => {
             console.error('Error loading salaries:', error);
+            console.error('Error details:', {
+                message: error.message,
+                stack: error.stack,
+                name: error.name
+            });
             select.innerHTML = '<option value="">خطأ في تحميل الرواتب</option>';
             // عرض رسالة خطأ للمستخدم
-            alert('حدث خطأ أثناء تحميل الرواتب. يرجى التحقق من وحدة التحكم للمزيد من التفاصيل.');
+            const errorMsg = error.message || 'حدث خطأ غير معروف أثناء تحميل الرواتب';
+            alert('حدث خطأ أثناء تحميل الرواتب:\n\n' + errorMsg + '\n\nيرجى التحقق من وحدة التحكم (F12) للمزيد من التفاصيل.');
         });
 }
 
