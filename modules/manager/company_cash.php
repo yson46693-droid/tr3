@@ -948,6 +948,7 @@ $typeColorMap = [
                                     </span>
                                 </td>
                                 <td><?php echo htmlspecialchars($trans['created_by_name'] ?? '-', ENT_QUOTES, 'UTF-8'); ?></td>
+                                <td><?php echo htmlspecialchars($trans['approved_by_name'] ?? '-', ENT_QUOTES, 'UTF-8'); ?></td>
                                 <td>
                                     <?php 
                                     // عرض زر الطباعة فقط للحركات من نوع إيراد (income) من accountant_transactions
@@ -971,7 +972,6 @@ $typeColorMap = [
                                         <span class="text-muted small">-</span>
                                     <?php endif; ?>
                                 </td>
-                                <td><?php echo htmlspecialchars($trans['approved_by_name'] ?? '-', ENT_QUOTES, 'UTF-8'); ?></td>
                             </tr>
                         <?php endforeach; ?>
                     <?php endif; ?>
