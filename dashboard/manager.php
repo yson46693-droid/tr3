@@ -370,10 +370,23 @@ $pageDescription = 'لوحة تحكم المدير - إدارة شاملة لل�
                     
                     $balance = $totalIncome - $totalExpenses - $totalSalaries;
                     
-                    $monthlySales = $db->queryOne(
-                        "SELECT COALESCE(SUM(total), 0) as total
-                         FROM sales WHERE status = 'approved' AND MONTH(date) = MONTH(NOW())"
-                    );
+                    // حساب المبيعات الشهرية من جدول invoices (كما في تقارير المبيعات)
+                    $invoicesTableExists = $db->queryOne("SHOW TABLES LIKE 'invoices'");
+                    if (!empty($invoicesTableExists)) {
+                        $monthlySales = $db->queryOne(
+                            "SELECT COALESCE(SUM(total_amount), 0) as total
+                             FROM invoices
+                             WHERE status != 'cancelled'
+                             AND MONTH(date) = MONTH(NOW())
+                             AND YEAR(date) = YEAR(NOW())"
+                        );
+                    } else {
+                        // إذا لم يكن جدول invoices موجوداً، نستخدم جدول sales (للتوافق مع الإصدارات القديمة)
+                        $monthlySales = $db->queryOne(
+                            "SELECT COALESCE(SUM(total), 0) as total
+                             FROM sales WHERE status = 'approved' AND MONTH(date) = MONTH(NOW())"
+                        );
+                    }
                     ?>
                     
                     <div class="stat-card">
