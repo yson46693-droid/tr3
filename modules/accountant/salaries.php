@@ -4343,6 +4343,12 @@ function openSettleModal(salaryId, salaryData, remainingAmount, calculatedAccumu
     // التحقق من وجود العناصر قبل الوصول إليها
     const userIdInput = document.getElementById('settleUserId');
     const userNameSpan = document.getElementById('settleUserName');
+    const settleSalaryIdEl = document.getElementById('settleSalaryId');
+    const settleAccumulatedAmountEl = document.getElementById('settleAccumulatedAmount');
+    const settlePaidAmountEl = document.getElementById('settlePaidAmount');
+    const settleRemainingAmountEl = document.getElementById('settleRemainingAmount');
+    const settleRemainingAmount2El = document.getElementById('settleRemainingAmount2');
+    const settleAmountEl = document.getElementById('settleAmount');
     
     if (userIdInput) {
         userIdInput.value = userId;
@@ -4356,29 +4362,23 @@ function openSettleModal(salaryId, salaryData, remainingAmount, calculatedAccumu
         console.error('settleUserName element not found');
     }
     
-    // استخدام القيم المحسوبة مباشرة من بطاقة الموظف بدلاً من إعادة حسابها
-    // هذا يضمن أن القيم في نموذج التسوية تطابق القيم في بطاقة الموظف
-    const settleAccumulatedAmountEl = document.getElementById('settleAccumulatedAmount');
-    const settlePaidAmountEl = document.getElementById('settlePaidAmount');
-    const settleRemainingAmountEl = document.getElementById('settleRemainingAmount');
-    const settleRemainingAmount2El = document.getElementById('settleRemainingAmount2');
-    const settleAmountEl = document.getElementById('settleAmount');
-    const settleSalaryIdEl = document.getElementById('settleSalaryId');
-    
-    // استخدام القيم المحسوبة من بطاقة الموظف
+    // استخدام القيم المحسوبة مباشرة من بطاقة الموظف
+    // هذا يضمن تطابق الأرقام مع ما هو معروض في بطاقة الموظف
     const accumulated = parseFloat(calculatedAccumulated || salaryData.calculated_accumulated || salaryData.accumulated_amount || salaryData.total_amount || 0);
     const paid = parseFloat(salaryData.paid_amount || 0);
-    const remaining = parseFloat(remainingAmount || salaryData.calculated_remaining || (accumulated - paid) || 0);
+    const remaining = parseFloat(remainingAmount || salaryData.calculated_remaining || Math.max(0, accumulated - paid));
     
     console.log('Using calculated values from employee card:', {
         accumulated: accumulated,
         paid: paid,
         remaining: remaining,
         calculatedAccumulated: calculatedAccumulated,
-        remainingAmount: remainingAmount
+        remainingAmount: remainingAmount,
+        salaryData_calculated_accumulated: salaryData.calculated_accumulated,
+        salaryData_calculated_remaining: salaryData.calculated_remaining
     });
     
-    // تحديث القيم مباشرة من البيانات المرسلة من بطاقة الموظف
+    // تحديث القيم مباشرة من بطاقة الموظف
     if (settleSalaryIdEl) settleSalaryIdEl.value = salaryId;
     if (settleAccumulatedAmountEl) settleAccumulatedAmountEl.textContent = formatCurrency(accumulated);
     if (settlePaidAmountEl) settlePaidAmountEl.textContent = formatCurrency(paid);
@@ -4402,8 +4402,10 @@ function openSettleModal(salaryId, salaryData, remainingAmount, calculatedAccumu
             const select = document.getElementById('settleSalarySelect');
             if (select) {
                 select.value = salaryId;
+                // لا نستدعي loadSelectedSalaryData() هنا لأننا استخدمنا القيم من بطاقة الموظف
+                // فقط نحدد القيمة في القائمة المنسدلة
             }
-        }, 500); // زيادة الوقت لانتظار تحميل القائمة
+        }, 500); // انتظار تحميل القائمة
     }
 }
 
@@ -4541,11 +4543,9 @@ function loadSelectedSalaryData() {
     
     settleSalaryIdEl.value = salaryId;
     
-    // جلب بيانات الراتب المحدد من API
-    // ملاحظة: إذا تم فتح النموذج من بطاقة الموظف، يجب استخدام القيم المحسوبة من البطاقة
-    // ولكن عند اختيار راتب آخر من القائمة المنسدلة، نستخدم API
+    // جلب بيانات الراتب المحدد
     const apiUrl = '<?php echo getBasePath(); ?>/api/get_salary_details.php?salary_id=' + salaryId;
-    console.log('Fetching salary details from API:', apiUrl);
+    console.log('Fetching salary details from:', apiUrl);
     
     fetch(apiUrl, {
         method: 'GET',
@@ -4567,7 +4567,7 @@ function loadSelectedSalaryData() {
             return response.json();
         })
         .then(data => {
-            console.log('Salary details received from API:', data);
+            console.log('Salary details received:', data);
             
             if (!data) {
                 throw new Error('Empty response from server');
@@ -4575,16 +4575,14 @@ function loadSelectedSalaryData() {
             
             if (data.success && data.salary) {
                 const salary = data.salary;
-                // استخدام calculated_accumulated من API (يتم حسابه بنفس طريقة بطاقة الموظف)
                 const accumulated = parseFloat(salary.calculated_accumulated || salary.accumulated_amount || salary.total_amount || 0);
                 const paid = parseFloat(salary.paid_amount || 0);
-                const remaining = parseFloat(salary.remaining || Math.max(0, accumulated - paid));
+                const remaining = Math.max(0, accumulated - paid);
                 
-                console.log('Salary data from API:', {
+                console.log('Salary data:', {
                     accumulated: accumulated,
                     paid: paid,
-                    remaining: remaining,
-                    calculated_accumulated: salary.calculated_accumulated
+                    remaining: remaining
                 });
                 
                 // تحديث القيم مع التحقق من وجود العناصر
@@ -4714,7 +4712,7 @@ function printSalaryStatement() {
                         <select class="form-select" name="selected_salary_id" id="settleSalarySelect" required onchange="loadSelectedSalaryData()">
                             <option value="">-- اختر راتب للتسوية --</option>
                         </select>
-                        <small class="text-muted">يمكنك اختيار راتب من الشهر الحالي أو شهر ماضي</small>
+                        <small class="text-muted">يمكنك اختيار راتب من الشهر الحالي أو شهر ماضي. ملاحظة: عند اختيار راتب آخر، سيتم إعادة حساب المبالغ من قاعدة البيانات.</small>
                     </div>
                     
                     <div class="row mb-3">
