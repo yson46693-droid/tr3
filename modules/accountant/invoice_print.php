@@ -235,7 +235,7 @@ $returnTypeLabel = $isReturnDocument ? ($returnTypeLabels[$returnMetadata['retur
                     <div class="info-item">العنوان: <?php echo htmlspecialchars($customerAddress); ?></div>
                 <?php endif; ?>
                 <?php if ($repName): ?>
-                    <div class="info-item rep">مندوب المبيعات: <?php echo htmlspecialchars($repName); ?></div>
+                    <div class="info-item rep">المسؤول عن عملية البيع: <?php echo htmlspecialchars($repName); ?></div>
                 <?php endif; ?>
             </div>
         </section>

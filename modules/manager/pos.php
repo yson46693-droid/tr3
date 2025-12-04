@@ -617,8 +617,15 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     }
                 }
 
+                // تحديد batch_id و product_type من أول عنصر
+                $firstItem = $product['items'][0] ?? null;
+                $batchId = $firstItem['batch_id'] ?? null;
+                $productType = $firstItem['product_type'] ?? 'external';
+                
                 $normalizedCart[] = [
                     'product_id' => $productId,
+                    'batch_id' => $batchId,
+                    'product_type' => $productType,
                     'name' => $productName ?: 'منتج',
                     'category' => $product['items'][0]['category'] ?? null,
                     'quantity' => $quantity,
@@ -847,6 +854,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 $db->execute($invoiceUpdateSql . " WHERE id = ?", $invoiceUpdateParams);
 
                 // تسجيل الإيراد في خزنة الشركة (accountant_transactions)
+                // منع التسجيل المزدوج: فحص إذا كان تم تسجيل معاملة بنفس reference_number
                 try {
                     // التأكد من وجود جدول accountant_transactions
                     $accountantTableExists = $db->queryOne("SHOW TABLES LIKE 'accountant_transactions'");
@@ -855,41 +863,59 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                         
                         // الحالة 1: البيع الكامل - تسجيل كامل المبلغ كإيراد معتمد
                         if ($invoiceStatus === 'paid' && $effectivePaidAmount > 0) {
-                            $description = 'بيع كامل من نقطة بيع المدير - فاتورة ' . $invoiceNumber . ' - عميل: ' . $customerName;
-                            $referenceNumber = 'POS-FULL-' . $invoiceId . '-' . date('YmdHis');
+                            $referenceNumber = 'POS-FULL-' . $invoiceId;
                             
-                            $db->execute(
-                                "INSERT INTO accountant_transactions 
-                                (transaction_type, amount, description, reference_number, payment_method, status, approved_by, created_by, approved_at)
-                                VALUES (?, ?, ?, ?, 'cash', 'approved', ?, ?, NOW())",
-                                [
-                                    'income',
-                                    $effectivePaidAmount,
-                                    $description,
-                                    $referenceNumber,
-                                    $currentUser['id'],
-                                    $currentUser['id']
-                                ]
+                            // فحص إذا كان تم تسجيل معاملة بنفس reference_number مسبقاً
+                            $existingTransaction = $db->queryOne(
+                                "SELECT id FROM accountant_transactions WHERE reference_number = ? LIMIT 1",
+                                [$referenceNumber]
                             );
+                            
+                            if (empty($existingTransaction)) {
+                                $description = 'بيع كامل من نقطة بيع المدير - فاتورة ' . $invoiceNumber . ' - عميل: ' . $customerName;
+                                
+                                $db->execute(
+                                    "INSERT INTO accountant_transactions 
+                                    (transaction_type, amount, description, reference_number, payment_method, status, approved_by, created_by, approved_at)
+                                    VALUES (?, ?, ?, ?, 'cash', 'approved', ?, ?, NOW())",
+                                    [
+                                        'income',
+                                        $effectivePaidAmount,
+                                        $description,
+                                        $referenceNumber,
+                                        $currentUser['id'],
+                                        $currentUser['id']
+                                    ]
+                                );
+                            }
                         }
                         // الحالة 2: البيع الجزئي - تسجيل المبلغ المحصل فقط كإيراد معتمد
                         elseif ($invoiceStatus === 'partial' && $effectivePaidAmount > 0) {
-                            $description = 'تحصيل جزئي من نقطة بيع المدير - فاتورة ' . $invoiceNumber . ' - عميل: ' . $customerName;
-                            $referenceNumber = 'POS-PARTIAL-' . $invoiceId . '-' . date('YmdHis');
+                            $referenceNumber = 'POS-PARTIAL-' . $invoiceId;
                             
-                            $db->execute(
-                                "INSERT INTO accountant_transactions 
-                                (transaction_type, amount, description, reference_number, payment_method, status, approved_by, created_by, approved_at)
-                                VALUES (?, ?, ?, ?, 'cash', 'approved', ?, ?, NOW())",
-                                [
-                                    'income',
-                                    $effectivePaidAmount,
-                                    $description,
-                                    $referenceNumber,
-                                    $currentUser['id'],
-                                    $currentUser['id']
-                                ]
+                            // فحص إذا كان تم تسجيل معاملة بنفس reference_number مسبقاً
+                            $existingTransaction = $db->queryOne(
+                                "SELECT id FROM accountant_transactions WHERE reference_number = ? LIMIT 1",
+                                [$referenceNumber]
                             );
+                            
+                            if (empty($existingTransaction)) {
+                                $description = 'تحصيل جزئي من نقطة بيع المدير - فاتورة ' . $invoiceNumber . ' - عميل: ' . $customerName;
+                                
+                                $db->execute(
+                                    "INSERT INTO accountant_transactions 
+                                    (transaction_type, amount, description, reference_number, payment_method, status, approved_by, created_by, approved_at)
+                                    VALUES (?, ?, ?, ?, 'cash', 'approved', ?, ?, NOW())",
+                                    [
+                                        'income',
+                                        $effectivePaidAmount,
+                                        $description,
+                                        $referenceNumber,
+                                        $currentUser['id'],
+                                        $currentUser['id']
+                                    ]
+                                );
+                            }
                         }
                     }
                 } catch (Throwable $incomeError) {
@@ -902,17 +928,34 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     $quantity = $item['quantity'];
                     $unitPrice = $item['unit_price'];
                     $lineTotal = $item['line_total'];
+                    $batchId = $item['batch_id'] ?? null;
+                    $productType = $item['product_type'] ?? 'external';
 
-                    // تحديث كمية المنتج في products
-                    $product = $db->queryOne(
-                        "SELECT id, quantity FROM products WHERE id = ? FOR UPDATE",
-                        [$productId]
-                    );
+                    // تحديث كمية المنتج حسب نوعه
+                    if ($productType === 'factory' && $batchId) {
+                        // منتج مصنع - خصم من finished_products.quantity_produced
+                        $finishedProduct = $db->queryOne(
+                            "SELECT id, quantity_produced FROM finished_products WHERE id = ? FOR UPDATE",
+                            [$batchId]
+                        );
+                        
+                        if ($finishedProduct) {
+                            $currentQty = (float)($finishedProduct['quantity_produced'] ?? 0);
+                            $newQty = max(0, $currentQty - $quantity);
+                            $db->execute("UPDATE finished_products SET quantity_produced = ? WHERE id = ?", [$newQty, $batchId]);
+                        }
+                    } else {
+                        // منتج خارجي - خصم من products.quantity
+                        $product = $db->queryOne(
+                            "SELECT id, quantity FROM products WHERE id = ? FOR UPDATE",
+                            [$productId]
+                        );
 
-                    if ($product) {
-                        $currentQty = (float)($product['quantity'] ?? 0);
-                        $newQty = max(0, $currentQty - $quantity);
-                        $db->execute("UPDATE products SET quantity = ?, updated_at = NOW() WHERE id = ?", [$newQty, $productId]);
+                        if ($product) {
+                            $currentQty = (float)($product['quantity'] ?? 0);
+                            $newQty = max(0, $currentQty - $quantity);
+                            $db->execute("UPDATE products SET quantity = ?, updated_at = NOW() WHERE id = ?", [$newQty, $productId]);
+                        }
                     }
 
                     // تسجيل حركة المخزون
@@ -924,7 +967,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                         'sales',
                         $invoiceId,
                         'بيع من نقطة بيع المدير - فاتورة ' . $invoiceNumber,
-                        $currentUser['id']
+                        $currentUser['id'],
+                        null, // unitPrice
+                        $batchId // batchId
                     );
 
                     if (empty($movementResult['success'])) {
@@ -937,6 +982,71 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                          VALUES (?, ?, ?, ?, ?, ?, ?, 'completed')",
                         [$tempCustomerId, $productId, $quantity, $unitPrice, $lineTotal, $saleDate, $currentUser['id']]
                     );
+                }
+
+                // إنشاء فاتورة محلية للعميل المحلي في local_invoices
+                try {
+                    $localInvoicesTableExists = $db->queryOne("SHOW TABLES LIKE 'local_invoices'");
+                    if (!empty($localInvoicesTableExists)) {
+                        // إنشاء الفاتورة المحلية
+                        $localInvoiceNumber = 'LOC-' . $invoiceNumber;
+                        
+                        // فحص إذا كانت الفاتورة المحلية موجودة مسبقاً
+                        $existingLocalInvoice = $db->queryOne(
+                            "SELECT id FROM local_invoices WHERE invoice_number = ? LIMIT 1",
+                            [$localInvoiceNumber]
+                        );
+                        
+                        if (empty($existingLocalInvoice)) {
+                            // إنشاء الفاتورة المحلية
+                            $db->execute(
+                                "INSERT INTO local_invoices 
+                                (invoice_number, customer_id, date, due_date, subtotal, tax_rate, tax_amount, 
+                                 discount_amount, total_amount, paid_amount, remaining_amount, status, notes, created_by)
+                                VALUES (?, ?, ?, ?, ?, 0, 0, ?, ?, ?, ?, ?, ?, ?)",
+                                [
+                                    $localInvoiceNumber,
+                                    $localCustomerId,
+                                    $saleDate,
+                                    $dueDate,
+                                    $subtotal,
+                                    $prepaidAmount,
+                                    $netTotal,
+                                    $effectivePaidAmount,
+                                    $dueAmount,
+                                    $invoiceStatus,
+                                    $notes,
+                                    $currentUser['id']
+                                ]
+                            );
+                            
+                            $localInvoiceId = (int)$db->getLastInsertId();
+                            
+                            // إضافة عناصر الفاتورة المحلية
+                            $localInvoiceItemsTableExists = $db->queryOne("SHOW TABLES LIKE 'local_invoice_items'");
+                            if (!empty($localInvoiceItemsTableExists)) {
+                                foreach ($invoiceItems as $item) {
+                                    $itemTotal = $item['quantity'] * $item['unit_price'];
+                                    $db->execute(
+                                        "INSERT INTO local_invoice_items 
+                                        (invoice_id, product_id, description, quantity, unit_price, total_price)
+                                        VALUES (?, ?, ?, ?, ?, ?)",
+                                        [
+                                            $localInvoiceId,
+                                            $item['product_id'],
+                                            $item['description'] ?? null,
+                                            $item['quantity'],
+                                            $item['unit_price'],
+                                            $itemTotal
+                                        ]
+                                    );
+                                }
+                            }
+                        }
+                    }
+                } catch (Throwable $localInvoiceError) {
+                    // لا نوقف العملية إذا فشل إنشاء الفاتورة المحلية، فقط نسجل الخطأ
+                    error_log('Error creating local invoice: ' . $localInvoiceError->getMessage());
                 }
 
                 logAudit($currentUser['id'], 'create_pos_sale_manager', 'invoice', $invoiceId, null, [
