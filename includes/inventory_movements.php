@@ -230,9 +230,17 @@ function recordInventoryMovement($productId, $warehouseId, $type, $quantity, $re
             $updateSql = "UPDATE products SET quantity = ?, warehouse_id = ? WHERE id = ?";
             $db->execute($updateSql, [$quantityAfter, $warehouseId ?? $product['warehouse_id'], $productId]);
         } else {
-            // إذا كنا نستخدم finished_products، نحافظ على products.quantity كما هو
-            // لأن quantity_produced يتم تحديثه في approveWarehouseTransfer
-            error_log("recordInventoryMovement: Skipping products.quantity update for batch_id: $batchId, using finished_products.quantity_produced instead");
+            // إذا كنا نستخدم finished_products، نحتاج تحديث quantity_produced
+            if ($usingFinishedProductQuantity && ($type === 'out' || $type === 'transfer')) {
+                // تحديث finished_products.quantity_produced
+                $db->execute(
+                    "UPDATE finished_products SET quantity_produced = ? WHERE id = ?",
+                    [$quantityAfter, $batchId]
+                );
+                error_log("recordInventoryMovement: Updated finished_products.quantity_produced = $quantityAfter for batch_id: $batchId");
+            } else {
+                error_log("recordInventoryMovement: Skipping products.quantity update for batch_id: $batchId, using finished_products.quantity_produced instead");
+            }
         }
         
         // تسجيل الحركة

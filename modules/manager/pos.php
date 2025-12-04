@@ -931,34 +931,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     $batchId = $item['batch_id'] ?? null;
                     $productType = $item['product_type'] ?? 'external';
 
-                    // تحديث كمية المنتج حسب نوعه
-                    if ($productType === 'factory' && $batchId) {
-                        // منتج مصنع - خصم من finished_products.quantity_produced
-                        $finishedProduct = $db->queryOne(
-                            "SELECT id, quantity_produced FROM finished_products WHERE id = ? FOR UPDATE",
-                            [$batchId]
-                        );
-                        
-                        if ($finishedProduct) {
-                            $currentQty = (float)($finishedProduct['quantity_produced'] ?? 0);
-                            $newQty = max(0, $currentQty - $quantity);
-                            $db->execute("UPDATE finished_products SET quantity_produced = ? WHERE id = ?", [$newQty, $batchId]);
-                        }
-                    } else {
-                        // منتج خارجي - خصم من products.quantity
-                        $product = $db->queryOne(
-                            "SELECT id, quantity FROM products WHERE id = ? FOR UPDATE",
-                            [$productId]
-                        );
-
-                        if ($product) {
-                            $currentQty = (float)($product['quantity'] ?? 0);
-                            $newQty = max(0, $currentQty - $quantity);
-                            $db->execute("UPDATE products SET quantity = ?, updated_at = NOW() WHERE id = ?", [$newQty, $productId]);
-                        }
-                    }
-
-                    // تسجيل حركة المخزون
+                    // تسجيل حركة المخزون (سوف يقوم recordInventoryMovement بتحديث الكمية)
                     $movementResult = recordInventoryMovement(
                         $productId,
                         $mainWarehouseId,
