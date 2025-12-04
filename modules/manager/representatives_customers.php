@@ -17,7 +17,10 @@ require_once __DIR__ . '/../../includes/components/customers/section_header.php'
 require_once __DIR__ . '/../../includes/components/customers/rep_card.php';
 require_once __DIR__ . '/../sales/table_styles.php';
 
-requireRole(['manager', 'accountant']);
+// التحقق من الصلاحيات فقط إذا لم نكن في وضع معالجة POST
+if (!defined('COLLECTION_POST_PROCESSING')) {
+    requireRole(['manager', 'accountant']);
+}
 
 $currentUser = getCurrentUser();
 $currentRole = strtolower((string)($currentUser['role'] ?? 'manager'));
@@ -31,14 +34,23 @@ if ($currentRole === 'accountant') {
 
 // معالجة POST يجب أن تكون في البداية قبل أي شيء آخر
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['action'] === 'collect_debt') {
+    error_log('=== Collection POST Processing Started in Module ===');
+    error_log('Customer ID: ' . ($_POST['customer_id'] ?? 'not set'));
+    error_log('Amount: ' . ($_POST['amount'] ?? 'not set'));
+    
     $customerId = isset($_POST['customer_id']) ? (int)$_POST['customer_id'] : 0;
     $amount = isset($_POST['amount']) ? cleanFinancialValue($_POST['amount']) : 0;
     
+    error_log('Parsed - Customer ID: ' . $customerId . ', Amount: ' . $amount);
+    
     if ($customerId <= 0) {
+        error_log('ERROR: Invalid customer ID');
         $_SESSION['error_message'] = 'معرف العميل غير صالح.';
     } elseif ($amount <= 0) {
+        error_log('ERROR: Invalid amount');
         $_SESSION['error_message'] = 'يجب إدخال مبلغ تحصيل أكبر من صفر.';
     } else {
+        error_log('Starting transaction...');
         $transactionStarted = false;
         
         try {
@@ -196,12 +208,24 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['
             
             // توزيع التحصيل على فواتير العميل
             $distributionResult = null;
-            if (function_exists('distributeCollectionToInvoices')) {
-                $distributionResult = distributeCollectionToInvoices($customerId, $amount, $currentUser['id']);
+            try {
+                if (function_exists('distributeCollectionToInvoices')) {
+                    error_log('Starting invoice distribution...');
+                    $distributionResult = distributeCollectionToInvoices($customerId, $amount, $currentUser['id']);
+                    error_log('Invoice distribution result: ' . json_encode($distributionResult));
+                } else {
+                    error_log('WARNING: distributeCollectionToInvoices function does not exist');
+                }
+            } catch (Throwable $distError) {
+                error_log('ERROR in invoice distribution: ' . $distError->getMessage());
+                // لا نوقف العملية إذا فشل التوزيع
+                $distributionResult = ['success' => false, 'message' => 'فشل توزيع التحصيل على الفواتير: ' . $distError->getMessage()];
             }
             
+            error_log('Committing transaction...');
             $db->commit();
             $transactionStarted = false;
+            error_log('Transaction committed successfully');
             
             $messageParts = ['تم تحصيل المبلغ بنجاح وإضافته إلى خزنة الشركة.'];
             $messageParts[] = 'رقم المرجع: ' . $referenceNumber . '.';
@@ -215,28 +239,42 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['
             }
             
             $_SESSION['success_message'] = implode(' ', array_filter($messageParts));
+            error_log('Collection successful, redirecting...');
             
         } catch (Exception $e) {
             if ($transactionStarted) {
                 $db->rollback();
+                error_log('Transaction rolled back due to Exception');
             }
-            $_SESSION['error_message'] = 'حدث خطأ أثناء التحصيل: ' . $e->getMessage();
-            error_log('Collection error in representatives_customers: ' . $e->getMessage());
+            $errorMsg = 'حدث خطأ أثناء التحصيل: ' . $e->getMessage();
+            $_SESSION['error_message'] = $errorMsg;
+            error_log('Collection ERROR (Exception): ' . $e->getMessage());
+            error_log('Stack trace: ' . $e->getTraceAsString());
         } catch (Throwable $e) {
             if ($transactionStarted) {
                 $db->rollback();
+                error_log('Transaction rolled back due to Throwable');
             }
-            $_SESSION['error_message'] = 'حدث خطأ أثناء التحصيل: ' . $e->getMessage();
-            error_log('Collection error in representatives_customers: ' . $e->getMessage());
+            $errorMsg = 'حدث خطأ أثناء التحصيل: ' . $e->getMessage();
+            $_SESSION['error_message'] = $errorMsg;
+            error_log('Collection ERROR (Throwable): ' . $e->getMessage());
+            error_log('Stack trace: ' . $e->getTraceAsString());
         }
     }
     
     // إعادة التوجيه بعد معالجة POST (نجاح أو فشل)
+    error_log('Preparing redirect...');
     $redirectUrl = getRelativeUrl($dashboardScript . '?page=representatives_customers');
+    error_log('Redirect URL: ' . $redirectUrl);
+    error_log('Headers sent: ' . (headers_sent() ? 'yes' : 'no'));
+    
     if (!headers_sent()) {
+        error_log('Sending Location header...');
         header('Location: ' . $redirectUrl);
+        error_log('Location header sent, exiting...');
         exit;
     } else {
+        error_log('Headers already sent, using JavaScript redirect...');
         echo '<script>window.location.href = ' . json_encode($redirectUrl) . ';</script>';
         exit;
     }

@@ -31,24 +31,75 @@ if ($page === 'representatives_customers' &&
     isset($_POST['action']) && 
     $_POST['action'] === 'collect_debt') {
     
-    // تحميل الملفات الأساسية فقط
-    require_once __DIR__ . '/../includes/config.php';
-    require_once __DIR__ . '/../includes/db.php';
-    require_once __DIR__ . '/../includes/auth.php';
-    require_once __DIR__ . '/../includes/path_helper.php';
+    // تسجيل بداية معالجة POST
+    error_log('=== POST Collection Request Started ===');
+    error_log('POST data: ' . json_encode($_POST));
+    error_log('Page: ' . $page);
     
-    // التحقق من تسجيل الدخول
-    if (!isLoggedIn()) {
-        header('Location: ' . getRelativeUrl('index.php'));
-        exit;
-    }
-    
-    // تضمين الملف مباشرة لمعالجة POST
-    $modulePath = __DIR__ . '/../modules/manager/representatives_customers.php';
-    if (file_exists($modulePath)) {
-        // سيتم معالجة POST داخل الملف وإعادة التوجيه
-        include $modulePath;
-        // بعد معالجة POST، يجب إيقاف التنفيذ
+    try {
+        // تحميل الملفات الأساسية فقط
+        require_once __DIR__ . '/../includes/config.php';
+        require_once __DIR__ . '/../includes/db.php';
+        require_once __DIR__ . '/../includes/auth.php';
+        require_once __DIR__ . '/../includes/path_helper.php';
+        
+        error_log('Files loaded successfully');
+        
+        // التحقق من تسجيل الدخول
+        if (!isLoggedIn()) {
+            error_log('User not logged in - redirecting to login');
+            header('Location: ' . getRelativeUrl('index.php'));
+            exit;
+        }
+        
+        error_log('User is logged in');
+        
+        // تحميل الملفات الإضافية المطلوبة
+        require_once __DIR__ . '/../includes/audit_log.php';
+        require_once __DIR__ . '/../includes/invoices.php';
+        require_once __DIR__ . '/../includes/notifications.php';
+        
+        // التحقق من الصلاحيات مباشرة بدون requireRole (لتجنب redirect)
+        $currentUser = getCurrentUser();
+        $userRole = strtolower($currentUser['role'] ?? '');
+        
+        error_log('User role: ' . $userRole);
+        
+        if (!in_array($userRole, ['manager', 'accountant'], true)) {
+            error_log('User does not have required role - redirecting');
+            $_SESSION['error_message'] = 'غير مصرح لك بالوصول إلى هذه الصفحة.';
+            header('Location: ' . getRelativeUrl('manager.php'));
+            exit;
+        }
+        
+        error_log('User has required role');
+        
+        // تضمين الملف مباشرة لمعالجة POST
+        $modulePath = __DIR__ . '/../modules/manager/representatives_customers.php';
+        if (file_exists($modulePath)) {
+            error_log('Module file exists, including...');
+            
+            // تعريف ثابت لتجنب requireRole داخل الملف
+            define('COLLECTION_POST_PROCESSING', true);
+            
+            // سيتم معالجة POST داخل الملف وإعادة التوجيه
+            include $modulePath;
+            
+            error_log('Module file processed');
+            // بعد معالجة POST، يجب إيقاف التنفيذ
+            exit;
+        } else {
+            error_log('ERROR: Module file does not exist: ' . $modulePath);
+            $_SESSION['error_message'] = 'صفحة التحصيل غير متاحة حالياً.';
+            header('Location: ' . getRelativeUrl('manager.php'));
+            exit;
+        }
+        
+    } catch (Throwable $e) {
+        error_log('CRITICAL ERROR in POST processing: ' . $e->getMessage());
+        error_log('Stack trace: ' . $e->getTraceAsString());
+        $_SESSION['error_message'] = 'حدث خطأ أثناء معالجة التحصيل. يرجى المحاولة مرة أخرى.';
+        header('Location: ' . getRelativeUrl('manager.php?page=representatives_customers'));
         exit;
     }
 }
