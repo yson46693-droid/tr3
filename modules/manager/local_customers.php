@@ -1186,6 +1186,79 @@ $summaryTotalCustomers = $customerStats['total_count'] ?? $totalCustomers;
     </div>
 </div>
 
+<!-- Modal إرجاع منتجات العميل المحلي -->
+<div class="modal fade" id="localCustomerReturnModal" tabindex="-1" aria-hidden="true">
+    <div class="modal-dialog modal-xl modal-dialog-scrollable">
+        <div class="modal-content">
+            <div class="modal-header bg-warning text-dark">
+                <h5 class="modal-title">
+                    <i class="bi bi-arrow-return-left me-2"></i>
+                    إرجاع منتجات - <span id="localReturnCustomerName">عميل محلي</span>
+                </h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="إغلاق"></button>
+            </div>
+            <div class="modal-body">
+                <div class="mb-3">
+                    <label class="form-label fw-semibold">طريقة الاسترداد <span class="text-danger">*</span></label>
+                    <div class="form-check">
+                        <input class="form-check-input" type="radio" name="localRefundMethod" id="localRefundCredit" value="credit" checked>
+                        <label class="form-check-label" for="localRefundCredit">
+                            خصم من الرصيد (إذا كان العميل مدين: خصم من الدين، وإذا كان غير مدين: إضافة رصيد دائن)
+                        </label>
+                    </div>
+                    <div class="form-check">
+                        <input class="form-check-input" type="radio" name="localRefundMethod" id="localRefundCash" value="cash">
+                        <label class="form-check-label" for="localRefundCash">
+                            استرداد نقدي (يتم إضافة مصروف في خزنة الشركة)
+                        </label>
+                    </div>
+                </div>
+                
+                <div class="mb-3">
+                    <label class="form-label fw-semibold">المنتجات المحددة للإرجاع</label>
+                    <div class="table-responsive">
+                        <table class="table table-bordered table-hover">
+                            <thead class="table-light">
+                                <tr>
+                                    <th>رقم الفاتورة</th>
+                                    <th>اسم المنتج</th>
+                                    <th>الكمية</th>
+                                    <th>سعر الوحدة</th>
+                                    <th>الإجمالي</th>
+                                    <th>إجراءات</th>
+                                </tr>
+                            </thead>
+                            <tbody id="localReturnItemsList">
+                                <tr>
+                                    <td colspan="6" class="text-center text-muted">لا توجد منتجات محددة</td>
+                                </tr>
+                            </tbody>
+                            <tfoot>
+                                <tr>
+                                    <th colspan="4" class="text-end">المبلغ الإجمالي:</th>
+                                    <th id="localReturnTotalAmount" class="text-danger">0.00 ج.م</th>
+                                    <th></th>
+                                </tr>
+                            </tfoot>
+                        </table>
+                    </div>
+                </div>
+                
+                <div class="mb-3">
+                    <label class="form-label" for="localReturnNotes">ملاحظات (اختياري)</label>
+                    <textarea class="form-control" id="localReturnNotes" rows="3" placeholder="أضف أي ملاحظات حول المرتجع..."></textarea>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">إلغاء</button>
+                <button type="button" class="btn btn-success" id="localReturnSubmitBtn" onclick="submitLocalCustomerReturn()">
+                    <i class="bi bi-check-circle me-1"></i>تسجيل المرتجع
+                </button>
+            </div>
+        </div>
+    </div>
+</div>
+
 <!-- Modal عرض موقع العميل -->
 <div class="modal fade" id="viewLocationModal" tabindex="-1" aria-hidden="true">
     <div class="modal-dialog modal-lg modal-dialog-centered">
@@ -1541,8 +1614,362 @@ function openLocalCustomerReturnModal() {
         alert('يرجى تحديد منتج واحد على الأقل للإرجاع');
         return;
     }
-    // سيتم تنفيذ هذه الوظيفة لاحقاً
-    alert('وظيفة إرجاع المنتجات للعملاء المحليين قيد التطوير');
+    
+    // إظهار modal إرجاع المنتجات
+    const returnModal = document.getElementById('localCustomerReturnModal');
+    if (returnModal) {
+        // تحديث قائمة المنتجات المحددة
+        updateLocalReturnItemsList();
+        
+        const modal = new bootstrap.Modal(returnModal);
+        modal.show();
+    } else {
+        alert('حدث خطأ: لم يتم العثور على نافذة إرجاع المنتجات');
+    }
+}
+
+// دالة تحديث كمية الإرجاع
+function localUpdateReturnQuantity(index, quantity) {
+    if (index < 0 || index >= localSelectedItemsForReturn.length) return;
+    
+    const item = localSelectedItemsForReturn[index];
+    const qty = parseFloat(quantity) || 0;
+    const maxQty = item.available_to_return;
+    
+    if (qty > maxQty) {
+        alert(`الكمية المتاحة للإرجاع هي ${maxQty.toFixed(2)} فقط`);
+        const input = document.querySelector(`.local-return-quantity[data-index="${index}"]`);
+        if (input) input.value = maxQty.toFixed(2);
+        return;
+    }
+    
+    if (qty <= 0) {
+        alert('الكمية يجب أن تكون أكبر من صفر');
+        const input = document.querySelector(`.local-return-quantity[data-index="${index}"]`);
+        if (input) input.value = maxQty.toFixed(2);
+        return;
+    }
+    
+    // تحديث الكمية في المصفوفة
+    item.quantity = qty;
+    
+    // تحديث السعر الإجمالي للعنصر
+    const row = document.querySelector(`.local-return-quantity[data-index="${index}"]`).closest('tr');
+    const totalCell = row.querySelector('.local-return-item-total');
+    if (totalCell) {
+        const itemTotal = item.unit_price * qty;
+        totalCell.textContent = itemTotal.toFixed(2) + ' ج.م';
+    }
+    
+    // تحديث المبلغ الإجمالي
+    let totalRefund = 0;
+    localSelectedItemsForReturn.forEach(function(itm) {
+        totalRefund += itm.unit_price * (itm.quantity || itm.available_to_return);
+    });
+    
+    const totalElement = document.getElementById('localReturnTotalAmount');
+    if (totalElement) {
+        totalElement.textContent = totalRefund.toFixed(2) + ' ج.م';
+    }
+}
+
+// دالة إزالة عنصر من قائمة الإرجاع
+function localRemoveReturnItem(index) {
+    if (index < 0 || index >= localSelectedItemsForReturn.length) return;
+    
+    if (confirm('هل أنت متأكد من إزالة هذا المنتج من قائمة الإرجاع؟')) {
+        const removedItem = localSelectedItemsForReturn[index];
+        localSelectedItemsForReturn.splice(index, 1);
+        updateLocalReturnItemsList();
+        
+        // إخفاء زر الإرجاع إذا لم يعد هناك منتجات
+        const returnBtn = document.getElementById('localCustomerReturnBtn');
+        if (returnBtn) {
+            returnBtn.style.display = localSelectedItemsForReturn.length > 0 ? 'inline-block' : 'none';
+        }
+        
+        // تحديث checkbox في جدول المشتريات
+        const checkbox = document.querySelector(`.local-item-checkbox[data-invoice-item-id="${removedItem.invoice_item_id}"]`);
+        if (checkbox) {
+            checkbox.checked = false;
+        }
+    }
+}
+
+// دالة إرسال طلب الإرجاع
+function submitLocalCustomerReturn() {
+    if (!currentLocalCustomerId) {
+        alert('يرجى فتح سجل مشتريات عميل أولاً');
+        return;
+    }
+    
+    if (localSelectedItemsForReturn.length === 0) {
+        alert('يرجى تحديد منتج واحد على الأقل للإرجاع');
+        return;
+    }
+    
+    const refundMethod = document.querySelector('input[name="localRefundMethod"]:checked')?.value || 'credit';
+    const notes = document.getElementById('localReturnNotes')?.value.trim() || '';
+    
+    // التحقق من الكميات
+    const items = [];
+    for (let i = 0; i < localSelectedItemsForReturn.length; i++) {
+        const item = localSelectedItemsForReturn[i];
+        const quantityInput = document.querySelector(`.local-return-quantity[data-index="${i}"]`);
+        const quantity = quantityInput ? parseFloat(quantityInput.value) : item.available_to_return;
+        
+        if (quantity <= 0 || quantity > item.available_to_return) {
+            alert(`الكمية غير صحيحة للمنتج: ${item.product_name}`);
+            return;
+        }
+        
+        items.push({
+            invoice_item_id: item.invoice_item_id,
+            quantity: quantity
+        });
+    }
+    
+    // تعطيل زر الإرسال
+    const submitBtn = document.getElementById('localReturnSubmitBtn');
+    if (submitBtn) {
+        submitBtn.disabled = true;
+        submitBtn.innerHTML = '<span class="spinner-border spinner-border-sm me-1"></span>جاري المعالجة...';
+    }
+    
+    const basePath = '<?php echo getBasePath(); ?>';
+    const payload = {
+        customer_id: currentLocalCustomerId,
+        items: items,
+        refund_method: refundMethod,
+        notes: notes
+    };
+    
+    fetch(basePath + '/api/local_returns.php?action=create_return', {
+        method: 'POST',
+        headers: {
+            'Content-Type': 'application/json',
+            'Accept': 'application/json'
+        },
+        credentials: 'same-origin',
+        body: JSON.stringify(payload)
+    })
+    .then(response => {
+        const contentType = response.headers.get('content-type') || '';
+        if (!contentType.includes('application/json')) {
+            return response.text().then(text => {
+                throw new Error('استجابة غير صحيحة من الخادم');
+            });
+        }
+        return response.json();
+    })
+    .then(data => {
+        if (data.success) {
+            alert('تم تسجيل المرتجع بنجاح!\nرقم المرتجع: ' + data.return_number + '\nالمبلغ: ' + data.refund_amount.toFixed(2) + ' ج.م');
+            
+            // إغلاق modal الإرجاع
+            const returnModal = document.getElementById('localCustomerReturnModal');
+            if (returnModal) {
+                const modal = bootstrap.Modal.getInstance(returnModal);
+                if (modal) modal.hide();
+            }
+            
+            // إغلاق modal سجل المشتريات
+            const purchaseHistoryModal = document.getElementById('localCustomerPurchaseHistoryModal');
+            if (purchaseHistoryModal) {
+                const modal = bootstrap.Modal.getInstance(purchaseHistoryModal);
+                if (modal) modal.hide();
+            }
+            
+            // إعادة تحميل الصفحة
+            window.location.reload();
+        } else {
+            alert('حدث خطأ: ' + (data.message || 'خطأ غير معروف'));
+            if (submitBtn) {
+                submitBtn.disabled = false;
+                submitBtn.innerHTML = '<i class="bi bi-check-circle me-1"></i>تسجيل المرتجع';
+            }
+        }
+    })
+    .catch(error => {
+        console.error('Error submitting return:', error);
+        alert('حدث خطأ في الاتصال بالخادم: ' + error.message);
+        if (submitBtn) {
+            submitBtn.disabled = false;
+            submitBtn.innerHTML = '<i class="bi bi-check-circle me-1"></i>تسجيل المرتجع';
+        }
+    });
+}
+
+// دالة تحديث كمية الإرجاع
+function localUpdateReturnQuantity(index, quantity) {
+    if (index < 0 || index >= localSelectedItemsForReturn.length) return;
+    
+    const item = localSelectedItemsForReturn[index];
+    const qty = parseFloat(quantity) || 0;
+    const maxQty = item.available_to_return;
+    
+    if (qty > maxQty) {
+        alert(`الكمية المتاحة للإرجاع هي ${maxQty.toFixed(2)} فقط`);
+        const input = document.querySelector(`.local-return-quantity[data-index="${index}"]`);
+        if (input) input.value = maxQty.toFixed(2);
+        return;
+    }
+    
+    if (qty <= 0) {
+        alert('الكمية يجب أن تكون أكبر من صفر');
+        const input = document.querySelector(`.local-return-quantity[data-index="${index}"]`);
+        if (input) input.value = maxQty.toFixed(2);
+        return;
+    }
+    
+    // تحديث الكمية في المصفوفة
+    item.quantity = qty;
+    
+    // تحديث السعر الإجمالي للعنصر
+    const row = document.querySelector(`.local-return-quantity[data-index="${index}"]`).closest('tr');
+    const totalCell = row.querySelector('.local-return-item-total');
+    if (totalCell) {
+        const itemTotal = item.unit_price * qty;
+        totalCell.textContent = itemTotal.toFixed(2) + ' ج.م';
+    }
+    
+    // تحديث المبلغ الإجمالي
+    let totalRefund = 0;
+    localSelectedItemsForReturn.forEach(function(itm) {
+        totalRefund += itm.unit_price * (itm.quantity || itm.available_to_return);
+    });
+    
+    const totalElement = document.getElementById('localReturnTotalAmount');
+    if (totalElement) {
+        totalElement.textContent = totalRefund.toFixed(2) + ' ج.م';
+    }
+}
+
+// دالة إزالة عنصر من قائمة الإرجاع
+function localRemoveReturnItem(index) {
+    if (index < 0 || index >= localSelectedItemsForReturn.length) return;
+    
+    if (confirm('هل أنت متأكد من إزالة هذا المنتج من قائمة الإرجاع؟')) {
+        const removedItem = localSelectedItemsForReturn[index];
+        localSelectedItemsForReturn.splice(index, 1);
+        updateLocalReturnItemsList();
+        
+        // إخفاء زر الإرجاع إذا لم يعد هناك منتجات
+        const returnBtn = document.getElementById('localCustomerReturnBtn');
+        if (returnBtn) {
+            returnBtn.style.display = localSelectedItemsForReturn.length > 0 ? 'inline-block' : 'none';
+        }
+        
+        // تحديث checkbox في جدول المشتريات
+        const checkbox = document.querySelector(`.local-item-checkbox[data-invoice-item-id="${removedItem.invoice_item_id}"]`);
+        if (checkbox) {
+            checkbox.checked = false;
+        }
+    }
+}
+
+// دالة إرسال طلب الإرجاع
+function submitLocalCustomerReturn() {
+    if (!currentLocalCustomerId) {
+        alert('يرجى فتح سجل مشتريات عميل أولاً');
+        return;
+    }
+    
+    if (localSelectedItemsForReturn.length === 0) {
+        alert('يرجى تحديد منتج واحد على الأقل للإرجاع');
+        return;
+    }
+    
+    const refundMethod = document.querySelector('input[name="localRefundMethod"]:checked')?.value || 'credit';
+    const notes = document.getElementById('localReturnNotes')?.value.trim() || '';
+    
+    // التحقق من الكميات
+    const items = [];
+    for (let i = 0; i < localSelectedItemsForReturn.length; i++) {
+        const item = localSelectedItemsForReturn[i];
+        const quantityInput = document.querySelector(`.local-return-quantity[data-index="${i}"]`);
+        const quantity = quantityInput ? parseFloat(quantityInput.value) : item.available_to_return;
+        
+        if (quantity <= 0 || quantity > item.available_to_return) {
+            alert(`الكمية غير صحيحة للمنتج: ${item.product_name}`);
+            return;
+        }
+        
+        items.push({
+            invoice_item_id: item.invoice_item_id,
+            quantity: quantity
+        });
+    }
+    
+    // تعطيل زر الإرسال
+    const submitBtn = document.getElementById('localReturnSubmitBtn');
+    if (submitBtn) {
+        submitBtn.disabled = true;
+        submitBtn.innerHTML = '<span class="spinner-border spinner-border-sm me-1"></span>جاري المعالجة...';
+    }
+    
+    const basePath = '<?php echo getBasePath(); ?>';
+    const payload = {
+        customer_id: currentLocalCustomerId,
+        items: items,
+        refund_method: refundMethod,
+        notes: notes
+    };
+    
+    fetch(basePath + '/api/local_returns.php?action=create_return', {
+        method: 'POST',
+        headers: {
+            'Content-Type': 'application/json',
+            'Accept': 'application/json'
+        },
+        credentials: 'same-origin',
+        body: JSON.stringify(payload)
+    })
+    .then(response => {
+        const contentType = response.headers.get('content-type') || '';
+        if (!contentType.includes('application/json')) {
+            return response.text().then(text => {
+                throw new Error('استجابة غير صحيحة من الخادم');
+            });
+        }
+        return response.json();
+    })
+    .then(data => {
+        if (data.success) {
+            alert('تم تسجيل المرتجع بنجاح!\nرقم المرتجع: ' + data.return_number + '\nالمبلغ: ' + data.refund_amount.toFixed(2) + ' ج.م');
+            
+            // إغلاق modal الإرجاع
+            const returnModal = document.getElementById('localCustomerReturnModal');
+            if (returnModal) {
+                const modal = bootstrap.Modal.getInstance(returnModal);
+                if (modal) modal.hide();
+            }
+            
+            // إغلاق modal سجل المشتريات
+            const purchaseHistoryModal = document.getElementById('localCustomerPurchaseHistoryModal');
+            if (purchaseHistoryModal) {
+                const modal = bootstrap.Modal.getInstance(purchaseHistoryModal);
+                if (modal) modal.hide();
+            }
+            
+            // إعادة تحميل الصفحة
+            window.location.reload();
+        } else {
+            alert('حدث خطأ: ' + (data.message || 'خطأ غير معروف'));
+            if (submitBtn) {
+                submitBtn.disabled = false;
+                submitBtn.innerHTML = '<i class="bi bi-check-circle me-1"></i>تسجيل المرتجع';
+            }
+        }
+    })
+    .catch(error => {
+        console.error('Error submitting return:', error);
+        alert('حدث خطأ في الاتصال بالخادم: ' + error.message);
+        if (submitBtn) {
+            submitBtn.disabled = false;
+            submitBtn.innerHTML = '<i class="bi bi-check-circle me-1"></i>تسجيل المرتجع';
+        }
+    });
 }
 
 // دالة تحميل سجل المشتريات للعميل المحلي
