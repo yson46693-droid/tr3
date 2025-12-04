@@ -621,6 +621,9 @@ if (!empty($statsResult)) {
 
 try {
     // حساب إجمالي التحصيلات من جميع العملاء المحليين (بغض النظر عن الفلتر)
+    $totalCollectionsAmount = 0.0;
+    
+    // 1. حساب التحصيلات من جدول local_collections
     $localCollectionsTableExists = $db->queryOne("SHOW TABLES LIKE 'local_collections'");
     if (!empty($localCollectionsTableExists)) {
         $collectionsStatusExists = false;
@@ -642,11 +645,45 @@ try {
 
         $collectionsResult = $db->queryOne($collectionsSql, $collectionsParams);
         if (!empty($collectionsResult)) {
-            $totalCollectionsAmount = (float)($collectionsResult['total_collections'] ?? 0);
+            $totalCollectionsAmount += (float)($collectionsResult['total_collections'] ?? 0);
         }
-    } else {
-        // إذا لم يكن جدول local_collections موجوداً، استخدم 0
-        $totalCollectionsAmount = 0.0;
+    }
+    
+    // 2. إضافة المبيعات المدفوعة بالكامل من الفواتير المحلية
+    $localInvoicesTableExists = $db->queryOne("SHOW TABLES LIKE 'local_invoices'");
+    if (!empty($localInvoicesTableExists)) {
+        try {
+            // التحقق من وجود عمود status في جدول local_invoices
+            $hasStatusColumn = !empty($db->queryOne("SHOW COLUMNS FROM local_invoices LIKE 'status'"));
+            
+            if ($hasStatusColumn) {
+                // حساب المبيعات المدفوعة بالكامل (paid_amount للفواتير التي status = 'paid')
+                $paidSalesResult = $db->queryOne(
+                    "SELECT COALESCE(SUM(paid_amount), 0) AS total_paid_sales
+                     FROM local_invoices
+                     WHERE status = 'paid' AND paid_amount > 0"
+                );
+                
+                if (!empty($paidSalesResult)) {
+                    $paidSalesAmount = (float)($paidSalesResult['total_paid_sales'] ?? 0);
+                    $totalCollectionsAmount += $paidSalesAmount;
+                }
+            } else {
+                // إذا لم يكن هناك عمود status، نحسب جميع المبالغ المدفوعة
+                $paidSalesResult = $db->queryOne(
+                    "SELECT COALESCE(SUM(paid_amount), 0) AS total_paid_sales
+                     FROM local_invoices
+                     WHERE paid_amount > 0"
+                );
+                
+                if (!empty($paidSalesResult)) {
+                    $paidSalesAmount = (float)($paidSalesResult['total_paid_sales'] ?? 0);
+                    $totalCollectionsAmount += $paidSalesAmount;
+                }
+            }
+        } catch (Throwable $paidSalesError) {
+            error_log('Local customers paid sales calculation error: ' . $paidSalesError->getMessage());
+        }
     }
 } catch (Throwable $collectionsError) {
     error_log('Local customers collections summary error: ' . $collectionsError->getMessage());
