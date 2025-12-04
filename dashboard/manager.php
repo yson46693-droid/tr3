@@ -5,6 +5,88 @@
 
 define('ACCESS_ALLOWED', true);
 
+// تنظيف أي output buffer سابق قبل أي شيء
+while (ob_get_level() > 0) {
+    ob_end_clean();
+}
+
+// تحديد الصفحة أولاً
+$page = $_GET['page'] ?? 'overview';
+
+// معالجة POST لصفحة representatives_customers في البداية المطلقة - قبل أي شيء آخر
+if ($page === 'representatives_customers' && 
+    $_SERVER['REQUEST_METHOD'] === 'POST' && 
+    isset($_POST['action']) && 
+    $_POST['action'] === 'collect_debt') {
+    
+    // تسجيل في ملف debug
+    $debugFile = __DIR__ . '/../debug_collection_early.log';
+    file_put_contents($debugFile, "=== EARLY POST COLLECTION HANDLING ===\n" . date('Y-m-d H:i:s') . "\n", FILE_APPEND);
+    file_put_contents($debugFile, "Page: $page\n", FILE_APPEND);
+    file_put_contents($debugFile, "POST: " . json_encode($_POST, JSON_UNESCAPED_UNICODE) . "\n", FILE_APPEND);
+    file_put_contents($debugFile, "URI: " . ($_SERVER['REQUEST_URI'] ?? 'unknown') . "\n", FILE_APPEND);
+    
+    // تحميل الملفات الأساسية فقط
+    require_once __DIR__ . '/../includes/config.php';
+    require_once __DIR__ . '/../includes/db.php';
+    require_once __DIR__ . '/../includes/auth.php';
+    require_once __DIR__ . '/../includes/path_helper.php';
+    
+    file_put_contents($debugFile, "Basic files loaded\n", FILE_APPEND);
+    
+    // التحقق من تسجيل الدخول
+    if (!isLoggedIn()) {
+        file_put_contents($debugFile, "ERROR: Not logged in\n", FILE_APPEND);
+        header('Location: ' . getRelativeUrl('index.php'));
+        exit;
+    }
+    
+    file_put_contents($debugFile, "User is logged in\n", FILE_APPEND);
+    
+    // تحميل الملفات الإضافية
+    require_once __DIR__ . '/../includes/audit_log.php';
+    require_once __DIR__ . '/../includes/invoices.php';
+    require_once __DIR__ . '/../includes/notifications.php';
+    
+    // التحقق من الصلاحيات
+    $currentUser = getCurrentUser();
+    $userRole = strtolower($currentUser['role'] ?? '');
+    
+    file_put_contents($debugFile, "User role: $userRole\n", FILE_APPEND);
+    
+    if (!in_array($userRole, ['manager', 'accountant'], true)) {
+        file_put_contents($debugFile, "ERROR: Insufficient permissions\n", FILE_APPEND);
+        $_SESSION['error_message'] = 'غير مصرح لك بالوصول إلى هذه الصفحة.';
+        header('Location: ' . getRelativeUrl('manager.php'));
+        exit;
+    }
+    
+    file_put_contents($debugFile, "Permissions OK\n", FILE_APPEND);
+    
+    // تعريف ثابت لتجنب requireRole داخل الملف
+    define('COLLECTION_POST_PROCESSING', true);
+    
+    // تضمين الملف مباشرة
+    $modulePath = __DIR__ . '/../modules/manager/representatives_customers.php';
+    if (file_exists($modulePath)) {
+        file_put_contents($debugFile, "Including module file...\n", FILE_APPEND);
+        include $modulePath;
+        // يجب أن ينتهي التنفيذ هنا بعد redirect
+        file_put_contents($debugFile, "WARNING: Execution continued after include (should not happen)\n", FILE_APPEND);
+        exit;
+    } else {
+        file_put_contents($debugFile, "ERROR: Module file not found: $modulePath\n", FILE_APPEND);
+        $_SESSION['error_message'] = 'صفحة التحصيل غير متاحة حالياً.';
+        header('Location: ' . getRelativeUrl('manager.php'));
+        exit;
+    }
+}
+
+// بدء output buffering لضمان عدم وجود محتوى قبل DOCTYPE
+if (!ob_get_level()) {
+    ob_start();
+}
+
 // إضافة Permissions-Policy header للسماح بالوصول إلى Geolocation, Camera, Microphone, Notifications
 // يجب أن يكون في البداية قبل أي output
 if (!headers_sent()) {
@@ -13,29 +95,17 @@ if (!headers_sent()) {
     header("Feature-Policy: geolocation 'self'; camera 'self'; microphone 'self'; notifications 'self'");
 }
 
-// تنظيف أي output buffer سابق قبل أي شيء
-while (ob_get_level() > 0) {
-    ob_end_clean();
-}
-
-// بدء output buffering لضمان عدم وجود محتوى قبل DOCTYPE
-if (!ob_get_level()) {
-    ob_start();
-}
-
 // تسجيل جميع الطلبات للتحقق
 $debugFile = __DIR__ . '/../debug_all_requests.log';
 $requestData = [
     'timestamp' => date('Y-m-d H:i:s'),
     'method' => $_SERVER['REQUEST_METHOD'] ?? 'UNKNOWN',
-    'page' => $_GET['page'] ?? 'none',
+    'page' => $page,
     'action' => $_POST['action'] ?? 'none',
     'uri' => $_SERVER['REQUEST_URI'] ?? 'unknown',
     'post_keys' => array_keys($_POST ?? [])
 ];
 file_put_contents($debugFile, json_encode($requestData, JSON_UNESCAPED_UNICODE | JSON_PRETTY_PRINT) . "\n", FILE_APPEND);
-
-$page = $_GET['page'] ?? 'overview';
 
 // تسجيل جميع الطلبات POST للتحقق
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
