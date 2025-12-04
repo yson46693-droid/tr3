@@ -884,5 +884,23 @@ document.addEventListener('DOMContentLoaded', function () {
     }
     updateTaskTypeUI();
 });
+
+// تحديث الصفحة تلقائياً بعد رسالة النجاح
+(function() {
+    const successAlert = document.getElementById('successAlert');
+    
+    if (successAlert && successAlert.dataset.autoRefresh === 'true') {
+        // انتظار 2 ثانية لإعطاء المستخدم وقتاً لرؤية الرسالة
+        setTimeout(function() {
+            // إعادة تحميل الصفحة بدون معاملات GET لمنع تكرار الطلبات
+            const currentUrl = new URL(window.location.href);
+            // إزالة معاملات success و error من URL
+            currentUrl.searchParams.delete('success');
+            currentUrl.searchParams.delete('error');
+            // إعادة تحميل الصفحة
+            window.location.href = currentUrl.toString();
+        }, 2000);
+    }
+})();
 </script>
 
