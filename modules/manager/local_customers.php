@@ -1628,6 +1628,63 @@ function openLocalCustomerReturnModal() {
     }
 }
 
+// دالة تحديث قائمة المنتجات المحددة للإرجاع
+function updateLocalReturnItemsList() {
+    const itemsList = document.getElementById('localReturnItemsList');
+    if (!itemsList) return;
+    
+    itemsList.innerHTML = '';
+    
+    if (localSelectedItemsForReturn.length === 0) {
+        itemsList.innerHTML = '<tr><td colspan="6" class="text-center text-muted">لا توجد منتجات محددة</td></tr>';
+        return;
+    }
+    
+    let totalRefund = 0;
+    
+    localSelectedItemsForReturn.forEach(function(item, index) {
+        const itemQuantity = item.quantity || item.available_to_return;
+        const itemTotal = item.unit_price * itemQuantity;
+        totalRefund += itemTotal;
+        
+        const row = document.createElement('tr');
+        row.innerHTML = `
+            <td>${item.invoice_number || '-'}</td>
+            <td>${item.product_name || '-'}</td>
+            <td>
+                <input type="number" 
+                       class="form-control form-control-sm local-return-quantity" 
+                       data-index="${index}"
+                       value="${itemQuantity.toFixed(2)}"
+                       min="0.01"
+                       max="${item.available_to_return.toFixed(2)}"
+                       step="0.01"
+                       onchange="localUpdateReturnQuantity(${index}, this.value)">
+            </td>
+            <td>${item.unit_price.toFixed(2)} ج.م</td>
+            <td class="local-return-item-total">${itemTotal.toFixed(2)} ج.م</td>
+            <td>
+                <button type="button" class="btn btn-sm btn-danger" onclick="localRemoveReturnItem(${index})">
+                    <i class="bi bi-trash"></i>
+                </button>
+            </td>
+        `;
+        itemsList.appendChild(row);
+    });
+    
+    // تحديث المبلغ الإجمالي
+    const totalElement = document.getElementById('localReturnTotalAmount');
+    if (totalElement) {
+        totalElement.textContent = totalRefund.toFixed(2) + ' ج.م';
+    }
+    
+    // تحديث اسم العميل في modal الإرجاع
+    const customerNameElement = document.getElementById('localReturnCustomerName');
+    if (customerNameElement && currentLocalCustomerName) {
+        customerNameElement.textContent = currentLocalCustomerName;
+    }
+}
+
 // دالة تحديث كمية الإرجاع
 function localUpdateReturnQuantity(index, quantity) {
     if (index < 0 || index >= localSelectedItemsForReturn.length) return;
