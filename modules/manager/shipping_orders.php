@@ -549,43 +549,25 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     ]
                 );
 
-                // خصم الكميات من المخزون
+                // خصم الكميات من المخزون وتسجيل حركة المخزون
+                // دالة recordInventoryMovement تقوم بالخصم تلقائياً، لذلك لا نحتاج خصم يدوي
+                $movementNote = 'تسليم طلب شحن #' . $orderNumber . ' لشركة الشحن';
+                
                 if ($productType === 'factory' && $batchId) {
-                    // للمنتجات من المصنع، خصم الكمية من finished_products.quantity_produced
-                    // (التحقق من الكمية تم بالفعل في بداية الكود)
-                    $db->execute(
-                        "UPDATE finished_products SET quantity_produced = GREATEST(quantity_produced - ?, 0) WHERE batch_id = ?",
-                        [$quantity, $batchId]
+                    // للمنتجات من المصنع، recordInventoryMovement ستقوم بخصم الكمية من finished_products.quantity_produced
+                    $movementResult = recordInventoryMovement(
+                        $productId,
+                        $mainWarehouse['id'] ?? null,
+                        'out',
+                        $quantity,
+                        'shipping_order',
+                        $orderId,
+                        $movementNote,
+                        $currentUser['id'] ?? null,
+                        $batchId // تمرير batch_id لربط الحركة بالتشغيلة
                     );
-                    
-                    // تسجيل حركة المخزون لمنتجات المصنع
-                    try {
-                        $movementNote = 'تسليم طلب شحن #' . $orderNumber . ' لشركة الشحن';
-                        recordInventoryMovement(
-                            $productId,
-                            $mainWarehouse['id'] ?? null,
-                            'out',
-                            $quantity,
-                            'shipping_order',
-                            $orderId,
-                            $movementNote,
-                            $currentUser['id'] ?? null,
-                            $batchId
-                        );
-                    } catch (Throwable $movementError) {
-                        error_log('shipping_orders: Warning - failed recording inventory movement for factory product: ' . $movementError->getMessage());
-                        // لا نوقف العملية إذا فشل تسجيل الحركة
-                    }
                 } else {
-                    // للمنتجات الخارجية، خصم الكمية من products.quantity
-                    // (التحقق من الكمية تم بالفعل في بداية الكود)
-                    $db->execute(
-                        "UPDATE products SET quantity = GREATEST(quantity - ?, 0) WHERE id = ?",
-                        [$quantity, $productId]
-                    );
-                    
-                    // تسجيل حركة المخزون للمنتجات الخارجية
-                    $movementNote = 'تسليم طلب شحن #' . $orderNumber . ' لشركة الشحن';
+                    // للمنتجات الخارجية، recordInventoryMovement ستقوم بخصم الكمية من products.quantity
                     $movementResult = recordInventoryMovement(
                         $productId,
                         $mainWarehouse['id'] ?? null,
@@ -596,11 +578,10 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                         $movementNote,
                         $currentUser['id'] ?? null
                     );
+                }
 
-                    if (empty($movementResult['success'])) {
-                        error_log('shipping_orders: Warning - failed recording inventory movement: ' . ($movementResult['message'] ?? 'unknown error'));
-                        // لا نوقف العملية إذا فشل تسجيل الحركة لأن الكمية تم خصمها بالفعل
-                    }
+                if (empty($movementResult['success'])) {
+                    throw new RuntimeException($movementResult['message'] ?? 'تعذر تسجيل حركة المخزون وخصم الكمية.');
                 }
             }
 
