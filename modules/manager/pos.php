@@ -351,7 +351,7 @@ if (empty($customers)) {
         // جلب العملاء المحليين فقط من جدول local_customers
         $localCustomersTableExists = $db->queryOne("SHOW TABLES LIKE 'local_customers'");
         if (!empty($localCustomersTableExists)) {
-            $customers = $db->query("SELECT id, name FROM local_customers WHERE status = 'active' ORDER BY name ASC");
+            $customers = $db->query("SELECT id, name, COALESCE(balance, 0) as balance FROM local_customers WHERE status = 'active' ORDER BY name ASC");
         } else {
             $customers = [];
         }
@@ -664,7 +664,13 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             if ($customerId <= 0) {
                 $validationErrors[] = 'يجب اختيار عميل من القائمة.';
             } else {
-                $customer = $db->queryOne("SELECT id, name, balance, created_by FROM customers WHERE id = ?", [$customerId]);
+                // البحث عن العميل في جدول local_customers (العملاء المحليين)
+                $localCustomersTableExists = $db->queryOne("SHOW TABLES LIKE 'local_customers'");
+                if (!empty($localCustomersTableExists)) {
+                    $customer = $db->queryOne("SELECT id, name, balance, created_by FROM local_customers WHERE id = ?", [$customerId]);
+                } else {
+                    $customer = null;
+                }
                 if (!$customer) {
                     $validationErrors[] = 'العميل المحدد غير موجود.';
                 }
@@ -4560,3 +4566,23 @@ try {
     border-color: #86b7fe;
 }
 </style>
+
+<!-- إعادة تحميل الصفحة تلقائياً بعد رسالة الخطأ -->
+<script>
+(function() {
+    const errorAlert = document.getElementById('errorAlert');
+    
+    if (errorAlert && errorAlert.dataset.autoRefresh === 'true') {
+        // انتظار 3 ثوانٍ لإعطاء المستخدم وقتاً لرؤية رسالة الخطأ
+        setTimeout(function() {
+            // إعادة تحميل الصفحة بدون معاملات GET لمنع تكرار الطلبات
+            const currentUrl = new URL(window.location.href);
+            // إزالة معاملات success و error من URL
+            currentUrl.searchParams.delete('success');
+            currentUrl.searchParams.delete('error');
+            // إعادة تحميل الصفحة
+            window.location.href = currentUrl.toString();
+        }, 3000);
+    }
+})();
+</script>
