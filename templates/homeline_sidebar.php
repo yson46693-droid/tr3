@@ -331,13 +331,7 @@ switch ($role) {
                 'active' => ($currentPage === 'accountant.php' && $currentPageParam === 'company_products'),
                 'badge' => null
             ],
-            [
-                'title' => 'مخزن أدوات التعبئة',
-                'icon' => 'bi-box-seam',
-                'url' => $baseUrl . 'accountant.php?page=packaging_warehouse',
-                'active' => ($currentPage === 'accountant.php' && $currentPageParam === 'packaging_warehouse'),
-                'badge' => null
-            ],
+           
             [
                 'title' => isset($lang['menu_attendance']) ? $lang['menu_attendance'] : 'الحضور',
                 'icon' => 'bi-calendar-check',

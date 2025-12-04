@@ -377,7 +377,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                                 SELECT COALESCE(SUM(soi.quantity), 0) AS pending_quantity
                                 FROM shipping_company_order_items soi
                                 INNER JOIN shipping_company_orders sco ON soi.order_id = sco.id
-                                WHERE sco.status IN ('assigned', 'in_transit')
+                                WHERE sco.status = 'in_transit'
                                   AND soi.batch_id = ?
                             ", [$batchId]);
                             $pendingShippingQty = (float)($pendingShipping['pending_quantity'] ?? 0);
@@ -516,7 +516,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             $orderNumber = generateShippingOrderNumber($db);
 
             $db->execute(
-                "INSERT INTO shipping_company_orders (order_number, shipping_company_id, customer_id, invoice_id, total_amount, status, handed_over_at, notes, created_by) VALUES (?, ?, ?, ?, ?, 'assigned', NOW(), ?, ?)",
+                "INSERT INTO shipping_company_orders (order_number, shipping_company_id, customer_id, invoice_id, total_amount, status, handed_over_at, notes, created_by) VALUES (?, ?, ?, ?, ?, 'in_transit', NOW(), ?, ?)",
                 [
                     $orderNumber,
                     $shippingCompanyId,
@@ -608,40 +608,127 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         exit;
     }
 
-    if ($action === 'update_shipping_status') {
+    if ($action === 'cancel_shipping_order') {
         $orderId = isset($_POST['order_id']) ? (int)$_POST['order_id'] : 0;
-        $newStatus = $_POST['status'] ?? '';
-        $allowedStatuses = ['in_transit'];
 
-        if ($orderId <= 0 || !in_array($newStatus, $allowedStatuses, true)) {
-            $_SESSION[$sessionErrorKey] = 'طلب غير صالح لتحديث الحالة.';
+        if ($orderId <= 0) {
+            $_SESSION[$sessionErrorKey] = 'طلب غير صالح للإلغاء.';
             redirectAfterPost('shipping_orders', [], [], 'manager');
             exit;
         }
 
+        $transactionStarted = false;
+
         try {
-            $updateResult = $db->execute(
-                "UPDATE shipping_company_orders SET status = ?, updated_by = ?, updated_at = NOW() WHERE id = ? AND status = 'assigned'",
-                [$newStatus, $currentUser['id'] ?? null, $orderId]
+            $db->beginTransaction();
+            $transactionStarted = true;
+
+            $order = $db->queryOne(
+                "SELECT id, shipping_company_id, customer_id, total_amount, status, invoice_id FROM shipping_company_orders WHERE id = ? FOR UPDATE",
+                [$orderId]
             );
 
-            if (($updateResult['affected_rows'] ?? 0) < 1) {
-                throw new RuntimeException('لا يمكن تحديث حالة هذا الطلب في الوقت الحالي.');
+            if (!$order) {
+                throw new InvalidArgumentException('طلب الشحن المحدد غير موجود.');
+            }
+
+            if ($order['status'] === 'cancelled') {
+                throw new InvalidArgumentException('تم إلغاء هذا الطلب بالفعل.');
+            }
+
+            if ($order['status'] === 'delivered') {
+                throw new InvalidArgumentException('لا يمكن إلغاء طلب تم تسليمه بالفعل.');
+            }
+
+            $totalAmount = (float)($order['total_amount'] ?? 0.0);
+
+            // خصم المبلغ من ديون شركة الشحن
+            $db->execute(
+                "UPDATE shipping_companies SET balance = balance - ?, updated_by = ?, updated_at = NOW() WHERE id = ?",
+                [$totalAmount, $currentUser['id'] ?? null, $order['shipping_company_id']]
+            );
+
+            // إرجاع المنتجات إلى المخزن الرئيسي
+            $orderItems = $db->query(
+                "SELECT product_id, batch_id, quantity, product_type FROM shipping_company_order_items WHERE order_id = ?",
+                [$orderId]
+            );
+
+            foreach ($orderItems as $item) {
+                $productId = (int)($item['product_id'] ?? 0);
+                $batchId = isset($item['batch_id']) && $item['batch_id'] > 0 ? (int)$item['batch_id'] : null;
+                $quantity = (float)($item['quantity'] ?? 0);
+                $productType = $item['product_type'] ?? 'external';
+
+                if ($productType === 'factory' && $batchId) {
+                    // للمنتجات من المصنع، إرجاع الكمية إلى finished_products
+                    $db->execute(
+                        "UPDATE finished_products SET quantity_produced = quantity_produced + ? WHERE batch_id = ?",
+                        [$quantity, $batchId]
+                    );
+                } else {
+                    // للمنتجات الخارجية، إرجاع الكمية إلى products
+                    $db->execute(
+                        "UPDATE products SET quantity = quantity + ? WHERE id = ?",
+                        [$quantity, $productId]
+                    );
+
+                    // تسجيل حركة المخزون
+                    $movementNote = 'إرجاع منتجات من طلب شحن ملغي #' . ($order['order_number'] ?? $orderId);
+                    recordInventoryMovement(
+                        $productId,
+                        $mainWarehouse['id'] ?? null,
+                        'in',
+                        $quantity,
+                        'shipping_order_cancelled',
+                        $orderId,
+                        $movementNote,
+                        $currentUser['id'] ?? null
+                    );
+                }
+            }
+
+            // تحديث حالة الطلب إلى ملغي
+            $db->execute(
+                "UPDATE shipping_company_orders SET status = 'cancelled', updated_by = ?, updated_at = NOW() WHERE id = ?",
+                [$currentUser['id'] ?? null, $orderId]
+            );
+
+            // إلغاء الفاتورة إذا كانت موجودة
+            if (!empty($order['invoice_id'])) {
+                $db->execute(
+                    "UPDATE invoices SET status = 'cancelled', updated_at = NOW() WHERE id = ?",
+                    [$order['invoice_id']]
+                );
             }
 
             logAudit(
                 $currentUser['id'] ?? null,
-                'update_shipping_order_status',
+                'cancel_shipping_order',
                 'shipping_order',
                 $orderId,
                 null,
-                ['status' => $newStatus]
+                [
+                    'total_amount' => $totalAmount,
+                    'shipping_company_id' => $order['shipping_company_id'],
+                ]
             );
 
-            $_SESSION[$sessionSuccessKey] = 'تم تحديث حالة طلب الشحن.';
-        } catch (Throwable $statusError) {
-            error_log('shipping_orders: update status error -> ' . $statusError->getMessage());
-            $_SESSION[$sessionErrorKey] = 'تعذر تحديث حالة الطلب.';
+            $db->commit();
+            $transactionStarted = false;
+
+            $_SESSION[$sessionSuccessKey] = 'تم إلغاء الطلب وإرجاع المنتجات إلى المخزن الرئيسي بنجاح.';
+        } catch (InvalidArgumentException $validationError) {
+            if ($transactionStarted) {
+                $db->rollback();
+            }
+            $_SESSION[$sessionErrorKey] = $validationError->getMessage();
+        } catch (Throwable $cancelError) {
+            if ($transactionStarted) {
+                $db->rollback();
+            }
+            error_log('shipping_orders: cancel order error -> ' . $cancelError->getMessage());
+            $_SESSION[$sessionErrorKey] = 'تعذر إلغاء الطلب. يرجى المحاولة لاحقاً.';
         }
 
         redirectAfterPost('shipping_orders', [], [], 'manager');
@@ -925,7 +1012,7 @@ try {
                             SELECT COALESCE(SUM(soi.quantity), 0) AS pending_quantity
                             FROM shipping_company_order_items soi
                             INNER JOIN shipping_company_orders sco ON soi.order_id = sco.id
-                            WHERE sco.status IN ('assigned', 'in_transit')
+                            WHERE sco.status = 'in_transit'
                               AND soi.batch_id = ?
                         ", [$fp['batch_id'] ?? 0]);
                         $pendingShippingQty = (float)($pendingShipping['pending_quantity'] ?? 0);
@@ -1035,9 +1122,9 @@ try {
     $statsRow = $db->queryOne(
         "SELECT 
             COUNT(*) AS total_orders,
-            SUM(CASE WHEN status IN ('assigned','in_transit') THEN 1 ELSE 0 END) AS active_orders,
+            SUM(CASE WHEN status = 'in_transit' THEN 1 ELSE 0 END) AS active_orders,
             SUM(CASE WHEN status = 'delivered' THEN 1 ELSE 0 END) AS delivered_orders,
-            SUM(CASE WHEN status IN ('assigned','in_transit') THEN total_amount ELSE 0 END) AS outstanding_amount
+            SUM(CASE WHEN status = 'in_transit' THEN total_amount ELSE 0 END) AS outstanding_amount
         FROM shipping_company_orders"
     );
 
@@ -1288,100 +1375,244 @@ $hasShippingCompanies = !empty($shippingCompanies);
 </div>
 
 <div class="card shadow-sm">
-    <div class="card-header d-flex justify-content-between align-items-center">
-        <h5 class="mb-0">أحدث طلبات الشحن</h5>
+    <div class="card-header">
+        <h5 class="mb-0">طلبات الشحن</h5>
     </div>
     <div class="card-body p-0">
-        <?php if (empty($orders)): ?>
-            <div class="p-4 text-center text-muted">لا توجد طلبات شحن مسجلة حالياً.</div>
-        <?php else: ?>
-            <div class="table-responsive">
-                <table class="table table-hover table-nowrap mb-0 align-middle">
-                    <thead class="table-light">
-                        <tr>
-                            <th>رقم الطلب</th>
-                            <th>شركة الشحن</th>
-                            <th>العميل</th>
-                            <th>المبلغ</th>
-                            <th>الحالة</th>
-                            <th>تاريخ التسليم للعميل</th>
-                            <th>الفاتورة</th>
-                            <th style="width: 220px;">الإجراءات</th>
-                        </tr>
-                    </thead>
-                    <tbody>
-                        <?php foreach ($orders as $order): ?>
-                            <?php
-                                $statusInfo = $statusLabels[$order['status']] ?? ['label' => $order['status'], 'class' => 'bg-secondary'];
-                                $deliveredAt = $order['delivered_at'] ?? null;
-                                $invoiceLink = '';
-                                if (!empty($order['invoice_id'])) {
-                                    $invoiceUrl = getRelativeUrl('print_invoice.php?id=' . (int)$order['invoice_id']);
-                                    $invoiceLink = '<a href="' . htmlspecialchars($invoiceUrl) . '" target="_blank" class="btn btn-outline-primary btn-sm"><i class="bi bi-file-earmark-text me-1"></i>عرض الفاتورة</a>';
-                                }
-                            ?>
-                            <tr>
-                                <td>
-                                    <div class="fw-semibold">#<?php echo htmlspecialchars($order['order_number']); ?></div>
-                                    <div class="text-muted small">سجل في <?php echo formatDateTime($order['created_at']); ?></div>
-                                </td>
-                                <td>
-                                    <div class="fw-semibold"><?php echo htmlspecialchars($order['shipping_company_name'] ?? 'غير معروف'); ?></div>
-                                    <div class="text-muted small">دين حالي: <?php echo formatCurrency((float)($order['company_balance'] ?? 0)); ?></div>
-                                </td>
-                                <td>
-                                    <div class="fw-semibold"><?php echo htmlspecialchars($order['customer_name'] ?? 'غير محدد'); ?></div>
-                                    <?php if (!empty($order['customer_phone'])): ?>
-                                        <div class="text-muted small"><i class="bi bi-telephone"></i> <?php echo htmlspecialchars($order['customer_phone']); ?></div>
-                                    <?php endif; ?>
-                                </td>
-                                <td class="fw-semibold"><?php echo formatCurrency((float)$order['total_amount']); ?></td>
-                                <td>
-                                    <span class="badge <?php echo $statusInfo['class']; ?>">
-                                        <?php echo htmlspecialchars($statusInfo['label']); ?>
-                                    </span>
-                                    <?php if (!empty($order['handed_over_at'])): ?>
-                                        <div class="text-muted small mt-1">سُلِّم للشركة: <?php echo formatDateTime($order['handed_over_at']); ?></div>
-                                    <?php endif; ?>
-                                </td>
-                                <td>
-                                    <?php if ($deliveredAt): ?>
-                                        <span class="text-success fw-semibold"><?php echo formatDateTime($deliveredAt); ?></span>
-                                    <?php else: ?>
-                                        <span class="text-muted">لم يتم التسليم بعد</span>
-                                    <?php endif; ?>
-                                </td>
-                                <td><?php echo $invoiceLink ?: '<span class="text-muted">لا توجد فاتورة</span>'; ?></td>
-                                <td>
-                                    <div class="d-flex flex-wrap gap-2">
-                                        <?php if ($order['status'] === 'assigned'): ?>
-                                            <form method="POST" class="d-inline">
-                                                <input type="hidden" name="action" value="update_shipping_status">
-                                                <input type="hidden" name="order_id" value="<?php echo (int)$order['id']; ?>">
-                                                <input type="hidden" name="status" value="in_transit">
-                                                <button type="submit" class="btn btn-outline-warning btn-sm">
-                                                    <i class="bi bi-truck me-1"></i>بدء الشحن
-                                                </button>
-                                            </form>
-                                        <?php endif; ?>
-
-                                        <?php if (in_array($order['status'], ['assigned', 'in_transit'], true)): ?>
-                                            <form method="POST" class="d-inline" onsubmit="return confirm('هل ترغب في تأكيد تسليم الطلب للعميل ونقل الدين؟');">
-                                                <input type="hidden" name="action" value="complete_shipping_order">
-                                                <input type="hidden" name="order_id" value="<?php echo (int)$order['id']; ?>">
-                                                <button type="submit" class="btn btn-success btn-sm">
-                                                    <i class="bi bi-check-circle me-1"></i>إجراءات التسليم
-                                                </button>
-                                            </form>
-                                        <?php endif; ?>
-                                    </div>
-                                </td>
-                            </tr>
-                        <?php endforeach; ?>
-                    </tbody>
-                </table>
+        <?php
+        // تقسيم الطلبات حسب الحالة
+        $activeOrders = array_filter($orders, function($order) {
+            return in_array($order['status'], ['in_transit'], true);
+        });
+        $deliveredOrders = array_filter($orders, function($order) {
+            return $order['status'] === 'delivered';
+        });
+        $cancelledOrders = array_filter($orders, function($order) {
+            return $order['status'] === 'cancelled';
+        });
+        ?>
+        
+        <ul class="nav nav-tabs card-header-tabs border-0" role="tablist">
+            <li class="nav-item" role="presentation">
+                <button class="nav-link active" id="active-orders-tab" data-bs-toggle="tab" data-bs-target="#active-orders" type="button" role="tab">
+                    جاري الشحن <span class="badge bg-warning text-dark ms-1"><?php echo count($activeOrders); ?></span>
+                </button>
+            </li>
+            <li class="nav-item" role="presentation">
+                <button class="nav-link" id="delivered-orders-tab" data-bs-toggle="tab" data-bs-target="#delivered-orders" type="button" role="tab">
+                    تم التسليم <span class="badge bg-success ms-1"><?php echo count($deliveredOrders); ?></span>
+                </button>
+            </li>
+            <li class="nav-item" role="presentation">
+                <button class="nav-link" id="cancelled-orders-tab" data-bs-toggle="tab" data-bs-target="#cancelled-orders" type="button" role="tab">
+                    ملغاة <span class="badge bg-secondary ms-1"><?php echo count($cancelledOrders); ?></span>
+                </button>
+            </li>
+        </ul>
+        
+        <div class="tab-content">
+            <!-- طلبات جارية -->
+            <div class="tab-pane fade show active" id="active-orders" role="tabpanel">
+                <?php if (empty($activeOrders)): ?>
+                    <div class="p-4 text-center text-muted">لا توجد طلبات جارية حالياً.</div>
+                <?php else: ?>
+                    <div class="table-responsive">
+                        <table class="table table-hover table-nowrap mb-0 align-middle">
+                            <thead class="table-light">
+                                <tr>
+                                    <th>رقم الطلب</th>
+                                    <th>شركة الشحن</th>
+                                    <th>العميل</th>
+                                    <th>المبلغ</th>
+                                    <th>الحالة</th>
+                                    <th>تاريخ التسليم للشركة</th>
+                                    <th>الفاتورة</th>
+                                    <th style="width: 250px;">الإجراءات</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                <?php foreach ($activeOrders as $order): ?>
+                                    <?php
+                                        $statusInfo = $statusLabels[$order['status']] ?? ['label' => $order['status'], 'class' => 'bg-secondary'];
+                                        $invoiceLink = '';
+                                        if (!empty($order['invoice_id'])) {
+                                            $invoiceUrl = getRelativeUrl('print_invoice.php?id=' . (int)$order['invoice_id']);
+                                            $invoiceLink = '<a href="' . htmlspecialchars($invoiceUrl) . '" target="_blank" class="btn btn-outline-primary btn-sm"><i class="bi bi-file-earmark-text me-1"></i>عرض الفاتورة</a>';
+                                        }
+                                    ?>
+                                    <tr>
+                                        <td>
+                                            <div class="fw-semibold">#<?php echo htmlspecialchars($order['order_number']); ?></div>
+                                            <div class="text-muted small">سجل في <?php echo formatDateTime($order['created_at']); ?></div>
+                                        </td>
+                                        <td>
+                                            <div class="fw-semibold"><?php echo htmlspecialchars($order['shipping_company_name'] ?? 'غير معروف'); ?></div>
+                                            <div class="text-muted small">دين حالي: <?php echo formatCurrency((float)($order['company_balance'] ?? 0)); ?></div>
+                                        </td>
+                                        <td>
+                                            <div class="fw-semibold"><?php echo htmlspecialchars($order['customer_name'] ?? 'غير محدد'); ?></div>
+                                            <?php if (!empty($order['customer_phone'])): ?>
+                                                <div class="text-muted small"><i class="bi bi-telephone"></i> <?php echo htmlspecialchars($order['customer_phone']); ?></div>
+                                            <?php endif; ?>
+                                        </td>
+                                        <td class="fw-semibold"><?php echo formatCurrency((float)$order['total_amount']); ?></td>
+                                        <td>
+                                            <span class="badge <?php echo $statusInfo['class']; ?>">
+                                                <?php echo htmlspecialchars($statusInfo['label']); ?>
+                                            </span>
+                                            <?php if (!empty($order['handed_over_at'])): ?>
+                                                <div class="text-muted small mt-1">سُلِّم للشركة: <?php echo formatDateTime($order['handed_over_at']); ?></div>
+                                            <?php endif; ?>
+                                        </td>
+                                        <td>
+                                            <?php if (!empty($order['handed_over_at'])): ?>
+                                                <span class="text-info fw-semibold"><?php echo formatDateTime($order['handed_over_at']); ?></span>
+                                            <?php else: ?>
+                                                <span class="text-muted">-</span>
+                                            <?php endif; ?>
+                                        </td>
+                                        <td><?php echo $invoiceLink ?: '<span class="text-muted">لا توجد فاتورة</span>'; ?></td>
+                                        <td>
+                                            <div class="d-flex flex-wrap gap-2">
+                                                <form method="POST" class="d-inline" onsubmit="return confirm('هل ترغب في إلغاء هذا الطلب وإرجاع المنتجات إلى المخزن الرئيسي؟');">
+                                                    <input type="hidden" name="action" value="cancel_shipping_order">
+                                                    <input type="hidden" name="order_id" value="<?php echo (int)$order['id']; ?>">
+                                                    <button type="submit" class="btn btn-outline-danger btn-sm">
+                                                        <i class="bi bi-x-circle me-1"></i>طلب ملغي
+                                                    </button>
+                                                </form>
+                                                <form method="POST" class="d-inline" onsubmit="return confirm('هل ترغب في تأكيد تسليم الطلب للعميل ونقل الدين من شركة الشحن إلى العميل؟');">
+                                                    <input type="hidden" name="action" value="complete_shipping_order">
+                                                    <input type="hidden" name="order_id" value="<?php echo (int)$order['id']; ?>">
+                                                    <button type="submit" class="btn btn-success btn-sm">
+                                                        <i class="bi bi-check-circle me-1"></i>تم التسليم
+                                                    </button>
+                                                </form>
+                                            </div>
+                                        </td>
+                                    </tr>
+                                <?php endforeach; ?>
+                            </tbody>
+                        </table>
+                    </div>
+                <?php endif; ?>
             </div>
-        <?php endif; ?>
+            
+            <!-- طلبات مكتملة -->
+            <div class="tab-pane fade" id="delivered-orders" role="tabpanel">
+                <?php if (empty($deliveredOrders)): ?>
+                    <div class="p-4 text-center text-muted">لا توجد طلبات مكتملة.</div>
+                <?php else: ?>
+                    <div class="table-responsive">
+                        <table class="table table-hover table-nowrap mb-0 align-middle">
+                            <thead class="table-light">
+                                <tr>
+                                    <th>رقم الطلب</th>
+                                    <th>شركة الشحن</th>
+                                    <th>العميل</th>
+                                    <th>المبلغ</th>
+                                    <th>تاريخ التسليم للعميل</th>
+                                    <th>الفاتورة</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                <?php foreach ($deliveredOrders as $order): ?>
+                                    <?php
+                                        $deliveredAt = $order['delivered_at'] ?? null;
+                                        $invoiceLink = '';
+                                        if (!empty($order['invoice_id'])) {
+                                            $invoiceUrl = getRelativeUrl('print_invoice.php?id=' . (int)$order['invoice_id']);
+                                            $invoiceLink = '<a href="' . htmlspecialchars($invoiceUrl) . '" target="_blank" class="btn btn-outline-primary btn-sm"><i class="bi bi-file-earmark-text me-1"></i>عرض الفاتورة</a>';
+                                        }
+                                    ?>
+                                    <tr>
+                                        <td>
+                                            <div class="fw-semibold">#<?php echo htmlspecialchars($order['order_number']); ?></div>
+                                            <div class="text-muted small">سجل في <?php echo formatDateTime($order['created_at']); ?></div>
+                                        </td>
+                                        <td>
+                                            <div class="fw-semibold"><?php echo htmlspecialchars($order['shipping_company_name'] ?? 'غير معروف'); ?></div>
+                                        </td>
+                                        <td>
+                                            <div class="fw-semibold"><?php echo htmlspecialchars($order['customer_name'] ?? 'غير محدد'); ?></div>
+                                            <?php if (!empty($order['customer_phone'])): ?>
+                                                <div class="text-muted small"><i class="bi bi-telephone"></i> <?php echo htmlspecialchars($order['customer_phone']); ?></div>
+                                            <?php endif; ?>
+                                        </td>
+                                        <td class="fw-semibold"><?php echo formatCurrency((float)$order['total_amount']); ?></td>
+                                        <td>
+                                            <?php if ($deliveredAt): ?>
+                                                <span class="text-success fw-semibold"><?php echo formatDateTime($deliveredAt); ?></span>
+                                            <?php else: ?>
+                                                <span class="text-muted">-</span>
+                                            <?php endif; ?>
+                                        </td>
+                                        <td><?php echo $invoiceLink ?: '<span class="text-muted">لا توجد فاتورة</span>'; ?></td>
+                                    </tr>
+                                <?php endforeach; ?>
+                            </tbody>
+                        </table>
+                    </div>
+                <?php endif; ?>
+            </div>
+            
+            <!-- طلبات ملغاة -->
+            <div class="tab-pane fade" id="cancelled-orders" role="tabpanel">
+                <?php if (empty($cancelledOrders)): ?>
+                    <div class="p-4 text-center text-muted">لا توجد طلبات ملغاة.</div>
+                <?php else: ?>
+                    <div class="table-responsive">
+                        <table class="table table-hover table-nowrap mb-0 align-middle">
+                            <thead class="table-light">
+                                <tr>
+                                    <th>رقم الطلب</th>
+                                    <th>شركة الشحن</th>
+                                    <th>العميل</th>
+                                    <th>المبلغ</th>
+                                    <th>تاريخ الإلغاء</th>
+                                    <th>الفاتورة</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                <?php foreach ($cancelledOrders as $order): ?>
+                                    <?php
+                                        $invoiceLink = '';
+                                        if (!empty($order['invoice_id'])) {
+                                            $invoiceUrl = getRelativeUrl('print_invoice.php?id=' . (int)$order['invoice_id']);
+                                            $invoiceLink = '<a href="' . htmlspecialchars($invoiceUrl) . '" target="_blank" class="btn btn-outline-primary btn-sm"><i class="bi bi-file-earmark-text me-1"></i>عرض الفاتورة</a>';
+                                        }
+                                    ?>
+                                    <tr>
+                                        <td>
+                                            <div class="fw-semibold">#<?php echo htmlspecialchars($order['order_number']); ?></div>
+                                            <div class="text-muted small">سجل في <?php echo formatDateTime($order['created_at']); ?></div>
+                                        </td>
+                                        <td>
+                                            <div class="fw-semibold"><?php echo htmlspecialchars($order['shipping_company_name'] ?? 'غير معروف'); ?></div>
+                                        </td>
+                                        <td>
+                                            <div class="fw-semibold"><?php echo htmlspecialchars($order['customer_name'] ?? 'غير محدد'); ?></div>
+                                            <?php if (!empty($order['customer_phone'])): ?>
+                                                <div class="text-muted small"><i class="bi bi-telephone"></i> <?php echo htmlspecialchars($order['customer_phone']); ?></div>
+                                            <?php endif; ?>
+                                        </td>
+                                        <td class="fw-semibold"><?php echo formatCurrency((float)$order['total_amount']); ?></td>
+                                        <td>
+                                            <?php if (!empty($order['updated_at'])): ?>
+                                                <span class="text-muted"><?php echo formatDateTime($order['updated_at']); ?></span>
+                                            <?php else: ?>
+                                                <span class="text-muted">-</span>
+                                            <?php endif; ?>
+                                        </td>
+                                        <td><?php echo $invoiceLink ?: '<span class="text-muted">لا توجد فاتورة</span>'; ?></td>
+                                    </tr>
+                                <?php endforeach; ?>
+                            </tbody>
+                        </table>
+                    </div>
+                <?php endif; ?>
+            </div>
+        </div>
     </div>
 </div>
 
