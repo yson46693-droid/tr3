@@ -619,20 +619,76 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
                 // تحديد batch_id و product_type من أول عنصر
                 $firstItem = $product['items'][0] ?? null;
-                $batchId = $firstItem['batch_id'] ?? null;
                 $productType = $firstItem['product_type'] ?? 'external';
                 
-                $normalizedCart[] = [
-                    'product_id' => $productId,
-                    'batch_id' => $batchId,
-                    'product_type' => $productType,
-                    'name' => $productName ?: 'منتج',
-                    'category' => $product['items'][0]['category'] ?? null,
-                    'quantity' => $quantity,
-                    'available' => $available,
-                    'unit_price' => $unitPrice,
-                    'line_total' => $lineTotal,
-                ];
+                // للمنتجات المصنعة: توزيع الكمية على عدة باتشات إذا لزم الأمر
+                if ($productType === 'factory' && $quantity > 0) {
+                    $remainingQty = $quantity;
+                    $batchItems = [];
+                    
+                    // ترتيب الباتشات حسب الكمية (الأكبر أولاً)
+                    $sortedItems = $product['items'];
+                    usort($sortedItems, function($a, $b) {
+                        $qtyA = (float)($a['quantity'] ?? 0);
+                        $qtyB = (float)($b['quantity'] ?? 0);
+                        return $qtyB <=> $qtyA; // ترتيب تنازلي
+                    });
+                    
+                    foreach ($sortedItems as $item) {
+                        if ($remainingQty <= 0) break;
+                        
+                        $itemQty = (float)($item['quantity'] ?? 0);
+                        if ($itemQty <= 0) continue;
+                        
+                        $batchId = $item['batch_id'] ?? null;
+                        if (!$batchId) continue;
+                        
+                        $qtyToTake = min($remainingQty, $itemQty);
+                        $batchItems[] = [
+                            'batch_id' => $batchId,
+                            'quantity' => $qtyToTake,
+                            'unit_price' => $unitPrice,
+                            'line_total' => round($qtyToTake * $unitPrice, 2),
+                        ];
+                        
+                        $remainingQty -= $qtyToTake;
+                    }
+                    
+                    if ($remainingQty > 0.001) {
+                        $validationErrors[] = 'الكمية المطلوبة للمنتج رقم ' . ($index + 1) . ' (' . number_format($quantity, 2) . ') تتجاوز الكمية المتاحة (' . number_format($available, 2) . ').';
+                        continue;
+                    }
+                    
+                    // إضافة عناصر منفصلة لكل باتش
+                    foreach ($batchItems as $batchItem) {
+                        $normalizedCart[] = [
+                            'product_id' => $productId,
+                            'batch_id' => $batchItem['batch_id'],
+                            'product_type' => $productType,
+                            'name' => $productName ?: 'منتج',
+                            'category' => $product['items'][0]['category'] ?? null,
+                            'quantity' => $batchItem['quantity'],
+                            'available' => $available,
+                            'unit_price' => $batchItem['unit_price'],
+                            'line_total' => $batchItem['line_total'],
+                        ];
+                    }
+                } else {
+                    // للمنتجات الخارجية: استخدام batch_id من أول عنصر
+                    $batchId = $firstItem['batch_id'] ?? null;
+                    
+                    $normalizedCart[] = [
+                        'product_id' => $productId,
+                        'batch_id' => $batchId,
+                        'product_type' => $productType,
+                        'name' => $productName ?: 'منتج',
+                        'category' => $product['items'][0]['category'] ?? null,
+                        'quantity' => $quantity,
+                        'available' => $available,
+                        'unit_price' => $unitPrice,
+                        'line_total' => $lineTotal,
+                    ];
+                }
             }
         }
 
@@ -931,38 +987,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     $batchId = $item['batch_id'] ?? null;
                     $productType = $item['product_type'] ?? 'external';
 
-                    // التحقق من الكمية المتاحة في الباتش المحدد قبل تسجيل الحركة
-                    if ($productType === 'factory' && $batchId) {
-                        $finishedProduct = $db->queryOne(
-                            "SELECT quantity_produced FROM finished_products WHERE id = ? FOR UPDATE",
-                            [$batchId]
-                        );
-                        
-                        if (!$finishedProduct) {
-                            throw new RuntimeException('تعذر العثور على المنتج المصنع في المخزون.');
-                        }
-                        
-                        $availableQty = (float)($finishedProduct['quantity_produced'] ?? 0);
-                        if ($availableQty < $quantity) {
-                            throw new RuntimeException('الكمية المتاحة في المخزون (' . number_format($availableQty, 2) . ') أقل من الكمية المطلوبة (' . number_format($quantity, 2) . ').');
-                        }
-                    } elseif ($productType === 'external') {
-                        $product = $db->queryOne(
-                            "SELECT quantity FROM products WHERE id = ? FOR UPDATE",
-                            [$productId]
-                        );
-                        
-                        if (!$product) {
-                            throw new RuntimeException('تعذر العثور على المنتج في المخزون.');
-                        }
-                        
-                        $availableQty = (float)($product['quantity'] ?? 0);
-                        if ($availableQty < $quantity) {
-                            throw new RuntimeException('الكمية المتاحة في المخزون (' . number_format($availableQty, 2) . ') أقل من الكمية المطلوبة (' . number_format($quantity, 2) . ').');
-                        }
-                    }
-
-                    // تسجيل حركة المخزون (سوف يقوم recordInventoryMovement بتحديث الكمية)
+                    // تسجيل حركة المخزون (سوف يقوم recordInventoryMovement بالتحقق من الكمية وتحديثها)
+                    // تم توزيع الكمية على الباتشات مسبقاً في normalizedCart، لذا كل عنصر يحتوي على كمية متاحة في الباتش المحدد
                     $movementResult = recordInventoryMovement(
                         $productId,
                         $mainWarehouseId,

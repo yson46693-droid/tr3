@@ -172,6 +172,20 @@ function recordInventoryMovement($productId, $warehouseId, $type, $quantity, $re
                 $quantityAfter = $quantityBefore + $quantity;
                 break;
             case 'out':
+                // التحقق الصارم من الكمية قبل الحساب
+                if ($quantityBefore < $quantity) {
+                    if ($usingVehicleInventory) {
+                        // للـ vehicle_inventory، قد تكون الكمية تم تحديثها مسبقاً
+                        error_log("recordInventoryMovement: Warning - quantity_before ($quantityBefore) < requested ($quantity) for vehicle_inventory. batch_id: $batchId, product_id: $productId");
+                    } elseif ($usingFinishedProductQuantity) {
+                        error_log("recordInventoryMovement: Insufficient quantity in finished_products. batch_id: $batchId, quantity_produced: $quantityBefore, requested: $quantity");
+                        return ['success' => false, 'message' => 'الكمية غير كافية في المخزون. المتاح: ' . number_format($quantityBefore, 2) . '، المطلوب: ' . number_format($quantity, 2)];
+                    } else {
+                        error_log("recordInventoryMovement: Insufficient quantity in products. product_id: $productId, quantity: $quantityBefore, requested: $quantity");
+                        return ['success' => false, 'message' => 'الكمية غير كافية في المخزون. المتاح: ' . number_format($quantityBefore, 2) . '، المطلوب: ' . number_format($quantity, 2)];
+                    }
+                }
+                
                 $quantityAfter = $quantityBefore - $quantity;
                 if ($quantityAfter < 0) {
                     // إذا كنا نستخدم vehicle_inventory، لا نفحص لأن الكمية تم التحقق منها مسبقاً في approveWarehouseTransfer
@@ -181,14 +195,11 @@ function recordInventoryMovement($productId, $warehouseId, $type, $quantity, $re
                         error_log("recordInventoryMovement: Using vehicle_inventory for 'out' movement. quantity_before: $quantityBefore, quantity: $quantity, quantity_after: $quantityAfter (may be negative if already updated)");
                     } elseif ($usingFinishedProductQuantity) {
                         // التحقق من quantity_produced فقط
-                        if ($quantityAfter < 0) {
-                            error_log("recordInventoryMovement: Insufficient quantity in finished_products. batch_id: $batchId, quantity_produced: $quantityBefore, requested: $quantity");
-                            return ['success' => false, 'message' => 'الكمية غير كافية في المخزون'];
-                        }
+                        error_log("recordInventoryMovement: Insufficient quantity in finished_products. batch_id: $batchId, quantity_produced: $quantityBefore, requested: $quantity");
+                        return ['success' => false, 'message' => 'الكمية غير كافية في المخزون. المتاح: ' . number_format($quantityBefore, 2) . '، المطلوب: ' . number_format($quantity, 2)];
                     } else {
-                        if ($quantityAfter < 0) {
-                            return ['success' => false, 'message' => 'الكمية غير كافية في المخزون'];
-                        }
+                        error_log("recordInventoryMovement: Insufficient quantity in products. product_id: $productId, quantity: $quantityBefore, requested: $quantity");
+                        return ['success' => false, 'message' => 'الكمية غير كافية في المخزون. المتاح: ' . number_format($quantityBefore, 2) . '، المطلوب: ' . number_format($quantity, 2)];
                     }
                 }
                 break;
