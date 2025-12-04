@@ -134,10 +134,25 @@ function recordInventoryMovement($productId, $warehouseId, $type, $quantity, $re
         // لكن فقط إذا لم نكن نستخدم vehicle_inventory (لأننا استخدمناها بالفعل)
         if ($batchId && ($type === 'out' || $type === 'transfer') && !$usingVehicleInventory) {
             // استخدام FOR UPDATE لضمان قراءة الكمية الصحيحة ومنع race conditions
+            // محاولة البحث باستخدام id أولاً
             $finishedProduct = $db->queryOne(
-                "SELECT quantity_produced FROM finished_products WHERE id = ? FOR UPDATE",
+                "SELECT id, quantity_produced FROM finished_products WHERE id = ? FOR UPDATE",
                 [$batchId]
             );
+            
+            // إذا لم نجد باستخدام id، نحاول البحث باستخدام product_id (للمنتجات المصنعة)
+            if (!$finishedProduct && $productId) {
+                $finishedProduct = $db->queryOne(
+                    "SELECT id, quantity_produced FROM finished_products 
+                     WHERE product_id = ? AND (quantity_produced IS NULL OR quantity_produced > 0)
+                     ORDER BY production_date DESC, id DESC LIMIT 1 FOR UPDATE",
+                    [$productId]
+                );
+                // إذا وجدنا سجل، نستخدم id الجديد
+                if ($finishedProduct) {
+                    $batchId = (int)$finishedProduct['id'];
+                }
+            }
             
             if ($finishedProduct && isset($finishedProduct['quantity_produced'])) {
                 $quantityProducedRaw = (float)($finishedProduct['quantity_produced'] ?? 0);
@@ -162,6 +177,12 @@ function recordInventoryMovement($productId, $warehouseId, $type, $quantity, $re
                     $quantityBefore = $quantityProducedRaw;
                     error_log("recordInventoryMovement: Using finished_products.quantity_produced = $quantityBefore for batch_id: $batchId, product_id: $productId, reference_type: " . ($referenceType ?? 'null'));
                 }
+            } else {
+                // إذا لم نجد finished_product، نسجل تحذيراً لكن نستخدم products.quantity
+                // لكن يجب التأكد من أن products.quantity يحتوي على كمية كافية
+                error_log("recordInventoryMovement: Warning - finished_products not found for batch_id: $batchId, product_id: $productId. Using products.quantity instead.");
+                // إعادة تعيين batchId إلى null لأننا لم نجد finished_product
+                $batchId = null;
             }
         }
         

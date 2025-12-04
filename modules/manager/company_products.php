@@ -2084,5 +2084,16 @@ function initEditExternalButtons() {
         });
     });
 }
+
+// تحديث تلقائي للصفحة بعد رسالة النجاح
+(function() {
+    const successAlert = document.getElementById('successAlert');
+    if (successAlert) {
+        // انتظار 2.5 ثانية قبل التحديث التلقائي
+        setTimeout(function() {
+            window.location.reload();
+        }, 2500);
+    }
+})();
 </script>
 
