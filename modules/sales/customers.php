@@ -658,6 +658,22 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action'])) {
 
                     $_SESSION['success_message'] = implode(' ', array_filter($messageParts));
 
+                    // التوجيه إلى صفحة representatives_customers بدلاً من customers
+                    // تحديد الملف الصحيح بناءً على دور المستخدم
+                    $userRole = strtolower((string)($currentUser['role'] ?? 'manager'));
+                    $redirectBaseScript = 'manager.php';
+                    if ($userRole === 'accountant') {
+                        $redirectBaseScript = 'accountant.php';
+                    }
+                    $redirectUrl = getRelativeUrl($redirectBaseScript . '?page=representatives_customers');
+                    if (!headers_sent()) {
+                        header('Location: ' . $redirectUrl);
+                        exit;
+                    } else {
+                        echo '<script>window.location.href = ' . json_encode($redirectUrl) . ';</script>';
+                        exit;
+                    }
+
                 } else {
                     // التحصيل العادي (من قبل مندوب أو عميل بدون مندوب أو من صفحة أخرى)
                     $collectionNumber = null;
