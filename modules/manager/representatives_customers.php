@@ -11,6 +11,8 @@ require_once __DIR__ . '/../../includes/db.php';
 require_once __DIR__ . '/../../includes/auth.php';
 require_once __DIR__ . '/../../includes/audit_log.php';
 require_once __DIR__ . '/../../includes/path_helper.php';
+require_once __DIR__ . '/../../includes/invoices.php';
+require_once __DIR__ . '/../../includes/notifications.php';
 require_once __DIR__ . '/../../includes/components/customers/section_header.php';
 require_once __DIR__ . '/../../includes/components/customers/rep_card.php';
 require_once __DIR__ . '/../sales/table_styles.php';
@@ -25,6 +27,219 @@ $dashboardScript = basename($_SERVER['PHP_SELF'] ?? 'manager.php');
 $error = '';
 $success = '';
 applyPRGPattern($error, $success);
+
+// معالجة التحصيل من عملاء المندوبين
+if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['action'] === 'collect_debt') {
+    $customerId = isset($_POST['customer_id']) ? (int)$_POST['customer_id'] : 0;
+    $amount = isset($_POST['amount']) ? cleanFinancialValue($_POST['amount']) : 0;
+    
+    if ($customerId <= 0) {
+        $error = 'معرف العميل غير صالح.';
+    } elseif ($amount <= 0) {
+        $error = 'يجب إدخال مبلغ تحصيل أكبر من صفر.';
+    } else {
+        $transactionStarted = false;
+        
+        try {
+            $db->beginTransaction();
+            $transactionStarted = true;
+            
+            // جلب بيانات العميل مع معلومات المندوب
+            $customer = $db->queryOne(
+                "SELECT id, name, balance, created_by, rep_id FROM customers WHERE id = ? FOR UPDATE",
+                [$customerId]
+            );
+            
+            if (!$customer) {
+                throw new InvalidArgumentException('لم يتم العثور على العميل المطلوب.');
+            }
+            
+            $currentBalance = isset($customer['balance']) ? (float)$customer['balance'] : 0.0;
+            
+            if ($currentBalance <= 0) {
+                throw new InvalidArgumentException('لا توجد ديون نشطة على هذا العميل.');
+            }
+            
+            if ($amount > $currentBalance) {
+                throw new InvalidArgumentException('المبلغ المدخل أكبر من ديون العميل الحالية.');
+            }
+            
+            $newBalance = round(max($currentBalance - $amount, 0), 2);
+            
+            // تحديث رصيد العميل
+            $db->execute(
+                "UPDATE customers SET balance = ? WHERE id = ?",
+                [$newBalance, $customerId]
+            );
+            
+            // تحديد المندوب المسؤول عن العميل
+            $customerRepId = (int)($customer['rep_id'] ?? 0);
+            $customerCreatedBy = (int)($customer['created_by'] ?? 0);
+            $salesRepId = null;
+            if ($customerRepId > 0) {
+                $salesRepId = $customerRepId;
+            } elseif ($customerCreatedBy > 0) {
+                $repCheck = $db->queryOne(
+                    "SELECT id FROM users WHERE id = ? AND role = 'sales' AND status = 'active'",
+                    [$customerCreatedBy]
+                );
+                if ($repCheck) {
+                    $salesRepId = $customerCreatedBy;
+                }
+            }
+            
+            // التأكد من وجود جدول accountant_transactions
+            $accountantTableCheck = $db->queryOne("SHOW TABLES LIKE 'accountant_transactions'");
+            if (empty($accountantTableCheck)) {
+                $db->execute("
+                    CREATE TABLE IF NOT EXISTS `accountant_transactions` (
+                      `id` int(11) NOT NULL AUTO_INCREMENT,
+                      `transaction_type` enum('collection_from_sales_rep','expense','income','transfer','other') NOT NULL,
+                      `amount` decimal(15,2) NOT NULL,
+                      `sales_rep_id` int(11) DEFAULT NULL,
+                      `description` text NOT NULL,
+                      `reference_number` varchar(50) DEFAULT NULL,
+                      `payment_method` enum('cash','bank_transfer','check','other') DEFAULT 'cash',
+                      `status` enum('pending','approved','rejected') DEFAULT 'approved',
+                      `approved_by` int(11) DEFAULT NULL,
+                      `approved_at` timestamp NULL DEFAULT NULL,
+                      `notes` text DEFAULT NULL,
+                      `created_by` int(11) NOT NULL,
+                      `created_at` timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                      `updated_at` timestamp NULL DEFAULT NULL ON UPDATE CURRENT_TIMESTAMP,
+                      PRIMARY KEY (`id`),
+                      KEY `transaction_type` (`transaction_type`),
+                      KEY `sales_rep_id` (`sales_rep_id`),
+                      KEY `status` (`status`),
+                      KEY `created_by` (`created_by`)
+                    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
+                ");
+            }
+            
+            // الحصول على اسم المندوب
+            $salesRepName = '';
+            if ($salesRepId) {
+                $salesRep = $db->queryOne(
+                    "SELECT id, full_name, username FROM users WHERE id = ? AND role = 'sales'",
+                    [$salesRepId]
+                );
+                $salesRepName = $salesRep ? ($salesRep['full_name'] ?? $salesRep['username'] ?? '') : '';
+            }
+            
+            // توليد رقم مرجعي
+            $referenceNumber = 'COL-CUST-' . $customerId . '-' . date('YmdHis');
+            
+            // وصف المعاملة
+            $description = 'تحصيل من عميل: ' . htmlspecialchars($customer['name'] ?? '');
+            if ($salesRepName) {
+                $description .= ' (مندوب: ' . htmlspecialchars($salesRepName) . ')';
+            }
+            
+            // إضافة المعاملة في جدول accountant_transactions
+            $db->execute(
+                "INSERT INTO accountant_transactions (transaction_type, amount, sales_rep_id, description, reference_number, payment_method, status, approved_by, created_by, approved_at, notes)
+                 VALUES (?, ?, ?, ?, ?, 'cash', 'approved', ?, ?, NOW(), ?)",
+                [
+                    'income',
+                    $amount,
+                    $salesRepId,
+                    $description,
+                    $referenceNumber,
+                    $currentUser['id'],
+                    $currentUser['id'],
+                    'تحصيل من قبل ' . ($currentUser['full_name'] ?? $currentUser['username'] ?? 'مدير/محاسب') . ' - لا يتم احتساب نسبة للمندوب'
+                ]
+            );
+            
+            $accountantTransactionId = $db->getLastInsertId();
+            
+            // تسجيل سجل التدقيق
+            logAudit(
+                $currentUser['id'],
+                'collect_customer_debt_by_manager_accountant',
+                'accountant_transaction',
+                $accountantTransactionId,
+                null,
+                [
+                    'customer_id' => $customerId,
+                    'customer_name' => $customer['name'] ?? '',
+                    'sales_rep_id' => $salesRepId,
+                    'amount' => $amount,
+                    'reference_number' => $referenceNumber,
+                ]
+            );
+            
+            // إرسال إشعار للمندوب
+            if ($salesRepId && $salesRepId > 0) {
+                try {
+                    $collectorName = $currentUser['full_name'] ?? $currentUser['username'] ?? 'مدير/محاسب';
+                    $notificationTitle = 'تحصيل من عميلك';
+                    $notificationMessage = 'تم تحصيل مبلغ ' . formatCurrency($amount) . ' من العميل ' . htmlspecialchars($customer['name'] ?? '') . 
+                                         ' بواسطة ' . htmlspecialchars($collectorName) . 
+                                         ' - رقم المرجع: ' . $referenceNumber . 
+                                         ' (ملاحظة: لا يتم احتساب نسبة تحصيلات على هذا المبلغ)';
+                    $notificationLink = getRelativeUrl('dashboard/sales.php?page=customers');
+                    
+                    createNotification(
+                        $salesRepId,
+                        $notificationTitle,
+                        $notificationMessage,
+                        'info',
+                        $notificationLink,
+                        true
+                    );
+                } catch (Throwable $notifError) {
+                    error_log('Failed to send notification to sales rep: ' . $notifError->getMessage());
+                }
+            }
+            
+            // توزيع التحصيل على فواتير العميل
+            $distributionResult = null;
+            if (function_exists('distributeCollectionToInvoices')) {
+                $distributionResult = distributeCollectionToInvoices($customerId, $amount, $currentUser['id']);
+            }
+            
+            $db->commit();
+            $transactionStarted = false;
+            
+            $messageParts = ['تم تحصيل المبلغ بنجاح وإضافته إلى خزنة الشركة.'];
+            $messageParts[] = 'رقم المرجع: ' . $referenceNumber . '.';
+            if ($salesRepName) {
+                $messageParts[] = 'تم إرسال إشعار للمندوب: ' . htmlspecialchars($salesRepName) . '.';
+            }
+            if ($distributionResult && !empty($distributionResult['updated_invoices'])) {
+                $messageParts[] = 'تم تحديث ' . count($distributionResult['updated_invoices']) . ' فاتورة.';
+            } elseif ($distributionResult && !empty($distributionResult['message'])) {
+                $messageParts[] = 'ملاحظة: ' . $distributionResult['message'];
+            }
+            
+            $_SESSION['success_message'] = implode(' ', array_filter($messageParts));
+            
+            // التوجيه إلى نفس الصفحة
+            $redirectUrl = getRelativeUrl($dashboardScript . '?page=representatives_customers');
+            if (!headers_sent()) {
+                header('Location: ' . $redirectUrl);
+                exit;
+            } else {
+                echo '<script>window.location.href = ' . json_encode($redirectUrl) . ';</script>';
+                exit;
+            }
+            
+        } catch (Exception $e) {
+            if ($transactionStarted) {
+                $db->rollback();
+            }
+            $error = 'حدث خطأ أثناء التحصيل: ' . $e->getMessage();
+            error_log('Collection error in representatives_customers: ' . $e->getMessage());
+        } catch (Throwable $e) {
+            if ($transactionStarted) {
+                $db->rollback();
+            }
+            $error = 'حدث خطأ أثناء التحصيل: ' . $e->getMessage();
+            error_log('Collection error in representatives_customers: ' . $e->getMessage());
+        }
+    }
+}
 
 $representatives = [];
 $representativeSummary = [
@@ -1454,10 +1669,9 @@ document.addEventListener('DOMContentLoaded', function() {
                 <h5 class="modal-title"><i class="bi bi-cash-coin me-2"></i>تحصيل ديون العميل</h5>
                 <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="إغلاق"></button>
             </div>
-            <form method="POST" action="<?php echo htmlspecialchars(getRelativeUrl($dashboardScript . '?page=customers&section=company')); ?>">
+            <form method="POST" action="<?php echo htmlspecialchars(getRelativeUrl($dashboardScript . '?page=representatives_customers')); ?>">
                 <input type="hidden" name="action" value="collect_debt">
                 <input type="hidden" name="customer_id" value="">
-                <input type="hidden" name="from_representatives_customers" value="1">
                 <div class="modal-body">
                     <div class="mb-3">
                         <div class="fw-semibold text-muted">العميل</div>

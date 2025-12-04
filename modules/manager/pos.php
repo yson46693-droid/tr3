@@ -661,9 +661,11 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     
                     // إضافة عناصر منفصلة لكل باتش
                     foreach ($batchItems as $batchItem) {
+                        $itemBatchId = $batchItem['batch_id'] ?? null;
+                        error_log("Manager POS: Adding batch item to cart - product_id: $productId, batch_id: " . ($itemBatchId ?? 'NULL') . ", quantity: " . $batchItem['quantity']);
                         $normalizedCart[] = [
                             'product_id' => $productId,
-                            'batch_id' => $batchItem['batch_id'],
+                            'batch_id' => $itemBatchId,
                             'product_type' => $productType,
                             'name' => $productName ?: 'منتج',
                             'category' => $product['items'][0]['category'] ?? null,
@@ -986,6 +988,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     $lineTotal = $item['line_total'];
                     $batchId = $item['batch_id'] ?? null;
                     $productType = $item['product_type'] ?? 'external';
+
+                    error_log("Manager POS: Processing sale item - product_id: $productId, batch_id: " . ($batchId ?? 'NULL') . ", quantity: $quantity, product_type: $productType");
 
                     // تسجيل حركة المخزون (سوف يقوم recordInventoryMovement بالتحقق من الكمية وتحديثها)
                     // تم توزيع الكمية على الباتشات مسبقاً في normalizedCart، لذا كل عنصر يحتوي على كمية متاحة في الباتش المحدد

@@ -120,7 +120,29 @@ function recordInventoryMovement($productId, $warehouseId, $type, $quantity, $re
             );
             
             if (!$product) {
-                return ['success' => false, 'message' => 'المنتج غير موجود'];
+                // إذا لم نجد المنتج في products، نحاول البحث في finished_products (للمنتجات المصنعة)
+                if ($productId) {
+                    $finishedProductCheck = $db->queryOne(
+                        "SELECT id, quantity_produced FROM finished_products 
+                         WHERE product_id = ? AND (quantity_produced IS NULL OR quantity_produced > 0)
+                         ORDER BY production_date DESC, id DESC LIMIT 1",
+                        [$productId]
+                    );
+                    if ($finishedProductCheck) {
+                        error_log("recordInventoryMovement: Product not found in products table, but found in finished_products with id=" . ($finishedProductCheck['id'] ?? 'N/A') . ", quantity_produced=" . ($finishedProductCheck['quantity_produced'] ?? 0));
+                        // إنشاء product وهمي للتوافق مع باقي الكود
+                        $product = ['quantity' => (float)($finishedProductCheck['quantity_produced'] ?? 0), 'warehouse_id' => $warehouseId];
+                        // إذا كان batchId غير موجود، نستخدم finished_products.id
+                        if (!$batchId && isset($finishedProductCheck['id'])) {
+                            $batchId = (int)$finishedProductCheck['id'];
+                            error_log("recordInventoryMovement: Setting batch_id to " . $batchId . " from finished_products");
+                        }
+                    } else {
+                        return ['success' => false, 'message' => 'المنتج غير موجود'];
+                    }
+                } else {
+                    return ['success' => false, 'message' => 'المنتج غير موجود'];
+                }
             }
         }
         
@@ -136,27 +158,34 @@ function recordInventoryMovement($productId, $warehouseId, $type, $quantity, $re
             // استخدام FOR UPDATE لضمان قراءة الكمية الصحيحة ومنع race conditions
             // محاولة البحث باستخدام id أولاً
             $finishedProduct = $db->queryOne(
-                "SELECT id, quantity_produced FROM finished_products WHERE id = ? FOR UPDATE",
+                "SELECT id, quantity_produced, product_id FROM finished_products WHERE id = ? FOR UPDATE",
                 [$batchId]
             );
             
+            error_log("recordInventoryMovement: Searching for finished_products with batch_id: $batchId, product_id: $productId, type: $type, reference_type: " . ($referenceType ?? 'null'));
+            
             // إذا لم نجد باستخدام id، نحاول البحث باستخدام product_id (للمنتجات المصنعة)
             if (!$finishedProduct && $productId) {
+                error_log("recordInventoryMovement: finished_products not found with id=$batchId, trying to find by product_id=$productId");
                 $finishedProduct = $db->queryOne(
-                    "SELECT id, quantity_produced FROM finished_products 
+                    "SELECT id, quantity_produced, product_id FROM finished_products 
                      WHERE product_id = ? AND (quantity_produced IS NULL OR quantity_produced > 0)
                      ORDER BY production_date DESC, id DESC LIMIT 1 FOR UPDATE",
                     [$productId]
                 );
                 // إذا وجدنا سجل، نستخدم id الجديد
                 if ($finishedProduct) {
-                    $batchId = (int)$finishedProduct['id'];
+                    $newBatchId = (int)$finishedProduct['id'];
+                    error_log("recordInventoryMovement: Found finished_products with id=$newBatchId for product_id=$productId, updating batch_id from $batchId to $newBatchId");
+                    $batchId = $newBatchId;
                 }
             }
             
             if ($finishedProduct && isset($finishedProduct['quantity_produced'])) {
                 $quantityProducedRaw = (float)($finishedProduct['quantity_produced'] ?? 0);
                 $usingFinishedProductQuantity = true;
+                
+                error_log("recordInventoryMovement: Found finished_products with id=" . ($finishedProduct['id'] ?? 'N/A') . ", quantity_produced=$quantityProducedRaw");
                 
                 // إذا كان referenceType = 'warehouse_transfer'، نخصم الكميات المحجوزة في pending transfers الأخرى
                 // لأن quantity_produced نفسه هو الكمية المتبقية بعد خصم approved/completed transfers
@@ -180,9 +209,19 @@ function recordInventoryMovement($productId, $warehouseId, $type, $quantity, $re
             } else {
                 // إذا لم نجد finished_product، نسجل تحذيراً لكن نستخدم products.quantity
                 // لكن يجب التأكد من أن products.quantity يحتوي على كمية كافية
-                error_log("recordInventoryMovement: Warning - finished_products not found for batch_id: $batchId, product_id: $productId. Using products.quantity instead.");
+                if ($batchId) {
+                    error_log("recordInventoryMovement: ERROR - finished_products not found for batch_id: $batchId, product_id: $productId. This should not happen for factory products. Using products.quantity instead.");
+                } else {
+                    error_log("recordInventoryMovement: No batch_id provided, using products.quantity for product_id: $productId");
+                }
                 // إعادة تعيين batchId إلى null لأننا لم نجد finished_product
                 $batchId = null;
+            }
+        } else {
+            if (!$batchId) {
+                error_log("recordInventoryMovement: No batch_id provided for product_id: $productId, type: $type. Using products.quantity.");
+            } else {
+                error_log("recordInventoryMovement: Skipping finished_products lookup - usingVehicleInventory: " . ($usingVehicleInventory ? 'true' : 'false') . ", type: $type, batch_id: $batchId");
             }
         }
         
