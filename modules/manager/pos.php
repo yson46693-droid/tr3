@@ -931,6 +931,37 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     $batchId = $item['batch_id'] ?? null;
                     $productType = $item['product_type'] ?? 'external';
 
+                    // التحقق من الكمية المتاحة في الباتش المحدد قبل تسجيل الحركة
+                    if ($productType === 'factory' && $batchId) {
+                        $finishedProduct = $db->queryOne(
+                            "SELECT quantity_produced FROM finished_products WHERE id = ? FOR UPDATE",
+                            [$batchId]
+                        );
+                        
+                        if (!$finishedProduct) {
+                            throw new RuntimeException('تعذر العثور على المنتج المصنع في المخزون.');
+                        }
+                        
+                        $availableQty = (float)($finishedProduct['quantity_produced'] ?? 0);
+                        if ($availableQty < $quantity) {
+                            throw new RuntimeException('الكمية المتاحة في المخزون (' . number_format($availableQty, 2) . ') أقل من الكمية المطلوبة (' . number_format($quantity, 2) . ').');
+                        }
+                    } elseif ($productType === 'external') {
+                        $product = $db->queryOne(
+                            "SELECT quantity FROM products WHERE id = ? FOR UPDATE",
+                            [$productId]
+                        );
+                        
+                        if (!$product) {
+                            throw new RuntimeException('تعذر العثور على المنتج في المخزون.');
+                        }
+                        
+                        $availableQty = (float)($product['quantity'] ?? 0);
+                        if ($availableQty < $quantity) {
+                            throw new RuntimeException('الكمية المتاحة في المخزون (' . number_format($availableQty, 2) . ') أقل من الكمية المطلوبة (' . number_format($quantity, 2) . ').');
+                        }
+                    }
+
                     // تسجيل حركة المخزون (سوف يقوم recordInventoryMovement بتحديث الكمية)
                     $movementResult = recordInventoryMovement(
                         $productId,

@@ -133,8 +133,9 @@ function recordInventoryMovement($productId, $warehouseId, $type, $quantity, $re
         // إذا كان هناك batch_id ونوع الحركة هو 'out' أو 'transfer'، نستخدم quantity_produced من finished_products
         // لكن فقط إذا لم نكن نستخدم vehicle_inventory (لأننا استخدمناها بالفعل)
         if ($batchId && ($type === 'out' || $type === 'transfer') && !$usingVehicleInventory) {
+            // استخدام FOR UPDATE لضمان قراءة الكمية الصحيحة ومنع race conditions
             $finishedProduct = $db->queryOne(
-                "SELECT quantity_produced FROM finished_products WHERE id = ?",
+                "SELECT quantity_produced FROM finished_products WHERE id = ? FOR UPDATE",
                 [$batchId]
             );
             
@@ -157,9 +158,9 @@ function recordInventoryMovement($productId, $warehouseId, $type, $quantity, $re
                     $quantityBefore = $quantityProducedRaw - $pendingQuantity;
                     error_log("recordInventoryMovement: Using finished_products.quantity_produced = $quantityProducedRaw, pending (excluding current): $pendingQuantity, available: $quantityBefore for batch_id: $batchId, product_id: $productId, transfer_id: $referenceId");
                 } else {
-                    // إذا لم يكن warehouse_transfer، نستخدم quantity_produced مباشرة
+                    // إذا لم يكن warehouse_transfer (مثل 'sales')، نستخدم quantity_produced مباشرة
                     $quantityBefore = $quantityProducedRaw;
-                    error_log("recordInventoryMovement: Using finished_products.quantity_produced = $quantityBefore for batch_id: $batchId, product_id: $productId");
+                    error_log("recordInventoryMovement: Using finished_products.quantity_produced = $quantityBefore for batch_id: $batchId, product_id: $productId, reference_type: " . ($referenceType ?? 'null'));
                 }
             }
         }
