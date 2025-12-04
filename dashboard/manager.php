@@ -1,4 +1,4 @@
-﻿<?php
+<?php
 /**
  * لوحة التحكم للمدير
  */
@@ -314,7 +314,7 @@ require_once __DIR__ . '/../includes/security.php';
 require_once __DIR__ . '/../includes/path_helper.php';
 require_once __DIR__ . '/../includes/table_styles.php';
 
-requireRole('manager');
+requireRole(['manager', 'accountant']);
 
 $currentUser = getCurrentUser();
 $db = db();

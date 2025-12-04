@@ -391,10 +391,10 @@ switch ($role) {
                 'badge' => null
             ],
             [
-                'title' => 'التقارير',
+                'title' => isset($lang['menu_reports']) ? $lang['menu_reports'] : 'التقارير',
                 'icon' => 'bi-file-earmark-text',
-                'url' => $baseUrl . 'accountant.php?page=production_reports',
-                'active' => ($currentPage === 'accountant.php' && $currentPageParam === 'production_reports'),
+                'url' => $baseUrl . 'manager.php?page=reports',
+                'active' => ($currentPage === 'manager.php' && $currentPageParam === 'reports'),
                 'badge' => null
             ],
             ['divider' => true, 'title' => 'أدوات'],
