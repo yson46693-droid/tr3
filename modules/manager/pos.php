@@ -3850,19 +3850,34 @@ try {
         if (paymentType === 'full') {
             paidAmount = netTotal;
             elements.partialWrapper.classList.add('d-none');
-            elements.partialInput.value = '0.00';
+            elements.partialInput.value = '';
             if (elements.dueDateWrapper) elements.dueDateWrapper.classList.add('d-none');
         } else if (paymentType === 'partial') {
             elements.partialWrapper.classList.remove('d-none');
             if (elements.dueDateWrapper) elements.dueDateWrapper.classList.remove('d-none');
             let partialValue = sanitizeNumber(elements.partialInput.value);
-            if (partialValue < 0) partialValue = 0;
-            if (partialValue >= netTotal && netTotal > 0) partialValue = Math.max(0, netTotal - 0.01);
-            elements.partialInput.value = partialValue.toFixed(2);
-            paidAmount = partialValue;
+            const inputValue = elements.partialInput.value.trim();
+            const isInputFocused = document.activeElement === elements.partialInput;
+            
+            if (isNaN(partialValue) || partialValue <= 0) {
+                // لا نمسح الحقل أثناء الكتابة، فقط نتركه كما هو
+                if (!isInputFocused && (inputValue === '' || inputValue === '0' || inputValue === '0.' || inputValue === '0.00')) {
+                    elements.partialInput.value = '';
+                }
+                paidAmount = 0;
+            } else {
+                if (partialValue >= netTotal && netTotal > 0) {
+                    partialValue = Math.max(0, netTotal - 0);
+                }
+                // لا نطبق toFixed أثناء الكتابة، فقط عند blur أو change
+                if (!isInputFocused) {
+                    elements.partialInput.value = partialValue.toFixed(2);
+                }
+                paidAmount = partialValue;
+            }
         } else {
             elements.partialWrapper.classList.add('d-none');
-            elements.partialInput.value = '0.00';
+            elements.partialInput.value = '';
             if (elements.dueDateWrapper) elements.dueDateWrapper.classList.remove('d-none');
             paidAmount = 0;
         }
@@ -4073,6 +4088,20 @@ try {
 
     if (elements.partialInput) {
         elements.partialInput.addEventListener('input', updateSummary);
+        
+        // معالجة النقر على الأسهم (step arrows) - استخدام mouseup للكشف
+        elements.partialInput.addEventListener('mouseup', function() {
+            setTimeout(function() {
+                const value = sanitizeNumber(elements.partialInput.value);
+                if (value === 0 && elements.partialInput.value === '0') {
+                    elements.partialInput.value = '';
+                    updateSummary();
+                } else if (!isNaN(value) && value > 0) {
+                    elements.partialInput.value = value.toFixed(2);
+                    updateSummary();
+                }
+            }, 10);
+        });
     }
 
     elements.paymentRadios.forEach((radio) => {

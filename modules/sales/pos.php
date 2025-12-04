@@ -3263,6 +3263,19 @@ if (!$error) {
         }) + ' ' + currencySymbol;
     }
 
+    function formatPartialAmount(value) {
+        const sanitized = sanitizeNumber(value);
+        if (sanitized === 0) {
+            return '0';
+        }
+        // إذا كان الرقم صحيحاً (بدون كسور)، اعرضه بدون كسور
+        if (sanitized % 1 === 0) {
+            return sanitized.toString();
+        }
+        // إذا كان يحتوي على كسور، اعرضه مع كسور
+        return sanitized.toFixed(2);
+    }
+
     function escapeHtml(value) {
         return String(value ?? '').replace(/[&<>\"']/g, function (char) {
             const escapeMap = { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#039;' };
@@ -3366,9 +3379,9 @@ if (!$error) {
                 if (partialValue >= netTotal && netTotal > 0) {
                     partialValue = Math.max(0, netTotal - 0);
                 }
-                // لا نطبق toFixed أثناء الكتابة، فقط عند blur أو change
+                // لا نطبق التنسيق أثناء الكتابة، فقط عند blur أو change
                 if (!isInputFocused) {
-                    elements.partialInput.value = partialValue.toFixed(2);
+                    elements.partialInput.value = formatPartialAmount(partialValue);
                 }
                 paidAmount = partialValue;
             }
@@ -3668,6 +3681,7 @@ if (!$error) {
     if (elements.partialInput) {
         let previousValue = '';
         let isUserTyping = false;
+        let cursorPosition = 0;
         
         // تتبع ما إذا كان المستخدم يكتب
         elements.partialInput.addEventListener('focus', function() {
@@ -3675,8 +3689,11 @@ if (!$error) {
             previousValue = this.value;
         });
         
-        // معالجة الأسهم (step) - عند الضغط على الأسهم والحقل فارغ، ابدأ من 1
+        // حفظ موضع المؤشر قبل التحديث
         elements.partialInput.addEventListener('keydown', function(e) {
+            cursorPosition = this.selectionStart || 0;
+            
+            // معالجة الأسهم (step) - عند الضغط على الأسهم والحقل فارغ، ابدأ من 1
             if (e.key === 'ArrowUp' || e.key === 'ArrowDown') {
                 const currentValue = sanitizeNumber(this.value);
                 if (isNaN(currentValue) || currentValue === 0 || this.value === '' || this.value === '0') {
@@ -3692,13 +3709,22 @@ if (!$error) {
             }
         });
         
-        // تحديث عند الكتابة (بدون تطبيق toFixed أثناء الكتابة)
+        // تحديث عند الكتابة (بدون تطبيق التنسيق أثناء الكتابة)
+        let inputTimeout = null;
         elements.partialInput.addEventListener('input', function() {
             const currentValue = this.value;
-            // إذا كان المستخدم يكتب، لا نطبق toFixed
+            
+            // إلغاء أي تحديث سابق معلق
+            if (inputTimeout) {
+                clearTimeout(inputTimeout);
+            }
+            
+            // إذا كان المستخدم يكتب، لا نطبق التنسيق ولا نغير قيمة الحقل
             if (isUserTyping && currentValue !== '' && currentValue !== '0' && currentValue !== '0.') {
-                // فقط تحديث الحسابات، لا نغير قيمة الحقل
-                updateSummary();
+                // تأجيل تحديث الملخص لتجنب التداخل مع الكتابة
+                inputTimeout = setTimeout(function() {
+                    updateSummary();
+                }, 100);
             } else {
                 // إذا كانت القيمة 0 أو فارغة، امسحها
                 if (currentValue === '0' || currentValue === '0.00' || currentValue === '0.') {
@@ -3711,9 +3737,14 @@ if (!$error) {
         // تطبيق التنسيق عند فقدان التركيز
         elements.partialInput.addEventListener('blur', function() {
             isUserTyping = false;
+            // إلغاء أي تحديث معلق
+            if (inputTimeout) {
+                clearTimeout(inputTimeout);
+                inputTimeout = null;
+            }
             const value = sanitizeNumber(this.value);
             if (!isNaN(value) && value > 0) {
-                this.value = value.toFixed(2);
+                this.value = formatPartialAmount(value);
             } else if (this.value === '' || this.value === '0' || this.value === '0.' || this.value === '0.00') {
                 this.value = '';
             }
@@ -3728,7 +3759,7 @@ if (!$error) {
                 if (value === 0 && previousValue === '') {
                     this.value = '1';
                 } else {
-                    this.value = value.toFixed(2);
+                    this.value = formatPartialAmount(value);
                 }
             } else if (this.value === '' || this.value === '0' || this.value === '0.' || this.value === '0.00') {
                 this.value = '';
@@ -3745,7 +3776,7 @@ if (!$error) {
                     elements.partialInput.value = '';
                     updateSummary();
                 } else if (!isNaN(value) && value > 0) {
-                    elements.partialInput.value = value.toFixed(2);
+                    elements.partialInput.value = formatPartialAmount(value);
                     updateSummary();
                 }
             }, 10);
