@@ -2462,13 +2462,24 @@ try {
                             </div>
 
                             <div class="mb-3" id="posExistingCustomerWrap">
-                                <label class="form-label">العملاء المسجلون</label>
+                                <label class="form-label">العملاء المحليين</label>
                                 <select class="form-select" id="posCustomerSelect" name="customer_id" required>
                                     <option value="">اختر العميل</option>
                                     <?php foreach ($customers as $customer): ?>
-                                        <option value="<?php echo (int) $customer['id']; ?>"><?php echo htmlspecialchars($customer['name']); ?></option>
+                                        <option value="<?php echo (int) $customer['id']; ?>" data-balance="<?php echo htmlspecialchars((string)($customer['balance'] ?? 0)); ?>"><?php echo htmlspecialchars($customer['name']); ?></option>
                                     <?php endforeach; ?>
                                 </select>
+                            </div>
+                            
+                            <!-- معلومات العميل المالية - حقل يتحدث تلقائياً -->
+                            <div class="mb-3">
+                                <label class="form-label">الحالة المالية للعميل</label>
+                                <input type="text" 
+                                       class="form-control" 
+                                       id="posCustomerBalanceText" 
+                                       readonly 
+                                       value="اختر عميلاً لعرض التفاصيل المالية"
+                                       style="background-color: #f8f9fa; cursor: default;">
                             </div>
 
                             <div class="mb-3 d-none" id="posNewCustomerWrap">
@@ -2484,6 +2495,17 @@ try {
                                     <div class="col-sm-6">
                                         <label class="form-label">العنوان <span class="text-muted">(اختياري)</span></label>
                                         <input type="text" class="form-control" name="new_customer_address" placeholder="عنوان العميل">
+                                    </div>
+                                    <div class="col-12">
+                                        <label class="form-label">موقع العميل <span class="text-muted">(اختياري)</span></label>
+                                        <div class="d-flex gap-2">
+                                            <input type="text" class="form-control" name="new_customer_latitude" id="posNewCustomerLatitude" placeholder="خط العرض" readonly>
+                                            <input type="text" class="form-control" name="new_customer_longitude" id="posNewCustomerLongitude" placeholder="خط الطول" readonly>
+                                            <button type="button" class="btn btn-outline-primary" id="posGetLocationBtn" title="الحصول على الموقع الحالي">
+                                                <i class="bi bi-geo-alt"></i>
+                                            </button>
+                                        </div>
+                                        <small class="text-muted">اضغط على زر الموقع للحصول على موقعك الحالي</small>
                                     </div>
                                 </div>
                             </div>
@@ -2517,11 +2539,6 @@ try {
                             </div>
 
                             <div class="row g-2 g-md-3 align-items-start mb-3">
-                                <div class="col-12 col-sm-6">
-                                    <label class="form-label">مدفوع مسبقاً (اختياري)</label>
-                                    <input type="number" step="0.01" min="0" value="0" class="form-control form-control-sm" id="posPrepaidInput" name="prepaid_amount">
-                                    <div class="pos-inline-note">سيتم خصم المبلغ من إجمالي السلة.</div>
-                                </div>
                                 <div class="col-12 col-sm-6">
                                     <div class="pos-summary-card-neutral">
                                         <span class="small text-uppercase opacity-75">الإجمالي بعد الخصم</span>
@@ -3448,7 +3465,6 @@ try {
         resetForm: document.getElementById('posResetFormBtn'),
         netTotal: document.getElementById('posNetTotal'),
         dueAmount: document.getElementById('posDueAmount'),
-        prepaidInput: document.getElementById('posPrepaidInput'),
         paymentOptionCards: document.querySelectorAll('[data-payment-option]'),
         paymentRadios: document.querySelectorAll('input[name="payment_type"]'),
         partialWrapper: document.getElementById('posPartialWrapper'),
@@ -3544,18 +3560,61 @@ try {
         });
     }
 
+    // دالة تحديث حالة رصيد العميل
+    function updateCustomerBalance() {
+        const balanceText = document.getElementById('posCustomerBalanceText');
+        
+        if (!elements.customerSelect || !balanceText) {
+            return;
+        }
+        
+        const selectedOption = elements.customerSelect.options[elements.customerSelect.selectedIndex];
+        if (!selectedOption || !selectedOption.value) {
+            // عرض رسالة افتراضية عند عدم اختيار عميل
+            balanceText.value = 'اختر عميلاً لعرض التفاصيل المالية';
+            balanceText.className = 'form-control';
+            balanceText.style.backgroundColor = '#f8f9fa';
+            balanceText.style.borderColor = '#dee2e6';
+            return;
+        }
+        
+        const balance = parseFloat(selectedOption.getAttribute('data-balance') || '0');
+        
+        if (balance > 0) {
+            balanceText.value = 'ديون العميل: ' + formatCurrency(balance);
+            balanceText.className = 'form-control border-warning';
+            balanceText.style.backgroundColor = '#fff3cd';
+            balanceText.style.borderColor = '#ffc107';
+        } else if (balance < 0) {
+            balanceText.value = 'رصيد دائن: ' + formatCurrency(Math.abs(balance));
+            balanceText.className = 'form-control border-success';
+            balanceText.style.backgroundColor = '#d1e7dd';
+            balanceText.style.borderColor = '#198754';
+        } else {
+            balanceText.value = 'الرصيد: 0';
+            balanceText.className = 'form-control border-info';
+            balanceText.style.backgroundColor = '#cff4fc';
+            balanceText.style.borderColor = '#0dcaf0';
+        }
+    }
+
     function updateSummary() {
         const subtotal = cart.reduce((total, item) => {
             const qty = sanitizeNumber(item.quantity);
             const price = sanitizeNumber(item.unit_price);
             return total + (qty * price);
         }, 0);
-        let prepaid = sanitizeNumber(elements.prepaidInput ? elements.prepaidInput.value : '0');
+        // الحصول على المبلغ المدفوع مسبقاً
+        let prepaid = sanitizeNumber('0');
         let sanitizedSubtotal = sanitizeNumber(subtotal);
 
-        if (prepaid < 0) prepaid = 0;
-        if (prepaid > sanitizedSubtotal) prepaid = sanitizedSubtotal;
-        if (elements.prepaidInput) elements.prepaidInput.value = prepaid.toFixed(2);
+        // التأكد من أن المبلغ المدفوع مسبقاً لا يتجاوز المجموع الفرعي
+        if (prepaid < 0) {
+            prepaid = 0;
+        }
+        if (prepaid > sanitizedSubtotal) {
+            prepaid = sanitizedSubtotal;
+        }
 
         const netTotal = sanitizeNumber(sanitizedSubtotal - prepaid);
         let paidAmount = 0;
@@ -3785,11 +3844,6 @@ try {
         });
     }
 
-    if (elements.prepaidInput) {
-        elements.prepaidInput.addEventListener('input', updateSummary);
-        elements.prepaidInput.addEventListener('change', updateSummary);
-    }
-
     if (elements.partialInput) {
         elements.partialInput.addEventListener('input', updateSummary);
     }
@@ -3813,11 +3867,20 @@ try {
                 elements.newCustomerName?.setAttribute('required', 'required');
             }
             updateSummary();
+            updateCustomerBalance();
         });
     });
 
+    // إضافة مستمعين لحقول العميل لتحديث حالة الزر
     if (elements.customerSelect) {
-        elements.customerSelect.addEventListener('change', updateSummary);
+        elements.customerSelect.addEventListener('change', function() {
+            updateSummary();
+            updateCustomerBalance();
+        });
+        elements.customerSelect.addEventListener('input', function() {
+            updateSummary();
+            updateCustomerBalance();
+        });
     }
     if (elements.newCustomerName) {
         elements.newCustomerName.addEventListener('input', updateSummary);
@@ -3838,8 +3901,46 @@ try {
         });
     }
 
+    // الحصول على الموقع الجغرافي
+    const getLocationBtn = document.getElementById('posGetLocationBtn');
+    const latitudeInput = document.getElementById('posNewCustomerLatitude');
+    const longitudeInput = document.getElementById('posNewCustomerLongitude');
+    
+    if (getLocationBtn && latitudeInput && longitudeInput) {
+        getLocationBtn.addEventListener('click', function() {
+            if (!navigator.geolocation) {
+                alert('المتصفح لا يدعم الحصول على الموقع');
+                return;
+            }
+            
+            getLocationBtn.disabled = true;
+            getLocationBtn.innerHTML = '<i class="bi bi-hourglass-split"></i>';
+            
+            navigator.geolocation.getCurrentPosition(
+                function(position) {
+                    latitudeInput.value = position.coords.latitude.toFixed(8);
+                    longitudeInput.value = position.coords.longitude.toFixed(8);
+                    getLocationBtn.disabled = false;
+                    getLocationBtn.innerHTML = '<i class="bi bi-geo-alt"></i>';
+                },
+                function(error) {
+                    alert('فشل الحصول على الموقع: ' + error.message);
+                    getLocationBtn.disabled = false;
+                    getLocationBtn.innerHTML = '<i class="bi bi-geo-alt"></i>';
+                }
+            );
+        });
+    }
+    
+    // تهيئة أولية للقيم
     refreshPaymentOptionStates();
     renderCart();
+    
+    // عرض معلومات العميل المالية عند تحميل الصفحة
+    // استخدام setTimeout لضمان تحميل جميع العناصر
+    setTimeout(function() {
+        updateCustomerBalance();
+    }, 500);
 })();
 </script>
 
