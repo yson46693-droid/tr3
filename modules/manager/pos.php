@@ -2979,9 +2979,6 @@ try {
                                             </option>
                                         <?php endforeach; ?>
                                     </select>
-                                    <button class="btn btn-outline-primary" type="button" data-bs-toggle="modal" data-bs-target="#addCustomerFromShippingModal" title="إضافة عميل جديد">
-                                        <i class="bi bi-person-plus"></i>
-                                    </button>
                                 </div>
                             </div>
                             <div class="col-lg-4">
