@@ -14,6 +14,7 @@ require_once __DIR__ . '/../../includes/invoices.php';
 require_once __DIR__ . '/../../includes/inventory_movements.php';
 require_once __DIR__ . '/../../includes/audit_log.php';
 require_once __DIR__ . '/../../includes/path_helper.php';
+require_once __DIR__ . '/../../includes/customer_history.php';
 
 requireRole('manager');
 
@@ -677,10 +678,13 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 [$totalAmount, $currentUser['id'] ?? null, $order['shipping_company_id']]
             );
 
-            // تحديث رصيد العميل في الجدول المناسب
+            // تحديث رصيد العميل في الجدول المناسب (إضافة المبلغ كدين)
+            $currentBalance = (float)($customer['balance'] ?? 0.0);
+            $newBalance = round($currentBalance + $totalAmount, 2);
+            
             $db->execute(
-                "UPDATE {$customerTable} SET balance = balance + ?, updated_at = NOW() WHERE id = ?",
-                [$totalAmount, $order['customer_id']]
+                "UPDATE {$customerTable} SET balance = ?, updated_at = NOW() WHERE id = ?",
+                [$newBalance, $order['customer_id']]
             );
 
             $db->execute(
@@ -688,11 +692,20 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 [$currentUser['id'] ?? null, $orderId]
             );
 
+            // تحديث الفاتورة لتعكس المبلغ المتبقي
             if (!empty($order['invoice_id'])) {
                 $db->execute(
-                    "UPDATE invoices SET status = 'sent', remaining_amount = ?, updated_at = NOW() WHERE id = ?",
+                    "UPDATE invoices SET status = 'sent', remaining_amount = ?, paid_amount = 0, updated_at = NOW() WHERE id = ?",
                     [$totalAmount, $order['invoice_id']]
                 );
+                
+                // إضافة المنتجات إلى سجل مشتريات العميل
+                try {
+                    customerHistorySyncForCustomer($order['customer_id']);
+                } catch (Throwable $historyError) {
+                    error_log('shipping_orders: failed syncing customer purchase history -> ' . $historyError->getMessage());
+                    // لا نوقف العملية إذا فشل تحديث السجل
+                }
             }
 
             logAudit(
@@ -704,6 +717,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 [
                     'total_amount' => $totalAmount,
                     'customer_id' => $order['customer_id'],
+                    'customer_table' => $customerTable,
+                    'old_balance' => $currentBalance,
+                    'new_balance' => $newBalance,
                     'shipping_company_id' => $order['shipping_company_id'],
                 ]
             );
@@ -711,7 +727,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             $db->commit();
             $transactionStarted = false;
 
-            $_SESSION[$sessionSuccessKey] = 'تم تأكيد تسليم الطلب للعميل ونقل الدين بنجاح.';
+            $_SESSION[$sessionSuccessKey] = 'تم تأكيد تسليم الطلب للعميل ونقل الدين بنجاح. تم إضافة المنتجات إلى سجل مشتريات العميل.';
         } catch (InvalidArgumentException $validationError) {
             if ($transactionStarted) {
                 $db->rollback();
@@ -725,7 +741,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             $_SESSION[$sessionErrorKey] = 'تعذر إتمام إجراءات الطلب. يرجى المحاولة لاحقاً.';
         }
 
-        header('Location: ' . $redirectUrl);
+        // التأكد من التوجيه إلى صفحة طلبات الشحن
+        $finalRedirectUrl = !empty($redirectUrl) ? $redirectUrl : $shippingPosUrl;
+        header('Location: ' . $finalRedirectUrl);
         exit;
     }
 }
