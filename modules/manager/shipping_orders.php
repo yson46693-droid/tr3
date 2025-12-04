@@ -154,12 +154,7 @@ function generateShippingOrderNumber(Database $db): string
     return sprintf('%s%04d', $prefix, $serial);
 }
 
-// تحديد URL صفحة طلبات الشحن بشكل صارم - منع أي تحويل إلى الداشبورد
 $shippingPosUrl = getRelativeUrl('manager.php?page=shipping_orders');
-// التأكد من أن URL يحتوي على صفحة طلبات الشحن فقط
-if (strpos($shippingPosUrl, 'page=shipping_orders') === false) {
-    $shippingPosUrl = getRelativeUrl('manager.php?page=shipping_orders');
-}
 
 $mainWarehouse = $db->queryOne("SELECT id, name FROM warehouses WHERE warehouse_type = 'main' AND status = 'active' LIMIT 1");
 if (!$mainWarehouse) {
@@ -172,13 +167,7 @@ if (!$mainWarehouse) {
 
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     $action = $_POST['action'] ?? '';
-    
-    // تحديد URL التوجيه بشكل صارم - منع أي تحويل إلى الداشبورد
     $redirectUrl = $shippingPosUrl;
-    // التأكد من أن URL يحتوي على صفحة طلبات الشحن فقط
-    if (strpos($redirectUrl, 'page=shipping_orders') === false) {
-        $redirectUrl = getRelativeUrl('manager.php?page=shipping_orders');
-    }
 
     if ($action === 'add_shipping_company') {
         $name = trim($_POST['company_name'] ?? '');
@@ -219,12 +208,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             }
         }
 
-        // التأكد من التوجيه إلى صفحة طلبات الشحن فقط
-        $finalRedirectUrl = $shippingPosUrl;
-        if (strpos($finalRedirectUrl, 'page=shipping_orders') === false) {
-            $finalRedirectUrl = getRelativeUrl('manager.php?page=shipping_orders');
-        }
-        header('Location: ' . $finalRedirectUrl);
+        header('Location: ' . $redirectUrl);
         exit;
     }
 
@@ -236,31 +220,19 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
         if ($shippingCompanyId <= 0) {
             $_SESSION[$sessionErrorKey] = 'يرجى اختيار شركة الشحن.';
-            $finalRedirectUrl = $shippingPosUrl;
-            if (strpos($finalRedirectUrl, 'page=shipping_orders') === false) {
-                $finalRedirectUrl = getRelativeUrl('manager.php?page=shipping_orders');
-            }
-            header('Location: ' . $finalRedirectUrl);
+            header('Location: ' . $redirectUrl);
             exit;
         }
 
         if ($customerId <= 0) {
             $_SESSION[$sessionErrorKey] = 'يرجى اختيار العميل.';
-            $finalRedirectUrl = $shippingPosUrl;
-            if (strpos($finalRedirectUrl, 'page=shipping_orders') === false) {
-                $finalRedirectUrl = getRelativeUrl('manager.php?page=shipping_orders');
-            }
-            header('Location: ' . $finalRedirectUrl);
+            header('Location: ' . $redirectUrl);
             exit;
         }
 
         if (!is_array($itemsInput) || empty($itemsInput)) {
             $_SESSION[$sessionErrorKey] = 'يرجى إضافة منتجات إلى الطلب.';
-            $finalRedirectUrl = $shippingPosUrl;
-            if (strpos($finalRedirectUrl, 'page=shipping_orders') === false) {
-                $finalRedirectUrl = getRelativeUrl('manager.php?page=shipping_orders');
-            }
-            header('Location: ' . $finalRedirectUrl);
+            header('Location: ' . $redirectUrl);
             exit;
         }
 
@@ -305,11 +277,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
         if (empty($normalizedItems)) {
             $_SESSION[$sessionErrorKey] = 'يرجى التأكد من إدخال بيانات صحيحة للمنتجات.';
-            $finalRedirectUrl = $shippingPosUrl;
-            if (strpos($finalRedirectUrl, 'page=shipping_orders') === false) {
-                $finalRedirectUrl = getRelativeUrl('manager.php?page=shipping_orders');
-            }
-            header('Location: ' . $finalRedirectUrl);
+            header('Location: ' . $redirectUrl);
             exit;
         }
 
@@ -482,15 +450,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             );
 
             if (empty($invoiceResult['success'])) {
-                $invoiceErrorMessage = $invoiceResult['message'] ?? 'تعذر إنشاء الفاتورة الخاصة بالطلب.';
-                error_log('shipping_orders: createInvoice failed -> ' . $invoiceErrorMessage);
-                throw new RuntimeException($invoiceErrorMessage);
-            }
-            
-            // التحقق من أن الفاتورة تم إنشاؤها بنجاح
-            if (empty($invoiceResult['invoice_id']) || empty($invoiceResult['invoice_number'])) {
-                error_log('shipping_orders: createInvoice returned incomplete data -> ' . json_encode($invoiceResult));
-                throw new RuntimeException('فشل إنشاء الفاتورة. البيانات المسترجعة غير كاملة.');
+                throw new RuntimeException($invoiceResult['message'] ?? 'تعذر إنشاء الفاتورة الخاصة بالطلب.');
             }
 
             $invoiceId = (int)$invoiceResult['invoice_id'];
@@ -588,94 +548,11 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             if ($transactionStarted) {
                 $db->rollback();
             }
-            
-            // تسجيل تفاصيل الخطأ بشكل كامل
-            $errorMessage = $createError->getMessage();
-            $errorFile = $createError->getFile();
-            $errorLine = $createError->getLine();
-            $errorClass = get_class($createError);
-            $errorTrace = $createError->getTraceAsString();
-            
-            // تسجيل شامل للخطأ
-            error_log("================================================");
-            error_log("SHIPPING ORDER CREATION ERROR:");
-            error_log("Error Type: {$errorClass}");
-            error_log("Error Message: {$errorMessage}");
-            error_log("File: {$errorFile}");
-            error_log("Line: {$errorLine}");
-            error_log("User ID: " . ($currentUser['id'] ?? 'unknown'));
-            error_log("Customer ID: " . ($customerId ?? 'not set'));
-            error_log("Shipping Company ID: " . ($shippingCompanyId ?? 'not set'));
-            error_log("Stack Trace (first 1000 chars): " . substr($errorTrace, 0, 1000));
-            error_log("================================================");
-            
-            // رسالة خطأ مفصلة للمستخدم بناءً على نوع الخطأ الفعلي
-            $userErrorMessage = '';
-            
-            // التحقق من نوع الخطأ وإعطاء رسالة مناسبة
-            $errorMessageLower = strtolower($errorMessage);
-            $errorClassLower = strtolower($errorClass);
-            
-            // أخطاء الفاتورة
-            if (strpos($errorMessageLower, 'invoice') !== false || 
-                strpos($errorMessageLower, 'فاتورة') !== false ||
-                strpos($errorMessageLower, 'createinvoice') !== false ||
-                strpos($errorMessage, 'يجب تسجيل الدخول') !== false) {
-                $userErrorMessage = 'فشل إنشاء الفاتورة. يرجى التحقق من: 1) تسجيل الدخول بشكل صحيح 2) بيانات العميل صحيحة 3) المنتجات محددة بشكل صحيح.';
-            }
-            // أخطاء الكمية
-            elseif (strpos($errorMessageLower, 'quantity') !== false || 
-                    strpos($errorMessageLower, 'كمية') !== false ||
-                    strpos($errorMessageLower, 'available') !== false ||
-                    strpos($errorMessageLower, 'متاح') !== false ||
-                    strpos($errorMessageLower, 'غير كافية') !== false) {
-                $userErrorMessage = 'الكمية المتاحة في المخزون غير كافية. يرجى التحقق من المخزون المتاح للمنتجات المختارة.';
-            }
-            // أخطاء العميل
-            elseif (strpos($errorMessageLower, 'customer') !== false || 
-                    strpos($errorMessageLower, 'عميل') !== false ||
-                    strpos($errorMessageLower, 'client') !== false) {
-                $userErrorMessage = 'مشكلة في بيانات العميل. يرجى التحقق من: 1) العميل محدد بشكل صحيح 2) العميل نشط 3) بيانات العميل سليمة.';
-            }
-            // أخطاء المخزون
-            elseif (strpos($errorMessageLower, 'inventory') !== false || 
-                    strpos($errorMessageLower, 'مخزون') !== false ||
-                    strpos($errorMessageLower, 'movement') !== false ||
-                    strpos($errorMessageLower, 'حركة') !== false) {
-                $userErrorMessage = 'مشكلة في تسجيل حركة المخزون. يرجى المحاولة مرة أخرى أو التحقق من إعدادات المخزون.';
-            }
-            // أخطاء قاعدة البيانات
-            elseif (strpos($errorMessageLower, 'sql') !== false || 
-                    strpos($errorMessageLower, 'database') !== false ||
-                    strpos($errorMessageLower, 'query') !== false ||
-                    strpos($errorMessageLower, 'duplicate') !== false ||
-                    strpos($errorMessageLower, 'constraint') !== false) {
-                $userErrorMessage = 'مشكلة في قاعدة البيانات. قد يكون هناك تكرار في البيانات أو مشكلة في الاتصال. يرجى المحاولة مرة أخرى.';
-            }
-            // أخطاء عامة - عرض رسالة الخطأ الأصلية
-            else {
-                // إذا كانت الرسالة واضحة بالعربية، استخدمها
-                if (preg_match('/[\x{0600}-\x{06FF}]/u', $errorMessage)) {
-                    $userErrorMessage = $errorMessage;
-                } else {
-                    $userErrorMessage = 'حدث خطأ أثناء إنشاء طلب الشحن: ' . $errorMessage;
-                }
-            }
-            
-            // إذا لم يتم تحديد رسالة بعد، استخدم رسالة عامة
-            if (empty($userErrorMessage)) {
-                $userErrorMessage = 'تعذر إنشاء طلب الشحن. يرجى التحقق من جميع البيانات والمحاولة مرة أخرى. إذا استمرت المشكلة، يرجى التواصل مع الدعم الفني.';
-            }
-            
-            $_SESSION[$sessionErrorKey] = $userErrorMessage;
+            error_log('shipping_orders: create order error -> ' . $createError->getMessage());
+            $_SESSION[$sessionErrorKey] = 'تعذر إنشاء طلب الشحن. يرجى المحاولة لاحقاً.';
         }
 
-        // التأكد من التوجيه إلى صفحة طلبات الشحن فقط - منع التحويل إلى الداشبورد
-        $finalRedirectUrl = $shippingPosUrl;
-        if (strpos($finalRedirectUrl, 'page=shipping_orders') === false) {
-            $finalRedirectUrl = getRelativeUrl('manager.php?page=shipping_orders');
-        }
-        header('Location: ' . $finalRedirectUrl);
+        header('Location: ' . $redirectUrl);
         exit;
     }
 
@@ -686,11 +563,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
         if ($orderId <= 0 || !in_array($newStatus, $allowedStatuses, true)) {
             $_SESSION[$sessionErrorKey] = 'طلب غير صالح لتحديث الحالة.';
-            $finalRedirectUrl = $shippingPosUrl;
-            if (strpos($finalRedirectUrl, 'page=shipping_orders') === false) {
-                $finalRedirectUrl = getRelativeUrl('manager.php?page=shipping_orders');
-            }
-            header('Location: ' . $finalRedirectUrl);
+            header('Location: ' . $redirectUrl);
             exit;
         }
 
@@ -719,12 +592,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             $_SESSION[$sessionErrorKey] = 'تعذر تحديث حالة الطلب.';
         }
 
-        // التأكد من التوجيه إلى صفحة طلبات الشحن فقط
-        $finalRedirectUrl = $shippingPosUrl;
-        if (strpos($finalRedirectUrl, 'page=shipping_orders') === false) {
-            $finalRedirectUrl = getRelativeUrl('manager.php?page=shipping_orders');
-        }
-        header('Location: ' . $finalRedirectUrl);
+        header('Location: ' . $redirectUrl);
         exit;
     }
 
@@ -733,11 +601,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
         if ($orderId <= 0) {
             $_SESSION[$sessionErrorKey] = 'طلب غير صالح لإتمام التسليم.';
-            $finalRedirectUrl = $shippingPosUrl;
-            if (strpos($finalRedirectUrl, 'page=shipping_orders') === false) {
-                $finalRedirectUrl = getRelativeUrl('manager.php?page=shipping_orders');
-            }
-            header('Location: ' . $finalRedirectUrl);
+            header('Location: ' . $redirectUrl);
             exit;
         }
 
@@ -877,11 +741,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             $_SESSION[$sessionErrorKey] = 'تعذر إتمام إجراءات الطلب. يرجى المحاولة لاحقاً.';
         }
 
-        // التأكد من التوجيه إلى صفحة طلبات الشحن فقط - منع التحويل إلى الداشبورد
-        $finalRedirectUrl = $shippingPosUrl;
-        if (strpos($finalRedirectUrl, 'page=shipping_orders') === false) {
-            $finalRedirectUrl = getRelativeUrl('manager.php?page=shipping_orders');
-        }
+        // التأكد من التوجيه إلى صفحة طلبات الشحن
+        $finalRedirectUrl = !empty($redirectUrl) ? $redirectUrl : $shippingPosUrl;
         header('Location: ' . $finalRedirectUrl);
         exit;
     }
