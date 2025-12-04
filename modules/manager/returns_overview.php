@@ -14,7 +14,7 @@ require_once __DIR__ . '/../../includes/auth.php';
 require_once __DIR__ . '/../../includes/path_helper.php';
 require_once __DIR__ . '/../../includes/table_styles.php';
 
-requireRole(['manager']);
+requireRole(['manager', 'accountant']);
 
 $currentUser = getCurrentUser();
 $db = db();
@@ -266,6 +266,7 @@ $stats = [
                                         <th>المبلغ</th>
                                         <th>التاريخ</th>
                                         <th>الحالة</th>
+                                        <th style="width: 120px;">إجراءات</th>
                                     </tr>
                                 </thead>
                                 <tbody>
@@ -303,6 +304,14 @@ $stats = [
                                                 <span class="badge bg-<?php echo $statusClass; ?>">
                                                     <?php echo $statusLabel; ?>
                                                 </span>
+                                            </td>
+                                            <td>
+                                                <a href="<?php echo getRelativeUrl('print_return_invoice.php?id=' . $return['id']); ?>" 
+                                                   target="_blank" 
+                                                   class="btn btn-sm btn-outline-primary" 
+                                                   title="طباعة فاتورة المرتجع">
+                                                    <i class="bi bi-printer me-1"></i>طباعة
+                                                </a>
                                             </td>
                                         </tr>
                                     <?php endforeach; ?>
