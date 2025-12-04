@@ -6708,12 +6708,15 @@ $lang = isset($translations) ? $translations : [];
     <?php endif; ?>
 
     <!-- زر طباعة التقرير الشامل -->
-    <div class="card shadow-sm mb-4">
+    <div class="card shadow-sm mb-4 border-primary" style="border-width: 2px !important;">
         <div class="card-body">
             <div class="d-flex justify-content-between align-items-center flex-wrap gap-3">
                 <div>
-                    <h5 class="mb-1"><i class="bi bi-printer me-2"></i>طباعة التقرير الشامل</h5>
-                    <p class="text-muted mb-0">طباعة تقرير شامل بجميع تفاصيل الحركات كفاتورة</p>
+                    <h4 class="mb-2 text-primary"><i class="bi bi-printer-fill me-2"></i>طباعة التقرير الشامل</h4>
+                    <p class="text-muted mb-0">
+                        <i class="bi bi-info-circle me-1"></i>
+                        طباعة تقرير مفصل شامل لشهر محدد يتضمن جميع تفاصيل الحركات (استهلاك، توريدات، تلفيات) بصيغة قابلة للطباعة
+                    </p>
                 </div>
                 <div class="d-flex gap-2">
                     <?php
@@ -6728,14 +6731,25 @@ $lang = isset($translations) ? $translations : [];
                     ];
                     $printUrlWithParams = $printUrl . '?' . http_build_query($printParams);
                     
-                    // تنسيق اسم الشهر للعرض
+                    // تنسيق اسم الشهر للعرض بالعربية
                     $selectedMonthDate = DateTime::createFromFormat('Y-m', $selectedMonth);
-                    $monthName = $selectedMonthDate ? $selectedMonthDate->format('Y-m') : $selectedMonth;
+                    $monthNumber = $selectedMonthDate ? (int)$selectedMonthDate->format('n') : (int)date('n');
+                    $year = $selectedMonthDate ? (int)$selectedMonthDate->format('Y') : (int)date('Y');
+                    
+                    // أسماء الأشهر بالعربية
+                    $arabicMonths = [
+                        1 => 'يناير', 2 => 'فبراير', 3 => 'مارس', 4 => 'أبريل',
+                        5 => 'مايو', 6 => 'يونيو', 7 => 'يوليو', 8 => 'أغسطس',
+                        9 => 'سبتمبر', 10 => 'أكتوبر', 11 => 'نوفمبر', 12 => 'ديسمبر'
+                    ];
+                    $monthNameArabic = $arabicMonths[$monthNumber] ?? $selectedMonth;
+                    $monthDisplayName = $monthNameArabic . ' ' . $year;
                     ?>
                     <a href="<?php echo htmlspecialchars($printUrlWithParams); ?>" 
                        target="_blank" 
-                       class="btn btn-primary">
-                        <i class="bi bi-printer me-2"></i>طباعة تقرير شهر <?php echo htmlspecialchars($monthName); ?>
+                       class="btn btn-primary btn-lg shadow-sm"
+                       style="font-size: 1.1rem; padding: 0.75rem 1.5rem; font-weight: 600;">
+                        <i class="bi bi-printer-fill me-2"></i>طباعة تقرير شهر <?php echo htmlspecialchars($monthDisplayName); ?>
                     </a>
                 </div>
             </div>
