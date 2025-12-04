@@ -650,7 +650,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
             // إرجاع المنتجات إلى المخزن الرئيسي
             $orderItems = $db->query(
-                "SELECT product_id, batch_id, quantity, product_type FROM shipping_company_order_items WHERE order_id = ?",
+                "SELECT product_id, batch_id, quantity FROM shipping_company_order_items WHERE order_id = ?",
                 [$orderId]
             );
 
@@ -658,9 +658,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 $productId = (int)($item['product_id'] ?? 0);
                 $batchId = isset($item['batch_id']) && $item['batch_id'] > 0 ? (int)$item['batch_id'] : null;
                 $quantity = (float)($item['quantity'] ?? 0);
-                $productType = $item['product_type'] ?? 'external';
 
-                if ($productType === 'factory' && $batchId) {
+                // إذا كان batch_id موجوداً، فهو منتج من المصنع
+                if ($batchId) {
                     // للمنتجات من المصنع، إرجاع الكمية إلى finished_products
                     $db->execute(
                         "UPDATE finished_products SET quantity_produced = quantity_produced + ? WHERE batch_id = ?",
