@@ -4173,6 +4173,29 @@ function formatCurrency(amount) {
     }).format(amount);
 }
 
+// دالة لتحويل النص المنسق (مع أرقام عربية) إلى رقم
+function parseFormattedCurrency(text) {
+    if (!text) return 0;
+    
+    // استبدال الأرقام العربية بالأرقام الإنجليزية
+    const arabicToEnglish = {
+        '٠': '0', '١': '1', '٢': '2', '٣': '3', '٤': '4',
+        '٥': '5', '٦': '6', '٧': '7', '٨': '8', '٩': '9'
+    };
+    
+    let cleaned = text.toString();
+    // استبدال الأرقام العربية
+    for (let arabic in arabicToEnglish) {
+        cleaned = cleaned.replace(new RegExp(arabic, 'g'), arabicToEnglish[arabic]);
+    }
+    
+    // إزالة جميع الأحرف غير الرقمية والنقطة (بما في ذلك رمز العملة والفواصل)
+    cleaned = cleaned.replace(/[^\d.]/g, '');
+    
+    const result = parseFloat(cleaned) || 0;
+    return result;
+}
+
 function showMonthlyReport() {
     window.location.href = <?php echo json_encode($currentUrl, JSON_UNESCAPED_SLASHES); ?> + '?page=salaries&report=1&month=<?php echo $selectedMonth; ?>&year=<?php echo $selectedYear; ?>&view=<?php echo $view; ?>';
 }
@@ -4529,6 +4552,7 @@ function updateSettleRemaining() {
     const remainingElement = document.getElementById('settleRemainingAmount');
     const settleAmountElement = document.getElementById('settleAmount');
     const settleNewRemainingElement = document.getElementById('settleNewRemaining');
+    const settleRemainingAmount2El = document.getElementById('settleRemainingAmount2');
     
     // التحقق من وجود جميع العناصر المطلوبة
     if (!remainingElement || !settleAmountElement || !settleNewRemainingElement) {
@@ -4536,16 +4560,43 @@ function updateSettleRemaining() {
         return;
     }
     
-    const remaining = parseFloat(remainingElement.textContent.replace(/[^\d.]/g, '')) || 0;
+    // قراءة القيمة من النص المنسق باستخدام الدالة المساعدة
+    const remainingText = remainingElement.textContent || remainingElement.innerText || '0';
+    const remaining = parseFormattedCurrency(remainingText);
+    
     const settleAmount = parseFloat(settleAmountElement.value) || 0;
     const newRemaining = Math.max(0, remaining - settleAmount);
     
+    // تحديث المتبقي الجديد
     settleNewRemainingElement.textContent = formatCurrency(newRemaining);
+    
+    // تحديث الحد الأقصى المتاح في النص التوضيحي
+    if (settleRemainingAmount2El) {
+        settleRemainingAmount2El.textContent = formatCurrency(remaining);
+    }
+    
+    // تحديث الحد الأقصى في حقل الإدخال (مهم جداً!)
+    if (settleAmountElement) {
+        settleAmountElement.max = remaining;
+        // التأكد من أن القيمة الحالية لا تتجاوز الحد الأقصى
+        if (settleAmount > remaining) {
+            settleAmountElement.value = remaining;
+        }
+    }
     
     const submitBtn = document.getElementById('settleSubmitBtn');
     if (submitBtn) {
         submitBtn.disabled = settleAmount <= 0 || settleAmount > remaining;
     }
+    
+    console.log('updateSettleRemaining:', {
+        remainingText: remainingText,
+        remaining: remaining,
+        settleAmount: settleAmount,
+        newRemaining: newRemaining,
+        max: settleAmountElement.max,
+        settleRemainingAmount2: settleRemainingAmount2El ? settleRemainingAmount2El.textContent : 'N/A'
+    });
 }
 
 function openStatementModal(salaryId, userId, employeeName) {
@@ -4682,25 +4733,15 @@ function printSalaryStatement() {
 </div>
 
 <script>
-// تحديث المتبقي عند فتح modal
+// تحديث المتبقي عند إدخال مبلغ التسوية
 document.getElementById('settleAmount')?.addEventListener('input', function() {
     updateSettleRemaining();
-    const remainingEl = document.getElementById('settleRemainingAmount');
-    const remainingAmount2El = document.getElementById('settleRemainingAmount2');
-    if (remainingEl && remainingAmount2El) {
-        const remaining = parseFloat(remainingEl.textContent.replace(/[^\d.]/g, '')) || 0;
-        remainingAmount2El.textContent = formatCurrency(remaining);
-    }
 });
 
 // تحديث المتبقي عند فتح modal
 document.getElementById('settleSalaryModal')?.addEventListener('shown.bs.modal', function() {
-    const remainingEl = document.getElementById('settleRemainingAmount');
-    const remainingAmount2El = document.getElementById('settleRemainingAmount2');
-    if (remainingEl && remainingAmount2El) {
-        const remaining = parseFloat(remainingEl.textContent.replace(/[^\d.]/g, '')) || 0;
-        remainingAmount2El.textContent = formatCurrency(remaining);
-    }
+    // استدعاء updateSettleRemaining لتحديث جميع القيم
+    updateSettleRemaining();
 });
 </script>
 
