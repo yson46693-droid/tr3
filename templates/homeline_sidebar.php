@@ -141,6 +141,13 @@ switch ($role) {
                 'badge' => null
             ],
             [
+                'title' => 'طلبات الشحن',
+                'icon' => 'bi-truck',
+                'url' => $baseUrl . 'manager.php?page=shipping_orders',
+                'active' => ($currentPage === 'manager.php' && $currentPageParam === 'shipping_orders'),
+                'badge' => null
+            ],
+            [
                 'title' => 'الفواتير',
                 'icon' => 'bi-receipt',
                 'url' => $baseUrl . 'manager.php?page=invoices',
