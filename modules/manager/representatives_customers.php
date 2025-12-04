@@ -1350,6 +1350,17 @@ document.addEventListener('DOMContentLoaded', function() {
         const debtElement = repCollectModal.querySelector('.rep-collection-current-debt');
         const customerIdInput = repCollectModal.querySelector('input[name="customer_id"]');
         const amountInput = repCollectModal.querySelector('input[name="amount"]');
+        const collectionForm = repCollectModal.querySelector('form');
+
+        // إضافة event listener للنموذج للتحقق من الإرسال
+        if (collectionForm) {
+            collectionForm.addEventListener('submit', function(e) {
+                console.log('Form submitting...');
+                console.log('Form action:', this.action);
+                console.log('Customer ID:', customerIdInput?.value);
+                console.log('Amount:', amountInput?.value);
+            });
+        }
 
         if (nameElement && debtElement && customerIdInput && amountInput) {
             repCollectModal.addEventListener('show.bs.modal', function (event) {
@@ -1713,7 +1724,12 @@ document.addEventListener('DOMContentLoaded', function() {
                 <h5 class="modal-title"><i class="bi bi-cash-coin me-2"></i>تحصيل ديون العميل</h5>
                 <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="إغلاق"></button>
             </div>
-            <form method="POST" action="<?php echo htmlspecialchars(getRelativeUrl($dashboardScript . '?page=representatives_customers')); ?>">
+            <?php
+            // تحديد action URL بشكل صريح
+            $formAction = getRelativeUrl($dashboardScript . '?page=representatives_customers');
+            error_log('Form action URL: ' . $formAction);
+            ?>
+            <form method="POST" action="<?php echo htmlspecialchars($formAction); ?>" id="repCollectionForm">
                 <input type="hidden" name="action" value="collect_debt">
                 <input type="hidden" name="customer_id" value="">
                 <div class="modal-body">

@@ -23,7 +23,34 @@ if (!ob_get_level()) {
     ob_start();
 }
 
+// تسجيل جميع الطلبات للتحقق
+$debugFile = __DIR__ . '/../debug_all_requests.log';
+$requestData = [
+    'timestamp' => date('Y-m-d H:i:s'),
+    'method' => $_SERVER['REQUEST_METHOD'] ?? 'UNKNOWN',
+    'page' => $_GET['page'] ?? 'none',
+    'action' => $_POST['action'] ?? 'none',
+    'uri' => $_SERVER['REQUEST_URI'] ?? 'unknown',
+    'post_keys' => array_keys($_POST ?? [])
+];
+file_put_contents($debugFile, json_encode($requestData, JSON_UNESCAPED_UNICODE | JSON_PRETTY_PRINT) . "\n", FILE_APPEND);
+
 $page = $_GET['page'] ?? 'overview';
+
+// تسجيل جميع الطلبات POST للتحقق
+if ($_SERVER['REQUEST_METHOD'] === 'POST') {
+    $debugFile = __DIR__ . '/../debug_post.log';
+    $debugData = [
+        'timestamp' => date('Y-m-d H:i:s'),
+        'page' => $page,
+        'post_action' => $_POST['action'] ?? 'none',
+        'post_data' => $_POST,
+        'server_method' => $_SERVER['REQUEST_METHOD'],
+        'request_uri' => $_SERVER['REQUEST_URI'] ?? 'unknown'
+    ];
+    file_put_contents($debugFile, json_encode($debugData, JSON_UNESCAPED_UNICODE | JSON_PRETTY_PRINT) . "\n\n", FILE_APPEND);
+    error_log('POST Request - Page: ' . $page . ', Action: ' . ($_POST['action'] ?? 'none'));
+}
 
 // معالجة POST لصفحة representatives_customers قبل أي شيء
 if ($page === 'representatives_customers' && 
@@ -32,6 +59,11 @@ if ($page === 'representatives_customers' &&
     $_POST['action'] === 'collect_debt') {
     
     // تسجيل بداية معالجة POST
+    $debugFile = __DIR__ . '/../debug_collection.log';
+    file_put_contents($debugFile, "=== COLLECTION POST STARTED ===\n" . date('Y-m-d H:i:s') . "\n", FILE_APPEND);
+    file_put_contents($debugFile, "Page: $page\n", FILE_APPEND);
+    file_put_contents($debugFile, "POST: " . json_encode($_POST, JSON_UNESCAPED_UNICODE) . "\n", FILE_APPEND);
+    
     error_log('=== POST Collection Request Started ===');
     error_log('POST data: ' . json_encode($_POST));
     error_log('Page: ' . $page);
@@ -43,15 +75,18 @@ if ($page === 'representatives_customers' &&
         require_once __DIR__ . '/../includes/auth.php';
         require_once __DIR__ . '/../includes/path_helper.php';
         
+        file_put_contents($debugFile, "Files loaded successfully\n", FILE_APPEND);
         error_log('Files loaded successfully');
         
         // التحقق من تسجيل الدخول
         if (!isLoggedIn()) {
+            file_put_contents($debugFile, "ERROR: User not logged in\n", FILE_APPEND);
             error_log('User not logged in - redirecting to login');
             header('Location: ' . getRelativeUrl('index.php'));
             exit;
         }
         
+        file_put_contents($debugFile, "User is logged in\n", FILE_APPEND);
         error_log('User is logged in');
         
         // تحميل الملفات الإضافية المطلوبة
@@ -63,20 +98,24 @@ if ($page === 'representatives_customers' &&
         $currentUser = getCurrentUser();
         $userRole = strtolower($currentUser['role'] ?? '');
         
+        file_put_contents($debugFile, "User role: $userRole\n", FILE_APPEND);
         error_log('User role: ' . $userRole);
         
         if (!in_array($userRole, ['manager', 'accountant'], true)) {
+            file_put_contents($debugFile, "ERROR: User does not have required role\n", FILE_APPEND);
             error_log('User does not have required role - redirecting');
             $_SESSION['error_message'] = 'غير مصرح لك بالوصول إلى هذه الصفحة.';
             header('Location: ' . getRelativeUrl('manager.php'));
             exit;
         }
         
+        file_put_contents($debugFile, "User has required role\n", FILE_APPEND);
         error_log('User has required role');
         
         // تضمين الملف مباشرة لمعالجة POST
         $modulePath = __DIR__ . '/../modules/manager/representatives_customers.php';
         if (file_exists($modulePath)) {
+            file_put_contents($debugFile, "Module file exists, including...\n", FILE_APPEND);
             error_log('Module file exists, including...');
             
             // تعريف ثابت لتجنب requireRole داخل الملف
@@ -85,10 +124,12 @@ if ($page === 'representatives_customers' &&
             // سيتم معالجة POST داخل الملف وإعادة التوجيه
             include $modulePath;
             
+            file_put_contents($debugFile, "Module file processed (should not reach here if redirect works)\n", FILE_APPEND);
             error_log('Module file processed');
             // بعد معالجة POST، يجب إيقاف التنفيذ
             exit;
         } else {
+            file_put_contents($debugFile, "ERROR: Module file does not exist: $modulePath\n", FILE_APPEND);
             error_log('ERROR: Module file does not exist: ' . $modulePath);
             $_SESSION['error_message'] = 'صفحة التحصيل غير متاحة حالياً.';
             header('Location: ' . getRelativeUrl('manager.php'));
@@ -96,12 +137,16 @@ if ($page === 'representatives_customers' &&
         }
         
     } catch (Throwable $e) {
+        file_put_contents($debugFile, "CRITICAL ERROR: " . $e->getMessage() . "\n", FILE_APPEND);
+        file_put_contents($debugFile, "Stack trace: " . $e->getTraceAsString() . "\n", FILE_APPEND);
         error_log('CRITICAL ERROR in POST processing: ' . $e->getMessage());
         error_log('Stack trace: ' . $e->getTraceAsString());
         $_SESSION['error_message'] = 'حدث خطأ أثناء معالجة التحصيل. يرجى المحاولة مرة أخرى.';
         header('Location: ' . getRelativeUrl('manager.php?page=representatives_customers'));
         exit;
     }
+    
+    file_put_contents($debugFile, "=== COLLECTION POST ENDED ===\n\n", FILE_APPEND);
 }
 
 // معالجة AJAX قبل أي require أو include قد يخرج محتوى HTML
