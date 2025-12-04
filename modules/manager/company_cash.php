@@ -271,7 +271,18 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         $amount = isset($_POST['amount']) ? floatval($_POST['amount']) : 0;
         $description = trim($_POST['description'] ?? '');
         $referenceNumber = trim($_POST['reference_number'] ?? '');
-        $markAsApproved = isset($_POST['mark_as_approved']);
+        
+        // تحديد دور المستخدم
+        $userRole = strtolower($currentUser['role'] ?? '');
+        $isManager = ($userRole === 'manager');
+        
+        // إذا كان المدير، المصروف معتمد تلقائياً
+        // إذا كان المحاسب، يعتمد على اختيار المستخدم
+        if ($isManager) {
+            $markAsApproved = true; // المدير دائماً يعتمد المصروف تلقائياً
+        } else {
+            $markAsApproved = isset($_POST['mark_as_approved']);
+        }
 
         $_SESSION['financial_form_data'] = [
             'amount' => $_POST['amount'] ?? '',
@@ -284,9 +295,17 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             $_SESSION['financial_error'] = 'يرجى إدخال مبلغ مصروف صحيح.';
         } else {
             try {
-                $status = $markAsApproved ? 'approved' : 'pending';
-                $approvedBy = $markAsApproved ? $currentUser['id'] : null;
-                $approvedAt = $markAsApproved ? date('Y-m-d H:i:s') : null;
+                // إذا كان المدير، المصروف معتمد تلقائياً
+                if ($isManager) {
+                    $status = 'approved';
+                    $approvedBy = $currentUser['id'];
+                    $approvedAt = date('Y-m-d H:i:s');
+                } else {
+                    // المحاسب: يعتمد على الاختيار
+                    $status = $markAsApproved ? 'approved' : 'pending';
+                    $approvedBy = $markAsApproved ? $currentUser['id'] : null;
+                    $approvedAt = $markAsApproved ? date('Y-m-d H:i:s') : null;
+                }
 
                 $db->execute(
                     "INSERT INTO financial_transactions (type, amount, supplier_id, description, reference_number, status, approved_by, created_by, approved_at)
@@ -336,9 +355,14 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
                 unset($_SESSION['financial_form_data']);
 
-                $_SESSION['financial_success'] = $markAsApproved
-                    ? 'تم تسجيل المصروف واعتماده فوراً.'
-                    : 'تم تسجيل المصروف وإرساله للاعتماد.';
+                // رسالة النجاح
+                if ($isManager) {
+                    $_SESSION['financial_success'] = 'تم تسجيل المصروف واعتماده تلقائياً.';
+                } else {
+                    $_SESSION['financial_success'] = $markAsApproved
+                        ? 'تم تسجيل المصروف واعتماده فوراً.'
+                        : 'تم تسجيل المصروف وإرساله للاعتماد.';
+                }
             } catch (Throwable $e) {
                 error_log('Quick expense insertion failed: ' . $e->getMessage());
                 $_SESSION['financial_error'] = 'حدث خطأ أثناء تسجيل المصروف. حاول مرة أخرى.';
@@ -578,6 +602,13 @@ $typeColorMap = [
                         <label for="quickExpenseDescription" class="form-label">وصف المصروف <span class="text-danger">*</span></label>
                         <textarea class="form-control" id="quickExpenseDescription" name="description" rows="3" required placeholder="أدخل تفاصيل المصروف..."><?php echo htmlspecialchars($financialFormData['description'] ?? '', ENT_QUOTES, 'UTF-8'); ?></textarea>
                     </div>
+                    <?php
+                    // إخفاء خيار الاعتماد للمدير (المدير يعتمد تلقائياً)
+                    $userRole = strtolower($currentUser['role'] ?? '');
+                    $isManager = ($userRole === 'manager');
+                    
+                    if (!$isManager): // عرض الخيار فقط للمحاسب
+                    ?>
                     <div class="col-12">
                         <div class="form-check">
                             <input class="form-check-input" type="checkbox" id="quickExpenseApproved" name="mark_as_approved" value="1" <?php echo isset($financialFormData['mark_as_approved']) && $financialFormData['mark_as_approved'] === '1' ? 'checked' : ''; ?>>
@@ -587,6 +618,7 @@ $typeColorMap = [
                         </div>
                         <small class="text-muted d-block mt-1">إذا تُرك غير محدد فسيتم إرسال المصروف للموافقة لاحقاً.</small>
                     </div>
+                    <?php endif; ?>
                     <div class="col-12 d-flex justify-content-end gap-2">
                         <button type="reset" class="btn btn-outline-secondary">تفريغ الحقول</button>
                         <button type="submit" class="btn btn-success">
