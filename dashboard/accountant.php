@@ -34,6 +34,22 @@ $currentUser = getCurrentUser();
 $db = db();
 $page = $_GET['page'] ?? 'dashboard';
 
+// معالجة POST لصفحة representatives_customers قبل أي شيء
+if ($page === 'representatives_customers' && 
+    $_SERVER['REQUEST_METHOD'] === 'POST' && 
+    isset($_POST['action']) && 
+    $_POST['action'] === 'collect_debt') {
+    
+    // تضمين الملف مباشرة لمعالجة POST
+    $modulePath = __DIR__ . '/../modules/manager/representatives_customers.php';
+    if (file_exists($modulePath)) {
+        // سيتم معالجة POST داخل الملف وإعادة التوجيه
+        include $modulePath;
+        // بعد معالجة POST، يجب إيقاف التنفيذ
+        exit;
+    }
+}
+
 /**
  * التأكد من وجود جدول accountant_transactions
  */

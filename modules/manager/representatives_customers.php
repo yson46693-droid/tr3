@@ -22,21 +22,22 @@ requireRole(['manager', 'accountant']);
 $currentUser = getCurrentUser();
 $currentRole = strtolower((string)($currentUser['role'] ?? 'manager'));
 $db = db();
-$dashboardScript = basename($_SERVER['PHP_SELF'] ?? 'manager.php');
 
-$error = '';
-$success = '';
-applyPRGPattern($error, $success);
+// تحديد dashboard script بشكل صريح بناءً على الدور
+$dashboardScript = 'manager.php';
+if ($currentRole === 'accountant') {
+    $dashboardScript = 'accountant.php';
+}
 
-// معالجة التحصيل من عملاء المندوبين
+// معالجة POST يجب أن تكون في البداية قبل أي شيء آخر
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['action'] === 'collect_debt') {
     $customerId = isset($_POST['customer_id']) ? (int)$_POST['customer_id'] : 0;
     $amount = isset($_POST['amount']) ? cleanFinancialValue($_POST['amount']) : 0;
     
     if ($customerId <= 0) {
-        $error = 'معرف العميل غير صالح.';
+        $_SESSION['error_message'] = 'معرف العميل غير صالح.';
     } elseif ($amount <= 0) {
-        $error = 'يجب إدخال مبلغ تحصيل أكبر من صفر.';
+        $_SESSION['error_message'] = 'يجب إدخال مبلغ تحصيل أكبر من صفر.';
     } else {
         $transactionStarted = false;
         
@@ -215,31 +216,36 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['
             
             $_SESSION['success_message'] = implode(' ', array_filter($messageParts));
             
-            // التوجيه إلى نفس الصفحة
-            $redirectUrl = getRelativeUrl($dashboardScript . '?page=representatives_customers');
-            if (!headers_sent()) {
-                header('Location: ' . $redirectUrl);
-                exit;
-            } else {
-                echo '<script>window.location.href = ' . json_encode($redirectUrl) . ';</script>';
-                exit;
-            }
-            
         } catch (Exception $e) {
             if ($transactionStarted) {
                 $db->rollback();
             }
-            $error = 'حدث خطأ أثناء التحصيل: ' . $e->getMessage();
+            $_SESSION['error_message'] = 'حدث خطأ أثناء التحصيل: ' . $e->getMessage();
             error_log('Collection error in representatives_customers: ' . $e->getMessage());
         } catch (Throwable $e) {
             if ($transactionStarted) {
                 $db->rollback();
             }
-            $error = 'حدث خطأ أثناء التحصيل: ' . $e->getMessage();
+            $_SESSION['error_message'] = 'حدث خطأ أثناء التحصيل: ' . $e->getMessage();
             error_log('Collection error in representatives_customers: ' . $e->getMessage());
         }
     }
+    
+    // إعادة التوجيه بعد معالجة POST (نجاح أو فشل)
+    $redirectUrl = getRelativeUrl($dashboardScript . '?page=representatives_customers');
+    if (!headers_sent()) {
+        header('Location: ' . $redirectUrl);
+        exit;
+    } else {
+        echo '<script>window.location.href = ' . json_encode($redirectUrl) . ';</script>';
+        exit;
+    }
 }
+
+// قراءة الرسائل من session بعد معالجة POST
+$error = '';
+$success = '';
+applyPRGPattern($error, $success);
 
 $representatives = [];
 $representativeSummary = [

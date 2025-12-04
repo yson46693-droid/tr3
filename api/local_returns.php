@@ -200,21 +200,46 @@ function handleCreateLocalReturn(): void
             throw new InvalidArgumentException('المبلغ الإجمالي للمرتجع يجب أن يكون أكبر من صفر');
         }
         
+        // التحقق من وجود عمود approved_at وإضافته إذا لم يكن موجوداً
+        $hasApprovedAt = !empty($db->queryOne("SHOW COLUMNS FROM local_returns LIKE 'approved_at'"));
+        if (!$hasApprovedAt) {
+            try {
+                $db->execute("ALTER TABLE local_returns ADD COLUMN approved_at timestamp NULL DEFAULT NULL AFTER approved_by");
+            } catch (Throwable $e) {
+                error_log('Error adding approved_at column: ' . $e->getMessage());
+            }
+        }
+        
         // إنشاء سجل المرتجع
         $returnDate = date('Y-m-d');
+        
+        // بناء الاستعلام ديناميكياً حسب الأعمدة المتوفرة
+        $columns = ['return_number', 'customer_id', 'return_date', 'refund_amount', 'refund_method', 'status', 'notes', 'created_by', 'approved_by'];
+        $values = [
+            $returnNumber,
+            $customerId,
+            $returnDate,
+            $totalRefund,
+            $refundMethod,
+            'approved',
+            $notes ?: null,
+            $currentUser['id'],
+            $currentUser['id']
+        ];
+        
+        // التحقق مرة أخرى من وجود approved_at بعد محاولة إضافته
+        $hasApprovedAt = !empty($db->queryOne("SHOW COLUMNS FROM local_returns LIKE 'approved_at'"));
+        if ($hasApprovedAt) {
+            $columns[] = 'approved_at';
+            $values[] = date('Y-m-d H:i:s');
+        }
+        
+        $columnsStr = implode(', ', $columns);
+        $placeholders = implode(', ', array_fill(0, count($values), '?'));
+        
         $db->execute(
-            "INSERT INTO local_returns (return_number, customer_id, return_date, refund_amount, refund_method, status, notes, created_by, approved_by, approved_at)
-             VALUES (?, ?, ?, ?, ?, 'approved', ?, ?, ?, NOW())",
-            [
-                $returnNumber,
-                $customerId,
-                $returnDate,
-                $totalRefund,
-                $refundMethod,
-                $notes ?: null,
-                $currentUser['id'],
-                $currentUser['id']
-            ]
+            "INSERT INTO local_returns ($columnsStr) VALUES ($placeholders)",
+            $values
         );
         
         $returnId = $db->getLastInsertId();
@@ -374,6 +399,16 @@ function ensureLocalReturnsTables(): void
               CONSTRAINT `local_returns_ibfk_3` FOREIGN KEY (`approved_by`) REFERENCES `users` (`id`) ON DELETE SET NULL
             ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
         ");
+    }
+    
+    // إضافة عمود approved_at إذا لم يكن موجوداً
+    $hasApprovedAt = !empty($db->queryOne("SHOW COLUMNS FROM local_returns LIKE 'approved_at'"));
+    if (!$hasApprovedAt) {
+        try {
+            $db->execute("ALTER TABLE local_returns ADD COLUMN approved_at timestamp NULL DEFAULT NULL AFTER approved_by");
+        } catch (Throwable $e) {
+            error_log('Error adding approved_at column to local_returns: ' . $e->getMessage());
+        }
     }
     
     // إنشاء جدول local_return_items

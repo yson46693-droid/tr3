@@ -25,6 +25,34 @@ if (!ob_get_level()) {
 
 $page = $_GET['page'] ?? 'overview';
 
+// معالجة POST لصفحة representatives_customers قبل أي شيء
+if ($page === 'representatives_customers' && 
+    $_SERVER['REQUEST_METHOD'] === 'POST' && 
+    isset($_POST['action']) && 
+    $_POST['action'] === 'collect_debt') {
+    
+    // تحميل الملفات الأساسية فقط
+    require_once __DIR__ . '/../includes/config.php';
+    require_once __DIR__ . '/../includes/db.php';
+    require_once __DIR__ . '/../includes/auth.php';
+    require_once __DIR__ . '/../includes/path_helper.php';
+    
+    // التحقق من تسجيل الدخول
+    if (!isLoggedIn()) {
+        header('Location: ' . getRelativeUrl('index.php'));
+        exit;
+    }
+    
+    // تضمين الملف مباشرة لمعالجة POST
+    $modulePath = __DIR__ . '/../modules/manager/representatives_customers.php';
+    if (file_exists($modulePath)) {
+        // سيتم معالجة POST داخل الملف وإعادة التوجيه
+        include $modulePath;
+        // بعد معالجة POST، يجب إيقاف التنفيذ
+        exit;
+    }
+}
+
 // معالجة AJAX قبل أي require أو include قد يخرج محتوى HTML
 // خاصة لصفحة قوالب المنتجات
 if ($page === 'product_templates' && isset($_GET['ajax']) && $_GET['ajax'] === 'template_details' && isset($_GET['template_id'])) {
