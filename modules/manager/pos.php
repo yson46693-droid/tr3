@@ -1083,19 +1083,17 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                             // بعد التأكد من وجود جميع الأعمدة، نستخدم نفس استعلام INSERT
                             $hasDueDateColumn = !empty($db->queryOne("SHOW COLUMNS FROM local_invoices LIKE 'due_date'"));
                             
-                            $db->execute(
-                                "INSERT INTO local_invoices 
-                                (invoice_number, customer_id, date" . ($hasDueDateColumn ? ", due_date" : "") . ", subtotal, tax_rate, tax_amount, 
-                                 discount_amount, total_amount, paid_amount, remaining_amount, status, notes, created_by)
-                                VALUES (?, ?, ?" . ($hasDueDateColumn ? ", ?" : "") . ", ?, 0, 0, ?, ?, ?, ?, ?, ?, ?)",
-                                array_merge(
+                            if ($hasDueDateColumn) {
+                                $db->execute(
+                                    "INSERT INTO local_invoices 
+                                    (invoice_number, customer_id, date, due_date, subtotal, tax_rate, tax_amount, 
+                                     discount_amount, total_amount, paid_amount, remaining_amount, status, notes, created_by)
+                                    VALUES (?, ?, ?, ?, ?, 0, 0, ?, ?, ?, ?, ?, ?, ?)",
                                     [
                                         $localInvoiceNumber,
                                         $localCustomerId,
-                                        $saleDate
-                                    ],
-                                    $hasDueDateColumn ? [$dueDate] : [],
-                                    [
+                                        $saleDate,
+                                        $dueDate,
                                         $subtotal,
                                         $prepaidAmount,
                                         $netTotal,
@@ -1105,8 +1103,28 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                                         $notes,
                                         $currentUser['id']
                                     ]
-                                )
-                            );
+                                );
+                            } else {
+                                $db->execute(
+                                    "INSERT INTO local_invoices 
+                                    (invoice_number, customer_id, date, subtotal, tax_rate, tax_amount, 
+                                     discount_amount, total_amount, paid_amount, remaining_amount, status, notes, created_by)
+                                    VALUES (?, ?, ?, ?, 0, 0, ?, ?, ?, ?, ?, ?, ?)",
+                                    [
+                                        $localInvoiceNumber,
+                                        $localCustomerId,
+                                        $saleDate,
+                                        $subtotal,
+                                        $prepaidAmount,
+                                        $netTotal,
+                                        $effectivePaidAmount,
+                                        $dueAmount,
+                                        $invoiceStatus,
+                                        $notes,
+                                        $currentUser['id']
+                                    ]
+                                );
+                            }
                         
                         $localInvoiceId = (int)$db->getLastInsertId();
                         
