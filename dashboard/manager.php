@@ -949,15 +949,37 @@ $pageDescription = 'لوحة تحكم المدير - إدارة شاملة لل�
                         $returnedQty = isset($returnsByProduct[$productId]) ? $returnsByProduct[$productId]['qty'] : 0;
                         $returnedTotal = isset($returnsByProduct[$productId]) ? $returnsByProduct[$productId]['total'] : 0;
                         
-                        // خصم المرتجعات
-                        $sale['net_rep_qty'] = max(0, (float)$sale['rep_sales_qty'] - $returnedQty);
-                        $sale['net_manager_pos_qty'] = max(0, (float)$sale['manager_pos_qty'] - $returnedQty);
-                        $sale['net_shipping_qty'] = max(0, (float)$sale['shipping_qty'] - $returnedQty);
+                        // حساب إجمالي المبيعات لكل منتج
+                        $totalSalesQty = (float)$sale['rep_sales_qty'] + (float)$sale['manager_pos_qty'] + (float)$sale['shipping_qty'];
+                        $totalSalesAmount = (float)$sale['rep_sales_total'] + (float)$sale['manager_pos_total'] + (float)$sale['shipping_total'];
+                        
+                        // توزيع المرتجعات بشكل متناسب حسب حجم المبيعات من كل مصدر
+                        if ($totalSalesQty > 0) {
+                            $repRatio = (float)$sale['rep_sales_qty'] / $totalSalesQty;
+                            $managerRatio = (float)$sale['manager_pos_qty'] / $totalSalesQty;
+                            $shippingRatio = (float)$sale['shipping_qty'] / $totalSalesQty;
+                            
+                            $repReturnedQty = $returnedQty * $repRatio;
+                            $managerReturnedQty = $returnedQty * $managerRatio;
+                            $shippingReturnedQty = $returnedQty * $shippingRatio;
+                            
+                            $repReturnedTotal = $returnedTotal * $repRatio;
+                            $managerReturnedTotal = $returnedTotal * $managerRatio;
+                            $shippingReturnedTotal = $returnedTotal * $shippingRatio;
+                        } else {
+                            $repReturnedQty = $managerReturnedQty = $shippingReturnedQty = 0;
+                            $repReturnedTotal = $managerReturnedTotal = $shippingReturnedTotal = 0;
+                        }
+                        
+                        // خصم المرتجعات بشكل متناسب
+                        $sale['net_rep_qty'] = max(0, (float)$sale['rep_sales_qty'] - $repReturnedQty);
+                        $sale['net_manager_pos_qty'] = max(0, (float)$sale['manager_pos_qty'] - $managerReturnedQty);
+                        $sale['net_shipping_qty'] = max(0, (float)$sale['shipping_qty'] - $shippingReturnedQty);
                         $sale['total_net_qty'] = $sale['net_rep_qty'] + $sale['net_manager_pos_qty'] + $sale['net_shipping_qty'];
                         
-                        $sale['net_rep_total'] = max(0, (float)$sale['rep_sales_total'] - $returnedTotal);
-                        $sale['net_manager_pos_total'] = max(0, (float)$sale['manager_pos_total'] - $returnedTotal);
-                        $sale['net_shipping_total'] = max(0, (float)$sale['shipping_total'] - $returnedTotal);
+                        $sale['net_rep_total'] = max(0, (float)$sale['rep_sales_total'] - $repReturnedTotal);
+                        $sale['net_manager_pos_total'] = max(0, (float)$sale['manager_pos_total'] - $managerReturnedTotal);
+                        $sale['net_shipping_total'] = max(0, (float)$sale['shipping_total'] - $shippingReturnedTotal);
                         $sale['total_net_total'] = $sale['net_rep_total'] + $sale['net_manager_pos_total'] + $sale['net_shipping_total'];
                         
                         $totalRepSales += $sale['net_rep_total'];
