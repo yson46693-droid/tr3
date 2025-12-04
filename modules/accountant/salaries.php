@@ -4356,19 +4356,54 @@ function openSettleModal(salaryId, salaryData, remainingAmount, calculatedAccumu
         console.error('settleUserName element not found');
     }
     
-    // تحميل جميع الرواتب للموظف
+    // استخدام القيم المحسوبة مباشرة من بطاقة الموظف بدلاً من إعادة حسابها
+    // هذا يضمن أن القيم في نموذج التسوية تطابق القيم في بطاقة الموظف
+    const settleAccumulatedAmountEl = document.getElementById('settleAccumulatedAmount');
+    const settlePaidAmountEl = document.getElementById('settlePaidAmount');
+    const settleRemainingAmountEl = document.getElementById('settleRemainingAmount');
+    const settleRemainingAmount2El = document.getElementById('settleRemainingAmount2');
+    const settleAmountEl = document.getElementById('settleAmount');
+    const settleSalaryIdEl = document.getElementById('settleSalaryId');
+    
+    // استخدام القيم المحسوبة من بطاقة الموظف
+    const accumulated = parseFloat(calculatedAccumulated || salaryData.calculated_accumulated || salaryData.accumulated_amount || salaryData.total_amount || 0);
+    const paid = parseFloat(salaryData.paid_amount || 0);
+    const remaining = parseFloat(remainingAmount || salaryData.calculated_remaining || (accumulated - paid) || 0);
+    
+    console.log('Using calculated values from employee card:', {
+        accumulated: accumulated,
+        paid: paid,
+        remaining: remaining,
+        calculatedAccumulated: calculatedAccumulated,
+        remainingAmount: remainingAmount
+    });
+    
+    // تحديث القيم مباشرة من البيانات المرسلة من بطاقة الموظف
+    if (settleSalaryIdEl) settleSalaryIdEl.value = salaryId;
+    if (settleAccumulatedAmountEl) settleAccumulatedAmountEl.textContent = formatCurrency(accumulated);
+    if (settlePaidAmountEl) settlePaidAmountEl.textContent = formatCurrency(paid);
+    if (settleRemainingAmountEl) settleRemainingAmountEl.textContent = formatCurrency(remaining);
+    if (settleRemainingAmount2El) settleRemainingAmount2El.textContent = formatCurrency(remaining);
+    if (settleAmountEl) {
+        settleAmountEl.value = '';
+        settleAmountEl.max = remaining;
+    }
+    
+    // تحديث المتبقي الجديد
+    updateSettleRemaining();
+    
+    // تحميل جميع الرواتب للموظف (لاختيار راتب آخر إذا لزم الأمر)
     console.log('Loading salaries for user_id:', userId, 'currentSalaryId:', salaryId);
     loadUserSalariesForSettlement(userId, salaryId);
     
-    // تعيين الراتب الحالي كافتراضي
+    // تعيين الراتب الحالي كافتراضي في القائمة المنسدلة
     if (salaryId > 0) {
         setTimeout(() => {
             const select = document.getElementById('settleSalarySelect');
             if (select) {
                 select.value = salaryId;
-                loadSelectedSalaryData();
             }
-        }, 100);
+        }, 500); // زيادة الوقت لانتظار تحميل القائمة
     }
 }
 
@@ -4506,9 +4541,11 @@ function loadSelectedSalaryData() {
     
     settleSalaryIdEl.value = salaryId;
     
-    // جلب بيانات الراتب المحدد
+    // جلب بيانات الراتب المحدد من API
+    // ملاحظة: إذا تم فتح النموذج من بطاقة الموظف، يجب استخدام القيم المحسوبة من البطاقة
+    // ولكن عند اختيار راتب آخر من القائمة المنسدلة، نستخدم API
     const apiUrl = '<?php echo getBasePath(); ?>/api/get_salary_details.php?salary_id=' + salaryId;
-    console.log('Fetching salary details from:', apiUrl);
+    console.log('Fetching salary details from API:', apiUrl);
     
     fetch(apiUrl, {
         method: 'GET',
@@ -4530,7 +4567,7 @@ function loadSelectedSalaryData() {
             return response.json();
         })
         .then(data => {
-            console.log('Salary details received:', data);
+            console.log('Salary details received from API:', data);
             
             if (!data) {
                 throw new Error('Empty response from server');
@@ -4538,14 +4575,16 @@ function loadSelectedSalaryData() {
             
             if (data.success && data.salary) {
                 const salary = data.salary;
+                // استخدام calculated_accumulated من API (يتم حسابه بنفس طريقة بطاقة الموظف)
                 const accumulated = parseFloat(salary.calculated_accumulated || salary.accumulated_amount || salary.total_amount || 0);
                 const paid = parseFloat(salary.paid_amount || 0);
-                const remaining = Math.max(0, accumulated - paid);
+                const remaining = parseFloat(salary.remaining || Math.max(0, accumulated - paid));
                 
-                console.log('Salary data:', {
+                console.log('Salary data from API:', {
                     accumulated: accumulated,
                     paid: paid,
-                    remaining: remaining
+                    remaining: remaining,
+                    calculated_accumulated: salary.calculated_accumulated
                 });
                 
                 // تحديث القيم مع التحقق من وجود العناصر

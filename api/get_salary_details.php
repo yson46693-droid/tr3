@@ -88,6 +88,7 @@ try {
     }
     
     // حساب المبلغ التراكمي من الرواتب السابقة
+    // استخدام نفس منطق الحساب المستخدم في بطاقة الموظف
     $userId = intval($salary['user_id']);
     $salaryMonth = intval($salary['month'] ?? 0);
     $salaryYear = intval($salary['year'] ?? date('Y'));
@@ -95,8 +96,16 @@ try {
     $yearColumnCheck = $db->queryOne("SHOW COLUMNS FROM salaries LIKE 'year'");
     $hasYearColumn = !empty($yearColumnCheck);
     
-    $currentTotal = floatval($salary['total_amount'] ?? 0);
-    $accumulated = $currentTotal;
+    // استخدام cleanFinancialValue مثل بطاقة الموظف
+    require_once __DIR__ . '/../includes/config.php';
+    if (!function_exists('cleanFinancialValue')) {
+        function cleanFinancialValue($value) {
+            return floatval(str_replace(',', '', $value ?? 0));
+        }
+    }
+    
+    $currentTotal = cleanFinancialValue($salary['total_amount'] ?? 0);
+    $accumulated = $currentTotal; // ابدأ بالراتب الحالي (نفس منطق بطاقة الموظف)
     
     if ($hasYearColumn) {
         $previousSalaries = $db->query(
@@ -120,19 +129,22 @@ try {
         );
     }
     
+    // جمع المتبقي من الرواتب السابقة (نفس منطق بطاقة الموظف)
     foreach ($previousSalaries as $prevSalary) {
-        $prevTotal = floatval($prevSalary['total_amount'] ?? 0);
-        $prevPaid = floatval($prevSalary['paid_amount'] ?? 0);
-        $prevAccumulated = floatval($prevSalary['prev_accumulated'] ?? $prevTotal);
+        $prevTotal = cleanFinancialValue($prevSalary['total_amount'] ?? 0);
+        $prevPaid = cleanFinancialValue($prevSalary['paid_amount'] ?? 0);
+        $prevAccumulated = cleanFinancialValue($prevSalary['prev_accumulated'] ?? $prevTotal);
         
+        // حساب المتبقي من الراتب السابق (نفس منطق بطاقة الموظف)
         $prevRemaining = max(0, $prevAccumulated - $prevPaid);
         
+        // إضافة المتبقي إلى المبلغ التراكمي فقط إذا كان هناك متبقي (نفس منطق بطاقة الموظف)
         if ($prevRemaining > 0.01) {
             $accumulated += $prevRemaining;
         }
     }
     
-    $paid = floatval($salary['paid_amount'] ?? 0);
+    $paid = cleanFinancialValue($salary['paid_amount'] ?? 0);
     $remaining = max(0, $accumulated - $paid);
     
     ob_end_clean();
