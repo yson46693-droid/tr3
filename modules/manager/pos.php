@@ -742,10 +742,12 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     }
 
                     $currentBalance = (float) ($customer['balance'] ?? 0);
+                    
                     if ($currentBalance < 0 && $dueAmount > 0) {
                         $creditUsed = min(abs($currentBalance), $dueAmount);
                         $dueAmount = round($dueAmount - $creditUsed, 2);
-                        $effectivePaidAmount += $creditUsed;
+                        // لا نضيف creditUsed إلى effectivePaidAmount لأنه ليس مبلغ نقدي
+                        // effectivePaidAmount يبقى كما هو (المبلغ النقدي الفعلي فقط)
                     } else {
                         $creditUsed = 0.0;
                     }
@@ -841,18 +843,21 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 $invoiceNumber = $invoiceResult['invoice_number'] ?? '';
 
                 $invoiceStatus = 'sent';
+                // حساب المبلغ الإجمالي المدفوع (نقدي + رصيد دائن) للفاتورة
+                $totalPaidAmount = $effectivePaidAmount + $creditUsed;
+                
                 if ($dueAmount <= 0.0001) {
                     $invoiceStatus = 'paid';
-                    if ($creditUsed > 0 && $effectivePaidAmount < $netTotal) {
-                        $effectivePaidAmount = $netTotal;
-                    }
-                } elseif ($effectivePaidAmount > 0) {
+                    // إذا تم الدفع بالكامل (نقدي + رصيد دائن)، نستخدم المبلغ الإجمالي للفاتورة
+                    $totalPaidAmount = $netTotal;
+                } elseif ($totalPaidAmount > 0) {
                     $invoiceStatus = 'partial';
                 }
 
                 // تحديث الفاتورة بالمبلغ المدفوع والمبلغ المتبقي
+                // نستخدم totalPaidAmount (نقدي + رصيد دائن) للفاتورة
                 $invoiceUpdateSql = "UPDATE invoices SET paid_amount = ?, remaining_amount = ?, status = ?, updated_at = NOW()";
-                $invoiceUpdateParams = [$effectivePaidAmount, $dueAmount, $invoiceStatus];
+                $invoiceUpdateParams = [$totalPaidAmount, $dueAmount, $invoiceStatus];
                 
                 // إضافة مبلغ credit_used إذا كان هناك عمود credit_used
                 $hasCreditUsedColumn = !empty($db->queryOne("SHOW COLUMNS FROM invoices LIKE 'credit_used'"));
@@ -875,6 +880,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 $db->execute($invoiceUpdateSql . " WHERE id = ?", $invoiceUpdateParams);
 
                 // تسجيل الإيراد في خزنة الشركة (accountant_transactions)
+                // مهم: نستخدم فقط المبلغ النقدي الفعلي (effectivePaidAmount) وليس creditUsed
+                // لأن creditUsed هو رصيد دائن للعميل وليس مبلغ نقدي تم استلامه
                 // منع التسجيل المزدوج: فحص إذا كان تم تسجيل معاملة بنفس reference_number
                 try {
                     // التأكد من وجود جدول accountant_transactions
@@ -882,8 +889,11 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     if (!empty($accountantTableExists)) {
                         $customerName = $customer['name'] ?? 'عميل محلي';
                         
-                        // الحالة 1: البيع الكامل - تسجيل كامل المبلغ كإيراد معتمد
-                        if ($invoiceStatus === 'paid' && $effectivePaidAmount > 0) {
+                        // نستخدم فقط المبلغ النقدي الفعلي (بدون creditUsed)
+                        $cashAmountToRecord = $effectivePaidAmount;
+                        
+                        // الحالة 1: البيع الكامل - تسجيل المبلغ النقدي فقط كإيراد معتمد
+                        if ($invoiceStatus === 'paid' && $cashAmountToRecord > 0) {
                             $referenceNumber = 'POS-FULL-' . $invoiceId;
                             
                             // فحص إذا كان تم تسجيل معاملة بنفس reference_number مسبقاً
@@ -894,6 +904,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                             
                             if (empty($existingTransaction)) {
                                 $description = 'بيع كامل من نقطة بيع المدير - فاتورة ' . $invoiceNumber . ' - عميل: ' . $customerName;
+                                if ($creditUsed > 0) {
+                                    $description .= ' (منها ' . number_format($creditUsed, 2) . ' ج.م من الرصيد الدائن)';
+                                }
                                 
                                 $db->execute(
                                     "INSERT INTO accountant_transactions 
@@ -901,7 +914,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                                     VALUES (?, ?, ?, ?, 'cash', 'approved', ?, ?, NOW())",
                                     [
                                         'income',
-                                        $effectivePaidAmount,
+                                        $cashAmountToRecord,
                                         $description,
                                         $referenceNumber,
                                         $currentUser['id'],
@@ -910,8 +923,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                                 );
                             }
                         }
-                        // الحالة 2: البيع الجزئي - تسجيل المبلغ المحصل فقط كإيراد معتمد
-                        elseif ($invoiceStatus === 'partial' && $effectivePaidAmount > 0) {
+                        // الحالة 2: البيع الجزئي - تسجيل المبلغ النقدي المحصل فقط كإيراد معتمد
+                        elseif ($invoiceStatus === 'partial' && $cashAmountToRecord > 0) {
                             $referenceNumber = 'POS-PARTIAL-' . $invoiceId;
                             
                             // فحص إذا كان تم تسجيل معاملة بنفس reference_number مسبقاً
@@ -922,6 +935,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                             
                             if (empty($existingTransaction)) {
                                 $description = 'تحصيل جزئي من نقطة بيع المدير - فاتورة ' . $invoiceNumber . ' - عميل: ' . $customerName;
+                                if ($creditUsed > 0) {
+                                    $description .= ' (منها ' . number_format($creditUsed, 2) . ' ج.م من الرصيد الدائن)';
+                                }
                                 
                                 $db->execute(
                                     "INSERT INTO accountant_transactions 
@@ -929,7 +945,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                                     VALUES (?, ?, ?, ?, 'cash', 'approved', ?, ?, NOW())",
                                     [
                                         'income',
-                                        $effectivePaidAmount,
+                                        $cashAmountToRecord,
                                         $description,
                                         $referenceNumber,
                                         $currentUser['id'],
