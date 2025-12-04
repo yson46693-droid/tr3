@@ -1457,6 +1457,7 @@ document.addEventListener('DOMContentLoaded', function() {
             <form method="POST" action="<?php echo htmlspecialchars(getRelativeUrl($dashboardScript . '?page=customers&section=company')); ?>">
                 <input type="hidden" name="action" value="collect_debt">
                 <input type="hidden" name="customer_id" value="">
+                <input type="hidden" name="from_representatives_customers" value="1">
                 <div class="modal-body">
                     <div class="mb-3">
                         <div class="fw-semibold text-muted">العميل</div>

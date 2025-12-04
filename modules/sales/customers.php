@@ -462,8 +462,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action'])) {
                 $db->beginTransaction();
                 $transactionStarted = true;
 
+                // جلب بيانات العميل مع معلومات المندوب
                 $customer = $db->queryOne(
-                    "SELECT id, name, balance, created_by FROM customers WHERE id = ? FOR UPDATE",
+                    "SELECT id, name, balance, created_by, rep_id FROM customers WHERE id = ? FOR UPDATE",
                     [$customerId]
                 );
 
@@ -505,146 +506,301 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action'])) {
                     ]
                 );
 
-                $collectionNumber = null;
-                $collectionId = null;
-                $distributionResult = null;
+                // التحقق إذا كان التحصيل من صفحة representatives_customers (من قبل مدير أو محاسب)
+                $fromRepresentativesCustomers = isset($_POST['from_representatives_customers']) && (int)$_POST['from_representatives_customers'] === 1;
+                $isManagerOrAccountant = in_array(strtolower((string)($currentUser['role'] ?? '')), ['manager', 'accountant'], true);
+                
+                // تحديد المندوب المسؤول عن العميل
+                $customerRepId = (int)($customer['rep_id'] ?? 0);
+                $customerCreatedBy = (int)($customer['created_by'] ?? 0);
+                $salesRepId = null;
+                if ($customerRepId > 0) {
+                    $salesRepId = $customerRepId;
+                } elseif ($customerCreatedBy > 0) {
+                    // التحقق من أن created_by هو مندوب
+                    $repCheck = $db->queryOne(
+                        "SELECT id FROM users WHERE id = ? AND role = 'sales' AND status = 'active'",
+                        [$customerCreatedBy]
+                    );
+                    if ($repCheck) {
+                        $salesRepId = $customerCreatedBy;
+                    }
+                }
 
-                // حفظ التحصيل في جدول collections ليظهر في صفحات التحصيلات وخزنة المندوب
-                $collectionsTableExists = $db->queryOne("SHOW TABLES LIKE 'collections'");
-                if (!empty($collectionsTableExists)) {
-                    // التحقق من وجود الأعمدة
-                    $hasStatusColumn = !empty($db->queryOne("SHOW COLUMNS FROM collections LIKE 'status'"));
-                    $hasCollectionNumberColumn = !empty($db->queryOne("SHOW COLUMNS FROM collections LIKE 'collection_number'"));
-                    $hasNotesColumn = !empty($db->queryOne("SHOW COLUMNS FROM collections LIKE 'notes'"));
-
-                    // إضافة عمود collection_number إذا لم يكن موجوداً
-                    if (!$hasCollectionNumberColumn) {
-                        try {
-                            $db->execute("ALTER TABLE collections ADD COLUMN collection_number VARCHAR(50) NULL AFTER id");
-                            $hasCollectionNumberColumn = true;
-                        } catch (Throwable $alterError) {
-                            error_log('Failed to add collection_number column: ' . $alterError->getMessage());
-                        }
+                if ($fromRepresentativesCustomers && $isManagerOrAccountant && $salesRepId) {
+                    // التحصيل من قبل مدير أو محاسب من صفحة representatives_customers - معالجة خاصة
+                    
+                    // 1. إضافة المبلغ إلى خزنة الشركة فقط (جدول accountant_transactions)
+                    // التأكد من وجود جدول accountant_transactions
+                    $accountantTableCheck = $db->queryOne("SHOW TABLES LIKE 'accountant_transactions'");
+                    if (empty($accountantTableCheck)) {
+                        // إنشاء الجدول إذا لم يكن موجوداً
+                        $db->execute("
+                            CREATE TABLE IF NOT EXISTS `accountant_transactions` (
+                              `id` int(11) NOT NULL AUTO_INCREMENT,
+                              `transaction_type` enum('collection_from_sales_rep','expense','income','transfer','other') NOT NULL COMMENT 'نوع المعاملة',
+                              `amount` decimal(15,2) NOT NULL COMMENT 'المبلغ',
+                              `sales_rep_id` int(11) DEFAULT NULL COMMENT 'معرف المندوب (للتحصيل)',
+                              `description` text NOT NULL COMMENT 'الوصف',
+                              `reference_number` varchar(50) DEFAULT NULL COMMENT 'رقم مرجعي',
+                              `payment_method` enum('cash','bank_transfer','check','other') DEFAULT 'cash' COMMENT 'طريقة الدفع',
+                              `status` enum('pending','approved','rejected') DEFAULT 'approved' COMMENT 'الحالة',
+                              `approved_by` int(11) DEFAULT NULL COMMENT 'من وافق',
+                              `approved_at` timestamp NULL DEFAULT NULL COMMENT 'تاريخ الموافقة',
+                              `notes` text DEFAULT NULL COMMENT 'ملاحظات إضافية',
+                              `created_by` int(11) NOT NULL COMMENT 'من أنشأ السجل',
+                              `created_at` timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP COMMENT 'تاريخ الإنشاء',
+                              `updated_at` timestamp NULL DEFAULT NULL ON UPDATE CURRENT_TIMESTAMP COMMENT 'تاريخ التحديث',
+                              PRIMARY KEY (`id`),
+                              KEY `transaction_type` (`transaction_type`),
+                              KEY `sales_rep_id` (`sales_rep_id`),
+                              KEY `status` (`status`),
+                              KEY `created_by` (`created_by`),
+                              KEY `approved_by` (`approved_by`),
+                              KEY `created_at` (`created_at`),
+                              KEY `reference_number` (`reference_number`),
+                              CONSTRAINT `accountant_transactions_ibfk_1` FOREIGN KEY (`sales_rep_id`) REFERENCES `users` (`id`) ON DELETE SET NULL,
+                              CONSTRAINT `accountant_transactions_ibfk_2` FOREIGN KEY (`created_by`) REFERENCES `users` (`id`) ON DELETE CASCADE,
+                              CONSTRAINT `accountant_transactions_ibfk_3` FOREIGN KEY (`approved_by`) REFERENCES `users` (`id`) ON DELETE SET NULL
+                            ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='جدول المعاملات المحاسبية'
+                        ");
                     }
 
-                    // توليد رقم التحصيل إذا كان العمود موجوداً
-                    if ($hasCollectionNumberColumn) {
-                        $year = date('Y');
-                        $month = date('m');
-                        $lastCollection = $db->queryOne(
-                            "SELECT collection_number FROM collections WHERE collection_number LIKE ? ORDER BY collection_number DESC LIMIT 1 FOR UPDATE",
-                            ["COL-{$year}{$month}-%"]
-                        );
+                    // الحصول على اسم المندوب
+                    $salesRep = $db->queryOne(
+                        "SELECT id, full_name, username FROM users WHERE id = ? AND role = 'sales'",
+                        [$salesRepId]
+                    );
+                    $salesRepName = $salesRep ? ($salesRep['full_name'] ?? $salesRep['username'] ?? '') : '';
 
-                        $serial = 1;
-                        if (!empty($lastCollection['collection_number'])) {
-                            $parts = explode('-', $lastCollection['collection_number']);
-                            $serial = intval($parts[2] ?? 0) + 1;
-                        }
+                    // توليد رقم مرجعي
+                    $referenceNumber = 'COL-CUST-' . $customerId . '-' . date('YmdHis');
+                    
+                    // وصف المعاملة
+                    $description = 'تحصيل من عميل: ' . htmlspecialchars($customer['name'] ?? '') . 
+                                  ($salesRepName ? ' (مندوب: ' . htmlspecialchars($salesRepName) . ')' : '');
 
-                        $collectionNumber = sprintf("COL-%s%s-%04d", $year, $month, $serial);
-                    }
-
-                    // بناء قائمة الأعمدة والقيم
-                    $collectionDate = date('Y-m-d');
-                    $collectionColumns = ['customer_id', 'amount', 'date', 'payment_method', 'collected_by'];
-                    $collectionValues = [$customerId, $amount, $collectionDate, 'cash', $currentUser['id']];
-                    $collectionPlaceholders = array_fill(0, count($collectionColumns), '?');
-
-                    if ($hasCollectionNumberColumn && $collectionNumber !== null) {
-                        array_unshift($collectionColumns, 'collection_number');
-                        array_unshift($collectionValues, $collectionNumber);
-                        array_unshift($collectionPlaceholders, '?');
-                    }
-
-                    if ($hasNotesColumn) {
-                        $collectionColumns[] = 'notes';
-                        $collectionValues[] = 'تحصيل من صفحة العملاء';
-                        $collectionPlaceholders[] = '?';
-                    }
-
-                    if ($hasStatusColumn) {
-                        $collectionColumns[] = 'status';
-                        $collectionValues[] = 'pending';
-                        $collectionPlaceholders[] = '?';
-                    }
-
+                    // إضافة المعاملة في جدول accountant_transactions كنوع income
                     $db->execute(
-                        "INSERT INTO collections (" . implode(', ', $collectionColumns) . ") VALUES (" . implode(', ', $collectionPlaceholders) . ")",
-                        $collectionValues
+                        "INSERT INTO accountant_transactions (transaction_type, amount, sales_rep_id, description, reference_number, payment_method, status, approved_by, created_by, approved_at, notes)
+                         VALUES (?, ?, ?, ?, ?, 'cash', 'approved', ?, ?, NOW(), ?)",
+                        [
+                            'income',  // نوع المعاملة: إيراد (وليس collection_from_sales_rep)
+                            $amount,
+                            $salesRepId,  // حفظ معرف المندوب للرجوع إليه
+                            $description,
+                            $referenceNumber,
+                            $currentUser['id'],  // approved_by
+                            $currentUser['id'],  // created_by
+                            'تحصيل من قبل ' . ($currentUser['full_name'] ?? $currentUser['username'] ?? 'مدير/محاسب') . ' - لا يتم احتساب نسبة للمندوب'
+                        ]
                     );
 
-                    $collectionId = $db->getLastInsertId();
+                    $accountantTransactionId = $db->getLastInsertId();
 
                     logAudit(
                         $currentUser['id'],
-                        'add_collection_from_customers_page',
-                        'collection',
-                        $collectionId,
+                        'collect_customer_debt_by_manager_accountant',
+                        'accountant_transaction',
+                        $accountantTransactionId,
                         null,
                         [
-                            'collection_number' => $collectionNumber,
                             'customer_id' => $customerId,
+                            'customer_name' => $customer['name'] ?? '',
+                            'sales_rep_id' => $salesRepId,
                             'amount' => $amount,
+                            'reference_number' => $referenceNumber,
                         ]
                     );
-                    
-                    // تحديث راتب المندوب المسؤول عن العميل (المستحق للعمولة)
-                    // وليس بالضرورة الشخص الذي قام بالتحصيل
-                    try {
-                        $salesRepId = getSalesRepForCustomer($customerId);
-                        if ($salesRepId && $salesRepId > 0) {
-                            refreshSalesCommissionForUser(
-                                $salesRepId,
-                                $collectionDate,
-                                'تحديث تلقائي بعد تحصيل من صفحة العملاء'
-                            );
-                        }
-                    } catch (Throwable $e) {
-                        // لا نوقف العملية إذا فشل تحديث الراتب
-                        error_log('Error updating sales commission after collection from customers page: ' . $e->getMessage());
-                    }
-                    
-                    // القاعدة 3: أي مبلغ يقوم المندوب بتحصيله من العملاء من خلال صفحة العملاء
-                    // يتم احتساب نسبة 2% للمندوب الذي قام بالتحصيل
-                    // إضافة المكافأة الفورية بنسبة 2% للمندوب الذي قام بالتحصيل مباشرة
-                    if (($currentUser['role'] ?? '') === 'sales' && $collectionId) {
+
+                    // إرسال إشعار للمندوب
+                    if ($salesRepId > 0) {
                         try {
-                            require_once __DIR__ . '/../../includes/salary_calculator.php';
-                            if (function_exists('applyCollectionInstantReward')) {
-                                applyCollectionInstantReward(
-                                    $currentUser['id'],
-                                    $amount,
+                            require_once __DIR__ . '/../../includes/notifications.php';
+                            $collectorName = $currentUser['full_name'] ?? $currentUser['username'] ?? 'مدير/محاسب';
+                            $notificationTitle = 'تحصيل من عميلك';
+                            $notificationMessage = 'تم تحصيل مبلغ ' . formatCurrency($amount) . ' من العميل ' . htmlspecialchars($customer['name'] ?? '') . 
+                                                 ' بواسطة ' . htmlspecialchars($collectorName) . 
+                                                 ' - رقم المرجع: ' . $referenceNumber . 
+                                                 ' (ملاحظة: لا يتم احتساب نسبة تحصيلات على هذا المبلغ)';
+                            $notificationLink = getRelativeUrl('dashboard/sales.php?page=customers');
+                            
+                            createNotification(
+                                $salesRepId,
+                                $notificationTitle,
+                                $notificationMessage,
+                                'info',
+                                $notificationLink,
+                                true // إرسال Telegram
+                            );
+                        } catch (Throwable $notifError) {
+                            // لا نوقف العملية إذا فشل الإشعار
+                            error_log('Failed to send notification to sales rep: ' . $notifError->getMessage());
+                        }
+                    }
+
+                    // توزيع التحصيل على فواتير العميل
+                    $distributionResult = distributeCollectionToInvoices($customerId, $amount, $currentUser['id']);
+
+                    $db->commit();
+                    $transactionStarted = false;
+
+                    $messageParts = ['تم تحصيل المبلغ بنجاح وإضافته إلى خزنة الشركة.'];
+                    $messageParts[] = 'رقم المرجع: ' . $referenceNumber . '.';
+                    if ($salesRepName) {
+                        $messageParts[] = 'تم إرسال إشعار للمندوب: ' . htmlspecialchars($salesRepName) . '.';
+                    }
+                    if (!empty($distributionResult['updated_invoices'])) {
+                        $messageParts[] = 'تم تحديث ' . count($distributionResult['updated_invoices']) . ' فاتورة.';
+                    } elseif (!empty($distributionResult['message'])) {
+                        $messageParts[] = 'ملاحظة: ' . $distributionResult['message'];
+                    }
+
+                    $_SESSION['success_message'] = implode(' ', array_filter($messageParts));
+
+                } else {
+                    // التحصيل العادي (من قبل مندوب أو عميل بدون مندوب أو من صفحة أخرى)
+                    $collectionNumber = null;
+                    $collectionId = null;
+                    $distributionResult = null;
+
+                    // حفظ التحصيل في جدول collections ليظهر في صفحات التحصيلات وخزنة المندوب
+                    $collectionsTableExists = $db->queryOne("SHOW TABLES LIKE 'collections'");
+                    if (!empty($collectionsTableExists)) {
+                        // التحقق من وجود الأعمدة
+                        $hasStatusColumn = !empty($db->queryOne("SHOW COLUMNS FROM collections LIKE 'status'"));
+                        $hasCollectionNumberColumn = !empty($db->queryOne("SHOW COLUMNS FROM collections LIKE 'collection_number'"));
+                        $hasNotesColumn = !empty($db->queryOne("SHOW COLUMNS FROM collections LIKE 'notes'"));
+
+                        // إضافة عمود collection_number إذا لم يكن موجوداً
+                        if (!$hasCollectionNumberColumn) {
+                            try {
+                                $db->execute("ALTER TABLE collections ADD COLUMN collection_number VARCHAR(50) NULL AFTER id");
+                                $hasCollectionNumberColumn = true;
+                            } catch (Throwable $alterError) {
+                                error_log('Failed to add collection_number column: ' . $alterError->getMessage());
+                            }
+                        }
+
+                        // توليد رقم التحصيل إذا كان العمود موجوداً
+                        if ($hasCollectionNumberColumn) {
+                            $year = date('Y');
+                            $month = date('m');
+                            $lastCollection = $db->queryOne(
+                                "SELECT collection_number FROM collections WHERE collection_number LIKE ? ORDER BY collection_number DESC LIMIT 1 FOR UPDATE",
+                                ["COL-{$year}{$month}-%"]
+                            );
+
+                            $serial = 1;
+                            if (!empty($lastCollection['collection_number'])) {
+                                $parts = explode('-', $lastCollection['collection_number']);
+                                $serial = intval($parts[2] ?? 0) + 1;
+                            }
+
+                            $collectionNumber = sprintf("COL-%s%s-%04d", $year, $month, $serial);
+                        }
+
+                        // بناء قائمة الأعمدة والقيم
+                        $collectionDate = date('Y-m-d');
+                        $collectionColumns = ['customer_id', 'amount', 'date', 'payment_method', 'collected_by'];
+                        $collectionValues = [$customerId, $amount, $collectionDate, 'cash', $currentUser['id']];
+                        $collectionPlaceholders = array_fill(0, count($collectionColumns), '?');
+
+                        if ($hasCollectionNumberColumn && $collectionNumber !== null) {
+                            array_unshift($collectionColumns, 'collection_number');
+                            array_unshift($collectionValues, $collectionNumber);
+                            array_unshift($collectionPlaceholders, '?');
+                        }
+
+                        if ($hasNotesColumn) {
+                            $collectionColumns[] = 'notes';
+                            $collectionValues[] = 'تحصيل من صفحة العملاء';
+                            $collectionPlaceholders[] = '?';
+                        }
+
+                        if ($hasStatusColumn) {
+                            $collectionColumns[] = 'status';
+                            $collectionValues[] = 'pending';
+                            $collectionPlaceholders[] = '?';
+                        }
+
+                        $db->execute(
+                            "INSERT INTO collections (" . implode(', ', $collectionColumns) . ") VALUES (" . implode(', ', $collectionPlaceholders) . ")",
+                            $collectionValues
+                        );
+
+                        $collectionId = $db->getLastInsertId();
+
+                        logAudit(
+                            $currentUser['id'],
+                            'add_collection_from_customers_page',
+                            'collection',
+                            $collectionId,
+                            null,
+                            [
+                                'collection_number' => $collectionNumber,
+                                'customer_id' => $customerId,
+                                'amount' => $amount,
+                            ]
+                        );
+                        
+                        // تحديث راتب المندوب المسؤول عن العميل (المستحق للعمولة)
+                        // وليس بالضرورة الشخص الذي قام بالتحصيل
+                        try {
+                            $salesRepId = getSalesRepForCustomer($customerId);
+                            if ($salesRepId && $salesRepId > 0) {
+                                refreshSalesCommissionForUser(
+                                    $salesRepId,
                                     $collectionDate,
-                                    $collectionId,
-                                    $currentUser['id']
+                                    'تحديث تلقائي بعد تحصيل من صفحة العملاء'
                                 );
                             }
-                        } catch (Throwable $instantRewardError) {
-                            error_log('Instant collection reward error (customers page): ' . $instantRewardError->getMessage());
+                        } catch (Throwable $e) {
+                            // لا نوقف العملية إذا فشل تحديث الراتب
+                            error_log('Error updating sales commission after collection from customers page: ' . $e->getMessage());
                         }
+                        
+                        // القاعدة 3: أي مبلغ يقوم المندوب بتحصيله من العملاء من خلال صفحة العملاء
+                        // يتم احتساب نسبة 2% للمندوب الذي قام بالتحصيل
+                        // إضافة المكافأة الفورية بنسبة 2% للمندوب الذي قام بالتحصيل مباشرة
+                        if (($currentUser['role'] ?? '') === 'sales' && $collectionId) {
+                            try {
+                                require_once __DIR__ . '/../../includes/salary_calculator.php';
+                                if (function_exists('applyCollectionInstantReward')) {
+                                    applyCollectionInstantReward(
+                                        $currentUser['id'],
+                                        $amount,
+                                        $collectionDate,
+                                        $collectionId,
+                                        $currentUser['id']
+                                    );
+                                }
+                            } catch (Throwable $instantRewardError) {
+                                error_log('Instant collection reward error (customers page): ' . $instantRewardError->getMessage());
+                            }
+                        }
+                    } else {
+                        error_log('collect_debt: collections table not found, skipping collection record.');
                     }
-                } else {
-                    error_log('collect_debt: collections table not found, skipping collection record.');
+
+                    $distributionResult = distributeCollectionToInvoices($customerId, $amount, $currentUser['id']);
+
+                    $db->commit();
+                    $transactionStarted = false;
+
+                    $messageParts = ['تم تحصيل المبلغ بنجاح.'];
+                    if ($collectionNumber !== null) {
+                        $messageParts[] = 'رقم التحصيل: ' . $collectionNumber . '.';
+                    }
+
+                    if (!empty($distributionResult['updated_invoices'])) {
+                        $messageParts[] = 'تم تحديث ' . count($distributionResult['updated_invoices']) . ' فاتورة.';
+                    } elseif (!empty($distributionResult['message'])) {
+                        $messageParts[] = 'ملاحظة: ' . $distributionResult['message'];
+                    }
+
+                    $_SESSION['success_message'] = implode(' ', array_filter($messageParts));
                 }
-
-                $distributionResult = distributeCollectionToInvoices($customerId, $amount, $currentUser['id']);
-
-                $db->commit();
-                $transactionStarted = false;
-
-                $messageParts = ['تم تحصيل المبلغ بنجاح.'];
-                if ($collectionNumber !== null) {
-                    $messageParts[] = 'رقم التحصيل: ' . $collectionNumber . '.';
-                }
-
-                if (!empty($distributionResult['updated_invoices'])) {
-                    $messageParts[] = 'تم تحديث ' . count($distributionResult['updated_invoices']) . ' فاتورة.';
-                } elseif (!empty($distributionResult['message'])) {
-                    $messageParts[] = 'ملاحظة: ' . $distributionResult['message'];
-                }
-
-                $_SESSION['success_message'] = implode(' ', array_filter($messageParts));
 
                 $redirectFilters = [];
                 if (!empty($section)) {

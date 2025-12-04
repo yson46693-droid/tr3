@@ -986,67 +986,158 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
                 // إنشاء فاتورة محلية للعميل المحلي في local_invoices
                 try {
+                    // التأكد من وجود جدول local_invoices وإنشاؤه إذا لم يكن موجوداً
                     $localInvoicesTableExists = $db->queryOne("SHOW TABLES LIKE 'local_invoices'");
-                    if (!empty($localInvoicesTableExists)) {
-                        // إنشاء الفاتورة المحلية
-                        $localInvoiceNumber = 'LOC-' . $invoiceNumber;
-                        
-                        // فحص إذا كانت الفاتورة المحلية موجودة مسبقاً
-                        $existingLocalInvoice = $db->queryOne(
-                            "SELECT id FROM local_invoices WHERE invoice_number = ? LIMIT 1",
-                            [$localInvoiceNumber]
-                        );
-                        
-                        if (empty($existingLocalInvoice)) {
-                            // إنشاء الفاتورة المحلية
-                            $db->execute(
-                                "INSERT INTO local_invoices 
-                                (invoice_number, customer_id, date, due_date, subtotal, tax_rate, tax_amount, 
-                                 discount_amount, total_amount, paid_amount, remaining_amount, status, notes, created_by)
-                                VALUES (?, ?, ?, ?, ?, 0, 0, ?, ?, ?, ?, ?, ?, ?)",
-                                [
-                                    $localInvoiceNumber,
-                                    $localCustomerId,
-                                    $saleDate,
-                                    $dueDate,
-                                    $subtotal,
-                                    $prepaidAmount,
-                                    $netTotal,
-                                    $effectivePaidAmount,
-                                    $dueAmount,
-                                    $invoiceStatus,
-                                    $notes,
-                                    $currentUser['id']
-                                ]
-                            );
-                            
-                            $localInvoiceId = (int)$db->getLastInsertId();
-                            
-                            // إضافة عناصر الفاتورة المحلية
-                            $localInvoiceItemsTableExists = $db->queryOne("SHOW TABLES LIKE 'local_invoice_items'");
-                            if (!empty($localInvoiceItemsTableExists)) {
-                                foreach ($invoiceItems as $item) {
-                                    $itemTotal = $item['quantity'] * $item['unit_price'];
-                                    $db->execute(
-                                        "INSERT INTO local_invoice_items 
-                                        (invoice_id, product_id, description, quantity, unit_price, total_price)
-                                        VALUES (?, ?, ?, ?, ?, ?)",
-                                        [
-                                            $localInvoiceId,
-                                            $item['product_id'],
-                                            $item['description'] ?? null,
-                                            $item['quantity'],
-                                            $item['unit_price'],
-                                            $itemTotal
-                                        ]
-                                    );
-                                }
+                    if (empty($localInvoicesTableExists)) {
+                        // إنشاء جدول local_invoices
+                        $db->execute("
+                            CREATE TABLE IF NOT EXISTS `local_invoices` (
+                              `id` int(11) NOT NULL AUTO_INCREMENT,
+                              `invoice_number` varchar(50) NOT NULL,
+                              `customer_id` int(11) NOT NULL,
+                              `date` date NOT NULL,
+                              `due_date` date DEFAULT NULL,
+                              `subtotal` decimal(15,2) NOT NULL DEFAULT 0.00,
+                              `tax_rate` decimal(5,2) DEFAULT 0.00,
+                              `tax_amount` decimal(15,2) DEFAULT 0.00,
+                              `discount_amount` decimal(15,2) DEFAULT 0.00,
+                              `total_amount` decimal(15,2) NOT NULL DEFAULT 0.00,
+                              `paid_amount` decimal(15,2) DEFAULT 0.00,
+                              `remaining_amount` decimal(15,2) DEFAULT 0.00,
+                              `status` enum('draft','sent','paid','partial','overdue','cancelled') DEFAULT 'draft',
+                              `notes` text DEFAULT NULL,
+                              `created_by` int(11) NOT NULL,
+                              `created_at` timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                              `updated_at` timestamp NULL DEFAULT NULL ON UPDATE CURRENT_TIMESTAMP,
+                              PRIMARY KEY (`id`),
+                              UNIQUE KEY `invoice_number` (`invoice_number`),
+                              KEY `customer_id` (`customer_id`),
+                              KEY `date` (`date`),
+                              KEY `status` (`status`),
+                              KEY `created_by` (`created_by`)
+                            ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
+                        ");
+                    } else {
+                        // التأكد من وجود عمود due_date وإضافته إذا لم يكن موجوداً
+                        $hasDueDateColumn = !empty($db->queryOne("SHOW COLUMNS FROM local_invoices LIKE 'due_date'"));
+                        if (empty($hasDueDateColumn)) {
+                            try {
+                                $db->execute("ALTER TABLE local_invoices ADD COLUMN `due_date` date DEFAULT NULL AFTER `date`");
+                            } catch (Throwable $alterError) {
+                                error_log('Error adding due_date column to local_invoices: ' . $alterError->getMessage());
                             }
                         }
+                    }
+                    
+                    // التأكد من وجود جدول local_invoice_items وإنشاؤه إذا لم يكن موجوداً
+                    $localInvoiceItemsTableExists = $db->queryOne("SHOW TABLES LIKE 'local_invoice_items'");
+                    if (empty($localInvoiceItemsTableExists)) {
+                        // إنشاء جدول local_invoice_items
+                        $db->execute("
+                            CREATE TABLE IF NOT EXISTS `local_invoice_items` (
+                              `id` int(11) NOT NULL AUTO_INCREMENT,
+                              `invoice_id` int(11) NOT NULL,
+                              `product_id` int(11) NOT NULL,
+                              `description` varchar(255) DEFAULT NULL,
+                              `quantity` decimal(10,2) NOT NULL,
+                              `unit_price` decimal(15,2) NOT NULL,
+                              `total_price` decimal(15,2) NOT NULL,
+                              `created_at` timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                              PRIMARY KEY (`id`),
+                              KEY `invoice_id` (`invoice_id`),
+                              KEY `product_id` (`product_id`)
+                            ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
+                        ");
+                    }
+                    
+                    // إنشاء الفاتورة المحلية
+                    $localInvoiceNumber = 'LOC-' . $invoiceNumber;
+                    
+                    // فحص إذا كانت الفاتورة المحلية موجودة مسبقاً
+                    $existingLocalInvoice = $db->queryOne(
+                        "SELECT id FROM local_invoices WHERE invoice_number = ? LIMIT 1",
+                        [$localInvoiceNumber]
+                    );
+                    
+                        if (empty($existingLocalInvoice)) {
+                            // إنشاء الفاتورة المحلية
+                            // التحقق من وجود عمود due_date قبل الإدراج
+                            $hasDueDateColumn = !empty($db->queryOne("SHOW COLUMNS FROM local_invoices LIKE 'due_date'"));
+                            
+                            if ($hasDueDateColumn) {
+                                $db->execute(
+                                    "INSERT INTO local_invoices 
+                                    (invoice_number, customer_id, date, due_date, subtotal, tax_rate, tax_amount, 
+                                     discount_amount, total_amount, paid_amount, remaining_amount, status, notes, created_by)
+                                    VALUES (?, ?, ?, ?, ?, 0, 0, ?, ?, ?, ?, ?, ?, ?)",
+                                    [
+                                        $localInvoiceNumber,
+                                        $localCustomerId,
+                                        $saleDate,
+                                        $dueDate,
+                                        $subtotal,
+                                        $prepaidAmount,
+                                        $netTotal,
+                                        $effectivePaidAmount,
+                                        $dueAmount,
+                                        $invoiceStatus,
+                                        $notes,
+                                        $currentUser['id']
+                                    ]
+                                );
+                            } else {
+                                $db->execute(
+                                    "INSERT INTO local_invoices 
+                                    (invoice_number, customer_id, date, subtotal, tax_rate, tax_amount, 
+                                     discount_amount, total_amount, paid_amount, remaining_amount, status, notes, created_by)
+                                    VALUES (?, ?, ?, ?, 0, 0, ?, ?, ?, ?, ?, ?, ?)",
+                                    [
+                                        $localInvoiceNumber,
+                                        $localCustomerId,
+                                        $saleDate,
+                                        $subtotal,
+                                        $prepaidAmount,
+                                        $netTotal,
+                                        $effectivePaidAmount,
+                                        $dueAmount,
+                                        $invoiceStatus,
+                                        $notes,
+                                        $currentUser['id']
+                                    ]
+                                );
+                            }
+                        
+                        $localInvoiceId = (int)$db->getLastInsertId();
+                        
+                        error_log("Local invoice created successfully: ID=$localInvoiceId, Number=$localInvoiceNumber, Customer=$localCustomerId");
+                        
+                        // إضافة عناصر الفاتورة المحلية
+                        if (!empty($invoiceItems)) {
+                            foreach ($invoiceItems as $item) {
+                                $itemTotal = $item['quantity'] * $item['unit_price'];
+                                $db->execute(
+                                    "INSERT INTO local_invoice_items 
+                                    (invoice_id, product_id, description, quantity, unit_price, total_price)
+                                    VALUES (?, ?, ?, ?, ?, ?)",
+                                    [
+                                        $localInvoiceId,
+                                        $item['product_id'],
+                                        $item['description'] ?? null,
+                                        $item['quantity'],
+                                        $item['unit_price'],
+                                        $itemTotal
+                                    ]
+                                );
+                            }
+                            error_log("Local invoice items added successfully: " . count($invoiceItems) . " items for invoice ID=$localInvoiceId");
+                        }
+                    } else {
+                        error_log("Local invoice already exists: Number=$localInvoiceNumber");
                     }
                 } catch (Throwable $localInvoiceError) {
                     // لا نوقف العملية إذا فشل إنشاء الفاتورة المحلية، فقط نسجل الخطأ
                     error_log('Error creating local invoice: ' . $localInvoiceError->getMessage());
+                    error_log('Stack trace: ' . $localInvoiceError->getTraceAsString());
                 }
 
                 logAudit($currentUser['id'], 'create_pos_sale_manager', 'invoice', $invoiceId, null, [
