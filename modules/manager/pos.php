@@ -293,18 +293,24 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['
         $error = 'يجب إدخال اسم العميل.';
     } else {
         try {
-            // التحقق من عدم وجود عميل بنفس الاسم (جميع العملاء بغض النظر عن الشروط)
-            $existingCustomer = $db->queryOne(
-                "SELECT id, name FROM customers WHERE name = ? AND status = 'active' LIMIT 1",
+            // التحقق من وجود جدول local_customers
+            $localCustomersTableExists = $db->queryOne("SHOW TABLES LIKE 'local_customers'");
+            
+            if (empty($localCustomersTableExists)) {
+                throw new RuntimeException('جدول العملاء المحليين غير موجود في قاعدة البيانات.');
+            }
+            
+            // التحقق من عدم وجود عميل محلي بنفس الاسم
+            $existingLocalCustomer = $db->queryOne(
+                "SELECT id, name FROM local_customers WHERE name = ? AND status = 'active' LIMIT 1",
                 [$name]
             );
             
-            if ($existingCustomer) {
-                $error = 'يوجد عميل مسجل مسبقاً بنفس الاسم.';
+            if ($existingLocalCustomer) {
+                $error = 'يوجد عميل محلي مسجل مسبقاً بنفس الاسم.';
             } else {
                 $result = $db->execute(
-                    "INSERT INTO customers (name, phone, address, balance, status, created_by, rep_id, created_from_pos, created_by_admin)
-                     VALUES (?, ?, ?, ?, 'active', ?, NULL, 0, 1)",
+                    "INSERT INTO local_customers (name, phone, address, balance, status, created_by) VALUES (?, ?, ?, ?, 'active', ?)",
                     [
                         $name,
                         $phone !== '' ? $phone : null,
@@ -319,21 +325,12 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['
                     throw new RuntimeException('فشل إضافة العميل: لم يتم الحصول على معرف العميل.');
                 }
                 
-                logAudit($currentUser['id'], 'manager_add_company_customer', 'customer', $customerId, null, [
+                logAudit($currentUser['id'], 'manager_add_local_customer', 'local_customer', $customerId, null, [
                     'name' => $name,
-                    'created_by_admin' => 1,
                     'from_shipping_page' => true,
                 ]);
 
-                $success = 'تمت إضافة العميل بنجاح. يمكنك الآن اختياره من القائمة.';
-                
-                // إعادة تحميل قائمة العملاء
-                $customers = [];
-                try {
-                    $customers = $db->query("SELECT id, name FROM customers WHERE status = 'active' ORDER BY name ASC");
-                } catch (Throwable $e) {
-                    error_log('Error fetching customers after add: ' . $e->getMessage());
-                }
+                $success = 'تمت إضافة العميل المحلي بنجاح. يمكنك الآن اختياره من القائمة.';
             }
         } catch (InvalidArgumentException $invalidError) {
             $error = $invalidError->getMessage();
@@ -1478,10 +1475,63 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                         throw new InvalidArgumentException('شركة الشحن المحددة غير متاحة أو غير نشطة.');
                     }
 
-                    $customer = $db->queryOne(
-                        "SELECT id, balance, status FROM customers WHERE id = ? FOR UPDATE",
-                        [$customerId]
-                    );
+                    // البحث عن العميل في جدول local_customers أولاً
+                    $localCustomer = null;
+                    $actualCustomerId = null;
+                    $customer = null;
+                    
+                    $localCustomersTableExists = $db->queryOne("SHOW TABLES LIKE 'local_customers'");
+                    if (!empty($localCustomersTableExists)) {
+                        $localCustomer = $db->queryOne(
+                            "SELECT id, name, phone, address, balance, status FROM local_customers WHERE id = ? FOR UPDATE",
+                            [$customerId]
+                        );
+                        
+                        if ($localCustomer) {
+                            // البحث عن عميل في جدول customers بنفس الاسم
+                            $existingCustomer = $db->queryOne(
+                                "SELECT id, balance, status FROM customers WHERE name = ? AND status = 'active' FOR UPDATE",
+                                [$localCustomer['name']]
+                            );
+                            
+                            if ($existingCustomer) {
+                                $actualCustomerId = (int)$existingCustomer['id'];
+                                $customer = $existingCustomer;
+                            } else {
+                                // إنشاء عميل في جدول customers بنفس بيانات العميل المحلي
+                                $insertResult = $db->execute(
+                                    "INSERT INTO customers (name, phone, address, balance, status, created_by, created_by_admin) VALUES (?, ?, ?, ?, 'active', ?, 1)",
+                                    [
+                                        $localCustomer['name'],
+                                        $localCustomer['phone'] ?? null,
+                                        $localCustomer['address'] ?? null,
+                                        (float)($localCustomer['balance'] ?? 0),
+                                        $currentUser['id'] ?? null,
+                                    ]
+                                );
+                                $actualCustomerId = (int)($insertResult['insert_id'] ?? 0);
+                                
+                                if ($actualCustomerId <= 0) {
+                                    throw new RuntimeException('فشل إنشاء العميل في جدول customers.');
+                                }
+                                
+                                $customer = [
+                                    'id' => $actualCustomerId,
+                                    'balance' => (float)($localCustomer['balance'] ?? 0),
+                                    'status' => 'active'
+                                ];
+                            }
+                        }
+                    }
+                    
+                    // إذا لم نجد العميل في local_customers، نبحث في customers
+                    if (!$customer) {
+                        $customer = $db->queryOne(
+                            "SELECT id, balance, status FROM customers WHERE id = ? FOR UPDATE",
+                            [$customerId]
+                        );
+                        $actualCustomerId = $customerId;
+                    }
 
                     if (!$customer) {
                         error_log('Shipping order: Customer not found - customer_id: ' . $customerId);
@@ -1489,9 +1539,12 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     }
 
                     if (($customer['status'] ?? '') !== 'active') {
-                        error_log('Shipping order: Customer is not active - customer_id: ' . $customerId . ', status: ' . ($customer['status'] ?? 'unknown'));
+                        error_log('Shipping order: Customer is not active - customer_id: ' . ($actualCustomerId ?? $customerId) . ', status: ' . ($customer['status'] ?? 'unknown'));
                         throw new InvalidArgumentException('العميل المحدد غير نشط. يرجى اختيار عميل نشط.');
                     }
+                    
+                    // استخدام actualCustomerId بدلاً من customerId
+                    $customerId = $actualCustomerId ?? $customerId;
 
                     $productsMap = [];
                     $factoryProductsMap = [];
@@ -2243,11 +2296,6 @@ try {
             <i class="bi bi-cart-check me-2"></i>نقطة البيع
         </button>
     </li>
-    <li class="nav-item" role="presentation">
-        <button class="nav-link" id="shipping-tab" data-bs-toggle="tab" data-bs-target="#shipping-content" type="button" role="tab">
-            <i class="bi bi-truck me-2"></i>طلبات الشحن
-        </button>
-    </li>
 </ul>
 
 <div class="tab-content" id="posTabContent">
@@ -2906,15 +2954,18 @@ try {
             </section>
         </div>
     </div>
-    <!-- محتوى طلبات الشحن -->
-    <div class="tab-pane fade" id="shipping-content" role="tabpanel">
         <?php
-        // تحميل العملاء من جدول customers (وليس local_customers) لطلبات الشحن
+        // تحميل العملاء المحليين فقط من جدول local_customers لطلبات الشحن
         $shippingCustomers = [];
         try {
-            $shippingCustomers = $db->query("SELECT id, name, phone FROM customers WHERE status = 'active' ORDER BY name ASC");
+            $localCustomersTableExists = $db->queryOne("SHOW TABLES LIKE 'local_customers'");
+            if (!empty($localCustomersTableExists)) {
+                $shippingCustomers = $db->query("SELECT id, name, phone FROM local_customers WHERE status = 'active' ORDER BY name ASC");
+            } else {
+                $shippingCustomers = [];
+            }
         } catch (Throwable $e) {
-            error_log('Error fetching customers for shipping: ' . $e->getMessage());
+            error_log('Error fetching local customers for shipping: ' . $e->getMessage());
             $shippingCustomers = [];
         }
         
