@@ -264,6 +264,32 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     $placeholders[] = '?';
                 }
 
+                // البحث عن product_id من اسم المنتج إذا كان موجوداً
+                $productId = null;
+                if ($productName !== '') {
+                    try {
+                        // البحث بمطابقة دقيقة أولاً
+                        $product = $db->queryOne(
+                            "SELECT id FROM products WHERE name = ? AND status = 'active' LIMIT 1",
+                            [$productName]
+                        );
+                        
+                        // إذا لم يتم العثور عليه، جرب البحث بمطابقة جزئية
+                        if (!$product) {
+                            $product = $db->queryOne(
+                                "SELECT id FROM products WHERE name LIKE ? AND status = 'active' LIMIT 1",
+                                ['%' . $productName . '%']
+                            );
+                        }
+                        
+                        if ($product && !empty($product['id'])) {
+                            $productId = (int)$product['id'];
+                        }
+                    } catch (Exception $productSearchError) {
+                        error_log('Product search error in production_tasks: ' . $productSearchError->getMessage());
+                    }
+                }
+
                 // بناء notes مع معلومات المنتج والعمال
                 $notesParts = [];
                 if ($details) {
@@ -293,6 +319,13 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 if ($notesValue) {
                     $columns[] = 'notes';
                     $values[] = $notesValue;
+                    $placeholders[] = '?';
+                }
+
+                // حفظ product_id إذا تم العثور عليه
+                if ($productId !== null && $productId > 0) {
+                    $columns[] = 'product_id';
+                    $values[] = $productId;
                     $placeholders[] = '?';
                 }
 
