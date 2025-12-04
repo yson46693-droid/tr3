@@ -122,6 +122,23 @@ try {
     $paid = floatval($salary['paid_amount'] ?? 0);
     $remaining = max(0, $accumulated - $paid);
     
+    // إنشاء month_label بنفس طريقة get_user_salaries.php
+    $monthNames = [
+        1 => 'يناير', 2 => 'فبراير', 3 => 'مارس', 4 => 'أبريل',
+        5 => 'مايو', 6 => 'يونيو', 7 => 'يوليو', 8 => 'أغسطس',
+        9 => 'سبتمبر', 10 => 'أكتوبر', 11 => 'نوفمبر', 12 => 'ديسمبر'
+    ];
+    
+    // التأكد من أن الشهر والسنة صحيحين
+    if ($salaryMonth <= 0 || $salaryMonth > 12) {
+        $salaryMonth = date('n');
+    }
+    if ($salaryYear <= 0 || $salaryYear > 9999) {
+        $salaryYear = date('Y');
+    }
+    
+    $monthLabel = ($monthNames[$salaryMonth] ?? 'شهر غير معروف') . ' ' . $salaryYear;
+    
     ob_end_clean();
     echo json_encode([
         'success' => true,
@@ -130,6 +147,7 @@ try {
             'user_id' => $userId,
             'month' => $salaryMonth,
             'year' => $salaryYear,
+            'month_label' => $monthLabel,
             'total_amount' => $currentTotal,
             'calculated_accumulated' => $accumulated,
             'paid_amount' => $paid,

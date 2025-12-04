@@ -339,6 +339,19 @@ try {
         //     continue; // تخطي هذا الراتب
         // }
         
+        // التأكد من أن month_label موجود دائماً
+        if (empty($monthLabel) || $monthLabel === 'غير محدد') {
+            // إعادة إنشاء month_label إذا كان فارغاً
+            if ($month >= 1 && $month <= 12 && $year > 0 && $year <= 9999) {
+                $monthLabel = ($monthNames[$month] ?? 'شهر غير معروف') . ' ' . $year;
+            } else {
+                // استخدام القيم الافتراضية
+                $month = date('n');
+                $year = date('Y');
+                $monthLabel = ($monthNames[$month] ?? 'شهر غير معروف') . ' ' . $year;
+            }
+        }
+        
         // إنشاء مفتاح فريد للشهر والسنة
         $monthYearKey = $year . '-' . str_pad($month, 2, '0', STR_PAD_LEFT);
         

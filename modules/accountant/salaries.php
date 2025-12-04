@@ -4401,7 +4401,23 @@ function loadUserSalariesForSettlement(userId, currentSalaryId) {
                         const option = document.createElement('option');
                         option.value = salary.id;
                         const remaining = parseFloat(salary.remaining || 0);
-                        option.textContent = salary.month_label + ' - المتبقي: ' + formatCurrency(remaining);
+                        // استخدام month_label إذا كان موجوداً، وإلا إنشاء تسمية من month و year
+                        let monthLabel = salary.month_label || '';
+                        if (!monthLabel && salary.month && salary.year) {
+                            const monthNames = ['', 'يناير', 'فبراير', 'مارس', 'أبريل', 'مايو', 'يونيو', 
+                                               'يوليو', 'أغسطس', 'سبتمبر', 'أكتوبر', 'نوفمبر', 'ديسمبر'];
+                            const month = parseInt(salary.month) || 0;
+                            const year = parseInt(salary.year) || new Date().getFullYear();
+                            if (month >= 1 && month <= 12) {
+                                monthLabel = monthNames[month] + ' ' + year;
+                            } else {
+                                monthLabel = 'شهر غير معروف ' + year;
+                            }
+                        }
+                        if (!monthLabel) {
+                            monthLabel = 'غير محدد';
+                        }
+                        option.textContent = monthLabel + ' - المتبقي: ' + formatCurrency(remaining);
                         if (salary.id == currentSalaryId) {
                             option.selected = true;
                         }
