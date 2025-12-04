@@ -2446,6 +2446,106 @@ function calculateTotalSalaryWithCollections($salaryRecord, $userId, $month, $ye
  * @param int|null $year السنة (اختياري - إذا كان null يتم تحديث جميع السنوات)
  * @return array نتيجة العملية
  */
+/**
+ * حساب المبلغ التراكمي للراتب بناءً على الراتب الحالي والرواتب السابقة
+ * هذه الدالة توحد منطق الحساب في جميع أنحاء النظام
+ * 
+ * @param int $userId معرف الموظف
+ * @param int $salaryId معرف الراتب الحالي (0 إذا لم يكن محفوظاً)
+ * @param float $currentTotalAmount المبلغ الإجمالي للراتب الحالي
+ * @param int $currentMonth الشهر الحالي (1-12)
+ * @param int $currentYear السنة الحالية
+ * @param Database|null $dbInstance مثيل قاعدة البيانات (اختياري)
+ * @return array ['accumulated' => float, 'paid' => float, 'remaining' => float]
+ */
+function calculateSalaryAccumulatedAmount($userId, $salaryId, $currentTotalAmount, $currentMonth, $currentYear, $dbInstance = null) {
+    if ($dbInstance === null) {
+        $db = db();
+    } else {
+        $db = $dbInstance;
+    }
+    
+    require_once __DIR__ . '/config.php';
+    if (!function_exists('cleanFinancialValue')) {
+        function cleanFinancialValue($value) {
+            return floatval(str_replace(',', '', $value ?? 0));
+        }
+    }
+    
+    // التحقق من وجود عمود year
+    $yearColumnCheck = $db->queryOne("SHOW COLUMNS FROM salaries LIKE 'year'");
+    $hasYearColumn = !empty($yearColumnCheck);
+    
+    // ابدأ بالراتب الحالي
+    $accumulated = cleanFinancialValue($currentTotalAmount);
+    
+    // جلب الرواتب السابقة
+    if ($hasYearColumn) {
+        if ($salaryId > 0) {
+            $previousSalaries = $db->query(
+                "SELECT s.total_amount, s.paid_amount, s.accumulated_amount,
+                        COALESCE(s.accumulated_amount, s.total_amount) as prev_accumulated
+                 FROM salaries s
+                 WHERE s.user_id = ? AND s.id != ? 
+                 AND (s.year < ? OR (s.year = ? AND s.month < ?))
+                 ORDER BY s.year ASC, s.month ASC",
+                [$userId, $salaryId, $currentYear, $currentYear, $currentMonth]
+            );
+        } else {
+            $previousSalaries = $db->query(
+                "SELECT s.total_amount, s.paid_amount, s.accumulated_amount,
+                        COALESCE(s.accumulated_amount, s.total_amount) as prev_accumulated
+                 FROM salaries s
+                 WHERE s.user_id = ? 
+                 AND (s.year < ? OR (s.year = ? AND s.month < ?))
+                 ORDER BY s.year ASC, s.month ASC",
+                [$userId, $currentYear, $currentYear, $currentMonth]
+            );
+        }
+    } else {
+        if ($salaryId > 0) {
+            $previousSalaries = $db->query(
+                "SELECT s.total_amount, s.paid_amount, s.accumulated_amount,
+                        COALESCE(s.accumulated_amount, s.total_amount) as prev_accumulated
+                 FROM salaries s
+                 WHERE s.user_id = ? AND s.id != ? 
+                 AND s.month < ?
+                 ORDER BY s.month ASC",
+                [$userId, $salaryId, $currentMonth]
+            );
+        } else {
+            $previousSalaries = $db->query(
+                "SELECT s.total_amount, s.paid_amount, s.accumulated_amount,
+                        COALESCE(s.accumulated_amount, s.total_amount) as prev_accumulated
+                 FROM salaries s
+                 WHERE s.user_id = ? 
+                 AND s.month < ?
+                 ORDER BY s.month ASC",
+                [$userId, $currentMonth]
+            );
+        }
+    }
+    
+    // جمع المتبقي من الرواتب السابقة
+    foreach ($previousSalaries as $prevSalary) {
+        $prevTotal = cleanFinancialValue($prevSalary['total_amount'] ?? 0);
+        $prevPaid = cleanFinancialValue($prevSalary['paid_amount'] ?? 0);
+        $prevAccumulated = cleanFinancialValue($prevSalary['prev_accumulated'] ?? $prevTotal);
+        
+        // حساب المتبقي من الراتب السابق
+        $prevRemaining = max(0, $prevAccumulated - $prevPaid);
+        
+        // إضافة المتبقي إلى المبلغ التراكمي فقط إذا كان هناك متبقي
+        if ($prevRemaining > 0.01) {
+            $accumulated += $prevRemaining;
+        }
+    }
+    
+    return [
+        'accumulated' => $accumulated
+    ];
+}
+
 function updateTotalHoursFromAttendanceRecords($userId = null, $month = null, $year = null) {
     try {
         $db = db();

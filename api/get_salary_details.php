@@ -87,51 +87,25 @@ try {
         exit;
     }
     
-    // حساب المبلغ التراكمي من الرواتب السابقة
+    // حساب المبلغ التراكمي من الرواتب السابقة - استخدام الدالة المشتركة
+    require_once __DIR__ . '/../includes/salary_calculator.php';
+    
     $userId = intval($salary['user_id']);
     $salaryMonth = intval($salary['month'] ?? 0);
     $salaryYear = intval($salary['year'] ?? date('Y'));
-    
-    $yearColumnCheck = $db->queryOne("SHOW COLUMNS FROM salaries LIKE 'year'");
-    $hasYearColumn = !empty($yearColumnCheck);
-    
     $currentTotal = floatval($salary['total_amount'] ?? 0);
-    $accumulated = $currentTotal;
     
-    if ($hasYearColumn) {
-        $previousSalaries = $db->query(
-            "SELECT s.total_amount, s.paid_amount, s.accumulated_amount,
-                    COALESCE(s.accumulated_amount, s.total_amount) as prev_accumulated
-             FROM salaries s
-             WHERE s.user_id = ? AND s.id != ? 
-             AND (s.year < ? OR (s.year = ? AND s.month < ?))
-             ORDER BY s.year ASC, s.month ASC",
-            [$userId, $salaryId, $salaryYear, $salaryYear, $salaryMonth]
-        );
-    } else {
-        $previousSalaries = $db->query(
-            "SELECT s.total_amount, s.paid_amount, s.accumulated_amount,
-                    COALESCE(s.accumulated_amount, s.total_amount) as prev_accumulated
-             FROM salaries s
-             WHERE s.user_id = ? AND s.id != ? 
-             AND s.month < ?
-             ORDER BY s.month ASC",
-            [$userId, $salaryId, $salaryMonth]
-        );
-    }
+    // استخدام الدالة المشتركة لحساب المبلغ التراكمي
+    $accumulatedData = calculateSalaryAccumulatedAmount(
+        $userId, 
+        $salaryId, 
+        $currentTotal, 
+        $salaryMonth, 
+        $salaryYear, 
+        $db
+    );
     
-    foreach ($previousSalaries as $prevSalary) {
-        $prevTotal = floatval($prevSalary['total_amount'] ?? 0);
-        $prevPaid = floatval($prevSalary['paid_amount'] ?? 0);
-        $prevAccumulated = floatval($prevSalary['prev_accumulated'] ?? $prevTotal);
-        
-        $prevRemaining = max(0, $prevAccumulated - $prevPaid);
-        
-        if ($prevRemaining > 0.01) {
-            $accumulated += $prevRemaining;
-        }
-    }
-    
+    $accumulated = $accumulatedData['accumulated'];
     $paid = floatval($salary['paid_amount'] ?? 0);
     $remaining = max(0, $accumulated - $paid);
     

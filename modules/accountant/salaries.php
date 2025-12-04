@@ -3130,86 +3130,24 @@ $pageTitle = ($view === 'advances') ? 'السلف' : (($view === 'pending') ? '�
                 $salary['calculated_collections_bonus'] = $collectionsBonus;
                 $salary['calculated_total_amount'] = $totalAmount;
                 
-                // إعادة حساب المبلغ التراكمي بدقة من جميع الرواتب السابقة
+                // إعادة حساب المبلغ التراكمي بدقة من جميع الرواتب السابقة - استخدام الدالة المشتركة
+                require_once __DIR__ . '/../../includes/salary_calculator.php';
+                
                 $salaryId = intval($salary['id'] ?? 0);
-                $accumulated = $totalAmount; // ابدأ بالراتب الحالي
+                
+                // استخدام الدالة المشتركة لحساب المبلغ التراكمي
+                $accumulatedData = calculateSalaryAccumulatedAmount(
+                    $userId, 
+                    $salaryId, 
+                    $totalAmount, 
+                    $selectedMonth, 
+                    $selectedYear, 
+                    $db
+                );
+                
+                $accumulated = $accumulatedData['accumulated'];
                 
                 // حفظ القيمة المحسوبة للمبلغ التراكمي لاستخدامها في التسوية
-                $salary['calculated_accumulated'] = $accumulated;
-                
-                // البحث عن الرواتب السابقة دائماً (حتى لو لم يكن هناك راتب محفوظ للشهر الحالي)
-                // هذا يضمن أن الرواتب التراكمية تظهر حتى لو كان الراتب الحالي "غير محسوب"
-                $yearColumnCheck = $db->queryOne("SHOW COLUMNS FROM salaries LIKE 'year'");
-                $hasYearColumn = !empty($yearColumnCheck);
-                
-                if ($hasYearColumn) {
-                    // إذا كان عمود year موجوداً، استخدمه للترتيب
-                    // جلب الرواتب السابقة مع المبلغ المدفوع والمتبقي
-                    if ($salaryId > 0) {
-                        $previousSalaries = $db->query(
-                            "SELECT s.total_amount, s.paid_amount, s.accumulated_amount,
-                                    COALESCE(s.accumulated_amount, s.total_amount) as prev_accumulated
-                             FROM salaries s
-                             WHERE s.user_id = ? AND s.id != ? 
-                             AND (s.year < ? OR (s.year = ? AND s.month < ?))
-                             ORDER BY s.year ASC, s.month ASC",
-                            [$userId, $salaryId, $selectedYear, $selectedYear, $selectedMonth]
-                        );
-                    } else {
-                        // إذا لم يكن هناك راتب محفوظ للشهر الحالي، ابحث عن جميع الرواتب السابقة
-                        $previousSalaries = $db->query(
-                            "SELECT s.total_amount, s.paid_amount, s.accumulated_amount,
-                                    COALESCE(s.accumulated_amount, s.total_amount) as prev_accumulated
-                             FROM salaries s
-                             WHERE s.user_id = ? 
-                             AND (s.year < ? OR (s.year = ? AND s.month < ?))
-                             ORDER BY s.year ASC, s.month ASC",
-                            [$userId, $selectedYear, $selectedYear, $selectedMonth]
-                        );
-                    }
-                } else {
-                    // إذا لم يكن year موجوداً، استخدم month فقط
-                    if ($salaryId > 0) {
-                        $previousSalaries = $db->query(
-                            "SELECT s.total_amount, s.paid_amount, s.accumulated_amount,
-                                    COALESCE(s.accumulated_amount, s.total_amount) as prev_accumulated
-                             FROM salaries s
-                             WHERE s.user_id = ? AND s.id != ? 
-                             AND s.month < ?
-                             ORDER BY s.month ASC",
-                            [$userId, $salaryId, $selectedMonth]
-                        );
-                    } else {
-                        // إذا لم يكن هناك راتب محفوظ للشهر الحالي، ابحث عن جميع الرواتب السابقة
-                        $previousSalaries = $db->query(
-                            "SELECT s.total_amount, s.paid_amount, s.accumulated_amount,
-                                    COALESCE(s.accumulated_amount, s.total_amount) as prev_accumulated
-                             FROM salaries s
-                             WHERE s.user_id = ? 
-                             AND s.month < ?
-                             ORDER BY s.month ASC",
-                            [$userId, $selectedMonth]
-                        );
-                    }
-                }
-                
-                // جمع المتبقي من الرواتب السابقة (التي لم يتم تسويتها بالكامل)
-                foreach ($previousSalaries as $prevSalary) {
-                    $prevTotal = cleanFinancialValue($prevSalary['total_amount'] ?? 0);
-                    $prevPaid = cleanFinancialValue($prevSalary['paid_amount'] ?? 0);
-                    $prevAccumulated = cleanFinancialValue($prevSalary['prev_accumulated'] ?? $prevTotal);
-                    
-                    // حساب المتبقي من الراتب السابق
-                    // المتبقي = المبلغ التراكمي السابق - المبلغ المدفوع
-                    $prevRemaining = max(0, $prevAccumulated - $prevPaid);
-                    
-                    // إضافة المتبقي إلى المبلغ التراكمي فقط إذا كان هناك متبقي
-                    if ($prevRemaining > 0.01) {
-                        $accumulated += $prevRemaining;
-                    }
-                }
-                
-                // تحديث القيمة المحسوبة للمبلغ التراكمي
                 $salary['calculated_accumulated'] = $accumulated;
                 
                 $paid = floatval($salary['paid_amount'] ?? 0);
@@ -3373,81 +3311,22 @@ $pageTitle = ($view === 'advances') ? 'السلف' : (($view === 'pending') ? '�
                         // التأكد من أن الراتب الإجمالي لا يكون سالباً
                         $totalSalary = max(0, $totalSalary);
                         
-                        // إعادة حساب المبلغ التراكمي بدقة من جميع الرواتب السابقة
+                        // إعادة حساب المبلغ التراكمي بدقة من جميع الرواتب السابقة - استخدام الدالة المشتركة
+                        require_once __DIR__ . '/../../includes/salary_calculator.php';
+                        
                         $salaryId = intval($salary['id'] ?? 0);
-                        $accumulated = $totalSalary; // ابدأ بالراتب الحالي
                         
-                        // البحث عن الرواتب السابقة دائماً (حتى لو لم يكن هناك راتب محفوظ للشهر الحالي)
-                        // هذا يضمن أن الرواتب التراكمية تظهر حتى لو كان الراتب الحالي "غير محسوب"
-                        $yearColumnCheck = $db->queryOne("SHOW COLUMNS FROM salaries LIKE 'year'");
-                        $hasYearColumn = !empty($yearColumnCheck);
+                        // استخدام الدالة المشتركة لحساب المبلغ التراكمي
+                        $accumulatedData = calculateSalaryAccumulatedAmount(
+                            $userId, 
+                            $salaryId, 
+                            $totalSalary, 
+                            $selectedMonth, 
+                            $selectedYear, 
+                            $db
+                        );
                         
-                        if ($hasYearColumn) {
-                            // إذا كان عمود year موجوداً، استخدمه للترتيب
-                            // جلب الرواتب السابقة مع المبلغ المدفوع والمتبقي
-                            if ($salaryId > 0) {
-                                $previousSalaries = $db->query(
-                                    "SELECT s.total_amount, s.paid_amount, s.accumulated_amount,
-                                            COALESCE(s.accumulated_amount, s.total_amount) as prev_accumulated
-                                     FROM salaries s
-                                     WHERE s.user_id = ? AND s.id != ? 
-                                     AND (s.year < ? OR (s.year = ? AND s.month < ?))
-                                     ORDER BY s.year ASC, s.month ASC",
-                                    [$userId, $salaryId, $selectedYear, $selectedYear, $selectedMonth]
-                                );
-                            } else {
-                                // إذا لم يكن هناك راتب محفوظ للشهر الحالي، ابحث عن جميع الرواتب السابقة
-                                $previousSalaries = $db->query(
-                                    "SELECT s.total_amount, s.paid_amount, s.accumulated_amount,
-                                            COALESCE(s.accumulated_amount, s.total_amount) as prev_accumulated
-                                     FROM salaries s
-                                     WHERE s.user_id = ? 
-                                     AND (s.year < ? OR (s.year = ? AND s.month < ?))
-                                     ORDER BY s.year ASC, s.month ASC",
-                                    [$userId, $selectedYear, $selectedYear, $selectedMonth]
-                                );
-                            }
-                        } else {
-                            // إذا لم يكن year موجوداً، استخدم month فقط
-                            if ($salaryId > 0) {
-                                $previousSalaries = $db->query(
-                                    "SELECT s.total_amount, s.paid_amount, s.accumulated_amount,
-                                            COALESCE(s.accumulated_amount, s.total_amount) as prev_accumulated
-                                     FROM salaries s
-                                     WHERE s.user_id = ? AND s.id != ? 
-                                     AND s.month < ?
-                                     ORDER BY s.month ASC",
-                                    [$userId, $salaryId, $selectedMonth]
-                                );
-                            } else {
-                                // إذا لم يكن هناك راتب محفوظ للشهر الحالي، ابحث عن جميع الرواتب السابقة
-                                $previousSalaries = $db->query(
-                                    "SELECT s.total_amount, s.paid_amount, s.accumulated_amount,
-                                            COALESCE(s.accumulated_amount, s.total_amount) as prev_accumulated
-                                     FROM salaries s
-                                     WHERE s.user_id = ? 
-                                     AND s.month < ?
-                                     ORDER BY s.month ASC",
-                                    [$userId, $selectedMonth]
-                                );
-                            }
-                        }
-                        
-                        // جمع المتبقي من الرواتب السابقة (التي لم يتم تسويتها بالكامل)
-                        foreach ($previousSalaries as $prevSalary) {
-                            $prevTotal = cleanFinancialValue($prevSalary['total_amount'] ?? 0);
-                            $prevPaid = cleanFinancialValue($prevSalary['paid_amount'] ?? 0);
-                            $prevAccumulated = cleanFinancialValue($prevSalary['prev_accumulated'] ?? $prevTotal);
-                            
-                            // حساب المتبقي من الراتب السابق
-                            // المتبقي = المبلغ التراكمي السابق - المبلغ المدفوع
-                            $prevRemaining = max(0, $prevAccumulated - $prevPaid);
-                            
-                            // إضافة المتبقي إلى المبلغ التراكمي فقط إذا كان هناك متبقي
-                            if ($prevRemaining > 0.01) {
-                                $accumulated += $prevRemaining;
-                            }
-                        }
+                        $accumulated = $accumulatedData['accumulated'];
                         
                         // تحديث القيمة المحسوبة للمبلغ التراكمي في البيانات
                         $salary['calculated_accumulated'] = $accumulated;
@@ -4312,6 +4191,14 @@ function viewAdvanceDetails(advanceId) {
     // يمكن إضافة modal لعرض التفاصيل لاحقاً
 }
 
+// متغيرات عامة لحفظ القيم المحسوبة من بطاقة الموظف
+let settleModalCalculatedValues = {
+    accumulated: 0,
+    paid: 0,
+    remaining: 0,
+    salaryId: 0
+};
+
 function openSettleModal(salaryId, salaryData, remainingAmount, calculatedAccumulated) {
     // الحصول على user_id من البيانات - محاولة عدة مصادر
     let userId = null;
@@ -4367,6 +4254,14 @@ function openSettleModal(salaryId, salaryData, remainingAmount, calculatedAccumu
     const accumulated = parseFloat(calculatedAccumulated || salaryData.calculated_accumulated || salaryData.accumulated_amount || salaryData.total_amount || 0);
     const paid = parseFloat(salaryData.paid_amount || 0);
     const remaining = parseFloat(remainingAmount || salaryData.calculated_remaining || Math.max(0, accumulated - paid));
+    
+    // حفظ القيم في متغير عام لاستخدامها عند تغيير الراتب
+    settleModalCalculatedValues = {
+        accumulated: accumulated,
+        paid: paid,
+        remaining: remaining,
+        salaryId: salaryId
+    };
     
     console.log('Using calculated values from employee card:', {
         accumulated: accumulated,
@@ -4541,11 +4436,32 @@ function loadSelectedSalaryData() {
         return;
     }
     
+    // إذا كان الراتب المحدد هو نفس الراتب من بطاقة الموظف، استخدم القيم المحفوظة
+    if (settleModalCalculatedValues.salaryId > 0 && parseInt(salaryId) === settleModalCalculatedValues.salaryId) {
+        console.log('Using saved calculated values from employee card for salary ID:', salaryId);
+        const accumulated = settleModalCalculatedValues.accumulated;
+        const paid = settleModalCalculatedValues.paid;
+        const remaining = settleModalCalculatedValues.remaining;
+        
+        settleSalaryIdEl.value = salaryId;
+        if (settleAccumulatedAmountEl) settleAccumulatedAmountEl.textContent = formatCurrency(accumulated);
+        if (settlePaidAmountEl) settlePaidAmountEl.textContent = formatCurrency(paid);
+        if (settleRemainingAmountEl) settleRemainingAmountEl.textContent = formatCurrency(remaining);
+        if (settleRemainingAmount2El) settleRemainingAmount2El.textContent = formatCurrency(remaining);
+        if (settleAmountEl) {
+            settleAmountEl.value = '';
+            settleAmountEl.max = remaining;
+        }
+        updateSettleRemaining();
+        return;
+    }
+    
+    // إذا كان راتب مختلف، جلب البيانات من API
     settleSalaryIdEl.value = salaryId;
     
     // جلب بيانات الراتب المحدد
     const apiUrl = '<?php echo getBasePath(); ?>/api/get_salary_details.php?salary_id=' + salaryId;
-    console.log('Fetching salary details from:', apiUrl);
+    console.log('Fetching salary details from API for different salary:', apiUrl);
     
     fetch(apiUrl, {
         method: 'GET',
@@ -4567,7 +4483,7 @@ function loadSelectedSalaryData() {
             return response.json();
         })
         .then(data => {
-            console.log('Salary details received:', data);
+            console.log('Salary details received from API:', data);
             
             if (!data) {
                 throw new Error('Empty response from server');
@@ -4577,12 +4493,13 @@ function loadSelectedSalaryData() {
                 const salary = data.salary;
                 const accumulated = parseFloat(salary.calculated_accumulated || salary.accumulated_amount || salary.total_amount || 0);
                 const paid = parseFloat(salary.paid_amount || 0);
-                const remaining = Math.max(0, accumulated - paid);
+                const remaining = parseFloat(salary.remaining || Math.max(0, accumulated - paid));
                 
-                console.log('Salary data:', {
+                console.log('Salary data from API:', {
                     accumulated: accumulated,
                     paid: paid,
-                    remaining: remaining
+                    remaining: remaining,
+                    calculated_accumulated: salary.calculated_accumulated
                 });
                 
                 // تحديث القيم مع التحقق من وجود العناصر
