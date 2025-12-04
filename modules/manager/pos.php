@@ -2631,7 +2631,7 @@ try {
                             <div class="col-lg-4 col-md-6">
                                 <label class="form-label fw-semibold">شركة الشحن <span class="text-danger">*</span></label>
                                 <div class="input-group">
-                                    <select class="form-select form-select-lg" name="shipping_company_id" id="shippingCompanySelect" required>
+                                    <select class="form-select" name="shipping_company_id" id="shippingCompanySelect" required>
                                         <option value="">اختر شركة الشحن</option>
                                         <?php foreach ($shippingCompanies as $company): ?>
                                             <?php if (($company['status'] ?? '') === 'active'): ?>
@@ -2641,8 +2641,8 @@ try {
                                             <?php endif; ?>
                                         <?php endforeach; ?>
                                     </select>
-                                    <button class="btn btn-outline-secondary btn-lg" type="button" data-bs-toggle="modal" data-bs-target="#addShippingCompanyModal" title="إضافة شركة شحن">
-                                        <i class="bi bi-plus"></i>
+                                    <button class="btn btn-outline-secondary" type="button" data-bs-toggle="modal" data-bs-target="#addShippingCompanyModal" title="إضافة شركة شحن">
+                                        <i class="bi bi-plus-lg"></i>
                                     </button>
                                 </div>
                                 <small class="text-muted">أو اختر من البطاقات أعلاه</small>
@@ -2650,7 +2650,7 @@ try {
                             <div class="col-lg-4 col-md-6">
                                 <label class="form-label fw-semibold">العميل <span class="text-danger">*</span></label>
                                 <div class="input-group">
-                                    <select class="form-select form-select-lg" name="customer_id" id="shippingCustomerSelect" required>
+                                    <select class="form-select" name="customer_id" id="shippingCustomerSelect" required>
                                         <option value="">اختر العميل</option>
                                         <?php foreach ($customers as $customer): ?>
                                             <option value="<?php echo (int)$customer['id']; ?>">
@@ -2658,14 +2658,14 @@ try {
                                             </option>
                                         <?php endforeach; ?>
                                     </select>
-                                    <button class="btn btn-outline-primary btn-lg" type="button" data-bs-toggle="modal" data-bs-target="#addCustomerFromShippingModal" title="إضافة عميل جديد">
+                                    <button class="btn btn-outline-primary" type="button" data-bs-toggle="modal" data-bs-target="#addCustomerFromShippingModal" title="إضافة عميل جديد">
                                         <i class="bi bi-person-plus"></i>
                                     </button>
                                 </div>
                             </div>
                             <div class="col-lg-4">
                                 <label class="form-label fw-semibold">المخزن المصدر</label>
-                                <div class="form-control form-control-lg bg-light">
+                                <div class="form-control bg-light border-0">
                                     <i class="bi bi-building me-1"></i>
                                     <?php echo htmlspecialchars($mainWarehouse['name'] ?? 'المخزن الرئيسي'); ?>
                                 </div>
@@ -4300,5 +4300,64 @@ try {
         padding: 0.75rem 0.5rem;
         font-size: 0.875rem;
     }
+}
+
+/* تحسين تصميم الأزرار في input-group */
+.input-group .btn {
+    border-left: none;
+    transition: all 0.2s ease;
+    min-width: 42px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
+
+.input-group .form-select + .btn {
+    border-top-right-radius: 0.375rem;
+    border-bottom-right-radius: 0.375rem;
+}
+
+.input-group .btn:hover {
+    transform: translateY(-1px);
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+}
+
+.input-group .btn:active {
+    transform: translateY(0);
+}
+
+.input-group .btn-outline-secondary {
+    border-color: #dee2e6;
+    color: #6c757d;
+}
+
+.input-group .btn-outline-secondary:hover {
+    background-color: #6c757d;
+    border-color: #6c757d;
+    color: #fff;
+}
+
+.input-group .btn-outline-primary {
+    border-color: #0d6efd;
+    color: #0d6efd;
+}
+
+.input-group .btn-outline-primary:hover {
+    background-color: #0d6efd;
+    border-color: #0d6efd;
+    color: #fff;
+}
+
+.input-group .form-select {
+    border-right: none;
+}
+
+.input-group .form-select:focus {
+    border-right: 1px solid #86b7fe;
+    box-shadow: none;
+}
+
+.input-group .form-select:focus + .btn {
+    border-color: #86b7fe;
 }
 </style>
