@@ -15,6 +15,7 @@ require_once __DIR__ . '/../includes/db.php';
 require_once __DIR__ . '/../includes/auth.php';
 require_once __DIR__ . '/../includes/path_helper.php';
 require_once __DIR__ . '/../includes/audit_log.php';
+require_once __DIR__ . '/../includes/inventory_movements.php';
 
 ob_clean();
 
@@ -316,6 +317,133 @@ function handleCreateLocalReturn(): void
                         'مرتجع نقدي من عميل محلي'
                     ]
                 );
+            }
+        }
+        
+        // إرجاع المنتجات إلى مخزن الشركة
+        // الحصول على المخزن الرئيسي
+        $mainWarehouse = $db->queryOne(
+            "SELECT id, name FROM warehouses WHERE warehouse_type = 'main' AND status = 'active' ORDER BY id ASC LIMIT 1"
+        );
+        
+        if (!$mainWarehouse) {
+            // إنشاء المخزن الرئيسي إذا لم يكن موجوداً
+            $db->execute(
+                "INSERT INTO warehouses (name, warehouse_type, status, location, description) 
+                 VALUES (?, 'main', 'active', ?, ?)",
+                ['المخزن الرئيسي', 'الموقع الرئيسي للشركة', 'المخزن الرئيسي للشركة']
+            );
+            $mainWarehouseId = $db->getLastInsertId();
+        } else {
+            $mainWarehouseId = (int)$mainWarehouse['id'];
+        }
+        
+        // إرجاع كل منتج إلى المخزن
+        foreach ($selectedItems as $item) {
+            $productId = (int)$item['product_id'];
+            $quantity = (float)$item['quantity'];
+            $invoiceItemId = (int)$item['invoice_item_id'];
+            
+            // جلب معلومات المنتج
+            $product = $db->queryOne(
+                "SELECT id, name, quantity, warehouse_id FROM products WHERE id = ?",
+                [$productId]
+            );
+            
+            if (!$product) {
+                error_log("Product not found for return: product_id = $productId");
+                continue;
+            }
+            
+            // تحديث كمية المنتج في جدول products
+            $currentQuantity = (float)($product['quantity'] ?? 0);
+            $newQuantity = round($currentQuantity + $quantity, 3);
+            
+            // تحديث warehouse_id إذا لم يكن محدداً
+            $warehouseId = (int)($product['warehouse_id'] ?? 0);
+            if ($warehouseId <= 0) {
+                $warehouseId = $mainWarehouseId;
+            }
+            
+            $db->execute(
+                "UPDATE products SET quantity = ?, warehouse_id = ? WHERE id = ?",
+                [$newQuantity, $warehouseId, $productId]
+            );
+            
+            // البحث عن batch_number من الفاتورة المحلية
+            $batchId = null;
+            $batchNumber = null;
+            
+            // التحقق من وجود جدول local_invoice_items و batch_number
+            $localInvoiceItemsTableExists = $db->queryOne("SHOW TABLES LIKE 'local_invoice_items'");
+            if (!empty($localInvoiceItemsTableExists)) {
+                // البحث عن batch_number في local_invoice_items
+                $invoiceItem = $db->queryOne(
+                    "SELECT batch_number, batch_id FROM local_invoice_items WHERE id = ?",
+                    [$invoiceItemId]
+                );
+                
+                if ($invoiceItem) {
+                    $batchNumber = $invoiceItem['batch_number'] ?? null;
+                    $batchId = isset($invoiceItem['batch_id']) && $invoiceItem['batch_id'] ? (int)$invoiceItem['batch_id'] : null;
+                    
+                    // إذا كان هناك batch_number لكن لا يوجد batch_id، نحاول البحث عنه
+                    if ($batchNumber && !$batchId) {
+                        $batchInfo = $db->queryOne(
+                            "SELECT id FROM batch_numbers WHERE batch_number = ? LIMIT 1",
+                            [$batchNumber]
+                        );
+                        if ($batchInfo) {
+                            $batchId = (int)$batchInfo['id'];
+                        }
+                    }
+                    
+                    // إذا كان هناك batch_id، نبحث عن finished_products
+                    if ($batchId) {
+                        $finishedProduct = $db->queryOne(
+                            "SELECT id, quantity_produced FROM finished_products WHERE batch_id = ? LIMIT 1",
+                            [$batchId]
+                        );
+                        
+                        if ($finishedProduct) {
+                            // تحديث quantity_produced في finished_products
+                            $currentProduced = (float)($finishedProduct['quantity_produced'] ?? 0);
+                            $newProduced = round($currentProduced + $quantity, 3);
+                            
+                            $db->execute(
+                                "UPDATE finished_products SET quantity_produced = ? WHERE id = ?",
+                                [$newProduced, (int)$finishedProduct['id']]
+                            );
+                        }
+                    }
+                }
+            }
+            
+            // تسجيل حركة المخزون
+            try {
+                $movementNotes = 'إرجاع من عميل محلي - رقم المرتجع: ' . $returnNumber;
+                if ($batchNumber) {
+                    $movementNotes .= ' - رقم التشغيلة: ' . $batchNumber;
+                }
+                
+                $movementResult = recordInventoryMovement(
+                    $productId,
+                    $warehouseId,
+                    'in',
+                    $quantity,
+                    'local_return',
+                    $returnId,
+                    $movementNotes,
+                    $currentUser['id'],
+                    $batchId
+                );
+                
+                if (empty($movementResult['success'])) {
+                    error_log('Failed to record inventory movement for local return: ' . ($movementResult['message'] ?? 'Unknown error'));
+                }
+            } catch (Throwable $movementError) {
+                error_log('Error recording inventory movement for local return: ' . $movementError->getMessage());
+                // لا نوقف العملية إذا فشل تسجيل الحركة
             }
         }
         
