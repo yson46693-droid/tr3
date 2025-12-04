@@ -833,17 +833,56 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
             // تحديث الفاتورة لتعكس المبلغ المتبقي
             if (!empty($order['invoice_id'])) {
+                // تحديث حالة الفاتورة والمبالغ
                 $db->execute(
                     "UPDATE invoices SET status = 'sent', remaining_amount = ?, paid_amount = 0, updated_at = NOW() WHERE id = ?",
                     [$totalAmount, $order['invoice_id']]
                 );
                 
+                // جلب بيانات الفاتورة للتأكد من تحديث سجل المشتريات
+                $invoiceData = $db->queryOne(
+                    "SELECT id, invoice_number, date, total_amount, paid_amount, status, customer_id 
+                     FROM invoices WHERE id = ?",
+                    [$order['invoice_id']]
+                );
+                
                 // إضافة المنتجات إلى سجل مشتريات العميل
-                try {
-                    customerHistorySyncForCustomer($order['customer_id']);
-                } catch (Throwable $historyError) {
-                    error_log('shipping_orders: failed syncing customer purchase history -> ' . $historyError->getMessage());
-                    // لا نوقف العملية إذا فشل تحديث السجل
+                if ($invoiceData) {
+                    try {
+                        // التأكد من أن جدول customer_purchase_history موجود
+                        customerHistoryEnsureSetup();
+                        
+                        // إضافة أو تحديث سجل الفاتورة في customer_purchase_history
+                        $db->execute(
+                            "INSERT INTO customer_purchase_history
+                                (customer_id, invoice_id, invoice_number, invoice_date, invoice_total, paid_amount, invoice_status,
+                                 return_total, return_count, created_at)
+                             VALUES (?, ?, ?, ?, ?, ?, ?, 0, 0, NOW())
+                             ON DUPLICATE KEY UPDATE
+                                invoice_number = VALUES(invoice_number),
+                                invoice_date = VALUES(invoice_date),
+                                invoice_total = VALUES(invoice_total),
+                                paid_amount = VALUES(paid_amount),
+                                invoice_status = VALUES(invoice_status),
+                                updated_at = NOW()",
+                            [
+                                $order['customer_id'],
+                                $order['invoice_id'],
+                                $invoiceData['invoice_number'] ?? '',
+                                $invoiceData['date'] ?? date('Y-m-d'),
+                                (float)($invoiceData['total_amount'] ?? 0),
+                                (float)($invoiceData['paid_amount'] ?? 0),
+                                $invoiceData['status'] ?? 'sent',
+                            ]
+                        );
+                        
+                        // مزامنة كاملة لسجل المشتريات للتأكد من تحديث جميع البيانات
+                        customerHistorySyncForCustomer($order['customer_id']);
+                    } catch (Throwable $historyError) {
+                        error_log('shipping_orders: failed syncing customer purchase history -> ' . $historyError->getMessage());
+                        error_log('shipping_orders: history error trace -> ' . $historyError->getTraceAsString());
+                        // لا نوقف العملية إذا فشل تحديث السجل
+                    }
                 }
             }
 
