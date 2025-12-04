@@ -88,7 +88,6 @@ try {
             KEY `invoice_id` (`invoice_id`),
             KEY `status` (`status`),
             CONSTRAINT `shipping_company_orders_company_fk` FOREIGN KEY (`shipping_company_id`) REFERENCES `shipping_companies` (`id`) ON DELETE CASCADE,
-            CONSTRAINT `shipping_company_orders_customer_fk` FOREIGN KEY (`customer_id`) REFERENCES `customers` (`id`) ON DELETE CASCADE,
             CONSTRAINT `shipping_company_orders_invoice_fk` FOREIGN KEY (`invoice_id`) REFERENCES `invoices` (`id`) ON DELETE SET NULL,
             CONSTRAINT `shipping_company_orders_created_fk` FOREIGN KEY (`created_by`) REFERENCES `users` (`id`) ON DELETE SET NULL,
             CONSTRAINT `shipping_company_orders_updated_fk` FOREIGN KEY (`updated_by`) REFERENCES `users` (`id`) ON DELETE SET NULL
@@ -298,8 +297,14 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 throw new InvalidArgumentException('شركة الشحن المحددة غير متاحة أو غير نشطة.');
             }
 
+            // البحث عن العميل في جدول local_customers (العملاء المحليين)
+            $localCustomersTableExists = $db->queryOne("SHOW TABLES LIKE 'local_customers'");
+            if (empty($localCustomersTableExists)) {
+                throw new InvalidArgumentException('جدول العملاء المحليين غير متوفر في النظام.');
+            }
+
             $customer = $db->queryOne(
-                "SELECT id, balance, status FROM customers WHERE id = ? FOR UPDATE",
+                "SELECT id, balance, status FROM local_customers WHERE id = ? FOR UPDATE",
                 [$customerId]
             );
 
@@ -631,8 +636,14 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 throw new InvalidArgumentException('شركة الشحن المرتبطة بالطلب غير موجودة.');
             }
 
+            // البحث عن العميل في جدول local_customers (العملاء المحليين)
+            $localCustomersTableExists = $db->queryOne("SHOW TABLES LIKE 'local_customers'");
+            if (empty($localCustomersTableExists)) {
+                throw new InvalidArgumentException('جدول العملاء المحليين غير متوفر في النظام.');
+            }
+
             $customer = $db->queryOne(
-                "SELECT id, balance, status FROM customers WHERE id = ? FOR UPDATE",
+                "SELECT id, balance, status FROM local_customers WHERE id = ? FOR UPDATE",
                 [$order['customer_id']]
             );
 
@@ -649,7 +660,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             );
 
             $db->execute(
-                "UPDATE customers SET balance = balance + ?, updated_at = NOW() WHERE id = ?",
+                "UPDATE local_customers SET balance = balance + ?, updated_at = NOW() WHERE id = ?",
                 [$totalAmount, $order['customer_id']]
             );
 
@@ -712,9 +723,15 @@ try {
 
 $activeCustomers = [];
 try {
-    $activeCustomers = $db->query(
-        "SELECT id, name, phone FROM customers WHERE status = 'active' ORDER BY name ASC"
-    );
+    // جلب العملاء المحليين فقط من جدول local_customers
+    $localCustomersTableExists = $db->queryOne("SHOW TABLES LIKE 'local_customers'");
+    if (!empty($localCustomersTableExists)) {
+        $activeCustomers = $db->query(
+            "SELECT id, name, phone FROM local_customers WHERE status = 'active' ORDER BY name ASC"
+        );
+    } else {
+        $activeCustomers = [];
+    }
 } catch (Throwable $customersError) {
     error_log('shipping_orders: failed fetching customers -> ' . $customersError->getMessage());
     $activeCustomers = [];
@@ -905,7 +922,7 @@ try {
             i.invoice_number
         FROM shipping_company_orders sco
         LEFT JOIN shipping_companies sc ON sco.shipping_company_id = sc.id
-        LEFT JOIN customers c ON sco.customer_id = c.id
+        LEFT JOIN local_customers c ON sco.customer_id = c.id
         LEFT JOIN invoices i ON sco.invoice_id = i.id
         ORDER BY sco.created_at DESC
         LIMIT 50"
