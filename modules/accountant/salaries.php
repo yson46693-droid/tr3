@@ -3451,12 +3451,20 @@ $pageTitle = ($view === 'advances') ? 'السلف' : (($view === 'pending') ? '�
                                 <i class="bi bi-pencil me-1"></i>تعديل
                             </button>
                             
-                            <?php if ($hasSalaryId && $remaining > 0): ?>
+                            <?php 
+                            // استخدام القيم المحسوبة من collapse (الحساب الثاني) التي تطابق بطاقة الموظف
+                            // هذه القيم تم حسابها في السطر 3320-3341 باستخدام $totalSalary المحسوب من المكونات
+                            // وليس $totalAmount من قاعدة البيانات
+                            // استخدام القيم المحسوبة من الحساب الثاني (داخل collapse)
+                            $calculatedRemaining = isset($salary['calculated_remaining']) ? (float)$salary['calculated_remaining'] : (float)$remaining;
+                            $calculatedAccumulated = isset($salary['calculated_accumulated']) ? (float)$salary['calculated_accumulated'] : (float)$accumulated;
+                            
+                            // استخدام القيم المحسوبة من الحساب الثاني في الشرط أيضاً
+                            if ($hasSalaryId && $calculatedRemaining > 0): ?>
                             <?php
-                            // التأكد من أن القيم المحسوبة موجودة في $salary قبل إنشاء JSON
-                            // استخدام القيم المحسوبة إذا كانت موجودة، وإلا استخدام القيم الحالية
-                            $settleRemaining = isset($salary['calculated_remaining']) ? (float)$salary['calculated_remaining'] : (float)$remaining;
-                            $settleAccumulated = isset($salary['calculated_accumulated']) ? (float)$salary['calculated_accumulated'] : (float)$accumulated;
+                            // استخدام القيم المحسوبة من الحساب الثاني مباشرة
+                            $settleRemaining = $calculatedRemaining;
+                            $settleAccumulated = $calculatedAccumulated;
                             
                             // التأكد من أن القيم المحسوبة موجودة في مصفوفة $salary لتمريرها في JSON
                             $salaryForJson = $salary;
@@ -3473,12 +3481,20 @@ $pageTitle = ($view === 'advances') ? 'السلف' : (($view === 'pending') ? '�
                                 $salaryForJson['user_id'] = intval($salaryForJson['user_id']);
                             }
                             
+                            // التأكد من استخدام القيم المحسوبة من collapse (الحساب الثاني)
+                            // هذه القيم تم تعيينها في السطر 3332 و 3341
                             if (!isset($salaryForJson['calculated_remaining'])) {
                                 $salaryForJson['calculated_remaining'] = $settleRemaining;
                             }
                             if (!isset($salaryForJson['calculated_accumulated'])) {
                                 $salaryForJson['calculated_accumulated'] = $settleAccumulated;
                             }
+                            
+                            // التأكد من أن القيم المستخدمة في openSettleModal مطابقة للقيم المعروضة في بطاقة الموظف
+                            // استخدام القيم من $salary['calculated_remaining'] و $salary['calculated_accumulated']
+                            // التي تم تعيينها في السطر 3332 و 3341 من الحساب الثاني
+                            $settleRemaining = (float)$salaryForJson['calculated_remaining'];
+                            $settleAccumulated = (float)$salaryForJson['calculated_accumulated'];
                             ?>
                             <button class="btn btn-success btn-sm" 
                                     onclick="openSettleModal(<?php echo $salary['id']; ?>, <?php echo htmlspecialchars(json_encode($salaryForJson, JSON_UNESCAPED_UNICODE), ENT_QUOTES); ?>, <?php echo $settleRemaining; ?>, <?php echo $settleAccumulated; ?>)" 

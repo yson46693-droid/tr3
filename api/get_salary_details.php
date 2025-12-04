@@ -93,7 +93,20 @@ try {
     $userId = intval($salary['user_id']);
     $salaryMonth = intval($salary['month'] ?? 0);
     $salaryYear = intval($salary['year'] ?? date('Y'));
-    $currentTotal = floatval($salary['total_amount'] ?? 0);
+    
+    // استخدام نفس طريقة حساب الراتب من المكونات كما في بطاقة الموظف
+    // الراتب الإجمالي = الراتب الأساسي + المكافآت + نسبة التحصيلات - الخصومات
+    // cleanFinancialValue موجودة في config.php الذي تم تحميله في السطر 32
+    $baseAmount = cleanFinancialValue($salary['base_amount'] ?? 0);
+    $bonus = cleanFinancialValue($salary['bonus_standardized'] ?? ($salary['bonus'] ?? $salary['bonuses'] ?? 0));
+    $deductions = cleanFinancialValue($salary['deductions'] ?? 0);
+    $collectionsBonus = cleanFinancialValue($salary['collections_bonus'] ?? 0);
+    
+    // حساب الراتب الإجمالي من المكونات (مطابق لبطاقة الموظف)
+    $currentTotal = round($baseAmount + $bonus + $collectionsBonus - $deductions, 2);
+    
+    // التأكد من أن الراتب الإجمالي لا يكون سالباً
+    $currentTotal = max(0, $currentTotal);
     
     // استخدام الدالة المشتركة لحساب المبلغ التراكمي
     $accumulatedData = calculateSalaryAccumulatedAmount(
