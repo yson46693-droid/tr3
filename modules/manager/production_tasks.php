@@ -268,16 +268,32 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 $productId = null;
                 if ($productName !== '') {
                     try {
-                        // البحث بمطابقة دقيقة أولاً
+                        // البحث بمطابقة دقيقة أولاً (مع status = 'active')
                         $product = $db->queryOne(
                             "SELECT id FROM products WHERE name = ? AND status = 'active' LIMIT 1",
                             [$productName]
                         );
                         
-                        // إذا لم يتم العثور عليه، جرب البحث بمطابقة جزئية
+                        // إذا لم يتم العثور عليه، جرب البحث بدون شرط status
+                        if (!$product) {
+                            $product = $db->queryOne(
+                                "SELECT id FROM products WHERE name = ? LIMIT 1",
+                                [$productName]
+                            );
+                        }
+                        
+                        // إذا لم يتم العثور عليه، جرب البحث بمطابقة جزئية (مع status = 'active')
                         if (!$product) {
                             $product = $db->queryOne(
                                 "SELECT id FROM products WHERE name LIKE ? AND status = 'active' LIMIT 1",
+                                ['%' . $productName . '%']
+                            );
+                        }
+                        
+                        // إذا لم يتم العثور عليه، جرب البحث بمطابقة جزئية بدون شرط status
+                        if (!$product) {
+                            $product = $db->queryOne(
+                                "SELECT id FROM products WHERE name LIKE ? LIMIT 1",
                                 ['%' . $productName . '%']
                             );
                         }

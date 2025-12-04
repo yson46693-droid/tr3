@@ -524,7 +524,7 @@ LIMIT ? OFFSET ?";
 $queryParams = array_merge($params, [$perPage, $offset]);
 $tasks = $db->query($taskSql, $queryParams);
 
-// استخراج جميع العمال من notes لكل مهمة
+// استخراج جميع العمال من notes لكل مهمة واستخراج اسم المنتج من notes إذا لم يكن موجوداً
 foreach ($tasks as &$task) {
     $notes = $task['notes'] ?? '';
     $allWorkers = [];
@@ -547,6 +547,17 @@ foreach ($tasks as &$task) {
     // إذا لم نجد عمال من notes، استخدم assigned_to
     if (empty($allWorkers) && !empty($task['assigned_to_name'])) {
         $allWorkers[] = $task['assigned_to_name'];
+    }
+    
+    // استخراج اسم المنتج من notes إذا لم يكن موجوداً من JOIN
+    if (empty($task['product_name']) && !empty($notes)) {
+        // البحث عن "المنتج: " متبوعاً باسم المنتج
+        if (preg_match('/المنتج:\s*(.+?)(?:\s*-\s*الكمية:|$)/i', $notes, $productMatches)) {
+            $extractedProductName = trim($productMatches[1] ?? '');
+            if ($extractedProductName !== '') {
+                $task['product_name'] = $extractedProductName;
+            }
+        }
     }
     
     $task['all_workers'] = $allWorkers;
