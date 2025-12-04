@@ -1301,6 +1301,79 @@ $pageDescription = 'لوحة تحكم المدير - إدارة شاملة لل�
                     });
                     ?>
                     
+                    <!-- زر طباعة التقرير الشامل للمبيعات -->
+                    <?php
+                    // معالجة فلترة الشهر للمبيعات
+                    $salesReportMonthParam = isset($_GET['sales_report_month']) ? trim((string)$_GET['sales_report_month']) : '';
+                    $selectedSalesMonth = date('Y-m'); // الشهر الحالي كافتراضي
+                    
+                    if ($salesReportMonthParam !== '') {
+                        // التحقق من صحة تنسيق الشهر (YYYY-MM)
+                        $monthDate = DateTime::createFromFormat('Y-m', $salesReportMonthParam);
+                        if ($monthDate && $monthDate->format('Y-m') === $salesReportMonthParam) {
+                            $selectedSalesMonth = $salesReportMonthParam;
+                        }
+                    }
+                    
+                    // حساب بداية ونهاية الشهر المحدد
+                    $selectedSalesMonthDate = DateTime::createFromFormat('Y-m', $selectedSalesMonth);
+                    $salesReportsMonthStart = $selectedSalesMonthDate->format('Y-m-01');
+                    $lastDayOfMonth = $selectedSalesMonthDate->format('t');
+                    $salesReportsMonthEnd = $selectedSalesMonthDate->format('Y-m-' . $lastDayOfMonth);
+                    
+                    // أسماء الأشهر بالعربية
+                    $arabicMonths = [
+                        1 => 'يناير', 2 => 'فبراير', 3 => 'مارس', 4 => 'أبريل',
+                        5 => 'مايو', 6 => 'يونيو', 7 => 'يوليو', 8 => 'أغسطس',
+                        9 => 'سبتمبر', 10 => 'أكتوبر', 11 => 'نوفمبر', 12 => 'ديسمبر'
+                    ];
+                    $monthNumber = $selectedSalesMonthDate ? (int)$selectedSalesMonthDate->format('n') : (int)date('n');
+                    $year = $selectedSalesMonthDate ? (int)$selectedSalesMonthDate->format('Y') : (int)date('Y');
+                    $monthNameArabic = $arabicMonths[$monthNumber] ?? $selectedSalesMonth;
+                    $monthDisplayName = $monthNameArabic . ' ' . $year;
+                    
+                    // بناء رابط طباعة التقرير
+                    $salesPrintUrl = getRelativeUrl('api/generate_sales_report.php');
+                    $salesPrintParams = [
+                        'date_from' => $salesReportsMonthStart,
+                        'date_to' => $salesReportsMonthEnd
+                    ];
+                    $salesPrintUrlWithParams = $salesPrintUrl . '?' . http_build_query($salesPrintParams);
+                    ?>
+                    <div class="card shadow-sm mb-4 border-success" style="border-width: 2px !important;">
+                        <div class="card-body">
+                            <div class="d-flex justify-content-between align-items-center flex-wrap gap-3">
+                                <div>
+                                    <h4 class="mb-2 text-success"><i class="bi bi-printer-fill me-2"></i>طباعة التقرير الشامل للمبيعات</h4>
+                                    <p class="text-muted mb-0">
+                                        <i class="bi bi-info-circle me-1"></i>
+                                        طباعة تقرير مفصل شامل لشهر محدد يتضمن جميع تفاصيل المبيعات (المنتجات، العملاء، المندوبين، المبالغ) بصيغة قابلة للطباعة
+                                    </p>
+                                </div>
+                                <div class="d-flex flex-column gap-2" style="min-width: 300px;">
+                                    <form method="GET" action="" class="d-flex gap-2 align-items-end">
+                                        <input type="hidden" name="page" value="reports">
+                                        <div class="flex-grow-1">
+                                            <label class="form-label fw-semibold small mb-1"><i class="bi bi-calendar-month me-1"></i>اختيار الشهر</label>
+                                            <input type="month"
+                                                   class="form-control"
+                                                   name="sales_report_month"
+                                                   value="<?php echo htmlspecialchars($selectedSalesMonth); ?>"
+                                                   max="<?php echo date('Y-m'); ?>"
+                                                   onchange="this.form.submit()">
+                                        </div>
+                                    </form>
+                                    <a href="<?php echo htmlspecialchars($salesPrintUrlWithParams); ?>" 
+                                       target="_blank" 
+                                       class="btn btn-success btn-lg shadow-sm w-100"
+                                       style="font-size: 1.1rem; padding: 0.75rem 1.5rem; font-weight: 600;">
+                                        <i class="bi bi-printer-fill me-2"></i>طباعة تقرير شهر <?php echo htmlspecialchars($monthDisplayName); ?>
+                                    </a>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                    
                     <!-- بطاقات الإحصائيات -->
                     <div class="row g-3 mb-4">
                         <div class="col-lg-3 col-md-6">

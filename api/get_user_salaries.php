@@ -284,6 +284,13 @@ try {
         
         $salaryId = intval($salary['id'] ?? 0);
         
+        // إذا كان الراتب المحسوب من المكونات يساوي 0، استخدم total_amount من قاعدة البيانات كقيمة احتياطية
+        // هذا يحدث عندما تكون المكونات غير محفوظة في قاعدة البيانات
+        $dbTotalAmount = cleanFinancialValue($salary['total_amount'] ?? 0);
+        if ($currentTotal < 0.01 && $dbTotalAmount > 0.01) {
+            $currentTotal = $dbTotalAmount;
+        }
+        
         // استخدام الدالة المشتركة لحساب المبلغ التراكمي
         $accumulatedData = calculateSalaryAccumulatedAmount(
             $userId, 
@@ -297,6 +304,12 @@ try {
         $accumulated = $accumulatedData['accumulated'];
         $paid = floatval($salary['paid_amount'] ?? 0);
         $remaining = max(0, $accumulated - $paid);
+        
+        // تسجيل للتشخيص (يمكن حذفه لاحقاً)
+        error_log(sprintf(
+            'get_user_salaries.php: salary_id=%d, user_id=%d, month=%d, year=%d, baseAmount=%.2f, bonus=%.2f, collectionsBonus=%.2f, deductions=%.2f, currentTotal=%.2f, dbTotalAmount=%.2f, accumulated=%.2f, paid=%.2f, remaining=%.2f',
+            $salaryId, $userId, $month, $year, $baseAmount, $bonus, $collectionsBonus, $deductions, $currentTotal, $dbTotalAmount, $accumulated, $paid, $remaining
+        ));
         
         // عرض جميع الرواتب حتى لو كان المتبقي صفر (لإتاحة التسوية الكاملة)
         // يمكن تغيير هذا الشرط إذا أردت تصفية الرواتب المدفوعة بالكامل
