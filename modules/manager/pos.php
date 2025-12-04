@@ -791,11 +791,32 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
                 $invoiceItems = [];
                 foreach ($normalizedCart as $item) {
+                    $batchId = $item['batch_id'] ?? null;
+                    $batchNumber = null;
+                    
+                    // جلب batch_number من batch_id إذا كان موجوداً
+                    // batch_id في normalizedCart هو fp.id (finished_products.id)
+                    if ($batchId) {
+                        $batchInfo = $db->queryOne(
+                            "SELECT COALESCE(fp.batch_number, bn.batch_number) as batch_number
+                             FROM finished_products fp
+                             LEFT JOIN batch_numbers bn ON fp.batch_number = bn.batch_number
+                             WHERE fp.id = ?
+                             LIMIT 1",
+                            [$batchId]
+                        );
+                        if ($batchInfo && !empty($batchInfo['batch_number'])) {
+                            $batchNumber = $batchInfo['batch_number'];
+                        }
+                    }
+                    
                     $invoiceItems[] = [
                         'product_id' => $item['product_id'],
                         'description' => $item['name'],
                         'quantity' => $item['quantity'],
                         'unit_price' => $item['unit_price'],
+                        'batch_id' => $batchId,
+                        'batch_number' => $batchNumber,
                     ];
                 }
 
@@ -1150,21 +1171,38 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                         
                         // إضافة عناصر الفاتورة المحلية
                         if (!empty($invoiceItems)) {
+                            // التحقق من وجود أعمدة batch_number و batch_id في local_invoice_items
+                            $hasBatchNumber = !empty($db->queryOne("SHOW COLUMNS FROM local_invoice_items LIKE 'batch_number'"));
+                            $hasBatchId = !empty($db->queryOne("SHOW COLUMNS FROM local_invoice_items LIKE 'batch_id'"));
+                            
                             foreach ($invoiceItems as $item) {
                                 $itemTotal = $item['quantity'] * $item['unit_price'];
-                                $db->execute(
-                                    "INSERT INTO local_invoice_items 
-                                    (invoice_id, product_id, description, quantity, unit_price, total_price)
-                                    VALUES (?, ?, ?, ?, ?, ?)",
-                                    [
-                                        $localInvoiceId,
-                                        $item['product_id'],
-                                        $item['description'] ?? null,
-                                        $item['quantity'],
-                                        $item['unit_price'],
-                                        $itemTotal
-                                    ]
-                                );
+                                
+                                // بناء استعلام INSERT ديناميكياً بناءً على وجود الأعمدة
+                                $columns = ['invoice_id', 'product_id', 'description', 'quantity', 'unit_price', 'total_price'];
+                                $values = [
+                                    $localInvoiceId,
+                                    $item['product_id'],
+                                    $item['description'] ?? null,
+                                    $item['quantity'],
+                                    $item['unit_price'],
+                                    $itemTotal
+                                ];
+                                
+                                if ($hasBatchNumber) {
+                                    $columns[] = 'batch_number';
+                                    $values[] = $item['batch_number'] ?? null;
+                                }
+                                
+                                if ($hasBatchId) {
+                                    $columns[] = 'batch_id';
+                                    $values[] = isset($item['batch_id']) && $item['batch_id'] ? (int)$item['batch_id'] : null;
+                                }
+                                
+                                $placeholders = str_repeat('?,', count($values) - 1) . '?';
+                                $sql = "INSERT INTO local_invoice_items (" . implode(', ', $columns) . ") VALUES ($placeholders)";
+                                
+                                $db->execute($sql, $values);
                             }
                             error_log("Local invoice items added successfully: " . count($invoiceItems) . " items for invoice ID=$localInvoiceId");
                         }

@@ -1348,17 +1348,109 @@ document.addEventListener('DOMContentLoaded', function() {
     if (repCollectModal) {
         const nameElement = repCollectModal.querySelector('.rep-collection-customer-name');
         const debtElement = repCollectModal.querySelector('.rep-collection-current-debt');
-        const customerIdInput = repCollectModal.querySelector('input[name="customer_id"]');
+        const customerIdInput = repCollectModal.querySelector('#repCollectionCustomerId');
         const amountInput = repCollectModal.querySelector('input[name="amount"]');
-        const collectionForm = repCollectModal.querySelector('form');
+        const collectionForm = repCollectModal.querySelector('#repCollectionForm');
+        const errorDiv = repCollectModal.querySelector('#repCollectionError');
+        const successDiv = repCollectModal.querySelector('#repCollectionSuccess');
+        const submitBtn = repCollectModal.querySelector('#repCollectionSubmitBtn');
 
-        // إضافة event listener للنموذج للتحقق من الإرسال
+        // معالجة إرسال النموذج عبر AJAX
         if (collectionForm) {
             collectionForm.addEventListener('submit', function(e) {
-                console.log('Form submitting...');
-                console.log('Form action:', this.action);
-                console.log('Customer ID:', customerIdInput?.value);
-                console.log('Amount:', amountInput?.value);
+                e.preventDefault();
+                e.stopPropagation();
+                
+                const customerId = customerIdInput?.value || '';
+                const amount = amountInput?.value || '';
+                
+                if (!customerId || customerId <= 0) {
+                    if (errorDiv) {
+                        errorDiv.textContent = 'معرف العميل غير صالح';
+                        errorDiv.classList.remove('d-none');
+                    }
+                    return;
+                }
+                
+                if (!amount || parseFloat(amount) <= 0) {
+                    if (errorDiv) {
+                        errorDiv.textContent = 'يجب إدخال مبلغ تحصيل أكبر من صفر';
+                        errorDiv.classList.remove('d-none');
+                    }
+                    return;
+                }
+                
+                // إخفاء رسائل الخطأ والنجاح السابقة
+                if (errorDiv) errorDiv.classList.add('d-none');
+                if (successDiv) successDiv.classList.add('d-none');
+                
+                // تعطيل الزر وإظهار loading
+                const originalBtnHtml = submitBtn?.innerHTML || '';
+                if (submitBtn) {
+                    submitBtn.disabled = true;
+                    submitBtn.innerHTML = '<span class="spinner-border spinner-border-sm me-1"></span>جاري التحصيل...';
+                }
+                
+                // إرسال الطلب عبر AJAX
+                const apiUrl = '<?php echo getRelativeUrl("api/collect_from_rep_customer.php"); ?>';
+                const formData = new FormData();
+                formData.append('customer_id', customerId);
+                formData.append('amount', amount);
+                
+                fetch(apiUrl, {
+                    method: 'POST',
+                    body: formData,
+                    credentials: 'same-origin'
+                })
+                .then(response => {
+                    // التحقق من نوع الاستجابة
+                    const contentType = response.headers.get('content-type') || '';
+                    if (!contentType.includes('application/json')) {
+                        return response.text().then(text => {
+                            console.error('Non-JSON response:', text);
+                            throw new Error('استجابة غير صحيحة من الخادم');
+                        });
+                    }
+                    return response.json();
+                })
+                .then(data => {
+                    console.log('API Response:', data);
+                    if (data.success) {
+                        if (successDiv) {
+                            successDiv.textContent = data.message || 'تم التحصيل بنجاح';
+                            successDiv.classList.remove('d-none');
+                        }
+                        
+                        // إعادة تحميل الصفحة بعد ثانيتين
+                        setTimeout(function() {
+                            window.location.reload();
+                        }, 2000);
+                    } else {
+                        if (errorDiv) {
+                            errorDiv.textContent = data.message || 'حدث خطأ أثناء التحصيل';
+                            errorDiv.classList.remove('d-none');
+                        }
+                        
+                        // إعادة تعيين الزر
+                        if (submitBtn) {
+                            submitBtn.disabled = false;
+                            submitBtn.innerHTML = originalBtnHtml;
+                        }
+                    }
+                })
+                .catch(error => {
+                    console.error('Collection error:', error);
+                    if (errorDiv) {
+                        errorDiv.textContent = 'حدث خطأ أثناء إرسال الطلب. يرجى المحاولة مرة أخرى.';
+                        errorDiv.classList.remove('d-none');
+                    }
+                    
+                    // إعادة تعيين الزر
+                    if (submitBtn) {
+                        submitBtn.disabled = false;
+                        submitBtn.innerHTML = originalBtnHtml;
+                    }
+                });
             });
         }
 
@@ -1380,7 +1472,13 @@ document.addEventListener('DOMContentLoaded', function() {
 
                 nameElement.textContent = customerName;
                 debtElement.textContent = balanceFormatted;
-                customerIdInput.value = triggerButton.getAttribute('data-customer-id') || '';
+                if (customerIdInput) {
+                    customerIdInput.value = triggerButton.getAttribute('data-customer-id') || '';
+                }
+                
+                // إخفاء رسائل الخطأ والنجاح
+                if (errorDiv) errorDiv.classList.add('d-none');
+                if (successDiv) successDiv.classList.add('d-none');
 
                 amountInput.value = debtAmount.toFixed(2);
                 amountInput.setAttribute('max', debtAmount.toFixed(2));
@@ -1724,14 +1822,8 @@ document.addEventListener('DOMContentLoaded', function() {
                 <h5 class="modal-title"><i class="bi bi-cash-coin me-2"></i>تحصيل ديون العميل</h5>
                 <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="إغلاق"></button>
             </div>
-            <?php
-            // تحديد action URL بشكل صريح
-            $formAction = getRelativeUrl($dashboardScript . '?page=representatives_customers');
-            error_log('Form action URL: ' . $formAction);
-            ?>
-            <form method="POST" action="<?php echo htmlspecialchars($formAction); ?>" id="repCollectionForm">
-                <input type="hidden" name="action" value="collect_debt">
-                <input type="hidden" name="customer_id" value="">
+            <form id="repCollectionForm">
+                <input type="hidden" name="customer_id" id="repCollectionCustomerId" value="">
                 <div class="modal-body">
                     <div class="mb-3">
                         <div class="fw-semibold text-muted">العميل</div>
@@ -1754,10 +1846,12 @@ document.addEventListener('DOMContentLoaded', function() {
                         >
                         <div class="form-text">لن يتم قبول مبلغ أكبر من قيمة الديون الحالية.</div>
                     </div>
+                    <div id="repCollectionError" class="alert alert-danger d-none" role="alert"></div>
+                    <div id="repCollectionSuccess" class="alert alert-success d-none" role="alert"></div>
                 </div>
                 <div class="modal-footer">
                     <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">إلغاء</button>
-                    <button type="submit" class="btn btn-primary">
+                    <button type="submit" class="btn btn-primary" id="repCollectionSubmitBtn">
                         <i class="bi bi-check-circle me-1"></i>تحصيل
                     </button>
                 </div>
