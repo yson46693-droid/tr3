@@ -2289,15 +2289,6 @@ try {
 </div>
 <?php endif; ?>
 
-<!-- Tabs للتنقل بين نقطة البيع وطلبات الشحن -->
-<ul class="nav nav-tabs mb-4" id="posTabs" role="tablist">
-    <li class="nav-item" role="presentation">
-        <button class="nav-link active" id="pos-tab" data-bs-toggle="tab" data-bs-target="#pos-content" type="button" role="tab">
-            <i class="bi bi-cart-check me-2"></i>نقطة البيع
-        </button>
-    </li>
-</ul>
-
 <div class="tab-content" id="posTabContent">
     <!-- محتوى نقطة البيع -->
     <div class="tab-pane fade show active" id="pos-content" role="tabpanel">
