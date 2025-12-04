@@ -936,6 +936,46 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
                     error_log("Manager POS: Processing sale item - product_id: $productId, batch_id: " . ($batchId ?? 'NULL') . ", quantity: $quantity, product_type: $productType");
 
+                    // التحقق من الكمية مباشرة من finished_products قبل البيع (مثل نقطة بيع المندوب)
+                    // هذا مهم جداً لضمان أن الكمية متاحة فعلياً
+                    if ($productType === 'factory' && $batchId) {
+                        // للمنتجات المصنعة: التحقق من finished_products مباشرة
+                        $finishedProduct = $db->queryOne(
+                            "SELECT id, quantity_produced FROM finished_products WHERE id = ? FOR UPDATE",
+                            [$batchId]
+                        );
+                        
+                        if (!$finishedProduct) {
+                            throw new RuntimeException('التشغيلة المحددة غير موجودة في قاعدة البيانات.');
+                        }
+                        
+                        $availableQuantity = (float)($finishedProduct['quantity_produced'] ?? 0);
+                        
+                        if ($quantity > $availableQuantity) {
+                            throw new RuntimeException('الكمية المتاحة للمنتج ' . $item['name'] . ' غير كافية. المتاح: ' . number_format($availableQuantity, 2) . '، المطلوب: ' . number_format($quantity, 2));
+                        }
+                        
+                        error_log("Manager POS: Verified quantity from finished_products - batch_id: $batchId, available: $availableQuantity, requested: $quantity");
+                    } elseif ($productType === 'external') {
+                        // للمنتجات الخارجية: التحقق من products مباشرة
+                        $product = $db->queryOne(
+                            "SELECT id, quantity FROM products WHERE id = ? AND product_type = 'external' FOR UPDATE",
+                            [$productId]
+                        );
+                        
+                        if (!$product) {
+                            throw new RuntimeException('المنتج الخارجي المحدد غير موجود في قاعدة البيانات.');
+                        }
+                        
+                        $availableQuantity = (float)($product['quantity'] ?? 0);
+                        
+                        if ($quantity > $availableQuantity) {
+                            throw new RuntimeException('الكمية المتاحة للمنتج ' . $item['name'] . ' غير كافية. المتاح: ' . number_format($availableQuantity, 2) . '، المطلوب: ' . number_format($quantity, 2));
+                        }
+                        
+                        error_log("Manager POS: Verified quantity from products - product_id: $productId, available: $availableQuantity, requested: $quantity");
+                    }
+
                     // تسجيل حركة المخزون (سوف يقوم recordInventoryMovement بالتحقق من الكمية وتحديثها)
                     // تم توزيع الكمية على الباتشات مسبقاً في normalizedCart، لذا كل عنصر يحتوي على كمية متاحة في الباتش المحدد
                     $movementResult = recordInventoryMovement(
@@ -2867,6 +2907,15 @@ try {
     <!-- محتوى طلبات الشحن -->
     <div class="tab-pane fade" id="shipping-content" role="tabpanel">
         <?php
+        // تحميل العملاء من جدول customers (وليس local_customers) لطلبات الشحن
+        $shippingCustomers = [];
+        try {
+            $shippingCustomers = $db->query("SELECT id, name, phone FROM customers WHERE status = 'active' ORDER BY name ASC");
+        } catch (Throwable $e) {
+            error_log('Error fetching customers for shipping: ' . $e->getMessage());
+            $shippingCustomers = [];
+        }
+        
         // إحصائيات طلبات الشحن
         $ordersStats = [
             'total_orders' => 0,
@@ -2945,7 +2994,7 @@ try {
                 <i class="bi bi-box-seam fs-5"></i>
                 <div>لا توجد منتجات متاحة في المخزن الرئيسي حالياً.</div>
             </div>
-        <?php elseif (empty($customers)): ?>
+        <?php elseif (empty($shippingCustomers)): ?>
             <div class="alert alert-warning d-flex align-items-center gap-2">
                 <i class="bi bi-people fs-5"></i>
                 <div class="flex-grow-1">لا توجد عملاء نشطون في النظام. قم بإضافة عميل أولاً.</div>
@@ -2985,9 +3034,12 @@ try {
                                 <div class="input-group">
                                     <select class="form-select" name="customer_id" id="shippingCustomerSelect" required>
                                         <option value="">اختر العميل</option>
-                                        <?php foreach ($customers as $customer): ?>
+                                        <?php foreach ($shippingCustomers as $customer): ?>
                                             <option value="<?php echo (int)$customer['id']; ?>">
                                                 <?php echo htmlspecialchars($customer['name']); ?>
+                                                <?php if (!empty($customer['phone'])): ?>
+                                                    - <?php echo htmlspecialchars($customer['phone']); ?>
+                                                <?php endif; ?>
                                             </option>
                                         <?php endforeach; ?>
                                     </select>
