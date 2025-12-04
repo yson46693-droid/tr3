@@ -636,18 +636,36 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 throw new InvalidArgumentException('شركة الشحن المرتبطة بالطلب غير موجودة.');
             }
 
-            // البحث عن العميل في جدول local_customers (العملاء المحليين)
+            // البحث عن العميل في جدول local_customers أولاً (العملاء المحليين)
+            $customer = null;
+            $customerTable = null;
             $localCustomersTableExists = $db->queryOne("SHOW TABLES LIKE 'local_customers'");
-            if (empty($localCustomersTableExists)) {
-                throw new InvalidArgumentException('جدول العملاء المحليين غير متوفر في النظام.');
+            
+            if (!empty($localCustomersTableExists)) {
+                $customer = $db->queryOne(
+                    "SELECT id, balance, status FROM local_customers WHERE id = ? FOR UPDATE",
+                    [$order['customer_id']]
+                );
+                if ($customer) {
+                    $customerTable = 'local_customers';
+                }
             }
 
-            $customer = $db->queryOne(
-                "SELECT id, balance, status FROM local_customers WHERE id = ? FOR UPDATE",
-                [$order['customer_id']]
-            );
-
+            // إذا لم نجد العميل في local_customers، نبحث في customers (للطلبات القديمة)
             if (!$customer) {
+                $customersTableExists = $db->queryOne("SHOW TABLES LIKE 'customers'");
+                if (!empty($customersTableExists)) {
+                    $customer = $db->queryOne(
+                        "SELECT id, balance, status FROM customers WHERE id = ? FOR UPDATE",
+                        [$order['customer_id']]
+                    );
+                    if ($customer) {
+                        $customerTable = 'customers';
+                    }
+                }
+            }
+
+            if (!$customer || !$customerTable) {
                 error_log('Complete shipping order: Customer not found - customer_id: ' . ($order['customer_id'] ?? 'null') . ', order_id: ' . $orderId);
                 throw new InvalidArgumentException('تعذر العثور على العميل المرتبط بالطلب. قد يكون العميل قد تم حذفه.');
             }
@@ -659,8 +677,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 [$totalAmount, $currentUser['id'] ?? null, $order['shipping_company_id']]
             );
 
+            // تحديث رصيد العميل في الجدول المناسب
             $db->execute(
-                "UPDATE local_customers SET balance = balance + ?, updated_at = NOW() WHERE id = ?",
+                "UPDATE {$customerTable} SET balance = balance + ?, updated_at = NOW() WHERE id = ?",
                 [$totalAmount, $order['customer_id']]
             );
 
@@ -912,17 +931,19 @@ try {
 
 $orders = [];
 try {
+    // جلب الطلبات مع البحث عن العملاء في كلا الجدولين (local_customers و customers)
     $orders = $db->query(
         "SELECT 
             sco.*, 
             sc.name AS shipping_company_name,
             sc.balance AS company_balance,
-            c.name AS customer_name,
-            c.phone AS customer_phone,
+            COALESCE(lc.name, c.name) AS customer_name,
+            COALESCE(lc.phone, c.phone) AS customer_phone,
             i.invoice_number
         FROM shipping_company_orders sco
         LEFT JOIN shipping_companies sc ON sco.shipping_company_id = sc.id
-        LEFT JOIN local_customers c ON sco.customer_id = c.id
+        LEFT JOIN local_customers lc ON sco.customer_id = lc.id
+        LEFT JOIN customers c ON sco.customer_id = c.id AND lc.id IS NULL
         LEFT JOIN invoices i ON sco.invoice_id = i.id
         ORDER BY sco.created_at DESC
         LIMIT 50"
