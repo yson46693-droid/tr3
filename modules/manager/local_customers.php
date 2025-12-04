@@ -630,15 +630,14 @@ try {
         }
 
         // حساب إجمالي التحصيلات من جميع العملاء المحليين بدون فلاتر
-        // التحصيلات من صفحة العملاء المحليين تُضاف كإيراد معتمد مباشرة
+        // نحسب جميع التحصيلات (pending و approved) لأنها جميعاً من العملاء المحليين
         $collectionsSql = "SELECT COALESCE(SUM(col.amount), 0) AS total_collections
-                           FROM local_collections col
-                           WHERE 1=1";
+                           FROM local_collections col";
         $collectionsParams = [];
 
-        // حساب التحصيلات المعتمدة (التحصيلات من هذه الصفحة تُضاف معتمدة مباشرة)
+        // حساب جميع التحصيلات (pending و approved) - نستثني المرفوضة فقط
         if ($collectionsStatusExists) {
-            $collectionsSql .= " AND col.status = 'approved'";
+            $collectionsSql .= " WHERE col.status IN ('pending', 'approved')";
         }
 
         $collectionsResult = $db->queryOne($collectionsSql, $collectionsParams);
