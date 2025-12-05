@@ -391,23 +391,13 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
                     $quantityProduced = (float)($fp['quantity_produced'] ?? 0);
                     
-                    // حساب الكمية المباعة
-                    $soldQty = 0;
+                    // ملاحظة: quantity_produced تمثل الكمية المتبقية بالفعل (يتم خصم المباع منها تلقائياً عبر recordInventoryMovement)
+                    // لذلك لا نحتاج لخصم soldQty مرة أخرى
                     $pendingQty = 0;
                     $pendingShippingQty = 0;
                     
                     if (!empty($fp['batch_number'])) {
                         try {
-                            $sold = $db->queryOne("
-                                SELECT COALESCE(SUM(ii.quantity), 0) AS sold_quantity
-                                FROM invoice_items ii
-                                INNER JOIN invoices i ON ii.invoice_id = i.id
-                                INNER JOIN sales_batch_numbers sbn ON ii.id = sbn.invoice_item_id
-                                INNER JOIN batch_numbers bn ON sbn.batch_number_id = bn.id
-                                WHERE bn.batch_number = ?
-                            ", [$fp['batch_number']]);
-                            $soldQty = (float)($sold['sold_quantity'] ?? 0);
-                            
                             // حساب الكمية المحجوزة في طلبات العملاء المعلقة
                             // ملاحظة: customer_order_items لا يحتوي على batch_number مباشرة
                             // لذلك نستخدم finished_products للربط مع batch_number بناءً على product_id و batch_number
@@ -421,6 +411,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                             ", [$fp['batch_number']]);
                             $pendingQty = (float)($pending['pending_quantity'] ?? 0);
                             
+                            // حساب الكمية المحجوزة في طلبات الشحن المعلقة (in_transit)
                             $pendingShipping = $db->queryOne("
                                 SELECT COALESCE(SUM(soi.quantity), 0) AS pending_quantity
                                 FROM shipping_company_order_items soi
@@ -434,7 +425,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                         }
                     }
                     
-                    $availableQuantity = max(0, $quantityProduced - $soldQty - $pendingQty - $pendingShippingQty);
+                    // حساب الكمية المتاحة: quantity_produced (المتبقية) - الكميات المحجوزة فقط
+                    // لا نخصم soldQty لأنها مخصومة بالفعل من quantity_produced
+                    $availableQuantity = max(0, $quantityProduced - $pendingQty - $pendingShippingQty);
                     
                     if ($availableQuantity < $requestedQuantity) {
                         throw new InvalidArgumentException('الكمية المتاحة للمنتج ' . ($fp['product_name'] ?? '') . ' غير كافية.');
@@ -1164,27 +1157,17 @@ try {
             foreach ($factoryProducts as $fp) {
                 $batchNumber = $fp['batch_number'] ?? '';
                 $productName = $fp['name'] ?? 'غير محدد';
-                $quantity = (float)($fp['quantity'] ?? 0);
+                $quantity = (float)($fp['quantity'] ?? 0); // هذا هو quantity_produced (الكمية المتبقية)
                 $unitPrice = (float)($fp['unit_price'] ?? 0);
                 
-                // حساب الكمية المتاحة (طرح المبيعات والطلبات المعلقة)
-                $soldQty = 0;
+                // ملاحظة: quantity هنا هو quantity_produced الذي يمثل الكمية المتبقية بالفعل
+                // (يتم خصم المباع منها تلقائياً عبر recordInventoryMovement)
+                // لذلك لا نحتاج لخصم soldQty مرة أخرى
                 $pendingQty = 0;
                 $pendingShippingQty = 0;
                 
                 if (!empty($batchNumber)) {
                     try {
-                        // حساب الكمية المباعة
-                        $sold = $db->queryOne("
-                            SELECT COALESCE(SUM(ii.quantity), 0) AS sold_quantity
-                            FROM invoice_items ii
-                            INNER JOIN invoices i ON ii.invoice_id = i.id
-                            INNER JOIN sales_batch_numbers sbn ON ii.id = sbn.invoice_item_id
-                            INNER JOIN batch_numbers bn ON sbn.batch_number_id = bn.id
-                            WHERE bn.batch_number = ?
-                        ", [$batchNumber]);
-                        $soldQty = (float)($sold['sold_quantity'] ?? 0);
-                        
                         // حساب الكمية المحجوزة في طلبات العملاء المعلقة
                         // ملاحظة: customer_order_items لا يحتوي على batch_number مباشرة
                         // لذلك نستخدم finished_products للربط مع batch_number بناءً على product_id و batch_number
@@ -1212,7 +1195,9 @@ try {
                     }
                 }
                 
-                $availableQuantity = max(0, $quantity - $soldQty - $pendingQty - $pendingShippingQty);
+                // حساب الكمية المتاحة: quantity (المتبقية) - الكميات المحجوزة فقط
+                // لا نخصم soldQty لأنها مخصومة بالفعل من quantity_produced
+                $availableQuantity = max(0, $quantity - $pendingQty - $pendingShippingQty);
                 
                 // عرض جميع المنتجات حتى لو كانت الكمية المتاحة صفر (مثل نقطة بيع المدير)
                 $productsList[] = [
