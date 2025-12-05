@@ -1244,7 +1244,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 [$currentUser['id'] ?? null, $orderId]
             );
 
-            // تحديث الفاتورة لتعكس المبلغ المتبقي
+            // تحديث الفاتورة لتعكس المبلغ المتبقي وإضافة المنتجات إلى سجل مشتريات العميل
             if (!empty($order['invoice_id'])) {
                 // تحديث حالة الفاتورة والمبالغ
                 $db->execute(
@@ -1289,14 +1289,31 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                             ]
                         );
                         
-                        // مزامنة كاملة لسجل المشتريات للتأكد من تحديث جميع البيانات
-                        customerHistorySyncForCustomer($order['customer_id']);
+                        error_log(sprintf(
+                            'shipping_orders: Saved purchase history for customer_id=%d, invoice_id=%d, invoice_number=%s',
+                            $order['customer_id'],
+                            $order['invoice_id'],
+                            $invoiceData['invoice_number'] ?? 'N/A'
+                        ));
                     } catch (Throwable $historyError) {
-                        error_log('shipping_orders: failed syncing customer purchase history -> ' . $historyError->getMessage());
+                        error_log('shipping_orders: failed saving customer purchase history -> ' . $historyError->getMessage());
                         error_log('shipping_orders: history error trace -> ' . $historyError->getTraceAsString());
-                        // لا نوقف العملية إذا فشل تحديث السجل
                     }
                 }
+            }
+            
+            // مزامنة كاملة لسجل المشتريات للتأكد من تحديث جميع البيانات (يتم استدعاؤها دائماً)
+            try {
+                customerHistorySyncForCustomer($order['customer_id']);
+                error_log(sprintf(
+                    'shipping_orders: Synced purchase history for customer_id=%d after completing order_id=%d',
+                    $order['customer_id'],
+                    $orderId
+                ));
+            } catch (Throwable $syncError) {
+                error_log('shipping_orders: failed syncing customer purchase history -> ' . $syncError->getMessage());
+                error_log('shipping_orders: sync error trace -> ' . $syncError->getTraceAsString());
+                // لا نوقف العملية إذا فشل تحديث السجل
             }
 
             logAudit(
