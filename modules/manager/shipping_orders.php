@@ -545,22 +545,49 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     if ($productType === 'factory' && $batchId) {
                         // جلب batch_number من finished_products
                         $fp = $db->queryOne("
-                            SELECT fp.batch_number
+                            SELECT fp.batch_number, fp.batch_id
                             FROM finished_products fp
                             WHERE fp.id = ?
                             LIMIT 1
                         ", [$batchId]);
                         
-                        if ($fp && !empty($fp['batch_number'])) {
-                            $batchNumber = trim($fp['batch_number']);
-                            // البحث عن batch_number_id من جدول batch_numbers
-                            $batchCheck = $db->queryOne(
-                                "SELECT id FROM batch_numbers WHERE batch_number = ?",
-                                [$batchNumber]
-                            );
-                            if ($batchCheck) {
-                                $batchNumberId = (int)$batchCheck['id'];
+                        error_log("shipping_orders: Linking batch - batchId: $batchId, fp data: " . json_encode($fp));
+                        
+                        if ($fp) {
+                            // محاولة جلب batch_number من finished_products.batch_number مباشرة
+                            $batchNumber = null;
+                            if (!empty($fp['batch_number'])) {
+                                $batchNumber = trim($fp['batch_number']);
+                                error_log("shipping_orders: Found batch_number from finished_products: $batchNumber");
+                            } elseif (!empty($fp['batch_id'])) {
+                                // إذا لم يكن batch_number موجوداً، نحاول جلب batch_number من batch_numbers باستخدام batch_id
+                                $batchFromTable = $db->queryOne(
+                                    "SELECT batch_number FROM batch_numbers WHERE id = ?",
+                                    [(int)$fp['batch_id']]
+                                );
+                                if ($batchFromTable && !empty($batchFromTable['batch_number'])) {
+                                    $batchNumber = trim($batchFromTable['batch_number']);
+                                    error_log("shipping_orders: Found batch_number from batch_numbers using batch_id: $batchNumber");
+                                }
                             }
+                            
+                            if ($batchNumber) {
+                                // البحث عن batch_number_id من جدول batch_numbers
+                                $batchCheck = $db->queryOne(
+                                    "SELECT id FROM batch_numbers WHERE batch_number = ?",
+                                    [$batchNumber]
+                                );
+                                if ($batchCheck) {
+                                    $batchNumberId = (int)$batchCheck['id'];
+                                    error_log("shipping_orders: Found batch_number_id: $batchNumberId for batch_number: $batchNumber");
+                                } else {
+                                    error_log("shipping_orders: WARNING - batch_number '$batchNumber' not found in batch_numbers table");
+                                }
+                            } else {
+                                error_log("shipping_orders: WARNING - batch_number is empty for finished_products.id = $batchId");
+                            }
+                        } else {
+                            error_log("shipping_orders: ERROR - finished_products not found with id = $batchId");
                         }
                     }
                     
@@ -573,9 +600,12 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                                  ON DUPLICATE KEY UPDATE quantity = quantity + ?",
                                 [$invoiceItemId, $batchNumberId, $quantity, $quantity]
                             );
+                            error_log("shipping_orders: Successfully linked batch_number_id $batchNumberId to invoice_item_id $invoiceItemId with quantity $quantity");
                         } catch (Throwable $batchError) {
-                            error_log('Error linking batch number to invoice item: ' . $batchError->getMessage());
+                            error_log('shipping_orders: Error linking batch number to invoice item: ' . $batchError->getMessage());
                         }
+                    } else {
+                        error_log("shipping_orders: WARNING - batchNumberId is null for product_id: $productId, batchId: $batchId, productType: $productType");
                     }
                 }
             }

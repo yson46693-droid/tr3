@@ -116,47 +116,56 @@ function recordInventoryMovement($productId, $warehouseId, $type, $quantity, $re
             // إنشاء كائن product وهمي للتوافق مع باقي الكود
             $product = ['quantity' => $quantityBefore, 'warehouse_id' => $warehouseId];
         } else {
-            // الحصول على الكمية الحالية من products
-            $product = $db->queryOne(
-                "SELECT quantity, warehouse_id FROM products WHERE id = ?",
-                [$productId]
-            );
+            // الحصول على الكمية الحالية - منطق مبسط لضمان الخصم من مكان واحد فقط
+            $product = null;
+            $usingFinishedProductQuantity = false;
             
-            if (!$product) {
-                // إذا لم نجد المنتج في products، نحاول البحث في finished_products (للمنتجات المصنعة)
-                if ($productId) {
-                    $finishedProductCheck = $db->queryOne(
-                        "SELECT id, quantity_produced FROM finished_products 
-                         WHERE product_id = ? AND (quantity_produced IS NULL OR quantity_produced > 0)
-                         ORDER BY production_date DESC, id DESC LIMIT 1",
-                        [$productId]
-                    );
-                    if ($finishedProductCheck) {
-                        error_log("recordInventoryMovement: Product not found in products table, but found in finished_products with id=" . ($finishedProductCheck['id'] ?? 'N/A') . ", quantity_produced=" . ($finishedProductCheck['quantity_produced'] ?? 0));
-                        // إنشاء product وهمي للتوافق مع باقي الكود
-                        $product = ['quantity' => (float)($finishedProductCheck['quantity_produced'] ?? 0), 'warehouse_id' => $warehouseId];
-                        // إذا كان batchId غير موجود، نستخدم finished_products.id
-                        if (!$batchId && isset($finishedProductCheck['id'])) {
-                            $batchId = (int)$finishedProductCheck['id'];
-                            error_log("recordInventoryMovement: Setting batch_id to " . $batchId . " from finished_products");
+            // قاعدة بسيطة: إذا كان batch_id موجوداً ونوع الحركة 'out' أو 'transfer'، نستخدم finished_products فقط
+            // وإلا نستخدم products فقط
+            if ($batchId && ($type === 'out' || $type === 'transfer') && !$usingVehicleInventory) {
+                // للمنتجات المصنعة: نتجاهل products.quantity تماماً ونستخدم finished_products.quantity_produced فقط
+                // لا نقرأ من products على الإطلاق
+            } else {
+                // للمنتجات الخارجية: نقرأ من products فقط
+                $product = $db->queryOne(
+                    "SELECT quantity, warehouse_id FROM products WHERE id = ?",
+                    [$productId]
+                );
+                
+                if (!$product) {
+                    // إذا لم نجد المنتج في products، نحاول البحث في finished_products (للمنتجات المصنعة)
+                    if ($productId) {
+                        $finishedProductCheck = $db->queryOne(
+                            "SELECT id, quantity_produced FROM finished_products 
+                             WHERE product_id = ? AND (quantity_produced IS NULL OR quantity_produced > 0)
+                             ORDER BY production_date DESC, id DESC LIMIT 1",
+                            [$productId]
+                        );
+                        if ($finishedProductCheck) {
+                            error_log("recordInventoryMovement: Product not found in products table, but found in finished_products with id=" . ($finishedProductCheck['id'] ?? 'N/A') . ", quantity_produced=" . ($finishedProductCheck['quantity_produced'] ?? 0));
+                            // إنشاء product وهمي للتوافق مع باقي الكود
+                            $product = ['quantity' => (float)($finishedProductCheck['quantity_produced'] ?? 0), 'warehouse_id' => $warehouseId];
+                            // إذا كان batchId غير موجود، نستخدم finished_products.id
+                            if (!$batchId && isset($finishedProductCheck['id'])) {
+                                $batchId = (int)$finishedProductCheck['id'];
+                                error_log("recordInventoryMovement: Setting batch_id to " . $batchId . " from finished_products");
+                            }
+                        } else {
+                            return ['success' => false, 'message' => 'المنتج غير موجود'];
                         }
                     } else {
                         return ['success' => false, 'message' => 'المنتج غير موجود'];
                     }
-                } else {
-                    return ['success' => false, 'message' => 'المنتج غير موجود'];
                 }
             }
         }
         
-        // إذا كان هناك batch_id ونوع الحركة هو 'out' أو 'transfer'، نستخدم quantity_produced من finished_products
-        if (!$usingVehicleInventory) {
-            $quantityBefore = (float)($product['quantity'] ?? 0);
-        }
+        // تحديد الكمية الأولية والجدول المستخدم للخصم - منطق مبسط
+        $quantityBefore = 0.0;
         $usingFinishedProductQuantity = false;
         
-        // إذا كان هناك batch_id ونوع الحركة هو 'out' أو 'transfer'، نستخدم quantity_produced من finished_products
-        // لكن فقط إذا لم نكن نستخدم vehicle_inventory (لأننا استخدمناها بالفعل)
+        // إذا كان batch_id موجوداً ونوع الحركة 'out' أو 'transfer'، نستخدم finished_products مباشرة
+        // هذا يضمن الخصم من مكان واحد فقط - لا نقرأ أو نحدث products.quantity أبداً
         error_log("recordInventoryMovement: Checking conditions - batchId: " . ($batchId ?? 'NULL') . ", type: $type, usingVehicleInventory: " . ($usingVehicleInventory ? 'true' : 'false'));
         if ($batchId && ($type === 'out' || $type === 'transfer') && !$usingVehicleInventory) {
             // استخدام FOR UPDATE لضمان قراءة الكمية الصحيحة ومنع race conditions
@@ -211,19 +220,31 @@ function recordInventoryMovement($productId, $warehouseId, $type, $quantity, $re
                     error_log("recordInventoryMovement: Using finished_products.quantity_produced = $quantityBefore for batch_id: $batchId, product_id: $productId, reference_type: " . ($referenceType ?? 'null'));
                 }
             } else {
-                // إذا لم نجد finished_product، نسجل تحذيراً لكن نستخدم products.quantity
-                // لكن يجب التأكد من أن products.quantity يحتوي على كمية كافية
+                // إذا كان batch_id موجوداً ولم نجد finished_product، هذا خطأ يجب إيقافه
                 if ($batchId) {
-                    error_log("recordInventoryMovement: ERROR - finished_products not found for batch_id: $batchId, product_id: $productId. This should not happen for factory products. Using products.quantity instead.");
-                } else {
-                    error_log("recordInventoryMovement: No batch_id provided, using products.quantity for product_id: $productId");
+                    error_log("recordInventoryMovement: ERROR - finished_products not found for batch_id: $batchId, product_id: $productId. Cannot proceed with factory product.");
+                    return ['success' => false, 'message' => 'رقم التشغيلة غير موجود أو غير صحيح'];
                 }
-                // إعادة تعيين batchId إلى null لأننا لم نجد finished_product
-                $batchId = null;
+                // إذا لم يكن batch_id موجوداً، سنستخدم products.quantity لاحقاً
+                error_log("recordInventoryMovement: No batch_id provided for product_id: $productId, type: $type. Will use products.quantity.");
             }
         } else {
-            if (!$batchId) {
-                error_log("recordInventoryMovement: No batch_id provided for product_id: $productId, type: $type. Using products.quantity.");
+            // إذا لم يكن batch_id موجوداً أو نوع الحركة ليس 'out' أو 'transfer'، نستخدم products.quantity
+            if (!$batchId || ($batchId && ($type !== 'out' && $type !== 'transfer'))) {
+                if (!$usingVehicleInventory) {
+                    if (!$product) {
+                        // نحاول قراءة products مرة أخرى إذا لم نكن قد قرأناها
+                        $product = $db->queryOne(
+                            "SELECT quantity, warehouse_id FROM products WHERE id = ?",
+                            [$productId]
+                        );
+                        if (!$product) {
+                            return ['success' => false, 'message' => 'المنتج غير موجود'];
+                        }
+                    }
+                    $quantityBefore = (float)($product['quantity'] ?? 0);
+                    error_log("recordInventoryMovement: Using products.quantity = $quantityBefore for product_id: $productId");
+                }
             } else {
                 error_log("recordInventoryMovement: Skipping finished_products lookup - usingVehicleInventory: " . ($usingVehicleInventory ? 'true' : 'false') . ", type: $type, batch_id: $batchId");
             }
