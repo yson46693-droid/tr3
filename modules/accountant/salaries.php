@@ -1064,7 +1064,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     }
                     
                     try {
-                        $db->getConnection()->beginTransaction();
+                        $db->beginTransaction();
                         
                         // حساب المتبقي بعد التسوية (من المتبقي الحالي، وليس من المبلغ التراكمي)
                         $remainingAfter = max(0, $currentRemaining - $settlementAmount);
@@ -1162,7 +1162,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                             );
                         }
                         
-                        $db->getConnection()->commit();
+                        $db->commit();
                         
                         logAudit($currentUser['id'], 'settle_salary', 'salary', $salaryId, null, [
                             'settlement_amount' => $settlementAmount,
@@ -1181,7 +1181,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                         exit;
                         
                     } catch (Exception $e) {
-                        $db->getConnection()->rollBack();
+                        $db->rollback();
                         error_log('Error settling salary: ' . $e->getMessage());
                         $_SESSION['salaries_error'] = 'حدث خطأ أثناء تسوية المستحقات: ' . $e->getMessage();
                         $redirectUrl = $buildViewUrl($view, ['month' => $selectedMonth, 'year' => $selectedYear]);

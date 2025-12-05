@@ -245,12 +245,19 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 }
 
                 $productId = isset($itemRow['product_id']) ? (int)$itemRow['product_id'] : 0;
+                // قراءة الكمية بشكل صحيح - التأكد من أنها قيمة رقمية صحيحة
                 $quantity = isset($itemRow['quantity']) ? (float)$itemRow['quantity'] : 0.0;
+                // التحقق من أن الكمية قيمة صحيحة وموجبة
+                if ($quantity <= 0 || $quantity > 100000) {
+                    error_log("shipping_orders: Invalid quantity detected: " . var_export($itemRow['quantity'], true) . " for product_id: " . $productId);
+                    continue;
+                }
                 $unitPrice = isset($itemRow['unit_price']) ? (float)$itemRow['unit_price'] : 0.0;
-                $batchId = isset($itemRow['batch_id']) ? (int)$itemRow['batch_id'] : null;
+                // إصلاح: استخدام !empty() لضمان أن batch_id يكون null إذا كان فارغ أو 0 أو غير موجود
+                $batchId = !empty($itemRow['batch_id']) && (int)$itemRow['batch_id'] > 0 ? (int)$itemRow['batch_id'] : null;
                 $productType = isset($itemRow['product_type']) ? trim($itemRow['product_type']) : '';
 
-                if ($productId <= 0 || $quantity <= 0 || $unitPrice < 0) {
+                if ($productId <= 0 || $unitPrice < 0) {
                     continue;
                 }
 
