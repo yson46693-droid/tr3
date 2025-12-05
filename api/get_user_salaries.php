@@ -111,10 +111,12 @@ try {
     }
     
     // بناء الاستعلام - تبسيط الشروط لتشمل جميع الرواتب
+    // ملاحظة: نستخدم COALESCE للتعامل مع القيم NULL
     $query = "SELECT s.*, 
                      COALESCE(s.accumulated_amount, s.total_amount, 0) as calculated_accumulated,
                      COALESCE(s.paid_amount, 0) as paid_amount,
-                     (COALESCE(s.accumulated_amount, s.total_amount, 0) - COALESCE(s.paid_amount, 0)) as remaining";
+                     (COALESCE(s.accumulated_amount, s.total_amount, 0) - COALESCE(s.paid_amount, 0)) as remaining,
+                     s.id as salary_id";
     
     if ($hasYearColumn) {
         // إذا كان month من نوع INT و year موجود
@@ -170,6 +172,13 @@ try {
     // تسجيل عدد الرواتب المسترجعة
     error_log("get_user_salaries.php found " . count($salaries) . " salaries for user_id: " . $userId);
     
+    // تسجيل تفاصيل الرواتب المسترجعة
+    if (count($salaries) > 0) {
+        foreach ($salaries as $idx => $sal) {
+            error_log("get_user_salaries.php raw salary[$idx]: id=" . ($sal['id'] ?? 'N/A') . ", user_id=" . ($sal['user_id'] ?? 'N/A') . ", month=" . ($sal['month'] ?? 'NULL') . ", year=" . ($sal['year'] ?? 'NULL'));
+        }
+    }
+    
     // التحقق من وجود رواتب
     if (empty($salaries) || count($salaries) === 0) {
         error_log("get_user_salaries.php: No salaries found for user_id: " . $userId);
@@ -198,9 +207,19 @@ try {
         try {
             // التحقق من وجود user_id في الراتب
             $salaryUserId = intval($salary['user_id'] ?? 0);
-            if ($salaryUserId <= 0 || $salaryUserId != $userId) {
+            $salaryId = intval($salary['id'] ?? $salary['salary_id'] ?? 0);
+            
+            error_log("get_user_salaries.php: Processing salary ID $salaryId, user_id=$salaryUserId, expected_user_id=$userId");
+            
+            if ($salaryUserId <= 0) {
                 $skippedCount++;
-                error_log("get_user_salaries.php: Skipping salary ID " . ($salary['id'] ?? 'unknown') . " - user_id mismatch: expected $userId, got $salaryUserId");
+                error_log("get_user_salaries.php: Skipping salary ID $salaryId - invalid user_id: $salaryUserId");
+                continue;
+            }
+            
+            if ($salaryUserId != $userId) {
+                $skippedCount++;
+                error_log("get_user_salaries.php: Skipping salary ID $salaryId - user_id mismatch: expected $userId, got $salaryUserId");
                 continue;
             }
             
@@ -335,7 +354,7 @@ try {
         // التأكد من أن الراتب الإجمالي لا يكون سالباً
         $currentTotal = max(0, $currentTotal);
         
-        $salaryId = intval($salary['id'] ?? 0);
+        $salaryId = intval($salary['id'] ?? $salary['salary_id'] ?? 0);
         
         // إذا كان الراتب المحسوب من المكونات يساوي 0، استخدم total_amount من قاعدة البيانات كقيمة احتياطية
         // هذا يحدث عندما تكون المكونات غير محفوظة في قاعدة البيانات
@@ -439,17 +458,19 @@ try {
             // تسجيل الخطأ ولكن الاستمرار في معالجة الرواتب الأخرى
             error_log("Error processing salary ID " . ($salary['id'] ?? 'unknown') . ": " . $e->getMessage());
             error_log("Stack trace: " . $e->getTraceAsString());
+            $skippedCount++;
             continue; // تخطي هذا الراتب والمتابعة مع البقية
         } catch (Throwable $e) {
             // معالجة جميع أنواع الأخطاء
             error_log("Fatal error processing salary ID " . ($salary['id'] ?? 'unknown') . ": " . $e->getMessage());
             error_log("Stack trace: " . $e->getTraceAsString());
+            $skippedCount++;
             continue; // تخطي هذا الراتب والمتابعة مع البقية
         }
     }
     
-    // تسجيل إحصائيات المعالجة
-    error_log("get_user_salaries.php: Processed $processedCount salaries, skipped $skippedCount, monthYearMap contains " . count($monthYearMap) . " entries");
+    // تسجيل إحصائيات نهائية
+    error_log("get_user_salaries.php: Final stats - Processed: $processedCount, Skipped: $skippedCount, monthYearMap entries: " . count($monthYearMap));
     
     // تحويل الخريطة إلى مصفوفة وترتيبها حسب السنة والشهر (الأحدث أولاً)
     $formattedSalaries = array_values($monthYearMap);
@@ -490,11 +511,16 @@ try {
         error_log("get_user_salaries.php salary[$idx]: id=" . ($sal['id'] ?? 'N/A') . ", month=" . ($sal['month'] ?? 'NULL') . ", year=" . ($sal['year'] ?? 'NULL') . ", month_label=" . ($sal['month_label'] ?? 'N/A') . ", remaining=" . ($sal['remaining'] ?? 0));
     }
     
-    ob_end_clean();
-    echo json_encode([
+    // تسجيل JSON المرسل
+    $jsonResponse = json_encode([
         'success' => true,
         'salaries' => $formattedSalaries
     ], JSON_UNESCAPED_UNICODE);
+    
+    error_log("get_user_salaries.php: Sending JSON response with " . count($formattedSalaries) . " salaries, JSON length: " . strlen($jsonResponse));
+    
+    ob_end_clean();
+    echo $jsonResponse;
     
 } catch (Throwable $e) {
     ob_end_clean();

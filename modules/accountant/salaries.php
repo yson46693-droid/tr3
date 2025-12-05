@@ -4394,8 +4394,13 @@ function loadUserSalariesForSettlement(userId, currentSalaryId) {
         })
         .then(data => {
             console.log('Salaries data received:', data);
+            console.log('Salaries data type:', typeof data);
+            console.log('Salaries data.success:', data?.success);
+            console.log('Salaries data.salaries:', data?.salaries);
+            console.log('Salaries data.salaries length:', data?.salaries?.length);
             
             if (!data) {
+                console.error('Empty response from server');
                 throw new Error('Empty response from server');
             }
             
@@ -4403,7 +4408,9 @@ function loadUserSalariesForSettlement(userId, currentSalaryId) {
             
             if (data.success !== false) {
                 if (data.salaries && Array.isArray(data.salaries) && data.salaries.length > 0) {
-                    data.salaries.forEach(salary => {
+                    console.log('Processing ' + data.salaries.length + ' salaries');
+                    data.salaries.forEach((salary, index) => {
+                        console.log('Processing salary[' + index + ']:', salary);
                         const option = document.createElement('option');
                         option.value = salary.id;
                         const remaining = parseFloat(salary.remaining || 0);
@@ -4438,6 +4445,10 @@ function loadUserSalariesForSettlement(userId, currentSalaryId) {
                     }
                 } else {
                     console.warn('No salaries found or empty array:', data);
+                    console.warn('data.salaries:', data.salaries);
+                    console.warn('data.salaries type:', typeof data.salaries);
+                    console.warn('data.salaries isArray:', Array.isArray(data.salaries));
+                    console.warn('data.salaries length:', data.salaries?.length);
                     const message = (data && data.message) ? data.message : 'لا توجد رواتب متاحة لهذا الموظف';
                     select.innerHTML = '<option value="">' + message + '</option>';
                 }
