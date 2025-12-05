@@ -4482,12 +4482,16 @@ function loadUserSalariesForSettlement(userId, currentSalaryId) {
                     
                     // إذا كان هناك راتب محدد مسبقاً (currentSalaryId)، نضيفه كخيار واحد
                     if (currentSalaryId > 0) {
-                        select.innerHTML = '<option value="' + currentSalaryId + '">الراتب الحالي</option>';
+                        // البحث عن معلومات الراتب الحالي من Modal
+                        const currentSalaryInfo = 'الراتب الحالي'; // يمكن تحسينه لاحقاً
+                        select.innerHTML = '<option value="' + currentSalaryId + '">' + currentSalaryInfo + '</option>';
+                        console.info('Using current salary ID:', currentSalaryId, 'since no other salaries found');
                     } else {
                         select.innerHTML = '<option value="">' + message + '</option>';
+                        console.info('No current salary ID and no salaries found. Message:', message);
                     }
                     
-                    // إظهار تحذير للمستخدم
+                    // إظهار تحذير للمستخدم (بدون إزعاج)
                     if (data && data.message) {
                         console.info('API message:', data.message);
                     }
@@ -4507,12 +4511,21 @@ function loadUserSalariesForSettlement(userId, currentSalaryId) {
             console.error('Error details:', {
                 message: error.message,
                 stack: error.stack,
-                name: error.name
+                name: error.name,
+                userId: userId,
+                currentSalaryId: currentSalaryId
             });
-            select.innerHTML = '<option value="">خطأ في تحميل الرواتب</option>';
-            // عرض رسالة خطأ للمستخدم
-            const errorMsg = error.message || 'حدث خطأ غير معروف أثناء تحميل الرواتب';
-            alert('حدث خطأ أثناء تحميل الرواتب:\n\n' + errorMsg + '\n\nيرجى التحقق من وحدة التحكم (F12) للمزيد من التفاصيل.');
+            
+            // إذا كان هناك راتب محدد مسبقاً، نستخدمه
+            if (currentSalaryId > 0) {
+                select.innerHTML = '<option value="' + currentSalaryId + '">الراتب الحالي (لا يمكن تحميل الرواتب الأخرى)</option>';
+                console.warn('Using current salary ID due to API error');
+            } else {
+                select.innerHTML = '<option value="">خطأ في تحميل الرواتب</option>';
+            }
+            
+            // لا نعرض alert لأن هذا قد يكون مجرد مشكلة في تحميل القائمة
+            // الراتب الحالي موجود بالفعل في Modal
         });
 }
 
@@ -4676,13 +4689,16 @@ function updateSettleRemaining() {
     // استخدام القيمة المحفوظة مباشرة بدلاً من قراءة النص المنسق
     // هذا يضمن الدقة وعدم وجود أخطاء في التحويل
     let remaining = settleModalRemainingValue;
+    let remainingText = '';
     
     // إذا لم تكن القيمة محفوظة، حاول قراءتها من النص المنسق
     if (remaining <= 0) {
-        const remainingText = remainingElement.textContent || remainingElement.innerText || '0';
+        remainingText = remainingElement.textContent || remainingElement.innerText || '0';
         remaining = parseFormattedCurrency(remainingText);
         // حفظ القيمة للمرة القادمة
         settleModalRemainingValue = remaining;
+    } else {
+        remainingText = formatCurrency(remaining);
     }
     
     const settleAmount = parseFloat(settleAmountElement.value) || 0;
