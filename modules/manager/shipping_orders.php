@@ -1011,6 +1011,97 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     $currentUser['id'] ?? null,
                     $batchId
                 );
+
+                // للمنتجات التي لها رقم تشغيلة: إضافة الكمية إلى products.quantity
+                if ($batchId) {
+                    try {
+                        // جلب product_id الصحيح من finished_products (لأن batch_id هو finished_products.id وليس products.id)
+                        $fpData = $db->queryOne("
+                            SELECT 
+                                fp.product_id,
+                                bn.product_id AS batch_product_id,
+                                COALESCE(fp.product_id, bn.product_id) AS actual_product_id
+                            FROM finished_products fp
+                            LEFT JOIN batch_numbers bn ON fp.batch_number = bn.batch_number
+                            WHERE fp.id = ?
+                        ", [$batchId]);
+                        
+                        if (!$fpData) {
+                            error_log(sprintf(
+                                "shipping_orders: WARNING - finished_products not found for batch_id: %d, Order: %s",
+                                $batchId,
+                                $order['order_number'] ?? $orderId
+                            ));
+                            continue;
+                        }
+                        
+                        // استخدام product_id الصحيح من finished_products أو batch_numbers
+                        $actualProductId = (int)($fpData['actual_product_id'] ?? $productId);
+                        
+                        // جلب الكمية الحالية من products قبل الإضافة
+                        $currentProduct = $db->queryOne(
+                            "SELECT quantity FROM products WHERE id = ?",
+                            [$actualProductId]
+                        );
+                        
+                        if (!$currentProduct) {
+                            error_log(sprintf(
+                                "shipping_orders: WARNING - products not found for product_id: %d (from batch_id: %d), Order: %s",
+                                $actualProductId,
+                                $batchId,
+                                $order['order_number'] ?? $orderId
+                            ));
+                            continue;
+                        }
+                        
+                        $currentQuantity = (float)($currentProduct['quantity'] ?? 0);
+                        
+                        error_log(sprintf(
+                            "shipping_orders: BEFORE adding quantity (cancel) - Order: %s, Product ID: %d, Batch ID: %d, products.quantity: %.2f, Quantity to add: %.2f",
+                            $order['order_number'] ?? $orderId,
+                            $actualProductId,
+                            $batchId,
+                            $currentQuantity,
+                            $quantity
+                        ));
+                        
+                        // إضافة الكمية المدخلة إلى products.quantity
+                        $newQuantity = $currentQuantity + $quantity;
+                        $db->execute(
+                            "UPDATE products SET quantity = ? WHERE id = ?",
+                            [$newQuantity, $actualProductId]
+                        );
+                        
+                        // قراءة الكمية بعد الإضافة للتحقق
+                        $productAfterAdd = $db->queryOne(
+                            "SELECT quantity FROM products WHERE id = ?",
+                            [$actualProductId]
+                        );
+                        $verifiedQuantity = $productAfterAdd ? (float)($productAfterAdd['quantity'] ?? 0) : $newQuantity;
+                        
+                        // تسجيل العملية في سجل الأخطاء
+                        error_log(sprintf(
+                            "shipping_orders: AFTER adding quantity (cancel) - Order: %s, Finished Product ID (batch_id): %d, Actual Product ID: %d, Quantity Added: %.2f, Previous Quantity: %.2f, Calculated New Quantity: %.2f, Verified Quantity: %.2f",
+                            $order['order_number'] ?? $orderId,
+                            $batchId,
+                            $actualProductId,
+                            $quantity,
+                            $currentQuantity,
+                            $newQuantity,
+                            $verifiedQuantity
+                        ));
+                    } catch (Throwable $addQuantityError) {
+                        // في حالة حدوث خطأ، نسجله فقط ولا نوقف العملية
+                        error_log(sprintf(
+                            "shipping_orders: ERROR adding quantity to products.quantity for product with batch_id (cancel) - Order: %s, Batch ID: %d, Product ID: %d, Quantity: %.2f, Error: %s",
+                            $order['order_number'] ?? $orderId,
+                            $batchId,
+                            $productId,
+                            $quantity,
+                            $addQuantityError->getMessage()
+                        ));
+                    }
+                }
             }
 
             // تحديث حالة الطلب إلى ملغي
