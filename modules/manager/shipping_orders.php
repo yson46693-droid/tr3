@@ -1196,7 +1196,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             
             if (!empty($localCustomersTableExists)) {
                 $customer = $db->queryOne(
-                    "SELECT id, balance, status FROM local_customers WHERE id = ? FOR UPDATE",
+                    "SELECT id, name, phone, address, balance, status FROM local_customers WHERE id = ? FOR UPDATE",
                     [$order['customer_id']]
                 );
                 if ($customer) {
@@ -1209,7 +1209,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 $customersTableExists = $db->queryOne("SHOW TABLES LIKE 'customers'");
                 if (!empty($customersTableExists)) {
                     $customer = $db->queryOne(
-                        "SELECT id, balance, status FROM customers WHERE id = ? FOR UPDATE",
+                        "SELECT id, name, phone, address, balance, status FROM customers WHERE id = ? FOR UPDATE",
                         [$order['customer_id']]
                     );
                     if ($customer) {
@@ -1243,6 +1243,90 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 "UPDATE shipping_company_orders SET status = 'delivered', delivered_at = NOW(), updated_by = ?, updated_at = NOW() WHERE id = ?",
                 [$currentUser['id'] ?? null, $orderId]
             );
+
+            // إضافة المنتجات إلى جدول sales (سجل مشتريات العميل)
+            try {
+                // جلب منتجات الطلب
+                $orderItems = $db->query(
+                    "SELECT product_id, batch_id, quantity, unit_price, total_price FROM shipping_company_order_items WHERE order_id = ?",
+                    [$orderId]
+                );
+
+                if (!empty($orderItems)) {
+                    // تحديد customer_id للاستخدام في جدول sales
+                    $salesCustomerId = $order['customer_id'];
+                    
+                    // إذا كان العميل في local_customers، يجب البحث عن أو إنشاء عميل مؤقت في customers
+                    // لأن جدول sales له foreign key على customers
+                    if ($customerTable === 'local_customers') {
+                        $customerName = $customer['name'] ?? '';
+                        $customerPhone = $customer['phone'] ?? null;
+                        $customerAddress = $customer['address'] ?? null;
+                        
+                        // البحث عن عميل في customers بنفس الاسم
+                        $existingCustomerInCustomers = $db->queryOne(
+                            "SELECT id FROM customers WHERE name = ? AND created_by_admin = 1 LIMIT 1",
+                            [$customerName]
+                        );
+                        
+                        if ($existingCustomerInCustomers) {
+                            $salesCustomerId = (int)$existingCustomerInCustomers['id'];
+                        } else {
+                            // إنشاء عميل مؤقت في customers للربط
+                            $db->execute(
+                                "INSERT INTO customers (name, phone, address, balance, status, created_by, rep_id, created_from_pos, created_by_admin) 
+                                 VALUES (?, ?, ?, 0, 'active', ?, NULL, 1, 1)",
+                                [
+                                    $customerName,
+                                    $customerPhone,
+                                    $customerAddress,
+                                    $currentUser['id'] ?? null,
+                                ]
+                            );
+                            $salesCustomerId = (int) $db->getLastInsertId();
+                        }
+                    }
+                    
+                    // تاريخ البيع (تاريخ التسليم)
+                    $saleDate = date('Y-m-d');
+                    
+                    // إضافة كل منتج إلى جدول sales
+                    foreach ($orderItems as $item) {
+                        $productId = (int)($item['product_id'] ?? 0);
+                        $quantity = (float)($item['quantity'] ?? 0);
+                        $unitPrice = (float)($item['unit_price'] ?? 0);
+                        $totalPrice = (float)($item['total_price'] ?? 0);
+                        
+                        if ($productId > 0 && $quantity > 0) {
+                            $db->execute(
+                                "INSERT INTO sales (customer_id, product_id, quantity, price, total, date, salesperson_id, status) 
+                                 VALUES (?, ?, ?, ?, ?, ?, ?, 'completed')",
+                                [$salesCustomerId, $productId, $quantity, $unitPrice, $totalPrice, $saleDate, $currentUser['id'] ?? null]
+                            );
+                            
+                            error_log(sprintf(
+                                'shipping_orders: Added sale record - customer_id=%d, product_id=%d, quantity=%.2f, total=%.2f, order_id=%d',
+                                $salesCustomerId,
+                                $productId,
+                                $quantity,
+                                $totalPrice,
+                                $orderId
+                            ));
+                        }
+                    }
+                    
+                    error_log(sprintf(
+                        'shipping_orders: Added %d product(s) to sales table for order_id=%d, customer_id=%d',
+                        count($orderItems),
+                        $orderId,
+                        $salesCustomerId
+                    ));
+                }
+            } catch (Throwable $salesError) {
+                error_log('shipping_orders: failed adding products to sales table -> ' . $salesError->getMessage());
+                error_log('shipping_orders: sales error trace -> ' . $salesError->getTraceAsString());
+                // لا نوقف العملية إذا فشل إضافة المنتجات إلى جدول sales
+            }
 
             // تحديث الفاتورة لتعكس المبلغ المتبقي وإضافة المنتجات إلى سجل مشتريات العميل
             if (!empty($order['invoice_id'])) {
