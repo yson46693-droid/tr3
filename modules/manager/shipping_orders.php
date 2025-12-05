@@ -723,6 +723,46 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     $currentUser['id'] ?? null,
                     ($productType === 'factory' && $batchId) ? $batchId : null
                 );
+
+                // للمنتجات التي لها رقم تشغيلة: إضافة الكمية إلى products.quantity
+                if ($productType === 'factory' && $batchId) {
+                    try {
+                        // جلب الكمية الحالية من products
+                        $currentProduct = $db->queryOne(
+                            "SELECT quantity FROM products WHERE id = ?",
+                            [$productId]
+                        );
+                        $currentQuantity = (float)($currentProduct['quantity'] ?? 0);
+                        
+                        // إضافة الكمية المدخلة إلى products.quantity
+                        $newQuantity = $currentQuantity + $quantity;
+                        $db->execute(
+                            "UPDATE products SET quantity = ? WHERE id = ?",
+                            [$newQuantity, $productId]
+                        );
+                        
+                        // تسجيل العملية في سجل الأخطاء
+                        error_log(sprintf(
+                            "shipping_orders: Added quantity to products.quantity for product with batch_id - Order: %s, Product ID: %d, Batch ID: %d, Quantity Added: %.2f, Previous Quantity: %.2f, New Quantity: %.2f",
+                            $orderNumber,
+                            $productId,
+                            $batchId,
+                            $quantity,
+                            $currentQuantity,
+                            $newQuantity
+                        ));
+                    } catch (Throwable $addQuantityError) {
+                        // في حالة حدوث خطأ، نسجله فقط ولا نوقف العملية
+                        error_log(sprintf(
+                            "shipping_orders: ERROR adding quantity to products.quantity for product with batch_id - Order: %s, Product ID: %d, Batch ID: %d, Quantity: %.2f, Error: %s",
+                            $orderNumber,
+                            $productId,
+                            $batchId,
+                            $quantity,
+                            $addQuantityError->getMessage()
+                        ));
+                    }
+                }
             }
 
             $db->execute(
