@@ -4697,14 +4697,7 @@ function loadSelectedSalaryData() {
         });
 }
 
-// متغير لتتبع عدد محاولات إعادة المحاولة
-let updateSettleRemainingRetryCount = 0;
-const MAX_UPDATE_SETTLE_RETRIES = 5;
-
 function updateSettleRemaining() {
-    // إعادة تعيين عداد المحاولات إذا نجحت الدالة
-    updateSettleRemainingRetryCount = 0;
-    
     // التحقق من أن Modal موجود في DOM أولاً
     const settleModal = document.getElementById('settleSalaryModal');
     if (!settleModal) {
@@ -4712,14 +4705,12 @@ function updateSettleRemaining() {
         return;
     }
     
-    // التحقق من أن Modal مرئي (منفتح) - استخدام طريقة بسيطة للتحقق
-    // Modal يكون مرئياً عندما يكون له class 'show' أو عندما يكون display ليس none
+    // التحقق من أن Modal مرئي (منفتح)
     const isModalVisible = settleModal.classList.contains('show') || 
                           (settleModal.offsetParent !== null);
     
     if (!isModalVisible) {
         // Modal غير مفتوح، لا نحتاج لتحديث أي شيء
-        updateSettleRemainingRetryCount = 0; // إعادة تعيين العداد
         return;
     }
     
@@ -4728,36 +4719,13 @@ function updateSettleRemaining() {
     const settleNewRemainingElement = document.getElementById('settleNewRemaining');
     const settleRemainingAmount2El = document.getElementById('settleRemainingAmount2');
     
-    // التحقق من وجود جميع العناصر المطلوبة - إذا لم تكن موجودة، ننتظر قليلاً ثم نحاول مرة أخرى
-    if (!remainingElement || !settleAmountElement || !settleNewRemainingElement) {
-        updateSettleRemainingRetryCount++;
-        
-        if (updateSettleRemainingRetryCount <= MAX_UPDATE_SETTLE_RETRIES) {
-            console.warn('updateSettleRemaining: بعض العناصر غير موجودة في DOM، محاولة ' + updateSettleRemainingRetryCount + '/' + MAX_UPDATE_SETTLE_RETRIES, {
-                remainingElement: !!remainingElement,
-                settleAmountElement: !!settleAmountElement,
-                settleNewRemainingElement: !!settleNewRemainingElement,
-                settleRemainingAmount2El: !!settleRemainingAmount2El
-            });
-            
-            // محاولة مرة أخرى بعد وقت قصير (زيادة الوقت قليلاً مع كل محاولة)
-            setTimeout(function() {
-                updateSettleRemaining();
-            }, 100 * updateSettleRemainingRetryCount);
-            return;
-        } else {
-            console.error('updateSettleRemaining: فشل في الوصول للعناصر بعد ' + MAX_UPDATE_SETTLE_RETRIES + ' محاولات', {
-                remainingElement: !!remainingElement,
-                settleAmountElement: !!settleAmountElement,
-                settleNewRemainingElement: !!settleNewRemainingElement
-            });
-            updateSettleRemainingRetryCount = 0; // إعادة تعيين العداد
-            return;
-        }
+    // التحقق من وجود العناصر الأساسية فقط - إذا لم تكن موجودة، نتوقف
+    if (!remainingElement || !settleAmountElement) {
+        // لا نعرض تحذير لتجنب التكرار - العناصر ستكون موجودة لاحقاً
+        return;
     }
     
-    // إعادة تعيين العداد عند النجاح
-    updateSettleRemainingRetryCount = 0;
+    // العناصر الاختيارية (settleNewRemainingElement و settleRemainingAmount2El) - نعمل بدونهما إذا لم تكونا موجودة
     
     // استخدام القيمة المحفوظة مباشرة بدلاً من قراءة النص المنسق
     // هذا يضمن الدقة وعدم وجود أخطاء في التحويل
@@ -4777,8 +4745,10 @@ function updateSettleRemaining() {
     const settleAmount = parseFloat(settleAmountElement.value) || 0;
     const newRemaining = Math.max(0, remaining - settleAmount);
     
-    // تحديث المتبقي الجديد
-    settleNewRemainingElement.textContent = formatCurrency(newRemaining);
+    // تحديث المتبقي الجديد (عنصر اختياري)
+    if (settleNewRemainingElement) {
+        settleNewRemainingElement.textContent = formatCurrency(newRemaining);
+    }
     
     // تحديث الحد الأقصى المتاح في النص التوضيحي
     if (settleRemainingAmount2El) {
