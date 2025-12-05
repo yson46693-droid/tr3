@@ -694,10 +694,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
             $orderId = (int)$db->getLastInsertId();
 
-            // ملاحظة: تم خصم الكميات تلقائياً عند إنشاء الفاتورة عبر createInvoice()
-            // لا حاجة لخصم يدوي هنا لتجنب الخصم المتكرر
-
-            // حفظ عناصر الطلب فقط بدون خصم إضافي
+            // حفظ عناصر الطلب
             foreach ($normalizedItems as $normalizedItem) {
                 $db->execute(
                     "INSERT INTO shipping_company_order_items (order_id, product_id, batch_id, quantity, unit_price, total_price) VALUES (?, ?, ?, ?, ?, ?)",
@@ -710,6 +707,54 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                         $normalizedItem['total_price'],
                     ]
                 );
+            }
+
+            // خصم الكميات من المخزون عند إنشاء الطلب
+            $movementNote = 'تسليم طلب شحن #' . $orderNumber . ' لشركة الشحن';
+            foreach ($normalizedItems as $normalizedItem) {
+                $productId = $normalizedItem['product_id'];
+                $batchId = $normalizedItem['batch_id'] ?? null;
+                $productType = $normalizedItem['product_type'] ?? '';
+                $quantity = (float)$normalizedItem['quantity'];
+
+                if ($productType === 'factory' && $batchId) {
+                    // للمنتجات من المصنع: خصم من finished_products.quantity_produced
+                    $db->execute(
+                        "UPDATE finished_products SET quantity_produced = quantity_produced - ? WHERE id = ?",
+                        [$quantity, $batchId]
+                    );
+                    
+                    // تسجيل حركة المخزون
+                    recordInventoryMovement(
+                        $productId,
+                        $mainWarehouse['id'] ?? null,
+                        'out',
+                        $quantity,
+                        'shipping_order',
+                        $orderId,
+                        $movementNote,
+                        $currentUser['id'] ?? null,
+                        $batchId
+                    );
+                } else {
+                    // للمنتجات الخارجية: خصم من products.quantity
+                    $db->execute(
+                        "UPDATE products SET quantity = quantity - ? WHERE id = ?",
+                        [$quantity, $productId]
+                    );
+                    
+                    // تسجيل حركة المخزون
+                    recordInventoryMovement(
+                        $productId,
+                        $mainWarehouse['id'] ?? null,
+                        'out',
+                        $quantity,
+                        'shipping_order',
+                        $orderId,
+                        $movementNote,
+                        $currentUser['id'] ?? null
+                    );
+                }
             }
 
             $db->execute(
@@ -798,17 +843,32 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 [$orderId]
             );
 
+            $movementNote = 'إرجاع منتجات من طلب شحن ملغي #' . ($order['order_number'] ?? $orderId);
+            
             foreach ($orderItems as $item) {
                 $productId = (int)($item['product_id'] ?? 0);
                 $batchId = isset($item['batch_id']) && $item['batch_id'] > 0 ? (int)$item['batch_id'] : null;
                 $quantity = (float)($item['quantity'] ?? 0);
-
+                
                 // إذا كان batch_id موجوداً، فهو منتج من المصنع
                 if ($batchId) {
                     // للمنتجات من المصنع، إرجاع الكمية إلى finished_products
                     $db->execute(
-                        "UPDATE finished_products SET quantity_produced = quantity_produced + ? WHERE batch_id = ?",
+                        "UPDATE finished_products SET quantity_produced = quantity_produced + ? WHERE id = ?",
                         [$quantity, $batchId]
+                    );
+                    
+                    // تسجيل حركة المخزون للمنتجات المصنعة
+                    recordInventoryMovement(
+                        $productId,
+                        $mainWarehouse['id'] ?? null,
+                        'in',
+                        $quantity,
+                        'shipping_order_cancelled',
+                        $orderId,
+                        $movementNote,
+                        $currentUser['id'] ?? null,
+                        $batchId
                     );
                 } else {
                     // للمنتجات الخارجية، إرجاع الكمية إلى products
@@ -818,7 +878,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     );
 
                     // تسجيل حركة المخزون
-                    $movementNote = 'إرجاع منتجات من طلب شحن ملغي #' . ($order['order_number'] ?? $orderId);
                     recordInventoryMovement(
                         $productId,
                         $mainWarehouse['id'] ?? null,
