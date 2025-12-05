@@ -657,6 +657,17 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
                 // خصم الكمية من المخزون - مكان واحد فقط للخصم
                 // recordInventoryMovement هي المكان الوحيد للخصم، لا يوجد أي خصم يدوي في مكان آخر
+                
+                // التحقق من الكمية الحالية قبل الخصم (للتشخيص)
+                if ($productType === 'factory' && $batchId) {
+                    $beforeCheck = $db->queryOne(
+                        "SELECT quantity_produced FROM finished_products WHERE id = ?",
+                        [$batchId]
+                    );
+                    $quantityBeforeDeduction = $beforeCheck ? (float)($beforeCheck['quantity_produced'] ?? 0) : 0;
+                    error_log("shipping_orders: BEFORE recordInventoryMovement - batch_id: $batchId, quantity_produced: $quantityBeforeDeduction, quantity_to_deduct: $quantity");
+                }
+                
                 error_log("shipping_orders: About to call recordInventoryMovement - product_id: $productId, batch_id: " . ($batchId ?? 'NULL') . ", quantity: $quantity, product_type: $productType");
                 
                 if ($productType === 'factory' && $batchId) {
@@ -672,6 +683,16 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                         $currentUser['id'] ?? null,
                         $batchId // finished_products.id
                     );
+                    
+                    // التحقق من الكمية بعد الخصم (للتشخيص)
+                    $afterCheck = $db->queryOne(
+                        "SELECT quantity_produced FROM finished_products WHERE id = ?",
+                        [$batchId]
+                    );
+                    $quantityAfterDeduction = $afterCheck ? (float)($afterCheck['quantity_produced'] ?? 0) : 0;
+                    $actualDeducted = $quantityBeforeDeduction - $quantityAfterDeduction;
+                    
+                    error_log("shipping_orders: AFTER recordInventoryMovement - batch_id: $batchId, quantity_before: $quantityBeforeDeduction, quantity_after: $quantityAfterDeduction, actual_deducted: $actualDeducted, expected_deduct: $quantity");
                     error_log("shipping_orders: recordInventoryMovement result for factory product - success: " . ($movementResult['success'] ?? 'false') . ", message: " . ($movementResult['message'] ?? 'N/A'));
                 } else {
                     // للمنتجات الخارجية: خصم من products.quantity

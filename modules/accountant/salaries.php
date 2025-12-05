@@ -4335,6 +4335,19 @@ function openSettleModal(salaryId, salaryData, remainingAmount, calculatedAccumu
     if (settleAmountEl) {
         settleAmountEl.value = '';
         settleAmountEl.max = remaining;
+        // إزالة أي قيود على الحد الأدنى
+        settleAmountEl.min = 0;
+    }
+    
+    // تحديث حالة الزر مباشرة بعد تعيين القيم
+    const submitBtn = document.getElementById('settleSubmitBtn');
+    if (submitBtn && remaining > 0) {
+        // الزر يبدأ معطلاً حتى يتم إدخال مبلغ
+        submitBtn.disabled = true;
+        console.log('Submit button initialized as disabled (waiting for amount input), remaining:', remaining);
+    } else if (submitBtn && remaining <= 0) {
+        submitBtn.disabled = true;
+        console.log('Submit button disabled (no remaining amount)');
     }
     
     // إنشاء Modal instance إذا لم يكن موجوداً
@@ -4348,7 +4361,26 @@ function openSettleModal(salaryId, salaryData, remainingAmount, calculatedAccumu
         // تحديث المتبقي بعد فتح Modal
         setTimeout(() => {
             updateSettleRemaining();
-        }, 200);
+            
+            // التأكد من تحديث حالة الزر بعد التحديث
+            const submitBtn = document.getElementById('settleSubmitBtn');
+            if (submitBtn) {
+                const settleAmountEl = document.getElementById('settleAmount');
+                const remainingEl = document.getElementById('settleRemainingAmount');
+                if (settleAmountEl && remainingEl) {
+                    const settleAmount = parseFloat(settleAmountEl.value) || 0;
+                    const remainingText = remainingEl.textContent || remainingEl.innerText || '0';
+                    const remaining = parseFormattedCurrency(remainingText);
+                    
+                    // تفعيل الزر فقط إذا كان هناك مبلغ متبقي للمساعدة في التشخيص
+                    console.log('Checking submit button after modal shown:', {
+                        settleAmount: settleAmount,
+                        remaining: remaining,
+                        shouldEnable: remaining > 0
+                    });
+                }
+            }
+        }, 300); // زيادة الوقت قليلاً للتأكد من أن جميع العناصر جاهزة
         
         // تحميل جميع الرواتب للموظف (لاختيار راتب آخر إذا لزم الأمر)
         console.log('Loading salaries for user_id:', userId, 'currentSalaryId:', salaryId);
@@ -4365,9 +4397,6 @@ function openSettleModal(salaryId, salaryData, remainingAmount, calculatedAccumu
                 }
             }, 500); // انتظار تحميل القائمة
         }
-        
-        // إزالة المستمع بعد استخدامه مرة واحدة
-        settleModal.removeEventListener('shown.bs.modal', updateAfterModalShown);
     };
     
     settleModal.addEventListener('shown.bs.modal', updateAfterModalShown, { once: true });
@@ -4723,7 +4752,44 @@ function updateSettleRemaining() {
     
     const submitBtn = document.getElementById('settleSubmitBtn');
     if (submitBtn) {
-        submitBtn.disabled = settleAmount <= 0 || settleAmount > remaining;
+        // الزر يكون معطلاً إذا:
+        // 1. المتبقي <= 0 (لا يوجد مبلغ متبقي للتسوية)
+        // 2. المبلغ المُدخل <= 0 (لم يتم إدخال مبلغ أو كان صفر)
+        // 3. المبلغ المُدخل > المتبقي (المبلغ أكبر من المتاح)
+        const hasRemaining = remaining > 0;
+        const hasValidAmount = settleAmount > 0 && settleAmount <= remaining;
+        const shouldDisable = !hasRemaining || !hasValidAmount;
+        
+        submitBtn.disabled = shouldDisable;
+        
+        // إضافة class للتأثير البصري
+        if (shouldDisable) {
+            submitBtn.classList.add('disabled');
+        } else {
+            submitBtn.classList.remove('disabled');
+        }
+        
+        // إضافة معلومات تشخيصية مفصلة
+        console.log('Settle button state:', {
+            disabled: shouldDisable,
+            hasRemaining: hasRemaining,
+            hasValidAmount: hasValidAmount,
+            reason: shouldDisable ? (
+                !hasRemaining ? 'no_remaining' : 
+                settleAmount <= 0 ? 'no_amount_entered' : 
+                settleAmount > remaining ? 'amount_too_large' : 'unknown'
+            ) : 'enabled',
+            remaining: remaining,
+            settleAmount: settleAmount,
+            remainingText: remainingText,
+            settleModalRemainingValue: settleModalRemainingValue,
+            buttonElement: submitBtn ? 'found' : 'not_found'
+        });
+        
+        // إضافة رسالة مرئية للمستخدم إذا كان الزر معطلاً بسبب عدم إدخال مبلغ
+        if (shouldDisable && hasRemaining && settleAmount <= 0) {
+            // لا نعرض أي شيء - الزر معطّل بشكل طبيعي حتى يتم إدخال مبلغ
+        }
     }
     
     console.log('updateSettleRemaining:', {
@@ -4732,7 +4798,8 @@ function updateSettleRemaining() {
         settleAmount: settleAmount,
         newRemaining: newRemaining,
         max: settleAmountElement.max,
-        settleRemainingAmount2: settleRemainingAmount2El ? settleRemainingAmount2El.textContent : 'N/A'
+        settleRemainingAmount2: settleRemainingAmount2El ? settleRemainingAmount2El.textContent : 'N/A',
+        submitBtnDisabled: submitBtn ? submitBtn.disabled : 'N/A'
     });
 }
 
@@ -4839,7 +4906,7 @@ function printSalaryStatement() {
                     
                     <div class="mb-3">
                         <label class="form-label">مبلغ التسوية <span class="text-danger">*</span></label>
-                        <input type="number" step="0.01" min="0" class="form-control" name="settlement_amount" id="settleAmount" required oninput="updateSettleRemaining()">
+                        <input type="number" step="0.01" min="0" class="form-control" name="settlement_amount" id="settleAmount" required oninput="updateSettleRemaining()" onchange="updateSettleRemaining()" onkeyup="updateSettleRemaining()">
                         <small class="text-muted">أقصى مبلغ متاح: <span id="settleRemainingAmount2"></span></small>
                     </div>
                     
@@ -4875,6 +4942,17 @@ document.addEventListener('DOMContentLoaded', function() {
     const settleAmountEl = document.getElementById('settleAmount');
     if (settleAmountEl) {
         settleAmountEl.addEventListener('input', function() {
+            console.log('Amount input changed, calling updateSettleRemaining()');
+            updateSettleRemaining();
+        });
+        
+        settleAmountEl.addEventListener('change', function() {
+            console.log('Amount input changed (change event), calling updateSettleRemaining()');
+            updateSettleRemaining();
+        });
+        
+        settleAmountEl.addEventListener('keyup', function() {
+            console.log('Amount input keyup, calling updateSettleRemaining()');
             updateSettleRemaining();
         });
     }
@@ -4883,20 +4961,29 @@ document.addEventListener('DOMContentLoaded', function() {
     const settleModal = document.getElementById('settleSalaryModal');
     if (settleModal) {
         settleModal.addEventListener('shown.bs.modal', function() {
+            console.log('Settle modal shown, updating remaining amount');
             // انتظار صغير للتأكد من أن جميع العناصر قد تم تحديثها
             setTimeout(function() {
                 updateSettleRemaining();
-            }, 100);
+                console.log('updateSettleRemaining() called after modal shown');
+            }, 150);
         });
         
         // تحديث عند إغلاق Modal لضمان إعادة التعيين
         settleModal.addEventListener('hidden.bs.modal', function() {
+            console.log('Settle modal hidden, resetting values');
             // إعادة تعيين القيم عند إغلاق Modal
             const settleAmountEl = document.getElementById('settleAmount');
             if (settleAmountEl) {
                 settleAmountEl.value = '';
             }
             settleModalRemainingValue = 0;
+            
+            // إعادة تعطيل الزر
+            const submitBtn = document.getElementById('settleSubmitBtn');
+            if (submitBtn) {
+                submitBtn.disabled = true;
+            }
         });
     }
 });

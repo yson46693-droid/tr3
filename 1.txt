@@ -1,0 +1,16 @@
+[05-Dec-2025 02:55:00 Africa/Cairo] shipping_orders: Normalized items count: 1, normalizedItems: [{"product_id":10,"quantity":1,"unit_price":1000,"total_price":1000,"batch_id":10,"product_type":"factory"}]
+[05-Dec-2025 02:55:00 Africa/Cairo] Generated unique invoice number: INV-202512-0077
+[05-Dec-2025 02:55:00 Africa/Cairo] shipping_orders: Linking batch - batchId: 10, fp data: {"batch_number":"251204-543605","batch_id":10}
+[05-Dec-2025 02:55:00 Africa/Cairo] shipping_orders: Found batch_number from finished_products: 251204-543605
+[05-Dec-2025 02:55:00 Africa/Cairo] shipping_orders: Found batch_number_id: 10 for batch_number: 251204-543605
+[05-Dec-2025 02:55:00 Africa/Cairo] shipping_orders: Successfully linked batch_number_id 10 to invoice_item_id 137 with quantity 1
+[05-Dec-2025 02:55:00 Africa/Cairo] shipping_orders: Starting inventory deduction - normalizedItems count: 1
+[05-Dec-2025 02:55:00 Africa/Cairo] shipping_orders: Processing item[0]: product_id=10, quantity=1, batch_id=10, product_type=factory
+[05-Dec-2025 02:55:00 Africa/Cairo] shipping_orders: About to call recordInventoryMovement - product_id: 10, batch_id: 10, quantity: 1, product_type: factory
+[05-Dec-2025 02:55:00 Africa/Cairo] recordInventoryMovement: Called with product_id: 10, warehouse_id: 2, type: out, quantity: 1, batch_id: 10, reference_type: shipping_order
+[05-Dec-2025 02:55:00 Africa/Cairo] recordInventoryMovement: Checking conditions - batchId: 10, type: out, usingVehicleInventory: false
+[05-Dec-2025 02:55:00 Africa/Cairo] recordInventoryMovement: Searching for finished_products with batch_id: 10, product_id: 10, type: out, reference_type: shipping_order
+[05-Dec-2025 02:55:00 Africa/Cairo] recordInventoryMovement: Found finished_products with id=10, quantity_produced=89
+[05-Dec-2025 02:55:00 Africa/Cairo] recordInventoryMovement: Using finished_products.quantity_produced = 89 for batch_id: 10, product_id: 10, reference_type: shipping_order
+[05-Dec-2025 02:55:00 Africa/Cairo] recordInventoryMovement: Updated finished_products.quantity_produced = 88 for batch_id: 10
+[05-Dec-2025 02:55:00 Africa/Cairo] shipping_orders: recordInventoryMovement result for factory product - success: 1, message: N/A

@@ -329,12 +329,27 @@ function recordInventoryMovement($productId, $warehouseId, $type, $quantity, $re
         } else {
             // إذا كنا نستخدم finished_products، نحتاج تحديث quantity_produced
             if ($usingFinishedProductQuantity && ($type === 'out' || $type === 'transfer')) {
+                // التحقق من الكمية الحالية قبل التحديث (للتشخيص)
+                $currentCheck = $db->queryOne(
+                    "SELECT quantity_produced FROM finished_products WHERE id = ?",
+                    [$batchId]
+                );
+                $currentQuantity = $currentCheck ? (float)($currentCheck['quantity_produced'] ?? 0) : 0;
+                
                 // تحديث finished_products.quantity_produced
                 $db->execute(
                     "UPDATE finished_products SET quantity_produced = ? WHERE id = ?",
                     [$quantityAfter, $batchId]
                 );
-                error_log("recordInventoryMovement: Updated finished_products.quantity_produced = $quantityAfter for batch_id: $batchId");
+                
+                // التحقق من الكمية بعد التحديث (للتشخيص)
+                $afterCheck = $db->queryOne(
+                    "SELECT quantity_produced FROM finished_products WHERE id = ?",
+                    [$batchId]
+                );
+                $afterQuantity = $afterCheck ? (float)($afterCheck['quantity_produced'] ?? 0) : 0;
+                
+                error_log("recordInventoryMovement: Updated finished_products.quantity_produced - batch_id: $batchId, quantity_before: $quantityBefore, quantity_requested: $quantity, quantity_after_calculated: $quantityAfter, current_before_update: $currentQuantity, current_after_update: $afterQuantity");
             } else {
                 error_log("recordInventoryMovement: Skipping products.quantity update for batch_id: $batchId, using finished_products.quantity_produced instead");
             }
