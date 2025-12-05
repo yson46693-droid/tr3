@@ -755,6 +755,48 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 $productType = $normalizedItem['product_type'] ?? '';
                 $quantity = (float)$normalizedItem['quantity'];
 
+                // للمنتجات التي لها رقم تشغيلة: قراءة products.quantity قبل recordInventoryMovement
+                $productsQuantityBeforeMovement = null;
+                $actualProductIdForTracking = null;
+                if ($productType === 'factory' && $batchId) {
+                    try {
+                        // جلب product_id الصحيح من finished_products
+                        $fpDataForTracking = $db->queryOne("
+                            SELECT 
+                                fp.product_id,
+                                bn.product_id AS batch_product_id,
+                                COALESCE(fp.product_id, bn.product_id) AS actual_product_id
+                            FROM finished_products fp
+                            LEFT JOIN batch_numbers bn ON fp.batch_number = bn.batch_number
+                            WHERE fp.id = ?
+                        ", [$batchId]);
+                        
+                        if ($fpDataForTracking) {
+                            $actualProductIdForTracking = (int)($fpDataForTracking['actual_product_id'] ?? $productId);
+                            $productBeforeMovement = $db->queryOne(
+                                "SELECT quantity FROM products WHERE id = ?",
+                                [$actualProductIdForTracking]
+                            );
+                            if ($productBeforeMovement) {
+                                $productsQuantityBeforeMovement = (float)($productBeforeMovement['quantity'] ?? 0);
+                                error_log(sprintf(
+                                    "shipping_orders: BEFORE recordInventoryMovement - Order: %s, Product ID: %d, Batch ID: %d, products.quantity: %.2f",
+                                    $orderNumber,
+                                    $actualProductIdForTracking,
+                                    $batchId,
+                                    $productsQuantityBeforeMovement
+                                ));
+                            }
+                        }
+                    } catch (Throwable $trackingError) {
+                        error_log(sprintf(
+                            "shipping_orders: ERROR reading products.quantity before recordInventoryMovement - Order: %s, Error: %s",
+                            $orderNumber,
+                            $trackingError->getMessage()
+                        ));
+                    }
+                }
+
                 // تسجيل حركة المخزون (تقوم الدالة بالخصم تلقائياً)
                 recordInventoryMovement(
                     $productId,
@@ -767,6 +809,36 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     $currentUser['id'] ?? null,
                     ($productType === 'factory' && $batchId) ? $batchId : null
                 );
+
+                // للمنتجات التي لها رقم تشغيلة: قراءة products.quantity بعد recordInventoryMovement
+                if ($productType === 'factory' && $batchId && $actualProductIdForTracking) {
+                    try {
+                        $productAfterMovement = $db->queryOne(
+                            "SELECT quantity FROM products WHERE id = ?",
+                            [$actualProductIdForTracking]
+                        );
+                        if ($productAfterMovement) {
+                            $productsQuantityAfterMovement = (float)($productAfterMovement['quantity'] ?? 0);
+                            $difference = $productsQuantityBeforeMovement !== null 
+                                ? ($productsQuantityAfterMovement - $productsQuantityBeforeMovement) 
+                                : null;
+                            error_log(sprintf(
+                                "shipping_orders: AFTER recordInventoryMovement - Order: %s, Product ID: %d, Batch ID: %d, products.quantity: %.2f, Difference: %s",
+                                $orderNumber,
+                                $actualProductIdForTracking,
+                                $batchId,
+                                $productsQuantityAfterMovement,
+                                $difference !== null ? sprintf("%.2f", $difference) : 'N/A'
+                            ));
+                        }
+                    } catch (Throwable $trackingError) {
+                        error_log(sprintf(
+                            "shipping_orders: ERROR reading products.quantity after recordInventoryMovement - Order: %s, Error: %s",
+                            $orderNumber,
+                            $trackingError->getMessage()
+                        ));
+                    }
+                }
 
                 // للمنتجات التي لها رقم تشغيلة: إضافة الكمية إلى products.quantity
                 if ($productType === 'factory' && $batchId) {
@@ -794,7 +866,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                         // استخدام product_id الصحيح من finished_products أو batch_numbers
                         $actualProductId = (int)($fpData['actual_product_id'] ?? $productId);
                         
-                        // جلب الكمية الحالية من products
+                        // جلب الكمية الحالية من products قبل الإضافة
                         $currentProduct = $db->queryOne(
                             "SELECT quantity FROM products WHERE id = ?",
                             [$actualProductId]
@@ -812,6 +884,15 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                         
                         $currentQuantity = (float)($currentProduct['quantity'] ?? 0);
                         
+                        error_log(sprintf(
+                            "shipping_orders: BEFORE adding quantity - Order: %s, Product ID: %d, Batch ID: %d, products.quantity: %.2f, Quantity to add: %.2f",
+                            $orderNumber,
+                            $actualProductId,
+                            $batchId,
+                            $currentQuantity,
+                            $quantity
+                        ));
+                        
                         // إضافة الكمية المدخلة إلى products.quantity
                         $newQuantity = $currentQuantity + $quantity;
                         $db->execute(
@@ -819,15 +900,23 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                             [$newQuantity, $actualProductId]
                         );
                         
+                        // قراءة الكمية بعد الإضافة للتحقق
+                        $productAfterAdd = $db->queryOne(
+                            "SELECT quantity FROM products WHERE id = ?",
+                            [$actualProductId]
+                        );
+                        $verifiedQuantity = $productAfterAdd ? (float)($productAfterAdd['quantity'] ?? 0) : $newQuantity;
+                        
                         // تسجيل العملية في سجل الأخطاء
                         error_log(sprintf(
-                            "shipping_orders: Added quantity to products.quantity for product with batch_id - Order: %s, Finished Product ID (batch_id): %d, Actual Product ID: %d, Quantity Added: %.2f, Previous Quantity: %.2f, New Quantity: %.2f",
+                            "shipping_orders: AFTER adding quantity - Order: %s, Finished Product ID (batch_id): %d, Actual Product ID: %d, Quantity Added: %.2f, Previous Quantity: %.2f, Calculated New Quantity: %.2f, Verified Quantity: %.2f",
                             $orderNumber,
                             $batchId,
                             $actualProductId,
                             $quantity,
                             $currentQuantity,
-                            $newQuantity
+                            $newQuantity,
+                            $verifiedQuantity
                         ));
                     } catch (Throwable $addQuantityError) {
                         // في حالة حدوث خطأ، نسجله فقط ولا نوقف العملية
