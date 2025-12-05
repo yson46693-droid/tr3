@@ -287,7 +287,35 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             exit;
         }
 
-        error_log("shipping_orders: Normalized items count: " . count($normalizedItems) . ", normalizedItems: " . json_encode($normalizedItems));
+        // تجميع العناصر المكررة لمنع الخصم المتكرر
+        // إذا كان نفس المنتج مع نفس batch_id موجود أكثر من مرة، نجمع الكميات
+        $groupedItems = [];
+        foreach ($normalizedItems as $item) {
+            $key = $item['product_id'] . '_' . ($item['batch_id'] ?? 'null') . '_' . $item['product_type'];
+            
+            if (!isset($groupedItems[$key])) {
+                $groupedItems[$key] = $item;
+            } else {
+                // جمع الكميات للعناصر المكررة
+                $groupedItems[$key]['quantity'] += $item['quantity'];
+                // استخدام أعلى سعر وحدة عند التجميع
+                if ($item['unit_price'] > $groupedItems[$key]['unit_price']) {
+                    $groupedItems[$key]['unit_price'] = $item['unit_price'];
+                }
+                // إعادة حساب السعر الإجمالي بناءً على الكمية المجمعة والسعر
+                $groupedItems[$key]['total_price'] = round($groupedItems[$key]['quantity'] * $groupedItems[$key]['unit_price'], 2);
+            }
+        }
+        
+        // إعادة حساب المبلغ الإجمالي بناءً على العناصر المجمعة
+        $totalAmount = 0.0;
+        foreach ($groupedItems as $item) {
+            $totalAmount += $item['total_price'];
+        }
+        
+        // تحويل المصفوفة المجمعة إلى مصفوفة عادية
+        $normalizedItems = array_values($groupedItems);
+        error_log("shipping_orders: After grouping - items count: " . count($normalizedItems) . ", normalizedItems: " . json_encode($normalizedItems));
         $totalAmount = round($totalAmount, 2);
 
         $transactionStarted = false;
@@ -647,7 +675,16 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 $batchId = $normalizedItem['batch_id'] ?? null;
                 $productType = $normalizedItem['product_type'] ?? '';
                 $productId = $normalizedItem['product_id'];
-                $quantity = $normalizedItem['quantity'];
+                // التأكد من أن الكمية هي قيمة رقمية صحيحة
+                $quantity = (float)($normalizedItem['quantity'] ?? 0.0);
+                
+                // التحقق النهائي من صحة الكمية قبل المعالجة
+                if ($quantity <= 0 || $quantity > 100000) {
+                    error_log("shipping_orders: ERROR - Invalid quantity detected: $quantity for product_id: $productId, batch_id: " . ($batchId ?? 'NULL'));
+                    throw new InvalidArgumentException('الكمية المدخلة غير صحيحة للمنتج.');
+                }
+                
+                error_log("shipping_orders: FINAL quantity to deduct: $quantity for product_id: $productId, batch_id: " . ($batchId ?? 'NULL'));
 
                 // حفظ العنصر مع batch_id إذا كان موجوداً
                 $db->execute(
