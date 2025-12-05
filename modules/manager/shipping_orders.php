@@ -1000,6 +1000,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 $quantity = (float)($item['quantity'] ?? 0);
                 
                 // تسجيل حركة المخزون (تقوم الدالة بالإرجاع تلقائياً)
+                // ملاحظة: للمنتجات التي لها batchId، recordInventoryMovement يحدث products.quantity فقط
+                // ولا يحدث finished_products.quantity_produced عند type = 'in'
                 recordInventoryMovement(
                     $productId,
                     $mainWarehouse['id'] ?? null,
@@ -1012,12 +1014,15 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     $batchId
                 );
 
-                // للمنتجات التي لها رقم تشغيلة: إضافة الكمية إلى products.quantity
+                // للمنتجات التي لها رقم تشغيلة: إرجاع الكمية إلى finished_products.quantity_produced
+                // (products.quantity تم تحديثه بالفعل بواسطة recordInventoryMovement)
                 if ($batchId) {
                     try {
-                        // جلب product_id الصحيح من finished_products (لأن batch_id هو finished_products.id وليس products.id)
+                        // جلب بيانات finished_products
                         $fpData = $db->queryOne("
                             SELECT 
+                                fp.id,
+                                fp.quantity_produced,
                                 fp.product_id,
                                 bn.product_id AS batch_product_id,
                                 COALESCE(fp.product_id, bn.product_id) AS actual_product_id
@@ -1035,68 +1040,29 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                             continue;
                         }
                         
-                        // استخدام product_id الصحيح من finished_products أو batch_numbers
-                        $actualProductId = (int)($fpData['actual_product_id'] ?? $productId);
+                        $currentQuantityProduced = (float)($fpData['quantity_produced'] ?? 0);
                         
-                        // جلب الكمية الحالية من products قبل الإضافة
-                        $currentProduct = $db->queryOne(
-                            "SELECT quantity FROM products WHERE id = ?",
-                            [$actualProductId]
-                        );
-                        
-                        if (!$currentProduct) {
-                            error_log(sprintf(
-                                "shipping_orders: WARNING - products not found for product_id: %d (from batch_id: %d), Order: %s",
-                                $actualProductId,
-                                $batchId,
-                                $order['order_number'] ?? $orderId
-                            ));
-                            continue;
-                        }
-                        
-                        $currentQuantity = (float)($currentProduct['quantity'] ?? 0);
-                        
-                        error_log(sprintf(
-                            "shipping_orders: BEFORE adding quantity (cancel) - Order: %s, Product ID: %d, Batch ID: %d, products.quantity: %.2f, Quantity to add: %.2f",
-                            $order['order_number'] ?? $orderId,
-                            $actualProductId,
-                            $batchId,
-                            $currentQuantity,
-                            $quantity
-                        ));
-                        
-                        // إضافة الكمية المدخلة إلى products.quantity
-                        $newQuantity = $currentQuantity + $quantity;
+                        // إرجاع الكمية إلى finished_products.quantity_produced
+                        $newQuantityProduced = $currentQuantityProduced + $quantity;
                         $db->execute(
-                            "UPDATE products SET quantity = ? WHERE id = ?",
-                            [$newQuantity, $actualProductId]
+                            "UPDATE finished_products SET quantity_produced = ? WHERE id = ?",
+                            [$newQuantityProduced, $batchId]
                         );
                         
-                        // قراءة الكمية بعد الإضافة للتحقق
-                        $productAfterAdd = $db->queryOne(
-                            "SELECT quantity FROM products WHERE id = ?",
-                            [$actualProductId]
-                        );
-                        $verifiedQuantity = $productAfterAdd ? (float)($productAfterAdd['quantity'] ?? 0) : $newQuantity;
-                        
-                        // تسجيل العملية في سجل الأخطاء
                         error_log(sprintf(
-                            "shipping_orders: AFTER adding quantity (cancel) - Order: %s, Finished Product ID (batch_id): %d, Actual Product ID: %d, Quantity Added: %.2f, Previous Quantity: %.2f, Calculated New Quantity: %.2f, Verified Quantity: %.2f",
+                            "shipping_orders: Updated finished_products.quantity_produced (cancel) - Order: %s, Batch ID: %d, Previous: %.2f, Added: %.2f, New: %.2f",
                             $order['order_number'] ?? $orderId,
                             $batchId,
-                            $actualProductId,
+                            $currentQuantityProduced,
                             $quantity,
-                            $currentQuantity,
-                            $newQuantity,
-                            $verifiedQuantity
+                            $newQuantityProduced
                         ));
                     } catch (Throwable $addQuantityError) {
                         // في حالة حدوث خطأ، نسجله فقط ولا نوقف العملية
                         error_log(sprintf(
-                            "shipping_orders: ERROR adding quantity to products.quantity for product with batch_id (cancel) - Order: %s, Batch ID: %d, Product ID: %d, Quantity: %.2f, Error: %s",
+                            "shipping_orders: ERROR updating finished_products.quantity_produced for batch_id (cancel) - Order: %s, Batch ID: %d, Quantity: %.2f, Error: %s",
                             $order['order_number'] ?? $orderId,
                             $batchId,
-                            $productId,
                             $quantity,
                             $addQuantityError->getMessage()
                         ));
