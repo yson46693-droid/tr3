@@ -91,8 +91,21 @@ try {
     require_once __DIR__ . '/../includes/salary_calculator.php';
     
     $userId = intval($salary['user_id']);
-    $salaryMonth = intval($salary['month'] ?? 0);
-    $salaryYear = intval($salary['year'] ?? date('Y'));
+    
+    // التعامل مع month NULL بشكل صحيح
+    $monthValue = $salary['month'] ?? null;
+    $yearValue = $salary['year'] ?? null;
+    
+    $salaryMonth = ($monthValue !== null && $monthValue !== '') ? intval($monthValue) : date('n');
+    $salaryYear = ($yearValue !== null && $yearValue !== '') ? intval($yearValue) : date('Y');
+    
+    // التأكد من أن القيم صحيحة
+    if ($salaryMonth <= 0 || $salaryMonth > 12) {
+        $salaryMonth = date('n');
+    }
+    if ($salaryYear <= 0 || $salaryYear > 9999) {
+        $salaryYear = date('Y');
+    }
     
     // استخدام نفس طريقة حساب الراتب من المكونات كما في بطاقة الموظف
     // الراتب الإجمالي = الراتب الأساسي + المكافآت + نسبة التحصيلات - الخصومات

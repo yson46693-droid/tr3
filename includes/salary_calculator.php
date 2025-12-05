@@ -2487,9 +2487,12 @@ function calculateSalaryAccumulatedAmount($userId, $salaryId, $currentTotalAmoun
                         COALESCE(s.accumulated_amount, s.total_amount) as prev_accumulated
                  FROM salaries s
                  WHERE s.user_id = ? AND s.id != ? 
-                 AND (s.year < ? OR (s.year = ? AND s.month < ?))
-                 ORDER BY s.year ASC, s.month ASC",
-                [$userId, $salaryId, $currentYear, $currentYear, $currentMonth]
+                 AND (
+                     (s.year IS NOT NULL AND s.month IS NOT NULL AND (s.year < ? OR (s.year = ? AND s.month < ?)))
+                     OR (s.year IS NULL OR s.month IS NULL)
+                 )
+                 ORDER BY COALESCE(s.year, ?) ASC, COALESCE(s.month, ?) ASC",
+                [$userId, $salaryId, $currentYear, $currentYear, $currentMonth, $currentYear, $currentMonth]
             );
         } else {
             $previousSalaries = $db->query(
@@ -2497,9 +2500,12 @@ function calculateSalaryAccumulatedAmount($userId, $salaryId, $currentTotalAmoun
                         COALESCE(s.accumulated_amount, s.total_amount) as prev_accumulated
                  FROM salaries s
                  WHERE s.user_id = ? 
-                 AND (s.year < ? OR (s.year = ? AND s.month < ?))
-                 ORDER BY s.year ASC, s.month ASC",
-                [$userId, $currentYear, $currentYear, $currentMonth]
+                 AND (
+                     (s.year IS NOT NULL AND s.month IS NOT NULL AND (s.year < ? OR (s.year = ? AND s.month < ?)))
+                     OR (s.year IS NULL OR s.month IS NULL)
+                 )
+                 ORDER BY COALESCE(s.year, ?) ASC, COALESCE(s.month, ?) ASC",
+                [$userId, $currentYear, $currentYear, $currentMonth, $currentYear, $currentMonth]
             );
         }
     } else {

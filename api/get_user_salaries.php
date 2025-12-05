@@ -206,18 +206,47 @@ try {
         // تحديد الشهر والسنة بناءً على نوع عمود month
         if ($hasYearColumn) {
             // month من نوع INT و year موجود
-            $month = intval($salary['month'] ?? 0);
-            $year = intval($salary['year'] ?? date('Y'));
+            // التحقق من NULL بشكل صحيح
+            $monthValue = $salary['month'] ?? null;
+            $yearValue = $salary['year'] ?? null;
             
-            // استخدام القيم الافتراضية إذا كانت غير صحيحة
-            if ($month <= 0 || $month > 12) {
-                $month = date('n');
+            // استخدام month_label من SQL إذا كان موجوداً
+            if (!empty($salary['month_label'])) {
+                $date = date_create_from_format('Y-m', $salary['month_label']);
+                if ($date) {
+                    $year = intval($date->format('Y'));
+                    $month = intval($date->format('n'));
+                    $monthLabel = ($monthNames[$month] ?? 'شهر غير معروف') . ' ' . $year;
+                } else {
+                    // استخدام القيم من month و year مباشرة
+                    $month = ($monthValue !== null && $monthValue !== '') ? intval($monthValue) : 0;
+                    $year = ($yearValue !== null && $yearValue !== '') ? intval($yearValue) : date('Y');
+                    
+                    // استخدام القيم الافتراضية إذا كانت غير صحيحة
+                    if ($month <= 0 || $month > 12) {
+                        $month = date('n');
+                    }
+                    if ($year <= 0 || $year > 9999) {
+                        $year = date('Y');
+                    }
+                    
+                    $monthLabel = ($monthNames[$month] ?? 'شهر غير معروف') . ' ' . $year;
+                }
+            } else {
+                // استخدام القيم من month و year مباشرة
+                $month = ($monthValue !== null && $monthValue !== '') ? intval($monthValue) : 0;
+                $year = ($yearValue !== null && $yearValue !== '') ? intval($yearValue) : date('Y');
+                
+                // استخدام القيم الافتراضية إذا كانت غير صحيحة
+                if ($month <= 0 || $month > 12) {
+                    $month = date('n');
+                }
+                if ($year <= 0 || $year > 9999) {
+                    $year = date('Y');
+                }
+                
+                $monthLabel = ($monthNames[$month] ?? 'شهر غير معروف') . ' ' . $year;
             }
-            if ($year <= 0 || $year > 9999) {
-                $year = date('Y');
-            }
-            
-            $monthLabel = ($monthNames[$month] ?? 'شهر غير معروف') . ' ' . $year;
         } else {
             if ($isMonthDate) {
                 // month من نوع DATE
@@ -257,12 +286,29 @@ try {
                 }
             } else {
                 // month من نوع INT بدون year
-                $month = intval($salary['month'] ?? 0);
-                if ($month <= 0 || $month > 12) {
-                    $month = date('n');
+                // استخدام month_label من SQL إذا كان موجوداً
+                if (!empty($salary['month_label'])) {
+                    $date = date_create_from_format('Y-m', $salary['month_label']);
+                    if ($date) {
+                        $year = intval($date->format('Y'));
+                        $month = intval($date->format('n'));
+                        $monthLabel = $monthNames[$month] . ' ' . $year;
+                    } else {
+                        // استخدام القيم الافتراضية
+                        $month = date('n');
+                        $year = date('Y');
+                        $monthLabel = $monthNames[$month] . ' ' . $year;
+                    }
+                } else {
+                    // استخدام القيم من month مباشرة
+                    $monthValue = $salary['month'] ?? null;
+                    $month = ($monthValue !== null && $monthValue !== '') ? intval($monthValue) : 0;
+                    if ($month <= 0 || $month > 12) {
+                        $month = date('n');
+                    }
+                    $year = date('Y'); // استخدام السنة الحالية كافتراضي
+                    $monthLabel = $monthNames[$month] . ' ' . $year;
                 }
-                $year = date('Y'); // استخدام السنة الحالية كافتراضي
-                $monthLabel = $monthNames[$month] . ' ' . $year;
             }
         }
         

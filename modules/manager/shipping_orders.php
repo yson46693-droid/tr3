@@ -334,7 +334,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                         FROM finished_products fp
                         LEFT JOIN batch_numbers bn ON fp.batch_number = bn.batch_number
                         LEFT JOIN products pr ON COALESCE(fp.product_id, bn.product_id) = pr.id
-                        WHERE fp.batch_id = ?
+                        WHERE fp.id = ?
                     ", [$batchId]);
 
                     if (!$fp) {
@@ -423,7 +423,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                         FROM finished_products fp
                         LEFT JOIN batch_numbers bn ON fp.batch_number = bn.batch_number
                         LEFT JOIN products pr ON COALESCE(fp.product_id, bn.product_id) = pr.id
-                        WHERE fp.batch_id = ?
+                        WHERE fp.id = ?
                     ", [$batchId]);
                     $productName = ($fp['product_name'] ?? 'غير محدد') . ($fp['batch_number'] ? ' (' . $fp['batch_number'] . ')' : '');
                 } else {
@@ -547,7 +547,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                         $fp = $db->queryOne("
                             SELECT fp.batch_number
                             FROM finished_products fp
-                            WHERE fp.batch_id = ?
+                            WHERE fp.id = ?
                             LIMIT 1
                         ", [$batchId]);
                         
