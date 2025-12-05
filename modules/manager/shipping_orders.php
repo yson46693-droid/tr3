@@ -441,8 +441,10 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                         }
                     }
                     
-                    // حساب الكمية المتاحة: quantity_produced - الكمية المباعة - الكميات المحجوزة (مثل company_products.php)
-                    $availableQuantity = max(0, $quantity - $soldQty - $pendingQty - $pendingShippingQty);
+                    // حساب الكمية المتاحة
+                    // ملاحظة: quantity_produced يتم تحديثه تلقائياً عند المبيعات وطلبات الشحن
+                    // لذلك نحتاج فقط خصم طلبات العملاء المعلقة (pendingQty)
+                    $availableQuantity = max(0, $quantity - $pendingQty);
                     
                     if ($availableQuantity < $requestedQuantity) {
                         throw new InvalidArgumentException('الكمية المتاحة للمنتج ' . ($fp['product_name'] ?? '') . ' غير كافية.');
@@ -1389,8 +1391,10 @@ try {
                     }
                 }
                 
-                // حساب الكمية المتاحة: quantity_produced - الكمية المباعة - الكميات المحجوزة (مثل company_products.php)
-                $availableQuantity = max(0, $quantity - $soldQty - $pendingQty - $pendingShippingQty);
+                // حساب الكمية المتاحة
+                // ملاحظة: quantity_produced يتم تحديثه تلقائياً عند المبيعات وطلبات الشحن
+                // لذلك نحتاج فقط خصم طلبات العملاء المعلقة (pendingQty)
+                $availableQuantity = max(0, $quantity - $pendingQty);
                 
                 // عرض جميع المنتجات حتى لو كانت الكمية المتاحة صفر (مثل نقطة بيع المدير)
                 $productsList[] = [
