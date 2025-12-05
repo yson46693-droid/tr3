@@ -2642,6 +2642,27 @@ function updateTotalHoursFromAttendanceRecords($userId = null, $month = null, $y
             }
         }
         
+        // التحقق من وجود عمود year
+        $hasYearColumn = false;
+        try {
+            $yearColumnCheck = $db->queryOne("SHOW COLUMNS FROM salaries LIKE 'year'");
+            $hasYearColumn = !empty($yearColumnCheck);
+        } catch (Exception $e) {
+            $hasYearColumn = false;
+        }
+        
+        // التحقق من نوع عمود month
+        $isMonthDate = false;
+        try {
+            $monthColumnCheck = $db->queryOne("SHOW COLUMNS FROM salaries WHERE Field = 'month'");
+            if (!empty($monthColumnCheck) && isset($monthColumnCheck['Type'])) {
+                $monthType = $monthColumnCheck['Type'];
+                $isMonthDate = stripos($monthType, 'date') !== false;
+            }
+        } catch (Exception $e) {
+            $isMonthDate = false;
+        }
+        
         // استخدام الاستعلام المطلوب: SELECT * FROM attendance_records ORDER BY work_hours ASC
         // ثم تجميع الساعات لكل موظف وشهر
         // بناء شروط WHERE للاستعلام الداخلي
@@ -2705,10 +2726,24 @@ function updateTotalHoursFromAttendanceRecords($userId = null, $month = null, $y
             
             try {
                 // البحث عن سجل الراتب المطابق
-                $salary = $db->queryOne(
-                    "SELECT id FROM salaries WHERE user_id = ? AND month = ? AND year = ?",
-                    [$userIdValue, $monthValue, $yearValue]
-                );
+                // بناء WHERE clause بناءً على وجود عمود year
+                if ($hasYearColumn) {
+                    $selectSql = "SELECT id FROM salaries WHERE user_id = ? AND month = ? AND year = ?";
+                    $selectParams = [$userIdValue, $monthValue, $yearValue];
+                } else {
+                    // إذا لم يكن year موجوداً، تحقق من نوع month
+                    if ($isMonthDate) {
+                        // إذا كان month من نوع DATE
+                        $selectSql = "SELECT id FROM salaries WHERE user_id = ? AND DATE_FORMAT(month, '%Y-%m') = ?";
+                        $selectParams = [$userIdValue, sprintf('%04d-%02d', $yearValue, $monthValue)];
+                    } else {
+                        // إذا كان month من نوع INT فقط
+                        $selectSql = "SELECT id FROM salaries WHERE user_id = ? AND month = ?";
+                        $selectParams = [$userIdValue, $monthValue];
+                    }
+                }
+                
+                $salary = $db->queryOne($selectSql, $selectParams);
                 
                 if ($salary) {
                     // تحديث total_hours

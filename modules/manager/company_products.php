@@ -234,6 +234,64 @@ try {
     error_log('Error fetching factory products from finished_products: ' . $e->getMessage());
 }
 
+// حساب الكمية المتاحة لكل منتج من منتجات المصنع (طرح المبيعات والطلبات المعلقة)
+if (!empty($factoryProducts)) {
+    foreach ($factoryProducts as &$product) {
+        $quantityProduced = (float)($product['quantity_produced'] ?? 0);
+        $batchNumber = $product['batch_number'] ?? '';
+        $batchId = $product['id'] ?? null;
+        
+        // حساب الكمية المتاحة (طرح المبيعات والطلبات المعلقة)
+        $soldQty = 0;
+        $pendingQty = 0;
+        $pendingShippingQty = 0;
+        
+        if (!empty($batchNumber) && $batchId) {
+            try {
+                // حساب الكمية المباعة
+                $sold = $db->queryOne("
+                    SELECT COALESCE(SUM(ii.quantity), 0) AS sold_quantity
+                    FROM invoice_items ii
+                    INNER JOIN invoices i ON ii.invoice_id = i.id
+                    INNER JOIN sales_batch_numbers sbn ON ii.id = sbn.invoice_item_id
+                    INNER JOIN batch_numbers bn ON sbn.batch_number_id = bn.id
+                    WHERE bn.batch_number = ?
+                ", [$batchNumber]);
+                $soldQty = (float)($sold['sold_quantity'] ?? 0);
+                
+                // حساب الكمية المحجوزة في طلبات العملاء المعلقة
+                $pending = $db->queryOne("
+                    SELECT COALESCE(SUM(oi.quantity), 0) AS pending_quantity
+                    FROM customer_order_items oi
+                    INNER JOIN customer_orders co ON oi.order_id = co.id
+                    INNER JOIN finished_products fp2 ON fp2.product_id = oi.product_id AND fp2.batch_number = ?
+                    WHERE co.status = 'pending'
+                ", [$batchNumber]);
+                $pendingQty = (float)($pending['pending_quantity'] ?? 0);
+                
+                // حساب الكمية المحجوزة في طلبات الشحن المعلقة
+                $pendingShipping = $db->queryOne("
+                    SELECT COALESCE(SUM(soi.quantity), 0) AS pending_quantity
+                    FROM shipping_company_order_items soi
+                    INNER JOIN shipping_company_orders sco ON soi.order_id = sco.id
+                    WHERE sco.status = 'in_transit'
+                      AND soi.batch_id = ?
+                ", [$batchId]);
+                $pendingShippingQty = (float)($pendingShipping['pending_quantity'] ?? 0);
+            } catch (Throwable $calcError) {
+                error_log('company_products: error calculating available quantity for batch ' . $batchNumber . ': ' . $calcError->getMessage());
+            }
+        }
+        
+        // حساب الكمية المتاحة
+        $product['available_quantity'] = max(0, $quantityProduced - $soldQty - $pendingQty - $pendingShippingQty);
+        $product['sold_quantity'] = $soldQty;
+        $product['pending_quantity'] = $pendingQty;
+        $product['pending_shipping_quantity'] = $pendingShippingQty;
+    }
+    unset($product); // إلغاء المرجع لتجنب التأثير على المتغيرات المستقبلية
+}
+
 // الحصول على المنتجات الخارجية
 $externalProducts = [];
 try {
@@ -1061,11 +1119,14 @@ foreach ($factoryProducts as $product) {
                             $productName = htmlspecialchars($product['product_name'] ?? 'غير محدد');
                             $category = htmlspecialchars($product['product_category'] ?? '—');
                             $productionDate = !empty($product['production_date']) ? htmlspecialchars(formatDate($product['production_date'])) : '—';
-                            $quantity = number_format((float)($product['quantity_produced'] ?? 0), 2);
+                            $quantityProduced = (float)($product['quantity_produced'] ?? 0);
+                            $availableQuantity = (float)($product['available_quantity'] ?? $quantityProduced);
+                            $quantity = number_format($availableQuantity, 2);
+                            $totalQuantity = number_format($quantityProduced, 2);
                             $unitPrice = floatval($product['unit_price'] ?? 0);
                             $totalPrice = floatval($product['calculated_total_price'] ?? 0);
-                            if ($totalPrice == 0 && $unitPrice > 0 && floatval($product['quantity_produced'] ?? 0) > 0) {
-                                $totalPrice = $unitPrice * floatval($product['quantity_produced'] ?? 0);
+                            if ($totalPrice == 0 && $unitPrice > 0 && $quantityProduced > 0) {
+                                $totalPrice = $unitPrice * $quantityProduced;
                             }
                         ?>
                         <div class="product-card">
@@ -1093,7 +1154,10 @@ foreach ($factoryProducts as $product) {
 
                             <div class="product-detail-row"><span>الفئة:</span> <span><?php echo $category; ?></span></div>
                             <div class="product-detail-row"><span>تاريخ الإنتاج:</span> <span><?php echo $productionDate; ?></span></div>
-                            <div class="product-detail-row"><span>الكمية:</span> <span><strong><?php echo $quantity; ?></strong></span></div>
+                            <div class="product-detail-row"><span>الكمية المتاحة:</span> <span><strong><?php echo $quantity; ?></strong></span></div>
+                            <?php if ($availableQuantity != $quantityProduced): ?>
+                                <div class="product-detail-row"><span>الكمية الإجمالية:</span> <span><?php echo $totalQuantity; ?></span></div>
+                            <?php endif; ?>
                             <div class="product-detail-row"><span>سعر الوحدة:</span> <span><?php echo formatCurrency($unitPrice); ?></span></div>
                             <div class="product-detail-row"><span>إجمالي القيمة:</span> <span><strong class="text-success"><?php echo formatCurrency($totalPrice); ?></strong></span></div>
 
