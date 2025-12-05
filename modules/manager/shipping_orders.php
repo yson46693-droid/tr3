@@ -393,43 +393,19 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     $quantityProduced = (float)($fp['quantity_produced'] ?? 0);
                     $actualProductId = (int)($fp['product_id'] ?? 0);
                     
-                    // التحقق من الكمية في المخزن الرئيسي أولاً
+                    // للمنتجات التي لها رقم تشغيلة: استخدام quantity_produced مباشرة
+                    // وعدم استخدام products.quantity لأنها قد تكون لجميع أرقام التشغيلة مجتمعة
                     $quantity = $quantityProduced;
-                    $usingWarehouseQuantity = false;
                     
-                    if ($actualProductId > 0) {
-                        // جلب المخزن الرئيسي
-                        $mainWarehouse = $db->queryOne("SELECT id FROM warehouses WHERE warehouse_type = 'main' AND status = 'active' LIMIT 1");
-                        if ($mainWarehouse) {
-                            $mainWarehouseId = (int)$mainWarehouse['id'];
-                            
-                            // التحقق من وجود المنتج في المخزن الرئيسي
-                            $productInWarehouse = $db->queryOne(
-                                "SELECT quantity FROM products 
-                                 WHERE id = ? 
-                                 AND (warehouse_id = ? OR (warehouse_id IS NULL AND ? IN (SELECT id FROM warehouses WHERE warehouse_type = 'main')))",
-                                [$actualProductId, $mainWarehouseId, $mainWarehouseId]
-                            );
-                            
-                            if ($productInWarehouse && (float)($productInWarehouse['quantity'] ?? 0) > 0) {
-                                // استخدام الكمية من المخزن الرئيسي
-                                $quantity = (float)$productInWarehouse['quantity'];
-                                $usingWarehouseQuantity = true;
-                            }
-                        }
-                    }
-                    
-                    // حساب الكميات المحجوزة
+                    // حساب الكميات المحجوزة (يُطبق فقط على quantity_produced للمنتجات التي لها رقم تشغيلة)
                     $pendingQty = 0;
                     $pendingShippingQty = 0;
-                    $pendingTransfersQty = 0;
                     
                     if (!empty($fp['batch_number'])) {
                         try {
                             // حساب الكمية المحجوزة في طلبات العملاء المعلقة
                             // ملاحظة: customer_order_items لا يحتوي على batch_number مباشرة
                             // لذلك نستخدم finished_products للربط مع batch_number بناءً على product_id و batch_number
-                            // هذا قد يحسب كميات من batches أخرى لنفس المنتج، لكن هذا مقبول كتقدير
                             $pending = $db->queryOne("
                                 SELECT COALESCE(SUM(oi.quantity), 0) AS pending_quantity
                                 FROM customer_order_items oi
@@ -453,25 +429,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                         }
                     }
                     
-                    // إذا كنا نستخدم كمية المخزن الرئيسي، نحتاج لخصم الكميات المحجوزة في طلبات النقل المعلقة
-                    if ($usingWarehouseQuantity && $actualProductId > 0 && isset($mainWarehouseId)) {
-                        try {
-                            // حساب الكمية المحجوزة في طلبات النقل المعلقة (pending) من المخزن الرئيسي
-                            $pendingTransfers = $db->queryOne(
-                                "SELECT COALESCE(SUM(wti.quantity), 0) AS pending_quantity
-                                 FROM warehouse_transfer_items wti
-                                 INNER JOIN warehouse_transfers wt ON wt.id = wti.transfer_id
-                                 WHERE wti.product_id = ? AND wt.from_warehouse_id = ? AND wt.status = 'pending'",
-                                [$actualProductId, $mainWarehouseId]
-                            );
-                            $pendingTransfersQty = (float)($pendingTransfers['pending_quantity'] ?? 0);
-                        } catch (Throwable $transferError) {
-                            error_log('shipping_orders: error calculating pending transfers for product ' . $actualProductId . ': ' . $transferError->getMessage());
-                        }
-                    }
-                    
-                    // حساب الكمية المتاحة: الكمية الفعلية - الكميات المحجوزة
-                    $availableQuantity = max(0, $quantity - $pendingQty - $pendingShippingQty - $pendingTransfersQty);
+                    // حساب الكمية المتاحة: quantity_produced - الكميات المحجوزة
+                    $availableQuantity = max(0, $quantity - $pendingQty - $pendingShippingQty);
                     
                     if ($availableQuantity < $requestedQuantity) {
                         throw new InvalidArgumentException('الكمية المتاحة للمنتج ' . ($fp['product_name'] ?? '') . ' غير كافية.');
@@ -1370,43 +1329,19 @@ try {
                 $quantityProduced = (float)($fp['quantity'] ?? 0); // هذا هو quantity_produced (الكمية المتبقية)
                 $unitPrice = (float)($fp['unit_price'] ?? 0);
                 
-                // التحقق من الكمية في المخزن الرئيسي أولاً
+                // للمنتجات التي لها رقم تشغيلة: استخدام quantity_produced مباشرة
+                // وعدم استخدام products.quantity لأنها قد تكون لجميع أرقام التشغيلة مجتمعة
                 $quantity = $quantityProduced;
-                $usingWarehouseQuantity = false;
                 
-                if ($productId > 0) {
-                    // جلب المخزن الرئيسي
-                    $mainWarehouse = $db->queryOne("SELECT id FROM warehouses WHERE warehouse_type = 'main' AND status = 'active' LIMIT 1");
-                    if ($mainWarehouse) {
-                        $mainWarehouseId = (int)$mainWarehouse['id'];
-                        
-                        // التحقق من وجود المنتج في المخزن الرئيسي
-                        $productInWarehouse = $db->queryOne(
-                            "SELECT quantity FROM products 
-                             WHERE id = ? 
-                             AND (warehouse_id = ? OR (warehouse_id IS NULL AND ? IN (SELECT id FROM warehouses WHERE warehouse_type = 'main')))",
-                            [$productId, $mainWarehouseId, $mainWarehouseId]
-                        );
-                        
-                        if ($productInWarehouse && (float)($productInWarehouse['quantity'] ?? 0) > 0) {
-                            // استخدام الكمية من المخزن الرئيسي
-                            $quantity = (float)$productInWarehouse['quantity'];
-                            $usingWarehouseQuantity = true;
-                        }
-                    }
-                }
-                
-                // حساب الكميات المحجوزة
+                // حساب الكميات المحجوزة (يُطبق فقط على quantity_produced للمنتجات التي لها رقم تشغيلة)
                 $pendingQty = 0;
                 $pendingShippingQty = 0;
-                $pendingTransfersQty = 0;
                 
                 if (!empty($batchNumber)) {
                     try {
                         // حساب الكمية المحجوزة في طلبات العملاء المعلقة
                         // ملاحظة: customer_order_items لا يحتوي على batch_number مباشرة
                         // لذلك نستخدم finished_products للربط مع batch_number بناءً على product_id و batch_number
-                        // هذا قد يحسب كميات من batches أخرى لنفس المنتج، لكن هذا مقبول كتقدير
                         $pending = $db->queryOne("
                             SELECT COALESCE(SUM(oi.quantity), 0) AS pending_quantity
                             FROM customer_order_items oi
@@ -1430,25 +1365,8 @@ try {
                     }
                 }
                 
-                // إذا كنا نستخدم كمية المخزن الرئيسي، نحتاج لخصم الكميات المحجوزة في طلبات النقل المعلقة
-                if ($usingWarehouseQuantity && $productId > 0 && isset($mainWarehouseId)) {
-                    try {
-                        // حساب الكمية المحجوزة في طلبات النقل المعلقة (pending) من المخزن الرئيسي
-                        $pendingTransfers = $db->queryOne(
-                            "SELECT COALESCE(SUM(wti.quantity), 0) AS pending_quantity
-                             FROM warehouse_transfer_items wti
-                             INNER JOIN warehouse_transfers wt ON wt.id = wti.transfer_id
-                             WHERE wti.product_id = ? AND wt.from_warehouse_id = ? AND wt.status = 'pending'",
-                            [$productId, $mainWarehouseId]
-                        );
-                        $pendingTransfersQty = (float)($pendingTransfers['pending_quantity'] ?? 0);
-                    } catch (Throwable $transferError) {
-                        error_log('shipping_orders: error calculating pending transfers for product ' . $productId . ': ' . $transferError->getMessage());
-                    }
-                }
-                
-                // حساب الكمية المتاحة: الكمية الفعلية - الكميات المحجوزة
-                $availableQuantity = max(0, $quantity - $pendingQty - $pendingShippingQty - $pendingTransfersQty);
+                // حساب الكمية المتاحة: quantity_produced - الكميات المحجوزة
+                $availableQuantity = max(0, $quantity - $pendingQty - $pendingShippingQty);
                 
                 // عرض جميع المنتجات حتى لو كانت الكمية المتاحة صفر (مثل نقطة بيع المدير)
                 $productsList[] = [
