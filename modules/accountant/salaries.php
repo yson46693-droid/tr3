@@ -4269,6 +4269,14 @@ function openSettleModal(salaryId, salaryData, remainingAmount, calculatedAccumu
         return;
     }
     
+    // التحقق من وجود Modal أولاً
+    const settleModal = document.getElementById('settleSalaryModal');
+    if (!settleModal) {
+        console.error('settleSalaryModal element not found in DOM');
+        alert('خطأ: لم يتم العثور على نافذة التسوية. يرجى تحديث الصفحة والمحاولة مرة أخرى.');
+        return;
+    }
+    
     // التحقق من وجود العناصر قبل الوصول إليها
     const userIdInput = document.getElementById('settleUserId');
     const userNameSpan = document.getElementById('settleUserName');
@@ -4279,16 +4287,16 @@ function openSettleModal(salaryId, salaryData, remainingAmount, calculatedAccumu
     const settleRemainingAmount2El = document.getElementById('settleRemainingAmount2');
     const settleAmountEl = document.getElementById('settleAmount');
     
-    if (userIdInput) {
-        userIdInput.value = userId;
+    if (!userIdInput) {
+        console.error('settleUserId element not found in settleSalaryModal');
     } else {
-        console.error('settleUserId element not found');
+        userIdInput.value = userId;
     }
     
-    if (userNameSpan) {
-        userNameSpan.textContent = salaryData.full_name || salaryData.username || 'غير محدد';
+    if (!userNameSpan) {
+        console.error('settleUserName element not found in settleSalaryModal');
     } else {
-        console.error('settleUserName element not found');
+        userNameSpan.textContent = salaryData.full_name || salaryData.username || 'غير محدد';
     }
     
     // استخدام القيم المحسوبة مباشرة من بطاقة الموظف
@@ -4329,24 +4337,43 @@ function openSettleModal(salaryId, salaryData, remainingAmount, calculatedAccumu
         settleAmountEl.max = remaining;
     }
     
-    // تحديث المتبقي الجديد
-    updateSettleRemaining();
-    
-    // تحميل جميع الرواتب للموظف (لاختيار راتب آخر إذا لزم الأمر)
-    console.log('Loading salaries for user_id:', userId, 'currentSalaryId:', salaryId);
-    loadUserSalariesForSettlement(userId, salaryId);
-    
-    // تعيين الراتب الحالي كافتراضي في القائمة المنسدلة
-    if (salaryId > 0) {
-        setTimeout(() => {
-            const select = document.getElementById('settleSalarySelect');
-            if (select) {
-                select.value = salaryId;
-                // لا نستدعي loadSelectedSalaryData() هنا لأننا استخدمنا القيم من بطاقة الموظف
-                // فقط نحدد القيمة في القائمة المنسدلة
-            }
-        }, 500); // انتظار تحميل القائمة
+    // إنشاء Modal instance إذا لم يكن موجوداً
+    let modalInstance = bootstrap.Modal.getInstance(settleModal);
+    if (!modalInstance) {
+        modalInstance = new bootstrap.Modal(settleModal);
     }
+    
+    // إضافة مستمع لحدث shown.bs.modal قبل فتح Modal
+    const updateAfterModalShown = function() {
+        // تحديث المتبقي بعد فتح Modal
+        setTimeout(() => {
+            updateSettleRemaining();
+        }, 200);
+        
+        // تحميل جميع الرواتب للموظف (لاختيار راتب آخر إذا لزم الأمر)
+        console.log('Loading salaries for user_id:', userId, 'currentSalaryId:', salaryId);
+        loadUserSalariesForSettlement(userId, salaryId);
+        
+        // تعيين الراتب الحالي كافتراضي في القائمة المنسدلة
+        if (salaryId > 0) {
+            setTimeout(() => {
+                const select = document.getElementById('settleSalarySelect');
+                if (select) {
+                    select.value = salaryId;
+                    // لا نستدعي loadSelectedSalaryData() هنا لأننا استخدمنا القيم من بطاقة الموظف
+                    // فقط نحدد القيمة في القائمة المنسدلة
+                }
+            }, 500); // انتظار تحميل القائمة
+        }
+        
+        // إزالة المستمع بعد استخدامه مرة واحدة
+        settleModal.removeEventListener('shown.bs.modal', updateAfterModalShown);
+    };
+    
+    settleModal.addEventListener('shown.bs.modal', updateAfterModalShown, { once: true });
+    
+    // فتح Modal
+    modalInstance.show();
 }
 
 function loadUserSalariesForSettlement(userId, currentSalaryId) {
@@ -4449,8 +4476,21 @@ function loadUserSalariesForSettlement(userId, currentSalaryId) {
                     console.warn('data.salaries type:', typeof data.salaries);
                     console.warn('data.salaries isArray:', Array.isArray(data.salaries));
                     console.warn('data.salaries length:', data.salaries?.length);
+                    
+                    // التحقق من أن الرواتب فارغة وليس هناك خطأ
                     const message = (data && data.message) ? data.message : 'لا توجد رواتب متاحة لهذا الموظف';
-                    select.innerHTML = '<option value="">' + message + '</option>';
+                    
+                    // إذا كان هناك راتب محدد مسبقاً (currentSalaryId)، نضيفه كخيار واحد
+                    if (currentSalaryId > 0) {
+                        select.innerHTML = '<option value="' + currentSalaryId + '">الراتب الحالي</option>';
+                    } else {
+                        select.innerHTML = '<option value="">' + message + '</option>';
+                    }
+                    
+                    // إظهار تحذير للمستخدم
+                    if (data && data.message) {
+                        console.info('API message:', data.message);
+                    }
                 }
             } else {
                 // API أرجعت success: false
@@ -4604,6 +4644,20 @@ function loadSelectedSalaryData() {
 }
 
 function updateSettleRemaining() {
+    // التحقق من أن Modal موجود في DOM أولاً
+    const settleModal = document.getElementById('settleSalaryModal');
+    if (!settleModal) {
+        // Modal غير موجود في DOM، لا نحتاج لتحديث أي شيء
+        return;
+    }
+    
+    // التحقق من أن Modal مرئي (منفتح) - استخدام طريقة بسيطة للتحقق
+    // Modal يكون مرئياً عندما يكون له class 'show'
+    if (!settleModal.classList.contains('show')) {
+        // Modal غير مفتوح، لا نحتاج لتحديث أي شيء
+        return;
+    }
+    
     const remainingElement = document.getElementById('settleRemainingAmount');
     const settleAmountElement = document.getElementById('settleAmount');
     const settleNewRemainingElement = document.getElementById('settleNewRemaining');
@@ -4611,7 +4665,11 @@ function updateSettleRemaining() {
     
     // التحقق من وجود جميع العناصر المطلوبة
     if (!remainingElement || !settleAmountElement || !settleNewRemainingElement) {
-        console.warn('updateSettleRemaining: بعض العناصر غير موجودة في DOM');
+        console.warn('updateSettleRemaining: بعض العناصر غير موجودة في DOM', {
+            remainingElement: !!remainingElement,
+            settleAmountElement: !!settleAmountElement,
+            settleNewRemainingElement: !!settleNewRemainingElement
+        });
         return;
     }
     
@@ -4797,14 +4855,34 @@ function printSalaryStatement() {
 
 <script>
 // تحديث المتبقي عند إدخال مبلغ التسوية
-document.getElementById('settleAmount')?.addEventListener('input', function() {
-    updateSettleRemaining();
-});
-
-// تحديث المتبقي عند فتح modal
-document.getElementById('settleSalaryModal')?.addEventListener('shown.bs.modal', function() {
-    // استدعاء updateSettleRemaining لتحديث جميع القيم
-    updateSettleRemaining();
+document.addEventListener('DOMContentLoaded', function() {
+    const settleAmountEl = document.getElementById('settleAmount');
+    if (settleAmountEl) {
+        settleAmountEl.addEventListener('input', function() {
+            updateSettleRemaining();
+        });
+    }
+    
+    // تحديث المتبقي عند فتح modal
+    const settleModal = document.getElementById('settleSalaryModal');
+    if (settleModal) {
+        settleModal.addEventListener('shown.bs.modal', function() {
+            // انتظار صغير للتأكد من أن جميع العناصر قد تم تحديثها
+            setTimeout(function() {
+                updateSettleRemaining();
+            }, 100);
+        });
+        
+        // تحديث عند إغلاق Modal لضمان إعادة التعيين
+        settleModal.addEventListener('hidden.bs.modal', function() {
+            // إعادة تعيين القيم عند إغلاق Modal
+            const settleAmountEl = document.getElementById('settleAmount');
+            if (settleAmountEl) {
+                settleAmountEl.value = '';
+            }
+            settleModalRemainingValue = 0;
+        });
+    }
 });
 </script>
 
