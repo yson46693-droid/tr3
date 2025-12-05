@@ -694,112 +694,22 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
             $orderId = (int)$db->getLastInsertId();
 
-            // خصم الكميات من المخزون - مكان واحد فقط للخصم
-            // نستخدم recordInventoryMovement لتقوم بالخصم تلقائياً من مكان واحد
-            $movementNote = 'تسليم طلب شحن #' . $orderNumber . ' لشركة الشحن';
-            
-            // مصفوفة لتتبع العناصر التي تم خصمها لمنع الخصم المتكرر
-            $processedItems = [];
-            
-            error_log("shipping_orders: Starting inventory deduction - normalizedItems count: " . count($normalizedItems));
-            foreach ($normalizedItems as $index => $normalizedItem) {
-                error_log("shipping_orders: Processing item[$index]: product_id=" . ($normalizedItem['product_id'] ?? 'N/A') . ", quantity=" . ($normalizedItem['quantity'] ?? 'N/A') . ", batch_id=" . ($normalizedItem['batch_id'] ?? 'NULL') . ", product_type=" . ($normalizedItem['product_type'] ?? 'N/A'));
-                $batchId = $normalizedItem['batch_id'] ?? null;
-                $productType = $normalizedItem['product_type'] ?? '';
-                $productId = $normalizedItem['product_id'];
-                // التأكد من أن الكمية هي قيمة رقمية صحيحة
-                $quantity = (float)($normalizedItem['quantity'] ?? 0.0);
-                
-                // التحقق النهائي من صحة الكمية قبل المعالجة
-                if ($quantity <= 0 || $quantity > 100000) {
-                    error_log("shipping_orders: ERROR - Invalid quantity detected: $quantity for product_id: $productId, batch_id: " . ($batchId ?? 'NULL'));
-                    throw new InvalidArgumentException('الكمية المدخلة غير صحيحة للمنتج.');
-                }
-                
-                // إنشاء مفتاح فريد لتتبع العناصر المعالجة
-                $processKey = $productId . '_' . ($batchId ?? 'null') . '_' . $productType;
-                
-                // التحقق من أن هذا العنصر لم يتم معالجته من قبل
-                if (isset($processedItems[$processKey])) {
-                    error_log("shipping_orders: WARNING - Item already processed! Skipping duplicate: product_id=$productId, batch_id=" . ($batchId ?? 'NULL') . ", quantity=$quantity");
-                    continue; // تخطي العنصر المكرر
-                }
-                
-                // تسجيل العنصر كمعالج
-                $processedItems[$processKey] = true;
-                
-                error_log("shipping_orders: FINAL quantity to deduct: $quantity for product_id: $productId, batch_id: " . ($batchId ?? 'NULL') . ", process_key: $processKey");
+            // ملاحظة: تم خصم الكميات تلقائياً عند إنشاء الفاتورة عبر createInvoice()
+            // لا حاجة لخصم يدوي هنا لتجنب الخصم المتكرر
 
-                // حفظ العنصر مع batch_id إذا كان موجوداً
+            // حفظ عناصر الطلب فقط بدون خصم إضافي
+            foreach ($normalizedItems as $normalizedItem) {
                 $db->execute(
                     "INSERT INTO shipping_company_order_items (order_id, product_id, batch_id, quantity, unit_price, total_price) VALUES (?, ?, ?, ?, ?, ?)",
                     [
                         $orderId,
-                        $productId,
-                        $batchId,
-                        $quantity,
+                        $normalizedItem['product_id'],
+                        $normalizedItem['batch_id'] ?? null,
+                        $normalizedItem['quantity'],
                         $normalizedItem['unit_price'],
                         $normalizedItem['total_price'],
                     ]
                 );
-
-                // خصم الكمية من المخزون - مكان واحد فقط للخصم
-                // recordInventoryMovement هي المكان الوحيد للخصم، لا يوجد أي خصم يدوي في مكان آخر
-                
-                // التحقق من الكمية الحالية قبل الخصم (للتشخيص)
-                if ($productType === 'factory' && $batchId) {
-                    $beforeCheck = $db->queryOne(
-                        "SELECT quantity_produced FROM finished_products WHERE id = ?",
-                        [$batchId]
-                    );
-                    $quantityBeforeDeduction = $beforeCheck ? (float)($beforeCheck['quantity_produced'] ?? 0) : 0;
-                    error_log("shipping_orders: BEFORE recordInventoryMovement - batch_id: $batchId, quantity_produced: $quantityBeforeDeduction, quantity_to_deduct: $quantity");
-                }
-                
-                error_log("shipping_orders: About to call recordInventoryMovement - product_id: $productId, batch_id: " . ($batchId ?? 'NULL') . ", quantity: $quantity, product_type: $productType");
-                
-                if ($productType === 'factory' && $batchId) {
-                    // للمنتجات من المصنع: خصم من finished_products.quantity_produced
-                    $movementResult = recordInventoryMovement(
-                        $productId,
-                        $mainWarehouse['id'] ?? null,
-                        'out',
-                        $quantity,
-                        'shipping_order',
-                        $orderId,
-                        $movementNote,
-                        $currentUser['id'] ?? null,
-                        $batchId // finished_products.id
-                    );
-                    
-                    // التحقق من الكمية بعد الخصم (للتشخيص)
-                    $afterCheck = $db->queryOne(
-                        "SELECT quantity_produced FROM finished_products WHERE id = ?",
-                        [$batchId]
-                    );
-                    $quantityAfterDeduction = $afterCheck ? (float)($afterCheck['quantity_produced'] ?? 0) : 0;
-                    $actualDeducted = $quantityBeforeDeduction - $quantityAfterDeduction;
-                    
-                    error_log("shipping_orders: AFTER recordInventoryMovement - batch_id: $batchId, quantity_before: $quantityBeforeDeduction, quantity_after: $quantityAfterDeduction, actual_deducted: $actualDeducted, expected_deduct: $quantity");
-                    error_log("shipping_orders: recordInventoryMovement result for factory product - success: " . ($movementResult['success'] ?? 'false') . ", message: " . ($movementResult['message'] ?? 'N/A'));
-                } else {
-                    // للمنتجات الخارجية: خصم من products.quantity
-                    $movementResult = recordInventoryMovement(
-                        $productId,
-                        $mainWarehouse['id'] ?? null,
-                        'out',
-                        $quantity,
-                        'shipping_order',
-                        $orderId,
-                        $movementNote,
-                        $currentUser['id'] ?? null
-                    );
-                    error_log("shipping_orders: recordInventoryMovement result for external product - success: " . ($movementResult['success'] ?? 'false') . ", message: " . ($movementResult['message'] ?? 'N/A'));
-                }
-
-                if (empty($movementResult['success'])) {
-                    throw new RuntimeException($movementResult['message'] ?? 'تعذر تسجيل حركة المخزون وخصم الكمية.');
-                }
             }
 
             $db->execute(

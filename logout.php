@@ -142,7 +142,7 @@ try {
         </div>
         <p style="margin-top: 20px;">
             <a href="<?php echo htmlspecialchars($redirectUrl, ENT_QUOTES, 'UTF-8'); ?>" 
-               style="color: #007bff; text-decoration: none; font-weight: bold; display: inline-block; margin-top: 10px;">
+               style="color:rgb(255, 0, 0); text-decoration: none; font-weight: bold; display: inline-block; margin-top: 10px;">
                 اضغط هنا إذا لم يتم إعادة التوجيه تلقائياً
             </a>
         </p>
