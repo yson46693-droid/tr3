@@ -242,6 +242,26 @@ if (isset($_GET['month']) && isset($_GET['year'])) {
             overflow-x: auto;
             -webkit-overflow-scrolling: touch;
             max-width: 100%;
+            box-shadow: 0 2px 8px rgba(0, 0, 0, 0.05);
+        }
+        
+        .transactions-table table {
+            width: 100%;
+            min-width: 100%;
+            border-collapse: collapse;
+        }
+        
+        /* توحيد عرض جميع الجداول */
+        .transactions-table thead tr,
+        .transactions-table tbody tr,
+        .transactions-table tfoot tr {
+            display: table-row;
+        }
+        
+        .transactions-table thead,
+        .transactions-table tbody,
+        .transactions-table tfoot {
+            display: table-row-group;
         }
         
         .transactions-table::-webkit-scrollbar {
@@ -277,6 +297,14 @@ if (isset($_GET['month']) && isset($_GET['year'])) {
             min-width: 100px;
         }
         
+        .transactions-table th:first-child {
+            padding-right: 16px;
+        }
+        
+        .transactions-table th:last-child {
+            padding-left: 16px;
+        }
+        
         .transactions-table td {
             padding: 16px 12px;
             border-bottom: 1px solid rgba(148, 163, 184, 0.25);
@@ -285,12 +313,53 @@ if (isset($_GET['month']) && isset($_GET['year'])) {
             white-space: nowrap;
         }
         
-        .transactions-table tbody tr:last-child td {
-            border-bottom: none;
+        .transactions-table td:first-child {
+            padding-right: 16px;
+        }
+        
+        .transactions-table td:last-child {
+            padding-left: 16px;
+        }
+        
+        /* توحيد عرض الأعمدة المالية */
+        .transactions-table td.amount-cell,
+        .transactions-table th.amount-header {
+            text-align: left;
+            font-family: 'Courier New', 'Consolas', monospace;
+            min-width: 140px;
+            letter-spacing: 0.02em;
+        }
+        
+        /* توحيد عرض التاريخ */
+        .transactions-table td.date-cell,
+        .transactions-table th.date-header {
+            min-width: 130px;
+            text-align: right;
+        }
+        
+        /* توحيد عرض الحالة */
+        .transactions-table td.status-cell,
+        .transactions-table th.status-header {
+            min-width: 130px;
+            text-align: center;
+        }
+        
+        /* تحسين عرض الأرقام */
+        .transactions-table td {
+            vertical-align: middle;
+        }
+        
+        /* تحسين عرض الجداول بشكل عام */
+        .transactions-table tbody tr:nth-child(even) {
+            background-color: rgba(249, 250, 251, 0.5);
         }
         
         .transactions-table tbody tr:hover {
-            background-color: rgba(15, 76, 129, 0.02);
+            background-color: rgba(15, 76, 129, 0.03) !important;
+        }
+        
+        .transactions-table tbody tr:last-child td {
+            border-bottom: none;
         }
         
         .amount-positive {
@@ -699,36 +768,36 @@ if (isset($_GET['month']) && isset($_GET['year'])) {
                 <tr>
                     <th>الشهر</th>
                     <th>الساعات</th>
-                    <th>الراتب الأساسي</th>
-                    <th>المكافآت</th>
-                    <th>نسبة التحصيلات</th>
-                    <th>الخصومات</th>
-                    <th>الإجمالي</th>
-                    <th>الحالة</th>
+                    <th class="amount-header">الراتب الأساسي</th>
+                    <th class="amount-header">المكافآت</th>
+                    <th class="amount-header">نسبة التحصيلات</th>
+                    <th class="amount-header">الخصومات</th>
+                    <th class="amount-header">الإجمالي</th>
+                    <th class="status-header">الحالة</th>
                 </tr>
             </thead>
             <tbody>
                 <?php foreach ($statementSalaries as $sal): ?>
                 <tr>
-                    <td>
+                    <td style="min-width: 140px;">
                         <?php 
                         $month = intval($sal['month'] ?? 0);
                         $year = intval($sal['year'] ?? date('Y'));
                         if ($month > 0 && $month <= 12) {
                             $monthNames = ['يناير', 'فبراير', 'مارس', 'أبريل', 'مايو', 'يونيو', 'يوليو', 'أغسطس', 'سبتمبر', 'أكتوبر', 'نوفمبر', 'ديسمبر'];
-                            echo ($monthNames[$month - 1] ?? date('F', mktime(0, 0, 0, $month, 1))) . ' ' . $year;
+                            echo htmlspecialchars($monthNames[$month - 1] ?? date('F', mktime(0, 0, 0, $month, 1))) . ' ' . $year;
                         } else {
                             echo '-';
                         }
                         ?>
                     </td>
-                    <td><?php echo number_format($sal['total_hours'] ?? 0, 2); ?></td>
-                    <td class="amount-positive"><?php echo formatCurrency($sal['base_amount'] ?? 0); ?></td>
-                    <td class="amount-positive"><?php echo formatCurrency($sal['bonus_standardized'] ?? ($sal['bonus'] ?? $sal['bonuses'] ?? 0)); ?></td>
-                    <td class="amount-positive"><?php echo formatCurrency($sal['collections_bonus'] ?? 0); ?></td>
-                    <td class="amount-negative"><?php echo formatCurrency($sal['deductions'] ?? 0); ?></td>
-                    <td><strong class="amount-positive"><?php echo formatCurrency($sal['total_amount'] ?? 0); ?></strong></td>
-                    <td>
+                    <td style="text-align: center; font-family: 'Courier New', monospace;"><?php echo number_format($sal['total_hours'] ?? 0, 2); ?></td>
+                    <td class="amount-positive amount-cell"><?php echo formatCurrency($sal['base_amount'] ?? 0); ?></td>
+                    <td class="amount-positive amount-cell"><?php echo formatCurrency($sal['bonus_standardized'] ?? ($sal['bonus'] ?? $sal['bonuses'] ?? 0)); ?></td>
+                    <td class="amount-positive amount-cell"><?php echo formatCurrency($sal['collections_bonus'] ?? 0); ?></td>
+                    <td class="amount-negative amount-cell"><?php echo formatCurrency($sal['deductions'] ?? 0); ?></td>
+                    <td class="amount-positive amount-cell" style="font-weight: 700; font-size: 15px;"><?php echo formatCurrency($sal['total_amount'] ?? 0); ?></td>
+                    <td class="status-cell">
                         <?php 
                         $status = $sal['status'] ?? 'calculated';
                         $statusLabels = [
@@ -756,8 +825,8 @@ if (isset($_GET['month']) && isset($_GET['year'])) {
             <?php if (count($statementSalaries) > 0): ?>
             <tfoot>
                 <tr style="background: linear-gradient(135deg, #eff6ff 0%, #dbeafe 100%); font-weight: 700;">
-                    <td colspan="2" style="text-align: right; padding: 14px 12px;"><strong>المجموع:</strong></td>
-                    <td class="amount-positive" style="font-weight: 700;"><?php 
+                    <td colspan="2" style="text-align: right;"><strong>المجموع:</strong></td>
+                    <td class="amount-positive amount-cell"><?php 
                         $totalBase = 0;
                         $totalBonus = 0;
                         $totalCollections = 0;
@@ -772,10 +841,10 @@ if (isset($_GET['month']) && isset($_GET['year'])) {
                         }
                         echo formatCurrency($totalBase);
                     ?></td>
-                    <td class="amount-positive" style="font-weight: 700;"><?php echo formatCurrency($totalBonus); ?></td>
-                    <td class="amount-positive" style="font-weight: 700;"><?php echo formatCurrency($totalCollections); ?></td>
-                    <td class="amount-negative" style="font-weight: 700;"><?php echo formatCurrency($totalDeductions); ?></td>
-                    <td style="font-weight: 700; font-size: 16px;" class="amount-positive"><?php echo formatCurrency($totalAmount); ?></td>
+                    <td class="amount-positive amount-cell"><?php echo formatCurrency($totalBonus); ?></td>
+                    <td class="amount-positive amount-cell"><?php echo formatCurrency($totalCollections); ?></td>
+                    <td class="amount-negative amount-cell"><?php echo formatCurrency($totalDeductions); ?></td>
+                    <td class="amount-positive amount-cell" style="font-size: 16px;"><?php echo formatCurrency($totalAmount); ?></td>
                     <td></td>
                 </tr>
             </tfoot>
@@ -795,18 +864,18 @@ if (isset($_GET['month']) && isset($_GET['year'])) {
         <table class="transactions-table">
             <thead>
                 <tr>
-                    <th>التاريخ</th>
-                    <th>المبلغ</th>
-                    <th>الحالة</th>
+                    <th class="date-header">التاريخ</th>
+                    <th class="amount-header">المبلغ</th>
+                    <th class="status-header">الحالة</th>
                     <th>ملاحظات</th>
                 </tr>
             </thead>
             <tbody>
                 <?php foreach ($statementAdvances as $adv): ?>
                 <tr>
-                    <td><?php echo formatDate($adv['request_date']); ?></td>
-                    <td class="amount-negative"><?php echo formatCurrency($adv['amount'] ?? 0); ?></td>
-                    <td>
+                    <td class="date-cell"><?php echo formatDate($adv['request_date']); ?></td>
+                    <td class="amount-negative amount-cell"><?php echo formatCurrency($adv['amount'] ?? 0); ?></td>
+                    <td class="status-cell">
                         <span class="status-badge status-approved">موافق عليه</span>
                     </td>
                     <td><?php echo htmlspecialchars($adv['notes'] ?? '-'); ?></td>
@@ -816,8 +885,8 @@ if (isset($_GET['month']) && isset($_GET['year'])) {
             <?php if (count($statementAdvances) > 0): ?>
             <tfoot>
                 <tr style="background: linear-gradient(135deg, #fee2e2 0%, #fecaca 100%); font-weight: 700;">
-                    <td colspan="3" style="text-align: right; padding: 14px 12px;"><strong>المجموع:</strong></td>
-                    <td class="amount-negative" style="font-weight: 700; font-size: 16px;"><?php 
+                    <td colspan="3" style="text-align: right;"><strong>المجموع:</strong></td>
+                    <td class="amount-negative amount-cell" style="font-size: 16px;"><?php 
                         $totalAdvances = 0;
                         foreach ($statementAdvances as $adv) {
                             $totalAdvances += cleanFinancialValue($adv['amount'] ?? 0);
@@ -837,24 +906,24 @@ if (isset($_GET['month']) && isset($_GET['year'])) {
         <table class="transactions-table">
             <thead>
                 <tr>
-                    <th>التاريخ</th>
-                    <th>المبلغ المدفوع</th>
-                    <th>المبلغ التراكمي قبل التسوية</th>
-                    <th>المتبقي بعد التسوية</th>
+                    <th class="date-header">التاريخ</th>
+                    <th class="amount-header">المبلغ المدفوع</th>
+                    <th class="amount-header">المبلغ التراكمي قبل التسوية</th>
+                    <th class="amount-header">المتبقي بعد التسوية</th>
                     <th>نوع التسوية</th>
                 </tr>
             </thead>
             <tbody>
                 <?php foreach ($statementSettlements as $set): ?>
                 <tr>
-                    <td><?php echo formatDate($set['settlement_date']); ?></td>
-                    <td class="amount-positive"><strong><?php echo formatCurrency($set['settlement_amount'] ?? 0); ?></strong></td>
-                    <td><?php echo formatCurrency($set['previous_accumulated'] ?? 0); ?></td>
-                    <td><?php echo formatCurrency($set['remaining_after_settlement'] ?? 0); ?></td>
+                    <td class="date-cell"><?php echo formatDate($set['settlement_date']); ?></td>
+                    <td class="amount-positive amount-cell" style="font-weight: 700; font-size: 15px;"><?php echo formatCurrency($set['settlement_amount'] ?? 0); ?></td>
+                    <td class="amount-cell"><?php echo formatCurrency($set['previous_accumulated'] ?? 0); ?></td>
+                    <td class="amount-cell"><?php echo formatCurrency($set['remaining_after_settlement'] ?? 0); ?></td>
                     <td>
                         <?php 
                         $type = $set['settlement_type'] ?? 'partial';
-                        echo $type === 'full' ? 'تسوية كاملة' : 'تسوية جزئية';
+                        echo htmlspecialchars($type === 'full' ? 'تسوية كاملة' : 'تسوية جزئية');
                         ?>
                     </td>
                 </tr>
@@ -863,8 +932,8 @@ if (isset($_GET['month']) && isset($_GET['year'])) {
             <?php if (count($statementSettlements) > 0): ?>
             <tfoot>
                 <tr style="background: linear-gradient(135deg, #d1fae5 0%, #a7f3d0 100%); font-weight: 700;">
-                    <td colspan="1" style="text-align: right; padding: 14px 12px;"><strong>المجموع:</strong></td>
-                    <td class="amount-positive" style="font-weight: 700; font-size: 16px;"><?php 
+                    <td colspan="1" style="text-align: right;"><strong>المجموع:</strong></td>
+                    <td class="amount-positive amount-cell" style="font-size: 16px;"><?php 
                         $totalSettlements = 0;
                         foreach ($statementSettlements as $set) {
                             $totalSettlements += cleanFinancialValue($set['settlement_amount'] ?? 0);

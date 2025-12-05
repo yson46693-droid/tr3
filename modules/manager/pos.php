@@ -396,14 +396,64 @@ try {
         
         foreach ($factoryProducts as $fp) {
             $productId = (int)($fp['product_id'] ?? 0);
-            $quantity = (float)($fp['quantity'] ?? 0);
+            $quantityProduced = (float)($fp['quantity'] ?? 0);
             $unitPrice = (float)($fp['unit_price'] ?? 0);
+            $batchNumber = $fp['batch_number'] ?? '';
+            $batchId = (int)($fp['batch_id'] ?? 0);
+            
+            // حساب الكمية المتاحة (طرح المبيعات والطلبات المعلقة)
+            $soldQty = 0;
+            $pendingQty = 0;
+            $pendingShippingQty = 0;
+            
+            if (!empty($batchNumber) && $batchId > 0) {
+                try {
+                    // حساب الكمية المباعة
+                    $sold = $db->queryOne("
+                        SELECT COALESCE(SUM(ii.quantity), 0) AS sold_quantity
+                        FROM invoice_items ii
+                        INNER JOIN invoices i ON ii.invoice_id = i.id
+                        INNER JOIN sales_batch_numbers sbn ON ii.id = sbn.invoice_item_id
+                        INNER JOIN batch_numbers bn ON sbn.batch_number_id = bn.id
+                        WHERE bn.batch_number = ?
+                    ", [$batchNumber]);
+                    $soldQty = (float)($sold['sold_quantity'] ?? 0);
+                    
+                    // حساب الكمية المحجوزة في طلبات العملاء المعلقة
+                    $pending = $db->queryOne("
+                        SELECT COALESCE(SUM(oi.quantity), 0) AS pending_quantity
+                        FROM customer_order_items oi
+                        INNER JOIN customer_orders co ON oi.order_id = co.id
+                        INNER JOIN finished_products fp2 ON fp2.product_id = oi.product_id AND fp2.batch_number = ?
+                        WHERE co.status = 'pending'
+                    ", [$batchNumber]);
+                    $pendingQty = (float)($pending['pending_quantity'] ?? 0);
+                    
+                    // حساب الكمية المحجوزة في طلبات الشحن المعلقة
+                    $pendingShipping = $db->queryOne("
+                        SELECT COALESCE(SUM(soi.quantity), 0) AS pending_quantity
+                        FROM shipping_company_order_items soi
+                        INNER JOIN shipping_company_orders sco ON soi.order_id = sco.id
+                        WHERE sco.status = 'in_transit'
+                          AND soi.batch_id = ?
+                    ", [$batchId]);
+                    $pendingShippingQty = (float)($pendingShipping['pending_quantity'] ?? 0);
+                } catch (Throwable $calcError) {
+                    error_log('manager_pos: error calculating available quantity for batch ' . $batchNumber . ': ' . $calcError->getMessage());
+                }
+            }
+            
+            // حساب الكمية المتاحة
+            $availableQuantity = max(0, $quantityProduced - $soldQty - $pendingQty - $pendingShippingQty);
+            
+            // استخدام الكمية المتاحة بدلاً من الكمية المنتجة
+            $quantity = $availableQuantity;
             $totalValue = $quantity * $unitPrice;
             
             $companyInventory[] = [
                 'product_id' => $productId,
-                'batch_id' => (int)($fp['batch_id'] ?? 0),
-                'batch_number' => $fp['batch_number'] ?? '',
+                'batch_id' => $batchId,
+                'batch_number' => $batchNumber,
                 'product_name' => $fp['product_name'] ?? 'غير محدد',
                 'category' => $fp['product_category'] ?? '',
                 'quantity' => $quantity,
