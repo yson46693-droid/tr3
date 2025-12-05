@@ -406,7 +406,7 @@ try {
             $pendingQty = 0;
             $pendingShippingQty = 0;
             
-            if (!empty($batchNumber) && $batchId > 0) {
+            if (!empty($batchNumber) && $batchId) {
                 try {
                     // حساب الكمية المباعة
                     $sold = $db->queryOne("
