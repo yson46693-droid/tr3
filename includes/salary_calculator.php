@@ -2476,10 +2476,25 @@ function calculateSalaryAccumulatedAmount($userId, $salaryId, $currentTotalAmoun
     $yearColumnCheck = $db->queryOne("SHOW COLUMNS FROM salaries LIKE 'year'");
     $hasYearColumn = !empty($yearColumnCheck);
     
+    // التحقق من نوع عمود month
+    $isMonthDate = false;
+    try {
+        $monthColumnCheck = $db->queryOne("SHOW COLUMNS FROM salaries WHERE Field = 'month'");
+        if (!empty($monthColumnCheck) && isset($monthColumnCheck['Type'])) {
+            $monthType = $monthColumnCheck['Type'];
+            $isMonthDate = stripos($monthType, 'date') !== false;
+        }
+    } catch (Exception $e) {
+        // افتراض أن month من نوع INT في حالة الخطأ
+        $isMonthDate = false;
+    }
+    
     // ابدأ بالراتب الحالي
     $accumulated = cleanFinancialValue($currentTotalAmount);
     
     // جلب الرواتب السابقة
+    // ملاحظة: الرواتب التي month NULL يتم استبعادها من حساب المبلغ التراكمي
+    // لأننا لا نستطيع تحديد ما إذا كانت سابقة أم لا
     if ($hasYearColumn) {
         if ($salaryId > 0) {
             $previousSalaries = $db->query(
@@ -2487,12 +2502,10 @@ function calculateSalaryAccumulatedAmount($userId, $salaryId, $currentTotalAmoun
                         COALESCE(s.accumulated_amount, s.total_amount) as prev_accumulated
                  FROM salaries s
                  WHERE s.user_id = ? AND s.id != ? 
-                 AND (
-                     (s.year IS NOT NULL AND s.month IS NOT NULL AND (s.year < ? OR (s.year = ? AND s.month < ?)))
-                     OR (s.year IS NULL OR s.month IS NULL)
-                 )
-                 ORDER BY COALESCE(s.year, ?) ASC, COALESCE(s.month, ?) ASC",
-                [$userId, $salaryId, $currentYear, $currentYear, $currentMonth, $currentYear, $currentMonth]
+                 AND s.year IS NOT NULL AND s.month IS NOT NULL
+                 AND (s.year < ? OR (s.year = ? AND s.month < ?))
+                 ORDER BY s.year ASC, s.month ASC",
+                [$userId, $salaryId, $currentYear, $currentYear, $currentMonth]
             );
         } else {
             $previousSalaries = $db->query(
@@ -2500,35 +2513,67 @@ function calculateSalaryAccumulatedAmount($userId, $salaryId, $currentTotalAmoun
                         COALESCE(s.accumulated_amount, s.total_amount) as prev_accumulated
                  FROM salaries s
                  WHERE s.user_id = ? 
-                 AND (
-                     (s.year IS NOT NULL AND s.month IS NOT NULL AND (s.year < ? OR (s.year = ? AND s.month < ?)))
-                     OR (s.year IS NULL OR s.month IS NULL)
-                 )
-                 ORDER BY COALESCE(s.year, ?) ASC, COALESCE(s.month, ?) ASC",
-                [$userId, $currentYear, $currentYear, $currentMonth, $currentYear, $currentMonth]
+                 AND s.year IS NOT NULL AND s.month IS NOT NULL
+                 AND (s.year < ? OR (s.year = ? AND s.month < ?))
+                 ORDER BY s.year ASC, s.month ASC",
+                [$userId, $currentYear, $currentYear, $currentMonth]
             );
         }
     } else {
-        if ($salaryId > 0) {
-            $previousSalaries = $db->query(
-                "SELECT s.total_amount, s.paid_amount, s.accumulated_amount,
-                        COALESCE(s.accumulated_amount, s.total_amount) as prev_accumulated
-                 FROM salaries s
-                 WHERE s.user_id = ? AND s.id != ? 
-                 AND s.month < ?
-                 ORDER BY s.month ASC",
-                [$userId, $salaryId, $currentMonth]
-            );
+        if ($isMonthDate) {
+            // month من نوع DATE
+            if ($salaryId > 0) {
+                $previousSalaries = $db->query(
+                    "SELECT s.total_amount, s.paid_amount, s.accumulated_amount,
+                            COALESCE(s.accumulated_amount, s.total_amount) as prev_accumulated
+                     FROM salaries s
+                     WHERE s.user_id = ? AND s.id != ? 
+                     AND s.month IS NOT NULL 
+                     AND s.month != '0000-00-00' 
+                     AND s.month != '1970-01-01'
+                     AND s.month < ?
+                     ORDER BY s.month ASC",
+                    [$userId, $salaryId, $currentMonth]
+                );
+            } else {
+                $previousSalaries = $db->query(
+                    "SELECT s.total_amount, s.paid_amount, s.accumulated_amount,
+                            COALESCE(s.accumulated_amount, s.total_amount) as prev_accumulated
+                     FROM salaries s
+                     WHERE s.user_id = ? 
+                     AND s.month IS NOT NULL 
+                     AND s.month != '0000-00-00' 
+                     AND s.month != '1970-01-01'
+                     AND s.month < ?
+                     ORDER BY s.month ASC",
+                    [$userId, $currentMonth]
+                );
+            }
         } else {
-            $previousSalaries = $db->query(
-                "SELECT s.total_amount, s.paid_amount, s.accumulated_amount,
-                        COALESCE(s.accumulated_amount, s.total_amount) as prev_accumulated
-                 FROM salaries s
-                 WHERE s.user_id = ? 
-                 AND s.month < ?
-                 ORDER BY s.month ASC",
-                [$userId, $currentMonth]
-            );
+            // month من نوع INT بدون year
+            if ($salaryId > 0) {
+                $previousSalaries = $db->query(
+                    "SELECT s.total_amount, s.paid_amount, s.accumulated_amount,
+                            COALESCE(s.accumulated_amount, s.total_amount) as prev_accumulated
+                     FROM salaries s
+                     WHERE s.user_id = ? AND s.id != ? 
+                     AND s.month IS NOT NULL
+                     AND s.month < ?
+                     ORDER BY s.month ASC",
+                    [$userId, $salaryId, $currentMonth]
+                );
+            } else {
+                $previousSalaries = $db->query(
+                    "SELECT s.total_amount, s.paid_amount, s.accumulated_amount,
+                            COALESCE(s.accumulated_amount, s.total_amount) as prev_accumulated
+                     FROM salaries s
+                     WHERE s.user_id = ? 
+                     AND s.month IS NOT NULL
+                     AND s.month < ?
+                     ORDER BY s.month ASC",
+                    [$userId, $currentMonth]
+                );
+            }
         }
     }
     
