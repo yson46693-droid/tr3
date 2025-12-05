@@ -417,7 +417,8 @@ try {
             // استخدام salary_id في المفتاح للرواتب التي month NULL
             $monthYearKey = 'null-' . $salaryId;
         } else {
-            $monthYearKey = $year . '-' . str_pad($month, 2, '0', STR_PAD_LEFT);
+            // تحويل month إلى string قبل استخدام str_pad (PHP 8+ requirement)
+            $monthYearKey = $year . '-' . str_pad((string)$month, 2, '0', STR_PAD_LEFT);
         }
         
         // إذا كان هناك راتب آخر لنفس الشهر والسنة، نأخذ الراتب الأحدث (id أكبر)
