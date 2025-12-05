@@ -269,7 +269,11 @@ if (!empty($factoryProducts)) {
                 ", [$batchNumber]);
                 $pendingQty = (float)($pending['pending_quantity'] ?? 0);
                 
-                // حساب الكمية المحجوزة في طلبات الشحن المعلقة
+                // ملاحظة: لا نحتاج لخصم طلبات الشحن من quantity_produced
+                // لأن quantity_produced يتم تحديثه مباشرة عند إنشاء طلب الشحن
+                // (يتم خصم الكمية منه عبر recordInventoryMovement)
+                // لذلك quantity_produced يحتوي بالفعل على الكمية المتبقية بعد خصم طلبات الشحن
+                // نحسب pendingShippingQty فقط للعرض (للمعلومات) وليس للخصم
                 $pendingShipping = $db->queryOne("
                     SELECT COALESCE(SUM(soi.quantity), 0) AS pending_quantity
                     FROM shipping_company_order_items soi
@@ -284,7 +288,8 @@ if (!empty($factoryProducts)) {
         }
         
         // حساب الكمية المتاحة
-        $product['available_quantity'] = max(0, $quantityProduced - $soldQty - $pendingQty - $pendingShippingQty);
+        // ملاحظة: لا نخصم pendingShippingQty لأن quantity_produced يحتوي بالفعل على الكمية المتبقية بعد خصم طلبات الشحن
+        $product['available_quantity'] = max(0, $quantityProduced - $soldQty - $pendingQty);
         $product['sold_quantity'] = $soldQty;
         $product['pending_quantity'] = $pendingQty;
         $product['pending_shipping_quantity'] = $pendingShippingQty;
