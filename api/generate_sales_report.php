@@ -29,57 +29,92 @@ if (strtotime($dateFrom) > strtotime($dateTo)) {
     die('تاريخ البداية يجب أن يكون قبل تاريخ النهاية');
 }
 
-// بناء استعلام SQL
-$sql = "SELECT s.*, c.name as customer_name, 
-               COALESCE(
-                   (SELECT fp2.product_name 
-                    FROM finished_products fp2 
-                    WHERE fp2.product_id = p.id 
-                      AND fp2.product_name IS NOT NULL 
-                      AND TRIM(fp2.product_name) != ''
-                      AND fp2.product_name NOT LIKE 'منتج رقم%'
-                    ORDER BY fp2.id DESC 
-                    LIMIT 1),
-                   NULLIF(TRIM(p.name), ''),
-                   CONCAT('منتج رقم ', p.id)
-               ) as product_name,
-               u.full_name as salesperson_name,
-               (SELECT GROUP_CONCAT(DISTINCT bn.batch_number ORDER BY bn.batch_number SEPARATOR ', ')
-                FROM invoices i
-                INNER JOIN invoice_items ii ON i.id = ii.invoice_id
-                LEFT JOIN sales_batch_numbers sbn ON ii.id = sbn.invoice_item_id
-                LEFT JOIN batch_numbers bn ON sbn.batch_number_id = bn.id
-                WHERE i.customer_id = s.customer_id 
-                  AND DATE(i.date) = DATE(s.date)
-                  AND ii.product_id = s.product_id
-                  AND bn.batch_number IS NOT NULL
-                GROUP BY ii.id
-                ORDER BY 
-                  CASE WHEN i.sales_rep_id = s.salesperson_id THEN 0 ELSE 1 END,
-                  CASE WHEN ABS(ii.quantity - s.quantity) < 0.01 AND ABS(ii.unit_price - s.price) < 0.01 THEN 0 ELSE 1 END,
-                  i.id DESC, 
-                  ii.id DESC
-                LIMIT 1) as batch_numbers
-        FROM sales s
-        LEFT JOIN customers c ON s.customer_id = c.id
-        LEFT JOIN products p ON s.product_id = p.id
-        LEFT JOIN users u ON s.salesperson_id = u.id
-        WHERE DATE(s.date) >= ? AND DATE(s.date) <= ?";
+// بناء استعلام SQL - استخدام نفس المنطق المستخدم في صفحة manager.php
+// استخدام invoice_items بدلاً من sales للحصول على نفس البيانات
+$sql = "SELECT 
+            ii.id as sale_id,
+            ii.invoice_id,
+            i.invoice_number,
+            i.date,
+            i.customer_id,
+            i.sales_rep_id as salesperson_id,
+            ii.product_id,
+            ii.quantity,
+            ii.unit_price as price,
+            ii.total_price as total,
+            i.status,
+            c.name as customer_name,
+            COALESCE(
+                (SELECT fp2.product_name 
+                 FROM finished_products fp2 
+                 WHERE fp2.product_id = p.id 
+                   AND fp2.product_name IS NOT NULL 
+                   AND TRIM(fp2.product_name) != ''
+                   AND fp2.product_name NOT LIKE 'منتج رقم%'
+                 ORDER BY fp2.id DESC 
+                 LIMIT 1),
+                NULLIF(TRIM(p.name), ''),
+                CONCAT('منتج رقم ', p.id)
+            ) as product_name,
+            u.full_name as salesperson_name,
+            (SELECT GROUP_CONCAT(DISTINCT bn.batch_number ORDER BY bn.batch_number SEPARATOR ', ')
+             FROM sales_batch_numbers sbn2
+             LEFT JOIN batch_numbers bn ON sbn2.batch_number_id = bn.id
+             WHERE sbn2.invoice_item_id = ii.id
+               AND bn.batch_number IS NOT NULL
+             LIMIT 1) as batch_numbers,
+            CASE 
+                WHEN EXISTS (
+                    SELECT 1 FROM shipping_company_orders sco 
+                    WHERE sco.invoice_id = i.id
+                ) THEN 'shipping'
+                WHEN i.sales_rep_id IS NOT NULL AND u.role = 'sales' THEN 'rep'
+                ELSE 'manager'
+            END as sale_type
+        FROM invoice_items ii
+        INNER JOIN invoices i ON ii.invoice_id = i.id
+        LEFT JOIN customers c ON i.customer_id = c.id
+        LEFT JOIN products p ON ii.product_id = p.id
+        LEFT JOIN users u ON i.sales_rep_id = u.id
+        WHERE i.status != 'cancelled'
+          AND DATE(i.date) >= ? AND DATE(i.date) <= ?";
 
 $params = [$dateFrom, $dateTo];
 
 // إذا كان المستخدم مندوب مبيعات، عرض فقط مبيعاته
 if ($currentUser['role'] === 'sales') {
-    $sql .= " AND s.salesperson_id = ?";
+    $sql .= " AND i.sales_rep_id = ?";
     $params[] = $currentUser['id'];
 }
 
-$sql .= " ORDER BY s.date DESC, s.created_at DESC";
+$sql .= " ORDER BY i.date DESC, i.created_at DESC, ii.id DESC";
 
 $sales = $db->query($sql, $params);
 
-// حساب الإحصائيات
-$totalSales = count($sales);
+// جلب المرتجعات لكل منتج (نفس المنطق المستخدم في manager.php)
+$returnsQuery = "
+    SELECT 
+        ri.product_id,
+        COALESCE(SUM(ri.quantity), 0) AS returned_qty,
+        COALESCE(SUM(ri.total_price), 0) AS returned_total
+    FROM return_items ri
+    INNER JOIN sales_returns sr ON ri.return_id = sr.id
+    WHERE sr.status IN ('approved', 'processed')
+      AND DATE(sr.return_date) >= ? AND DATE(sr.return_date) <= ?
+    GROUP BY ri.product_id
+";
+
+$returnsData = $db->query($returnsQuery, [$dateFrom, $dateTo]);
+$returnsByProduct = [];
+foreach ($returnsData as $return) {
+    $returnsByProduct[$return['product_id']] = [
+        'qty' => (float)$return['returned_qty'],
+        'total' => (float)$return['returned_total']
+    ];
+}
+
+// حساب الإحصائيات مع مراعاة المرتجعات
+$totalSales = 0;
 $totalAmount = 0;
 $totalQuantity = 0;
 $statusCounts = [
@@ -88,9 +123,57 @@ $statusCounts = [
     'rejected' => 0
 ];
 
+// تجميع المبيعات حسب المنتج لحساب المرتجعات بشكل صحيح
+$salesByProduct = [];
 foreach ($sales as $sale) {
-    $totalAmount += (float)($sale['total'] ?? 0);
-    $totalQuantity += (float)($sale['quantity'] ?? 0);
+    $productId = $sale['product_id'];
+    if (!isset($salesByProduct[$productId])) {
+        $salesByProduct[$productId] = [
+            'quantity' => 0,
+            'total' => 0
+        ];
+    }
+    $salesByProduct[$productId]['quantity'] += (float)($sale['quantity'] ?? 0);
+    $salesByProduct[$productId]['total'] += (float)($sale['total'] ?? 0);
+}
+
+// حساب المرتجعات المتناسبة لكل منتج
+$returnedAmountByProduct = [];
+foreach ($salesByProduct as $productId => $productSales) {
+    $returnedQty = isset($returnsByProduct[$productId]) ? $returnsByProduct[$productId]['qty'] : 0;
+    $returnedTotal = isset($returnsByProduct[$productId]) ? $returnsByProduct[$productId]['total'] : 0;
+    
+    if ($productSales['quantity'] > 0) {
+        // توزيع المرتجعات بشكل متناسب
+        $returnRatio = min(1, $returnedQty / $productSales['quantity']);
+        $returnedAmountByProduct[$productId] = $productSales['total'] * $returnRatio;
+    } else {
+        $returnedAmountByProduct[$productId] = 0;
+    }
+}
+
+// حساب الإجماليات النهائية
+foreach ($sales as $sale) {
+    $productId = $sale['product_id'];
+    $saleQty = (float)($sale['quantity'] ?? 0);
+    $saleTotal = (float)($sale['total'] ?? 0);
+    
+    // حساب نسبة هذا البيع من إجمالي مبيعات المنتج
+    $productTotalQty = $salesByProduct[$productId]['quantity'];
+    $productReturnedAmount = $returnedAmountByProduct[$productId] ?? 0;
+    
+    if ($productTotalQty > 0) {
+        $saleRatio = $saleQty / $productTotalQty;
+        $saleReturnedAmount = $productReturnedAmount * $saleRatio;
+        $netTotal = max(0, $saleTotal - $saleReturnedAmount);
+    } else {
+        $netTotal = $saleTotal;
+    }
+    
+    $totalSales++;
+    $totalAmount += $netTotal;
+    $totalQuantity += $saleQty;
+    
     $status = strtolower($sale['status'] ?? 'pending');
     if (isset($statusCounts[$status])) {
         $statusCounts[$status]++;
@@ -611,12 +694,13 @@ $generatedAt = formatDateTime(date('Y-m-d H:i:s'));
         <div class="report-content">
             <div class="stats-grid">
                 <div class="stat-card">
-                    <div class="stat-label">إجمالي المبيعات</div>
+                    <div class="stat-label">عدد عمليات البيع</div>
                     <div class="stat-value"><?php echo $totalSales; ?></div>
                 </div>
                 <div class="stat-card">
-                    <div class="stat-label">إجمالي المبلغ</div>
+                    <div class="stat-label">إجمالي المبلغ الصافي</div>
                     <div class="stat-value"><?php echo formatCurrency($totalAmount); ?></div>
+                    <small style="color: #94a3b8; font-size: 12px;">بعد خصم المرتجعات</small>
                 </div>
                 <div class="stat-card">
                     <div class="stat-label">إجمالي الكمية</div>
@@ -642,10 +726,12 @@ $generatedAt = formatDateTime(date('Y-m-d H:i:s'));
                         <thead>
                             <tr>
                                 <th>التاريخ</th>
+                                <th>رقم الفاتورة</th>
                                 <th>العميل</th>
                                 <th>المنتج</th>
                                 <th>الكمية</th>
                                 <th>المبلغ</th>
+                                <th>النوع</th>
                                 <th>رقم التشغيلة</th>
                                 <th>مندوب المبيعات</th>
                             </tr>
@@ -655,13 +741,49 @@ $generatedAt = formatDateTime(date('Y-m-d H:i:s'));
                                 <?php
                                 // جلب أرقام التشغيلة
                                 $batchNumbers = !empty($sale['batch_numbers']) ? trim($sale['batch_numbers']) : '';
+                                
+                                // تحديد نوع البيع
+                                $saleType = $sale['sale_type'] ?? 'manager';
+                                $saleTypeLabels = [
+                                    'shipping' => 'شحن',
+                                    'rep' => 'مندوب',
+                                    'manager' => 'مدير'
+                                ];
+                                $saleTypeLabel = $saleTypeLabels[$saleType] ?? 'غير محدد';
+                                $saleTypeBadgeClass = [
+                                    'shipping' => 'badge-info',
+                                    'rep' => 'badge-primary',
+                                    'manager' => 'badge-warning'
+                                ];
+                                $badgeClass = $saleTypeBadgeClass[$saleType] ?? 'badge-secondary';
+                                
+                                // حساب المبلغ الصافي بعد خصم المرتجعات
+                                $productId = $sale['product_id'];
+                                $saleQty = (float)($sale['quantity'] ?? 0);
+                                $saleTotal = (float)($sale['total'] ?? 0);
+                                $productTotalQty = $salesByProduct[$productId]['quantity'] ?? $saleQty;
+                                $productReturnedAmount = $returnedAmountByProduct[$productId] ?? 0;
+                                
+                                if ($productTotalQty > 0) {
+                                    $saleRatio = $saleQty / $productTotalQty;
+                                    $saleReturnedAmount = $productReturnedAmount * $saleRatio;
+                                    $netTotal = max(0, $saleTotal - $saleReturnedAmount);
+                                } else {
+                                    $netTotal = $saleTotal;
+                                }
                                 ?>
                                 <tr>
                                     <td><?php echo formatDate($sale['date']); ?></td>
+                                    <td><?php echo htmlspecialchars($sale['invoice_number'] ?? '-'); ?></td>
                                     <td><?php echo htmlspecialchars($sale['customer_name'] ?? '-'); ?></td>
                                     <td><?php echo htmlspecialchars($sale['product_name'] ?? 'منتج غير محدد'); ?></td>
-                                    <td><?php echo number_format((float)($sale['quantity'] ?? 0), 2); ?></td>
-                                    <td><?php echo formatCurrency((float)($sale['total'] ?? 0)); ?></td>
+                                    <td><?php echo number_format($saleQty, 2); ?></td>
+                                    <td><?php echo formatCurrency($netTotal); ?></td>
+                                    <td>
+                                        <span class="badge <?php echo $badgeClass; ?>" style="font-size: 11px;">
+                                            <?php echo htmlspecialchars($saleTypeLabel); ?>
+                                        </span>
+                                    </td>
                                     <td>
                                         <?php if (!empty($batchNumbers)): ?>
                                             <span class="badge badge-info" style="background: #0dcaf0; color: #055160; font-size: 11px;">
@@ -677,10 +799,10 @@ $generatedAt = formatDateTime(date('Y-m-d H:i:s'));
                         </tbody>
                         <tfoot>
                             <tr style="background: #f8fafc; font-weight: 600;">
-                                <td colspan="3" style="text-align: left;">الإجمالي</td>
+                                <td colspan="4" style="text-align: left;">الإجمالي الصافي</td>
                                 <td><?php echo number_format($totalQuantity, 2); ?></td>
                                 <td><?php echo formatCurrency($totalAmount); ?></td>
-                                <td colspan="2"></td>
+                                <td colspan="3"></td>
                             </tr>
                         </tfoot>
                     </table>

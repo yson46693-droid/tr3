@@ -513,6 +513,73 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 [$totalAmount, $invoiceId]
             );
 
+            // ربط أرقام التشغيلة بعناصر الفاتورة
+            $invoiceItemsFromDb = $db->query(
+                "SELECT id, product_id FROM invoice_items WHERE invoice_id = ? ORDER BY id",
+                [$invoiceId]
+            );
+            
+            // إنشاء خريطة للمطابقة بين invoice_items و normalizedItems
+            $invoiceItemsMap = [];
+            foreach ($invoiceItemsFromDb as $invItem) {
+                $productId = (int)$invItem['product_id'];
+                if (!isset($invoiceItemsMap[$productId])) {
+                    $invoiceItemsMap[$productId] = [];
+                }
+                $invoiceItemsMap[$productId][] = (int)$invItem['id'];
+            }
+            
+            // ربط أرقام التشغيلة بعناصر الفاتورة
+            foreach ($normalizedItems as $normalizedItem) {
+                $productId = (int)$normalizedItem['product_id'];
+                $batchId = $normalizedItem['batch_id'] ?? null;
+                $productType = $normalizedItem['product_type'] ?? '';
+                $quantity = $normalizedItem['quantity'];
+                
+                if (isset($invoiceItemsMap[$productId]) && !empty($invoiceItemsMap[$productId])) {
+                    // استخدام أول invoice_item_id متطابق
+                    $invoiceItemId = array_shift($invoiceItemsMap[$productId]);
+                    
+                    // البحث عن batch_number_id من جدول batch_numbers
+                    $batchNumberId = null;
+                    if ($productType === 'factory' && $batchId) {
+                        // جلب batch_number من finished_products
+                        $fp = $db->queryOne("
+                            SELECT fp.batch_number
+                            FROM finished_products fp
+                            WHERE fp.batch_id = ?
+                            LIMIT 1
+                        ", [$batchId]);
+                        
+                        if ($fp && !empty($fp['batch_number'])) {
+                            $batchNumber = trim($fp['batch_number']);
+                            // البحث عن batch_number_id من جدول batch_numbers
+                            $batchCheck = $db->queryOne(
+                                "SELECT id FROM batch_numbers WHERE batch_number = ?",
+                                [$batchNumber]
+                            );
+                            if ($batchCheck) {
+                                $batchNumberId = (int)$batchCheck['id'];
+                            }
+                        }
+                    }
+                    
+                    // ربط رقم التشغيلة بعنصر الفاتورة إذا وُجد
+                    if ($batchNumberId) {
+                        try {
+                            $db->execute(
+                                "INSERT INTO sales_batch_numbers (invoice_item_id, batch_number_id, quantity) 
+                                 VALUES (?, ?, ?)
+                                 ON DUPLICATE KEY UPDATE quantity = quantity + ?",
+                                [$invoiceItemId, $batchNumberId, $quantity, $quantity]
+                            );
+                        } catch (Throwable $batchError) {
+                            error_log('Error linking batch number to invoice item: ' . $batchError->getMessage());
+                        }
+                    }
+                }
+            }
+
             $orderNumber = generateShippingOrderNumber($db);
 
             $db->execute(
@@ -554,19 +621,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 $movementNote = 'تسليم طلب شحن #' . $orderNumber . ' لشركة الشحن';
                 
                 if ($productType === 'factory' && $batchId) {
-                    // للمنتجات من المصنع، نحتاج الحصول على finished_products.id من batch_id
-                    // لأن recordInventoryMovement تبحث باستخدام id وليس batch_id
-                    $fpForMovement = $db->queryOne(
-                        "SELECT id FROM finished_products WHERE batch_id = ? LIMIT 1",
-                        [$batchId]
-                    );
-                    
-                    $finishedProductId = $fpForMovement ? (int)$fpForMovement['id'] : null;
-                    
-                    if (!$finishedProductId) {
-                        throw new InvalidArgumentException('تعذر العثور على المنتج المصنع المحدد.');
-                    }
-                    
+                    // للمنتجات من المصنع، batch_id هو finished_products.id بالفعل
+                    // نستخدمه مباشرة مع recordInventoryMovement
                     // recordInventoryMovement ستقوم بخصم الكمية من finished_products.quantity_produced
                     $movementResult = recordInventoryMovement(
                         $productId,
@@ -577,7 +633,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                         $orderId,
                         $movementNote,
                         $currentUser['id'] ?? null,
-                        $finishedProductId // تمرير finished_products.id (وليس batch_id)
+                        $batchId // batch_id هو finished_products.id بالفعل
                     );
                 } else {
                     // للمنتجات الخارجية، recordInventoryMovement ستقوم بخصم الكمية من products.quantity
@@ -1030,7 +1086,7 @@ try {
                     ) AS unit_price,
                     'قطعة' AS unit,
                     fp.batch_number,
-                    fp.batch_id,
+                    fp.id AS batch_id,
                     'factory' AS product_type
                 FROM finished_products fp
                 LEFT JOIN batch_numbers bn ON fp.batch_number = bn.batch_number
