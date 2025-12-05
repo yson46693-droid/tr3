@@ -191,14 +191,20 @@ try {
     $formattedSalaries = [];
     $monthYearMap = []; // لتجميع الرواتب حسب الشهر والسنة
     
+    $processedCount = 0;
+    $skippedCount = 0;
+    
     foreach ($salaries as $salary) {
         try {
             // التحقق من وجود user_id في الراتب
             $salaryUserId = intval($salary['user_id'] ?? 0);
             if ($salaryUserId <= 0 || $salaryUserId != $userId) {
+                $skippedCount++;
                 error_log("get_user_salaries.php: Skipping salary ID " . ($salary['id'] ?? 'unknown') . " - user_id mismatch: expected $userId, got $salaryUserId");
                 continue;
             }
+            
+            $processedCount++;
             
             $month = 0;
             $year = date('Y');
@@ -365,15 +371,20 @@ try {
         // }
         
         // التأكد من أن month_label موجود دائماً
-        if (empty($monthLabel) || $monthLabel === 'غير محدد') {
+        if (empty($monthLabel) || $monthLabel === 'غير محدد' || $monthLabel === '') {
             // إعادة إنشاء month_label إذا كان فارغاً
             if ($month >= 1 && $month <= 12 && $year > 0 && $year <= 9999) {
                 $monthLabel = ($monthNames[$month] ?? 'شهر غير معروف') . ' ' . $year;
             } else {
-                // استخدام القيم الافتراضية
-                $month = date('n');
-                $year = date('Y');
-                $monthLabel = ($monthNames[$month] ?? 'شهر غير معروف') . ' ' . $year;
+                // للرواتب التي month NULL، نستخدم "راتب بدون شهر" مع ID
+                if ($hasNullMonth) {
+                    $monthLabel = 'راتب بدون شهر (ID: ' . $salaryId . ')';
+                } else {
+                    // استخدام القيم الافتراضية
+                    $month = date('n');
+                    $year = date('Y');
+                    $monthLabel = ($monthNames[$month] ?? 'شهر غير معروف') . ' ' . $year;
+                }
             }
         }
         
@@ -437,9 +448,31 @@ try {
         }
     }
     
+    // تسجيل إحصائيات المعالجة
+    error_log("get_user_salaries.php: Processed $processedCount salaries, skipped $skippedCount, monthYearMap contains " . count($monthYearMap) . " entries");
+    
     // تحويل الخريطة إلى مصفوفة وترتيبها حسب السنة والشهر (الأحدث أولاً)
     $formattedSalaries = array_values($monthYearMap);
+    
+    // تسجيل عدد الرواتب قبل الترتيب
+    error_log("get_user_salaries.php: monthYearMap contains " . count($monthYearMap) . " entries before sorting");
+    
     usort($formattedSalaries, function($a, $b) {
+        // للرواتب التي month NULL، نضعها في النهاية
+        $aHasNullMonth = (empty($a['month']) || $a['month'] <= 0) && (empty($a['year']) || $a['year'] <= 0);
+        $bHasNullMonth = (empty($b['month']) || $b['month'] <= 0) && (empty($b['year']) || $b['year'] <= 0);
+        
+        if ($aHasNullMonth && !$bHasNullMonth) {
+            return 1; // a بعد b
+        }
+        if (!$aHasNullMonth && $bHasNullMonth) {
+            return -1; // a قبل b
+        }
+        if ($aHasNullMonth && $bHasNullMonth) {
+            return $b['id'] - $a['id']; // الأحدث أولاً
+        }
+        
+        // للرواتب العادية، الترتيب حسب السنة والشهر
         if ($a['year'] != $b['year']) {
             return $b['year'] - $a['year']; // الأحدث أولاً
         }
@@ -451,6 +484,11 @@ try {
     
     // تسجيل عدد الرواتب المعالجة
     error_log("get_user_salaries.php formatted " . count($formattedSalaries) . " salaries for user_id: " . $userId);
+    
+    // تسجيل تفاصيل الرواتب المرجعة
+    foreach ($formattedSalaries as $idx => $sal) {
+        error_log("get_user_salaries.php salary[$idx]: id=" . ($sal['id'] ?? 'N/A') . ", month=" . ($sal['month'] ?? 'NULL') . ", year=" . ($sal['year'] ?? 'NULL') . ", month_label=" . ($sal['month_label'] ?? 'N/A') . ", remaining=" . ($sal['remaining'] ?? 0));
+    }
     
     ob_end_clean();
     echo json_encode([
