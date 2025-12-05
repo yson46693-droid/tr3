@@ -2642,14 +2642,14 @@ function updateTotalHoursFromAttendanceRecords($userId = null, $month = null, $y
             }
         }
         
-        // التحقق من وجود عمود year
-        $hasYearColumn = false;
-        try {
-            $yearColumnCheck = $db->queryOne("SHOW COLUMNS FROM salaries LIKE 'year'");
-            $hasYearColumn = !empty($yearColumnCheck);
-        } catch (Exception $e) {
-            $hasYearColumn = false;
+        // التحقق من وجود الأعمدة في جدول salaries
+        $columns = $db->query("SHOW COLUMNS FROM salaries");
+        $columnNames = [];
+        foreach ($columns as $column) {
+            $columnNames[] = $column['Field'] ?? '';
         }
+        
+        $hasYearColumn = in_array('year', $columnNames, true);
         
         // التحقق من نوع عمود month
         $isMonthDate = false;

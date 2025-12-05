@@ -1699,91 +1699,75 @@ if (isset($_GET['action']) && $_GET['action'] === 'print_statement') {
     
     $netAmount = $totalSalaries - $totalAdvances - $totalSettlements;
     
-    // حساب المتبقي (المبلغ التراكمي - المبلغ المدفوع)
-    // هذا هو نفس الحساب المستخدم في بطاقة الموظف
+    // حساب المتبقي (المبلغ التراكمي - المبلغ المدفوع) - استخدام نفس الدالة المستخدمة في بطاقة الموظف
     require_once __DIR__ . '/../../includes/salary_calculator.php';
     
-    $accumulatedAmount = 0; // المبلغ التراكمي
-    $paidAmount = 0; // المبلغ المدفوع
-    
-    // حساب المبلغ التراكمي: جمع جميع الرواتب حتى نهاية الفترة
-    // يشمل الرواتب المحفوظة في قاعدة البيانات
-    $yearColumnCheck = $db->queryOne("SHOW COLUMNS FROM salaries LIKE 'year'");
-    $hasYearColumn = !empty($yearColumnCheck);
-    
-    if ($hasYearColumn) {
-        // جمع جميع الرواتب المحفوظة حتى نهاية الفترة (شامل)
-        $allSalariesUntilEnd = $db->query(
-            "SELECT total_amount FROM salaries 
-             WHERE user_id = ? 
-             AND (year < ? OR (year = ? AND month <= ?))
-             ORDER BY year ASC, month ASC",
-            [$statementUserId, $toYear, $toYear, $toMonth]
-        );
-    } else {
-        // جمع جميع الرواتب المحفوظة حتى نهاية الفترة
-        $allSalariesUntilEnd = $db->query(
-            "SELECT total_amount FROM salaries 
-             WHERE user_id = ? 
-             AND DATE(month) <= ?
-             ORDER BY month ASC",
-            [$statementUserId, $toDate]
-        );
+    // الحصول على آخر راتب في الفترة لحساب المبلغ التراكمي بدقة
+    $lastSalaryInPeriod = null;
+    if (!empty($statementSalaries)) {
+        // أخذ آخر راتب في الفترة
+        $lastSalaryInPeriod = end($statementSalaries);
+        reset($statementSalaries);
     }
     
-    // حساب مجموع جميع الرواتب المحفوظة حتى نهاية الفترة
-    foreach ($allSalariesUntilEnd as $sal) {
-        $salTotal = cleanFinancialValue($sal['total_amount'] ?? 0);
-        $accumulatedAmount += max(0, $salTotal);
-    }
+    // استخدام نفس طريقة حساب المبلغ التراكمي المستخدمة في بطاقة الموظف
+    $accumulatedAmount = 0;
+    $paidAmount = 0;
     
-    // حساب الراتب للشهر الحالي إذا لم يكن محفوظاً (من الحضور)
-    // هذا يضمن أن المبلغ التراكمي يشمل الراتب الحالي حتى لو لم يكن محفوظاً
-    $currentMonthSalary = 0;
-    $hasCurrentMonthSalary = false;
-    
-    // التحقق من وجود راتب محفوظ للشهر الحالي (آخر شهر في الفترة)
-    if ($hasYearColumn) {
-        $currentMonthSalaryRecord = $db->queryOne(
-            "SELECT total_amount FROM salaries 
-             WHERE user_id = ? AND month = ? AND year = ?",
-            [$statementUserId, $toMonth, $toYear]
+    if ($lastSalaryInPeriod) {
+        // استخدام الدالة المشتركة لحساب المبلغ التراكمي (نفس المستخدم في بطاقة الموظف)
+        $lastSalaryId = intval($lastSalaryInPeriod['id'] ?? 0);
+        $lastSalaryMonth = intval($lastSalaryInPeriod['month'] ?? $toMonth);
+        $lastSalaryYear = intval($lastSalaryInPeriod['year'] ?? $toYear);
+        $lastSalaryTotal = cleanFinancialValue($lastSalaryInPeriod['total_amount'] ?? 0);
+        
+        $accumulatedData = calculateSalaryAccumulatedAmount(
+            $statementUserId, 
+            $lastSalaryId, 
+            $lastSalaryTotal, 
+            $lastSalaryMonth, 
+            $lastSalaryYear, 
+            $db
         );
+        
+        $accumulatedAmount = $accumulatedData['accumulated'];
     } else {
-        $currentMonthSalaryRecord = $db->queryOne(
-            "SELECT total_amount FROM salaries 
-             WHERE user_id = ? AND DATE(month) = ?",
-            [$statementUserId, $toDate]
-        );
-    }
-    
-    if ($currentMonthSalaryRecord) {
-        // الراتب محفوظ، لن نحسبه مرة أخرى
-        $hasCurrentMonthSalary = true;
-    } else {
-        // الراتب غير محفوظ، احسبه من الحضور
-        $userData = $db->queryOne("SELECT hourly_rate, role FROM users WHERE id = ?", [$statementUserId]);
-        if ($userData) {
-            $hourlyRate = cleanFinancialValue($userData['hourly_rate'] ?? 0);
-            if ($hourlyRate > 0) {
-                // حساب الراتب الأساسي من الساعات المكتملة
-                $completedHours = calculateCompletedMonthlyHours($statementUserId, $toMonth, $toYear);
-                $baseAmount = round($completedHours * $hourlyRate, 2);
-                
-                // حساب نسبة التحصيلات إذا كان مندوب مبيعات
-                $collectionsBonus = 0;
-                if ($userData['role'] === 'sales') {
-                    $collectionsAmount = calculateSalesCollections($statementUserId, $toMonth, $toYear);
-                    $collectionsBonus = round($collectionsAmount * 0.02, 2);
-                }
-                
-                $currentMonthSalary = max(0, $baseAmount + $collectionsBonus);
-                
-                // إضافة الراتب الحالي المحسوب إلى المبلغ التراكمي
-                if ($currentMonthSalary > 0) {
-                    $accumulatedAmount += $currentMonthSalary;
-                }
-            }
+        // إذا لم يكن هناك راتب في الفترة، نحسب من آخر راتب موجود
+        $lastSalaryRecord = null;
+        if ($hasYearColumn) {
+            $lastSalaryRecord = $db->queryOne(
+                "SELECT id, month, year, total_amount FROM salaries 
+                 WHERE user_id = ? 
+                 AND (year < ? OR (year = ? AND month < ?))
+                 ORDER BY year DESC, month DESC LIMIT 1",
+                [$statementUserId, $toYear, $toYear, $toMonth]
+            );
+        } else {
+            $lastSalaryRecord = $db->queryOne(
+                "SELECT id, month, total_amount FROM salaries 
+                 WHERE user_id = ? 
+                 AND DATE(month) < ?
+                 ORDER BY month DESC LIMIT 1",
+                [$statementUserId, $toDate]
+            );
+        }
+        
+        if ($lastSalaryRecord) {
+            $lastSalaryId = intval($lastSalaryRecord['id'] ?? 0);
+            $lastSalaryMonth = intval($lastSalaryRecord['month'] ?? 0);
+            $lastSalaryYear = $hasYearColumn ? intval($lastSalaryRecord['year'] ?? date('Y')) : date('Y');
+            $lastSalaryTotal = cleanFinancialValue($lastSalaryRecord['total_amount'] ?? 0);
+            
+            $accumulatedData = calculateSalaryAccumulatedAmount(
+                $statementUserId, 
+                $lastSalaryId, 
+                $lastSalaryTotal, 
+                $lastSalaryMonth, 
+                $lastSalaryYear, 
+                $db
+            );
+            
+            $accumulatedAmount = $accumulatedData['accumulated'];
         }
     }
     
@@ -1804,8 +1788,10 @@ if (isset($_GET['action']) && $_GET['action'] === 'print_statement') {
     // حساب المتبقي (الراتب الفعلي) = المبلغ التراكمي - المبلغ المدفوع
     $remainingAmount = max(0, $accumulatedAmount - $paidAmount);
     
-    // إضافة المتبقي كالراتب الفعلي إلى بيانات الموظف
+    // إضافة القيم المحسوبة إلى بيانات الموظف (مطابقة لبطاقة الموظف)
     $employee['actual_salary'] = $remainingAmount;
+    $employee['accumulated_amount'] = $accumulatedAmount;
+    $employee['paid_amount'] = $paidAmount;
     
     // عرض صفحة الطباعة
     include __DIR__ . '/salary_statement_print.php';

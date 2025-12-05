@@ -321,6 +321,23 @@ if (isset($_GET['month']) && isset($_GET['year'])) {
             color: #92400e;
         }
         
+        .status-rejected {
+            background: #fee2e2;
+            color: #991b1b;
+        }
+        
+        .transactions-table tfoot {
+            background: linear-gradient(135deg, #eff6ff 0%, #dbeafe 100%);
+        }
+        
+        .transactions-table tfoot td {
+            font-weight: 700;
+            font-size: 14px;
+            padding: 14px 12px;
+            border-top: 2px solid #3b82f6;
+            color: #1e40af;
+        }
+        
         .summary-section {
             background: #f9fafb;
             border-radius: 12px;
@@ -651,16 +668,26 @@ if (isset($_GET['month']) && isset($_GET['year'])) {
                     <div class="employee-info-value"><?php echo formatCurrency($employee['hourly_rate'] ?? 0); ?></div>
                 </div>
                 <div class="employee-info-item">
-                    <div class="employee-info-label">الراتب الفعلي</div>
-                    <div class="employee-info-value amount-positive"><?php echo formatCurrency($employee['actual_salary'] ?? 0); ?></div>
-                </div>
-            </div>
-            <div class="employee-info-row">
-                <div class="employee-info-item">
                     <div class="employee-info-label">تاريخ الطباعة</div>
                     <div class="employee-info-value"><?php echo date('d/m/Y H:i'); ?></div>
                 </div>
             </div>
+            <?php if (isset($employee['accumulated_amount']) || isset($employee['paid_amount']) || isset($employee['actual_salary'])): ?>
+            <div class="employee-info-row" style="background: #f0f9ff; border-radius: 8px; padding: 12px; margin-top: 8px; border: 1px solid #bfdbfe;">
+                <div class="employee-info-item">
+                    <div class="employee-info-label">المبلغ التراكمي</div>
+                    <div class="employee-info-value" style="color: #2563eb; font-weight: 700;"><?php echo formatCurrency($employee['accumulated_amount'] ?? 0); ?></div>
+                </div>
+                <div class="employee-info-item">
+                    <div class="employee-info-label">المبلغ المدفوع</div>
+                    <div class="employee-info-value" style="color: #059669; font-weight: 700;"><?php echo formatCurrency($employee['paid_amount'] ?? 0); ?></div>
+                </div>
+                <div class="employee-info-item">
+                    <div class="employee-info-label">المتبقي</div>
+                    <div class="employee-info-value amount-positive" style="font-weight: 700; font-size: 18px;"><?php echo formatCurrency($employee['actual_salary'] ?? 0); ?></div>
+                </div>
+            </div>
+            <?php endif; ?>
         </div>
         
         <?php if (!empty($statementSalaries)): ?>
@@ -677,6 +704,7 @@ if (isset($_GET['month']) && isset($_GET['year'])) {
                     <th>نسبة التحصيلات</th>
                     <th>الخصومات</th>
                     <th>الإجمالي</th>
+                    <th>الحالة</th>
                 </tr>
             </thead>
             <tbody>
@@ -696,13 +724,62 @@ if (isset($_GET['month']) && isset($_GET['year'])) {
                     </td>
                     <td><?php echo number_format($sal['total_hours'] ?? 0, 2); ?></td>
                     <td class="amount-positive"><?php echo formatCurrency($sal['base_amount'] ?? 0); ?></td>
-                    <td class="amount-positive"><?php echo formatCurrency($sal['bonus'] ?? 0); ?></td>
+                    <td class="amount-positive"><?php echo formatCurrency($sal['bonus_standardized'] ?? ($sal['bonus'] ?? $sal['bonuses'] ?? 0)); ?></td>
                     <td class="amount-positive"><?php echo formatCurrency($sal['collections_bonus'] ?? 0); ?></td>
                     <td class="amount-negative"><?php echo formatCurrency($sal['deductions'] ?? 0); ?></td>
                     <td><strong class="amount-positive"><?php echo formatCurrency($sal['total_amount'] ?? 0); ?></strong></td>
+                    <td>
+                        <?php 
+                        $status = $sal['status'] ?? 'calculated';
+                        $statusLabels = [
+                            'calculated' => 'محسوب',
+                            'approved' => 'موافق عليه',
+                            'rejected' => 'مرفوض',
+                            'paid' => 'مدفوع',
+                            'pending' => 'قيد الانتظار'
+                        ];
+                        $statusClasses = [
+                            'calculated' => 'status-pending',
+                            'approved' => 'status-approved',
+                            'rejected' => 'status-rejected',
+                            'paid' => 'status-approved',
+                            'pending' => 'status-pending'
+                        ];
+                        $statusLabel = $statusLabels[$status] ?? $status;
+                        $statusClass = $statusClasses[$status] ?? 'status-pending';
+                        ?>
+                        <span class="status-badge <?php echo $statusClass; ?>"><?php echo htmlspecialchars($statusLabel); ?></span>
+                    </td>
                 </tr>
                 <?php endforeach; ?>
             </tbody>
+            <?php if (count($statementSalaries) > 0): ?>
+            <tfoot>
+                <tr style="background: linear-gradient(135deg, #eff6ff 0%, #dbeafe 100%); font-weight: 700;">
+                    <td colspan="2" style="text-align: right; padding: 14px 12px;"><strong>المجموع:</strong></td>
+                    <td class="amount-positive" style="font-weight: 700;"><?php 
+                        $totalBase = 0;
+                        $totalBonus = 0;
+                        $totalCollections = 0;
+                        $totalDeductions = 0;
+                        $totalAmount = 0;
+                        foreach ($statementSalaries as $sal) {
+                            $totalBase += cleanFinancialValue($sal['base_amount'] ?? 0);
+                            $totalBonus += cleanFinancialValue($sal['bonus_standardized'] ?? ($sal['bonus'] ?? $sal['bonuses'] ?? 0));
+                            $totalCollections += cleanFinancialValue($sal['collections_bonus'] ?? 0);
+                            $totalDeductions += cleanFinancialValue($sal['deductions'] ?? 0);
+                            $totalAmount += cleanFinancialValue($sal['total_amount'] ?? 0);
+                        }
+                        echo formatCurrency($totalBase);
+                    ?></td>
+                    <td class="amount-positive" style="font-weight: 700;"><?php echo formatCurrency($totalBonus); ?></td>
+                    <td class="amount-positive" style="font-weight: 700;"><?php echo formatCurrency($totalCollections); ?></td>
+                    <td class="amount-negative" style="font-weight: 700;"><?php echo formatCurrency($totalDeductions); ?></td>
+                    <td style="font-weight: 700; font-size: 16px;" class="amount-positive"><?php echo formatCurrency($totalAmount); ?></td>
+                    <td></td>
+                </tr>
+            </tfoot>
+            <?php endif; ?>
         </table>
         <?php else: ?>
         <div class="empty-state">
@@ -736,6 +813,20 @@ if (isset($_GET['month']) && isset($_GET['year'])) {
                 </tr>
                 <?php endforeach; ?>
             </tbody>
+            <?php if (count($statementAdvances) > 0): ?>
+            <tfoot>
+                <tr style="background: linear-gradient(135deg, #fee2e2 0%, #fecaca 100%); font-weight: 700;">
+                    <td colspan="3" style="text-align: right; padding: 14px 12px;"><strong>المجموع:</strong></td>
+                    <td class="amount-negative" style="font-weight: 700; font-size: 16px;"><?php 
+                        $totalAdvances = 0;
+                        foreach ($statementAdvances as $adv) {
+                            $totalAdvances += cleanFinancialValue($adv['amount'] ?? 0);
+                        }
+                        echo formatCurrency($totalAdvances);
+                    ?></td>
+                </tr>
+            </tfoot>
+            <?php endif; ?>
         </table>
         <?php endif; ?>
         
@@ -769,32 +860,62 @@ if (isset($_GET['month']) && isset($_GET['year'])) {
                 </tr>
                 <?php endforeach; ?>
             </tbody>
+            <?php if (count($statementSettlements) > 0): ?>
+            <tfoot>
+                <tr style="background: linear-gradient(135deg, #d1fae5 0%, #a7f3d0 100%); font-weight: 700;">
+                    <td colspan="1" style="text-align: right; padding: 14px 12px;"><strong>المجموع:</strong></td>
+                    <td class="amount-positive" style="font-weight: 700; font-size: 16px;"><?php 
+                        $totalSettlements = 0;
+                        foreach ($statementSettlements as $set) {
+                            $totalSettlements += cleanFinancialValue($set['settlement_amount'] ?? 0);
+                        }
+                        echo formatCurrency($totalSettlements);
+                    ?></td>
+                    <td colspan="3"></td>
+                </tr>
+            </tfoot>
+            <?php endif; ?>
         </table>
         <?php endif; ?>
         
         <div class="summary-section">
             <h2 class="section-title" style="margin-top: 0; margin-bottom: 16px;">ملخص الحساب</h2>
-            <div class="summary-row">
-                <span class="summary-label">إجمالي الرواتب</span>
-                <span class="summary-value amount-positive"><?php echo formatCurrency($totalSalaries ?? 0); ?></span>
+            
+            <!-- ملخص مطابق لبطاقة الموظف -->
+            <?php if (isset($employee['accumulated_amount']) || isset($employee['paid_amount']) || isset($employee['actual_salary'])): ?>
+            <div class="summary-row" style="background: #eff6ff; padding: 16px; border-radius: 8px; margin-bottom: 12px; border: 2px solid #3b82f6;">
+                <span class="summary-label" style="font-weight: 700; color: #1e40af;">المبلغ التراكمي</span>
+                <span class="summary-value amount-positive" style="font-size: 18px; font-weight: 700; color: #2563eb;"><?php echo formatCurrency($employee['accumulated_amount'] ?? 0); ?></span>
             </div>
-            <?php if (($totalAdvances ?? 0) > 0): ?>
-            <div class="summary-row">
-                <span class="summary-label">إجمالي السلف</span>
-                <span class="summary-value amount-negative"><?php echo formatCurrency($totalAdvances); ?></span>
+            <div class="summary-row" style="background: #f0fdf4; padding: 16px; border-radius: 8px; margin-bottom: 12px; border: 2px solid #10b981;">
+                <span class="summary-label" style="font-weight: 700; color: #065f46;">المبلغ المدفوع</span>
+                <span class="summary-value amount-positive" style="font-size: 18px; font-weight: 700; color: #059669;"><?php echo formatCurrency($employee['paid_amount'] ?? 0); ?></span>
+            </div>
+            <div class="summary-row" style="background: #fffbeb; padding: 16px; border-radius: 8px; margin-bottom: 16px; border: 2px solid #f59e0b;">
+                <span class="summary-label" style="font-weight: 700; color: #92400e;">المتبقي</span>
+                <span class="summary-value amount-positive" style="font-size: 20px; font-weight: 700; color: #d97706;"><?php echo formatCurrency($employee['actual_salary'] ?? 0); ?></span>
             </div>
             <?php endif; ?>
-            <?php if (($totalSettlements ?? 0) > 0): ?>
-            <div class="summary-row">
-                <span class="summary-label">إجمالي المدفوعات</span>
-                <span class="summary-value amount-positive"><?php echo formatCurrency($totalSettlements); ?></span>
-            </div>
-            <?php endif; ?>
-            <div class="summary-row">
-                <span class="summary-label">الصافي</span>
-                <span class="summary-value <?php echo ($netAmount ?? 0) >= 0 ? 'amount-positive' : 'amount-negative'; ?>">
-                    <?php echo formatCurrency(abs($netAmount ?? 0)); ?>
-                </span>
+            
+            <!-- ملخص الفترة -->
+            <div style="border-top: 2px solid #e2e8f0; padding-top: 16px; margin-top: 16px;">
+                <h3 style="font-size: 16px; font-weight: 600; color: #1f2937; margin-bottom: 12px;">ملخص الفترة المحددة</h3>
+                <div class="summary-row">
+                    <span class="summary-label">إجمالي الرواتب في الفترة</span>
+                    <span class="summary-value amount-positive"><?php echo formatCurrency($totalSalaries ?? 0); ?></span>
+                </div>
+                <?php if (($totalAdvances ?? 0) > 0): ?>
+                <div class="summary-row">
+                    <span class="summary-label">إجمالي السلف في الفترة</span>
+                    <span class="summary-value amount-negative"><?php echo formatCurrency($totalAdvances); ?></span>
+                </div>
+                <?php endif; ?>
+                <?php if (($totalSettlements ?? 0) > 0): ?>
+                <div class="summary-row">
+                    <span class="summary-label">إجمالي المدفوعات في الفترة</span>
+                    <span class="summary-value amount-positive"><?php echo formatCurrency($totalSettlements); ?></span>
+                </div>
+                <?php endif; ?>
             </div>
         </div>
         
