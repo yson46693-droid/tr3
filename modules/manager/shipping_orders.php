@@ -999,11 +999,40 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 $batchId = isset($item['batch_id']) && $item['batch_id'] > 0 ? (int)$item['batch_id'] : null;
                 $quantity = (float)($item['quantity'] ?? 0);
                 
+                // للمنتجات التي لها رقم تشغيلة: جلب actual_product_id الصحيح
+                $actualProductId = $productId;
+                if ($batchId) {
+                    try {
+                        $fpData = $db->queryOne("
+                            SELECT 
+                                fp.id,
+                                fp.quantity_produced,
+                                fp.product_id,
+                                bn.product_id AS batch_product_id,
+                                COALESCE(fp.product_id, bn.product_id) AS actual_product_id
+                            FROM finished_products fp
+                            LEFT JOIN batch_numbers bn ON fp.batch_number = bn.batch_number
+                            WHERE fp.id = ?
+                        ", [$batchId]);
+                        
+                        if ($fpData) {
+                            $actualProductId = (int)($fpData['actual_product_id'] ?? $productId);
+                        }
+                    } catch (Throwable $fpError) {
+                        error_log(sprintf(
+                            "shipping_orders: ERROR getting actual_product_id for batch_id (cancel) - Order: %s, Batch ID: %d, Error: %s",
+                            $order['order_number'] ?? $orderId,
+                            $batchId,
+                            $fpError->getMessage()
+                        ));
+                    }
+                }
+                
                 // تسجيل حركة المخزون (تقوم الدالة بالإرجاع تلقائياً)
                 // ملاحظة: للمنتجات التي لها batchId، recordInventoryMovement يحدث products.quantity فقط
                 // ولا يحدث finished_products.quantity_produced عند type = 'in'
                 recordInventoryMovement(
-                    $productId,
+                    $actualProductId,
                     $mainWarehouse['id'] ?? null,
                     'in',
                     $quantity,
@@ -1018,18 +1047,20 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 // (products.quantity تم تحديثه بالفعل بواسطة recordInventoryMovement)
                 if ($batchId) {
                     try {
-                        // جلب بيانات finished_products
-                        $fpData = $db->queryOne("
-                            SELECT 
-                                fp.id,
-                                fp.quantity_produced,
-                                fp.product_id,
-                                bn.product_id AS batch_product_id,
-                                COALESCE(fp.product_id, bn.product_id) AS actual_product_id
-                            FROM finished_products fp
-                            LEFT JOIN batch_numbers bn ON fp.batch_number = bn.batch_number
-                            WHERE fp.id = ?
-                        ", [$batchId]);
+                        // جلب بيانات finished_products (إذا لم نكن قد جلبناها بالفعل)
+                        if (!isset($fpData)) {
+                            $fpData = $db->queryOne("
+                                SELECT 
+                                    fp.id,
+                                    fp.quantity_produced,
+                                    fp.product_id,
+                                    bn.product_id AS batch_product_id,
+                                    COALESCE(fp.product_id, bn.product_id) AS actual_product_id
+                                FROM finished_products fp
+                                LEFT JOIN batch_numbers bn ON fp.batch_number = bn.batch_number
+                                WHERE fp.id = ?
+                            ", [$batchId]);
+                        }
                         
                         if (!$fpData) {
                             error_log(sprintf(
