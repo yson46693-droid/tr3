@@ -597,6 +597,10 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
             $orderId = (int)$db->getLastInsertId();
 
+            // خصم الكميات من المخزون - مكان واحد فقط للخصم
+            // نستخدم recordInventoryMovement لتقوم بالخصم تلقائياً من مكان واحد
+            $movementNote = 'تسليم طلب شحن #' . $orderNumber . ' لشركة الشحن';
+            
             foreach ($normalizedItems as $normalizedItem) {
                 $batchId = $normalizedItem['batch_id'] ?? null;
                 $productType = $normalizedItem['product_type'] ?? '';
@@ -616,14 +620,10 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     ]
                 );
 
-                // خصم الكميات من المخزون وتسجيل حركة المخزون
-                // دالة recordInventoryMovement تقوم بالخصم تلقائياً، لذلك لا نحتاج خصم يدوي
-                $movementNote = 'تسليم طلب شحن #' . $orderNumber . ' لشركة الشحن';
-                
+                // خصم الكمية من المخزون - مكان واحد فقط للخصم
+                // recordInventoryMovement هي المكان الوحيد للخصم، لا يوجد أي خصم يدوي في مكان آخر
                 if ($productType === 'factory' && $batchId) {
-                    // للمنتجات من المصنع، batch_id هو finished_products.id بالفعل
-                    // نستخدمه مباشرة مع recordInventoryMovement
-                    // recordInventoryMovement ستقوم بخصم الكمية من finished_products.quantity_produced
+                    // للمنتجات من المصنع: خصم من finished_products.quantity_produced
                     $movementResult = recordInventoryMovement(
                         $productId,
                         $mainWarehouse['id'] ?? null,
@@ -633,10 +633,10 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                         $orderId,
                         $movementNote,
                         $currentUser['id'] ?? null,
-                        $batchId // batch_id هو finished_products.id بالفعل
+                        $batchId // finished_products.id
                     );
                 } else {
-                    // للمنتجات الخارجية، recordInventoryMovement ستقوم بخصم الكمية من products.quantity
+                    // للمنتجات الخارجية: خصم من products.quantity
                     $movementResult = recordInventoryMovement(
                         $productId,
                         $mainWarehouse['id'] ?? null,
