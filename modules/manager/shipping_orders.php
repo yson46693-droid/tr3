@@ -237,7 +237,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             $totalAmount = 0.0;
             $productIds = [];
 
-            foreach ($itemsInput as $itemRow) {
+            error_log("shipping_orders: Processing create_shipping_order - itemsInput count: " . count($itemsInput));
+            foreach ($itemsInput as $index => $itemRow) {
+                error_log("shipping_orders: Processing itemsInput[$index]: " . json_encode($itemRow));
                 if (!is_array($itemRow)) {
                     continue;
                 }
@@ -278,6 +280,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             exit;
         }
 
+        error_log("shipping_orders: Normalized items count: " . count($normalizedItems) . ", normalizedItems: " . json_encode($normalizedItems));
         $totalAmount = round($totalAmount, 2);
 
         $transactionStarted = false;
@@ -631,7 +634,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             // نستخدم recordInventoryMovement لتقوم بالخصم تلقائياً من مكان واحد
             $movementNote = 'تسليم طلب شحن #' . $orderNumber . ' لشركة الشحن';
             
-            foreach ($normalizedItems as $normalizedItem) {
+            error_log("shipping_orders: Starting inventory deduction - normalizedItems count: " . count($normalizedItems));
+            foreach ($normalizedItems as $index => $normalizedItem) {
+                error_log("shipping_orders: Processing item[$index]: product_id=" . ($normalizedItem['product_id'] ?? 'N/A') . ", quantity=" . ($normalizedItem['quantity'] ?? 'N/A') . ", batch_id=" . ($normalizedItem['batch_id'] ?? 'NULL') . ", product_type=" . ($normalizedItem['product_type'] ?? 'N/A'));
                 $batchId = $normalizedItem['batch_id'] ?? null;
                 $productType = $normalizedItem['product_type'] ?? '';
                 $productId = $normalizedItem['product_id'];
@@ -652,6 +657,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
                 // خصم الكمية من المخزون - مكان واحد فقط للخصم
                 // recordInventoryMovement هي المكان الوحيد للخصم، لا يوجد أي خصم يدوي في مكان آخر
+                error_log("shipping_orders: About to call recordInventoryMovement - product_id: $productId, batch_id: " . ($batchId ?? 'NULL') . ", quantity: $quantity, product_type: $productType");
+                
                 if ($productType === 'factory' && $batchId) {
                     // للمنتجات من المصنع: خصم من finished_products.quantity_produced
                     $movementResult = recordInventoryMovement(
@@ -665,6 +672,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                         $currentUser['id'] ?? null,
                         $batchId // finished_products.id
                     );
+                    error_log("shipping_orders: recordInventoryMovement result for factory product - success: " . ($movementResult['success'] ?? 'false') . ", message: " . ($movementResult['message'] ?? 'N/A'));
                 } else {
                     // للمنتجات الخارجية: خصم من products.quantity
                     $movementResult = recordInventoryMovement(
@@ -677,6 +685,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                         $movementNote,
                         $currentUser['id'] ?? null
                     );
+                    error_log("shipping_orders: recordInventoryMovement result for external product - success: " . ($movementResult['success'] ?? 'false') . ", message: " . ($movementResult['message'] ?? 'N/A'));
                 }
 
                 if (empty($movementResult['success'])) {
