@@ -397,12 +397,24 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     // وعدم استخدام products.quantity لأنها قد تكون لجميع أرقام التشغيلة مجتمعة
                     $quantity = $quantityProduced;
                     
-                    // حساب الكميات المحجوزة (يُطبق فقط على quantity_produced للمنتجات التي لها رقم تشغيلة)
+                    // حساب الكميات المحجوزة والمباعة (يُطبق فقط على quantity_produced للمنتجات التي لها رقم تشغيلة)
+                    $soldQty = 0;
                     $pendingQty = 0;
                     $pendingShippingQty = 0;
                     
                     if (!empty($fp['batch_number'])) {
                         try {
+                            // حساب الكمية المباعة (مثل company_products.php)
+                            $sold = $db->queryOne("
+                                SELECT COALESCE(SUM(ii.quantity), 0) AS sold_quantity
+                                FROM invoice_items ii
+                                INNER JOIN invoices i ON ii.invoice_id = i.id
+                                INNER JOIN sales_batch_numbers sbn ON ii.id = sbn.invoice_item_id
+                                INNER JOIN batch_numbers bn ON sbn.batch_number_id = bn.id
+                                WHERE bn.batch_number = ?
+                            ", [$fp['batch_number']]);
+                            $soldQty = (float)($sold['sold_quantity'] ?? 0);
+                            
                             // حساب الكمية المحجوزة في طلبات العملاء المعلقة
                             // ملاحظة: customer_order_items لا يحتوي على batch_number مباشرة
                             // لذلك نستخدم finished_products للربط مع batch_number بناءً على product_id و batch_number
@@ -429,8 +441,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                         }
                     }
                     
-                    // حساب الكمية المتاحة: quantity_produced - الكميات المحجوزة
-                    $availableQuantity = max(0, $quantity - $pendingQty - $pendingShippingQty);
+                    // حساب الكمية المتاحة: quantity_produced - الكمية المباعة - الكميات المحجوزة (مثل company_products.php)
+                    $availableQuantity = max(0, $quantity - $soldQty - $pendingQty - $pendingShippingQty);
                     
                     if ($availableQuantity < $requestedQuantity) {
                         throw new InvalidArgumentException('الكمية المتاحة للمنتج ' . ($fp['product_name'] ?? '') . ' غير كافية.');
@@ -1333,12 +1345,24 @@ try {
                 // وعدم استخدام products.quantity لأنها قد تكون لجميع أرقام التشغيلة مجتمعة
                 $quantity = $quantityProduced;
                 
-                // حساب الكميات المحجوزة (يُطبق فقط على quantity_produced للمنتجات التي لها رقم تشغيلة)
+                // حساب الكميات المحجوزة والمباعة (يُطبق فقط على quantity_produced للمنتجات التي لها رقم تشغيلة)
+                $soldQty = 0;
                 $pendingQty = 0;
                 $pendingShippingQty = 0;
                 
                 if (!empty($batchNumber)) {
                     try {
+                        // حساب الكمية المباعة (مثل company_products.php)
+                        $sold = $db->queryOne("
+                            SELECT COALESCE(SUM(ii.quantity), 0) AS sold_quantity
+                            FROM invoice_items ii
+                            INNER JOIN invoices i ON ii.invoice_id = i.id
+                            INNER JOIN sales_batch_numbers sbn ON ii.id = sbn.invoice_item_id
+                            INNER JOIN batch_numbers bn ON sbn.batch_number_id = bn.id
+                            WHERE bn.batch_number = ?
+                        ", [$batchNumber]);
+                        $soldQty = (float)($sold['sold_quantity'] ?? 0);
+                        
                         // حساب الكمية المحجوزة في طلبات العملاء المعلقة
                         // ملاحظة: customer_order_items لا يحتوي على batch_number مباشرة
                         // لذلك نستخدم finished_products للربط مع batch_number بناءً على product_id و batch_number
@@ -1365,8 +1389,8 @@ try {
                     }
                 }
                 
-                // حساب الكمية المتاحة: quantity_produced - الكميات المحجوزة
-                $availableQuantity = max(0, $quantity - $pendingQty - $pendingShippingQty);
+                // حساب الكمية المتاحة: quantity_produced - الكمية المباعة - الكميات المحجوزة (مثل company_products.php)
+                $availableQuantity = max(0, $quantity - $soldQty - $pendingQty - $pendingShippingQty);
                 
                 // عرض جميع المنتجات حتى لو كانت الكمية المتاحة صفر (مثل نقطة بيع المدير)
                 $productsList[] = [
