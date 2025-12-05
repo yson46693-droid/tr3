@@ -194,8 +194,9 @@ try {
     foreach ($salaries as $salary) {
         try {
             // التحقق من وجود user_id في الراتب
-            if (empty($salary['user_id']) || intval($salary['user_id']) <= 0) {
-                error_log("get_user_salaries.php: Skipping salary ID " . ($salary['id'] ?? 'unknown') . " - missing or invalid user_id");
+            $salaryUserId = intval($salary['user_id'] ?? 0);
+            if ($salaryUserId <= 0 || $salaryUserId != $userId) {
+                error_log("get_user_salaries.php: Skipping salary ID " . ($salary['id'] ?? 'unknown') . " - user_id mismatch: expected $userId, got $salaryUserId");
                 continue;
             }
             
@@ -377,10 +378,21 @@ try {
         }
         
         // إنشاء مفتاح فريد للشهر والسنة
-        $monthYearKey = $year . '-' . str_pad($month, 2, '0', STR_PAD_LEFT);
+        // للرواتب التي month NULL، نستخدم salary_id في المفتاح لضمان عدم التجميع
+        $monthValue = $salary['month'] ?? null;
+        $yearValue = $salary['year'] ?? null;
+        $hasNullMonth = ($monthValue === null || $monthValue === '') || ($hasYearColumn && ($yearValue === null || $yearValue === ''));
+        
+        if ($hasNullMonth) {
+            // استخدام salary_id في المفتاح للرواتب التي month NULL
+            $monthYearKey = 'null-' . $salaryId;
+        } else {
+            $monthYearKey = $year . '-' . str_pad($month, 2, '0', STR_PAD_LEFT);
+        }
         
         // إذا كان هناك راتب آخر لنفس الشهر والسنة، نأخذ الراتب الأحدث (id أكبر)
-        if (isset($monthYearMap[$monthYearKey])) {
+        // لكن فقط للرواتب التي ليست NULL
+        if (!$hasNullMonth && isset($monthYearMap[$monthYearKey])) {
             $existingId = intval($monthYearMap[$monthYearKey]['id']);
             $currentId = intval($salary['id'] ?? 0);
             

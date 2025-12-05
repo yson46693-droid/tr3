@@ -4238,6 +4238,9 @@ let settleModalCalculatedValues = {
     salaryId: 0
 };
 
+// متغير لحفظ القيمة الفعلية للمتبقي (بدون تنسيق)
+let settleModalRemainingValue = 0;
+
 function openSettleModal(salaryId, salaryData, remainingAmount, calculatedAccumulated) {
     // الحصول على user_id من البيانات - محاولة عدة مصادر
     let userId = null;
@@ -4301,6 +4304,9 @@ function openSettleModal(salaryId, salaryData, remainingAmount, calculatedAccumu
         remaining: remaining,
         salaryId: salaryId
     };
+    
+    // حفظ القيمة الفعلية للمتبقي (بدون تنسيق) لاستخدامها في updateSettleRemaining
+    settleModalRemainingValue = remaining;
     
     console.log('Using calculated values from employee card:', {
         accumulated: accumulated,
@@ -4498,6 +4504,9 @@ function loadSelectedSalaryData() {
         const paid = settleModalCalculatedValues.paid;
         const remaining = settleModalCalculatedValues.remaining;
         
+        // حفظ القيمة الفعلية للمتبقي
+        settleModalRemainingValue = remaining;
+        
         settleSalaryIdEl.value = salaryId;
         if (settleAccumulatedAmountEl) settleAccumulatedAmountEl.textContent = formatCurrency(accumulated);
         if (settlePaidAmountEl) settlePaidAmountEl.textContent = formatCurrency(paid);
@@ -4550,6 +4559,9 @@ function loadSelectedSalaryData() {
                 const paid = parseFloat(salary.paid_amount || 0);
                 const remaining = parseFloat(salary.remaining || Math.max(0, accumulated - paid));
                 
+                // حفظ القيمة الفعلية للمتبقي
+                settleModalRemainingValue = remaining;
+                
                 console.log('Salary data from API:', {
                     accumulated: accumulated,
                     paid: paid,
@@ -4592,9 +4604,17 @@ function updateSettleRemaining() {
         return;
     }
     
-    // قراءة القيمة من النص المنسق باستخدام الدالة المساعدة
-    const remainingText = remainingElement.textContent || remainingElement.innerText || '0';
-    const remaining = parseFormattedCurrency(remainingText);
+    // استخدام القيمة المحفوظة مباشرة بدلاً من قراءة النص المنسق
+    // هذا يضمن الدقة وعدم وجود أخطاء في التحويل
+    let remaining = settleModalRemainingValue;
+    
+    // إذا لم تكن القيمة محفوظة، حاول قراءتها من النص المنسق
+    if (remaining <= 0) {
+        const remainingText = remainingElement.textContent || remainingElement.innerText || '0';
+        remaining = parseFormattedCurrency(remainingText);
+        // حفظ القيمة للمرة القادمة
+        settleModalRemainingValue = remaining;
+    }
     
     const settleAmount = parseFloat(settleAmountElement.value) || 0;
     const newRemaining = Math.max(0, remaining - settleAmount);
