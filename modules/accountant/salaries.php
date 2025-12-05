@@ -1002,57 +1002,52 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 header('Location: ' . $redirectUrl);
                 exit;
             } else {
-                // الحصول على المبلغ التراكمي الحالي - استخدام القيمة المحسوبة الفعلية
-                // حساب المبلغ التراكمي من الراتب الحالي + جميع الرواتب السابقة
+                // الحصول على المبلغ التراكمي الحالي - استخدام نفس الدالة المستخدمة في الواجهة
                 $userId = intval($salary['user_id'] ?? 0);
                 $salaryMonth = intval($salary['month'] ?? $selectedMonth);
                 $salaryYear = intval($salary['year'] ?? $selectedYear);
                 
-                // حساب الراتب الإجمالي الحالي
+                // حساب الراتب الإجمالي الحالي (نفس الطريقة المستخدمة في بطاقة الموظف)
                 require_once __DIR__ . '/../../includes/salary_calculator.php';
-                $hourlyRate = cleanFinancialValue($salary['hourly_rate'] ?? 0);
-                $completedHours = calculateCompletedMonthlyHours($userId, $salaryMonth, $salaryYear);
-                $baseAmount = round($completedHours * $hourlyRate, 2);
-                $bonus = cleanFinancialValue($salary['bonus_standardized'] ?? ($salary['bonus'] ?? $salary['bonuses'] ?? 0));
-                $deductions = cleanFinancialValue($salary['deductions'] ?? 0);
-                $collectionsBonus = cleanFinancialValue($salary['collections_bonus'] ?? 0);
-                if ($salary['role'] === 'sales') {
-                    $collectionsAmount = calculateSalesCollections($userId, $salaryMonth, $salaryYear);
-                    $collectionsBonus = round($collectionsAmount * 0.02, 2);
-                }
-                $currentTotal = $baseAmount + $bonus + $collectionsBonus - $deductions;
-                $currentTotal = max(0, $currentTotal);
                 
-                // حساب مجموع جميع الرواتب السابقة
-                $currentAccumulated = $currentTotal;
-                $yearColumnCheck = $db->queryOne("SHOW COLUMNS FROM salaries LIKE 'year'");
-                $hasYearColumn = !empty($yearColumnCheck);
+                // استخدام total_amount مباشرة من قاعدة البيانات (مثل بطاقة الموظف)
+                $currentTotal = cleanFinancialValue($salary['total_amount'] ?? 0);
                 
-                if ($hasYearColumn) {
-                    $previousSalaries = $db->query(
-                        "SELECT total_amount FROM salaries 
-                         WHERE user_id = ? AND id != ? 
-                         AND (year < ? OR (year = ? AND month < ?))
-                         ORDER BY year ASC, month ASC",
-                        [$userId, $salaryId, $salaryYear, $salaryYear, $salaryMonth]
-                    );
-                } else {
-                    $previousSalaries = $db->query(
-                        "SELECT total_amount FROM salaries 
-                         WHERE user_id = ? AND id != ? 
-                         AND month < ?
-                         ORDER BY month ASC",
-                        [$userId, $salaryId, $salaryMonth]
-                    );
+                // إذا كان total_amount صفر أو غير موجود، نحاول حساب الراتب من المكونات
+                if ($currentTotal < 0.01) {
+                    $baseAmount = cleanFinancialValue($salary['base_amount'] ?? 0);
+                    $bonus = cleanFinancialValue($salary['bonus_standardized'] ?? ($salary['bonus'] ?? $salary['bonuses'] ?? 0));
+                    $deductions = cleanFinancialValue($salary['deductions'] ?? 0);
+                    $collectionsBonus = cleanFinancialValue($salary['collections_bonus'] ?? 0);
+                    
+                    // حساب الراتب الإجمالي من المكونات
+                    $currentTotal = round($baseAmount + $bonus + $collectionsBonus - $deductions, 2);
+                    $currentTotal = max(0, $currentTotal);
                 }
                 
-                foreach ($previousSalaries as $prevSalary) {
-                    $prevTotal = cleanFinancialValue($prevSalary['total_amount'] ?? 0);
-                    $currentAccumulated += max(0, $prevTotal);
-                }
+                // استخدام الدالة المشتركة لحساب المبلغ التراكمي (نفس المستخدم في الواجهة)
+                $accumulatedData = calculateSalaryAccumulatedAmount(
+                    $userId, 
+                    $salaryId, 
+                    $currentTotal, 
+                    $salaryMonth, 
+                    $salaryYear, 
+                    $db
+                );
                 
-                if ($settlementAmount > $currentAccumulated) {
-                    $_SESSION['salaries_error'] = 'مبلغ التسوية يتجاوز المبلغ التراكمي المتاح (' . formatCurrency($currentAccumulated) . ')';
+                $currentAccumulated = $accumulatedData['accumulated'];
+                $currentPaid = cleanFinancialValue($salary['paid_amount'] ?? 0);
+                $currentRemaining = max(0, $currentAccumulated - $currentPaid);
+                
+                // تسجيل المعلومات للتشخيص
+                error_log("settle_salary: salaryId=$salaryId, userId=$userId, month=$salaryMonth, year=$salaryYear");
+                error_log("settle_salary: currentTotal=$currentTotal, currentAccumulated=$currentAccumulated, currentPaid=$currentPaid, currentRemaining=$currentRemaining");
+                error_log("settle_salary: settlementAmount=$settlementAmount");
+                
+                // التحقق من أن مبلغ التسوية لا يتجاوز المتبقي (وليس المبلغ التراكمي)
+                if ($settlementAmount > $currentRemaining + 0.01) { // إضافة 0.01 للتسامح مع الأخطاء الحسابية الطفيفة
+                    $_SESSION['salaries_error'] = 'مبلغ التسوية (' . formatCurrency($settlementAmount) . ') يتجاوز المبلغ المتبقي المتاح (' . formatCurrency($currentRemaining) . ' من أصل ' . formatCurrency($currentAccumulated) . ' - مدفوع: ' . formatCurrency($currentPaid) . ')';
+                    error_log("settle_salary: Validation failed - settlementAmount ($settlementAmount) > currentRemaining ($currentRemaining)");
                     $redirectUrl = $buildViewUrl($view, ['month' => $selectedMonth, 'year' => $selectedYear]);
                     header('Location: ' . $redirectUrl);
                     exit;
@@ -1071,8 +1066,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     try {
                         $db->getConnection()->beginTransaction();
                         
-                        // حساب المتبقي بعد التسوية
-                        $remainingAfter = $currentAccumulated - $settlementAmount;
+                        // حساب المتبقي بعد التسوية (من المتبقي الحالي، وليس من المبلغ التراكمي)
+                        $remainingAfter = max(0, $currentRemaining - $settlementAmount);
                         $settlementType = ($remainingAfter <= 0.01) ? 'full' : 'partial';
                         
                         // التحقق المنطقي: التأكد من أن المتبقي بعد التسوية لا يكون سالباً
@@ -1080,21 +1075,20 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                             throw new Exception('خطأ في الحساب: المتبقي بعد التسوية سالب (' . formatCurrency($remainingAfter) . ')');
                         }
                         
-                        // تحديث الراتب: خصم من accumulated_amount وإضافة لـ paid_amount
-                        $newPaidAmount = floatval($salary['paid_amount'] ?? 0) + $settlementAmount;
-                        $newAccumulated = max(0, $remainingAfter);
+                        // تحديث الراتب: إضافة المبلغ المدفوع إلى paid_amount (لا نغير accumulated_amount)
+                        $newPaidAmount = $currentPaid + $settlementAmount;
                         
                         // التحقق المنطقي: التأكد من أن المبلغ المدفوع لا يتجاوز المبلغ التراكمي
                         if ($newPaidAmount > $currentAccumulated + 0.01) {
                             throw new Exception('خطأ في الحساب: المبلغ المدفوع (' . formatCurrency($newPaidAmount) . ') يتجاوز المبلغ التراكمي (' . formatCurrency($currentAccumulated) . ')');
                         }
                         
+                        // تحديث paid_amount فقط (accumulated_amount يبقى كما هو)
                         $db->execute(
                             "UPDATE salaries SET 
-                                accumulated_amount = ?,
                                 paid_amount = ?
                              WHERE id = ?",
-                            [$newAccumulated, $newPaidAmount, $salaryId]
+                            [$newPaidAmount, $salaryId]
                         );
                         
                         // إنشاء سجل التسوية
