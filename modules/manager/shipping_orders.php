@@ -246,7 +246,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
                 $productId = isset($itemRow['product_id']) ? (int)$itemRow['product_id'] : 0;
                 // قراءة الكمية بشكل صحيح - التأكد من أنها قيمة رقمية صحيحة
-                $quantity = isset($itemRow['quantity']) ? (float)$itemRow['quantity'] : 0.0;
+                $rawQuantity = $itemRow['quantity'] ?? 0.0;
+                $quantity = (float)$rawQuantity;
+                error_log("shipping_orders: RAW quantity from form: " . var_export($rawQuantity, true) . " -> parsed: $quantity for product_id: $productId");
                 // التحقق من أن الكمية قيمة صحيحة وموجبة
                 if ($quantity <= 0 || $quantity > 100000) {
                     error_log("shipping_orders: Invalid quantity detected: " . var_export($itemRow['quantity'], true) . " for product_id: " . $productId);
@@ -289,15 +291,22 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
         // تجميع العناصر المكررة لمنع الخصم المتكرر
         // إذا كان نفس المنتج مع نفس batch_id موجود أكثر من مرة، نجمع الكميات
+        error_log("shipping_orders: BEFORE grouping - normalizedItems count: " . count($normalizedItems) . ", items: " . json_encode($normalizedItems));
         $groupedItems = [];
-        foreach ($normalizedItems as $item) {
-            $key = $item['product_id'] . '_' . ($item['batch_id'] ?? 'null') . '_' . $item['product_type'];
+        foreach ($normalizedItems as $index => $item) {
+            $batchIdForKey = $item['batch_id'] ?? null;
+            $key = $item['product_id'] . '_' . ($batchIdForKey ?? 'null') . '_' . $item['product_type'];
+            error_log("shipping_orders: Grouping item[$index]: key='$key', product_id={$item['product_id']}, batch_id=" . ($batchIdForKey ?? 'NULL') . ", quantity={$item['quantity']}, product_type={$item['product_type']}");
             
             if (!isset($groupedItems[$key])) {
                 $groupedItems[$key] = $item;
+                error_log("shipping_orders: NEW grouped item with key '$key', quantity: {$item['quantity']}");
             } else {
                 // جمع الكميات للعناصر المكررة
-                $groupedItems[$key]['quantity'] += $item['quantity'];
+                $oldQuantity = $groupedItems[$key]['quantity'];
+                $newQuantity = $item['quantity'];
+                $groupedItems[$key]['quantity'] = $oldQuantity + $newQuantity;
+                error_log("shipping_orders: MERGED grouped item with key '$key': old_quantity=$oldQuantity, new_quantity=$newQuantity, total_quantity={$groupedItems[$key]['quantity']}");
                 // استخدام أعلى سعر وحدة عند التجميع
                 if ($item['unit_price'] > $groupedItems[$key]['unit_price']) {
                     $groupedItems[$key]['unit_price'] = $item['unit_price'];
@@ -309,13 +318,14 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         
         // إعادة حساب المبلغ الإجمالي بناءً على العناصر المجمعة
         $totalAmount = 0.0;
-        foreach ($groupedItems as $item) {
+        foreach ($groupedItems as $key => $item) {
             $totalAmount += $item['total_price'];
+            error_log("shipping_orders: Final grouped item '$key': quantity={$item['quantity']}, total_price={$item['total_price']}");
         }
         
         // تحويل المصفوفة المجمعة إلى مصفوفة عادية
         $normalizedItems = array_values($groupedItems);
-        error_log("shipping_orders: After grouping - items count: " . count($normalizedItems) . ", normalizedItems: " . json_encode($normalizedItems));
+        error_log("shipping_orders: AFTER grouping - items count: " . count($normalizedItems) . ", normalizedItems: " . json_encode($normalizedItems));
         $totalAmount = round($totalAmount, 2);
 
         $transactionStarted = false;
@@ -632,13 +642,32 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     // ربط رقم التشغيلة بعنصر الفاتورة إذا وُجد
                     if ($batchNumberId) {
                         try {
-                            $db->execute(
-                                "INSERT INTO sales_batch_numbers (invoice_item_id, batch_number_id, quantity) 
-                                 VALUES (?, ?, ?)
-                                 ON DUPLICATE KEY UPDATE quantity = quantity + ?",
-                                [$invoiceItemId, $batchNumberId, $quantity, $quantity]
+                            // التحقق من وجود سجل مسبقاً لتجنب التكرار
+                            $existingBatchLink = $db->queryOne(
+                                "SELECT id, quantity FROM sales_batch_numbers WHERE invoice_item_id = ? AND batch_number_id = ?",
+                                [$invoiceItemId, $batchNumberId]
                             );
-                            error_log("shipping_orders: Successfully linked batch_number_id $batchNumberId to invoice_item_id $invoiceItemId with quantity $quantity");
+                            
+                            if ($existingBatchLink) {
+                                // إذا كان السجل موجوداً، نحدّث الكمية فقط إذا كانت مختلفة
+                                if ((float)($existingBatchLink['quantity'] ?? 0) != $quantity) {
+                                    $db->execute(
+                                        "UPDATE sales_batch_numbers SET quantity = ? WHERE id = ?",
+                                        [$quantity, $existingBatchLink['id']]
+                                    );
+                                    error_log("shipping_orders: Updated existing batch link - batch_number_id $batchNumberId to invoice_item_id $invoiceItemId with quantity $quantity");
+                                } else {
+                                    error_log("shipping_orders: Batch link already exists with same quantity - batch_number_id $batchNumberId to invoice_item_id $invoiceItemId with quantity $quantity");
+                                }
+                            } else {
+                                // إدراج سجل جديد
+                                $db->execute(
+                                    "INSERT INTO sales_batch_numbers (invoice_item_id, batch_number_id, quantity) 
+                                     VALUES (?, ?, ?)",
+                                    [$invoiceItemId, $batchNumberId, $quantity]
+                                );
+                                error_log("shipping_orders: Successfully linked batch_number_id $batchNumberId to invoice_item_id $invoiceItemId with quantity $quantity");
+                            }
                         } catch (Throwable $batchError) {
                             error_log('shipping_orders: Error linking batch number to invoice item: ' . $batchError->getMessage());
                         }
@@ -669,6 +698,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             // نستخدم recordInventoryMovement لتقوم بالخصم تلقائياً من مكان واحد
             $movementNote = 'تسليم طلب شحن #' . $orderNumber . ' لشركة الشحن';
             
+            // مصفوفة لتتبع العناصر التي تم خصمها لمنع الخصم المتكرر
+            $processedItems = [];
+            
             error_log("shipping_orders: Starting inventory deduction - normalizedItems count: " . count($normalizedItems));
             foreach ($normalizedItems as $index => $normalizedItem) {
                 error_log("shipping_orders: Processing item[$index]: product_id=" . ($normalizedItem['product_id'] ?? 'N/A') . ", quantity=" . ($normalizedItem['quantity'] ?? 'N/A') . ", batch_id=" . ($normalizedItem['batch_id'] ?? 'NULL') . ", product_type=" . ($normalizedItem['product_type'] ?? 'N/A'));
@@ -684,7 +716,19 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     throw new InvalidArgumentException('الكمية المدخلة غير صحيحة للمنتج.');
                 }
                 
-                error_log("shipping_orders: FINAL quantity to deduct: $quantity for product_id: $productId, batch_id: " . ($batchId ?? 'NULL'));
+                // إنشاء مفتاح فريد لتتبع العناصر المعالجة
+                $processKey = $productId . '_' . ($batchId ?? 'null') . '_' . $productType;
+                
+                // التحقق من أن هذا العنصر لم يتم معالجته من قبل
+                if (isset($processedItems[$processKey])) {
+                    error_log("shipping_orders: WARNING - Item already processed! Skipping duplicate: product_id=$productId, batch_id=" . ($batchId ?? 'NULL') . ", quantity=$quantity");
+                    continue; // تخطي العنصر المكرر
+                }
+                
+                // تسجيل العنصر كمعالج
+                $processedItems[$processKey] = true;
+                
+                error_log("shipping_orders: FINAL quantity to deduct: $quantity for product_id: $productId, batch_id: " . ($batchId ?? 'NULL') . ", process_key: $processKey");
 
                 // حفظ العنصر مع batch_id إذا كان موجوداً
                 $db->execute(

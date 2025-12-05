@@ -322,17 +322,12 @@ foreach ($externalProducts as $ext) {
     $totalExternalValue += floatval($ext['total_value'] ?? 0);
 }
 
-// حساب القيمة الإجمالية لمنتجات المصنع
+// حساب القيمة الإجمالية لمنتجات المصنع بناءً على الكمية المتاحة
 $totalFactoryValue = 0;
 foreach ($factoryProducts as $product) {
-    $totalPrice = floatval($product['calculated_total_price'] ?? 0);
-    if ($totalPrice == 0) {
-        $unitPrice = floatval($product['unit_price'] ?? 0);
-        $quantity = floatval($product['quantity_produced'] ?? 0);
-        if ($unitPrice > 0 && $quantity > 0) {
-            $totalPrice = $unitPrice * $quantity;
-        }
-    }
+    $unitPrice = floatval($product['unit_price'] ?? 0);
+    $availableQuantity = floatval($product['available_quantity'] ?? $product['quantity_produced'] ?? 0);
+    $totalPrice = $unitPrice * $availableQuantity;
     $totalFactoryValue += $totalPrice;
 }
 ?>
@@ -1122,12 +1117,9 @@ foreach ($factoryProducts as $product) {
                             $quantityProduced = (float)($product['quantity_produced'] ?? 0);
                             $availableQuantity = (float)($product['available_quantity'] ?? $quantityProduced);
                             $quantity = number_format($availableQuantity, 2);
-                            $totalQuantity = number_format($quantityProduced, 2);
                             $unitPrice = floatval($product['unit_price'] ?? 0);
-                            $totalPrice = floatval($product['calculated_total_price'] ?? 0);
-                            if ($totalPrice == 0 && $unitPrice > 0 && $quantityProduced > 0) {
-                                $totalPrice = $unitPrice * $quantityProduced;
-                            }
+                            // حساب إجمالي القيمة بناءً على الكمية المتاحة فقط
+                            $totalPrice = $unitPrice * $availableQuantity;
                         ?>
                         <div class="product-card">
                             <div class="product-status">
@@ -1154,10 +1146,7 @@ foreach ($factoryProducts as $product) {
 
                             <div class="product-detail-row"><span>الفئة:</span> <span><?php echo $category; ?></span></div>
                             <div class="product-detail-row"><span>تاريخ الإنتاج:</span> <span><?php echo $productionDate; ?></span></div>
-                            <div class="product-detail-row"><span>الكمية المتاحة:</span> <span><strong><?php echo $quantity; ?></strong></span></div>
-                            <?php if ($availableQuantity != $quantityProduced): ?>
-                                <div class="product-detail-row"><span>الكمية الإجمالية:</span> <span><?php echo $totalQuantity; ?></span></div>
-                            <?php endif; ?>
+                            <div class="product-detail-row"><span>الكمية:</span> <span><strong><?php echo $quantity; ?></strong></span></div>
                             <div class="product-detail-row"><span>سعر الوحدة:</span> <span><?php echo formatCurrency($unitPrice); ?></span></div>
                             <div class="product-detail-row"><span>إجمالي القيمة:</span> <span><strong class="text-success"><?php echo formatCurrency($totalPrice); ?></strong></span></div>
 
