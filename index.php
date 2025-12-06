@@ -26,6 +26,33 @@ if (preg_match('#^/v1/manifest\.json$#', $requestUri) || preg_match('#^/[^/]+/v1
 require_once __DIR__ . '/includes/config.php';
 require_once __DIR__ . '/includes/install.php';
 
+// ============================================
+// تحميل التحسينات الأمنية (InfinityFree Compatible)
+// ============================================
+// تحميل الإعدادات الأمنية
+require_once __DIR__ . '/includes/security_config.php';
+
+// تطبيق Security Headers
+require_once __DIR__ . '/includes/security_headers.php';
+SecurityHeaders::apply();
+
+// تهيئة الجلسات الآمنة (متوافقة مع config.php)
+require_once __DIR__ . '/includes/session_security.php';
+initSecureSession();
+
+// تحميل CSRF Protection (متوافق مع النظام الحالي)
+require_once __DIR__ . '/includes/csrf_protection.php';
+
+// تحميل Rate Limiter (يستخدم جدول login_attempts الموجود)
+require_once __DIR__ . '/includes/rate_limiter.php';
+
+// تحميل Input Validation
+require_once __DIR__ . '/includes/input_validation.php';
+
+// تحميل Logger (معطل افتراضياً)
+require_once __DIR__ . '/includes/security_logger.php';
+// ============================================
+
 if (needsInstallation()) {
     $installResult = initializeDatabase();
     
@@ -154,14 +181,39 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     $login_method = $_POST['login_method'] ?? 'password';
     
     if ($login_method === 'webauthn') {
+        // WebAuthn لا يحتاج CSRF protection في هذه المرحلة
     } else {
-        if (empty($username) || empty($password)) {
-            $error = 'يرجى إدخال اسم المستخدم وكلمة المرور';
+        // التحقق من CSRF (متوافق مع النظام الحالي)
+        $uri = $_SERVER['REQUEST_URI'] ?? '';
+        if (strpos($uri, '/api/') === false) {
+            protectFormFromCSRF();
+        }
+        
+        // تنظيف المدخلات
+        $username = InputValidator::sanitizeString($username);
+        $password = InputValidator::sanitizeString($password);
+        
+        // التحقق من صحة المدخلات
+        $usernameValidation = InputValidator::validateUsername($username);
+        if (!$usernameValidation['valid']) {
+            $error = $usernameValidation['error'];
+        } elseif (empty($password)) {
+            $error = 'يرجى إدخال كلمة المرور';
         } else {
-            $rememberMe = isset($_POST['remember_me']) && $_POST['remember_me'] == '1';
-            $result = login($username, $password, $rememberMe);
+            // فحص Rate Limiting (يستخدم النظام الموجود في security.php)
+            $rateLimitCheck = RateLimiter::checkLoginAttempt($username);
             
-            if ($result['success']) {
+            if (!$rateLimitCheck['allowed']) {
+                $error = $rateLimitCheck['message'];
+            } else {
+                $rememberMe = isset($_POST['remember_me']) && $_POST['remember_me'] == '1';
+                $result = login($username, $password, $rememberMe);
+                
+                if ($result['success']) {
+                    // إعادة تعيين محاولات Rate Limiting بعد تسجيل دخول ناجح
+                    RateLimiter::resetAttempts($username);
+                    // تجديد معرف الجلسة
+                    regenerateSessionAfterLogin();
                 $userRole = $result['user']['role'] ?? 'accountant';
                 $dashboardUrl = getDashboardUrl($userRole);
                 
@@ -205,9 +257,16 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     echo '<script>window.location.href = "' . htmlspecialchars($dashboardUrl) . '";</script>';
                     echo '<noscript><meta http-equiv="refresh" content="0;url=' . htmlspecialchars($dashboardUrl) . '"></noscript>';
                     exit;
+                } else {
+                    // تسجيل محاولة فاشلة في Rate Limiter
+                    $remaining = RateLimiter::recordFailedAttempt($username);
+                    
+                    if ($remaining > 0) {
+                        $error = $result['message'] . " (المحاولات المتبقية: {$remaining})";
+                    } else {
+                        $error = "تم استنفاد المحاولات. تم حظر الحساب لمدة 15 دقيقة.";
+                    }
                 }
-            } else {
-                $error = $result['message'];
             }
         }
     }
@@ -376,6 +435,9 @@ $lang = $translations;
                                     <?php echo $lang['remember_me']; ?>
                                 </label>
                             </div>
+                            
+                            <!-- حماية CSRF -->
+                            <?php echo csrf_token_field(); ?>
                             
                             <div class="d-grid gap-2 mb-3">
                                 <button type="submit" class="btn btn-primary btn-lg">
