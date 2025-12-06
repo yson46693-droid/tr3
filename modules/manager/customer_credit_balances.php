@@ -35,6 +35,7 @@ if (isset($_SESSION['customer_credit_error'])) {
 // معالجة تسوية الرصيد
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['action'] === 'settle_credit_balance') {
     $customerId = isset($_POST['customer_id']) ? intval($_POST['customer_id']) : 0;
+    $customerType = isset($_POST['customer_type']) ? trim($_POST['customer_type']) : 'rep'; // 'rep' أو 'local'
     $settlementAmount = isset($_POST['settlement_amount']) ? cleanFinancialValue($_POST['settlement_amount']) : 0;
     $notes = trim($_POST['notes'] ?? '');
     
@@ -44,11 +45,22 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['
         $_SESSION['customer_credit_error'] = 'يجب إدخال مبلغ تسوية صحيح أكبر من الصفر.';
     } else {
         try {
-            // جلب بيانات العميل
-            $customer = $db->queryOne(
-                "SELECT id, name, balance, rep_id, created_by FROM customers WHERE id = ?",
-                [$customerId]
-            );
+            // جلب بيانات العميل حسب النوع
+            $customer = null;
+            $tableName = '';
+            if ($customerType === 'local') {
+                $tableName = 'local_customers';
+                $customer = $db->queryOne(
+                    "SELECT id, name, balance, created_by FROM local_customers WHERE id = ?",
+                    [$customerId]
+                );
+            } else {
+                $tableName = 'customers';
+                $customer = $db->queryOne(
+                    "SELECT id, name, balance, rep_id, created_by FROM customers WHERE id = ?",
+                    [$customerId]
+                );
+            }
             
             if (empty($customer)) {
                 throw new Exception('العميل غير موجود.');
@@ -84,17 +96,18 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['
                 
                 // تحديث رصيد العميل
                 $db->execute(
-                    "UPDATE customers SET balance = ? WHERE id = ?",
+                    "UPDATE {$tableName} SET balance = ? WHERE id = ?",
                     [$newBalance, $customerId]
                 );
                 
                 // إضافة معاملة expense في accountant_transactions (خصم من خزنة الشركة)
                 $customerName = htmlspecialchars($customer['name'] ?? '', ENT_QUOTES, 'UTF-8');
-                $description = 'تسوية رصيد دائن لعميل: ' . $customerName;
+                $customerTypeLabel = $customerType === 'local' ? 'عميل محلي' : 'عميل مندوب';
+                $description = 'تسوية رصيد دائن ل' . $customerTypeLabel . ': ' . $customerName;
                 if ($notes) {
                     $description .= ' - ' . htmlspecialchars($notes, ENT_QUOTES, 'UTF-8');
                 }
-                $referenceNumber = 'CUST-CREDIT-SETTLE-' . $customerId . '-' . date('YmdHis');
+                $referenceNumber = 'CUST-CREDIT-SETTLE-' . ($customerType === 'local' ? 'LOCAL-' : 'REP-') . $customerId . '-' . date('YmdHis');
                 
                 // التأكد من وجود جدول accountant_transactions
                 $accountantTableCheck = $db->queryOne("SHOW TABLES LIKE 'accountant_transactions'");
@@ -120,11 +133,12 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['
                 logAudit(
                     $currentUser['id'],
                     'settle_customer_credit',
-                    'customer',
+                    $customerType === 'local' ? 'local_customer' : 'customer',
                     $customerId,
                     null,
                     [
                         'customer_name' => $customerName,
+                        'customer_type' => $customerType,
                         'settlement_amount' => $settlementAmount,
                         'old_balance' => $currentBalance,
                         'new_balance' => $newBalance,
@@ -134,7 +148,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['
                 
                 $db->commit();
                 
-                $_SESSION['customer_credit_success'] = 'تم تسوية رصيد العميل ' . $customerName . ' بمبلغ ' . formatCurrency($settlementAmount) . ' بنجاح.';
+                $_SESSION['customer_credit_success'] = 'تم تسوية رصيد ' . $customerTypeLabel . ' ' . $customerName . ' بمبلغ ' . formatCurrency($settlementAmount) . ' بنجاح.';
             } catch (Throwable $e) {
                 $db->rollBack();
                 throw $e;
@@ -154,10 +168,10 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['
     exit;
 }
 
-// جلب العملاء ذوي الرصيد الدائن (رصيد سالب)
-$creditorCustomers = [];
+// جلب العملاء ذوي الرصيد الدائن (رصيد سالب) - عملاء المندوبين
+$repCreditorCustomers = [];
 try {
-    $creditorCustomers = $db->query(
+    $repCreditorCustomers = $db->query(
         "SELECT 
             c.id,
             c.name,
@@ -166,7 +180,8 @@ try {
             c.balance,
             c.created_at,
             u.full_name AS rep_name,
-            u.id AS rep_id
+            u.id AS rep_id,
+            'rep' AS customer_type
         FROM customers c
         LEFT JOIN users u ON (c.rep_id = u.id OR c.created_by = u.id)
         WHERE (c.rep_id IN (SELECT id FROM users WHERE role = 'sales') 
@@ -175,9 +190,56 @@ try {
         ORDER BY ABS(c.balance) DESC, c.name ASC"
     );
 } catch (Throwable $creditorError) {
-    error_log('Creditor customers query error: ' . $creditorError->getMessage());
-    $creditorCustomers = [];
+    error_log('Rep creditor customers query error: ' . $creditorError->getMessage());
+    $repCreditorCustomers = [];
 }
+
+// جلب العملاء المحليين ذوي الرصيد الدائن
+$localCreditorCustomers = [];
+try {
+    $localCustomersTableExists = $db->queryOne("SHOW TABLES LIKE 'local_customers'");
+    if (!empty($localCustomersTableExists)) {
+        $localCreditorCustomers = $db->query(
+            "SELECT 
+                c.id,
+                c.name,
+                c.phone,
+                c.address,
+                c.balance,
+                c.created_at,
+                NULL AS rep_name,
+                NULL AS rep_id,
+                'local' AS customer_type
+            FROM local_customers c
+            WHERE c.balance < 0
+            ORDER BY ABS(c.balance) DESC, c.name ASC"
+        );
+    }
+} catch (Throwable $localCreditorError) {
+    error_log('Local creditor customers query error: ' . $localCreditorError->getMessage());
+    $localCreditorCustomers = [];
+}
+
+// دمج العملاء مع إضافة نوع العميل
+$creditorCustomers = [];
+foreach ($repCreditorCustomers as $customer) {
+    $customer['customer_type'] = 'rep';
+    $creditorCustomers[] = $customer;
+}
+foreach ($localCreditorCustomers as $customer) {
+    $customer['customer_type'] = 'local';
+    $creditorCustomers[] = $customer;
+}
+
+// ترتيب حسب الرصيد الدائن
+usort($creditorCustomers, function($a, $b) {
+    $balanceA = abs((float)($a['balance'] ?? 0));
+    $balanceB = abs((float)($b['balance'] ?? 0));
+    if ($balanceA == $balanceB) {
+        return strcmp($a['name'] ?? '', $b['name'] ?? '');
+    }
+    return $balanceB <=> $balanceA;
+});
 
 // حساب الإجماليات
 $totalCreditBalance = 0.0;
@@ -234,9 +296,10 @@ $lang = isset($translations) ? $translations : [];
         <div class="card-body">
             <div class="table-responsive">
                 <table class="table table-hover align-middle">
-                    <thead class="table-light">
+                        <thead class="table-light">
                         <tr>
                             <th>#</th>
+                            <th>نوع العميل</th>
                             <th>اسم العميل</th>
                             <th>رقم الهاتف</th>
                             <th>العنوان</th>
@@ -252,8 +315,18 @@ $lang = isset($translations) ? $translations : [];
                             $balanceValue = (float)($customer['balance'] ?? 0.0);
                             $creditAmount = abs($balanceValue);
                             ?>
+                            <?php
+                            $customerType = $customer['customer_type'] ?? 'rep';
+                            $customerTypeLabel = $customerType === 'local' ? 'عميل محلي' : 'عميل مندوب';
+                            $customerTypeBadge = $customerType === 'local' ? 'bg-info' : 'bg-secondary';
+                            ?>
                             <tr>
                                 <td><?php echo $index + 1; ?></td>
+                                <td>
+                                    <span class="badge <?php echo $customerTypeBadge; ?>">
+                                        <?php echo htmlspecialchars($customerTypeLabel); ?>
+                                    </span>
+                                </td>
                                 <td>
                                     <strong><?php echo htmlspecialchars($customer['name'] ?? '-'); ?></strong>
                                 </td>
@@ -265,7 +338,7 @@ $lang = isset($translations) ? $translations : [];
                                     </span>
                                 </td>
                                 <td>
-                                    <?php if (!empty($customer['rep_name'])): ?>
+                                    <?php if ($customerType === 'rep' && !empty($customer['rep_name'])): ?>
                                         <span class="text-muted">
                                             <?php echo htmlspecialchars($customer['rep_name']); ?>
                                         </span>
@@ -282,7 +355,7 @@ $lang = isset($translations) ? $translations : [];
                                     <button type="button" 
                                             class="btn btn-sm btn-success" 
                                             data-bs-toggle="modal" 
-                                            data-bs-target="#settleCreditModal<?php echo $customer['id']; ?>"
+                                            data-bs-target="#settleCreditModal<?php echo $customerType; ?>_<?php echo $customer['id']; ?>"
                                             title="تسوية الرصيد الدائن">
                                         <i class="bi bi-cash-coin me-1"></i>تسوية الرصيد
                                     </button>
@@ -290,18 +363,19 @@ $lang = isset($translations) ? $translations : [];
                             </tr>
                             
                             <!-- Modal تسوية الرصيد -->
-                            <div class="modal fade" id="settleCreditModal<?php echo $customer['id']; ?>" tabindex="-1" aria-labelledby="settleCreditModalLabel<?php echo $customer['id']; ?>" aria-hidden="true">
+                            <div class="modal fade" id="settleCreditModal<?php echo $customerType; ?>_<?php echo $customer['id']; ?>" tabindex="-1" aria-labelledby="settleCreditModalLabel<?php echo $customerType; ?>_<?php echo $customer['id']; ?>" aria-hidden="true">
                                 <div class="modal-dialog modal-dialog-centered">
                                     <div class="modal-content">
                                         <div class="modal-header">
-                                            <h5 class="modal-title" id="settleCreditModalLabel<?php echo $customer['id']; ?>">
+                                            <h5 class="modal-title" id="settleCreditModalLabel<?php echo $customerType; ?>_<?php echo $customer['id']; ?>">
                                                 <i class="bi bi-cash-coin me-2"></i>تسوية رصيد دائن
                                             </h5>
                                             <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
                                         </div>
-                                        <form method="POST" id="settleCreditForm<?php echo $customer['id']; ?>">
+                                        <form method="POST" id="settleCreditForm<?php echo $customerType; ?>_<?php echo $customer['id']; ?>">
                                             <input type="hidden" name="action" value="settle_credit_balance">
                                             <input type="hidden" name="customer_id" value="<?php echo $customer['id']; ?>">
+                                            <input type="hidden" name="customer_type" value="<?php echo htmlspecialchars($customerType); ?>">
                                             <div class="modal-body">
                                                 <div class="mb-3">
                                                     <label class="form-label">اسم العميل</label>
@@ -312,7 +386,11 @@ $lang = isset($translations) ? $translations : [];
                                                     <input type="text" class="form-control" value="<?php echo formatCurrency($creditAmount); ?>" readonly style="background-color: #f8f9fa; font-weight: bold; color: #0d6efd;">
                                                 </div>
                                                 <div class="mb-3">
-                                                    <label for="settlementAmount<?php echo $customer['id']; ?>" class="form-label">
+                                                    <label class="form-label">نوع العميل</label>
+                                                    <input type="text" class="form-control" value="<?php echo htmlspecialchars($customerTypeLabel); ?>" readonly style="background-color: #f8f9fa;">
+                                                </div>
+                                                <div class="mb-3">
+                                                    <label for="settlementAmount<?php echo $customerType; ?>_<?php echo $customer['id']; ?>" class="form-label">
                                                         مبلغ التسوية <span class="text-danger">*</span>
                                                     </label>
                                                     <div class="input-group">
@@ -322,7 +400,7 @@ $lang = isset($translations) ? $translations : [];
                                                                min="0.01" 
                                                                max="<?php echo $creditAmount; ?>"
                                                                class="form-control" 
-                                                               id="settlementAmount<?php echo $customer['id']; ?>" 
+                                                               id="settlementAmount<?php echo $customerType; ?>_<?php echo $customer['id']; ?>" 
                                                                name="settlement_amount" 
                                                                required 
                                                                value="<?php echo $creditAmount; ?>"
@@ -331,9 +409,9 @@ $lang = isset($translations) ? $translations : [];
                                                     <small class="text-muted">الحد الأقصى: <?php echo formatCurrency($creditAmount); ?></small>
                                                 </div>
                                                 <div class="mb-3">
-                                                    <label for="settlementNotes<?php echo $customer['id']; ?>" class="form-label">ملاحظات (اختياري)</label>
+                                                    <label for="settlementNotes<?php echo $customerType; ?>_<?php echo $customer['id']; ?>" class="form-label">ملاحظات (اختياري)</label>
                                                     <textarea class="form-control" 
-                                                              id="settlementNotes<?php echo $customer['id']; ?>" 
+                                                              id="settlementNotes<?php echo $customerType; ?>_<?php echo $customer['id']; ?>" 
                                                               name="notes" 
                                                               rows="3" 
                                                               placeholder="أدخل أي ملاحظات إضافية..."></textarea>
@@ -368,8 +446,18 @@ document.addEventListener('DOMContentLoaded', function() {
     settleForms.forEach(function(form) {
         form.addEventListener('submit', function(e) {
             const formId = form.id;
-            const customerId = formId.replace('settleCreditForm', '');
-            const amountInput = document.getElementById('settlementAmount' + customerId);
+            // استخراج المعرف من formId (مثل: settleCreditFormrep_123 أو settleCreditFormlocal_456)
+            const parts = formId.replace('settleCreditForm', '').split('_');
+            const customerId = parts.length > 1 ? parts[1] : parts[0];
+            const customerType = parts.length > 1 ? parts[0] : 'rep';
+            const amountInputId = 'settlementAmount' + customerType + '_' + customerId;
+            const amountInput = document.getElementById(amountInputId);
+            
+            if (!amountInput) {
+                console.error('Amount input not found:', amountInputId);
+                return;
+            }
+            
             const maxAmount = parseFloat(amountInput.getAttribute('max'));
             const amount = parseFloat(amountInput.value);
             
