@@ -16,6 +16,35 @@ require_once __DIR__ . '/../../includes/approval_system.php';
 
 requireRole(['manager', 'accountant']);
 
+/**
+ * حساب صافي رصيد خزنة الشركة
+ * الصيغة: الإيرادات المعتمدة - المصروفات المعتمدة - المدفوعات
+ */
+if (!function_exists('calculateCompanyCashBalance')) {
+    function calculateCompanyCashBalance($db) {
+        // حساب ملخص الخزنة من financial_transactions و accountant_transactions
+        $treasurySummary = $db->queryOne("
+            SELECT
+                (SELECT COALESCE(SUM(CASE WHEN type = 'income' AND status = 'approved' THEN amount ELSE 0 END), 0) FROM financial_transactions) +
+                (SELECT COALESCE(SUM(CASE WHEN transaction_type IN ('collection_from_sales_rep', 'income') AND status = 'approved' THEN amount ELSE 0 END), 0) FROM accountant_transactions) AS approved_income,
+                (SELECT COALESCE(SUM(CASE WHEN type = 'expense' AND status = 'approved' THEN amount ELSE 0 END), 0) FROM financial_transactions) +
+                (SELECT COALESCE(SUM(CASE WHEN transaction_type = 'expense' AND status = 'approved' THEN amount ELSE 0 END), 0) FROM accountant_transactions) AS approved_expense,
+                (SELECT COALESCE(SUM(CASE WHEN type = 'payment' AND status = 'approved' THEN amount ELSE 0 END), 0) FROM financial_transactions) +
+                (SELECT COALESCE(SUM(CASE WHEN transaction_type = 'payment' AND status = 'approved' THEN amount ELSE 0 END), 0) FROM accountant_transactions) AS approved_payment
+        ");
+        
+        $approvedIncome = (float) ($treasurySummary['approved_income'] ?? 0);
+        $approvedExpense = (float) ($treasurySummary['approved_expense'] ?? 0);
+        $approvedPayment = (float) ($treasurySummary['approved_payment'] ?? 0);
+        
+        // حساب صافي الرصيد
+        // ملاحظة: تسويات الرواتب تُحسب كـ expenses في accountant_transactions، لذلك تُخصم تلقائياً
+        $netBalance = $approvedIncome - $approvedExpense - $approvedPayment;
+        
+        return $netBalance; // يمكن أن يكون سالباً إذا كانت المصروفات أكبر من الإيرادات
+    }
+}
+
 $currentUser = getCurrentUser();
 $db = db();
 
