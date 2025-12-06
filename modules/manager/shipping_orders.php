@@ -1498,9 +1498,26 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                                 $totalPrice = (float)($item['total_price'] ?? 0);
                                 
                                 if ($productId > 0 && $quantity > 0) {
-                                    // جلب اسم المنتج
-                                    $product = $db->queryOne("SELECT name FROM products WHERE id = ?", [$productId]);
-                                    $productName = $product['name'] ?? 'منتج رقم ' . $productId;
+                                    // جلب اسم المنتج - إذا كان batch_id موجوداً، نستخدم product_name من finished_products
+                                    $batchId = isset($item['batch_id']) && $item['batch_id'] ? (int)$item['batch_id'] : null;
+                                    $productName = '';
+                                    
+                                    if ($batchId) {
+                                        // منتج مصنع - جلب product_name من finished_products
+                                        $fp = $db->queryOne("
+                                            SELECT COALESCE(NULLIF(TRIM(fp.product_name), ''), pr.name, 'غير محدد') AS product_name,
+                                                   fp.batch_number
+                                            FROM finished_products fp
+                                            LEFT JOIN batch_numbers bn ON fp.batch_number = bn.batch_number
+                                            LEFT JOIN products pr ON COALESCE(fp.product_id, bn.product_id) = pr.id
+                                            WHERE fp.id = ?
+                                        ", [$batchId]);
+                                        $productName = ($fp['product_name'] ?? 'غير محدد');
+                                    } else {
+                                        // منتج خارجي - جلب اسم المنتج من products
+                                        $product = $db->queryOne("SELECT name FROM products WHERE id = ?", [$productId]);
+                                        $productName = $product['name'] ?? 'منتج رقم ' . $productId;
+                                    }
                                     
                                     $itemTotal = $quantity * $unitPrice;
                                     

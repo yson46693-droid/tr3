@@ -174,6 +174,31 @@ function handleGetHistory(): void
                                 '' as batch_number_ids";
             }
             
+            // بناء استعلام لجلب اسم المنتج الصحيح من finished_products إذا كان batch_id موجوداً
+            $productNameSelect = '';
+            if ($hasBatchId) {
+                // إذا كان batch_id موجوداً، نستخدم product_name من finished_products
+                $productNameSelect = "COALESCE(
+                    CASE 
+                        WHEN ii.batch_id IS NOT NULL AND ii.batch_id > 0 
+                        THEN (
+                            SELECT COALESCE(NULLIF(TRIM(fp.product_name), ''), pr.name, 'غير محدد')
+                            FROM finished_products fp
+                            LEFT JOIN batch_numbers bn ON fp.batch_number = bn.batch_number
+                            LEFT JOIN products pr ON COALESCE(fp.product_id, bn.product_id) = pr.id
+                            WHERE fp.id = ii.batch_id
+                            LIMIT 1
+                        )
+                        ELSE NULLIF(TRIM(p.name), '')
+                    END,
+                    NULLIF(TRIM(p.name), ''),
+                    'غير محدد'
+                ) as product_name";
+            } else {
+                // إذا لم يكن batch_id موجوداً، نستخدم اسم المنتج من products
+                $productNameSelect = "NULLIF(TRIM(p.name), '') as product_name";
+            }
+            
             $purchaseHistory = $db->query(
                 "SELECT 
                     i.id as invoice_id,
@@ -184,7 +209,7 @@ function handleGetHistory(): void
                     i.status as invoice_status,
                     ii.id as invoice_item_id,
                     ii.product_id,
-                    NULLIF(TRIM(p.name), '') as product_name,
+                    $productNameSelect,
                     p.unit,
                     ii.quantity,
                     ii.unit_price,
