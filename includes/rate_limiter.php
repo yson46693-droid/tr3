@@ -29,8 +29,6 @@ class RateLimiter {
      * التحقق من محاولات تسجيل الدخول - يستخدم جدول login_attempts الموجود
      */
     public static function checkLoginAttempt($username) {
-        global $pdo;
-        
         try {
             $db = db();
             $ipAddress = $_SERVER['REMOTE_ADDR'] ?? 'unknown';

@@ -29,29 +29,26 @@ require_once __DIR__ . '/includes/install.php';
 // ============================================
 // تحميل التحسينات الأمنية (InfinityFree Compatible)
 // ============================================
-// تحميل الإعدادات الأمنية
-require_once __DIR__ . '/includes/security_config.php';
-
-// تطبيق Security Headers
-require_once __DIR__ . '/includes/security_headers.php';
-SecurityHeaders::apply();
-
-// تهيئة الجلسات الآمنة (متوافقة مع config.php)
-require_once __DIR__ . '/includes/session_security.php';
-initSecureSession();
-
-// تحميل CSRF Protection (متوافق مع النظام الحالي)
-require_once __DIR__ . '/includes/csrf_protection.php';
-
-// تحميل Rate Limiter (يستخدم جدول login_attempts الموجود)
-require_once __DIR__ . '/includes/rate_limiter.php';
-
-// تحميل Input Validation
-require_once __DIR__ . '/includes/input_validation.php';
-
-// تحميل Logger (معطل افتراضياً)
-require_once __DIR__ . '/includes/security_logger.php';
-// ============================================
+try {
+    // تحميل الإعدادات الأمنية
+    if (file_exists(__DIR__ . '/includes/security_config.php')) {
+        require_once __DIR__ . '/includes/security_config.php';
+    }
+    
+    // تطبيق Security Headers
+    if (file_exists(__DIR__ . '/includes/security_headers.php')) {
+        require_once __DIR__ . '/includes/security_headers.php';
+        if (class_exists('SecurityHeaders')) {
+            SecurityHeaders::apply();
+        }
+    }
+    
+    // تهيئة الجلسات الآمنة (متوافقة مع config.php)
+    // تم تأجيلها لأن config.php يبدأ الجلسة بالفعل
+} catch (Exception $e) {
+    // في حالة خطأ، استمر بدون التحسينات الأمنية
+    error_log("Security enhancements error: " . $e->getMessage());
+}
 
 if (needsInstallation()) {
     $installResult = initializeDatabase();
@@ -87,6 +84,47 @@ if (needsInstallation()) {
 require_once __DIR__ . '/includes/db.php';
 require_once __DIR__ . '/includes/auth.php';
 require_once __DIR__ . '/includes/path_helper.php';
+
+// ============================================
+// تحميل باقي التحسينات الأمنية (بعد db.php و auth.php)
+// ============================================
+try {
+    // تحميل CSRF Protection (متوافق مع النظام الحالي)
+    if (file_exists(__DIR__ . '/includes/csrf_protection.php')) {
+        require_once __DIR__ . '/includes/csrf_protection.php';
+    }
+    
+    // تحميل Rate Limiter (يستخدم جدول login_attempts الموجود)
+    if (file_exists(__DIR__ . '/includes/rate_limiter.php')) {
+        require_once __DIR__ . '/includes/rate_limiter.php';
+    }
+    
+    // تحميل Input Validation
+    if (file_exists(__DIR__ . '/includes/input_validation.php')) {
+        require_once __DIR__ . '/includes/input_validation.php';
+    }
+    
+    // تحميل Logger (معطل افتراضياً)
+    if (file_exists(__DIR__ . '/includes/security_logger.php')) {
+        require_once __DIR__ . '/includes/security_logger.php';
+    }
+    
+    // تهيئة الجلسات الآمنة (بعد تحميل db.php و auth.php)
+    if (file_exists(__DIR__ . '/includes/session_security.php')) {
+        require_once __DIR__ . '/includes/session_security.php';
+        if (function_exists('initSecureSession')) {
+            try {
+                initSecureSession();
+            } catch (Exception $e) {
+                error_log("Session security error: " . $e->getMessage());
+            }
+        }
+    }
+} catch (Exception $e) {
+    // في حالة خطأ، استمر بدون التحسينات الأمنية
+    error_log("Security enhancements error: " . $e->getMessage());
+}
+// ============================================
 
 if (!defined('ASSETS_URL')) {
     $requestUri = $_SERVER['REQUEST_URI'] ?? '';
@@ -185,86 +223,113 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     } else {
         // التحقق من CSRF (متوافق مع النظام الحالي)
         $uri = $_SERVER['REQUEST_URI'] ?? '';
-        if (strpos($uri, '/api/') === false) {
-            protectFormFromCSRF();
+        if (strpos($uri, '/api/') === false && function_exists('protectFormFromCSRF')) {
+            try {
+                protectFormFromCSRF();
+            } catch (Exception $e) {
+                error_log("CSRF protection error: " . $e->getMessage());
+            }
         }
         
         // تنظيف المدخلات
-        $username = InputValidator::sanitizeString($username);
-        $password = InputValidator::sanitizeString($password);
+        if (class_exists('InputValidator')) {
+            $username = InputValidator::sanitizeString($username);
+            $password = InputValidator::sanitizeString($password);
+        }
         
-        // التحقق من صحة المدخلات
-        $usernameValidation = InputValidator::validateUsername($username);
-        if (!$usernameValidation['valid']) {
-            $error = $usernameValidation['error'];
-        } elseif (empty($password)) {
-            $error = 'يرجى إدخال كلمة المرور';
+        if (empty($username) || empty($password)) {
+            $error = 'يرجى إدخال اسم المستخدم وكلمة المرور';
         } else {
             // فحص Rate Limiting (يستخدم النظام الموجود في security.php)
-            $rateLimitCheck = RateLimiter::checkLoginAttempt($username);
+            $rateLimitCheck = null;
+            if (class_exists('RateLimiter')) {
+                try {
+                    $rateLimitCheck = RateLimiter::checkLoginAttempt($username);
+                    if (!$rateLimitCheck['allowed']) {
+                        $error = $rateLimitCheck['message'];
+                    }
+                } catch (Exception $e) {
+                    error_log("Rate limiter error: " . $e->getMessage());
+                }
+            }
             
-            if (!$rateLimitCheck['allowed']) {
-                $error = $rateLimitCheck['message'];
-            } else {
+            if (empty($error)) {
                 $rememberMe = isset($_POST['remember_me']) && $_POST['remember_me'] == '1';
                 $result = login($username, $password, $rememberMe);
                 
                 if ($result['success']) {
                     // إعادة تعيين محاولات Rate Limiting بعد تسجيل دخول ناجح
-                    RateLimiter::resetAttempts($username);
+                    if (class_exists('RateLimiter')) {
+                        try {
+                            RateLimiter::resetAttempts($username);
+                        } catch (Exception $e) {
+                            error_log("Rate limiter reset error: " . $e->getMessage());
+                        }
+                    }
                     // تجديد معرف الجلسة
-                    regenerateSessionAfterLogin();
-                $userRole = $result['user']['role'] ?? 'accountant';
-                $dashboardUrl = getDashboardUrl($userRole);
-                
-                $dashboardUrl = preg_replace('/^https?:\/\//', '', $dashboardUrl);
-                $dashboardUrl = preg_replace('/^\/\//', '/', $dashboardUrl);
-                
-                if (strpos($dashboardUrl, '/') !== 0) {
-                    $dashboardUrl = '/' . $dashboardUrl;
-                }
-                
-                $dashboardUrl = preg_replace('/\/+/', '/', $dashboardUrl);
-                
-                if (preg_match('/^\/[^\/]+\.[a-z]/i', $dashboardUrl)) {
-                    $parts = explode('/', $dashboardUrl);
-                    $dashboardIndex = array_search('dashboard', $parts);
-                    if ($dashboardIndex !== false) {
-                        $dashboardUrl = '/' . implode('/', array_slice($parts, $dashboardIndex));
-                    } else {
+                    if (function_exists('regenerateSessionAfterLogin')) {
+                        regenerateSessionAfterLogin();
+                    }
+                    
+                    $userRole = $result['user']['role'] ?? 'accountant';
+                    $dashboardUrl = getDashboardUrl($userRole);
+                    
+                    $dashboardUrl = preg_replace('/^https?:\/\//', '', $dashboardUrl);
+                    $dashboardUrl = preg_replace('/^\/\//', '/', $dashboardUrl);
+                    
+                    if (strpos($dashboardUrl, '/') !== 0) {
+                        $dashboardUrl = '/' . $dashboardUrl;
+                    }
+                    
+                    $dashboardUrl = preg_replace('/\/+/', '/', $dashboardUrl);
+                    
+                    if (preg_match('/^\/[^\/]+\.[a-z]/i', $dashboardUrl)) {
+                        $parts = explode('/', $dashboardUrl);
+                        $dashboardIndex = array_search('dashboard', $parts);
+                        if ($dashboardIndex !== false) {
+                            $dashboardUrl = '/' . implode('/', array_slice($parts, $dashboardIndex));
+                        } else {
+                            $dashboardUrl = '/dashboard/' . $userRole . '.php';
+                        }
+                    }
+                    
+                    if (strpos($dashboardUrl, '/dashboard') === false) {
                         $dashboardUrl = '/dashboard/' . $userRole . '.php';
                     }
-                }
-                
-                if (strpos($dashboardUrl, '/dashboard') === false) {
-                    $dashboardUrl = '/dashboard/' . $userRole . '.php';
-                }
-                
-                if (strpos($dashboardUrl, 'http://') === 0 || strpos($dashboardUrl, 'https://') === 0) {
-                    $parsed = parse_url($dashboardUrl);
-                    $dashboardUrl = $parsed['path'] ?? '/dashboard/' . $userRole . '.php';
-                }
-                
-                $dashboardUrl = trim($dashboardUrl);
-                if (empty($dashboardUrl) || $dashboardUrl === '/') {
-                    $dashboardUrl = '/dashboard/' . $userRole . '.php';
-                }
-                
-                if (!headers_sent()) {
-                    header('Location: ' . $dashboardUrl);
-                    exit;
-                } else {
-                    echo '<script>window.location.href = "' . htmlspecialchars($dashboardUrl) . '";</script>';
-                    echo '<noscript><meta http-equiv="refresh" content="0;url=' . htmlspecialchars($dashboardUrl) . '"></noscript>';
-                    exit;
+                    
+                    if (strpos($dashboardUrl, 'http://') === 0 || strpos($dashboardUrl, 'https://') === 0) {
+                        $parsed = parse_url($dashboardUrl);
+                        $dashboardUrl = $parsed['path'] ?? '/dashboard/' . $userRole . '.php';
+                    }
+                    
+                    $dashboardUrl = trim($dashboardUrl);
+                    if (empty($dashboardUrl) || $dashboardUrl === '/') {
+                        $dashboardUrl = '/dashboard/' . $userRole . '.php';
+                    }
+                    
+                    if (!headers_sent()) {
+                        header('Location: ' . $dashboardUrl);
+                        exit;
+                    } else {
+                        echo '<script>window.location.href = "' . htmlspecialchars($dashboardUrl) . '";</script>';
+                        echo '<noscript><meta http-equiv="refresh" content="0;url=' . htmlspecialchars($dashboardUrl) . '"></noscript>';
+                        exit;
+                    }
                 } else {
                     // تسجيل محاولة فاشلة في Rate Limiter
-                    $remaining = RateLimiter::recordFailedAttempt($username);
-                    
-                    if ($remaining > 0) {
-                        $error = $result['message'] . " (المحاولات المتبقية: {$remaining})";
+                    if (class_exists('RateLimiter')) {
+                        try {
+                            $remaining = RateLimiter::recordFailedAttempt($username);
+                            if ($remaining > 0) {
+                                $error = $result['message'] . " (المحاولات المتبقية: {$remaining})";
+                            } else {
+                                $error = "تم استنفاد المحاولات. تم حظر الحساب لمدة 15 دقيقة.";
+                            }
+                        } catch (Exception $e) {
+                            $error = $result['message'];
+                        }
                     } else {
-                        $error = "تم استنفاد المحاولات. تم حظر الحساب لمدة 15 دقيقة.";
+                        $error = $result['message'];
                     }
                 }
             }

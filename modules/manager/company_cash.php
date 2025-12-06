@@ -1347,6 +1347,28 @@ document.addEventListener('DOMContentLoaded', function() {
             }
         });
     }
+    
+    // التحقق من صحة نموذج التقرير
+    function validateReportForm() {
+        const form = document.getElementById('reportForm');
+        if (!form) return true;
+        
+        const dateFrom = document.getElementById('reportDateFrom');
+        const dateTo = document.getElementById('reportDateTo');
+        
+        if (!dateFrom || !dateTo) return true;
+        
+        const fromDate = new Date(dateFrom.value);
+        const toDate = new Date(dateTo.value);
+        
+        if (fromDate > toDate) {
+            alert('تاريخ البداية يجب أن يكون قبل تاريخ النهاية');
+            dateFrom.focus();
+            return false;
+        }
+        
+        return true;
+    }
 });
 </script>
 
@@ -1360,7 +1382,13 @@ document.addEventListener('DOMContentLoaded', function() {
                 </h5>
                 <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal" aria-label="Close"></button>
             </div>
-            <form method="GET" action="<?php echo getRelativeUrl('print_company_cash_report.php'); ?>" target="_blank">
+            <form method="GET" action="<?php 
+                // استخدام المسار المطلق من الجذر
+                $basePath = getBasePath();
+                $basePath = rtrim($basePath, '/');
+                $reportPath = $basePath . '/print_company_cash_report.php';
+                echo htmlspecialchars($reportPath, ENT_QUOTES, 'UTF-8'); 
+            ?>" target="_blank" id="reportForm" onsubmit="return validateReportForm()">
                 <div class="modal-body">
                     <div class="alert alert-info">
                         <i class="bi bi-info-circle me-2"></i>

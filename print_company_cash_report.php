@@ -33,8 +33,12 @@ if (strtotime($dateFrom) > strtotime($dateTo)) {
 // حساب ملخص الخزنة للفترة
 $statusFilter = $includePending ? "('approved', 'pending')" : "('approved')";
 
+// إصلاح SQL injection - استخدام prepared statements
+$statusPlaceholders = $includePending ? "?, ?" : "?";
+$statusParams = $includePending ? ['approved', 'pending'] : ['approved'];
+
 // جلب جميع الحركات المالية من financial_transactions
-$financialTransactions = $db->query("
+$financialQuery = "
     SELECT 
         id,
         type,
@@ -49,12 +53,14 @@ $financialTransactions = $db->query("
         'financial_transactions' as source_table
     FROM financial_transactions
     WHERE DATE(created_at) BETWEEN ? AND ?
-    AND status IN {$statusFilter}
+    AND status IN ({$statusPlaceholders})
     ORDER BY created_at ASC
-", [$dateFrom, $dateTo]) ?: [];
+";
+$financialParams = array_merge([$dateFrom, $dateTo], $statusParams);
+$financialTransactions = $db->query($financialQuery, $financialParams) ?: [];
 
 // جلب جميع الحركات من accountant_transactions
-$accountantTransactions = $db->query("
+$accountantQuery = "
     SELECT 
         id,
         CASE 
@@ -77,9 +83,11 @@ $accountantTransactions = $db->query("
         'accountant_transactions' as source_table
     FROM accountant_transactions
     WHERE DATE(created_at) BETWEEN ? AND ?
-    AND status IN {$statusFilter}
+    AND status IN ({$statusPlaceholders})
     ORDER BY created_at ASC
-", [$dateFrom, $dateTo]) ?: [];
+";
+$accountantParams = array_merge([$dateFrom, $dateTo], $statusParams);
+$accountantTransactions = $db->query($accountantQuery, $accountantParams) ?: [];
 
 // دمج الحركات
 $allTransactions = [];
