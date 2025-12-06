@@ -254,10 +254,69 @@ $lang = isset($translations) ? $translations : [];
 ?>
 
 <!-- صفحة العملاء ذوي الرصيد الدائن -->
-<div class="page-header mb-4 d-flex justify-content-between align-items-center">
-    <div>
-        <h2><i class="bi bi-wallet2 me-2 text-primary"></i>العملاء ذوو الرصيد الدائن</h2>
-        <p class="text-muted mb-0">إجمالي الرصيد الدائن: <strong><?php echo formatCurrency($totalCreditBalance); ?></strong> | عدد العملاء: <strong><?php echo number_format($customerCount); ?></strong></p>
+<div class="page-header mb-4">
+    <div class="card shadow-sm border-0 mb-3">
+        <div class="card-body">
+            <div class="row g-3 align-items-center">
+                <div class="col-12 col-lg-8">
+                    <div class="d-flex align-items-center mb-3">
+                        <div class="bg-primary bg-opacity-10 rounded-circle p-3 me-3">
+                            <i class="bi bi-wallet2 text-primary fs-3"></i>
+                        </div>
+                        <div>
+                            <h2 class="fw-bold mb-1">العملاء ذوو الرصيد الدائن</h2>
+                            <p class="text-muted small mb-0">إدارة وتسوية أرصدة العملاء الدائنة</p>
+                        </div>
+                    </div>
+                    <div class="row g-3">
+                        <div class="col-6 col-md-4">
+                            <div class="d-flex align-items-center p-2 bg-success bg-opacity-10 rounded">
+                                <i class="bi bi-cash-coin me-2 text-success fs-5"></i>
+                                <div>
+                                    <small class="text-muted d-block small">إجمالي الرصيد الدائن</small>
+                                    <strong class="text-success"><?php echo formatCurrency($totalCreditBalance); ?></strong>
+                                </div>
+                            </div>
+                        </div>
+                        <div class="col-6 col-md-4">
+                            <div class="d-flex align-items-center p-2 bg-info bg-opacity-10 rounded">
+                                <i class="bi bi-people me-2 text-info fs-5"></i>
+                                <div>
+                                    <small class="text-muted d-block small">عدد العملاء</small>
+                                    <strong class="text-info"><?php echo number_format($customerCount); ?></strong>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                <div class="col-12 col-lg-4">
+                    <label for="customerSearchInput" class="form-label fw-semibold">
+                        <i class="bi bi-search me-1"></i>البحث في القائمة
+                    </label>
+                    <div class="input-group input-group-lg">
+                        <span class="input-group-text bg-light border-end-0">
+                            <i class="bi bi-search text-muted"></i>
+                        </span>
+                        <input type="text" 
+                               class="form-control border-start-0" 
+                               id="customerSearchInput" 
+                               placeholder="ابحث بالاسم، رقم الهاتف، أو العنوان..."
+                               autocomplete="off">
+                        <button class="btn btn-outline-secondary border-start-0" 
+                                type="button" 
+                                id="clearSearchBtn" 
+                                style="display: none;"
+                                title="مسح البحث">
+                            <i class="bi bi-x-lg"></i>
+                        </button>
+                    </div>
+                    <small class="text-muted d-block mt-1">
+                        <i class="bi bi-info-circle me-1"></i>
+                        ابحث في جميع بيانات العملاء
+                    </small>
+                </div>
+            </div>
+        </div>
     </div>
 </div>
 
@@ -286,10 +345,22 @@ $lang = isset($translations) ? $translations : [];
         </div>
     </div>
 <?php else: ?>
-    <div class="card shadow-sm">
-        <div class="card-body">
+    <div class="card shadow-sm border-0">
+                <div class="card-header bg-gradient bg-light border-bottom">
+            <div class="d-flex justify-content-between align-items-center flex-wrap gap-2">
+                <h5 class="mb-0 fw-semibold">
+                    <i class="bi bi-list-ul me-2 text-primary"></i>
+                    قائمة العملاء
+                </h5>
+                <div class="d-flex align-items-center gap-2">
+                    <span class="badge bg-secondary">إجمالي: <span id="totalCountBadge"><?php echo number_format($customerCount); ?></span></span>
+                    <span class="badge bg-primary">عرض: <span id="visibleCountBadge"><?php echo number_format($customerCount); ?></span></span>
+                </div>
+            </div>
+        </div>
+        <div class="card-body p-0">
             <div class="table-responsive">
-                <table class="table table-hover align-middle">
+                <table class="table table-hover align-middle mb-0" id="customersTable">
                         <thead class="table-light">
                         <tr>
                             <th>#</th>
@@ -303,7 +374,7 @@ $lang = isset($translations) ? $translations : [];
                             <th>إجراءات</th>
                         </tr>
                     </thead>
-                    <tbody>
+                    <tbody id="customersTableBody">
                         <?php foreach ($creditorCustomers as $index => $customer): ?>
                             <?php
                             $balanceValue = (float)($customer['balance'] ?? 0.0);
@@ -435,7 +506,99 @@ $lang = isset($translations) ? $translations : [];
 
 <script>
 document.addEventListener('DOMContentLoaded', function() {
-    // التحقق من مبلغ التسوية قبل الإرسال
+    // ========== وظيفة البحث في الجدول ==========
+    const searchInput = document.getElementById('customerSearchInput');
+    const clearSearchBtn = document.getElementById('clearSearchBtn');
+    const customersTable = document.getElementById('customersTable');
+    const customersTableBody = document.getElementById('customersTableBody');
+    const visibleCountBadge = document.getElementById('visibleCountBadge');
+    const totalCountBadge = document.getElementById('totalCountBadge');
+    
+    if (searchInput && customersTableBody) {
+        // البحث عند الكتابة
+        searchInput.addEventListener('input', function() {
+            filterTable();
+        });
+        
+        // البحث عند الضغط على Enter
+        searchInput.addEventListener('keydown', function(e) {
+            if (e.key === 'Enter') {
+                e.preventDefault();
+                filterTable();
+            }
+        });
+        
+        // زر مسح البحث
+        if (clearSearchBtn) {
+            clearSearchBtn.addEventListener('click', function() {
+                searchInput.value = '';
+                filterTable();
+                searchInput.focus();
+            });
+        }
+        
+        function filterTable() {
+            const searchTerm = searchInput.value.trim().toLowerCase();
+            const rows = customersTableBody.querySelectorAll('tr');
+            let visibleCount = 0;
+            
+            rows.forEach(function(row) {
+                // جلب النص من جميع الخلايا في الصف (باستثناء أزرار الإجراءات)
+                const cells = row.querySelectorAll('td');
+                let rowText = '';
+                
+                cells.forEach(function(cell, index) {
+                    // تخطي عمود الإجراءات (آخر عمود)
+                    if (index < cells.length - 1) {
+                        rowText += ' ' + (cell.textContent || cell.innerText || '').toLowerCase();
+                    }
+                });
+                
+                // البحث في النص
+                if (searchTerm === '' || rowText.includes(searchTerm)) {
+                    row.style.display = '';
+                    visibleCount++;
+                } else {
+                    row.style.display = 'none';
+                }
+            });
+            
+            // تحديث العداد
+            if (visibleCountBadge) {
+                visibleCountBadge.textContent = visibleCount.toLocaleString('ar-EG');
+            }
+            
+            // إظهار/إخفاء زر المسح
+            if (clearSearchBtn) {
+                if (searchTerm.length > 0) {
+                    clearSearchBtn.style.display = 'block';
+                } else {
+                    clearSearchBtn.style.display = 'none';
+                }
+            }
+            
+            // إظهار رسالة إذا لم توجد نتائج
+            let noResultsRow = customersTableBody.querySelector('tr.no-results-row');
+            if (visibleCount === 0 && searchTerm.length > 0) {
+                if (!noResultsRow) {
+                    noResultsRow = document.createElement('tr');
+                    noResultsRow.className = 'no-results-row';
+                    noResultsRow.innerHTML = `
+                        <td colspan="9" class="text-center py-5">
+                            <i class="bi bi-search text-muted" style="font-size: 3rem;"></i>
+                            <p class="text-muted mt-3 mb-0">لم يتم العثور على نتائج للبحث: "<strong>${searchTerm}</strong>"</p>
+                            <small class="text-muted">جرب البحث بكلمات مختلفة</small>
+                        </td>
+                    `;
+                    customersTableBody.appendChild(noResultsRow);
+                }
+            } else if (noResultsRow) {
+                noResultsRow.remove();
+            }
+        }
+    }
+    
+    // ========== التحقق من مبلغ التسوية قبل الإرسال ==========
     const settleForms = document.querySelectorAll('[id^="settleCreditForm"]');
     settleForms.forEach(function(form) {
         form.addEventListener('submit', function(e) {
@@ -476,5 +639,52 @@ document.addEventListener('DOMContentLoaded', function() {
             }
         });
     });
+    
+    // ========== تحسينات إضافية ==========
+    // إضافة تأثير hover على صفوف الجدول
+    const tableRows = document.querySelectorAll('#customersTableBody tr');
+    tableRows.forEach(function(row) {
+        row.addEventListener('mouseenter', function() {
+            this.style.backgroundColor = '#f8f9fa';
+        });
+        row.addEventListener('mouseleave', function() {
+            this.style.backgroundColor = '';
+        });
+    });
 });
 </script>
+
+<style>
+/* تحسينات التصميم */
+#customersTable thead th {
+    font-weight: 600;
+    font-size: 0.9rem;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+    border-bottom: 2px solid #dee2e6;
+}
+
+#customersTable tbody tr {
+    transition: all 0.2s ease;
+}
+
+#customersTable tbody tr:hover {
+    background-color: #f8f9fa !important;
+    transform: translateY(-1px);
+    box-shadow: 0 2px 4px rgba(0,0,0,0.05);
+}
+
+#customerSearchInput:focus {
+    border-color: #0d6efd;
+    box-shadow: 0 0 0 0.2rem rgba(13, 110, 253, 0.25);
+}
+
+.page-header .card {
+    background: linear-gradient(135deg, #ffffff 0%, #f8f9fa 100%);
+    border: 1px solid #e9ecef;
+}
+
+.no-results-row td {
+    background-color: #fff3cd !important;
+}
+</style>
