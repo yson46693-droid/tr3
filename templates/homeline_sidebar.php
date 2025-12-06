@@ -169,6 +169,13 @@ switch ($role) {
                 'badge' => null
             ],
             [
+                'title' => 'أرصدة العملاء الدائنة',
+                'icon' => 'bi-wallet2',
+                'url' => $baseUrl . 'manager.php?page=customer_credit_balances',
+                'active' => ($currentPage === 'manager.php' && $currentPageParam === 'customer_credit_balances'),
+                'badge' => null
+            ],
+            [
                 'title' => isset($lang['menu_warehouse_transfers']) ? $lang['menu_warehouse_transfers'] : 'نقل المخازن',
                 'icon' => 'bi-arrow-left-right',
                 'url' => $baseUrl . 'manager.php?page=warehouse_transfers',

@@ -479,6 +479,19 @@ if (!empty($accountantTableExists)) {
     $totalSalaryAdjustments = (float) ($adjustmentsResult['total_adjustments'] ?? 0);
 }
 
+// حساب إجمالي تسويات أرصدة العملاء
+$totalCustomerCreditSettlements = 0.0;
+if (!empty($accountantTableExists)) {
+    $customerSettlementsResult = $db->queryOne(
+        "SELECT COALESCE(SUM(amount), 0) as total_settlements
+         FROM accountant_transactions
+         WHERE transaction_type = 'expense' 
+         AND status = 'approved'
+         AND description LIKE '%تسوية رصيد دائن لعميل%'"
+    );
+    $totalCustomerCreditSettlements = (float) ($customerSettlementsResult['total_settlements'] ?? 0);
+}
+
 $netApprovedBalance = 
     ($treasurySummary['approved_income'] ?? 0) 
     - ($treasurySummary['approved_expense'] ?? 0)
@@ -489,13 +502,14 @@ $approvedIncome = (float) ($treasurySummary['approved_income'] ?? 0);
 $approvedExpense = (float) ($treasurySummary['approved_expense'] ?? 0);
 $approvedPayment = (float) ($treasurySummary['approved_payment'] ?? 0);
 
-$movementTotal = $approvedIncome + $approvedExpense + $approvedPayment + $totalSalaries + $totalSalaryAdjustments;
+$movementTotal = $approvedIncome + $approvedExpense + $approvedPayment + $totalSalaries + $totalSalaryAdjustments + $totalCustomerCreditSettlements;
 $shareDenominator = $movementTotal > 0 ? $movementTotal : 1;
 $incomeShare = $shareDenominator > 0 ? round(($approvedIncome / $shareDenominator) * 100) : 0;
 $expenseShare = $shareDenominator > 0 ? round(($approvedExpense / $shareDenominator) * 100) : 0;
 $paymentShare = $shareDenominator > 0 ? round(($approvedPayment / $shareDenominator) * 100) : 0;
 $salariesShare = $shareDenominator > 0 ? round(($totalSalaries / $shareDenominator) * 100) : 0;
 $adjustmentsShare = $shareDenominator > 0 ? round(($totalSalaryAdjustments / $shareDenominator) * 100) : 0;
+$customerSettlementsShare = $shareDenominator > 0 ? round(($totalCustomerCreditSettlements / $shareDenominator) * 100) : 0;
 $pendingCount = intval($pendingStats['total_pending'] ?? 0);
 $pendingAmount = (float) ($pendingStats['pending_amount'] ?? 0);
 $pendingPreview = array_slice($pendingTransactions, 0, 3);
@@ -598,6 +612,19 @@ $typeColorMap = [
                                 <div class="progress-bar bg-info" role="progressbar" style="width: <?php echo max(0, min(100, $adjustmentsShare)); ?>%;"></div>
                             </div>
                             <small class="text-muted d-block mt-2"><?php echo max(0, min(100, $adjustmentsShare)); ?>% من إجمالي الحركة</small>
+                        </div>
+                    </div>
+                    <div class="col-12 col-md-4">
+                        <div class="border rounded-3 p-3 h-100">
+                            <div class="d-flex justify-content-between align-items-center">
+                                <span class="text-muted small">تسويات أرصدة العملاء</span>
+                                <i class="bi bi-wallet2 text-secondary"></i>
+                            </div>
+                            <div class="h5 text-secondary mt-2"><?php echo formatCurrency($totalCustomerCreditSettlements); ?></div>
+                            <div class="progress mt-3" style="height: 6px;">
+                                <div class="progress-bar bg-secondary" role="progressbar" style="width: <?php echo max(0, min(100, $customerSettlementsShare)); ?>%;"></div>
+                            </div>
+                            <small class="text-muted d-block mt-2"><?php echo max(0, min(100, $customerSettlementsShare)); ?>% من إجمالي الحركة</small>
                         </div>
                     </div>
                 </div>

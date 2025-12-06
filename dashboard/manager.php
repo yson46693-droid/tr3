@@ -1731,9 +1731,20 @@ $pageDescription = 'لوحة تحكم المدير - إدارة شاملة لل�
                 }
                 ?>
                 
+            <?php elseif ($page === 'customer_credit_balances'): ?>
+                <!-- صفحة العملاء ذوي الرصيد الدائن -->
+                <?php
+                $modulePath = __DIR__ . '/../modules/manager/customer_credit_balances.php';
+                if (file_exists($modulePath)) {
+                    include $modulePath;
+                } else {
+                    echo '<div class="alert alert-danger">الصفحة غير متاحة حالياً.</div>';
+                }
+                ?>
+
             <?php elseif ($page === 'company_cash'): ?>
                 <!-- صفحة خزنة الشركة -->
-                <?php 
+                <?php
                 $modulePath = __DIR__ . '/../modules/manager/company_cash.php';
                 if (file_exists($modulePath)) {
                     include $modulePath;

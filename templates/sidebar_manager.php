@@ -98,6 +98,14 @@ $baseUrl = getDashboardUrl();
                 </a>
             </li>
 
+            <li class="nav-item">
+                <a class="nav-link <?php echo (isset($_GET['page']) && $_GET['page'] === 'customer_credit_balances') ? 'active' : ''; ?>"
+                   href="<?php echo $baseUrl; ?>manager.php?page=customer_credit_balances">
+                    <i class="bi bi-wallet2"></i>
+                    <span>أرصدة العملاء الدائنة</span>
+                </a>
+            </li>
+
             <li class="nav-item sidebar-section-divider">
                 <div class="sidebar-section-title">Listing</div>
             </li>
