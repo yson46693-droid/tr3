@@ -1156,6 +1156,49 @@ if (!empty($advanceRequests)) {
     }
 }
 
+// حساب المتبقي من الراتب (نفس المنطق المستخدم في صفحة salaries)
+$remainingAmount = 0;
+$accumulatedAmount = 0;
+$paidAmount = 0;
+
+if ($salaryData['exists'] && isset($currentSalary) && isset($currentSalary['id'])) {
+    $salaryId = intval($currentSalary['id'] ?? 0);
+    $salaryMonth = intval($currentSalary['month'] ?? $selectedMonth);
+    $salaryYear = intval($currentSalary['year'] ?? $selectedYear);
+    
+    if ($salaryId > 0) {
+        // استخدام الدالة المشتركة لحساب المبلغ التراكمي
+        $accumulatedData = calculateSalaryAccumulatedAmount(
+            $currentUser['id'], 
+            $salaryId, 
+            $totalSalary, 
+            $salaryMonth, 
+            $salaryYear, 
+            $db
+        );
+        
+        $accumulatedAmount = $accumulatedData['accumulated'];
+        
+        // حساب المبلغ المدفوع من جميع التسويات حتى نهاية الشهر
+        $toDate = date('Y-m-t', mktime(0, 0, 0, $salaryMonth, 1, $salaryYear));
+        $allSettlements = $db->query(
+            "SELECT settlement_amount FROM salary_settlements 
+             WHERE user_id = ? 
+             AND DATE(settlement_date) <= ?
+             ORDER BY settlement_date ASC",
+            [$currentUser['id'], $toDate]
+        );
+        
+        foreach ($allSettlements as $settlement) {
+            $setAmount = cleanFinancialValue($settlement['settlement_amount'] ?? 0);
+            $paidAmount += max(0, $setAmount);
+        }
+        
+        // حساب المتبقي = المبلغ التراكمي - المبلغ المدفوع
+        $remainingAmount = max(0, $accumulatedAmount - $paidAmount);
+    }
+}
+
 $dashboardUrl = getDashboardUrl($currentUser['role']);
 $monthName = date('F', mktime(0, 0, 0, $selectedMonth, 1));
 ?>
@@ -1491,6 +1534,14 @@ if ($showSuccessFromSession): ?>
                 <td><strong>الراتب الإجمالي</strong></td>
                 <td><strong><?php echo formatCurrency($totalSalary); ?></strong></td>
             </tr>
+            <?php if ($salaryData['exists'] && isset($currentSalary) && isset($currentSalary['id']) && $currentSalary['id'] > 0): ?>
+            <tr>
+                <td><strong>الباقي من الراتب</strong></td>
+                <td><strong class="<?php echo $remainingAmount > 0 ? 'text-warning' : 'text-success'; ?>">
+                    <?php echo formatCurrency($remainingAmount); ?>
+                </strong></td>
+            </tr>
+            <?php endif; ?>
             <?php if ($currentUser['role'] === 'sales' && $collectionsBonus > 0): ?>
             <tr>
                 <td colspan="2" style="text-align: center; color: #6b7280; font-size: 13px; padding-top: 10px;">
