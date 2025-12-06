@@ -287,12 +287,6 @@ $lang = isset($translations) ? $translations : [];
     </div>
 <?php else: ?>
     <div class="card shadow-sm">
-        <div class="card-header bg-primary text-white d-flex justify-content-between align-items-center">
-            <h5 class="mb-0">
-                <i class="bi bi-wallet2 me-2"></i>
-                قائمة العملاء ذوي الرصيد الدائن (<?php echo number_format($customerCount); ?>)
-            </h5>
-        </div>
         <div class="card-body">
             <div class="table-responsive">
                 <table class="table table-hover align-middle">
