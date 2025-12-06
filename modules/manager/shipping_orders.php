@@ -1340,33 +1340,72 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     if (empty($orderItems)) {
                         throw new RuntimeException('لا توجد منتجات في الطلب');
                     }
-                    // التأكد من وجود جدول local_invoices
+                    // التأكد من وجود جدول local_invoices وإنشاؤه إذا لم يكن موجوداً
                     $localInvoicesTableExists = $db->queryOne("SHOW TABLES LIKE 'local_invoices'");
                     if (empty($localInvoicesTableExists)) {
+                        // إنشاء جدول local_invoices
                         $db->execute("
                             CREATE TABLE IF NOT EXISTS `local_invoices` (
                               `id` int(11) NOT NULL AUTO_INCREMENT,
                               `invoice_number` varchar(50) NOT NULL,
                               `customer_id` int(11) NOT NULL,
                               `date` date NOT NULL,
+                              `due_date` date DEFAULT NULL,
                               `subtotal` decimal(15,2) NOT NULL DEFAULT 0.00,
+                              `tax_rate` decimal(5,2) DEFAULT 0.00,
+                              `tax_amount` decimal(15,2) DEFAULT 0.00,
+                              `discount_amount` decimal(15,2) DEFAULT 0.00,
                               `total_amount` decimal(15,2) NOT NULL DEFAULT 0.00,
                               `paid_amount` decimal(15,2) DEFAULT 0.00,
                               `remaining_amount` decimal(15,2) DEFAULT 0.00,
-                              `status` enum('draft','sent','paid','partial','overdue','cancelled') DEFAULT 'sent',
+                              `status` enum('draft','sent','paid','partial','overdue','cancelled') DEFAULT 'draft',
+                              `notes` text DEFAULT NULL,
                               `created_by` int(11) NOT NULL,
                               `created_at` timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP,
                               `updated_at` timestamp NULL DEFAULT NULL ON UPDATE CURRENT_TIMESTAMP,
                               PRIMARY KEY (`id`),
                               UNIQUE KEY `invoice_number` (`invoice_number`),
-                              KEY `customer_id` (`customer_id`)
+                              KEY `customer_id` (`customer_id`),
+                              KEY `date` (`date`),
+                              KEY `status` (`status`),
+                              KEY `created_by` (`created_by`)
                             ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
                         ");
+                    } else {
+                        // التأكد من وجود جميع الأعمدة المطلوبة وإضافتها إذا لم تكن موجودة
+                        $requiredColumns = [
+                            'due_date' => "ALTER TABLE local_invoices ADD COLUMN `due_date` date DEFAULT NULL AFTER `date`",
+                            'subtotal' => "ALTER TABLE local_invoices ADD COLUMN `subtotal` decimal(15,2) NOT NULL DEFAULT 0.00 AFTER `due_date`",
+                            'tax_rate' => "ALTER TABLE local_invoices ADD COLUMN `tax_rate` decimal(5,2) DEFAULT 0.00 AFTER `subtotal`",
+                            'tax_amount' => "ALTER TABLE local_invoices ADD COLUMN `tax_amount` decimal(15,2) DEFAULT 0.00 AFTER `tax_rate`",
+                            'discount_amount' => "ALTER TABLE local_invoices ADD COLUMN `discount_amount` decimal(15,2) DEFAULT 0.00 AFTER `tax_amount`",
+                            'total_amount' => "ALTER TABLE local_invoices ADD COLUMN `total_amount` decimal(15,2) NOT NULL DEFAULT 0.00 AFTER `discount_amount`",
+                            'paid_amount' => "ALTER TABLE local_invoices ADD COLUMN `paid_amount` decimal(15,2) DEFAULT 0.00 AFTER `total_amount`",
+                            'remaining_amount' => "ALTER TABLE local_invoices ADD COLUMN `remaining_amount` decimal(15,2) DEFAULT 0.00 AFTER `paid_amount`",
+                            'status' => "ALTER TABLE local_invoices ADD COLUMN `status` enum('draft','sent','paid','partial','overdue','cancelled') DEFAULT 'draft' AFTER `remaining_amount`",
+                            'notes' => "ALTER TABLE local_invoices ADD COLUMN `notes` text DEFAULT NULL AFTER `status`",
+                            'created_by' => "ALTER TABLE local_invoices ADD COLUMN `created_by` int(11) NOT NULL AFTER `notes`",
+                            'created_at' => "ALTER TABLE local_invoices ADD COLUMN `created_at` timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP AFTER `created_by`",
+                            'updated_at' => "ALTER TABLE local_invoices ADD COLUMN `updated_at` timestamp NULL DEFAULT NULL ON UPDATE CURRENT_TIMESTAMP AFTER `created_at`"
+                        ];
+                        
+                        foreach ($requiredColumns as $columnName => $alterSql) {
+                            $columnExists = !empty($db->queryOne("SHOW COLUMNS FROM local_invoices LIKE '$columnName'"));
+                            if (!$columnExists) {
+                                try {
+                                    $db->execute($alterSql);
+                                    error_log("Added column $columnName to local_invoices table");
+                                } catch (Throwable $alterError) {
+                                    error_log("Error adding column $columnName to local_invoices: " . $alterError->getMessage());
+                                }
+                            }
+                        }
                     }
                     
-                    // التأكد من وجود جدول local_invoice_items
+                    // التأكد من وجود جدول local_invoice_items وإنشاؤه إذا لم يكن موجوداً
                     $localInvoiceItemsTableExists = $db->queryOne("SHOW TABLES LIKE 'local_invoice_items'");
                     if (empty($localInvoiceItemsTableExists)) {
+                        // إنشاء جدول local_invoice_items
                         $db->execute("
                             CREATE TABLE IF NOT EXISTS `local_invoice_items` (
                               `id` int(11) NOT NULL AUTO_INCREMENT,
@@ -1384,11 +1423,11 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                         ");
                     }
                     
-                    // إنشاء رقم فاتورة محلية
+                    // إنشاء الفاتورة المحلية
                     $orderNumber = $order['order_number'] ?? 'ORD-' . $orderId;
                     $localInvoiceNumber = 'LOC-' . $orderNumber;
                     
-                    // التحقق من عدم وجود فاتورة محلية بنفس الرقم
+                    // فحص إذا كانت الفاتورة المحلية موجودة مسبقاً
                     $existingLocalInvoice = $db->queryOne(
                         "SELECT id FROM local_invoices WHERE invoice_number = ? LIMIT 1",
                         [$localInvoiceNumber]
@@ -1398,92 +1437,123 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                         // إنشاء الفاتورة المحلية
                         $saleDate = date('Y-m-d');
                         $localCustomerId = $order['customer_id'];
+                        $subtotal = $totalAmount; // المبلغ الإجمالي هو نفسه subtotal في حالة طلبات الشحن
+                        $dueDate = null; // لا يوجد تاريخ استحقاق لطلبات الشحن
+                        $notes = 'طلب شحن - ' . $orderNumber;
                         
-                        $db->execute(
-                            "INSERT INTO local_invoices 
-                            (invoice_number, customer_id, date, subtotal, total_amount, paid_amount, remaining_amount, status, created_by)
-                            VALUES (?, ?, ?, ?, ?, 0, ?, 'sent', ?)",
-                            [
-                                $localInvoiceNumber,
-                                $localCustomerId,
-                                $saleDate,
-                                $totalAmount,
-                                $totalAmount,
-                                $totalAmount,
-                                $currentUser['id'] ?? null
-                            ]
-                        );
+                        // بعد التأكد من وجود جميع الأعمدة، نستخدم نفس استعلام INSERT
+                        $hasDueDateColumn = !empty($db->queryOne("SHOW COLUMNS FROM local_invoices LIKE 'due_date'"));
+                        
+                        if ($hasDueDateColumn) {
+                            $db->execute(
+                                "INSERT INTO local_invoices 
+                                (invoice_number, customer_id, date, due_date, subtotal, tax_rate, tax_amount, 
+                                 discount_amount, total_amount, paid_amount, remaining_amount, status, notes, created_by)
+                                VALUES (?, ?, ?, ?, ?, 0, 0, 0, ?, 0, ?, 'sent', ?, ?)",
+                                [
+                                    $localInvoiceNumber,
+                                    $localCustomerId,
+                                    $saleDate,
+                                    $dueDate,
+                                    $subtotal,
+                                    $totalAmount,
+                                    $totalAmount,
+                                    $notes,
+                                    $currentUser['id'] ?? null
+                                ]
+                            );
+                        } else {
+                            $db->execute(
+                                "INSERT INTO local_invoices 
+                                (invoice_number, customer_id, date, subtotal, tax_rate, tax_amount, 
+                                 discount_amount, total_amount, paid_amount, remaining_amount, status, notes, created_by)
+                                VALUES (?, ?, ?, ?, 0, 0, 0, ?, 0, ?, 'sent', ?, ?)",
+                                [
+                                    $localInvoiceNumber,
+                                    $localCustomerId,
+                                    $saleDate,
+                                    $subtotal,
+                                    $totalAmount,
+                                    $totalAmount,
+                                    $notes,
+                                    $currentUser['id'] ?? null
+                                ]
+                            );
+                        }
                         
                         $localInvoiceId = (int)$db->getLastInsertId();
                         
+                        error_log("Local invoice created successfully: ID=$localInvoiceId, Number=$localInvoiceNumber, Customer=$localCustomerId");
+                        
                         // إضافة عناصر الفاتورة المحلية
-                        $hasBatchNumber = !empty($db->queryOne("SHOW COLUMNS FROM local_invoice_items LIKE 'batch_number'"));
-                        $hasBatchId = !empty($db->queryOne("SHOW COLUMNS FROM local_invoice_items LIKE 'batch_id'"));
-                        
-                        foreach ($orderItems as $item) {
-                            $productId = (int)($item['product_id'] ?? 0);
-                            $quantity = (float)($item['quantity'] ?? 0);
-                            $unitPrice = (float)($item['unit_price'] ?? 0);
-                            $totalPrice = (float)($item['total_price'] ?? 0);
+                        if (!empty($orderItems)) {
+                            // التحقق من وجود أعمدة batch_number و batch_id في local_invoice_items
+                            $hasBatchNumber = !empty($db->queryOne("SHOW COLUMNS FROM local_invoice_items LIKE 'batch_number'"));
+                            $hasBatchId = !empty($db->queryOne("SHOW COLUMNS FROM local_invoice_items LIKE 'batch_id'"));
                             
-                            if ($productId > 0 && $quantity > 0) {
-                                // جلب اسم المنتج
-                                $product = $db->queryOne("SELECT name FROM products WHERE id = ?", [$productId]);
-                                $productName = $product['name'] ?? 'منتج رقم ' . $productId;
+                            foreach ($orderItems as $item) {
+                                $productId = (int)($item['product_id'] ?? 0);
+                                $quantity = (float)($item['quantity'] ?? 0);
+                                $unitPrice = (float)($item['unit_price'] ?? 0);
+                                $totalPrice = (float)($item['total_price'] ?? 0);
                                 
-                                $columns = ['invoice_id', 'product_id', 'description', 'quantity', 'unit_price', 'total_price'];
-                                $values = [
-                                    $localInvoiceId,
-                                    $productId,
-                                    $productName,
-                                    $quantity,
-                                    $unitPrice,
-                                    $totalPrice
-                                ];
-                                
-                                if ($hasBatchId && !empty($item['batch_id'])) {
-                                    $columns[] = 'batch_id';
-                                    $values[] = (int)$item['batch_id'];
-                                }
-                                
-                                if ($hasBatchNumber) {
-                                    $batchNumber = null;
-                                    if (!empty($item['batch_id'])) {
-                                        $batchInfo = $db->queryOne(
-                                            "SELECT COALESCE(fp.batch_number, bn.batch_number) as batch_number
-                                             FROM finished_products fp
-                                             LEFT JOIN batch_numbers bn ON fp.batch_number = bn.batch_number
-                                             WHERE fp.id = ?
-                                             LIMIT 1",
-                                            [$item['batch_id']]
-                                        );
-                                        if ($batchInfo && !empty($batchInfo['batch_number'])) {
-                                            $batchNumber = $batchInfo['batch_number'];
+                                if ($productId > 0 && $quantity > 0) {
+                                    // جلب اسم المنتج
+                                    $product = $db->queryOne("SELECT name FROM products WHERE id = ?", [$productId]);
+                                    $productName = $product['name'] ?? 'منتج رقم ' . $productId;
+                                    
+                                    $itemTotal = $quantity * $unitPrice;
+                                    
+                                    // بناء استعلام INSERT ديناميكياً بناءً على وجود الأعمدة
+                                    $columns = ['invoice_id', 'product_id', 'description', 'quantity', 'unit_price', 'total_price'];
+                                    $values = [
+                                        $localInvoiceId,
+                                        $productId,
+                                        $productName,
+                                        $quantity,
+                                        $unitPrice,
+                                        $itemTotal
+                                    ];
+                                    
+                                    if ($hasBatchNumber) {
+                                        $batchNumber = null;
+                                        if (!empty($item['batch_id'])) {
+                                            $batchInfo = $db->queryOne(
+                                                "SELECT COALESCE(fp.batch_number, bn.batch_number) as batch_number
+                                                 FROM finished_products fp
+                                                 LEFT JOIN batch_numbers bn ON fp.batch_number = bn.batch_number
+                                                 WHERE fp.id = ?
+                                                 LIMIT 1",
+                                                [$item['batch_id']]
+                                            );
+                                            if ($batchInfo && !empty($batchInfo['batch_number'])) {
+                                                $batchNumber = $batchInfo['batch_number'];
+                                            }
                                         }
+                                        $columns[] = 'batch_number';
+                                        $values[] = $batchNumber;
                                     }
-                                    $columns[] = 'batch_number';
-                                    $values[] = $batchNumber;
+                                    
+                                    if ($hasBatchId) {
+                                        $columns[] = 'batch_id';
+                                        $values[] = isset($item['batch_id']) && $item['batch_id'] ? (int)$item['batch_id'] : null;
+                                    }
+                                    
+                                    $placeholders = str_repeat('?,', count($values) - 1) . '?';
+                                    $sql = "INSERT INTO local_invoice_items (" . implode(', ', $columns) . ") VALUES ($placeholders)";
+                                    
+                                    $db->execute($sql, $values);
                                 }
-                                
-                                $placeholders = str_repeat('?,', count($values) - 1) . '?';
-                                $sql = "INSERT INTO local_invoice_items (" . implode(', ', $columns) . ") VALUES ($placeholders)";
-                                
-                                $db->execute($sql, $values);
                             }
+                            error_log("Local invoice items added successfully: " . count($orderItems) . " items for invoice ID=$localInvoiceId");
                         }
-                        
-                        error_log(sprintf(
-                            'shipping_orders: Created local invoice - invoice_id=%d, invoice_number=%s, customer_id=%d, order_id=%d',
-                            $localInvoiceId,
-                            $localInvoiceNumber,
-                            $localCustomerId,
-                            $orderId
-                        ));
+                    } else {
+                        error_log("Local invoice already exists: Number=$localInvoiceNumber");
                     }
                 } catch (Throwable $localInvoiceError) {
-                    error_log('shipping_orders: failed creating local invoice -> ' . $localInvoiceError->getMessage());
-                    error_log('shipping_orders: local invoice error trace -> ' . $localInvoiceError->getTraceAsString());
-                    // لا نوقف العملية إذا فشل إنشاء الفاتورة المحلية
+                    // لا نوقف العملية إذا فشل إنشاء الفاتورة المحلية، فقط نسجل الخطأ
+                    error_log('Error creating local invoice: ' . $localInvoiceError->getMessage());
+                    error_log('Stack trace: ' . $localInvoiceError->getTraceAsString());
                 }
             }
 
