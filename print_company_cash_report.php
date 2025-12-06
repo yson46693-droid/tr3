@@ -323,7 +323,7 @@ $statusColors = [
         }
         
         .section-title {
-            background: linear-gradient(90deg, #667eea 0%, #764ba2 100%);
+            background: linear-gradient(90deg,rgb(22, 52, 186) 0%,rgb(13, 37, 175) 100%);
             color: white;
             padding: 18px 25px;
             border-radius: 10px;
