@@ -323,7 +323,7 @@ $statusColors = [
         }
         
         .section-title {
-            background: linear-gradient(90deg,rgb(22, 52, 186) 0%,rgb(13, 37, 175) 100%);
+            background: linear-gradient(90deg,rgb(22, 186, 129) 0%,rgb(9, 131, 93) 100%);
             color: white;
             padding: 18px 25px;
             border-radius: 10px;
@@ -348,7 +348,7 @@ $statusColors = [
         }
         
         .transactions-table thead {
-            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            background: linear-gradient(135deg,rgb(205, 234, 102) 0%,rgb(123, 162, 75) 100%);
             color: white;
         }
         
