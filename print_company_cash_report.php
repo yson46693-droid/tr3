@@ -239,7 +239,7 @@ $statusColors = [
         
         .report-header {
             text-align: center;
-            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            background: linear-gradient(135deg,rgb(22, 52, 186) 0%,rgb(11, 54, 147) 100%);
             color: white;
             padding: 40px 30px;
             border-radius: 16px;
@@ -271,7 +271,7 @@ $statusColors = [
         }
         
         .summary-section {
-            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            background: linear-gradient(135deg,rgb(22, 52, 186) 0%,rgb(11, 54, 147) 100%);
             color: white;
             padding: 35px;
             border-radius: 16px;
@@ -569,7 +569,7 @@ $statusColors = [
             bottom: 30px;
             left: 30px;
             z-index: 1000;
-            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            background: linear-gradient(135deg,rgb(22, 52, 186) 0%,rgb(11, 54, 147) 100%);
             color: white;
             border: none;
             padding: 14px 28px;
