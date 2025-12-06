@@ -1348,15 +1348,17 @@ document.addEventListener('DOMContentLoaded', function() {
         });
     }
     
-    // التحقق من صحة نموذج التقرير
-    function validateReportForm() {
+    // معالجة إرسال نموذج التقرير
+    function handleReportSubmit(event) {
+        event.preventDefault();
+        
         const form = document.getElementById('reportForm');
-        if (!form) return true;
+        if (!form) return false;
         
         const dateFrom = document.getElementById('reportDateFrom');
         const dateTo = document.getElementById('reportDateTo');
         
-        if (!dateFrom || !dateTo) return true;
+        if (!dateFrom || !dateTo) return false;
         
         const fromDate = new Date(dateFrom.value);
         const toDate = new Date(dateTo.value);
@@ -1367,7 +1369,58 @@ document.addEventListener('DOMContentLoaded', function() {
             return false;
         }
         
-        return true;
+        // بناء URL للتقرير
+        // استخدام window.location.origin للحصول على النطاق
+        const origin = window.location.origin;
+        const currentPath = window.location.pathname;
+        
+        // استخراج المسار الأساسي (إزالة dashboard/manager.php أو أي مسار آخر)
+        let basePath = currentPath;
+        // إزالة /dashboard/manager.php أو /dashboard/accountant.php
+        basePath = basePath.replace(/\/dashboard\/[^\/]+\.php.*$/, '');
+        // إزالة /modules/manager/company_cash.php إذا كان موجوداً
+        basePath = basePath.replace(/\/modules\/[^\/]+\/[^\/]+\.php.*$/, '');
+        
+        // تنظيف المسار
+        basePath = basePath.replace(/\/$/, ''); // إزالة / من النهاية
+        if (!basePath) {
+            basePath = '';
+        }
+        
+        // بناء URL للتقرير
+        const reportUrl = origin + basePath + '/print_company_cash_report.php';
+        
+        // جمع معاملات النموذج
+        const formData = new FormData(form);
+        const params = new URLSearchParams();
+        
+        for (const [key, value] of formData.entries()) {
+            params.append(key, value);
+        }
+        
+        // إضافة checkboxes غير المحددة كقيم فارغة
+        const includePending = document.getElementById('includePending');
+        const groupByType = document.getElementById('groupByType');
+        
+        if (!includePending.checked) {
+            params.delete('include_pending');
+        }
+        if (!groupByType.checked) {
+            params.delete('group_by_type');
+        }
+        
+        // فتح التقرير في تبويب جديد
+        const fullUrl = reportUrl + '?' + params.toString();
+        console.log('Opening report URL:', fullUrl); // للتشخيص
+        window.open(fullUrl, '_blank');
+        
+        // إغلاق Modal
+        const modal = bootstrap.Modal.getInstance(document.getElementById('generateReportModal'));
+        if (modal) {
+            modal.hide();
+        }
+        
+        return false;
     }
 });
 </script>
@@ -1382,13 +1435,7 @@ document.addEventListener('DOMContentLoaded', function() {
                 </h5>
                 <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal" aria-label="Close"></button>
             </div>
-            <form method="GET" action="<?php 
-                // استخدام المسار المطلق من الجذر
-                $basePath = getBasePath();
-                $basePath = rtrim($basePath, '/');
-                $reportPath = $basePath . '/print_company_cash_report.php';
-                echo htmlspecialchars($reportPath, ENT_QUOTES, 'UTF-8'); 
-            ?>" target="_blank" id="reportForm" onsubmit="return validateReportForm()">
+            <form method="GET" id="reportForm" onsubmit="return handleReportSubmit(event)">
                 <div class="modal-body">
                     <div class="alert alert-info">
                         <i class="bi bi-info-circle me-2"></i>
