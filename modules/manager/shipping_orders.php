@@ -1164,7 +1164,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             $transactionStarted = true;
 
             $order = $db->queryOne(
-                "SELECT id, shipping_company_id, customer_id, total_amount, status, invoice_id FROM shipping_company_orders WHERE id = ? FOR UPDATE",
+                "SELECT id, order_number, shipping_company_id, customer_id, total_amount, status, invoice_id FROM shipping_company_orders WHERE id = ? FOR UPDATE",
                 [$orderId]
             );
 
@@ -1326,6 +1326,165 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 error_log('shipping_orders: failed adding products to sales table -> ' . $salesError->getMessage());
                 error_log('shipping_orders: sales error trace -> ' . $salesError->getTraceAsString());
                 // لا نوقف العملية إذا فشل إضافة المنتجات إلى جدول sales
+            }
+
+            // إنشاء فاتورة محلية للعميل المحلي (حتى تظهر المشتريات في سجل العميل المحلي)
+            if ($customerTable === 'local_customers') {
+                try {
+                    // جلب منتجات الطلب
+                    $orderItems = $db->query(
+                        "SELECT product_id, batch_id, quantity, unit_price, total_price FROM shipping_company_order_items WHERE order_id = ?",
+                        [$orderId]
+                    );
+                    
+                    if (empty($orderItems)) {
+                        throw new RuntimeException('لا توجد منتجات في الطلب');
+                    }
+                    // التأكد من وجود جدول local_invoices
+                    $localInvoicesTableExists = $db->queryOne("SHOW TABLES LIKE 'local_invoices'");
+                    if (empty($localInvoicesTableExists)) {
+                        $db->execute("
+                            CREATE TABLE IF NOT EXISTS `local_invoices` (
+                              `id` int(11) NOT NULL AUTO_INCREMENT,
+                              `invoice_number` varchar(50) NOT NULL,
+                              `customer_id` int(11) NOT NULL,
+                              `date` date NOT NULL,
+                              `subtotal` decimal(15,2) NOT NULL DEFAULT 0.00,
+                              `total_amount` decimal(15,2) NOT NULL DEFAULT 0.00,
+                              `paid_amount` decimal(15,2) DEFAULT 0.00,
+                              `remaining_amount` decimal(15,2) DEFAULT 0.00,
+                              `status` enum('draft','sent','paid','partial','overdue','cancelled') DEFAULT 'sent',
+                              `created_by` int(11) NOT NULL,
+                              `created_at` timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                              `updated_at` timestamp NULL DEFAULT NULL ON UPDATE CURRENT_TIMESTAMP,
+                              PRIMARY KEY (`id`),
+                              UNIQUE KEY `invoice_number` (`invoice_number`),
+                              KEY `customer_id` (`customer_id`)
+                            ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
+                        ");
+                    }
+                    
+                    // التأكد من وجود جدول local_invoice_items
+                    $localInvoiceItemsTableExists = $db->queryOne("SHOW TABLES LIKE 'local_invoice_items'");
+                    if (empty($localInvoiceItemsTableExists)) {
+                        $db->execute("
+                            CREATE TABLE IF NOT EXISTS `local_invoice_items` (
+                              `id` int(11) NOT NULL AUTO_INCREMENT,
+                              `invoice_id` int(11) NOT NULL,
+                              `product_id` int(11) NOT NULL,
+                              `description` varchar(255) DEFAULT NULL,
+                              `quantity` decimal(10,2) NOT NULL,
+                              `unit_price` decimal(15,2) NOT NULL,
+                              `total_price` decimal(15,2) NOT NULL,
+                              `created_at` timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                              PRIMARY KEY (`id`),
+                              KEY `invoice_id` (`invoice_id`),
+                              KEY `product_id` (`product_id`)
+                            ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
+                        ");
+                    }
+                    
+                    // إنشاء رقم فاتورة محلية
+                    $orderNumber = $order['order_number'] ?? 'ORD-' . $orderId;
+                    $localInvoiceNumber = 'LOC-' . $orderNumber;
+                    
+                    // التحقق من عدم وجود فاتورة محلية بنفس الرقم
+                    $existingLocalInvoice = $db->queryOne(
+                        "SELECT id FROM local_invoices WHERE invoice_number = ? LIMIT 1",
+                        [$localInvoiceNumber]
+                    );
+                    
+                    if (empty($existingLocalInvoice)) {
+                        // إنشاء الفاتورة المحلية
+                        $saleDate = date('Y-m-d');
+                        $localCustomerId = $order['customer_id'];
+                        
+                        $db->execute(
+                            "INSERT INTO local_invoices 
+                            (invoice_number, customer_id, date, subtotal, total_amount, paid_amount, remaining_amount, status, created_by)
+                            VALUES (?, ?, ?, ?, ?, 0, ?, 'sent', ?)",
+                            [
+                                $localInvoiceNumber,
+                                $localCustomerId,
+                                $saleDate,
+                                $totalAmount,
+                                $totalAmount,
+                                $totalAmount,
+                                $currentUser['id'] ?? null
+                            ]
+                        );
+                        
+                        $localInvoiceId = (int)$db->getLastInsertId();
+                        
+                        // إضافة عناصر الفاتورة المحلية
+                        $hasBatchNumber = !empty($db->queryOne("SHOW COLUMNS FROM local_invoice_items LIKE 'batch_number'"));
+                        $hasBatchId = !empty($db->queryOne("SHOW COLUMNS FROM local_invoice_items LIKE 'batch_id'"));
+                        
+                        foreach ($orderItems as $item) {
+                            $productId = (int)($item['product_id'] ?? 0);
+                            $quantity = (float)($item['quantity'] ?? 0);
+                            $unitPrice = (float)($item['unit_price'] ?? 0);
+                            $totalPrice = (float)($item['total_price'] ?? 0);
+                            
+                            if ($productId > 0 && $quantity > 0) {
+                                // جلب اسم المنتج
+                                $product = $db->queryOne("SELECT name FROM products WHERE id = ?", [$productId]);
+                                $productName = $product['name'] ?? 'منتج رقم ' . $productId;
+                                
+                                $columns = ['invoice_id', 'product_id', 'description', 'quantity', 'unit_price', 'total_price'];
+                                $values = [
+                                    $localInvoiceId,
+                                    $productId,
+                                    $productName,
+                                    $quantity,
+                                    $unitPrice,
+                                    $totalPrice
+                                ];
+                                
+                                if ($hasBatchId && !empty($item['batch_id'])) {
+                                    $columns[] = 'batch_id';
+                                    $values[] = (int)$item['batch_id'];
+                                }
+                                
+                                if ($hasBatchNumber) {
+                                    $batchNumber = null;
+                                    if (!empty($item['batch_id'])) {
+                                        $batchInfo = $db->queryOne(
+                                            "SELECT COALESCE(fp.batch_number, bn.batch_number) as batch_number
+                                             FROM finished_products fp
+                                             LEFT JOIN batch_numbers bn ON fp.batch_number = bn.batch_number
+                                             WHERE fp.id = ?
+                                             LIMIT 1",
+                                            [$item['batch_id']]
+                                        );
+                                        if ($batchInfo && !empty($batchInfo['batch_number'])) {
+                                            $batchNumber = $batchInfo['batch_number'];
+                                        }
+                                    }
+                                    $columns[] = 'batch_number';
+                                    $values[] = $batchNumber;
+                                }
+                                
+                                $placeholders = str_repeat('?,', count($values) - 1) . '?';
+                                $sql = "INSERT INTO local_invoice_items (" . implode(', ', $columns) . ") VALUES ($placeholders)";
+                                
+                                $db->execute($sql, $values);
+                            }
+                        }
+                        
+                        error_log(sprintf(
+                            'shipping_orders: Created local invoice - invoice_id=%d, invoice_number=%s, customer_id=%d, order_id=%d',
+                            $localInvoiceId,
+                            $localInvoiceNumber,
+                            $localCustomerId,
+                            $orderId
+                        ));
+                    }
+                } catch (Throwable $localInvoiceError) {
+                    error_log('shipping_orders: failed creating local invoice -> ' . $localInvoiceError->getMessage());
+                    error_log('shipping_orders: local invoice error trace -> ' . $localInvoiceError->getTraceAsString());
+                    // لا نوقف العملية إذا فشل إنشاء الفاتورة المحلية
+                }
             }
 
             // تحديث الفاتورة لتعكس المبلغ المتبقي وإضافة المنتجات إلى سجل مشتريات العميل
