@@ -385,11 +385,16 @@ $pageTitle = isset($lang['menu_financial']) ? $lang['menu_financial'] : 'خزن�
 ?>
 
 <!-- صفحة الخزنة -->
-<div class="page-header mb-4 d-flex justify-content-between align-items-center">
+<div class="page-header mb-4 d-flex justify-content-between align-items-center flex-wrap gap-2">
     <h2><i class="bi bi-safe me-2"></i><?php echo isset($lang['menu_financial']) ? $lang['menu_financial'] : 'خزنة الشركة'; ?></h2>
-    <button type="button" class="btn btn-primary" data-bs-toggle="modal" data-bs-target="#collectFromRepModal">
-        <i class="bi bi-cash-coin me-1"></i>تحصيل من مندوب
-    </button>
+    <div class="d-flex gap-2">
+        <button type="button" class="btn btn-success" data-bs-toggle="modal" data-bs-target="#generateReportModal">
+            <i class="bi bi-file-earmark-text me-1"></i>تقرير تفصيلي
+        </button>
+        <button type="button" class="btn btn-primary" data-bs-toggle="modal" data-bs-target="#collectFromRepModal">
+            <i class="bi bi-cash-coin me-1"></i>تحصيل من مندوب
+        </button>
+    </div>
 </div>
 
 <?php if ($financialError): ?>
@@ -1344,3 +1349,71 @@ document.addEventListener('DOMContentLoaded', function() {
     }
 });
 </script>
+
+<!-- Modal إنشاء تقرير تفصيلي -->
+<div class="modal fade" id="generateReportModal" tabindex="-1" aria-labelledby="generateReportModalLabel" aria-hidden="true">
+    <div class="modal-dialog modal-dialog-centered">
+        <div class="modal-content">
+            <div class="modal-header bg-success text-white">
+                <h5 class="modal-title" id="generateReportModalLabel">
+                    <i class="bi bi-file-earmark-text me-2"></i>إنشاء تقرير تفصيلي
+                </h5>
+                <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal" aria-label="Close"></button>
+            </div>
+            <form method="GET" action="<?php echo getRelativeUrl('print_company_cash_report.php'); ?>" target="_blank">
+                <div class="modal-body">
+                    <div class="alert alert-info">
+                        <i class="bi bi-info-circle me-2"></i>
+                        <strong>ملاحظة:</strong> سيتم إنشاء تقرير تفصيلي لجميع حركات خزنة الشركة في الفترة المحددة.
+                    </div>
+                    <div class="row g-3">
+                        <div class="col-12 col-md-6">
+                            <label for="reportDateFrom" class="form-label">
+                                <i class="bi bi-calendar-event me-1"></i>من تاريخ <span class="text-danger">*</span>
+                            </label>
+                            <input type="date" 
+                                   class="form-control" 
+                                   id="reportDateFrom" 
+                                   name="date_from" 
+                                   required
+                                   value="<?php echo date('Y-m-01'); ?>">
+                        </div>
+                        <div class="col-12 col-md-6">
+                            <label for="reportDateTo" class="form-label">
+                                <i class="bi bi-calendar-event me-1"></i>إلى تاريخ <span class="text-danger">*</span>
+                            </label>
+                            <input type="date" 
+                                   class="form-control" 
+                                   id="reportDateTo" 
+                                   name="date_to" 
+                                   required
+                                   value="<?php echo date('Y-m-d'); ?>">
+                        </div>
+                        <div class="col-12">
+                            <div class="form-check">
+                                <input class="form-check-input" type="checkbox" id="includePending" name="include_pending" value="1">
+                                <label class="form-check-label" for="includePending">
+                                    تضمين المعاملات المعلقة
+                                </label>
+                            </div>
+                        </div>
+                        <div class="col-12">
+                            <div class="form-check">
+                                <input class="form-check-input" type="checkbox" id="groupByType" name="group_by_type" value="1" checked>
+                                <label class="form-check-label" for="groupByType">
+                                    تجميع الحركات حسب النوع
+                                </label>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">إلغاء</button>
+                    <button type="submit" class="btn btn-success">
+                        <i class="bi bi-file-earmark-pdf me-1"></i>إنشاء التقرير
+                    </button>
+                </div>
+            </form>
+        </div>
+    </div>
+</div>
