@@ -399,11 +399,51 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['
     // حساب الراتب الصافي (بعد الخصومات) = الراتب الإجمالي - الخصومات
     $netSalary = max(0, round($grossSalary - $deductions, 2));
     
-    // حساب الحد الأقصى للسلفة بناءً على نصف الراتب الصافي (بعد الخصومات)
-    $maxAdvance = cleanFinancialValue($netSalary * 0.5);
+    // حساب الباقي الفعلي من الراتب إذا كان هناك راتب محفوظ
+    $remainingAmount = 0;
+    if ($salaryData['exists'] && isset($salaryRecord['id'])) {
+        $salaryId = intval($salaryRecord['id'] ?? 0);
+        if ($salaryId > 0) {
+            // استخدام الدالة المشتركة لحساب المبلغ التراكمي
+            $accumulatedData = calculateSalaryAccumulatedAmount(
+                $currentUser['id'], 
+                $salaryId, 
+                $netSalary, 
+                $month, 
+                $year, 
+                $db
+            );
+            
+            $accumulatedAmount = $accumulatedData['accumulated'];
+            
+            // حساب المبلغ المدفوع من جميع التسويات حتى نهاية الشهر
+            $toDate = date('Y-m-t', mktime(0, 0, 0, $month, 1, $year));
+            $allSettlements = $db->query(
+                "SELECT settlement_amount FROM salary_settlements 
+                 WHERE user_id = ? 
+                 AND DATE(settlement_date) <= ?
+                 ORDER BY settlement_date ASC",
+                [$currentUser['id'], $toDate]
+            );
+            
+            $paidAmount = 0;
+            foreach ($allSettlements as $settlement) {
+                $setAmount = cleanFinancialValue($settlement['settlement_amount'] ?? 0);
+                $paidAmount += max(0, $setAmount);
+            }
+            
+            // حساب الباقي الفعلي = المبلغ التراكمي - المبلغ المدفوع
+            $remainingAmount = max(0, $accumulatedAmount - $paidAmount);
+        }
+    }
+    
+    // حساب الحد الأقصى للسلفة بناءً على نصف الباقي الفعلي من الراتب
+    // إذا كان الباقي متاحاً، استخدمه، وإلا استخدم الراتب الصافي
+    $baseForMaxAdvance = ($remainingAmount > 0 || $salaryData['exists']) ? $remainingAmount : $netSalary;
+    $maxAdvance = cleanFinancialValue(max(0, $baseForMaxAdvance * 0.5));
     
     if ($amount > $maxAdvance) {
-        $error = 'فشل إرسال طلب السلفة: قيمة السلفة (' . formatCurrency($amount) . ') لا يمكن أن تتجاوز نصف الراتب الحالي (' . formatCurrency($maxAdvance) . '). يرجى إدخال مبلغ أقل أو يساوي ' . formatCurrency($maxAdvance);
+        $error = 'فشل إرسال طلب السلفة: قيمة السلفة (' . formatCurrency($amount) . ') لا يمكن أن تتجاوز نصف الباقي من الراتب (' . formatCurrency($maxAdvance) . '). يرجى إدخال مبلغ أقل أو يساوي ' . formatCurrency($maxAdvance);
         $sendAdvanceAjaxResponse(false, $error);
         exit;
     }
@@ -1179,10 +1219,6 @@ if ($currentSalary && isset($currentSalary['base_amount'])) {
     }
 }
 
-// إعادة حساب الحد الأقصى للسلفة بناءً على نصف الراتب الصافي (بعد الخصومات)
-// $totalSalary هنا هو الراتب الصافي (بعد الخصومات) المعروض في الجدول
-$maxAdvance = cleanFinancialValue($totalSalary * 0.5);
-
 // حساب إجمالي السلفات المعتمدة لهذا الشهر
 $totalApprovedAdvances = 0;
 if (!empty($advanceRequests)) {
@@ -1240,6 +1276,10 @@ if ($salaryData['exists'] && isset($currentSalary) && isset($currentSalary['id']
         $remainingAmount = max(0, $accumulatedAmount - $paidAmount);
     }
 }
+
+// حساب الحد الأقصى للسلفة بناءً على نصف الباقي الفعلي من الراتب
+// الباقي الفعلي = المبلغ التراكمي - المبلغ المدفوع (يشمل التسويات والسلفات المدفوعة)
+$maxAdvance = cleanFinancialValue(max(0, $remainingAmount * 0.5));
 
 $dashboardUrl = getDashboardUrl($currentUser['role']);
 $monthName = date('F', mktime(0, 0, 0, $selectedMonth, 1));
