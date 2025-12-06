@@ -391,13 +391,16 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['
     // حساب الراتب الإجمالي (قبل الخصومات) = الراتب الأساسي + المكافآت + نسبة التحصيلات
     // هذا هو نفس الراتب الإجمالي المعروض في جدول التفاصيل (162.10)
     if ($currentUser['role'] === 'sales') {
-        $totalSalaryForAdvance = round($baseAmount + $bonus + $collectionsBonus, 2);
+        $grossSalary = round($baseAmount + $bonus + $collectionsBonus, 2);
     } else {
-        $totalSalaryForAdvance = round($baseAmount + $bonus, 2);
+        $grossSalary = round($baseAmount + $bonus, 2);
     }
     
-    // حساب الحد الأقصى للسلفة بناءً على الراتب الإجمالي (قبل الخصومات)
-    $maxAdvance = cleanFinancialValue($totalSalaryForAdvance * 0.5);
+    // حساب الراتب الصافي (بعد الخصومات) = الراتب الإجمالي - الخصومات
+    $netSalary = max(0, round($grossSalary - $deductions, 2));
+    
+    // حساب الحد الأقصى للسلفة بناءً على نصف الراتب الصافي (بعد الخصومات)
+    $maxAdvance = cleanFinancialValue($netSalary * 0.5);
     
     if ($amount > $maxAdvance) {
         $error = 'فشل إرسال طلب السلفة: قيمة السلفة (' . formatCurrency($amount) . ') لا يمكن أن تتجاوز نصف الراتب الحالي (' . formatCurrency($maxAdvance) . '). يرجى إدخال مبلغ أقل أو يساوي ' . formatCurrency($maxAdvance);
@@ -858,19 +861,30 @@ if ($salaryData['exists']) {
         $currentSalary['deductions'] = cleanFinancialValue($currentSalary['deductions']);
     }
     
-    // حساب الراتب الإجمالي بشكل صحيح مع نسبة التحصيلات
-    $salaryCalculation = calculateTotalSalaryWithCollections($currentSalary, $currentUser['id'], $selectedMonth, $selectedYear, $currentUser['role']);
-    $totalSalaryForAdvance = $salaryCalculation['total_salary'];
+    // حساب الراتب الإجمالي (قبل الخصومات)
+    $baseAmountForAdvance = cleanFinancialValue($currentSalary['base_amount'] ?? 0);
+    $bonusForAdvance = cleanFinancialValue($currentSalary[$bonusColumnName] ?? $currentSalary['bonus'] ?? $currentSalary['bonuses'] ?? 0);
+    $deductionsForAdvance = cleanFinancialValue($currentSalary['deductions'] ?? 0);
     
-    // استخدام الراتب الإجمالي من جدول تفاصيل الراتب إذا كان محفوظاً
-    if (isset($currentSalary['total_amount'])) {
-        $totalSalaryFromTable = cleanFinancialValue($currentSalary['total_amount'] ?? 0);
-        if ($totalSalaryFromTable > 0) {
-            $totalSalaryForAdvance = $totalSalaryFromTable;
-        }
+    // حساب نسبة التحصيلات للمندوبين
+    $collectionsBonusForAdvance = 0;
+    if ($currentUser['role'] === 'sales') {
+        $salaryCalculation = calculateTotalSalaryWithCollections($currentSalary, $currentUser['id'], $selectedMonth, $selectedYear, $currentUser['role']);
+        $collectionsBonusForAdvance = $salaryCalculation['collections_bonus'] ?? 0;
     }
     
-    $maxAdvance = cleanFinancialValue($totalSalaryForAdvance * 0.5);
+    // حساب الراتب الإجمالي (قبل الخصومات)
+    if ($currentUser['role'] === 'sales') {
+        $grossSalaryForAdvance = round($baseAmountForAdvance + $bonusForAdvance + $collectionsBonusForAdvance, 2);
+    } else {
+        $grossSalaryForAdvance = round($baseAmountForAdvance + $bonusForAdvance, 2);
+    }
+    
+    // حساب الراتب الصافي (بعد الخصومات)
+    $netSalaryForAdvance = max(0, round($grossSalaryForAdvance - $deductionsForAdvance, 2));
+    
+    // حساب الحد الأقصى للسلفة بناءً على نصف الراتب الصافي (بعد الخصومات)
+    $maxAdvance = cleanFinancialValue($netSalaryForAdvance * 0.5);
 } else if (isset($salaryData['calculation']) && $salaryData['calculation']['success']) {
     // الراتب محسوب مؤقتاً بناءً على الساعات حتى الآن
     $currentSalary = $salaryData['calculation'];
@@ -899,19 +913,30 @@ if ($salaryData['exists']) {
         $currentSalary['deductions'] = cleanFinancialValue($currentSalary['deductions']);
     }
     
-    // حساب الراتب الإجمالي بشكل صحيح مع نسبة التحصيلات
-    $salaryCalculation = calculateTotalSalaryWithCollections($currentSalary, $currentUser['id'], $selectedMonth, $selectedYear, $currentUser['role']);
-    $totalSalaryForAdvance = $salaryCalculation['total_salary'];
+    // حساب الراتب الإجمالي (قبل الخصومات)
+    $baseAmountForAdvance = cleanFinancialValue($currentSalary['base_amount'] ?? 0);
+    $bonusForAdvance = cleanFinancialValue($currentSalary[$bonusColumnName] ?? $currentSalary['bonus'] ?? $currentSalary['bonuses'] ?? 0);
+    $deductionsForAdvance = cleanFinancialValue($currentSalary['deductions'] ?? 0);
     
-    // استخدام الراتب الإجمالي من جدول تفاصيل الراتب إذا كان محفوظاً
-    if (isset($currentSalary['total_amount'])) {
-        $totalSalaryFromTable = cleanFinancialValue($currentSalary['total_amount'] ?? 0);
-        if ($totalSalaryFromTable > 0) {
-            $totalSalaryForAdvance = $totalSalaryFromTable;
-        }
+    // حساب نسبة التحصيلات للمندوبين
+    $collectionsBonusForAdvance = 0;
+    if ($currentUser['role'] === 'sales') {
+        $salaryCalculation = calculateTotalSalaryWithCollections($currentSalary, $currentUser['id'], $selectedMonth, $selectedYear, $currentUser['role']);
+        $collectionsBonusForAdvance = $salaryCalculation['collections_bonus'] ?? 0;
     }
     
-    $maxAdvance = cleanFinancialValue($totalSalaryForAdvance * 0.5);
+    // حساب الراتب الإجمالي (قبل الخصومات)
+    if ($currentUser['role'] === 'sales') {
+        $grossSalaryForAdvance = round($baseAmountForAdvance + $bonusForAdvance + $collectionsBonusForAdvance, 2);
+    } else {
+        $grossSalaryForAdvance = round($baseAmountForAdvance + $bonusForAdvance, 2);
+    }
+    
+    // حساب الراتب الصافي (بعد الخصومات)
+    $netSalaryForAdvance = max(0, round($grossSalaryForAdvance - $deductionsForAdvance, 2));
+    
+    // حساب الحد الأقصى للسلفة بناءً على نصف الراتب الصافي (بعد الخصومات)
+    $maxAdvance = cleanFinancialValue($netSalaryForAdvance * 0.5);
     $isTemporary = true;
 } else {
     // إذا فشل الحساب، حاول حساب الراتب مباشرة
@@ -938,19 +963,30 @@ if ($salaryData['exists']) {
             $currentSalary['deductions'] = cleanFinancialValue($currentSalary['deductions']);
         }
         
-        // حساب الراتب الإجمالي بشكل صحيح مع نسبة التحصيلات
-        $salaryCalculation = calculateTotalSalaryWithCollections($currentSalary, $currentUser['id'], $selectedMonth, $selectedYear, $currentUser['role']);
-        $totalSalaryForAdvance = $salaryCalculation['total_salary'];
+        // حساب الراتب الإجمالي (قبل الخصومات)
+        $baseAmountForAdvance = cleanFinancialValue($currentSalary['base_amount'] ?? 0);
+        $bonusForAdvance = cleanFinancialValue($currentSalary['bonus'] ?? 0);
+        $deductionsForAdvance = cleanFinancialValue($currentSalary['deductions'] ?? 0);
         
-        // استخدام الراتب الإجمالي من جدول تفاصيل الراتب إذا كان محفوظاً
-        if (isset($currentSalary['total_amount'])) {
-            $totalSalaryFromTable = cleanFinancialValue($currentSalary['total_amount'] ?? 0);
-            if ($totalSalaryFromTable > 0) {
-                $totalSalaryForAdvance = $totalSalaryFromTable;
-            }
+        // حساب نسبة التحصيلات للمندوبين
+        $collectionsBonusForAdvance = 0;
+        if ($currentUser['role'] === 'sales') {
+            $salaryCalculation = calculateTotalSalaryWithCollections($currentSalary, $currentUser['id'], $selectedMonth, $selectedYear, $currentUser['role']);
+            $collectionsBonusForAdvance = $salaryCalculation['collections_bonus'] ?? 0;
         }
         
-        $maxAdvance = cleanFinancialValue($totalSalaryForAdvance * 0.5);
+        // حساب الراتب الإجمالي (قبل الخصومات)
+        if ($currentUser['role'] === 'sales') {
+            $grossSalaryForAdvance = round($baseAmountForAdvance + $bonusForAdvance + $collectionsBonusForAdvance, 2);
+        } else {
+            $grossSalaryForAdvance = round($baseAmountForAdvance + $bonusForAdvance, 2);
+        }
+        
+        // حساب الراتب الصافي (بعد الخصومات)
+        $netSalaryForAdvance = max(0, round($grossSalaryForAdvance - $deductionsForAdvance, 2));
+        
+        // حساب الحد الأقصى للسلفة بناءً على نصف الراتب الصافي (بعد الخصومات)
+        $maxAdvance = cleanFinancialValue($netSalaryForAdvance * 0.5);
         $isTemporary = true;
     }
 }
@@ -979,8 +1015,14 @@ if ($currentSalary) {
         $monthStats['collections_amount'] = 0;
     }
     
-    // حساب الحد الأقصى للسلفة بناءً على الراتب الإجمالي من جدول تفاصيل الراتب
-    $maxAdvance = cleanFinancialValue($monthStats['total_salary'] * 0.5);
+    // حساب الحد الأقصى للسلفة بناءً على نصف الراتب الصافي (بعد الخصومات)
+    // الراتب الصافي = الراتب الإجمالي - الخصومات
+    $grossSalaryForStats = cleanFinancialValue($currentSalary['base_amount'] ?? 0) + 
+                          cleanFinancialValue($currentSalary[$bonusColumnName] ?? $currentSalary['bonus'] ?? $currentSalary['bonuses'] ?? 0) + 
+                          cleanFinancialValue($monthStats['collections_bonus'] ?? 0);
+    $deductionsForStats = cleanFinancialValue($currentSalary['deductions'] ?? 0);
+    $netSalaryForStats = max(0, round($grossSalaryForStats - $deductionsForStats, 2));
+    $maxAdvance = cleanFinancialValue($netSalaryForStats * 0.5);
 } else {
     // إذا لم يكن هناك راتب محفوظ، احسب الساعات مباشرة من attendance_records
     // لضمان أن الساعات معروضة حتى لو لم يتم حساب الراتب بعد
@@ -1137,8 +1179,8 @@ if ($currentSalary && isset($currentSalary['base_amount'])) {
     }
 }
 
-// إعادة حساب الحد الأقصى للسلفة بناءً على الراتب الإجمالي النهائي المعروض في الجدول
-// هذا يضمن أن الحد الأقصى يعتمد على نفس القيمة المعروضة للمستخدم (159.80 ج.م)
+// إعادة حساب الحد الأقصى للسلفة بناءً على نصف الراتب الصافي (بعد الخصومات)
+// $totalSalary هنا هو الراتب الصافي (بعد الخصومات) المعروض في الجدول
 $maxAdvance = cleanFinancialValue($totalSalary * 0.5);
 
 // حساب إجمالي السلفات المعتمدة لهذا الشهر

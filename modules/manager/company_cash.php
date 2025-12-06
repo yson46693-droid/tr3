@@ -1193,6 +1193,84 @@ $typeColorMap = [
 </div>
 
 <script>
+// معالجة إرسال نموذج التقرير (يجب أن تكون في النطاق العام)
+function handleReportSubmit(event) {
+    event.preventDefault();
+    
+    const form = document.getElementById('reportForm');
+    if (!form) return false;
+    
+    const dateFrom = document.getElementById('reportDateFrom');
+    const dateTo = document.getElementById('reportDateTo');
+    
+    if (!dateFrom || !dateTo) return false;
+    
+    const fromDate = new Date(dateFrom.value);
+    const toDate = new Date(dateTo.value);
+    
+    if (fromDate > toDate) {
+        alert('تاريخ البداية يجب أن يكون قبل تاريخ النهاية');
+        dateFrom.focus();
+        return false;
+    }
+    
+    // بناء URL للتقرير
+    // استخدام window.location.origin للحصول على النطاق
+    const origin = window.location.origin;
+    const currentPath = window.location.pathname;
+    
+    // استخراج المسار الأساسي (إزالة dashboard/manager.php أو أي مسار آخر)
+    let basePath = currentPath;
+    // إزالة /dashboard/manager.php أو /dashboard/accountant.php
+    basePath = basePath.replace(/\/dashboard\/[^\/]+\.php.*$/, '');
+    // إزالة /modules/manager/company_cash.php إذا كان موجوداً
+    basePath = basePath.replace(/\/modules\/[^\/]+\/[^\/]+\.php.*$/, '');
+    
+    // تنظيف المسار
+    basePath = basePath.replace(/\/$/, ''); // إزالة / من النهاية
+    if (!basePath) {
+        basePath = '';
+    }
+    
+    // بناء URL للتقرير
+    const reportUrl = origin + basePath + '/print_company_cash_report.php';
+    
+    // جمع معاملات النموذج
+    const formData = new FormData(form);
+    const params = new URLSearchParams();
+    
+    for (const [key, value] of formData.entries()) {
+        params.append(key, value);
+    }
+    
+    // إضافة checkboxes غير المحددة كقيم فارغة
+    const includePending = document.getElementById('includePending');
+    const groupByType = document.getElementById('groupByType');
+    
+    if (!includePending.checked) {
+        params.delete('include_pending');
+    }
+    if (!groupByType.checked) {
+        params.delete('group_by_type');
+    }
+    
+    // فتح التقرير في تبويب جديد
+    const fullUrl = reportUrl + '?' + params.toString();
+    console.log('Opening report URL:', fullUrl); // للتشخيص
+    window.open(fullUrl, '_blank');
+    
+    // إغلاق Modal
+    const modalElement = document.getElementById('generateReportModal');
+    if (modalElement) {
+        const modal = bootstrap.Modal.getInstance(modalElement);
+        if (modal) {
+            modal.hide();
+        }
+    }
+    
+    return false;
+}
+
 // معالجة تحصيل من مندوب
 document.addEventListener('DOMContentLoaded', function() {
     const salesRepSelect = document.getElementById('salesRepSelect');
@@ -1346,81 +1424,6 @@ document.addEventListener('DOMContentLoaded', function() {
                 submitBtn.innerHTML = '<i class="bi bi-check-circle me-1"></i>تحصيل';
             }
         });
-    }
-    
-    // معالجة إرسال نموذج التقرير
-    function handleReportSubmit(event) {
-        event.preventDefault();
-        
-        const form = document.getElementById('reportForm');
-        if (!form) return false;
-        
-        const dateFrom = document.getElementById('reportDateFrom');
-        const dateTo = document.getElementById('reportDateTo');
-        
-        if (!dateFrom || !dateTo) return false;
-        
-        const fromDate = new Date(dateFrom.value);
-        const toDate = new Date(dateTo.value);
-        
-        if (fromDate > toDate) {
-            alert('تاريخ البداية يجب أن يكون قبل تاريخ النهاية');
-            dateFrom.focus();
-            return false;
-        }
-        
-        // بناء URL للتقرير
-        // استخدام window.location.origin للحصول على النطاق
-        const origin = window.location.origin;
-        const currentPath = window.location.pathname;
-        
-        // استخراج المسار الأساسي (إزالة dashboard/manager.php أو أي مسار آخر)
-        let basePath = currentPath;
-        // إزالة /dashboard/manager.php أو /dashboard/accountant.php
-        basePath = basePath.replace(/\/dashboard\/[^\/]+\.php.*$/, '');
-        // إزالة /modules/manager/company_cash.php إذا كان موجوداً
-        basePath = basePath.replace(/\/modules\/[^\/]+\/[^\/]+\.php.*$/, '');
-        
-        // تنظيف المسار
-        basePath = basePath.replace(/\/$/, ''); // إزالة / من النهاية
-        if (!basePath) {
-            basePath = '';
-        }
-        
-        // بناء URL للتقرير
-        const reportUrl = origin + basePath + '/print_company_cash_report.php';
-        
-        // جمع معاملات النموذج
-        const formData = new FormData(form);
-        const params = new URLSearchParams();
-        
-        for (const [key, value] of formData.entries()) {
-            params.append(key, value);
-        }
-        
-        // إضافة checkboxes غير المحددة كقيم فارغة
-        const includePending = document.getElementById('includePending');
-        const groupByType = document.getElementById('groupByType');
-        
-        if (!includePending.checked) {
-            params.delete('include_pending');
-        }
-        if (!groupByType.checked) {
-            params.delete('group_by_type');
-        }
-        
-        // فتح التقرير في تبويب جديد
-        const fullUrl = reportUrl + '?' + params.toString();
-        console.log('Opening report URL:', fullUrl); // للتشخيص
-        window.open(fullUrl, '_blank');
-        
-        // إغلاق Modal
-        const modal = bootstrap.Modal.getInstance(document.getElementById('generateReportModal'));
-        if (modal) {
-            modal.hide();
-        }
-        
-        return false;
     }
 });
 </script>
