@@ -465,6 +465,20 @@ if (!empty($salariesTableExists)) {
     $totalSalaries = (float) ($salariesResult['total_salaries'] ?? 0);
 }
 
+// حساب إجمالي تسويات المرتبات
+$totalSalaryAdjustments = 0.0;
+$accountantTableExists = $db->queryOne("SHOW TABLES LIKE 'accountant_transactions'");
+if (!empty($accountantTableExists)) {
+    $adjustmentsResult = $db->queryOne(
+        "SELECT COALESCE(SUM(amount), 0) as total_adjustments
+         FROM accountant_transactions
+         WHERE transaction_type = 'expense' 
+         AND status = 'approved'
+         AND description LIKE '%تسوية راتب%'"
+    );
+    $totalSalaryAdjustments = (float) ($adjustmentsResult['total_adjustments'] ?? 0);
+}
+
 $netApprovedBalance = 
     ($treasurySummary['approved_income'] ?? 0) 
     - ($treasurySummary['approved_expense'] ?? 0)
@@ -475,12 +489,13 @@ $approvedIncome = (float) ($treasurySummary['approved_income'] ?? 0);
 $approvedExpense = (float) ($treasurySummary['approved_expense'] ?? 0);
 $approvedPayment = (float) ($treasurySummary['approved_payment'] ?? 0);
 
-$movementTotal = $approvedIncome + $approvedExpense + $approvedPayment + $totalSalaries;
+$movementTotal = $approvedIncome + $approvedExpense + $approvedPayment + $totalSalaries + $totalSalaryAdjustments;
 $shareDenominator = $movementTotal > 0 ? $movementTotal : 1;
 $incomeShare = $shareDenominator > 0 ? round(($approvedIncome / $shareDenominator) * 100) : 0;
 $expenseShare = $shareDenominator > 0 ? round(($approvedExpense / $shareDenominator) * 100) : 0;
 $paymentShare = $shareDenominator > 0 ? round(($approvedPayment / $shareDenominator) * 100) : 0;
 $salariesShare = $shareDenominator > 0 ? round(($totalSalaries / $shareDenominator) * 100) : 0;
+$adjustmentsShare = $shareDenominator > 0 ? round(($totalSalaryAdjustments / $shareDenominator) * 100) : 0;
 $pendingCount = intval($pendingStats['total_pending'] ?? 0);
 $pendingAmount = (float) ($pendingStats['pending_amount'] ?? 0);
 $pendingPreview = array_slice($pendingTransactions, 0, 3);
@@ -570,6 +585,19 @@ $typeColorMap = [
                                 <div class="progress-bar bg-danger" role="progressbar" style="width: <?php echo max(0, min(100, $salariesShare)); ?>%;"></div>
                             </div>
                             <small class="text-muted d-block mt-2"><?php echo max(0, min(100, $salariesShare)); ?>% من إجمالي الحركة</small>
+                        </div>
+                    </div>
+                    <div class="col-12 col-md-4">
+                        <div class="border rounded-3 p-3 h-100">
+                            <div class="d-flex justify-content-between align-items-center">
+                                <span class="text-muted small">تسويات المرتبات</span>
+                                <i class="bi bi-currency-exchange text-info"></i>
+                            </div>
+                            <div class="h5 text-info mt-2"><?php echo formatCurrency($totalSalaryAdjustments); ?></div>
+                            <div class="progress mt-3" style="height: 6px;">
+                                <div class="progress-bar bg-info" role="progressbar" style="width: <?php echo max(0, min(100, $adjustmentsShare)); ?>%;"></div>
+                            </div>
+                            <small class="text-muted d-block mt-2"><?php echo max(0, min(100, $adjustmentsShare)); ?>% من إجمالي الحركة</small>
                         </div>
                     </div>
                 </div>
