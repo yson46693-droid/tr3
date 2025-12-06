@@ -588,19 +588,7 @@ $typeColorMap = [
                             <small class="text-muted d-block mt-2"><?php echo max(0, min(100, $paymentShare)); ?>% من إجمالي الحركة</small>
                         </div>
                     </div>
-                    <div class="col-12 col-md-4">
-                        <div class="border rounded-3 p-3 h-100">
-                            <div class="d-flex justify-content-between align-items-center">
-                                <span class="text-muted small">إجمالي المرتبات</span>
-                                <i class="bi bi-cash-stack text-danger"></i>
-                            </div>
-                            <div class="h5 text-danger mt-2"><?php echo formatCurrency($totalSalaries); ?></div>
-                            <div class="progress mt-3" style="height: 6px;">
-                                <div class="progress-bar bg-danger" role="progressbar" style="width: <?php echo max(0, min(100, $salariesShare)); ?>%;"></div>
-                            </div>
-                            <small class="text-muted d-block mt-2"><?php echo max(0, min(100, $salariesShare)); ?>% من إجمالي الحركة</small>
-                        </div>
-                    </div>
+                    
                     <div class="col-12 col-md-4">
                         <div class="border rounded-3 p-3 h-100">
                             <div class="d-flex justify-content-between align-items-center">
